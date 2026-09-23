@@ -13,5 +13,6 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | Path | Kind | Role |
 |---|---|---|
 | `units/note-write/` | note | WRITE only (view is a separate artefact) |
+| `units/note-view/` | note | VIEW only (write is a separate artefact) |
 
 Chooser records for these units are not stored here.
