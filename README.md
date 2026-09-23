@@ -14,5 +14,6 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 |---|---|---|
 | `units/note-write/` | note | WRITE only (view is a separate artefact) |
 | `units/note-view/` | note | VIEW only (write is a separate artefact) |
+| `units/signin/` | sign-in | Email one-time-code card. Host injects app / origin / auth / returnTo. |
 
 Chooser records for these units are not stored here.
