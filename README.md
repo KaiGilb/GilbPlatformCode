@@ -125,5 +125,17 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/condition-title/` | text | The title of one condition, trimmed. The entry and exit lists have stored names. |
 | `units/unnamed-person/` | name | A label when no name was admitted. Never the raw address. |
 | `units/place-field-kind/` | place | Whether one address field is a street, a place, or neither. Both at once is neither. |
+| `units/record-write/` | access | Whether this session may write one record. A reader grant is not a write ban when this session stored the row. |
+| `units/principal-key/` | address | The opaque card key, the friendly card address, and which connect targets are accepted. |
+| `units/person-ruling-key/` | address | One spelling for a remembered person ruling. A missing ruling still admits the principal. |
+| `units/document-rename/` | text | The title prefill and the rename patch. The key is the bare slug title. A blank string hides the wire title. |
+| `units/place-display/` | place | The heading and text for one catalogue place. An unresolved value stays the raw value. |
+| `units/claims-on-vault/` | list | Which claims belong on this seat. A claim vault id is not trimmed. |
+| `units/holder-link/` | link | Whether a stored link may be read here. A bare id may. Another host may not. |
+| `units/place-line/` | place | Place names joined with a middle dot. Not a count. |
+| `units/working-set-order/` | list | Display order and the working-set address parameters. Not a search. The type registry is not included. |
+| `units/term-does/` | text | The definition on a term document already read. A failed read is not an empty definition. |
+| `units/bridge-host/` | address | Whether the app host and the vault host differ, so a session cookie may not be sent. |
+| `units/chat-agent/` | text | The two chat agents. An unknown stored value is Jackfruit, not an error. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
