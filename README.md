@@ -91,5 +91,13 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/scale-facts/` | scale | Scale fields on a relation. Endpoints alone are not content. |
 | `units/occurred-at/` | scale | When and where a relation happened, stored as text. Not an at-value object. |
 | `units/record-plane/` | records | Which rows are not content. A file is hidden on the register and kept for a relation. |
+| `units/relation-count/` | graph | Which records stay within a hop depth of the selection. Not a count of relations. |
+| `units/term-view/` | ontology | Fields of a term the host already fetched. A missing field stays empty. |
+| `units/frozen-tag/` | tag | A document tag can be set or cleared. It cannot be renamed in place. |
+| `units/contact-purpose/` | contact | Work or Private from an email slot. A phone slot is not a purpose. |
+| `units/vcard-line/` | contact | Escapes and folds one vCard line. Does not build the card. |
+| `units/folder-public-words/` | files | The sentence when a public folder could not make something public. Only the first failure is quoted. |
+| `units/named-type/` | type | Bare type names for a word search. An empty list is not a search of every type. |
+| `units/spec-card-facts/` | type | The facts a Value, Function, or Solution form stores. The type name is a different unit. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
