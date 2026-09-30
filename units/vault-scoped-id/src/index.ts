@@ -1,0 +1,1 @@
+export { vaultIdFromVaultScopedUrl } from "./vaultScopedId";
