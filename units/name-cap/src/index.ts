@@ -1,0 +1,1 @@
+export { formatFieldValue } from "./nameCap";
