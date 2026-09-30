@@ -70,5 +70,12 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/type-curie/` | type | A JSON-LD type as t:Name when the address says so. A bare word stays bare. |
 | `units/compact-id/` | id | A short base: form becomes a full address. The short form is not kept. |
 | `units/ref-keys/` | id | Spellings of one person id, and whether a row is a card field. |
+| `units/employment-role/` | employment | Dates and place on one role. An end date is never still current. |
+| `units/name-from-email/` | name | A first and last name from an email, or nothing. A messy address is not guessed. |
+| `units/seat-address/` | address | The public address of a seat. A second /i address is not invented. |
+| `units/prefs-choice/` | theme | Which saved theme and language win. A newer language row must not wipe dark. |
+| `units/not-requested/` | text | The sentence for a read that was never issued. Not the sentence for an empty vault. |
+| `units/step-order/` | list | Where a step sits, which steps a drag rewrites, and the facts a new step writes. |
+| `units/spec-kind/` | type | Which card type a Value, Function, or Solution form stores. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
