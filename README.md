@@ -168,5 +168,17 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/process-tag/` | tag | The document tag on a process. A rename of an existing tag is refused. Spaces are not a clear. |
 | `units/neighbour-hops/` | graph | How many hops to walk. No selection walks none. All means three, not every record. |
 | `units/narrowing-cut/` | filter | Apply filters the host registered. A filter that is not ready does not empty the list. |
+| `units/vault-namespace/` | vault | The vault root inside an entity address, and an entity address under a root. A trailing slash on the root is not a root. |
+| `units/jwt-subject/` | session | The sub claim from a token the caller already holds. The signature is not checked. |
+| `units/ontology-ref/` | type | Whether a string is a store id, and the term address on a host the caller passes. |
+| `units/create-kind/` | type | Which create-list a node kind belongs on. Relation, attribute, and scale are not on it. |
+| `units/search-words/` | search | Spaced words from a type name, and the queries to try when a bare name misses. |
+| `units/resource-id/` | id | The opaque id from a resource address. An address that is not one is returned unchanged. |
+| `units/fact-faithful/` | field | Whether a fact can be shown as text without dropping part of it. |
+| `units/photo-location/` | photo | Whether a photo address is ready to show, and the file path a stored location becomes. |
+| `units/process-name/` | name | The name a process document states. A miss is blank. The id is not a name. |
+| `units/stored-spelling/` | field | The key a write must use. A renamed or assembled key is not prefixed. |
+| `units/browse-kind/` | type | Type, function, or value from a term document already read. Relation stays a type. |
+| `units/cited-standard/` | list | Every standard one checklist question cites. A single string and a list are both read. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
