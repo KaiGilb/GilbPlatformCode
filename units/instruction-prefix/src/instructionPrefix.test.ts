@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { INSTRUCTION_PREFIX_SEPARATOR, liftInstructionPrefix } from "./instructionPrefix";
 
 describe("liftInstructionPrefix", () => {
-  it("lifts a leading token before space, en dash, space", () => {
+  it("lifts a leading token before space, em dash, space", () => {
     expect(liftInstructionPrefix("ProcVdcStProc — body with [[link]]")).toEqual({
       tag: "ProcVdcStProc",
       body: "body with [[link]]",
