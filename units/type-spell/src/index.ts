@@ -1,0 +1,1 @@
+export { normalizeTypeUri } from "./typeSpell";

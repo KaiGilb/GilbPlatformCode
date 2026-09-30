@@ -149,5 +149,15 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/skill-browse/` | search | Parent groups and a ranked search over skills already in hand. Not a catalogue fetch. |
 | `units/blast-radius/` | list | Who depends on one term, from an index already loaded. A missing index is not an empty neighbourhood. |
 | `units/place-kept/` | place | Whether the saved address still holds what was written. The audience is not compared. |
+| `units/addressable-slug/` | field | Whether a served key is a slug this app can prefix. A foreign predicate is not one. |
+| `units/type-spell/` | type | One absolute type address from any spelling. The host supplies the address. A foreign address stays as it was. |
+| `units/grantee-hits/` | access | Which reachable vaults match a name, and which the registry already offered. An address is not a match. |
+| `units/prefs-signature/` | prefs | The wire signature of one preference payload. The same facts match. Key order does not. |
+| `units/command-match/` | search | Whether a command label or keyword contains the query. An empty query keeps the command. |
+| `units/graph-node-id/` | graph | Stable ids for a relation node and a pendant node. A record id must not collide with either. |
+| `units/principal-row/` | access | The four lines of one access row. A missing name is not the key, and silence is not a fact. |
+| `units/claim-slot/` | claim | The slot string that keeps two employments from sharing one claim. The kind is exact. |
+| `units/entity-name/` | name | The name a row shows, the slug a name box binds to, and the label a write copies. Three questions. |
+| `units/folder-part/` | folder | Which already-read link is a member of a folder. The folder is the whole. Ended is dropped only from the document. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
