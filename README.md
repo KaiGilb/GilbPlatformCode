@@ -120,5 +120,10 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/vault-scoped-id/` | id | The vault id in a vault-scoped address. A missing slash is not an id. |
 | `units/label-hyphen/` | text | A label made into a single hyphenated word. Not the list of relation verbs. |
 | `units/canonical-host/` | address | The address to open instead, when this host is not the one the app serves. |
+| `units/place-lines/` | place | Which street and which place ids an address still holds. A field street wins even when it is blank. |
+| `units/facet-errors/` | text | The search failures as one sentence. A missing place catalogue is not one of them. |
+| `units/condition-title/` | text | The title of one condition, trimmed. The entry and exit lists have stored names. |
+| `units/unnamed-person/` | name | A label when no name was admitted. Never the raw address. |
+| `units/place-field-kind/` | place | Whether one address field is a street, a place, or neither. Both at once is neither. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
