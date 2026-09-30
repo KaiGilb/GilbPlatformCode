@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-session-vault-name",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The sign-in vault name, or Unnamed vault and its id. Not the reachable-vault label.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

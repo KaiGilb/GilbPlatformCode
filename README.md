@@ -187,5 +187,10 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/term-hops/` | type | The term addresses inside a declared identity. A foreign path is dropped. |
 | `units/short-query/` | search | How many more letters a type search still needs. The minimum is passed in. |
 | `units/catalog-path/` | file | The catalog file under an app mount. A missing slash is added. A leading slash is not. |
+| `units/vault-modes/` | vault | Read and write kept. Append and control are dropped. A missing id is not a row. |
+| `units/modes-label/` | vault | The words for a mode set. Both modes are one sentence. Append is not a word here. |
+| `units/session-vault-name/` | vault | The sign-in vault name, or Unnamed vault and its id. Not the reachable-vault label. |
+| `units/term-ref/` | type | An absolute address kept as a reference. A local name is not turned into an address. |
+| `units/app-basename/` | file | The app mount with one trailing slash removed. A missing mount becomes an empty path. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
