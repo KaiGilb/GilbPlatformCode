@@ -99,5 +99,14 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/folder-public-words/` | files | The sentence when a public folder could not make something public. Only the first failure is quoted. |
 | `units/named-type/` | type | Bare type names for a word search. An empty list is not a search of every type. |
 | `units/spec-card-facts/` | type | The facts a Value, Function, or Solution form stores. The type name is a different unit. |
+| `units/text-find-words/` | text | The two sentences under an inside-text find. Only an exact zero says nothing matched. |
+| `units/history-value/` | text | A short reading of one stored value. A long value is cut. A name is not fetched. |
+| `units/history-actor/` | text | Who is named on a change, from the address alone. A person is not looked up. |
+| `units/history-events/` | text | One line per save from a term's change rows. The history itself is not loaded. |
+| `units/status-level/` | filter | Suggested, Approved, and Deprecated: colour, default, and which rows stay listed. |
+| `units/column-narrowing/` | filter | Cuts three columns with the filters you register. A filter that is not ready yet is not applied. |
+| `units/prefs-row/` | prefs | Which preferences row to write. The smallest id, not the newest. |
+| `units/admitted-name/` | name | The name a profile may publish. An unadmitted field is skipped. The rung is not the test. |
+| `units/name-cap/` | name | Capitalises a given name or a family name. Every other field is left as typed. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.

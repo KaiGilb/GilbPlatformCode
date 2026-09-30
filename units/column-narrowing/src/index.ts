@@ -1,0 +1,15 @@
+export {
+  TOGGLE_ON,
+  applyNarrowing,
+  defaultNarrowingState,
+  filtersForView,
+  flattenColumns,
+  isFilterActive,
+  type NarrowingOutcome,
+  type NarrowingState,
+  type OntologyColumns,
+  type OntologyNarrowingFilter,
+  type OntologyNarrowingOption,
+  type OntologyViewMode,
+  type PreparedByFilter,
+} from "./columnNarrowing";
