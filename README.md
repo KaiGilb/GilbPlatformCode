@@ -180,5 +180,12 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/stored-spelling/` | field | The key a write must use. A renamed or assembled key is not prefixed. |
 | `units/browse-kind/` | type | Type, function, or value from a term document already read. Relation stays a type. |
 | `units/cited-standard/` | list | Every standard one checklist question cites. A single string and a list are both read. |
+| `units/wire-key/` | field | The read spelling of a stored attribute. One leading a: is removed. This is not a write. |
+| `units/name-gap/` | name | Whether a found person is still missing a given name or a family name. A space is not a name. |
+| `units/member-name/` | name | What to call one group member, and which address identifies the row. www and id are kept. |
+| `units/credential-surface/` | access | Whether an error must be shown. These five names are not a shorter list. |
+| `units/term-hops/` | type | The term addresses inside a declared identity. A foreign path is dropped. |
+| `units/short-query/` | search | How many more letters a type search still needs. The minimum is passed in. |
+| `units/catalog-path/` | file | The catalog file under an app mount. A missing slash is added. A leading slash is not. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.

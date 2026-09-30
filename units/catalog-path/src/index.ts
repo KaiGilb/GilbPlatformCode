@@ -1,0 +1,1 @@
+export { thinSkillsPathFor } from "./catalogPath";

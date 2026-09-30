@@ -1,0 +1,1 @@
+export { isCredentialSurfaceError } from "./credentialSurface";
