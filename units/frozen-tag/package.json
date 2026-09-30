@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-frozen-tag",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A document tag can be set or cleared. It cannot be renamed in place.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

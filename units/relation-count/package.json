@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-relation-count",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Which records stay in view at a hop depth from the selected record. Not a count of relations.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

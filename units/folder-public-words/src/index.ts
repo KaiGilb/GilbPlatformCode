@@ -1,0 +1,1 @@
+export { notMadePublicSentence } from "./folderPublicWords";
