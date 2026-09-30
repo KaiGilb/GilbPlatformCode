@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-entity-name",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The name a row shows, the slug a name box binds to, and the label a write copies. Three questions.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
