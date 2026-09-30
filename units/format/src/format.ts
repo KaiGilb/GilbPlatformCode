@@ -26,3 +26,17 @@ export function formatShortDate(ms: number | null | undefined, now: Date = new D
     ? day
     : `${day} ${String(d.getFullYear() % 100).padStart(2, "0")}`;
 }
+
+/** Date and time. A missing or zero stamp returns "" so the screen does not invent a moment. */
+export function formatDateTime(ms: number | null | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

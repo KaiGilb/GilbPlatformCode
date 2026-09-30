@@ -1,0 +1,1 @@
+export { labelFromDocument } from "./docLabel";

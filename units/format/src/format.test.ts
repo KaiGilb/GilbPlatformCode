@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { formatBytes, formatShortDate } from "./format";
+import { formatBytes, formatDateTime, formatShortDate } from "./format";
 
 test("bytes", () => {
   expect(formatBytes(0)).toBe("0 B");
@@ -21,4 +21,12 @@ test("this year omits the year; another year keeps two digits", () => {
   const other = formatShortDate(new Date(2024, 2, 12).getTime(), now);
   expect(same.includes("26")).toBe(false);
   expect(other.endsWith("24")).toBe(true);
+});
+
+test("a full stamp is blank when the record has no time", () => {
+  expect(formatDateTime(0)).toBe("");
+  expect(formatDateTime(null)).toBe("");
+  const shown = formatDateTime(new Date(2024, 2, 12, 15, 4).getTime());
+  expect(shown).toContain("2024");
+  expect(shown.length).toBeGreaterThan(4);
 });

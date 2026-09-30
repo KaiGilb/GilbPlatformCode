@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Short file sizes and short dates. A missing date stays blank.",
+  "description": "Short file sizes, short dates, and a full date with time. A missing date stays blank.",
   "exports": { ".": "./src/index.ts" },
   "files": ["src"],
   "scripts": {
