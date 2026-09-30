@@ -192,5 +192,9 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/session-vault-name/` | vault | The sign-in vault name, or Unnamed vault and its id. Not the reachable-vault label. |
 | `units/term-ref/` | type | An absolute address kept as a reference. A local name is not turned into an address. |
 | `units/app-basename/` | file | The app mount with one trailing slash removed. A missing mount becomes an empty path. |
+| `units/standing-notice/` | text | The sentence when standing instructions did not load. An empty group is not an unread vault. |
+| `units/ontology-status/` | field | A write-side status word. Retired and withdrawn become Deprecated. Suggested is the fallback. |
+| `units/label-type-name/` | name | A type name from a label. The rest of each word is not lowercased. A non-ASCII letter is a break. |
+| `units/vault-origin/` | vault | The origin of an entity address. The same host keeps the origin the caller passed, scheme included. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
