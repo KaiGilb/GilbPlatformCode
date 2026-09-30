@@ -1,0 +1,1 @@
+export { labelToTypeName } from "./labelTypeName";

@@ -1,0 +1,1 @@
+export { vaultOriginOf } from "./vaultOrigin";
