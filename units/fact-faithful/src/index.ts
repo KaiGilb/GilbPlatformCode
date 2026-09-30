@@ -1,0 +1,1 @@
+export { isFactStringFaithful } from "./factFaithful";
