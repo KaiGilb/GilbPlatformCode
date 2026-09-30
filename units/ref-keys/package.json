@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-ref-keys",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Spellings of the same person id, and whether a row is a card field.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
