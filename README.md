@@ -159,5 +159,14 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/claim-slot/` | claim | The slot string that keeps two employments from sharing one claim. The kind is exact. |
 | `units/entity-name/` | name | The name a row shows, the slug a name box binds to, and the label a write copies. Three questions. |
 | `units/folder-part/` | folder | Which already-read link is a member of a folder. The folder is the whole. Ended is dropped only from the document. |
+| `units/type-plane/` | type | Which plane a term sits on. First match wins. A present key is not the same as a true flag. |
+| `units/name-field/` | name | The two searchable name fields. Any other profile type is not one. |
+| `units/owned-claim/` | claim | Which claims belong to one employment. The title token keeps later colons. |
+| `units/map-limit/` | list | Run a list with a cap on how many run at once. Order matches the list. |
+| `units/card-ref/` | graph | Which row is a card field, and which spellings name the same person. The host passes the origin. |
+| `units/place-gate/` | place | Which place fields a viewer may see, and why a migration must not run. |
+| `units/process-tag/` | tag | The document tag on a process. A rename of an existing tag is refused. Spaces are not a clear. |
+| `units/neighbour-hops/` | graph | How many hops to walk. No selection walks none. All means three, not every record. |
+| `units/narrowing-cut/` | filter | Apply filters the host registered. A filter that is not ready does not empty the list. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
