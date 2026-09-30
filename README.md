@@ -16,7 +16,7 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/note-view/` | note | VIEW only (write is a separate artefact) |
 | `units/signin/` | sign-in | Email one-time-code card. Host injects app / origin / auth / returnTo. |
 | `units/result-total/` | count | Exact, lower bound, or guess. Never a bare number for a bound. |
-| `units/format/` | text | Short file size and short date. A missing date stays blank. |
+| `units/format/` | text | Short file size, short date, and a date with time. A missing date stays blank. |
 | `units/overlay-layers/` | popup order | Which overlay paints above which. The picker stays on top. |
 | `units/type-name/` | name | Bare type name from a short name, a CURIE, or an address. |
 | `units/share-link/` | link | A pointer to the current screen. Not a permission. |
@@ -43,5 +43,12 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/graph-point/` | graph | The centre of a card, and where it lands on the pane. |
 | `units/graph-contract/` | graph | What a click and a double-click do. |
 | `units/graph-layout/` | graph | Places the cards. Directed links rank top to bottom. |
+| `units/server-error/` | error text | The sentence from a refused request. A machine token is never shown alone. |
+| `units/router-basename/` | router | The base path. A trailing slash is kept so a redirect cannot drop the query. |
+| `units/copy-text/` | clipboard | Reports copied, unavailable, or denied. Does not throw. |
+| `units/contact-actions/` | contact | Call, text, and email links. Does not invent a page for a bare @name. |
+| `units/role-when/` | date | A role's date line. A missing end is not the word Present. |
+| `units/vault-children/` | vault | Which child vaults to load. An empty choice loads the open vault only. |
+| `units/specimen-role/` | role | The declared role line. Absence, unknown, and a known word stay different. |
 
-The rows that explain these units live in the vault table, not in this repository.
+Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
