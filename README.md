@@ -108,5 +108,17 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/prefs-row/` | prefs | Which preferences row to write. The smallest id, not the newest. |
 | `units/admitted-name/` | name | The name a profile may publish. An unadmitted field is skipped. The rung is not the test. |
 | `units/name-cap/` | name | Capitalises a given name or a family name. Every other field is left as typed. |
+| `units/step-removal/` | list | Whether one step id left the served list. A duplicate id still counts as present. |
+| `units/condition-removal/` | list | Whether one condition left the served list, by content. Order is part of the check. |
+| `units/place-clear/` | place | Clears a place rung on a draft. Does not choose who can see it. |
+| `units/share-refusal/` | text | The sentence for a refused share. The server's reason is kept. |
+| `units/card-fact-edge/` | graph | The synthetic link between a card field and a person. Not a stored relation. |
+| `units/strong-etag/` | field | The validator to send back. A weak marker is removed. Quotes stay. |
+| `units/request-htu/` | address | The request address a proof is bound to. The query is not part of it. |
+| `units/search-tokens/` | search | The words in a search box, for display and ordering. Not the match that keeps a person. |
+| `units/member-paste/` | list | Splits a member box into entries. A comma splits. It does not decide who is a person. |
+| `units/vault-scoped-id/` | id | The vault id in a vault-scoped address. A missing slash is not an id. |
+| `units/label-hyphen/` | text | A label made into a single hyphenated word. Not the list of relation verbs. |
+| `units/canonical-host/` | address | The address to open instead, when this host is not the one the app serves. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.

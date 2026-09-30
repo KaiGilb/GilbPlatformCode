@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-search-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The words in a search box, for display and ordering. Not the match that keeps a person.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
