@@ -1,0 +1,1 @@
+export { roleLabel } from "./roleLabel";
