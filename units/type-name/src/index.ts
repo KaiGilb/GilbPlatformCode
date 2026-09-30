@@ -1,0 +1,1 @@
+export { normalizeTypeName } from "./typeName";

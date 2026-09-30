@@ -1,0 +1,24 @@
+{
+  "name": "@kaigilb/gilbplatformcode-editorial-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The light, dark, and colour-blind colour sheet. Five anchors; the rest is mixed from them.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-size-class",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Compact, medium, or expanded, from the window width. The same three widths every app can share.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}
