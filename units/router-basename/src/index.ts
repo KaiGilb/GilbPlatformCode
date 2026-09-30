@@ -1,0 +1,1 @@
+export { routerBasename } from "./routerBasename";
