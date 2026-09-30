@@ -1,0 +1,1 @@
+export { narrowTotal } from "./narrowTotal";

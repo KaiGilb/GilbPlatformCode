@@ -77,5 +77,19 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/not-requested/` | text | The sentence for a read that was never issued. Not the sentence for an empty vault. |
 | `units/step-order/` | list | Where a step sits, which steps a drag rewrites, and the facts a new step writes. |
 | `units/spec-kind/` | type | Which card type a Value, Function, or Solution form stores. |
+| `units/tag-carrier/` | tag | Which stored tag a record holds. Absence is only when both fields are empty. |
+| `units/condition-tag/` | tag | The tag on one condition. A bare tag counts only when the condition is manual. |
+| `units/claim-handle/` | id | Employment and title handles. A position and an identity are not the same token. |
+| `units/person-address/` | address | Whether a paste is an address, a principal, or a person key. A /base vault is not a person. |
+| `units/mail-tel/` | contact | mailto and tel prefixes. The prefix match is case-sensitive. |
+| `units/activity-phrase/` | text | One sentence from language activities. Only the first letter of the last one is lowered. |
+| `units/legacy-employment-key/` | employment | The old orgName and title keys. Index 1 has no number. |
+| `units/narrow-total/` | count | A total after this page dropped rows. No server total means the kept count. |
+| `units/created-id/` | id | The id of a step that was minted but not confirmed. Any other error has no id. |
+| `units/vault-purpose/` | type | Which type a new vault may represent. Group stores CollectiveAgent. |
+| `units/kind-home/` | type | Which standards home a type belongs to. Stanza is not its own home. |
+| `units/scale-facts/` | scale | Scale fields on a relation. Endpoints alone are not content. |
+| `units/occurred-at/` | scale | When and where a relation happened, stored as text. Not an at-value object. |
+| `units/record-plane/` | records | Which rows are not content. A file is hidden on the register and kept for a relation. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
