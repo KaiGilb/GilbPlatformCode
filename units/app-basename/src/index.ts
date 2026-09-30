@@ -1,0 +1,1 @@
+export { appBasenameFrom } from "./appBasename";

@@ -1,0 +1,1 @@
+export { sessionVaultLabel } from "./sessionVaultName";

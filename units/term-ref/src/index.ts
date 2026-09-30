@@ -1,0 +1,1 @@
+export { termRefFromNameOrIri } from "./termRef";
