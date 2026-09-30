@@ -1,0 +1,1 @@
+export { skillUriDisplayLabel } from "./skillUriLabel";
