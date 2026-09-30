@@ -60,5 +60,15 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/display-friendly/` | name | A short label from an email or an address. Only a /base path shows the host. |
 | `units/vault-address/` | vault | Whether a string is a vault address. A person and a record are not a vault. |
 | `units/hands-off/` | link | Links to other records. A short name with a colon is not saved as a link. |
+| `units/entity-ref/` | link | A stored address that points at another record. Does not load it. |
+| `units/instruction-prefix/` | text | A leading tag token in a sentence. Not proof the tag is stored. |
+| `units/statement-refs/` | text | Words and references in one sentence. A reference is not opened. |
+| `units/step-instruction/` | text | The tag pill and the body a step shows. The pill is never invented. |
+| `units/one-or-many/` | list | One object or a list, as a list. The single object is not dropped. |
+| `units/list-move/` | list | Moves one item. The list stays the same length. |
+| `units/string-list/` | list | One string or many, as a list. A blank string is not an entry. |
+| `units/type-curie/` | type | A JSON-LD type as t:Name when the address says so. A bare word stays bare. |
+| `units/compact-id/` | id | A short base: form becomes a full address. The short form is not kept. |
+| `units/ref-keys/` | id | Spellings of one person id, and whether a row is a card field. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
