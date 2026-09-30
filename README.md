@@ -137,5 +137,17 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/term-does/` | text | The definition on a term document already read. A failed read is not an empty definition. |
 | `units/bridge-host/` | address | Whether the app host and the vault host differ, so a session cookie may not be sent. |
 | `units/chat-agent/` | text | The two chat agents. An unknown stored value is Jackfruit, not an error. |
+| `units/statement-href/` | link | Which statement text may be opened. Only http and https. The stored spelling is kept. |
+| `units/vault-row/` | vault | The row for one vault id, and the vault a session starts in. An id has no first-row fallback. |
+| `units/org-listing/` | list | Whether a listing value is public or private. A value that is neither is shown as public. |
+| `units/relation-ends/` | relations | The source end and the target end of a relation already read. A short base id expands from that document. |
+| `units/raw-files-path/` | file | Whether a value is a raw file path. It is not a picture address. |
+| `units/predicate-heading/` | text | A heading made from a predicate's own spelling. Not a decision to show the field. |
+| `units/skill-uri-label/` | name | A short label from a skill address when the catalogue gave no name. |
+| `units/group-vault/` | vault | Whether a vault is a group. The type addresses are passed in. |
+| `units/not-a-person/` | access | The server's ruling that this principal is not a person. A failed read is not that ruling. |
+| `units/skill-browse/` | search | Parent groups and a ranked search over skills already in hand. Not a catalogue fetch. |
+| `units/blast-radius/` | list | Who depends on one term, from an index already loaded. A missing index is not an empty neighbourhood. |
+| `units/place-kept/` | place | Whether the saved address still holds what was written. The audience is not compared. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
