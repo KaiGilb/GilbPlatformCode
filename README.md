@@ -50,5 +50,15 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 | `units/role-when/` | date | A role's date line. A missing end is not the word Present. |
 | `units/vault-children/` | vault | Which child vaults to load. An empty choice loads the open vault only. |
 | `units/specimen-role/` | role | The declared role line. Absence, unknown, and a known word stay different. |
+| `units/id-tail/` | id | The last segment of an id. The two functions do not do the same thing. |
+| `units/role-label/` | role | A role value shown with spaces. An empty role is the word Member. |
+| `units/relation-members/` | relation | The members named on a relation. A bare word is kept only as an @id. |
+| `units/stored-field/` | field | A field under two spellings, and a process name from the facts that are present. |
+| `units/served-string/` | field | A stored string, or nothing. Blank and absent are both nothing. |
+| `units/direct-shares/` | access | Readers and writers named on this record. Not the rest of access. |
+| `units/page-window/` | list | Whether another page should be asked for. The complete flag is not the stop. |
+| `units/display-friendly/` | name | A short label from an email or an address. Only a /base path shows the host. |
+| `units/vault-address/` | vault | Whether a string is a vault address. A person and a record are not a vault. |
+| `units/hands-off/` | link | Links to other records. A short name with a colon is not saved as a link. |
 
 Each new unit has a README in its folder: what it is, what it is not, what you pass, what you get, and the mistakes not to make. The rows that explain these units live in the vault table, not in this repository. The README is there so the code can be taken before that row is written.
