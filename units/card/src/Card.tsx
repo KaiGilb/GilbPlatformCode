@@ -20,7 +20,7 @@ export function CardHeader({ className, ...rest }: HTMLAttributes<HTMLDivElement
 
 export function CardTitle({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <h2 className={cn("font-[var(--serif)] text-[19px] font-semibold text-[var(--ink)] tracking-[0.2px]", className)}>
+    <h2 className={cn("font-[family-name:var(--serif)] text-[19px] font-semibold text-[var(--ink)] tracking-[0.2px]", className)}>
       {children}
     </h2>
   );

@@ -47,11 +47,11 @@ describe("selfCardIdForVault — the server's derivation, byte for byte", () => 
     expect(await selfCardIdForVault(VAULT)).toBe(CARD_ID);
   });
 
-  it("does NOT normalise the root — a trailing slash is a different string and the server hashes it as one", async () => {
-    // Stated as behaviour, not as a wish: the server hashes what it is given. This test exists so
-    // that "helpfully" trimming a slash in future shows up RED instead of silently moving every
-    // address.
-    expect(await selfCardIdForVault("https://vault-a.example.test/vault/")).not.toBe(CARD_ID);
+  it("refuses a root with a trailing slash rather than hashing or trimming it", async () => {
+    // A stored root never ends in a slash. Hashing one that does would give a real-looking
+    // address for a card that does not exist; trimming it would guess. Both are refused.
+    await expect(selfCardIdForVault("https://vault-a.example.test/vault/")).rejects.toThrow(/trailing slash/);
+    await expect(selfCardEntityUri("https://vault-a.example.test/vault/")).rejects.toThrow(/trailing slash/);
   });
 
   it("refuses an empty root rather than collapsing every vault onto one card", async () => {

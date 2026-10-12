@@ -54,6 +54,13 @@ export async function selfCardIdForVault(vaultRoot: string): Promise<string> {
       "selfCardIdForVault requires the vault root — an empty key would collide every vault onto one card.",
     );
   }
+  // A stored vault root never ends in a slash. Hashing one that does gives a real-looking
+  // address for a card that does not exist, so it is refused rather than hashed or trimmed.
+  if (root.endsWith("/")) {
+    throw new Error(
+      `selfCardIdForVault takes the vault root as stored, with no trailing slash: ${JSON.stringify(root)}`,
+    );
+  }
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(root));
   return `${SELF_CARD_ID_PREFIX}${toHex(digest).slice(0, SELF_CARD_HASH_LEN)}`;
 }
@@ -65,7 +72,8 @@ export async function selfCardIdForVault(vaultRoot: string): Promise<string> {
  */
 export async function selfCardEntityUri(vaultRoot: string): Promise<string> {
   const id = await selfCardIdForVault(vaultRoot);
-  return `${vaultRoot.trim().replace(/\/+$/, "")}/e/${id}`;
+  // The same string that was hashed: a root with a trailing slash was already refused above.
+  return `${vaultRoot.trim()}/e/${id}`;
 }
 
 /** True when an id looks like a derived self-card address rather than a minted record id. */

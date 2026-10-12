@@ -128,15 +128,59 @@ describe("the crop surface", () => {
   it("keeps Tab inside the dialog instead of walking into the covered page", () => {
     // Without a trap, Tab leaves the modal into content that is visually covered by the
     // overlay but still reachable — the controls a person cannot see are the ones they land on.
-    render(<FaceCropper source={blob()} onUse={vi.fn()} onCancel={vi.fn()} />);
-    const buttons = screen.getAllByRole("button");
-    const last = buttons[buttons.length - 1]!;
+    // jsdom lays nothing out, so every element reads as hidden (offsetParent null); pin it to the
+    // parent so the trap sees the controls a browser would.
+    vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(function (this: HTMLElement) {
+      return this.parentElement;
+    });
+    const { container } = render(<FaceCropper source={blob()} onUse={vi.fn()} onCancel={vi.fn()} />);
+    const focusable = Array.from(
+      container.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+    );
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
 
     last.focus();
     fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(first);
 
-    // Wrapped back to the first control rather than escaping the dialog.
-    expect(buttons).toContain(document.activeElement as HTMLElement);
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("moves and resizes the square with the arrow keys, + and -", () => {
+    const onUse = vi.fn();
+    render(<FaceCropper source={blob()} onUse={onUse} onCancel={vi.fn()} />);
+    const box = screen.getByRole("slider");
+    // 400 x 200 picture: the starting square is 160 px at (120, 20).
+    fireEvent.keyDown(box, { key: "ArrowRight" });
+    fireEvent.keyDown(box, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(box, { key: "-" });
+    expect(box.style.left).toBe("125px");
+    expect(box.style.top).toBe("40px");
+    expect(box.style.width).toBe("155px");
+    fireEvent.keyDown(box, { key: "+" });
+    expect(box.style.width).toBe("160px");
+  });
+
+  it("while busy, Escape does not cancel and the arrow keys do not move the square", () => {
+    const onCancel = vi.fn();
+    render(<FaceCropper source={blob()} busy onUse={vi.fn()} onCancel={onCancel} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+    const box = screen.getByRole("slider");
+    const before = box.style.left;
+    fireEvent.keyDown(box, { key: "ArrowRight" });
+    expect(box.style.left).toBe(before);
+  });
+
+  it("keeps focus where the person put it when the host re-renders with a new onCancel", () => {
+    const { rerender } = render(<FaceCropper source="https://example.test/m.jpg" onUse={vi.fn()} onCancel={() => {}} />);
+    const whole = screen.getByRole("button", { name: /use the whole picture/i });
+    whole.focus();
+    rerender(<FaceCropper source="https://example.test/m.jpg" onUse={vi.fn()} onCancel={() => {}} />);
+    expect(document.activeElement).toBe(whole);
   });
 
   it("tells the person their original is kept", () => {

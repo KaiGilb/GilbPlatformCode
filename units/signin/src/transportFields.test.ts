@@ -19,8 +19,8 @@ function recorder(body: unknown = {}) {
 
 test("requestSignInCode sends a trimmed return_to through the transport, and omits a blank one", async () => {
   const a = recorder({ requested: true });
-  await requestSignInCode("https://id.example.test", "person@example.test", "  http://app.example.test:5261/after  ", undefined, { transport: a.transport });
-  assert.deepEqual(JSON.parse(a.calls[0].req.body!), { email: "person@example.test", return_to: "http://app.example.test:5261/after" });
+  await requestSignInCode("https://id.example.test", "person@example.test", "  http://app.example.test:4200/after  ", undefined, { transport: a.transport });
+  assert.deepEqual(JSON.parse(a.calls[0].req.body!), { email: "person@example.test", return_to: "http://app.example.test:4200/after" });
   const b = recorder({ requested: true });
   await requestSignInCode("https://id.example.test", "person@example.test", "   ", undefined, { transport: b.transport });
   assert.deepEqual(JSON.parse(b.calls[0].req.body!), { email: "person@example.test" });

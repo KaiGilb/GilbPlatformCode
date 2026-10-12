@@ -63,6 +63,13 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
   const imgRef = useRef<HTMLImageElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ kind: "move" | "resize"; x: number; y: number; box: Box } | null>(null);
+  // The latest onCancel and busy, read when a key is pressed. The dialog effect below runs once:
+  // if it depended on onCancel, a host passing a new function each render would move focus back
+  // to the sheet on every render.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   // An object URL for a Blob source, revoked on unmount. A leaked object URL pins the whole
   // decoded picture in memory, which on a 26 MP camera original is not a small leak.
@@ -115,9 +122,11 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
+        // While the upload is in flight, Escape does nothing, as the Cancel button is disabled.
+        if (busyRef.current) return;
         // ⚠ Escape is CANCEL, never "use the whole picture". Backing out must not silently
         //   commit a framing decision the person did not make.
-        onCancel();
+        onCancelRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -143,7 +152,7 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
       // the top of the document.
       previously?.focus?.();
     };
-  }, [onCancel]);
+  }, []);
 
   const onPointerDown = (kind: "move" | "resize") => (e: React.PointerEvent) => {
     if (box === null || busy) return;
@@ -218,7 +227,7 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
               aria-valuemin={MIN_BOX_PX}
               aria-valuemax={shown === null ? MIN_BOX_PX : Math.round(Math.min(shown.width, shown.height))}
               onKeyDown={(e) => {
-                if (shown === null) return;
+                if (shown === null || busy) return;
                 const step = e.shiftKey ? 20 : 5;
                 const moves: Record<string, Partial<Box>> = {
                   ArrowLeft: { left: box.left - step },

@@ -103,7 +103,7 @@ export class MachineCredential {
   }
 
   private async mint(): Promise<string> {
-    const url = `${this.o.idOrigin}/base/oauth/token`;
+    const url = `${this.o.idOrigin.replace(/\/+$/, "")}/base/oauth/token`;
     const send = this.o.transport ?? fetchTransport;
     const DPoP = await dpopProof(this.o.key, "POST", url);
     const body = new URLSearchParams({
@@ -119,7 +119,12 @@ export class MachineCredential {
       throw new MachineTokenError(0, "unreachable");
     }
     if (res.status < 200 || res.status > 299) throw new MachineTokenError(res.status, "the token endpoint refused the client");
-    const j = (await res.json()) as { access_token?: unknown; expires_in?: unknown };
+    let j: { access_token?: unknown; expires_in?: unknown };
+    try {
+      j = (await res.json()) as { access_token?: unknown; expires_in?: unknown };
+    } catch {
+      throw new MachineTokenError(res.status, "no token in the answer (not JSON)");
+    }
     if (typeof j?.access_token !== "string" || !j.access_token) throw new MachineTokenError(res.status, "no token in the answer");
     const ttl = typeof j.expires_in === "number" && Number.isFinite(j.expires_in) ? j.expires_in * 1000 : 60_000;
     this.held = { token: j.access_token, expiresAt: this.now() + ttl };

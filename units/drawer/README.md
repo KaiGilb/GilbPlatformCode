@@ -11,7 +11,7 @@ A slide-over panel from the left or the right, for a narrow window. Escape, the 
 - a header with the title and a Close button,
 - your content, scrolling inside the panel.
 
-It is a modal dialog (`role="dialog"`, `aria-modal="true"`), named by `ariaLabel` or else by `title`. While open, Escape closes it and the page behind does not scroll. Focus moves into the panel on the next frame and goes back to what had it when the panel closes.
+It is a modal dialog (`role="dialog"`, `aria-modal="true"`), named by `ariaLabel` or else by `title`. While open, Escape closes it and the page behind does not scroll. Focus moves into the panel on the next frame and goes back to what had it when the panel closes. A new `onClose` function on each render is fine: Escape calls the latest one, and focus moves only when `open` changes.
 
 It stops 64 px above the bottom of the window, so a fixed bottom bar stays visible and tappable below it. The same bottom-bar button that opened the drawer can close it. `app-shell` uses it that way.
 
@@ -33,6 +33,16 @@ import { Overlay } from "@kaigilb/gilbplatformcode-drawer";
 </Overlay>
 ```
 
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/drawer
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
+
 ## What you pass
 
 `open`, `onClose`, `side` (`"left"` or `"right"`), `title`, optional `ariaLabel`, and `children`.
@@ -43,11 +53,11 @@ Nothing while closed. The dialog while open.
 
 ## Host must supply
 
-Tailwind and the `editorial-tokens` sheet (`--ink`, `--paper-2`, `--line-2`, `--sel`, `--serif`, `--shadow-lg`). The slide and fade keyframes ship inside the component.
+Tailwind and the `editorial-tokens` sheet (`--ink`, `--ink-faint`, `--paper-2`, `--line-2`, `--sel`, `--serif`, `--shadow-lg`). The slide and fade keyframes ship inside the component.
 
 ## Do not
 
-- Do not pass a new `onClose` function on every render if you can avoid it. The effect that wires Escape, the scroll lock and focus runs again each time `onClose` changes.
+- Do not count on Escape closing the drawer when a control inside it already handled Escape and called `preventDefault()`. The drawer then stays open, so a menu or picker inside it can close itself first.
 - Do not put a second bottom bar under it. It already leaves 64 px for one.
 
 ## Wrong readings

@@ -169,9 +169,14 @@ export interface ResolvePhotoTermOptions {
  * what the master says today; when the master changes, this returns the new answer with no code
  * change, which is the entire reason it does a network read instead of holding a list.
  */
-export async function resolvePhotoTerm(opts: ResolvePhotoTermOptions): Promise<PhotoTerm> {
+/** The term document's address: `<vedaOrigin>/base/a/<slug>`. The one place it is built. */
+function termUrlFor(opts: Pick<ResolvePhotoTermOptions, "vedaOrigin" | "slug">): string {
   const slug = opts.slug ?? "profilePhoto";
-  const termUrl = `${opts.vedaOrigin.replace(/\/+$/, "")}/base/a/${encodeURIComponent(slug)}`;
+  return `${opts.vedaOrigin.replace(/\/+$/, "")}/base/a/${encodeURIComponent(slug)}`;
+}
+
+export async function resolvePhotoTerm(opts: ResolvePhotoTermOptions): Promise<PhotoTerm> {
+  const termUrl = termUrlFor(opts);
   const doFetch = opts.fetchImpl ?? ((u: string) => fetch(u));
 
   let res: Response;
@@ -189,6 +194,9 @@ export async function resolvePhotoTerm(opts: ResolvePhotoTermOptions): Promise<P
     doc = (await res.json()) as Record<string, unknown>;
   } catch (cause) {
     throw new PhotoTermUnavailableError(`${termUrl} served unparseable JSON: ${String(cause)}`);
+  }
+  if (doc === null || typeof doc !== "object" || Array.isArray(doc)) {
+    throw new PhotoTermUnavailableError(`${termUrl} served no term document (${JSON.stringify(doc)})`);
   }
 
   const token = doc["a:predicateAttribute"];
@@ -234,8 +242,8 @@ export interface PhotoTermResolver {
   peek(): PhotoTerm | null;
 }
 
-/** The store key. Kept as the original package wrote it, so a cache an app already holds still warms. */
-const STORE_KEY = "gilb-photo.term.v1";
+/** The store key for one term: an answer about one term on one master is no answer about another. */
+const storeKeyFor = (termUrl: string): string => `gilbplatformcode.photo-term.v1 ${termUrl}`;
 
 /** The cold-start seed, built from the recorded reading of the master in `termSnapshot.ts`.
  *  Used ONLY when nothing better is in hand, and replaced by the first successful live read.
@@ -243,7 +251,7 @@ const STORE_KEY = "gilb-photo.term.v1";
 function seedTerm(opts: ResolvePhotoTermOptions): PhotoTerm | null {
   const snap = PHOTO_TERM_SNAPSHOT;
   if ((opts.slug ?? "profilePhoto") !== snap.slug) return null;
-  const termUrl = `${opts.vedaOrigin.replace(/\/+$/, "")}/base/a/${encodeURIComponent(snap.slug)}`;
+  const termUrl = termUrlFor({ vedaOrigin: opts.vedaOrigin, slug: snap.slug });
   const writeKey = writeSpellingFrom(termUrl, snap.predicateAttribute, snap.deprecatedNotation);
   return {
     readKeys: readKeysFrom(snap.predicateAttribute, snap.deprecatedNotation),
@@ -258,6 +266,7 @@ export function createPhotoTermResolver(
 ): PhotoTermResolver {
   let inFlight: Promise<PhotoTerm> | null = null;
   let settled: PhotoTerm | null = null;
+  const STORE_KEY = storeKeyFor(termUrlFor(opts));
 
   const readStore = (): PhotoTerm | null => {
     try {

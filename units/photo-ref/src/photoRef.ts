@@ -27,6 +27,16 @@ const ENTITY_OR_RECORD_RE = new RegExp(
   "i",
 );
 
+/** Percent-decodes an id, or null when the encoding is malformed (`%E0%A4%A`): a malformed
+ *  reference names no file, and must not throw out of a read path. */
+function decodeId(encoded: string): string | null {
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
 /** A reference that is NOT a file path at all, but a server-mediated route that answers with
  *  bytes for a principal the viewer is entitled to see. Recognised so it is never fed to the
  *  file loader, which would strip it to a nonsense id. */
@@ -46,9 +56,9 @@ export function fileIdFromPhotoRef(ref: string): string | null {
   if (!raw) return null;
   if (isMediatedPhotoRef(raw)) return null;
   const fromFiles = raw.match(FILE_PATH_RE);
-  if (fromFiles?.[1]) return decodeURIComponent(fromFiles[1]);
+  if (fromFiles?.[1]) return decodeId(fromFiles[1]);
   const fromEntity = raw.match(ENTITY_RE);
-  if (fromEntity?.[1]) return decodeURIComponent(fromEntity[1]);
+  if (fromEntity?.[1]) return decodeId(fromEntity[1]);
   // A bare opaque id — no scheme, no path. Length floor keeps `i` and `base` out.
   if (!/[:/]/.test(raw) && raw.length >= 8) return raw;
   return null;
@@ -63,7 +73,7 @@ export function entityIdTail(uriOrId: string): string {
   const raw = uriOrId.trim();
   if (!raw) return "";
   const m = raw.match(ENTITY_OR_RECORD_RE);
-  if (m?.[1]) return decodeURIComponent(m[1]);
+  if (m?.[1]) return decodeId(m[1]) ?? "";
   if (!/[:/]/.test(raw) && raw.length >= 8) return raw;
   const i = raw.lastIndexOf("/");
   const tail = i === -1 ? raw : raw.slice(i + 1);

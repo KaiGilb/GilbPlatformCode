@@ -45,21 +45,31 @@ export async function browserCanDisplay(blob: Blob): Promise<boolean> {
 
   // Fallback for engines without createImageBitmap. `decode()` is awaited rather than trusting
   // `onload`, for the header-vs-pixels reason above.
+  // It never rejects: an engine with no `Image` or no object URLs cannot paint the file either,
+  // so that answer is false too, and an object URL already made is revoked.
   return new Promise<boolean>((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
+    let url: string | null = null;
+    let settled = false;
     const done = (answer: boolean) => {
-      URL.revokeObjectURL(url);
+      if (settled) return;
+      settled = true;
+      if (url !== null) URL.revokeObjectURL(url);
       resolve(answer);
     };
-    img.onload = () => {
-      if (typeof img.decode === "function") {
-        img.decode().then(() => done(true), () => done(false));
-        return;
-      }
-      done(img.naturalWidth > 0);
-    };
-    img.onerror = () => done(false);
-    img.src = url;
+    try {
+      url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        if (typeof img.decode === "function") {
+          img.decode().then(() => done(true), () => done(false));
+          return;
+        }
+        done(img.naturalWidth > 0);
+      };
+      img.onerror = () => done(false);
+      img.src = url;
+    } catch {
+      done(false);
+    }
   });
 }

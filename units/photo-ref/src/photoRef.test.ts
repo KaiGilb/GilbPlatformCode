@@ -101,3 +101,15 @@ describe("the two rules a README reader relies on", () => {
     expect(entityIdTail("https://h.example/x/abcdefg")).toBe("");
   });
 });
+
+describe("a malformed percent-encoding names no file; it does not throw", () => {
+  it("fileIdFromPhotoRef and photoBytesUrl answer null", () => {
+    expect(fileIdFromPhotoRef("/files/%E0%A4%A")).toBeNull();
+    expect(fileIdFromPhotoRef("https://h.example/vault/e/%ZZ")).toBeNull();
+    expect(photoBytesUrl("/files/%E0%A4%A", "https://holder.example.test")).toBeNull();
+  });
+  it("entityIdTail answers empty", () => {
+    expect(entityIdTail("https://h.example/base/e/%E0%A4%A")).toBe("");
+  });
+});
+

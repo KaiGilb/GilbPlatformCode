@@ -11,7 +11,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 // Editorial-Calm button. Colour comes entirely from the editorial-tokens variables (no hex here),
-// so a single anchor edit recolours every button. Every size keeps a 44 px tap target.
+// so a single anchor edit recolours every button. Every size is at least 44 px tall; `icon` is also 44 px wide.
 const base =
   "inline-flex items-center justify-center gap-2 rounded-[var(--r-md)] font-medium " +
   "transition-[background,color,box-shadow,border-color] duration-150 " +
@@ -26,8 +26,8 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  // Every size keeps a 44px touch-target floor — "sm" only trims the padding and text scale,
-  // never the hit area.
+  // Every size keeps a 44px height floor — "sm" only trims the padding and text scale, never the
+  // height. Only `icon` also has a 44px width floor; the others are as wide as their label.
   sm: "min-h-[44px] px-3 text-[13px]",
   md: "min-h-[44px] px-4 text-[14px]",
   icon: "h-11 w-11 min-h-[44px] min-w-[44px] p-0 text-[15px]",

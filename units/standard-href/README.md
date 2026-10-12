@@ -14,7 +14,7 @@ A link that opens one standard in the standards editor. The host passes the edit
 2. `section` is always `standards`.
 3. `stab` is set only when the tab is not `processes`, the editor's default tab.
 4. `pk` is set only on the `processes` tab, and only when `processKind` is given and is not `process`.
-5. The tab's own selection param carries the id: `std` for processes, `rs` for rules, `pr` for procedures.
+5. The id goes under the param the caller passes in `target.param`. The editor reads `std` on processes, `rs` on rules and `pr` on procedures. This unit does not check that the param fits the tab.
 
 ## What this is not
 
@@ -40,7 +40,7 @@ const href = standardHref(config.editorBase, { tab: "rules", param: "rs", id: ru
 
 ## What you get
 
-An absolute URL string, the base's origin and path, with the query above. Values are encoded.
+An absolute URL string: the base's origin, path and hash, with the query above in place of any query the base had. Values are encoded.
 
 ## Examples
 

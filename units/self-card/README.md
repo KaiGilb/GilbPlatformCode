@@ -30,11 +30,11 @@ const cardUri = await selfCardEntityUri(vaultRoot); // e.g. "https://<host>/vaul
 
 ## What you pass
 
-The vault root exactly as the server stores it: `https://<host>/vault` for a user vault, `https://<host>/base` for a system vault. Whitespace around it is trimmed. Nothing else is changed.
+The vault root exactly as the server stores it: `https://<host>/vault` for a user vault, `https://<host>/base` for a system vault. Whitespace around it is trimmed. Nothing else is changed. A root that ends in `/` throws: a stored root never does, and hashing one would give the address of a card that does not exist.
 
 ## What you get
 
-A string. An empty root throws, because an empty key would put every vault on one card.
+A string. An empty root throws, because an empty key would put every vault on one card. A root that ends in `/` throws too.
 
 ## Examples
 

@@ -12,7 +12,7 @@ test("htuFor keeps the host of the request: a vault call signs the vault's host,
 });
 
 test("htuFor forces https and keeps an explicit port, as the server rebuilds it", () => {
-  assert.equal(htuFor("http://dev.example.test:8787/base/x?y=1"), "https://dev.example.test:8787/base/x");
+  assert.equal(htuFor("http://dev.example.test:4000/base/x?y=1"), "https://dev.example.test:4000/base/x");
 });
 
 test("htuFor refuses a relative URL rather than guessing a host", () => {

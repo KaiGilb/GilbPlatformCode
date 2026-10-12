@@ -8,11 +8,11 @@ The frame of an app: three resizable regions on a wide window; below 840 px the 
 
 - a top bar with the host's `header` in the middle and, on a wide window, a toggle for each side region that exists;
 - at **expanded** width (840 px and up): left, centre and right as resizable regions (the `panes` unit);
-- at **compact** (under 600 px) and **medium** (600 to 839 px): the centre alone, a fixed bottom bar with a button per side region, and each side region as a slide-over drawer (the `drawer` unit). The bottom bar stays above the drawer, so the button that opened a drawer also closes it.
+- at **compact** (under 600 px) and **medium** (600 to 839 px): the centre alone, a fixed bottom bar with a button per side region, and each side region as a slide-over drawer (the `drawer` unit). The bottom bar stays above the drawer, so the button that opened a drawer also closes it. Going to a wide window closes any open drawer, so it does not reopen when the window narrows again.
 
-Inside the frame, `useShellCore()` gives `sizeClass`, `layout`, `detailOpen`, `openDetail()` and `closeDetail()`. `openDetail` widens the right region on a wide window and opens its drawer on a narrow one; it is not a toggle. An app's own shell context can `extend ShellCoreValue`, so a component written against the core works in every app.
+Inside the frame, `useShellCore()` gives `sizeClass`, `layout`, `detailOpen`, `openDetail()` and `closeDetail()`. `openDetail` un-collapses the right region on a wide window and opens its drawer on a narrow one; it is not a toggle. An app's own shell context can `extend ShellCoreValue`, so a component written against the core works in every app.
 
-`useShellLayout(options)` is the three-region state: both widths and whether each side is collapsed, kept in `localStorage` under the host's key, widths clamped to the limits. `BottomButton`, `PanelLeftIcon` and `PanelRightIcon` are exported so a host's extra controls look the same.
+`useShellLayout(options)` is the three-region state: both widths and whether each side is collapsed, kept in `localStorage` under the host's key, widths clamped to the limits (the host's default widths too). When the key changes, the layout stored under the new key is read; the old layout is not written over it. It also returns the limits in force, which the dividers report to assistive technology. `BottomButton`, `PanelLeftIcon` and `PanelRightIcon` are exported so a host's extra controls look the same.
 
 ## What this is not
 
@@ -36,14 +36,24 @@ import { ShellFrame, useShellCore } from "@kaigilb/gilbplatformcode-app-shell";
 />;
 ```
 
-It depends on three units, by `file:` path: `panes` (the wide layout), `size-class` (the three widths) and `drawer` (the narrow side regions). Each unit's `.npmrc` sets `install-links=true`, so a sibling unit is installed as a copy with its own dependencies.
+It depends on three units, by `file:` path: `panes` (the wide layout), `size-class` (the three widths) and `drawer` (the narrow side regions). Each unit's `.npmrc` sets `install-links=true`, so when you install inside the library, a sibling unit is installed as a copy with its own dependencies. That file does not govern your app's install: see below.
+
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/app-shell
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
 
 ## What you pass
 
 | Prop | Meaning |
 |---|---|
 | `layoutOptions` | `storageKey` (required, one per app); optional `defaults`, `leftMin`, `leftMax`, `rightMin`, `rightMax` |
-| `header` | the top bar's middle. Omit for no top bar. |
+| `header` | the top bar's middle. Omit for no top bar. With no top bar there are no side toggles, so on a wide window a collapsed side region can only be reopened by the host, through `useShellCore().layout.expandLeft()` or `expandRight()`. |
 | `left`, `right` | the side regions. Omit one and no toggle, button or drawer is drawn for it. |
 | `center` | the centre region |
 | `leftTitle`, `rightTitle` | drawer titles (default `Workspace`, `Detail`) |

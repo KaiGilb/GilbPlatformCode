@@ -8,11 +8,11 @@ A stored profile photo is a short text value. These functions turn it into "whic
 
 | Function | Returns |
 |---|---|
-| `fileIdFromPhotoRef(ref)` | the file id in `/files/<id>`, `…/base/e/<id>`, `…/vault/e/<id>`, or a bare opaque id of 8 characters or more. The id is percent-decoded. Null for anything else, and for a mediated route. |
+| `fileIdFromPhotoRef(ref)` | the file id in `/files/<id>`, `…/base/e/<id>`, `…/vault/e/<id>`, or a bare opaque id of 8 characters or more. The id is percent-decoded. Null for anything else, for a mediated route, and when the percent-encoding is malformed. |
 | `isMediatedPhotoRef(ref)` | true when the reference is the server-mediated `/base/connect/profile-photo` route, which answers with bytes for a person the viewer may see. Case-insensitive. |
 | `photoRefOrigin(ref)` | the origin the reference carries itself, or null when it is host-less |
 | `photoBytesUrl(ref, door)` | the absolute URL of the bytes. A reference with its own origin is returned as it is. A host-less one is joined to `door`. No door, no URL. |
-| `entityIdTail(uriOrId)` | the trailing id of an entity or `/lws/r/` record URI on either vault segment. Empty for a WebID tail (`…/i`), a bare vault root, or a tail shorter than 8 characters. |
+| `entityIdTail(uriOrId)` | the trailing id of an entity URI (`…/e/<id>`) or an `/lws/r/` record URI, on either vault segment, percent-decoded and of any length. Empty when that encoding is malformed. For any other input: a bare id of 8 characters or more is returned as it is; otherwise the last path part is returned, but empty for a WebID tail (`…/i`), a bare vault root, or a part shorter than 8 characters. |
 | `vaultSegmentOf(entityUri)` | `/vault` or `/base`, read off the URI; `/base` when there is no URI to read |
 
 `VAULT_PATH_SEGMENTS` (`["base", "vault"]`) and `VAULT_SEGMENT_PATTERN` are the one place the two live segments are written.
@@ -65,7 +65,7 @@ The door: the origin of the vault the reference was read from.
 ## Wrong readings
 
 - A reference with its own origin keeps its query in `photoBytesUrl`. Only `fileIdFromPhotoRef` strips to the id.
-- `entityIdTail` refuses a tail under 8 characters, so a short real id reads as empty.
+- The 8-character floor in `entityIdTail` applies only when the input is not an `/e/` or `/lws/r/` URI. An entity or record URI returns its tail at any length.
 
 ## Source
 

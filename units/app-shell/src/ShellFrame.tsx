@@ -8,7 +8,7 @@
 // The host fills the regions and the header's middle; the frame owns only where they go. What a
 // section is, what a vault is, and what is signed in stay in the host.
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Overlay } from "@kaigilb/gilbplatformcode-drawer";
 import { Panes } from "@kaigilb/gilbplatformcode-panes";
 import { useWindowSizeClass } from "@kaigilb/gilbplatformcode-size-class";
@@ -57,6 +57,16 @@ export function ShellFrame({
   const [rightOpen, setRightOpen] = useState(false);
   const hasLeft = left !== undefined;
   const hasRight = right !== undefined;
+  const closeLeftDrawer = useCallback(() => setLeftOpen(false), []);
+  const closeRightDrawer = useCallback(() => setRightOpen(false), []);
+
+  // The drawers belong to the narrow layout. Going wide closes them, so a drawer left open does
+  // not reappear, and take focus, the next time the window narrows.
+  useEffect(() => {
+    if (!isExpanded) return;
+    setLeftOpen(false);
+    setRightOpen(false);
+  }, [isExpanded]);
 
   // At expanded width the right pane is governed by the layout; below it by the drawer state.
   // One function per act, so no caller has to remember which.
@@ -158,12 +168,12 @@ export function ShellFrame({
       </div>
 
       {!isExpanded && hasLeft && (
-        <Overlay open={leftOpen} onClose={() => setLeftOpen(false)} side="left" title={leftTitle}>
+        <Overlay open={leftOpen} onClose={closeLeftDrawer} side="left" title={leftTitle}>
           {left}
         </Overlay>
       )}
       {!isExpanded && hasRight && (
-        <Overlay open={rightOpen} onClose={() => setRightOpen(false)} side="right" title={rightTitle}>
+        <Overlay open={rightOpen} onClose={closeRightDrawer} side="right" title={rightTitle}>
           {right}
         </Overlay>
       )}

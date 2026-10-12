@@ -33,7 +33,7 @@ describe("host-agnostic check", () => {
     ["an import from another package", "planted.ts", `import { x } from "some-package";`],
     ["a template-literal dynamic import", "planted.ts", "export const m = () => import(`../SomeApp/x`);"],
     ["a hardcoded host", "planted.ts", `export const U = "https://gilb.com/app/";`],
-    ["a host in a comment", "planted.ts", "// the live app is at localhost:5197\nexport const k = 1;"],
+    ["a host in a comment", "planted.ts", "// the live app is at localhost:4000\nexport const k = 1;"],
     ["a CSS @import", "planted.css", `@import "../../SomeApp/src/styles/tokens.css";`],
     ["a CSS url()", "planted.css", `.x { background: url("https://example.test/a.png"); }`],
   ] as const)("a planted %s fails", (_name, file, text) => {

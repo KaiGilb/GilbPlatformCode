@@ -35,6 +35,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@kaig
 </Card>
 ```
 
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/card
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
+
 ## What you pass
 
 `Card`, `CardHeader` and `CardContent` take any `div` prop. `CardTitle` and `CardDescription` take `children` and `className` only. A host `className` is merged last, so it wins a conflict.

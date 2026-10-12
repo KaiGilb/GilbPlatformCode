@@ -34,8 +34,13 @@ export interface FaceRect {
  */
 export const FACE_WHOLE = "whole" as const;
 
-/** Clamps a rectangle into the unit square, keeping as much of the marked area as fits. */
+const isFiniteRect = (r: FaceRect): boolean =>
+  [r.x, r.y, r.width, r.height].every((n) => typeof n === "number" && Number.isFinite(n));
+
+/** Clamps a rectangle into the unit square, keeping as much of the marked area as fits.
+ *  A rectangle with a non-finite member (NaN, Infinity) marks nothing: it becomes the whole picture. */
 export function clampFaceRect(rect: FaceRect): FaceRect {
+  if (!isFiniteRect(rect)) return { x: 0, y: 0, width: 1, height: 1 };
   const x = Math.min(Math.max(rect.x, 0), 1);
   const y = Math.min(Math.max(rect.y, 0), 1);
   const width = Math.min(Math.max(rect.width, 0), 1 - x);
@@ -47,12 +52,13 @@ export function clampFaceRect(rect: FaceRect): FaceRect {
 /**
  * The `?face=` query value for a marked rectangle, or for no rectangle at all.
  *
- * @param rect the holder's rectangle, or null when they marked nothing
+ * @param rect the holder's rectangle, or null when they marked nothing (a non-finite rectangle
+ *   marks nothing too)
  * @returns `"whole"`, or `"x,y,w,h"` rounded to 6 decimals (about 1/40th of a pixel on a
  *   6240 px original — far finer than anyone can drag, and short enough to keep the URL small)
  */
 export function faceQueryValue(rect: FaceRect | null): string {
-  if (rect === null) return FACE_WHOLE;
+  if (rect === null || !isFiniteRect(rect)) return FACE_WHOLE;
   const c = clampFaceRect(rect);
   const r = (n: number): string => String(Number(n.toFixed(6)));
   return `${r(c.x)},${r(c.y)},${r(c.width)},${r(c.height)}`;

@@ -216,7 +216,29 @@ test("a host-held key (e.g. Secure Enclave signer) is used for proofs and never 
   assert.deepEqual(await cred.ensurePublicJwk(), inner.publicJwk);
 });
 
-test("the guard band is 60 s and the unknown-expiry window 5 min, as the README promises", () => {
+test("the guard band is 60 s and an unreadable expiry counts as 5 min, as the README states", () => {
   assert.equal(EXPIRY_GUARD_MS, 60_000);
   assert.equal(UNKNOWN_TTL_FALLBACK_MS, 300_000);
+});
+
+test("a sign-out while the code is being verified is not undone when the answer lands", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const send: Transport = async () => {
+    await gate;
+    return { status: 200, json: async () => ({ token: "tok-late", principal: "https://id.example.test/i/p1" }) };
+  };
+  const cred = new SessionCredential({ transport: send });
+  const pending = cred.signInWithCode("https://id.example.test", "person@example.test", "123456");
+  await new Promise((r) => setTimeout(r, 10));
+  cred.invalidate(true); // sign-out
+  release();
+  await assert.rejects(pending, NotSignedInError);
+  assert.equal(cred.session, null);
+});
+
+test("a 2xx from the bridge that is not JSON is refused as no token, not a raw parse error", async () => {
+  const send: Transport = async () => ({ status: 200, json: async () => { throw new SyntaxError("Unexpected token <"); } });
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: send });
+  await assert.rejects(cred.getSession(), /no token/);
 });

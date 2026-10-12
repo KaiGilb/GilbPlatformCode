@@ -43,3 +43,28 @@ test("a collapsed side draws neither its region nor its divider", () => {
   expect((out.match(/role="separator"/g) ?? []).length).toBe(1);
   expect(out).toContain('data-region="center"');
 });
+
+test("each divider reports the width it controls, and no range when the host passes no limits", () => {
+  const out = html(layout());
+  const dividers = out.match(/<div role="separator"[^>]*>/g) ?? [];
+  expect(dividers).toHaveLength(2);
+  const [left, right] = dividers;
+  expect(left).toContain('aria-valuenow="300"');
+  expect(right).toContain('aria-valuenow="376"');
+  for (const d of dividers) {
+    expect(d).not.toContain("aria-valuemin");
+    expect(d).not.toContain("aria-valuemax");
+  }
+});
+
+test("with the host's limits each divider reports its range", () => {
+  const out = html(layout({ leftMin: 180, leftMax: 440, rightMin: 280, rightMax: 520, leftW: 300.4 }));
+  const dividers = out.match(/<div role="separator"[^>]*>/g) ?? [];
+  const [left, right] = dividers;
+  expect(left).toContain('aria-valuenow="300"');
+  expect(left).toContain('aria-valuemin="180"');
+  expect(left).toContain('aria-valuemax="440"');
+  expect(right).toContain('aria-valuenow="376"');
+  expect(right).toContain('aria-valuemin="280"');
+  expect(right).toContain('aria-valuemax="520"');
+});

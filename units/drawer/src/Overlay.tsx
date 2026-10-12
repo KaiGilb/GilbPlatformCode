@@ -24,12 +24,18 @@ export interface OverlayProps {
 export function Overlay({ open, onClose, side, title, ariaLabel, children }: OverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
+  // The latest onClose, read when Escape is pressed. The effect below runs on `open` only: if it
+  // depended on onClose, a host passing a new function each render would restore focus and move
+  // it into the panel again on every render, taking focus away from an input inside the drawer.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     restoreFocusRef.current = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // A control inside the drawer that handled Escape itself (a menu, a picker) keeps it.
+      if (e.key === "Escape" && !e.defaultPrevented) onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -42,7 +48,7 @@ export function Overlay({ open, onClose, side, title, ariaLabel, children }: Ove
       cancelAnimationFrame(id);
       restoreFocusRef.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -70,7 +76,7 @@ export function Overlay({ open, onClose, side, title, ariaLabel, children }: Ove
         )}
       >
         <div className="flex items-center justify-between px-4 h-14 border-b border-[var(--line-2)] flex-none">
-          <span className="font-[var(--serif)] text-[15px] font-semibold text-[var(--ink)]">{title}</span>
+          <span className="font-[family-name:var(--serif)] text-[15px] font-semibold text-[var(--ink)]">{title}</span>
           <button
             onClick={onClose}
             aria-label="Close"

@@ -187,3 +187,12 @@ describe("the link back to the master", () => {
     expect(fileIdFromEntityUri("https://vault-a.example.test/base/e/abc123?at=2026-01-01")).toBe("abc123");
   });
 });
+
+describe("a rectangle that is not a number marks nothing", () => {
+  it("NaN or Infinity anywhere sends face=whole, and clamps to the whole picture", () => {
+    expect(faceQueryValue({ x: Number.NaN, y: 0, width: 0.5, height: 0.5 })).toBe(FACE_WHOLE);
+    expect(faceQueryValue({ x: 0, y: 0, width: Infinity, height: 0.5 })).toBe(FACE_WHOLE);
+    expect(clampFaceRect({ x: 0.2, y: Number.NaN, width: 0.5, height: 0.5 })).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+  });
+});
+

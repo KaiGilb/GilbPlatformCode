@@ -79,7 +79,7 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 ```
 
 - One DPoP key per credential. The kit makes it (private half non-extractable), or the host passes `key` for a key the kit cannot hold, such as a Secure Enclave signer: `{ publicJwk, sign }`, where `sign` returns a raw 64-byte ES256 signature. A DER signature is refused with an error that says DER.
-- Concurrent callers share one mint. It re-mints inside a 60 s guard band. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
+- Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
 - `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
 - Never cache `authHeaders`. Each proof is single-use.
 
@@ -93,7 +93,7 @@ const machine = new MachineCredential({ idOrigin: ID_ORIGIN, clientId, key: key!
 const headers = await machine.authHeaders("POST", url);
 ```
 
-The token is reused until 30 s before it expires. `invalidate()` after a 401. A refusal, an unreachable endpoint, and a 2xx with no token are `MachineTokenError` (`status` 0 means no answer arrived).
+The token is reused until 30 s before it expires. `invalidate()` after a 401. A refusal, an unreachable endpoint, a 2xx with no token, and a 2xx whose body is not JSON are `MachineTokenError` (`status` 0 means no answer arrived).
 
 ## Take
 
@@ -109,6 +109,16 @@ Headless (no React):
 ```ts
 import { requestSignInCode, verifySignInCodeHttp, generateDpopKeyPair, dpopHeaders } from "./src/core.ts";
 ```
+
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/signin
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
 
 ## Do not
 
@@ -127,8 +137,8 @@ npm run typecheck
 npm run check:host-agnostic
 ```
 
-Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a vault host, or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module.
+Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a host on its fixed list (see `scripts/check-host-agnostic.mjs`), or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module.
 
 ## Source
 
-The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows only when name-prep returns a `webIdDomain`.
+The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows when check-name returns an `address`, or else when name-prep returns a `webIdDomain`.

@@ -15,7 +15,7 @@ The profile-photo term's read spellings and its one write spelling, read from th
 
 The read set is every segment of `a:predicateAttribute` split on `|`. The write spelling is the one segment not named in `a:deprecatedNotation`.
 
-`createPhotoTermResolver(options & { store? })` resolves once and keeps the answer. On a later failure it serves the last answer that worked. With a `store` (`localStorage` fits), that answer survives a reload. With nothing in hand, it starts from a dated seed (`PHOTO_TERM_SNAPSHOT`), a recorded reading of the master, used only for the `profilePhoto` slug and replaced by the first live read. `peek()` returns what is in hand without waiting; null means "not known yet", never "no photo".
+`createPhotoTermResolver(options & { store? })` resolves once and keeps the answer for the life of the resolver: after the first successful read it does not read again. A read that fails before then serves the stored answer or the seed when there is one, and otherwise rejects; the next `get()` tries again. With a `store` (`localStorage` fits), the answer survives a reload. It is stored under a key that names the term's address, so a resolver for another slug or another master never reads it. With nothing in hand, it starts from a dated seed (`PHOTO_TERM_SNAPSHOT`), a recorded reading of the master, used only for the `profilePhoto` slug and replaced by the first live read. `peek()` returns what is in hand without waiting; null means "not known yet", never "no photo".
 
 `photoRefFromFacts(facts, term)` reads the photo reference off a record's facts under any read spelling, as a plain string or a `{"@id": …}` node.
 
@@ -42,7 +42,7 @@ const ref = photoRefFromFacts(card.facts, await photoTerm.get());
 
 ## What you get
 
-A `PhotoTerm`, or a `PhotoTermUnavailableError` when the master could not be reached or served something unusable and nothing better is in hand.
+A `PhotoTerm`, or a `PhotoTermUnavailableError` when the master could not be reached or served something unusable (including a body that is not a term document, such as `null`) and nothing better is in hand.
 
 ## Host must supply
 

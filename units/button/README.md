@@ -1,6 +1,6 @@
 # button
 
-One button look for every app: primary, secondary, ghost, or danger. Every size keeps a 44 px tap target.
+One button look for every app: primary, secondary, ghost, or danger. Every size is at least 44 px tall. The `icon` size is also 44 px wide.
 
 ## What this is
 
@@ -33,6 +33,16 @@ import { Button } from "@kaigilb/gilbplatformcode-button";
 
 <Button variant="secondary" onClick={save}>Save</Button>
 ```
+
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/button
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
 
 ## What you pass
 

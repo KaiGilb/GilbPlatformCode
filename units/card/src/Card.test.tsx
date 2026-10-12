@@ -36,4 +36,11 @@ describe("Card", () => {
     expect(cls).toContain("p-0");
     expect(cls).not.toContain("p-5");
   });
+  test("the title is serif and semibold: the family survives the class merge", () => {
+    render(<CardTitle className="text-[21px]">Serif</CardTitle>);
+    const cls = screen.getByRole("heading", { name: "Serif" }).className;
+    expect(cls).toContain("font-[family-name:var(--serif)]");
+    expect(cls).toContain("font-semibold");
+    expect(cls).toContain("text-[21px]");
+  });
 });

@@ -242,7 +242,8 @@ export class SessionCredential {
    * @param name a vault name, on first sign-in
    * @param productName words for error messages
    * @returns the verify-code body (`needsVaultName`, `suggestedName`)
-   * @throws whatever `verifySignInCodeHttp` throws; {@link NotSignedInError} when no token came back
+   * @throws whatever `verifySignInCodeHttp` throws; {@link NotSignedInError} when no token came
+   *   back, or when a sign-out (`invalidate(true)`) happened while the code was being verified
    */
   async signInWithCode(
     origin: string,
@@ -251,10 +252,14 @@ export class SessionCredential {
     name?: string,
     productName?: string,
   ): Promise<VerifyHttpBody> {
+    // A sign-out while the code is on the wire must not be undone when the answer lands: the
+    // token would be held after sign-out, bound to a key the credential may no longer hold.
+    const gen = this.generation;
     const jwk = await this.ensurePublicJwk();
     const body = await verifySignInCodeHttp(origin, email, code, jwk, name, productName, {
       transport: this.opts.transport,
     });
+    if (gen !== this.generation) throw new NotSignedInError();
     if (!body.token || !body.principal) {
       // A vault name is still owed: no token yet, and that is not an error for the caller.
       if (body.needsVaultName) return body;
@@ -349,7 +354,13 @@ export class SessionCredential {
     if (res.status === 401) throw new NotSignedInError();
     if (res.status === 403) throw new OriginNotAllowedError();
     if (res.status < 200 || res.status > 299) throw new Error(`DPoP token mint failed: HTTP ${res.status}`);
-    const body = (await res.json()) as DpopTokenResponse;
+    let body: DpopTokenResponse;
+    try {
+      body = (await res.json()) as DpopTokenResponse;
+    } catch {
+      // A 2xx that is not JSON carries no token either.
+      throw new Error("DPoP token mint returned no token");
+    }
     // A 2xx with no token is not a credential. Refuse it loudly, so a caller never sends
     // `DPoP undefined`.
     if (!body?.access_token || !body.principal) throw new Error("DPoP token mint returned no token");

@@ -103,9 +103,11 @@ describe("createPhotoTermResolver — a cold master never becomes 'no photo'", (
     const good = createPhotoTermResolver({ vedaOrigin: "https://v", fetchImpl: serve(LIVE_DOC), store: backing });
     await good.get();
 
-    // A NEW resolver (fresh page load) whose network is dead still answers from the store.
+    // A NEW resolver (fresh page load) whose network is dead still answers from the store. The
+    // seed is refused, so only the store can produce this answer.
     const dead = createPhotoTermResolver({
       vedaOrigin: "https://v",
+      useSeed: false,
       fetchImpl: vi.fn(async () => { throw new Error("offline"); }),
       store: backing,
     });
@@ -184,3 +186,38 @@ describe("the seed — a reading of one term, on the host's own origin", () => {
     await expect(r.get()).rejects.toBeInstanceOf(PhotoTermUnavailableError);
   });
 });
+
+describe("the store is keyed by the term's address", () => {
+  const offline = () => vi.fn(async (): Promise<Response> => { throw new Error("offline"); });
+  const backing = () => {
+    const m = new Map<string, string>();
+    return { m, store: { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) } };
+  };
+
+  it("an answer stored for profilePhoto is not served for another slug", async () => {
+    const { store } = backing();
+    await createPhotoTermResolver({ vedaOrigin: "https://v", fetchImpl: serve(LIVE_DOC), store }).get();
+    const other = createPhotoTermResolver({ vedaOrigin: "https://v", slug: "coverImage", useSeed: false, fetchImpl: offline(), store });
+    expect(other.peek()).toBeNull();
+  });
+
+  it("an answer stored for one master is not served for another origin", async () => {
+    const { store } = backing();
+    await createPhotoTermResolver({
+      vedaOrigin: "https://v",
+      fetchImpl: serve({ ...LIVE_DOC, "a:predicateAttribute": "a:faceImage", "a:deprecatedNotation": undefined }),
+      store,
+    }).get();
+    const same = createPhotoTermResolver({ vedaOrigin: "https://v/", useSeed: false, fetchImpl: offline(), store });
+    expect(same.peek()?.writeKey).toBe("a:faceImage");
+    const other = createPhotoTermResolver({ vedaOrigin: "https://w", useSeed: false, fetchImpl: offline(), store });
+    expect(other.peek()).toBeNull();
+  });
+});
+
+describe("a body that is not a term document is an unavailability", () => {
+  it("null is PhotoTermUnavailableError, not a TypeError", async () => {
+    await expect(resolvePhotoTerm({ vedaOrigin: "https://v", fetchImpl: serve(null) })).rejects.toBeInstanceOf(PhotoTermUnavailableError);
+  });
+});
+

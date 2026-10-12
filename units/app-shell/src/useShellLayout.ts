@@ -5,7 +5,7 @@
 //
 // Persisted to localStorage: this is a per-browser UI preference, not vault data.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface ShellLayout {
   /** Left region width in px. */
@@ -49,13 +49,19 @@ function limitsOf(o: ShellLayoutOptions): Limits {
 
 /**
  * Reads the stored layout, clamped to the limits; a missing or broken value uses the defaults.
+ * The host's default widths are clamped to the limits too.
  *
  * @param o the host's options
  * @returns the layout to start from
  */
 export function readStoredLayout(o: ShellLayoutOptions): ShellLayout {
-  const d = { ...SHELL_LAYOUT_DEFAULTS, ...o.defaults };
   const lim = limitsOf(o);
+  const merged = { ...SHELL_LAYOUT_DEFAULTS, ...o.defaults };
+  const d: ShellLayout = {
+    ...merged,
+    leftW: clamp(Number(merged.leftW) || SHELL_LAYOUT_DEFAULTS.leftW, lim.leftMin, lim.leftMax),
+    rightW: clamp(Number(merged.rightW) || SHELL_LAYOUT_DEFAULTS.rightW, lim.rightMin, lim.rightMax),
+  };
   try {
     const raw = localStorage.getItem(o.storageKey);
     if (raw) {
@@ -75,6 +81,14 @@ export function readStoredLayout(o: ShellLayoutOptions): ShellLayout {
 }
 
 export interface ShellLayoutApi extends ShellLayout {
+  /** The limits in force (the host's or the defaults), so the dividers can report their range. */
+  readonly leftMin: number;
+  /** The limits in force (the host's or the defaults), so the dividers can report their range. */
+  readonly leftMax: number;
+  /** The limits in force (the host's or the defaults), so the dividers can report their range. */
+  readonly rightMin: number;
+  /** The limits in force (the host's or the defaults), so the dividers can report their range. */
+  readonly rightMax: number;
   setLeftW: (px: number) => void;
   setRightW: (px: number) => void;
   toggleLeft: () => void;
@@ -92,20 +106,38 @@ export interface ShellLayoutApi extends ShellLayout {
 /**
  * The layout state and its setters, persisted under the host's storage key.
  *
+ * When `storageKey` changes, the layout stored under the new key is read; the old key's layout is
+ * not written over it. The returned object keeps its identity until the layout or a limit changes.
+ *
  * @param o the host's options; `storageKey` is required
  */
 export function useShellLayout(o: ShellLayoutOptions): ShellLayoutApi {
-  const [layout, setLayout] = useState<ShellLayout>(() => readStoredLayout(o));
-  const { leftMin, leftMax, rightMin, rightMax } = limitsOf(o);
   const { storageKey } = o;
+  const [keyed, setKeyed] = useState<{ key: string; layout: ShellLayout }>(() => ({ key: storageKey, layout: readStoredLayout(o) }));
+  let current = keyed;
+  if (keyed.key !== storageKey) {
+    // A new key: start from what that key has stored (derived state, set during render).
+    current = { key: storageKey, layout: readStoredLayout(o) };
+    setKeyed(current);
+  }
+  const layout = current.layout;
+  const { leftMin, leftMax, rightMin, rightMax } = limitsOf(o);
 
   useEffect(() => {
+    if (keyed.key !== storageKey) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(layout));
+      localStorage.setItem(keyed.key, JSON.stringify(keyed.layout));
     } catch {
       /* ignore persistence failure */
     }
-  }, [layout, storageKey]);
+  }, [keyed, storageKey]);
+
+  const setLayout = useCallback((f: (l: ShellLayout) => ShellLayout) => {
+    setKeyed((k) => {
+      const next = f(k.layout);
+      return next === k.layout ? k : { key: k.key, layout: next };
+    });
+  }, []);
 
   const setLeftW = useCallback((px: number) => setLayout((l) => ({ ...l, leftW: clamp(px, leftMin, leftMax) })), [leftMin, leftMax]);
   const setRightW = useCallback((px: number) => setLayout((l) => ({ ...l, rightW: clamp(px, rightMin, rightMax) })), [rightMin, rightMax]);
@@ -116,5 +148,8 @@ export function useShellLayout(o: ShellLayoutOptions): ShellLayoutApi {
   const expandRight = useCallback(() => setLayout((l) => (l.rightCollapsed ? { ...l, rightCollapsed: false } : l)), []);
   const collapseRight = useCallback(() => setLayout((l) => (l.rightCollapsed ? l : { ...l, rightCollapsed: true })), []);
 
-  return { ...layout, setLeftW, setRightW, toggleLeft, toggleRight, expandLeft, collapseLeft, expandRight, collapseRight };
+  return useMemo(
+    () => ({ ...layout, leftMin, leftMax, rightMin, rightMax, setLeftW, setRightW, toggleLeft, toggleRight, expandLeft, collapseLeft, expandRight, collapseRight }),
+    [layout, leftMin, leftMax, rightMin, rightMax, setLeftW, setRightW, toggleLeft, toggleRight, expandLeft, collapseLeft, expandRight, collapseRight],
+  );
 }

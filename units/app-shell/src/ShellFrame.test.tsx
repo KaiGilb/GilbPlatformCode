@@ -1,6 +1,7 @@
 // The frame at each size class. Imports the shipped component and renders it in jsdom.
 import { afterEach, describe, expect, test } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { ShellFrame } from "./ShellFrame";
 import { useShellCore } from "./ShellCore";
 
@@ -97,5 +98,45 @@ describe("ShellFrame", () => {
 
   test("useShellCore outside a frame throws", () => {
     expect(() => render(<Probe />)).toThrow(/inside a ShellFrame/);
+  });
+  test("a drawer left open does not reappear after the window goes wide and narrow again", () => {
+    setWidth(700);
+    render(frame());
+    fireEvent.click(screen.getByRole("button", { name: /Selection/ }));
+    expect(screen.getByRole("dialog", { name: "Workspace" })).toBeTruthy();
+    act(() => setWidth(1200));
+    act(() => setWidth(700));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("a typed input in a drawer keeps focus while the host re-renders the frame", async () => {
+    setWidth(700);
+    function Host() {
+      const [q, setQ] = useState("");
+      return (
+        <ShellFrame
+          layoutOptions={{ storageKey: "t3" }}
+          left={<input aria-label="query" value={q} onChange={(e) => setQ(e.target.value)} />}
+          center={<p>{q}</p>}
+        />
+      );
+    }
+    render(<Host />);
+    fireEvent.click(screen.getByRole("button", { name: /Selection/ }));
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    const input = screen.getByRole("textbox", { name: "query" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "ab" } });
+    await act(() => new Promise((r) => requestAnimationFrame(() => r(undefined))));
+    expect(document.activeElement).toBe(input);
+  });
+
+  test("at expanded width the right divider reports its width and the layout's limits", () => {
+    setWidth(840);
+    render(frame());
+    const d = screen.getByRole("separator", { name: "Resize detail panel" });
+    expect(d.getAttribute("aria-valuenow")).toBe("376");
+    expect(d.getAttribute("aria-valuemin")).toBe("280");
+    expect(d.getAttribute("aria-valuemax")).toBe("520");
   });
 });

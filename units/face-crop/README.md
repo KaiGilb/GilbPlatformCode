@@ -48,9 +48,19 @@ import "@kaigilb/gilbplatformcode-face-crop/facecrop.css";
 />;
 ```
 
+### Installing it into your app
+
+Install it as a copy, not a link, so your app has one copy of React:
+
+```sh
+npm install --install-links <path-to-the-library>/units/face-crop
+```
+
+Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
+
 ## What you pass
 
-`source`: a `Blob`/`File`, or the URL of a stored master (the re-cut case). `onUse`, `onCancel`. Optional `mode` (`"new"` or `"recut"`) and `busy` (disables both actions).
+`source`: a `Blob`/`File`, or the URL of a stored master (the re-cut case). `onUse`, `onCancel`. Optional `mode` (`"new"` or `"recut"`) and `busy` (disables both actions, and Escape, the arrow keys, `+` and `-` do nothing while it is true).
 
 ## What you get
 
@@ -64,7 +74,7 @@ The upload and the read of the face's entity, with its own credentials; the prof
 
 - Do not omit `?face=` when the person skipped the crop. Omitting it is how a document upload says "make no face". Send `whole`.
 - Do not point the profile photo at the upload's `Location:` header. That names the master, the full-size original.
-- Do not submit `initialSquare` on the person's behalf. It is a starting position; not touching it means `whole`.
+- Do not submit `initialSquare` on the person's behalf. It is only where the square starts: a centred square, 80% of the shorter side. If the person presses **Use this area** without moving it, that square is what they chose and it is sent. Only **Use the whole picture** sends `whole`.
 - Do not copy width into height to make a "square" rectangle. On a picture that is not square, a square on screen is not square in fractions.
 - Do not treat a failed read as "no master". Build `{ kind: "unknown" }`; it offers no re-cut and claims no absence.
 - Do not report `linkedToMaster: false` as a failure. The server writes the edge only when the face is strictly smaller than its source.

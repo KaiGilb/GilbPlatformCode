@@ -102,3 +102,26 @@ describe("the fallback, for engines without createImageBitmap", () => {
     await expect(browserCanDisplay(BLOB)).resolves.toBe(false);
   });
 });
+
+describe("it does not reject", () => {
+  it("resolves NO when there is no Image constructor, and revokes the object URL it made", async () => {
+    vi.stubGlobal("createImageBitmap", undefined);
+    vi.stubGlobal("Image", undefined);
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", Object.assign(Object.create(URL), { createObjectURL: () => "blob:x", revokeObjectURL: revoke }));
+    await expect(browserCanDisplay(BLOB)).resolves.toBe(false);
+    expect(revoke).toHaveBeenCalledWith("blob:x");
+  });
+
+  it("resolves NO when object URLs cannot be made", async () => {
+    vi.stubGlobal("createImageBitmap", undefined);
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", Object.assign(Object.create(URL), {
+      createObjectURL: () => { throw new Error("not supported"); },
+      revokeObjectURL: revoke,
+    }));
+    await expect(browserCanDisplay(BLOB)).resolves.toBe(false);
+    expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
