@@ -15,7 +15,7 @@ export interface ShellCoreValue {
   layout: ShellLayoutApi;
   /** Whether the detail (right) region is showing, at any width. */
   detailOpen: boolean;
-  /** Show the detail region: widens the pane at expanded width, opens the sheet below it. */
+  /** Show the detail region: un-collapses the pane at expanded width, opens the drawer below it. */
   openDetail: () => void;
   /** Hide the detail region, at any width. */
   closeDetail: () => void;

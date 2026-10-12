@@ -8,7 +8,7 @@ A stored profile photo is a short text value. These functions turn it into "whic
 
 | Function | Returns |
 |---|---|
-| `fileIdFromPhotoRef(ref)` | the file id in `/files/<id>`, `…/base/e/<id>`, `…/vault/e/<id>`, or a bare opaque id of 8 characters or more. The id is percent-decoded. Null for anything else, for a mediated route, and when the percent-encoding is malformed. |
+| `fileIdFromPhotoRef(ref)` | the file id in `/files/<id>`, `…/base/e/<id>`, `…/vault/e/<id>`, or a bare opaque id of 8 characters or more. An id read from a path is percent-decoded; a bare id is returned as it is. Null for anything else, for a mediated route, and when the percent-encoding is malformed. |
 | `isMediatedPhotoRef(ref)` | true when the reference is the server-mediated `/base/connect/profile-photo` route, which answers with bytes for a person the viewer may see. Case-insensitive. |
 | `photoRefOrigin(ref)` | the origin the reference carries itself, or null when it is host-less |
 | `photoBytesUrl(ref, door)` | the absolute URL of the bytes. A reference with its own origin is returned as it is. A host-less one is joined to `door`. No door, no URL. |

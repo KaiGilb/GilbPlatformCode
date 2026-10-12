@@ -25,7 +25,7 @@ Package: `@kaigilb/gilbplatformcode-self-card`
 ```ts
 import { selfCardEntityUri } from "@kaigilb/gilbplatformcode-self-card";
 
-const cardUri = await selfCardEntityUri(vaultRoot); // e.g. "https://<host>/vault"
+const cardUri = await selfCardEntityUri(vaultRoot); // vaultRoot e.g. "https://<host>/vault" -> "https://<host>/vault/e/vsc-…"
 ```
 
 ## What you pass
@@ -60,4 +60,4 @@ The vault root, and Web Crypto (`crypto.subtle`), which browsers and Node both h
 
 ## Source
 
-`selfCard.ts` from the private `gilb-photo` package. The tests check the hash against literals made by `shasum`, not against a production card.
+`selfCard.ts` from the private `gilb-photo` package. One change: a root that ends in `/` throws here, where the source trimmed it in the address but not in the hash. The tests check the hash against literals made by `shasum`, not against a production card.

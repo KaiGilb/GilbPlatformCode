@@ -157,6 +157,12 @@ export interface ResolvePhotoTermOptions {
   fetchImpl?: TermFetch;
 }
 
+/** The term document's address: `<vedaOrigin>/base/a/<slug>`. The one place it is built. */
+function termUrlFor(opts: Pick<ResolvePhotoTermOptions, "vedaOrigin" | "slug">): string {
+  const slug = opts.slug ?? "profilePhoto";
+  return `${opts.vedaOrigin.replace(/\/+$/, "")}/base/a/${encodeURIComponent(slug)}`;
+}
+
 /**
  * Dereference the photo term and derive its read set and write spelling.
  *
@@ -169,12 +175,6 @@ export interface ResolvePhotoTermOptions {
  * what the master says today; when the master changes, this returns the new answer with no code
  * change, which is the entire reason it does a network read instead of holding a list.
  */
-/** The term document's address: `<vedaOrigin>/base/a/<slug>`. The one place it is built. */
-function termUrlFor(opts: Pick<ResolvePhotoTermOptions, "vedaOrigin" | "slug">): string {
-  const slug = opts.slug ?? "profilePhoto";
-  return `${opts.vedaOrigin.replace(/\/+$/, "")}/base/a/${encodeURIComponent(slug)}`;
-}
-
 export async function resolvePhotoTerm(opts: ResolvePhotoTermOptions): Promise<PhotoTerm> {
   const termUrl = termUrlFor(opts);
   const doFetch = opts.fetchImpl ?? ((u: string) => fetch(u));
@@ -223,9 +223,9 @@ export async function resolvePhotoTerm(opts: ResolvePhotoTermOptions): Promise<P
 // about THIS REQUEST; "there is no photo" is a claim about the DATA. Collapsing them turns a
 // cold cache into a face the holder's own data no longer shows.
 //
-// So: resolve once, keep the answer, and on a later failure keep serving the last answer that
-// worked. Only a resolver that has NEVER succeeded fails, and it fails loudly rather than
-// answering with a guess.
+// So: resolve once and keep the answer for the life of the resolver. Before the first success,
+// a failed read serves the stored answer or the seed when there is one. Only a resolver with
+// nothing in hand fails, and it fails loudly rather than answering with a guess.
 
 /** Where a last-known-good resolution is kept across reloads. `localStorage` satisfies it. */
 export interface PhotoTermStore {
@@ -234,8 +234,9 @@ export interface PhotoTermStore {
 }
 
 export interface PhotoTermResolver {
-  /** The resolved term. Resolves once; later calls reuse it. On a failed refresh, returns the
-   *  last good answer and reports it stale rather than failing or guessing. */
+  /** The resolved term. Resolves once; later calls reuse it. A failed read before the first
+   *  success returns the stored answer or the seed when there is one, else rejects; the next
+   *  call tries again. */
   get(): Promise<PhotoTerm>;
   /** The resolved term if one is already in hand, else null. For synchronous paint paths that
    *  must not block — a null here means "not known yet", NEVER "no photo". */

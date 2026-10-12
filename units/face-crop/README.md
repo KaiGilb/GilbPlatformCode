@@ -8,7 +8,7 @@ Three parts, one meaning: the face crop.
 
 **The surface.** `<FaceCropper source mode busy onUse onCancel>` is a modal sheet over the page. The person drags a square over their face (or moves it with the arrow keys, `+` and `-`), then presses **Use this area** or **Use the whole picture**. The two buttons have equal weight. Cancel and Escape back out without choosing. `onUse(rect)` gets the marked rectangle; `onUse(null)` means "use all of it", never "cancelled". `mode="recut"` changes only the words. Focus moves into the sheet and Tab stays inside it. Styles: `./facecrop.css` (`gp-crop` classes): layout, the selection, and 44 px hit targets. Colours read `--gp-crop-accent`, `--gp-crop-accent-ink`, `--gp-crop-ink`, `--gp-crop-surface`, each with a neutral fallback, so an app sets them from its own tokens.
 
-**The rectangle and its wire form.** A `FaceRect` is `{ x, y, width, height }` as fractions of the displayed picture. `faceQueryValue(rect)` is the `?face=` value: `"whole"` for null, or `"x,y,w,h"` rounded to 6 decimals. `appendFaceQuery(params, rect)` sets it. `rectFromDisplayedBox(box, displayed)` converts a square in displayed pixels; `initialSquare(displayed)` is the centred starting square; `clampFaceRect(rect)` keeps a rectangle inside the picture.
+**The rectangle and its wire form.** A `FaceRect` is `{ x, y, width, height }` as fractions of the displayed picture. `faceQueryValue(rect)` is the `?face=` value: `"whole"` for null, or `"x,y,w,h"` rounded to 6 decimals. `appendFaceQuery(params, rect)` sets it. `rectFromDisplayedBox(box, displayed)` converts a square in displayed pixels; `initialSquare(displayed)` is the centred starting square; `clampFaceRect(rect)` keeps a rectangle inside the picture. A rectangle with a non-finite member (NaN, Infinity) marks nothing: it reads as the whole picture, and `faceQueryValue` sends `whole`.
 
 **The two pictures.** An upload with `?face=` makes a small "lean" face beside the master. From the upload ack:
 
@@ -50,13 +50,19 @@ import "@kaigilb/gilbplatformcode-face-crop/facecrop.css";
 
 ### Installing it into your app
 
-Install it as a copy, not a link, so your app has one copy of React:
+Install it as a copy, not a link, so your app has one copy of React. First put this line in your app's own `.npmrc` (the unit's own `.npmrc` does not apply to your app's install):
 
-```sh
-npm install --install-links <path-to-the-library>/units/face-crop
+```
+install-links=true
 ```
 
-Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
+Then install it:
+
+```sh
+npm install <path-to-the-library>/units/face-crop
+```
+
+Every later `npm install` and `npm ci`, CI included, then keeps the copy. Without that line a plain install makes a link, the unit brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist". A one-off `npm install --install-links <path>` works only until the next plain install, and `npm ci` then refuses the lock file.
 
 ## What you pass
 

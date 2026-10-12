@@ -35,13 +35,19 @@ import { Overlay } from "@kaigilb/gilbplatformcode-drawer";
 
 ### Installing it into your app
 
-Install it as a copy, not a link, so your app has one copy of React:
+Install it as a copy, not a link, so your app has one copy of React. First put this line in your app's own `.npmrc` (the unit's own `.npmrc` does not apply to your app's install):
 
-```sh
-npm install --install-links <path-to-the-library>/units/drawer
+```
+install-links=true
 ```
 
-Or put `install-links=true` in your app's own `.npmrc` before you install. The unit's own `.npmrc` does not apply to your app's install. A plain `npm install <path>` makes a link, the unit then brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist".
+Then install it:
+
+```sh
+npm install <path-to-the-library>/units/drawer
+```
+
+Every later `npm install` and `npm ci`, CI included, then keeps the copy. Without that line a plain install makes a link, the unit brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist". A one-off `npm install --install-links <path>` works only until the next plain install, and `npm ci` then refuses the lock file.
 
 ## What you pass
 
