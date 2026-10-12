@@ -5,42 +5,56 @@ import {
   type CheckNameResult,
   type NamePrepResult,
 } from "./types";
+import { fetchTransport, type HttpOptions, type TransportResponse } from "./transport";
 
 function join(origin: string, path: string): string {
   return `${origin.replace(/\/$/, "")}${path}`;
 }
+
+const ok = (res: TransportResponse): boolean => res.status >= 200 && res.status < 300;
+
+// Every call takes an optional trailing `opts` carrying a caller-supplied transport
+// (./transport). The positional parameters are unchanged, so existing callers keep working and
+// keep `fetch`.
 
 export async function requestSignInCode(
   origin: string,
   email: string,
   returnTo?: string,
   productName?: string,
+  opts: HttpOptions = {},
 ): Promise<void> {
-  let res: Response;
+  const send = opts.transport ?? fetchTransport;
+  let res: TransportResponse;
   try {
     const body: { email: string; return_to?: string } = { email: email.trim() };
     if (returnTo?.trim()) body.return_to = returnTo.trim();
-    res = await fetch(join(origin, "/base/auth/email/request-code"), {
+    res = await send(join(origin, "/base/auth/email/request-code"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     });
   } catch {
     throw new SignInUnreachableError(productName);
   }
-  if (!res.ok) throw new SignInRefusedError(res.status, productName);
+  if (!ok(res)) throw new SignInRefusedError(res.status, productName);
 }
 
-export async function prepareVaultName(origin: string, email: string): Promise<NamePrepResult> {
+export async function prepareVaultName(
+  origin: string,
+  email: string,
+  opts: HttpOptions = {},
+): Promise<NamePrepResult> {
+  const send = opts.transport ?? fetchTransport;
   try {
-    const res = await fetch(join(origin, "/onboard/api/name-prep"), {
+    const res = await send(join(origin, "/onboard/api/name-prep"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim() }),
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: 8000,
     });
-    if (!res.ok) return { isReturning: false, suggestedName: "" };
+    if (!ok(res)) return { isReturning: false, suggestedName: "" };
     const body = (await res.json()) as Record<string, unknown>;
     return {
       isReturning: body.isReturning === true,
@@ -53,15 +67,20 @@ export async function prepareVaultName(origin: string, email: string): Promise<N
   }
 }
 
-export async function checkVaultName(origin: string, name: string): Promise<CheckNameResult> {
+export async function checkVaultName(
+  origin: string,
+  name: string,
+  opts: HttpOptions = {},
+): Promise<CheckNameResult> {
+  const send = opts.transport ?? fetchTransport;
   try {
-    const res = await fetch(join(origin, "/onboard/api/check-name"), {
+    const res = await send(join(origin, "/onboard/api/check-name"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: 8000,
     });
-    if (!res.ok) {
+    if (!ok(res)) {
       return {
         available: false,
         reserved: false,
@@ -101,8 +120,10 @@ export async function verifySignInCodeHttp(
   dpopJwk: object,
   name?: string,
   productName?: string,
+  opts: HttpOptions = {},
 ): Promise<VerifyHttpBody> {
-  let res: Response;
+  const send = opts.transport ?? fetchTransport;
+  let res: TransportResponse;
   try {
     const body: Record<string, unknown> = {
       email: email.trim(),
@@ -110,17 +131,19 @@ export async function verifySignInCodeHttp(
       dpopJwk,
     };
     if (name?.trim()) body.name = name.trim();
-    res = await fetch(join(origin, "/base/auth/email/verify-code"), {
+    // ⚠ This route also sets a session cookie for the platform's own apps. A third-party app does
+    // not need it: the returned token is the credential. A transport without cookies is fine.
+    res = await send(join(origin, "/base/auth/email/verify-code"), {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     });
   } catch {
     throw new SignInUnreachableError(productName);
   }
   if (res.status === 401) throw new CodeRejectedError();
-  if (!res.ok) throw new SignInRefusedError(res.status, productName);
+  if (!ok(res)) throw new SignInRefusedError(res.status, productName);
   return (await res.json()) as VerifyHttpBody;
 }

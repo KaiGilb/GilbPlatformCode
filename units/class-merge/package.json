@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-class-merge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Joins class names. When two Tailwind classes set the same thing, the later one wins.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
