@@ -1,0 +1,33 @@
+{
+  "name": "@kaigilb/gilbplatformcode-face-crop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A person marks the part of their picture that becomes their face, or uses the whole picture; the wire form of that mark; and the way back from the shown face to the master.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./facecrop.css": "./src/facecrop.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

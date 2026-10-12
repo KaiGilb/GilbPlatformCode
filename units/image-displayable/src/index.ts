@@ -1,0 +1,1 @@
+export { browserCanDisplay } from "./displayable";

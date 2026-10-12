@@ -7,9 +7,10 @@
 // `Rule_Code_gilb-app-stack-and-data#RuleBaseappAuthSdk` forbids ("apps SHARE the login, they do
 // not build it from scratch ... do not fork the auth flow into an app").
 //
-// ⚠ Nothing in this file, or in the three modules it re-exports, imports React. Verified
-// 2026-09-21: `http.ts`, `types.ts` and `pendingSignInEmail.ts` contain zero React references and
-// `http.ts` imports only `./types`. Keep it that way — a React import reached from here silently
+// ⚠ Nothing in this file, or in the modules it re-exports, imports React. Verified
+// 2026-09-21 for `http.ts`, `types.ts` and `pendingSignInEmail.ts`, and 2026-09-24 for `dpop.ts` and
+// `transport.ts` (0.2.0): zero React references. `http.ts` imports only `./types` and
+// `./transport`; `dpop.ts` and `transport.ts` import nothing. Keep it that way — a React import reached from here silently
 // re-imposes the dependency this entry point exists to remove.
 //
 // The host supplies its own UI and its own token holder; the contract it must satisfy is
@@ -21,6 +22,8 @@ export {
   checkVaultName,
   verifySignInCodeHttp,
 } from "./http";
+export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
+export { fetchTransport } from "./transport";
 export {
   loadPendingSignInEmail,
   savePendingSignInEmail,
@@ -38,3 +41,5 @@ export type {
   CheckNameResult,
   VerifySignInResult,
 } from "./types";
+export type { DpopKey, DpopPublicJwk, DpopSignerKey, DpopWebCryptoKey } from "./dpop";
+export type { Transport, TransportRequest, TransportResponse, HttpOptions } from "./transport";

@@ -1,0 +1,176 @@
+/* The crop surface, styled once for every app.
+ *
+ * Deliberately token-light and neutral: this sheet is consumed by two apps with different
+ * design systems, so it claims only layout, the selection affordance and hit-target sizes, and
+ * inherits colour and type from whichever app mounts it. Both apps may override any rule here
+ * from their own stylesheet.
+ *
+ * Mobile-first: the base rules ARE the small-screen rules, the only
+ * media query widens the sheet upward, and every control clears the 44 px touch target.
+ */
+
+.gp-crop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgb(0 0 0 / 72%);
+  /* Respects an iPhone's home indicator and notch without the app having to pass anything in. */
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.gp-crop__sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--gp-crop-surface, #fff);
+  color: var(--gp-crop-ink, #14161a);
+}
+
+.gp-crop__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 650;
+}
+
+.gp-crop__hint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  opacity: 0.75;
+}
+
+/* The stage is inline-flex so it shrink-wraps the image exactly: the selection box is
+ * positioned against this element, so any gap between stage and image would offset every
+ * coordinate the person sees from the one that gets sent. */
+.gp-crop__stage {
+  position: relative;
+  display: inline-flex;
+  align-self: center;
+  max-width: 100%;
+  line-height: 0;
+  background: #0b0d10;
+  border-radius: 10px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.gp-crop__img {
+  display: block;
+  max-width: 100%;
+  /* Bounded so a tall picture cannot push the two actions off the bottom of a phone screen —
+   * a control the person cannot reach is a control that does not exist. */
+  max-height: min(58vh, 420px);
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.gp-crop__box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: move;
+  touch-action: none;
+  /* The ring shows what is kept; the vast shadow dims everything outside it without needing a
+   * second overlay element to keep in sync with the box. */
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 55%);
+}
+
+.gp-crop__box:focus-visible {
+  outline: 3px solid #4c9ffe;
+  outline-offset: 3px;
+}
+
+.gp-crop__handle {
+  position: absolute;
+  right: -11px;
+  bottom: -11px;
+  width: 44px;
+  height: 44px;
+  margin: -11px;
+  padding: 11px;
+  box-sizing: content-box;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #4c9ffe;
+  background-clip: content-box;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.gp-crop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gp-crop__btn {
+  flex: 1 1 180px;
+  min-height: 46px;
+  padding: 11px 14px;
+  font: inherit;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.gp-crop__btn--primary {
+  background: var(--gp-crop-accent, #14161a);
+  border-color: var(--gp-crop-accent, #14161a);
+  color: var(--gp-crop-accent-ink, #fff);
+}
+
+.gp-crop__btn:disabled,
+.gp-crop__cancel:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.gp-crop__cancel {
+  min-height: 44px;
+  padding: 10px;
+  font: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+@media (min-width: 640px) {
+  .gp-crop__sheet {
+    padding: 20px;
+    gap: 12px;
+  }
+  .gp-crop__img {
+    max-height: 460px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gp-crop__sheet {
+    animation: gp-crop-in 140ms ease-out;
+  }
+}
+
+@keyframes gp-crop-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}

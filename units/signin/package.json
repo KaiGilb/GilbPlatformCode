@@ -1,13 +1,15 @@
 {
   "name": "@kaigilb/gilbplatformcode-signin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "GilbPlatformCode sign-in unit. Email one-time-code card. Host injects app / origin / auth / returnTo. No vault host baked. No captive vault store.",
+  "description": "GilbPlatformCode sign-in unit. Email one-time-code card, DPoP proofs, the session credential an app holds after sign-in, and a machine agent's sign-in. Host injects app / origin / auth / returnTo. No vault host baked. No captive vault store.",
   "exports": {
     ".": "./src/index.ts",
     "./signin.css": "./src/signin.css",
-    "./core": "./src/core.ts"
+    "./core": "./src/core.ts",
+    "./session": "./src/session.ts",
+    "./machine": "./src/machine.ts"
   },
   "files": [
     "src"
@@ -26,9 +28,10 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "react": "^19.0.0",
-    "typescript": "^5.6.3",
+    "typescript": "^5.9.2",
     "vitest": "^2.1.9"
   }
 }
