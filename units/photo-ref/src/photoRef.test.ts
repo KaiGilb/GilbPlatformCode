@@ -88,3 +88,16 @@ describe("photoRefOrigin / photoBytesUrl — the apex holds no vault's files", (
     expect(isMediatedPhotoRef("/files/abc")).toBe(false);
   });
 });
+
+describe("the two rules a README reader relies on", () => {
+  it("the mediated route is recognised in any case", () => {
+    expect(isMediatedPhotoRef("https://h.example/BASE/Connect/Profile-Photo?principal=x")).toBe(true);
+    expect(fileIdFromPhotoRef("/Base/Connect/Profile-Photo")).toBeNull();
+  });
+  it("a bare opaque id needs 8 characters; a shorter word is not an id", () => {
+    expect(fileIdFromPhotoRef("abcdefgh")).toBe("abcdefgh");
+    expect(fileIdFromPhotoRef("abcdefg")).toBeNull();
+    expect(entityIdTail("abcdefgh")).toBe("abcdefgh");
+    expect(entityIdTail("https://h.example/x/abcdefg")).toBe("");
+  });
+});

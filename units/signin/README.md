@@ -131,4 +131,4 @@ Tests mock fetch or run a local `node:http` server. They prove request shape, ho
 
 ## Source
 
-Kai's `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows only when name-prep returns a `webIdDomain`.
+The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows only when name-prep returns a `webIdDomain`.

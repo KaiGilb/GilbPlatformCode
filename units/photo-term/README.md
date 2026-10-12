@@ -63,4 +63,4 @@ The master's origin. To refresh the seed: `VEDA_ORIGIN=<origin> npm run refresh-
 
 ## Source
 
-`photoTerm.ts` and `termSnapshot.ts` from Kai's `gilb-photo` package. Changed here: the seed no longer names the master's host; its `termUrl` is built on the injected origin, and it is used only for its own slug. The refresh script requires `VEDA_ORIGIN`.
+`photoTerm.ts` and `termSnapshot.ts` from the private `gilb-photo` package. Changed here: the seed no longer names the master's host; its `termUrl` is built on the injected origin, and it is used only for its own slug. The refresh script requires `VEDA_ORIGIN`.

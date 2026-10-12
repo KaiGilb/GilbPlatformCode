@@ -65,4 +65,4 @@ The editor's base URL. This unit names no host.
 
 ## Source
 
-`standardHref` from Kai's `gilb-shell` package. The URL shape is the standards editor's (GilbApp).
+`standardHref` from the private `gilb-shell` package. The URL shape is the standards editor's (GilbApp).

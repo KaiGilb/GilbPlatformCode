@@ -60,4 +60,4 @@ The vault root, and Web Crypto (`crypto.subtle`), which browsers and Node both h
 
 ## Source
 
-`selfCard.ts` from Kai's `gilb-photo` package. The tests check the hash against literals made by `shasum`, not against a production card.
+`selfCard.ts` from the private `gilb-photo` package. The tests check the hash against literals made by `shasum`, not against a production card.

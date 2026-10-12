@@ -51,4 +51,4 @@ A browser. In Node there is no `createImageBitmap` and no `Image`; the probe is 
 
 ## Source
 
-`displayable.ts` from Kai's `gilb-photo` package. Its tests stub the decoder: they prove the routing, not what a real browser decodes.
+`displayable.ts` from the private `gilb-photo` package. Its tests stub the decoder: they prove the routing, not what a real browser decodes.

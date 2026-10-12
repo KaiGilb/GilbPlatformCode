@@ -215,3 +215,8 @@ test("a host-held key (e.g. Secure Enclave signer) is used for proofs and never 
   cred.invalidate(true);
   assert.deepEqual(await cred.ensurePublicJwk(), inner.publicJwk);
 });
+
+test("the guard band is 60 s and the unknown-expiry window 5 min, as the README promises", () => {
+  assert.equal(EXPIRY_GUARD_MS, 60_000);
+  assert.equal(UNKNOWN_TTL_FALLBACK_MS, 300_000);
+});

@@ -76,4 +76,4 @@ The upload and the read of the face's entity, with its own credentials; the prof
 
 ## Source
 
-`FaceCropper.tsx`, `faceRect.ts`, `leanFace.ts` and `facecrop.css` from Kai's `gilb-photo` package.
+`FaceCropper.tsx`, `faceRect.ts`, `leanFace.ts` and `facecrop.css` from the private `gilb-photo` package.

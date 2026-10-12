@@ -74,4 +74,4 @@ The frame, and the core through `useShellCore()`. Defaults when nothing is store
 
 ## Source
 
-Kai's `gilb-shell` package 0.1.0: `ShellFrame` is the render frame of GilbApp's app shell; `useShellLayout` is GilbApp's layout hook with the storage key and limits passed by the host; `ShellCore` is the frame part of GilbApp's shell context. `gilb-shell`'s copies of `sizeClass`, `paneMath`, `Panes` and `tokens.css` are not repeated here: they are the `size-class`, `panes` and `editorial-tokens` units.
+The private `gilb-shell` package 0.1.0: `ShellFrame` is the render frame of GilbApp's app shell; `useShellLayout` is GilbApp's layout hook with the storage key and limits passed by the host; `ShellCore` is the frame part of GilbApp's shell context. `gilb-shell`'s copies of `sizeClass`, `paneMath`, `Panes` and `tokens.css` are not repeated here: they are the `size-class`, `panes` and `editorial-tokens` units.

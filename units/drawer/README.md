@@ -57,4 +57,4 @@ Tailwind and the `editorial-tokens` sheet (`--ink`, `--paper-2`, `--line-2`, `--
 
 ## Source
 
-`Overlay` from Kai's `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Overlay.tsx`. Classes are joined by `class-merge`.
+`Overlay` from the private `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Overlay.tsx`. Classes are joined by `class-merge`.

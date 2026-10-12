@@ -101,8 +101,7 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
   // The sheet declared itself a modal dialog while Escape did nothing, focus was never moved
   // into it, and Tab walked straight out into the page behind the overlay — where the controls
   // are visually covered and, to a screen-reader or keyboard user, silently reachable.
-  // ⚠ Flagged twice by independent QA on this surface, which is this increment's own new
-  //   SHARED component: whatever is wrong here is wrong in every app at once.
+  // ⚠ This is a SHARED component: whatever is wrong here is wrong in every app at once.
   useEffect(() => {
     const sheet = sheetRef.current;
     if (sheet === null) return;

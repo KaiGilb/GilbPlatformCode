@@ -147,7 +147,7 @@ describe("the link back to the master", () => {
   });
 
   it("returns null for a face that is not a crop — absence is NOT an error", () => {
-    // Every face uploaded before this cycle is in exactly this state. An app that treated a
+    // Every face uploaded before lean faces existed is in exactly this state. An app that treated a
     // missing edge as a fault would break every existing profile photo in both apps.
     expect(masterBehindFace({ "a:fileName": "portrait.jpg" })).toBeNull();
   });

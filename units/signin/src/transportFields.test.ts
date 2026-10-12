@@ -29,8 +29,8 @@ test("requestSignInCode sends a trimmed return_to through the transport, and omi
 test("verifySignInCodeHttp sends a trimmed vault name when given, and none when blank", async () => {
   const key = await generateDpopKeyPair();
   const a = recorder({ token: "t" });
-  await verifySignInCodeHttp("https://id.example.test", "person@example.test", "123456", key.publicJwk, "  tomsvault ", undefined, { transport: a.transport });
-  assert.equal(JSON.parse(a.calls[0].req.body!).name, "tomsvault");
+  await verifySignInCodeHttp("https://id.example.test", "person@example.test", "123456", key.publicJwk, "  myvault ", undefined, { transport: a.transport });
+  assert.equal(JSON.parse(a.calls[0].req.body!).name, "myvault");
   const b = recorder({ token: "t" });
   await verifySignInCodeHttp("https://id.example.test", "person@example.test", "123456", key.publicJwk, "  ", undefined, { transport: b.transport });
   assert.equal("name" in JSON.parse(b.calls[0].req.body!), false);

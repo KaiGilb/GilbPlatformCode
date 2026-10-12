@@ -69,4 +69,4 @@ The door: the origin of the vault the reference was read from.
 
 ## Source
 
-`photoRef.ts` from Kai's `gilb-photo` package.
+`photoRef.ts` from the private `gilb-photo` package.

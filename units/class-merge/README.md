@@ -50,4 +50,4 @@ Tailwind, when the classes are Tailwind classes. Without it the string is still 
 
 ## Source
 
-`cn` from Kai's `gilb-shell` package, which took it unchanged from GilbApp `src/lib/cn.ts`. `button`, `card` and `drawer` use it.
+`cn` from the private `gilb-shell` package, which took it unchanged from GilbApp `src/lib/cn.ts`. `button`, `card` and `drawer` use it.

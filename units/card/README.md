@@ -57,4 +57,4 @@ Tailwind and the `editorial-tokens` sheet (`--surface`, `--line-2`, `--ink`, `--
 
 ## Source
 
-`Card` from Kai's `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Card.tsx`. Classes are joined by `class-merge`.
+`Card` from the private `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Card.tsx`. Classes are joined by `class-merge`.

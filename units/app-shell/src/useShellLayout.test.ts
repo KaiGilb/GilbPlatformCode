@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { readStoredLayout, useShellLayout, SHELL_LAYOUT_DEFAULTS, LEFT_MAX, RIGHT_MIN } from "./useShellLayout";
+import { readStoredLayout, useShellLayout, SHELL_LAYOUT_DEFAULTS, LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX } from "./useShellLayout";
 
 afterEach(() => localStorage.clear());
 
 describe("layout", () => {
   test("no stored value gives the defaults", () => {
     expect(readStoredLayout({ storageKey: "k" })).toEqual(SHELL_LAYOUT_DEFAULTS);
+  });
+  test("the defaults and limits are the ones the README states", () => {
+    expect(SHELL_LAYOUT_DEFAULTS).toEqual({ leftW: 300, rightW: 376, leftCollapsed: true, rightCollapsed: false });
+    expect([LEFT_MIN, LEFT_MAX, RIGHT_MIN, RIGHT_MAX]).toEqual([180, 440, 280, 520]);
   });
   test("a stored value is clamped and a missing boolean keeps the default", () => {
     localStorage.setItem("k", JSON.stringify({ leftW: 9999, rightW: 1 }));

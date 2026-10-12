@@ -57,4 +57,4 @@ Tailwind and the `editorial-tokens` sheet (`--accent`, `--on-accent`, `--surface
 
 ## Source
 
-`Button` from Kai's `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Button.tsx`. Classes are joined by `class-merge`.
+`Button` from the private `gilb-shell` package, which took it unchanged from GilbApp `src/components/ui/Button.tsx`. Classes are joined by `class-merge`.

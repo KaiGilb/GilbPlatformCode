@@ -148,7 +148,7 @@ export function leanFaceNotice(ack: UploadAck): string | null {
  *
  * @param facts the shown face's file-entity facts, from either read plane
  * @returns the master file entity's URI, or null when this face is not a crop of anything
- *   (which is the ordinary state of every face uploaded before this cycle — ⛔ absence is not
+ *   (which is the ordinary state of every face uploaded before lean faces existed — ⛔ absence is not
  *   an error and ⛔ must not be reported as one)
  */
 /**
