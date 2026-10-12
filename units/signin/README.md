@@ -112,6 +112,8 @@ import { requestSignInCode, verifySignInCodeHttp, generateDpopKeyPair, dpopHeade
 
 ### Installing it into your app
 
+Your app needs TypeScript 5.7 or later: the source uses the generic `Uint8Array<ArrayBuffer>`, and an older compiler stops with "Type 'Uint8Array' is not generic".
+
 Install it as a copy, not a link, so your app has one copy of React:
 
 ```sh
