@@ -198,7 +198,7 @@ function sectionEl(id: string): HTMLElement | undefined {
 // Up/Down/Home/End move between sections (focus previews, as the pointer's rest does); Right goes into
 // the previewed pages and Left comes back. Tab alone reaches everything too.
 function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
-  const list = props.menu.sections.filter((x) => !x.coming);
+  const list = props.menu.sections;
   const i = list.findIndex((x) => x.id === s.id);
   const to =
     e.key === "ArrowDown" ? list[(i + 1) % list.length]
@@ -373,20 +373,10 @@ defineExpose({ show, close });
         <div class="sm-col sm-sections" @mouseleave="clearHover">
           <h2 class="sm-heading">{{ L.sections }}</h2>
           <div role="group" :aria-label="L.sectionsGroup" data-testid="section-menu-sections" class="sm-list">
+            <!-- A section is never "coming" (as in the app unit, Kai 2026-10-18): only options and places may be. -->
             <template v-for="s in menu.sections" :key="s.id">
-              <span
-                v-if="s.coming"
-                class="sm-item sm-section is-coming"
-                :data-section="s.id"
-                aria-disabled="true"
-              >
-                <span class="sm-section-label">{{ s.label }}</span>
-                <span class="sm-coming">{{ L.coming }}</span>
-                <span v-if="s.description" class="sm-desc">{{ s.description }}</span>
-              </span>
               <component
                 :is="hasNoPage(s) ? 'button' : linkTag(s)"
-                v-else
                 v-bind="hasNoPage(s) ? { type: 'button' } : linkAttrs(s)"
                 class="sm-item sm-section"
                 :class="{ 'is-current': s.id === currentId, 'is-preview': previewing && s.id === shown?.id }"
@@ -450,7 +440,11 @@ defineExpose({ show, close });
           <h2 class="sm-heading">{{ L.alsoUseful }}</h2>
           <ul class="sm-options">
             <li v-for="o in shownPlaces" :key="o.id">
-              <component :is="linkTag(o)" v-bind="linkAttrs(o)" class="sm-item sm-option" :data-option="o.id" @keydown="onOptionKey" @click="choose(o)">
+              <span v-if="o.coming" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true">
+                <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
+                <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
+              </span>
+              <component :is="linkTag(o)" v-else v-bind="linkAttrs(o)" class="sm-item sm-option" :data-option="o.id" @keydown="onOptionKey" @click="choose(o)">
                 <span class="sm-option-label">{{ o.label }}<span v-if="o.href && o.newTab" aria-hidden="true"> ↗</span></span>
                 <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
               </component>

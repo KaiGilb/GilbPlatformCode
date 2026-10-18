@@ -84,7 +84,7 @@ sectionMenu: {
 
 | Prop | Meaning |
 |---|---|
-| `menu` | `{ sections, places?, cta? }`. A section: `id`, `label`, `description?`, `to` (a route) or `href` (an address), `links?` (its pages), `also?` (place ids), `coming?` |
+| `menu` | `{ sections, places?, cta? }`. A section: `id`, `label`, `description?`, `to` (a route) or `href` (an address), `links?` (its pages), `also?` (place ids). A page or a place may be `coming?`; a section may not (as in the app unit) |
 | `currentPath` | the current route's path; it decides "You are here" and closes the menu when it changes |
 | `linkComponent` | the component that links a route, given `to` (Nuxt: `resolveComponent('NuxtLink')`); default a plain `<a href>` |
 | `labels` | optional: every word the menu draws |
@@ -97,7 +97,7 @@ The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwis
 
 ## Do not
 
-- Do not list a page that is not built (Rule_Code_gilb-app-nav-truth). `coming` is only for one the owner names as coming.
+- Do not list a page that is not built (Rule_Code_gilb-app-nav-truth). `coming` is only for a page or place the owner names as coming; a section is never coming.
 - Do not hard-code the menu in the component; it is data.
 
 ## Wrong readings

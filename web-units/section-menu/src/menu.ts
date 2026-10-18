@@ -5,7 +5,7 @@
  * component draws it. Nothing here is a page of any one site.
  *
  * ⚠ AVAILABILITY. A page that is not built is left out of the menu, not drawn
- * (Rule_Code_gilb-app-nav-truth). `coming` exists only for an entry the owner names as coming:
+ * (Rule_Code_gilb-app-nav-truth). `coming` exists only for a page or place the owner names as coming:
  * it is drawn greyed out and is not a link.
  */
 
@@ -25,8 +25,13 @@ export interface WebMenuLink {
   coming?: boolean;
 }
 
-/** One section: a main page on the menu's left, with its sub-pages previewed on the right. */
-export interface WebMenuSection extends WebMenuLink {
+/**
+ * One section: a main page on the menu's left, with its sub-pages previewed on the right. A section is
+ * never `coming` (the app unit's sections have no such field either, Kai 2026-10-18): only a page or a
+ * place may be named as coming.
+ */
+export interface WebMenuSection extends Omit<WebMenuLink, "coming"> {
+  coming?: never;
   /** The section's sub-pages. None: the section is a single page. */
   links?: readonly WebMenuLink[];
   /** Ids of places ("Also useful here") that fit this section. */
