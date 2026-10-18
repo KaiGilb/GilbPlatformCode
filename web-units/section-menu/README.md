@@ -120,7 +120,7 @@ The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwis
 
 ## Wrong readings
 
-- The panel is in the page while closed: test "closed" by `data-open` (and, after the script, `inert`), not by its absence. Before the script nothing is `inert`, and a closed `<details>` does not render the panel. After it, `<details>` is always open (for layout) and `data-open` tells.
+- The panel is in the page while closed: test "closed" by `data-open` (and, after the script, `inert`), not by its absence. Before the script nothing is `inert`, and a closed `<details>` does not render the panel. After it, `<details>` is open exactly while the menu is, so the button's expanded state is true only then (Chromium's accessibility tree measured; Firefox and WebKit not walked).
 - Every section's pages are in the HTML. Before the script all lists show; after it, only the shown one.
 - On a phone a section is a link to its page; it does not preview.
 

@@ -22,7 +22,9 @@
  * engines, first impressions); and the open state does NOT live in the address (an earlier `#<panel>` link
  * with CSS :target caused D19-D21: a router rewrote the address, reloads and Back reopened the menu).
  * When the script takes over (`enhanced`) it reads `details.open` once: a panel the visitor opened stays
- * open. From then on `details` stays open for layout and the script's own state shows and hides the panel.
+ * open. From then on the script's state decides, and `details.open` follows it, so the <summary> reports its
+ * real expanded state (Agent.Tester round 11, D23: an always-open <details> made Chromium announce a closed
+ * menu as expanded). The panel node stays in the page, so opening is still instant.
  *
  * Content is data (`menu`); nothing here is a page of any one site. Theme: the `--section-menu-*`
  * CSS variables, which the site maps to its own tokens.
@@ -291,6 +293,9 @@ let compactQuery: MediaQueryList | undefined;
 const onCompactChange = () => (compact.value = !!compactQuery?.matches);
 
 watch(open, (isOpen) => {
+  // The <summary> reports what is true: <details> is open exactly while the menu is (D23). Set before focus
+  // moves in, so the panel is rendered when it is focused.
+  if (detailsEl.value) detailsEl.value.open = isOpen;
   emit("open-change", isOpen);
   if (typeof document === "undefined") return;
   if (isOpen) {
@@ -329,9 +334,8 @@ onMounted(() => {
   } catch {
     // A browser (or test DOM) that cannot answer :hover simply does not carry a hover over.
   }
-  // From now on <details> stays open so the panel is laid out (always mounted, instant), and the
-  // script's own state (`open`, `inert`) shows and hides it.
-  if (details) details.open = true;
+  // From now on `details.open` follows the menu's state (the watcher on `open`), so the <summary>'s expanded
+  // state is true only while the menu is open.
   enhanced.value = true;
   if (openedBefore) {
     show();

@@ -211,10 +211,10 @@ describe("QA gaps — web SectionMenu", () => {
       app.unmount();
     });
 
-    test("nobody touched the menu: it stays closed at takeover, and <details> is kept open only for layout", async () => {
+    test("nobody touched the menu: it stays closed at takeover, and <details> stays closed with it (D23)", async () => {
       const { root, app } = await hydrateWith(() => {});
       expect(root.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("false");
-      expect(root.querySelector<HTMLDetailsElement>("details")!.open).toBe(true);
+      expect(root.querySelector<HTMLDetailsElement>("details")!.open).toBe(false);
       expect(root.querySelector("[data-testid='section-menu-panel']")!.hasAttribute("inert")).toBe(true);
       app.unmount();
     });
