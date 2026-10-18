@@ -1,0 +1,33 @@
+{
+  "name": "@kaigilb/gilbplatformcode-section-menu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
