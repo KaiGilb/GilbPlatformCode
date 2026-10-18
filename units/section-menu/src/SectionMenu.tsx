@@ -96,7 +96,7 @@ export interface SectionMenuHandle<Id extends string> {
 export interface SectionMenuProps<Id extends string, Api, Icon extends string = MenuIconKey, Gate = unknown> {
   /** The sections this person sees, in order (the host has applied the gates: `visibleSections`). None: nothing is drawn. */
   sections: readonly MenuSection<Id, Api, Gate, Icon>[];
-  /** What the options' gates read (`MenuOption.show`). Without it, an option that has a gate is left out. */
+  /** What the options' gates read (`MenuOption.show`). Without it (or undefined), an option that has a gate is left out. */
   gate?: Gate;
   /** The section the person is in. An id not among `sections` reads as the first section. */
   current: Id;
@@ -154,7 +154,8 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     footerHint, footerAction, layers, scrimTop = "3.5rem", panelTop = "4rem", ref,
   } = props;
   // The options' gate: passed on to the helpers only when the host gave one (see MenuOption.show).
-  const gateArgs = ("gate" in props ? [props.gate as Gate] : []) as [] | [Gate];
+  // Undefined (a gate still loading) counts as none (Agent.Tester round 2, D8).
+  const gateArgs = (props.gate !== undefined ? [props.gate] : []) as [] | [Gate];
   const L: SectionMenuLabels = { ...DEFAULT_LABELS, ...props.labels };
   const icon = (name: Icon, size: number) => (props.renderIcon ?? defaultIcon)(name, size);
   const currentSection = sections.find((s) => s.id === currentId) ?? sections[0]!;
@@ -594,7 +595,7 @@ function OptionList<Api, Icon extends string, Gate>({
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2 flex-wrap text-[15px] font-semibold">
                 {o.label}
-                {o.href && <span aria-hidden className="text-[var(--ink-faint)]">↗</span>}
+                {o.href && !o.coming && <span aria-hidden className="text-[var(--ink-faint)]">↗</span>}
                 {o.coming && (
                   <span className="text-[11px] font-semibold rounded-full px-[7px] py-px bg-[var(--paper-2)] text-[var(--ink-faint)]">
                     {comingLabel}

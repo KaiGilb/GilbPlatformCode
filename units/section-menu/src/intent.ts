@@ -59,9 +59,12 @@ export function createIntentChannel<I extends Intent>(): IntentChannel<I> {
     acceptRef.current = accept;
     // The intent this component already carried out. React's StrictMode runs an effect twice on mount,
     // before `consume()`'s state change lands, so without this the act ran twice (Agent.Tester D3).
+    // It is cleared once no intent is pending, so the same intent object posted again acts again
+    // (Agent.Tester round 2, D9).
     const doneRef = useRef<I | null>(null);
 
     useEffect(() => {
+      if (!intent) doneRef.current = null;
       if (!intent || intent.kind !== kind || !consume) return;
       if (intent.place !== "any" && intent.place !== place) return;
       if (intent === doneRef.current) return;

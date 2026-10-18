@@ -87,20 +87,21 @@ function passes(o: { show?: (gate: never) => boolean }, gate: unknown, hasGate: 
 /**
  * A section's menu options: the command-palette-only ones and the gated-off ones left out.
  * @param section one section
- * @param gate what the options' gates read; without it, an option that has a gate is left out
+ * @param gate what the options' gates read; without it (or undefined), an option that has a gate is left out
  */
 export function menuOptionsOf<O extends { commandOnly?: boolean; show?: (gate: never) => boolean }>(
   section: { options: readonly O[] },
   ...gate: [] | [unknown]
 ): O[] {
-  return section.options.filter((o) => !o.commandOnly && passes(o, gate[0], gate.length > 0));
+  // An undefined gate (a host's gate still loading) counts as no gate (Agent.Tester round 2, D8).
+  return section.options.filter((o) => !o.commandOnly && passes(o, gate[0], gate[0] !== undefined));
 }
 
 /**
  * The places that fit a section, in the places' own order, gated-off ones left out.
  * @param section one section; its `also` names place ids
  * @param places the host's places
- * @param gate what the places' gates read; without it, a place that has a gate is left out
+ * @param gate what the places' gates read; without it (or undefined), a place that has a gate is left out
  */
 export function placesFor<O extends { id: string; show?: (gate: never) => boolean }>(
   section: { also?: readonly string[] },
@@ -108,7 +109,7 @@ export function placesFor<O extends { id: string; show?: (gate: never) => boolea
   ...gate: [] | [unknown]
 ): O[] {
   const also = section.also ?? [];
-  return places.filter((p) => also.includes(p.id) && passes(p, gate[0], gate.length > 0));
+  return places.filter((p) => also.includes(p.id) && passes(p, gate[0], gate[0] !== undefined));
 }
 
 /**

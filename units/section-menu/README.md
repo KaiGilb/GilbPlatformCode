@@ -2,7 +2,7 @@
 
 The section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
 
-It is meant to be the default menu of an app built on GilbPlatform when the person asking for the app describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). GilbApp uses it. The website counterpart is `web-units/section-menu`.
+It is meant to be the default menu of an app built on GilbPlatform when the person asking for the app describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). GilbApp's branch `kai/section-menu-shared-unit` takes it (not yet on GilbApp main). The website counterpart is `web-units/section-menu`.
 
 ## What this is
 
@@ -86,7 +86,7 @@ An app that already takes sibling checkouts by link and a Vite alias (GilbApp ta
 | Prop | Meaning |
 |---|---|
 | `sections` | the sections this person sees, in order (apply the gates with `visibleSections`); none: nothing is drawn |
-| `gate` | optional: what the options' gates (`MenuOption.show`) read; without it an option that has a gate is left out |
+| `gate` | optional: what the options' gates (`MenuOption.show`) read; without it (or undefined) an option that has a gate is left out |
 | `current` | the id of the section the person is in; an unknown id reads as the first section |
 | `api` | what `go` and `run` are called with; while it is undefined a choice only closes the menu |
 | `sizeClass` | `"compact"`, `"medium"` or `"expanded"` |

@@ -473,10 +473,11 @@ defineExpose({ show, close });
     </div>
 
     <!-- The dimmed edge, below the header so the header stays readable; a click goes back. Before the
-         script it is a link back to the button (shown by :target with the panel). -->
+         script it is a link back to the button (shown by :target with the panel), named "Close" so no
+         page carries a nameless link (Agent.Tester round 2, D8: the starter's link check flagged it). -->
     <component
       :is="enhanced ? 'div' : 'a'"
-      v-bind="enhanced ? {} : { href: `#${triggerId}`, tabindex: '-1' }"
+      v-bind="enhanced ? {} : { href: `#${triggerId}`, tabindex: '-1', 'aria-label': L.close, title: L.close }"
       class="sm-scrim"
       :class="{ 'is-open': open }"
       aria-hidden="true"

@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-describe("QA probes — SectionMenu", () => {
+describe("ported — SectionMenu", () => {
   // Edge: a gate can hide every section (visibleSections → []).
   test("P1 an empty section list does not throw", () => {
     expect(() => renderMenu({ sections: visibleSections(SECTIONS.map((s) => ({ ...s, show: () => false })), {}) })).not.toThrow();
@@ -245,7 +245,7 @@ describe("QA probes — SectionMenu", () => {
   });
 });
 
-describe("QA probes — intent channel", () => {
+describe("ported — intent channel", () => {
   type I = Intent<"create", "home" | "notes">;
   const channel = createIntentChannel<I>();
   function Destination({ act: a }: { act: () => void }) { channel.useIntent("create", a); return <p>notes view</p>; }
