@@ -570,6 +570,9 @@ defineExpose({ show, close });
   pointer-events: none;
   transition: opacity 90ms ease, transform 90ms ease, visibility 0s linear 90ms;
 }
+/* Closing is instant: <details> closes with the menu (D23), and a closed <details> does not render the panel,
+   so a delayed visibility change would never run and the closed panel would keep reporting "visible". */
+.sm-panel:not(.is-open) { transition: none; }
 /* Open: by the script (.is-open), or, before the script, by the native <details> (its [open]). */
 .sm-panel.is-open,
 .sm-root:not(.is-enhanced) .sm-details[open] > .sm-panel {
