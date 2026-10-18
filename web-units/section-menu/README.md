@@ -6,7 +6,7 @@ It is meant to be the default header menu of a website built by Agent.Website wh
 
 ## What this is
 
-**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links. Until the script runs, the button is a link to the panel (`#<panel id>`): the panel opens by CSS `:target`, shows every section's pages under their names, and Close and the dimmed edge are links back to the button. When the script runs it takes over as below; a panel the visitor opened by the link stays open, and a hover already on the button opens it. So a site with delayed hydration needs no eager hydration for its header.
+**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links. Until the script runs, the button is a link to the panel (`#<panel id>`): the panel opens by CSS `:target`, shows every section's pages under their names, and Close and the dimmed edge are links back to the button. When the script runs it takes over as below; a panel the visitor opened by the link (a tap, a click, Enter) stays open with focus on the section they are on, and a hover already on the button opens it. Measured in Chromium, Firefox and WebKit by the website starter's `scripts/check-section-menu-browser.mjs` (a real-browser check: the page's scripts are held back, the visitor opens the menu, then the scripts run). A router may rewrite the address without the fragment before the menu mounts, so the menu also reads `:target` and focus; a host may call `rememberSectionMenuTarget()` as early as it can (the starter does, at the top of a Nuxt client plugin with `enforce: 'pre'`) so the fragment is kept even in an engine that drops `:target`. So a site with delayed hydration needs no eager hydration for its header.
 
 Once the script runs:
 
@@ -20,11 +20,11 @@ Once the script runs:
   - Right: "Also useful here", places a section names (for example another site).
   - Footer: "Press Esc to close" and the site's call to action.
 - **four ways to close**: Close, Esc, the dimmed edge, or any link (and a route change). Each gives focus back to the button.
-- **keyboard**: focus lands on the section you are on. Tab stays inside the panel: Close, every section, each followed (when previewed) by its pages and places, then the call to action, and wraps. Up, Down, Home and End move between sections; Right goes into the pages; Left comes back.
+- **keyboard**: focus lands on the section you are on. Tab stays inside the panel: Close, every section, each followed (when previewed) by its pages and places, then the call to action, and wraps. Tab skips a coming page or place (before the script too); the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order, as in the app unit. Up, Down, Home and End move between sections; Right goes into the pages; Left comes back.
 - **phone** (under 600 px): one column; no hover preview; the pages shown are those of the section you are on. A section with pages but no page of its own is a button: tapping it shows its pages. 600 to 839 px: two columns.
 - Reduced motion: no transitions.
 
-Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, and the words (`DEFAULT_WEB_LABELS`).
+Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, `rememberSectionMenuTarget()`, and the words (`DEFAULT_WEB_LABELS`).
 
 ## What this is not
 

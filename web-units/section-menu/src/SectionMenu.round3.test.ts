@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester round 3 (report AgentTester-WebUnit-8aaf2ff-EngineA-bdbe4c7.md, 2026-10-18).
-// Agent.Tester round 3 gap tests (web-units/section-menu @ 8aaf2ff), written in the QA scratch copy.
+// Agent.Tester round 3 gap tests (web-units/section-menu @ 8aaf2ff).
 // They kill the two mutants that survive the unit's own 56 tests (M24, M30 in qa3-web/mutation.log).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
 // ("the same behaviour as the app menu": each opening starts from where you are; the phone sheet shows the

@@ -1,6 +1,6 @@
 // Adopted from Agent.Tester round 5 (report AgentTester-WebUnit-71c948e-EngineA-052d2aa.md, 2026-10-18), plus
 // the run-time guard for a section marked coming (Kai-Zen's decision, 2026-10-18).
-// Agent.Tester round 5 gap tests (web-units/section-menu @ 71c948e), written in the QA scratch copy.
+// Agent.Tester round 5 gap tests (web-units/section-menu @ 71c948e).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
 // ("bring it to the same behaviour as the app menu": arrows), Kai-Zen 2026-10-18 (only pages and places may be
 // coming, drawn greyed, not links). Kai-Zen's decision on round-6 D13 (2026-10-18): as in the app unit, a coming

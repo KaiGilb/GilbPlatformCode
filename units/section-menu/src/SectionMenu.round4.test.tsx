@@ -1,6 +1,6 @@
 // Adopted from Agent.Tester round 4 (report AgentTester-AppUnit-b3efe88-GilbApp-d96e249.md, 2026-10-18): the gate
 // matrix and Q4-2, which covers the undefined gate in visibleSections and forYouFor (D14).
-// Agent.Tester round 4 probes (units/section-menu b3efe88). Scratch copy only, not shipped.
+// Agent.Tester round 4 probes (units/section-menu b3efe88). Now part of the unit's suite.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §2
 // ("menuCommands/toCommand, so a command palette can read the same list") + README line 25 ("one rule").
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";

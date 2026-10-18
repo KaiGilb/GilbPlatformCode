@@ -19,7 +19,10 @@
  * landmark whose button is a link to the panel (`#<panel id>`); the panel opens by CSS `:target`, lists
  * every section's pages as plain links, and closes by a link back to the button. Kai-Zen's decision, 2026-10-18:
  * websites must work before hydration and with JavaScript off (search engines, first impressions).
- * The script then takes over (`enhanced`), and a panel opened by the link stays open.
+ * The script then takes over (`enhanced`), and a panel opened by the link stays open: it reads the fragment,
+ * the fragment a host remembered early (`rememberSectionMenuTarget`), `:target` and focus, because a router
+ * may have rewritten the address first (D19; measured in Chromium, Firefox and WebKit by the starter's
+ * scripts/check-section-menu-browser.mjs).
  *
  * Content is data (`menu`); nothing here is a page of any one site. Theme: the `--section-menu-*`
  * CSS variables, which the site maps to its own tokens.
@@ -30,6 +33,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type Component } from "vue";
 import { currentSectionId, normalisePath, placesFor, type WebMenu, type WebMenuLink, type WebMenuSection } from "./menu";
 import { DEFAULT_WEB_LABELS, HOVER_CLICK_GRACE_MS, HOVER_INTENT_MS, type WebMenuLabels } from "./labels";
+import { takeRememberedTarget } from "./target";
 
 const props = withDefaults(
   defineProps<{
@@ -317,8 +321,22 @@ onMounted(() => {
   onCompactChange();
   compactQuery?.addEventListener?.("change", onCompactChange);
 
-  // What the visitor did before the script ran is carried over, not lost (Agent.Tester D7):
-  const openedByLink = window.location.hash === `#${panelId}`;
+  // What the visitor did before the script ran is carried over, not lost (Agent.Tester D7, D19). Did they open
+  // the panel by its link? Any one of four signals says so, because a router may already have rewritten the
+  // address without the fragment (D19): the fragment now; the fragment the host remembered early
+  // (`rememberSectionMenuTarget`); the panel still matching `:target`; focus already inside the panel.
+  const panel = panelEl.value;
+  let targeted = false;
+  try {
+    targeted = !!panel?.matches(":target");
+  } catch {
+    // An engine that cannot answer :target leaves the other signals to decide.
+  }
+  const openedByLink =
+    takeRememberedTarget(panelId) ||
+    window.location.hash === `#${panelId}` ||
+    targeted ||
+    (!!panel && panel.contains(document.activeElement));
   const hadFocus = document.activeElement === triggerEl.value;
   let hovering = false;
   try {
@@ -328,10 +346,13 @@ onMounted(() => {
   }
   enhanced.value = true;
   if (openedByLink) {
-    // The panel was opened by its link (`:target`): keep it open, now under the script, and drop the
-    // fragment so the back button does not reopen it.
-    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    // The panel was opened by its link (`:target`): keep it open, now under the script (focus moves to the
+    // section you are on), and drop the fragment so the back button does not reopen it.
+    if (window.location.hash === `#${panelId}`) {
+      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    }
     show();
+    return;
   } else if (hovering && canHoverOpen()) {
     hoverOpenedAt = Date.now();
     show();

@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester round 3 (report AgentTester-AppUnit-8aaf2ff.md, 2026-10-18).
-// Agent.Tester round 3 probes (8aaf2ff). Scratch copy only.
+// Agent.Tester round 3 probes (8aaf2ff). Now part of the unit's suite.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §2 + Outcome.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";

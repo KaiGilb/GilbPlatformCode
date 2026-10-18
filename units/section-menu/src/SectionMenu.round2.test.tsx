@@ -1,6 +1,6 @@
 // Adopted from Agent.Tester round 2 (report AgentTester-AppUnit-1c1c469.md, 2026-10-18); Q19, which
 // compares with GilbApp's 0f0f1b7 source, stays in the QA copy.
-// Agent.Tester round 2 probes (1c1c469). Scratch copy only.
+// Agent.Tester round 2 probes (1c1c469). Now part of the unit's suite.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §2 + Outcome.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";

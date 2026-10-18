@@ -16,7 +16,7 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
   - Right: "Also useful here" (places that fit the previewed section) and "For you". Without either, there are two columns.
   - Footer: a hint ("Press Esc to close" unless the host passes its own) and one act of the host's, such as Sign out.
 - **four ways to close**: Close, Esc, the dimmed edge, or any choice. Focus goes back to the button.
-- **keyboard**: on open, focus lands on the section you are in. Tab stays inside the panel and visits Close, then every section, each followed (when it is previewed) by its options and places, then "For you", then the footer act, and wraps. Up, Down, Home and End move between sections; Right goes into the options; Left comes back.
+- **keyboard**: on open, focus lands on the section you are in. Tab stays inside the panel and visits Close, then every section, each followed (when it is previewed) by its options and places, then "For you", then the footer act, and wraps. Tab skips a coming entry; the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order. Up, Down, Home and End move between sections; Right goes into the options; Left comes back.
 - **phone** (`sizeClass="compact"`): one column, no hover preview; the options are those of the section you are in. Medium is two columns.
 - Reduced motion: the transitions switch off under `prefers-reduced-motion`.
 

@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester (report AgentTester-WebUnit-943363c-EngineA-4df8986.md, 2026-10-18).
-// Agent.Tester round 6 gap tests (web-units/section-menu @ 943363c), written in the QA scratch copy.
+// Agent.Tester round 6 gap tests (web-units/section-menu @ 943363c).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3,
 // and Kai-Zen's decision 2026-10-18 (b): a section that arrives with `coming: true` at run time is left out
 // entirely, with a console warning in development mode only.

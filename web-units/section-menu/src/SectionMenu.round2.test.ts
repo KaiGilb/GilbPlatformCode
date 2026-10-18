@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester round 2 (report AgentTester-WebUnit-1c1c469-EngineA-5c3a91d.md, 2026-10-18).
-// Agent.Tester round 2 gap tests (web-units/section-menu @ 1c1c469), written in the QA scratch copy.
+// Agent.Tester round 2 gap tests (web-units/section-menu @ 1c1c469).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
 // + Kai-Zen's decision, 2026-10-18: websites work before hydration and with JavaScript off (SEO, first impressions).
 import { afterEach, beforeEach, describe, expect, test } from "vitest";

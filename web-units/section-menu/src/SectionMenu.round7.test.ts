@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester (report AgentTester-WebUnit-6f0cd7b-EngineA-ed37d22.md, 2026-10-18).
-// Agent.Tester round 7 gap tests (web-units/section-menu @ 6f0cd7b), written in the QA scratch copy.
+// Agent.Tester round 7 gap tests (web-units/section-menu @ 6f0cd7b).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3,
 // Kai-Zen's decisions 2026-10-18: (a) works before the script and with it off; (c) a coming page or place is a
 // focusable <button aria-disabled="true"> that the arrows land on and move past, Tab skips, a press does nothing.

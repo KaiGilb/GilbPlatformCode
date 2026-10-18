@@ -1,3 +1,4 @@
+// Adopted into the unit's own suite from Agent.Tester's probes (2026-10-18).
 // The app counterpart of the web unit's round-8 test (Agent.Tester web round 8, D18, 2026-10-18): Tab and
 // Shift+Tab from a coming option the arrows landed on go on to the next and previous usable entries, in the
 // trap's order, instead of jumping to Close. The same code was in both units.

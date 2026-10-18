@@ -5,3 +5,4 @@
 export { default as SectionMenu } from "./SectionMenu.vue";
 export { currentSectionId, normalisePath, placesFor, type WebMenu, type WebMenuCta, type WebMenuLink, type WebMenuSection } from "./menu";
 export { DEFAULT_WEB_LABELS, HOVER_CLICK_GRACE_MS, HOVER_INTENT_MS, type WebMenuLabels } from "./labels";
+export { rememberSectionMenuTarget } from "./target";

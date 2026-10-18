@@ -1,5 +1,5 @@
 // Adopted from Agent.Tester web round 8 (report AgentTester-WebUnit-18d5fb7-EngineA-c5d7b36.md, 2026-10-18).
-// Agent.Tester round 8 gap tests (web-units/section-menu @ 18d5fb7), written in the QA scratch copy.
+// Agent.Tester round 8 gap tests (web-units/section-menu @ 18d5fb7).
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
 // ("focus trap and Tab order"), Kai-Zen's decision 2026-10-18 (c): a coming page or place is a focusable
 // <button aria-disabled="true"> that the arrows land on and move past, that Tab skips; Rule_Code_accessibility
