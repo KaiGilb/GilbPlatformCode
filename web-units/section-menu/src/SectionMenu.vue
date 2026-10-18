@@ -2,21 +2,27 @@
 /**
  * A website's section menu: the header button that says where you are, and a large panel that
  * takes the visitor anywhere on the site. The website counterpart of GilbPlatformCode
- * `units/section-menu` (React), with the same behaviour:
+ * `units/section-menu` (React), with the same behaviour once the page runs its JavaScript:
  *
  *  • Opens at once on pointer enter where the pointer can hover finely, and on click or tap
  *    everywhere. It does NOT close when the pointer leaves: it is too big for that.
- *  • The panel is always in the page (rendered on the server too), so opening is a class change.
- *    While closed it is `inert` and `aria-hidden`.
+ *  • The panel is always in the page, so opening is a class change. While closed it is `inert`.
  *  • Closes with Close, Esc, a click on the dimmed edge, or any link; focus returns to the button.
  *    Focus moves into the panel on open and Tab stays inside it.
- *  • Left: the sections. Resting on one ~120 ms, or focusing it, previews its sub-pages in the next
+ *  • Left: the sections. Resting on one ~120 ms, or focusing it, previews its pages in the next
  *    column. Each opening starts from the section you are on.
- *  • Phone (under 600 px): one column, no hover; the sub-pages shown are those of the section you are on.
+ *  • Phone (under 600 px): one column, no hover; the pages shown are those of the section you are on,
+ *    or of a section that has no page of its own once it is tapped.
  *  • Reduced motion: no transition.
  *
- * Content is data (`menu`: sections, sub-pages, places, a call to action); nothing here is a page of
- * any one site. Theme: the `--section-menu-*` CSS variables, which the site maps to its own tokens.
+ * ⚠ BEFORE THE JAVASCRIPT RUNS (or with it off), the menu still works, as plain HTML: it is a `<nav>`
+ * landmark whose button is a link to the panel (`#<panel id>`); the panel opens by CSS `:target`, lists
+ * every section's pages as plain links, and closes by a link back to the button. Kai, 2026-10-18:
+ * websites must work before hydration and with JavaScript off (search engines, first impressions).
+ * The script then takes over (`enhanced`), and a panel opened by the link stays open.
+ *
+ * Content is data (`menu`); nothing here is a page of any one site. Theme: the `--section-menu-*`
+ * CSS variables, which the site maps to its own tokens.
  *
  * Source: myjackfruit-web components/MegaMenu.vue + SiteHeader.vue (Nuxt 3), brought to the app
  * menu's behaviour (GilbApp src/components/menu/SectionMenu.tsx at 0f0f1b7).
@@ -50,21 +56,31 @@ const L = computed<WebMenuLabels>(() => ({ ...DEFAULT_WEB_LABELS, ...props.label
 
 const currentId = computed(() => currentSectionId(props.menu, props.currentPath));
 const currentSection = computed(() => props.menu.sections.find((s) => s.id === currentId.value));
-const hasSubPages = computed(() => props.menu.sections.some((s) => (s.links ?? []).length > 0));
+const listed = computed(() => props.menu.sections.filter((s) => (s.links ?? []).length > 0));
+const hasSubPages = computed(() => listed.value.length > 0);
 
+/** False in the server's HTML and until the component is mounted in the browser: the plain-HTML menu. */
+const enhanced = ref(false);
 const open = ref(false);
 const preview = ref<string | undefined>(undefined);
 const compact = ref(false);
-const triggerEl = ref<HTMLButtonElement | null>(null);
+const triggerEl = ref<HTMLElement | null>(null);
 const panelEl = ref<HTMLElement | null>(null);
-const panelId = `section-menu-${useId()}`;
+const uid = useId();
+const panelId = `section-menu-${uid}`;
+const triggerId = `section-menu-trigger-${uid}`;
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 // When the pointer's enter opened the menu, the click that usually follows must not close it.
 let hoverOpenedAt = 0;
 
+/** A section with pages but no page of its own: tapping it shows its pages (it has nowhere to go). */
+const hasNoPage = (s: WebMenuSection) => !s.to && !s.href;
+
 const shown = computed<WebMenuSection | undefined>(() => {
-  if (compact.value) return currentSection.value;
-  return props.menu.sections.find((s) => s.id === preview.value) ?? currentSection.value;
+  const picked = props.menu.sections.find((s) => s.id === preview.value);
+  // On a phone only a tap on a page-less section changes what is shown; hover and focus do not.
+  if (compact.value) return picked && hasNoPage(picked) ? picked : currentSection.value;
+  return picked ?? currentSection.value;
 });
 const previewing = computed(() => !!shown.value && shown.value.id !== currentId.value);
 const shownPlaces = computed(() => (shown.value ? placesFor(shown.value, props.menu.places) : []));
@@ -91,41 +107,63 @@ function canHoverOpen(): boolean {
 }
 
 function onTriggerPointerEnter(e: PointerEvent) {
+  if (!enhanced.value) return;
   if (e.pointerType === "mouse" && canHoverOpen() && !open.value) {
     hoverOpenedAt = Date.now();
     show();
   }
 }
 
-function onTriggerClick() {
+function onTriggerClick(e: MouseEvent) {
+  // Before the script runs the button is a link to the panel and the browser opens it by `:target`.
+  if (!enhanced.value) return;
+  e.preventDefault();
   // The click that follows a hover-open keeps it open; a later click closes it.
   if (open.value && Date.now() - hoverOpenedAt < HOVER_CLICK_GRACE_MS) return;
   if (open.value) close();
   else show();
 }
 
+function onCloseClick(e: MouseEvent) {
+  if (!enhanced.value) return;
+  e.preventDefault();
+  close();
+}
+
 function choose(link: WebMenuLink) {
-  // The link's own default action navigates; the menu only closes. Focus is not pulled back to the
-  // button, because the page is about to change under it.
-  close(false);
+  // The link's own default action navigates; the menu closes and focus goes back to the button,
+  // as in the app menu (Agent.Tester D4: choosing the page you are on left focus on the body).
+  close();
   emit("navigate", link);
 }
 
+function onSectionClick(s: WebMenuSection) {
+  if (hasNoPage(s)) {
+    // Nowhere to go: show its pages (on a phone too, where nothing else previews).
+    preview.value = s.id;
+    return;
+  }
+  choose(s);
+}
+
 // --- The Tab order, as the app menu's: Close, then every section, each followed (when it is previewed)
-// by its sub-pages and places, then the call to action. The DOM order cannot say "sub-pages after the
+// by its pages and places, then the call to action. The DOM order cannot say "pages after the
 // previewed section" (they sit in the next column), so the trap computes the order.
+function shownList(): HTMLElement | null {
+  return Array.from(panelEl.value?.querySelectorAll<HTMLElement>("[data-list-for]") ?? []).find((el) => el.getAttribute("data-list-for") === shown.value?.id) ?? null;
+}
+
 function focusables(): HTMLElement[] {
   const p = panelEl.value;
   if (!p) return [];
   const usable = (root: ParentNode | null) =>
     Array.from(root?.querySelectorAll<HTMLElement>("a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
   const closeBtn = p.querySelector<HTMLElement>("[data-testid='section-menu-close']");
-  const shownList = Array.from(p.querySelectorAll<HTMLElement>("[data-list-for]")).find((el) => el.getAttribute("data-list-for") === shown.value?.id) ?? null;
-  const here = usable(shownList);
+  const here = usable(shownList());
   const placeLinks = usable(p.querySelector("[data-testid='section-menu-places']"));
   const shownId = p.querySelector<HTMLElement>("[data-previewing='true']")?.getAttribute("data-section");
   const order: HTMLElement[] = closeBtn ? [closeBtn] : [];
-  for (const sec of Array.from(p.querySelectorAll<HTMLElement>("[data-section]"))) {
+  for (const sec of Array.from(p.querySelectorAll<HTMLElement>("[data-section]:not([aria-disabled='true'])"))) {
     order.push(sec);
     if (sec.getAttribute("data-section") === shownId) order.push(...here, ...placeLinks);
   }
@@ -158,9 +196,9 @@ function sectionEl(id: string): HTMLElement | undefined {
 }
 
 // Up/Down/Home/End move between sections (focus previews, as the pointer's rest does); Right goes into
-// the previewed sub-pages and Left comes back. Tab alone reaches everything too.
+// the previewed pages and Left comes back. Tab alone reaches everything too.
 function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
-  const list = props.menu.sections;
+  const list = props.menu.sections.filter((x) => !x.coming);
   const i = list.findIndex((x) => x.id === s.id);
   const to =
     e.key === "ArrowDown" ? list[(i + 1) % list.length]
@@ -174,10 +212,7 @@ function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
     sectionEl(to.id)?.focus();
   } else if (e.key === "ArrowRight") {
     e.preventDefault();
-    Array.from(panelEl.value?.querySelectorAll<HTMLElement>("[data-list-for]") ?? [])
-      .find((el) => el.getAttribute("data-list-for") === shown.value?.id)
-      ?.querySelector<HTMLElement>("[data-option]")
-      ?.focus();
+    shownList()?.querySelector<HTMLElement>("[data-option]:not([aria-disabled='true'])")?.focus();
   }
 }
 
@@ -198,13 +233,13 @@ function onOptionKey(e: KeyboardEvent) {
 }
 
 function onSectionEnter(s: WebMenuSection) {
-  if (compact.value) return;
+  if (compact.value || !enhanced.value) return;
   clearHover();
   hoverTimer = setTimeout(() => (preview.value = s.id), HOVER_INTENT_MS);
 }
 
 function onSectionFocus(s: WebMenuSection) {
-  if (!compact.value) preview.value = s.id;
+  if (!compact.value && enhanced.value) preview.value = s.id;
 }
 
 /** The attributes that make a link go where it should: a route through the host's link component, an address as a plain link. */
@@ -248,6 +283,28 @@ onMounted(() => {
   compactQuery = window.matchMedia?.("(max-width: 599.98px)");
   onCompactChange();
   compactQuery?.addEventListener?.("change", onCompactChange);
+
+  // What the visitor did before the script ran is carried over, not lost (Agent.Tester D7):
+  const openedByLink = window.location.hash === `#${panelId}`;
+  const hadFocus = document.activeElement === triggerEl.value;
+  let hovering = false;
+  try {
+    hovering = !!triggerEl.value?.matches(":hover");
+  } catch {
+    // A browser (or test DOM) that cannot answer :hover simply does not carry a hover over.
+  }
+  enhanced.value = true;
+  if (openedByLink) {
+    // The panel was opened by its link (`:target`): keep it open, now under the script, and drop the
+    // fragment so the back button does not reopen it.
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    show();
+  } else if (hovering && canHoverOpen()) {
+    hoverOpenedAt = Date.now();
+    show();
+  }
+  // The link became a button: keep the keyboard where it was.
+  if (hadFocus) void nextTick(() => triggerEl.value?.focus({ preventScroll: true }));
 });
 
 onBeforeUnmount(() => {
@@ -260,159 +317,180 @@ defineExpose({ show, close });
 </script>
 
 <template>
-  <button
-    ref="triggerEl"
-    type="button"
-    class="sm-trigger"
-    :class="{ 'is-open': open }"
-    aria-haspopup="dialog"
-    :aria-expanded="open ? 'true' : 'false'"
-    :aria-controls="panelId"
-    :aria-label="L.trigger(currentSection?.label ?? L.menu)"
-    data-testid="section-menu-trigger"
-    @pointerenter="onTriggerPointerEnter"
-    @click="onTriggerClick"
-  >
-    <span class="sm-trigger-label" data-testid="section-menu-trigger-label">{{ currentSection?.label ?? L.menu }}</span>
-    <svg class="sm-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  </button>
+  <nav class="sm-root" :class="{ 'is-enhanced': enhanced }" :aria-label="L.navLabel" data-testid="section-menu">
+    <!-- Before the script: a link that opens the panel by :target. After: a button. -->
+    <component
+      :is="enhanced ? 'button' : 'a'"
+      :id="triggerId"
+      ref="triggerEl"
+      v-bind="enhanced ? { type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' } : { href: `#${panelId}` }"
+      class="sm-trigger"
+      :class="{ 'is-open': open }"
+      :aria-controls="panelId"
+      :aria-label="L.trigger(currentSection?.label ?? L.menu)"
+      data-testid="section-menu-trigger"
+      @pointerenter="onTriggerPointerEnter"
+      @click="onTriggerClick"
+    >
+      <span class="sm-trigger-label" data-testid="section-menu-trigger-label">{{ currentSection?.label ?? L.menu }}</span>
+      <svg class="sm-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </component>
 
-  <!-- The dimmed edge, below the header so the header stays readable; a click goes back. -->
-  <div class="sm-scrim" :class="{ 'is-open': open }" aria-hidden="true" data-testid="section-menu-scrim" @click="close()" />
-
-  <!-- Always mounted (also in the server's HTML), so opening is a class change and nothing more. -->
-  <div
-    :id="panelId"
-    ref="panelEl"
-    class="sm-panel"
-    :class="{ 'is-open': open, 'is-single': !hasSubPages }"
-    role="dialog"
-    aria-modal="true"
-    :aria-label="L.goTo"
-    :aria-hidden="open ? 'false' : 'true'"
-    :inert="open ? undefined : true"
-    data-testid="section-menu-panel"
-    :data-open="open ? 'true' : 'false'"
-  >
-    <div class="sm-head">
-      <span class="sm-kicker">{{ L.goTo }}</span>
-      <button type="button" class="sm-close" data-testid="section-menu-close" @click="close()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-          <path d="M6 6l12 12M18 6 6 18" />
-        </svg>
-        {{ L.close }}
-      </button>
-    </div>
-
-    <div class="sm-body">
-      <div class="sm-col sm-sections" @mouseleave="clearHover">
-        <h3 class="sm-heading">{{ L.sections }}</h3>
-        <div role="group" :aria-label="L.sectionsGroup" data-testid="section-menu-sections" class="sm-list">
-          <template v-for="s in menu.sections" :key="s.id">
-            <span
-              v-if="s.coming"
-              class="sm-item sm-section is-coming"
-              :data-section="s.id"
-              aria-disabled="true"
-            >
-              <span class="sm-section-label">{{ s.label }}</span>
-              <span class="sm-coming">{{ L.coming }}</span>
-              <span v-if="s.description" class="sm-desc">{{ s.description }}</span>
-            </span>
-            <component
-              :is="s.to || s.href ? linkTag(s) : 'button'"
-              v-else
-              v-bind="s.to || s.href ? linkAttrs(s) : { type: 'button' }"
-              class="sm-item sm-section"
-              :class="{ 'is-current': s.id === currentId, 'is-preview': !compact && previewing && s.id === shown?.id }"
-              :data-section="s.id"
-              :data-current="s.id === currentId ? 'true' : undefined"
-              :data-previewing="s.id === shown?.id ? 'true' : undefined"
-              :aria-current="s.id === currentId ? 'page' : undefined"
-              @mouseenter="onSectionEnter(s)"
-              @focus="onSectionFocus(s)"
-              @keydown="onSectionKey($event, s)"
-              @click="s.to || s.href ? choose(s) : undefined"
-            >
-              <span class="sm-section-label">{{ s.label }}</span>
-              <span v-if="s.id === currentId" class="sm-here" data-testid="section-menu-here-tag">{{ L.here }}</span>
-              <span v-if="s.description" class="sm-desc">{{ s.description }}</span>
-            </component>
-          </template>
-        </div>
+    <!-- Always in the page (also in the server's HTML). Closed: hidden; after the script, also `inert`. -->
+    <div
+      :id="panelId"
+      ref="panelEl"
+      class="sm-panel"
+      :class="{ 'is-open': open, 'is-single': !hasSubPages }"
+      role="dialog"
+      :aria-modal="enhanced ? 'true' : undefined"
+      :aria-label="L.goTo"
+      :aria-hidden="enhanced ? (open ? 'false' : 'true') : undefined"
+      :inert="enhanced && !open ? true : undefined"
+      data-testid="section-menu-panel"
+      :data-open="open ? 'true' : 'false'"
+    >
+      <div class="sm-head">
+        <span class="sm-kicker">{{ L.goTo }}</span>
+        <!-- Before the script: a link back to the button, which ends :target. After: a button. -->
+        <component
+          :is="enhanced ? 'button' : 'a'"
+          v-bind="enhanced ? { type: 'button' } : { href: `#${triggerId}` }"
+          class="sm-close"
+          data-testid="section-menu-close"
+          @click="onCloseClick"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+          {{ L.close }}
+        </component>
       </div>
 
-      <div v-if="hasSubPages" class="sm-col" data-testid="section-menu-here">
-        <template v-if="shown">
-          <h3 class="sm-heading">
-            {{ L.inSection(shown.label) }}
-            <span v-if="previewing" class="sm-hint">{{ L.previewHint(shown.label) }}</span>
-          </h3>
-          <!-- Every section's pages are in the page (so the server's HTML links them all, and a crawler
-               finds them); only the shown section's list is visible. -->
-          <ul
-            v-for="list in menu.sections.filter((x) => (x.links ?? []).length)"
-            v-show="list.id === shown.id"
-            :key="list.id"
-            class="sm-options"
-            :data-list-for="list.id"
-          >
-            <li v-for="o in list.links" :key="o.id">
-              <span v-if="o.coming" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true">
-                <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
-                <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
+      <div class="sm-body">
+        <div class="sm-col sm-sections" @mouseleave="clearHover">
+          <h2 class="sm-heading">{{ L.sections }}</h2>
+          <div role="group" :aria-label="L.sectionsGroup" data-testid="section-menu-sections" class="sm-list">
+            <template v-for="s in menu.sections" :key="s.id">
+              <span
+                v-if="s.coming"
+                class="sm-item sm-section is-coming"
+                :data-section="s.id"
+                aria-disabled="true"
+              >
+                <span class="sm-section-label">{{ s.label }}</span>
+                <span class="sm-coming">{{ L.coming }}</span>
+                <span v-if="s.description" class="sm-desc">{{ s.description }}</span>
               </span>
               <component
-                :is="linkTag(o)"
+                :is="hasNoPage(s) ? 'button' : linkTag(s)"
                 v-else
-                v-bind="linkAttrs(o)"
-                class="sm-item sm-option"
-                :data-option="o.id"
-                @keydown="onOptionKey"
-                @click="choose(o)"
+                v-bind="hasNoPage(s) ? { type: 'button' } : linkAttrs(s)"
+                class="sm-item sm-section"
+                :class="{ 'is-current': s.id === currentId, 'is-preview': previewing && s.id === shown?.id }"
+                :data-section="s.id"
+                :data-current="s.id === currentId ? 'true' : undefined"
+                :data-previewing="s.id === shown?.id ? 'true' : undefined"
+                :aria-current="s.id === currentId ? 'page' : undefined"
+                @mouseenter="onSectionEnter(s)"
+                @focus="onSectionFocus(s)"
+                @keydown="onSectionKey($event, s)"
+                @click="onSectionClick(s)"
               >
+                <span class="sm-section-label">{{ s.label }}</span>
+                <span v-if="s.id === currentId" class="sm-here" data-testid="section-menu-here-tag">{{ L.here }}</span>
+                <span v-if="s.description" class="sm-desc">{{ s.description }}</span>
+              </component>
+            </template>
+          </div>
+        </div>
+
+        <div v-if="hasSubPages" class="sm-col" data-testid="section-menu-here">
+          <h2 v-if="shown" class="sm-heading sm-here-heading">
+            {{ L.inSection(shown.label) }}
+            <span v-if="previewing" class="sm-hint">{{ L.previewHint(shown.label) }}</span>
+          </h2>
+          <!-- Every section's pages are in the page. After the script only the shown section's list is
+               visible; before it (or with it off) all lists show, each under its section's name. -->
+          <div
+            v-for="list in listed"
+            :key="list.id"
+            class="sm-group"
+            :class="{ 'is-shown': list.id === shown?.id }"
+            :data-list-for="list.id"
+          >
+            <h3 class="sm-heading sm-list-title">{{ list.label }}</h3>
+            <ul class="sm-options">
+              <li v-for="o in list.links" :key="o.id">
+                <span v-if="o.coming" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true">
+                  <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
+                  <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
+                </span>
+                <component
+                  :is="linkTag(o)"
+                  v-else
+                  v-bind="linkAttrs(o)"
+                  class="sm-item sm-option"
+                  :data-option="o.id"
+                  @keydown="onOptionKey"
+                  @click="choose(o)"
+                >
+                  <span class="sm-option-label">{{ o.label }}<span v-if="o.href && o.newTab" aria-hidden="true"> ↗</span></span>
+                  <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
+                </component>
+              </li>
+            </ul>
+          </div>
+          <p v-if="shown && !(shown.links ?? []).length && shown.description" class="sm-desc sm-only-desc">{{ shown.description }}</p>
+        </div>
+
+        <div v-if="shownPlaces.length" class="sm-col" data-testid="section-menu-places">
+          <h2 class="sm-heading">{{ L.alsoUseful }}</h2>
+          <ul class="sm-options">
+            <li v-for="o in shownPlaces" :key="o.id">
+              <component :is="linkTag(o)" v-bind="linkAttrs(o)" class="sm-item sm-option" :data-option="o.id" @keydown="onOptionKey" @click="choose(o)">
                 <span class="sm-option-label">{{ o.label }}<span v-if="o.href && o.newTab" aria-hidden="true"> ↗</span></span>
                 <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
               </component>
             </li>
           </ul>
-          <p v-if="!(shown.links ?? []).length && shown.description" class="sm-desc sm-only-desc">{{ shown.description }}</p>
-        </template>
+        </div>
       </div>
 
-      <div v-if="shownPlaces.length" class="sm-col" data-testid="section-menu-places">
-        <h3 class="sm-heading">{{ L.alsoUseful }}</h3>
-        <ul class="sm-options">
-          <li v-for="o in shownPlaces" :key="o.id">
-            <component :is="linkTag(o)" v-bind="linkAttrs(o)" class="sm-item sm-option" :data-option="o.id" @keydown="onOptionKey" @click="choose(o)">
-              <span class="sm-option-label">{{ o.label }}<span v-if="o.href && o.newTab" aria-hidden="true"> ↗</span></span>
-              <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
-            </component>
-          </li>
-        </ul>
+      <div class="sm-foot">
+        <span class="sm-foot-hint">{{ L.hint }}</span>
+        <component
+          :is="linkTag(menu.cta)"
+          v-if="menu.cta"
+          v-bind="linkAttrs(menu.cta)"
+          class="sm-cta"
+          data-testid="section-menu-cta"
+          @click="choose({ id: 'cta', ...menu.cta })"
+        >{{ menu.cta.label }}</component>
       </div>
     </div>
 
-    <div class="sm-foot">
-      <span class="sm-foot-hint">{{ L.hint }}</span>
-      <component
-        :is="linkTag(menu.cta)"
-        v-if="menu.cta"
-        v-bind="linkAttrs(menu.cta)"
-        class="sm-cta"
-        data-testid="section-menu-cta"
-        @click="choose({ id: 'cta', ...menu.cta })"
-      >{{ menu.cta.label }}</component>
-    </div>
-  </div>
+    <!-- The dimmed edge, below the header so the header stays readable; a click goes back. Before the
+         script it is a link back to the button (shown by :target with the panel). -->
+    <component
+      :is="enhanced ? 'div' : 'a'"
+      v-bind="enhanced ? {} : { href: `#${triggerId}`, tabindex: '-1' }"
+      class="sm-scrim"
+      :class="{ 'is-open': open }"
+      aria-hidden="true"
+      data-testid="section-menu-scrim"
+      @click="close()"
+    />
+  </nav>
 </template>
 
 <style scoped>
 /* Theme: every colour, radius and layer is a --section-menu-* variable the site maps to its own
    tokens; the fallbacks are neutral. Widths are the size-class unit's: compact under 600 px, medium
    600-839 px, expanded from 840 px. */
+.sm-root { display: inline-flex; align-items: center; }
 .sm-trigger {
   display: inline-flex;
   align-items: center;
@@ -426,6 +504,7 @@ defineExpose({ show, close });
   font: inherit;
   font-weight: 600;
   font-size: 0.9rem;
+  text-decoration: none;
   cursor: pointer;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -445,7 +524,6 @@ defineExpose({ show, close });
   opacity: 0;
   pointer-events: none;
 }
-.sm-scrim.is-open { opacity: 1; pointer-events: auto; }
 
 .sm-panel {
   position: fixed;
@@ -460,12 +538,25 @@ defineExpose({ show, close });
   background: var(--section-menu-surface, #fff);
   color: var(--section-menu-fg, #1a1a1a);
   box-shadow: var(--section-menu-shadow, 0 24px 70px rgb(0 0 0 / 0.18), 0 4px 14px rgb(0 0 0 / 0.1));
+  /* Closed: out of sight, out of the tab order and the accessibility tree (visibility), before the
+     script as after it. Opening is instant; closing fades, then hides. */
+  visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
-  transition: opacity 90ms ease, transform 90ms ease;
+  transition: opacity 90ms ease, transform 90ms ease, visibility 0s linear 90ms;
 }
-.sm-panel.is-open { opacity: 1; transform: none; pointer-events: auto; }
+/* Open: by the script (.is-open), or, before the script, by its link (:target). */
+.sm-panel.is-open,
+.sm-root:not(.is-enhanced) .sm-panel:target {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition: opacity 90ms ease, transform 90ms ease, visibility 0s;
+}
+.sm-panel.is-open ~ .sm-scrim,
+.sm-root:not(.is-enhanced) .sm-panel:target ~ .sm-scrim { opacity: 1; pointer-events: auto; }
 
 .sm-head { display: flex; align-items: center; padding: 1rem 1.5rem 0.4rem; }
 .sm-kicker, .sm-heading {
@@ -487,6 +578,7 @@ defineExpose({ show, close });
   background: var(--section-menu-soft, rgb(0 0 0 / 0.05));
   color: var(--section-menu-fg, #1a1a1a);
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -509,10 +601,15 @@ defineExpose({ show, close });
   font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
-  color: var(--section-menu-accent, #2563eb);
+  color: var(--section-menu-accent-text, color-mix(in srgb, var(--section-menu-accent, #2563eb) 75%, var(--section-menu-fg, #1a1a1a)));
 }
 .sm-list { display: grid; gap: 0.15rem; }
 .sm-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+
+/* Before the script every section's pages show, each under its name; after it, only the shown list. */
+.sm-root.is-enhanced .sm-group:not(.is-shown) { display: none; }
+.sm-root.is-enhanced .sm-list-title { display: none; }
+.sm-root:not(.is-enhanced) .sm-here-heading { display: none; }
 
 .sm-item {
   display: block;
@@ -546,8 +643,10 @@ defineExpose({ show, close });
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--section-menu-accent, #2563eb);
 }
+/* Accent text darkened toward the ink, so it clears WCAG AA 4.5:1 on the current section's accent tint
+   (Agent.Tester D1: the plain accent gave 4.36:1). A site may set --section-menu-accent-text itself. */
+.sm-here { color: var(--section-menu-accent-text, color-mix(in srgb, var(--section-menu-accent, #2563eb) 75%, var(--section-menu-fg, #1a1a1a))); }
 .sm-coming { color: var(--section-menu-muted, #6b7280); }
 .sm-desc { display: block; margin-top: 0.15rem; font-size: 0.875rem; color: var(--section-menu-muted, #6b7280); }
 .sm-only-desc { padding: 0 0.75rem; }
@@ -561,6 +660,8 @@ defineExpose({ show, close });
   font-size: 0.875rem;
   color: var(--section-menu-muted, #6b7280);
 }
+/* Esc works only with the script. */
+.sm-root:not(.is-enhanced) .sm-foot-hint { visibility: hidden; }
 .sm-cta {
   margin-left: auto;
   display: inline-flex;
@@ -591,6 +692,6 @@ defineExpose({ show, close });
   .sm-foot-hint { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sm-trigger, .sm-chevron, .sm-panel { transition: none; }
+  .sm-trigger, .sm-chevron, .sm-panel, .sm-panel.is-open { transition: none; }
 }
 </style>

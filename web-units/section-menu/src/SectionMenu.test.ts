@@ -65,18 +65,21 @@ const FakeLink = defineComponent({
   },
 });
 
-function mountMenu(props: Record<string, unknown> = {}) {
+/** Mounts the menu and waits for the script to take over (the plain-HTML menu becomes the enhanced one). */
+async function mountMenu(props: Record<string, unknown> = {}) {
   wrapper = mount(SectionMenu, { props: { menu: MENU, currentPath: "/services/websites", ...props }, attachTo: document.body });
+  await nextTick();
+  await nextTick();
   return wrapper;
 }
 const panel = () => document.querySelector<HTMLElement>("[data-testid='section-menu-panel']")!;
 const trigger = () => document.querySelector<HTMLElement>("[data-testid='section-menu-trigger']")!;
 const section = (id: string) => panel().querySelector<HTMLElement>(`[data-section="${id}"]`)!;
-/** An option the visitor can see: in the page, and not in a hidden section list. */
+/** An option the visitor can see: in the page, and (after the script) in the shown section list. */
 const option = (id: string) => {
   const el = panel().querySelector<HTMLElement>(`[data-option="${id}"]`);
   const list = el?.closest<HTMLElement>("[data-list-for]");
-  return el && (!list || list.style.display !== "none") ? el : null;
+  return el && (!list || list.classList.contains("is-shown")) ? el : null;
 };
 const isOpen = () => panel().getAttribute("data-open") === "true";
 const flush = async () => {
@@ -93,21 +96,21 @@ async function press(k: string, init: KeyboardEventInit = {}) {
 
 describe("web SectionMenu", () => {
   describe("the button", () => {
-    test("says where you are; a sub-page counts as its section", () => {
-      mountMenu();
+    test("says where you are; a sub-page counts as its section", async () => {
+      await mountMenu();
       expect(trigger().textContent).toContain("Services");
       expect(trigger().getAttribute("aria-label")).toBe("Go to — you are on Services");
       expect(trigger().getAttribute("aria-controls")).toBe(panel().id);
     });
-    test("a page in no section reads Menu", () => {
-      mountMenu({ currentPath: "/catalog" });
+    test("a page in no section reads Menu", async () => {
+      await mountMenu({ currentPath: "/catalog" });
       expect(trigger().textContent).toContain("Menu");
     });
   });
 
   describe("always mounted, instant", () => {
     test("closed: in the page, inert and hidden; open is a class change on the same node", async () => {
-      mountMenu();
+      await mountMenu();
       const p = panel();
       expect(p.getAttribute("aria-hidden")).toBe("true");
       expect(p.hasAttribute("inert")).toBe(true);
@@ -126,7 +129,6 @@ describe("web SectionMenu", () => {
       const html = await renderToString(createSSRApp(SectionMenu, { menu: MENU, currentPath: "/" }));
       expect(html).toContain('data-testid="section-menu-panel"');
       expect(html).toContain('data-open="false"');
-      expect(html).toContain("inert");
       // Every section's pages are linked in the server's HTML, so a crawler finds them all.
       expect(html).toContain('href="/services/websites"');
       expect(html).toContain('href="/blog/tag"');
@@ -135,7 +137,7 @@ describe("web SectionMenu", () => {
 
   describe("opening", () => {
     test("a click opens it and focus lands on the section you are on", async () => {
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       expect(document.activeElement).toBe(section("services"));
@@ -145,7 +147,7 @@ describe("web SectionMenu", () => {
 
     test("a fine pointer that can hover opens it on enter; the click that follows keeps it open; a later click closes", async () => {
       hoverable = true;
-      mountMenu();
+      await mountMenu();
       trigger().dispatchEvent(new PointerEvent("pointerenter", { pointerType: "mouse" }));
       await flush();
       expect(isOpen()).toBe(true);
@@ -161,7 +163,7 @@ describe("web SectionMenu", () => {
 
     test("touch, or a pointer that cannot hover, does not open on enter", async () => {
       hoverable = true;
-      mountMenu();
+      await mountMenu();
       trigger().dispatchEvent(new PointerEvent("pointerenter", { pointerType: "touch" }));
       await flush();
       expect(isOpen()).toBe(false);
@@ -174,7 +176,7 @@ describe("web SectionMenu", () => {
 
   describe("four ways to close", () => {
     test("Close, Esc and the dimmed edge close it and give focus back to the button", async () => {
-      mountMenu();
+      await mountMenu();
       for (const how of ["close", "esc", "scrim"] as const) {
         trigger().click();
         await flush();
@@ -188,7 +190,7 @@ describe("web SectionMenu", () => {
     });
 
     test("any link closes it and says which", async () => {
-      const w = mountMenu();
+      const w = await mountMenu();
       trigger().click();
       await flush();
       option("services.web")!.click();
@@ -203,7 +205,7 @@ describe("web SectionMenu", () => {
     });
 
     test("a route change closes it", async () => {
-      const w = mountMenu();
+      const w = await mountMenu();
       trigger().click();
       await flush();
       await w.setProps({ currentPath: "/about" });
@@ -215,7 +217,7 @@ describe("web SectionMenu", () => {
 
   describe("content is data", () => {
     test("routes go through the host's link component; an address is a plain link, in a new tab when asked", async () => {
-      mountMenu({ linkComponent: FakeLink });
+      await mountMenu({ linkComponent: FakeLink });
       expect(section("blog").hasAttribute("data-router-link")).toBe(true);
       expect(section("blog").getAttribute("href")).toBe("/blog");
       trigger().click();
@@ -229,7 +231,7 @@ describe("web SectionMenu", () => {
     });
 
     test("a coming page is greyed and not a link", async () => {
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       const soon = option("services.soon")!;
@@ -238,15 +240,15 @@ describe("web SectionMenu", () => {
       expect(soon.textContent).toContain("Coming");
     });
 
-    test("a site with no sub-pages anywhere has the sections column only", () => {
-      mountMenu({ menu: { sections: MENU.sections.map(({ links: _l, also: _a, ...s }) => s) } });
+    test("a site with no sub-pages anywhere has the sections column only", async () => {
+      await mountMenu({ menu: { sections: MENU.sections.map(({ links: _l, also: _a, ...s }) => s) } });
       expect(panel().querySelector("[data-testid='section-menu-here']")).toBeNull();
       expect(panel().classList.contains("is-single")).toBe(true);
       expect(panel().querySelector("[data-testid='section-menu-cta']")).toBeNull();
     });
 
-    test("the words are the site's", () => {
-      mountMenu({ labels: { goTo: "Navigate", here: "Here", trigger: (l: string) => `Menu at ${l}` } });
+    test("the words are the site's", async () => {
+      await mountMenu({ labels: { goTo: "Navigate", here: "Here", trigger: (l: string) => `Menu at ${l}` } });
       expect(panel().getAttribute("aria-label")).toBe("Navigate");
       expect(trigger().getAttribute("aria-label")).toBe("Menu at Services");
       expect(panel().querySelector("[data-testid='section-menu-here-tag']")!.textContent).toBe("Here");
@@ -256,7 +258,7 @@ describe("web SectionMenu", () => {
   describe("preview", () => {
     test("resting the pointer 120 ms on a section previews its pages; a quick pass does not", async () => {
       vi.useFakeTimers();
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       section("blog").dispatchEvent(new MouseEvent("mouseenter"));
@@ -273,7 +275,7 @@ describe("web SectionMenu", () => {
     });
 
     test("focus previews; each opening starts from where you are; a single-page section shows its line", async () => {
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       section("about").focus();
@@ -289,7 +291,7 @@ describe("web SectionMenu", () => {
 
   describe("keyboard", () => {
     test("Up, Down, Home, End move and preview; Right goes in; Left comes back", async () => {
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       await press("ArrowDown");
@@ -310,7 +312,7 @@ describe("web SectionMenu", () => {
     });
 
     test("Tab stays inside: every section, the previewed section's pages and places after it, the CTA, then wraps", async () => {
-      mountMenu();
+      await mountMenu();
       trigger().click();
       await flush();
       const seen: string[] = [];
@@ -331,7 +333,7 @@ describe("web SectionMenu", () => {
     test("no hover preview; the pages shown are those of the section you are on", async () => {
       vi.useFakeTimers();
       phone = true;
-      mountMenu();
+      await mountMenu();
       await flush();
       trigger().click();
       await flush();

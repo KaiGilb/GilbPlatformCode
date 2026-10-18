@@ -2,7 +2,7 @@
 
 The section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
 
-This is the default menu for an app built on GilbPlatform when the person asking for the app describes no menu of their own. The website counterpart is `web-units/section-menu`.
+It is meant to be the default menu of an app built on GilbPlatform when the person asking for the app describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). GilbApp uses it. The website counterpart is `web-units/section-menu`.
 
 ## What this is
 
@@ -12,7 +12,7 @@ This is the default menu for an app built on GilbPlatform when the person asking
 - **a dimmed edge** below the host's header. A click on it closes the menu.
 - **the panel**, always in the page, so opening it is a class change and nothing more. While closed it is `inert` and `aria-hidden`. It is a modal dialog named "Go to".
   - Left: the sections. The one you are in is marked "You are here". Resting the pointer on another section for 120 ms, or focusing it, previews its options; a quick pass does not. Each opening starts from the section you are in.
-  - Next: "In <section>", that section's options. A coming entry the owner named is drawn greyed out and does nothing. An option with an address opens it in a new tab.
+  - Next: "In <section>", that section's options. A coming entry the owner named is drawn greyed out and does nothing, even when it has an address. An option with an address opens it in a new tab.
   - Right: "Also useful here" (places that fit the previewed section) and "For you". Without either, there are two columns.
   - Footer: a hint ("Press Esc to close" unless the host passes its own) and one act of the host's, such as Sign out.
 - **four ways to close**: Close, Esc, the dimmed edge, or any choice. Focus goes back to the button.
@@ -22,8 +22,8 @@ This is the default menu for an app built on GilbPlatform when the person asking
 
 Also in the unit:
 
-- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart.
-- `createIntentChannel()`: "act once the destination is mounted". A menu choice that must do something in the section it goes to (open a dialog, focus a search) leaves an intent; a component there runs it once it is on screen. A window event fired in the same tick would reach nobody.
+- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart. Every entry may carry a gate (`show`); each helper and the menu leave out an entry whose gate is closed for the gate the host passes, and one that has a gate when none is passed.
+- `createIntentChannel()`: "act once the destination is mounted". A menu choice that must do something in the section it goes to (open a dialog, focus a search) leaves an intent; a component there runs it once it is on screen, and once only (also under React's StrictMode). A window event fired in the same tick would reach nobody.
 - `MenuIcon`: the line icon set, in `currentColor`.
 - `Kbd`: a key name as drawn in the footer hint.
 
@@ -85,18 +85,19 @@ An app that already takes sibling checkouts by link and a Vite alias (GilbApp ta
 
 | Prop | Meaning |
 |---|---|
-| `sections` | the sections this person sees, in order (apply the gates with `visibleSections`) |
+| `sections` | the sections this person sees, in order (apply the gates with `visibleSections`); none: nothing is drawn |
+| `gate` | optional: what the options' gates (`MenuOption.show`) read; without it an option that has a gate is left out |
 | `current` | the id of the section the person is in; an unknown id reads as the first section |
 | `api` | what `go` and `run` are called with; while it is undefined a choice only closes the menu |
 | `sizeClass` | `"compact"`, `"medium"` or `"expanded"` |
 | `layers` | `{ scrim, panel }` paint order; take `LAYER.menuBackdrop` and `LAYER.menu` from `overlay-layers` |
-| `places` | optional: a section's "Also useful here", for example `(s) => placesFor(s, PLACES)` |
+| `places` | optional: a section's "Also useful here", for example `(s) => placesFor(s, PLACES, gate)` |
 | `forYou` | optional: "For you", already gated (`forYouFor`) |
 | `sectionStatus` | optional: `(section) => { warning, busy }`: a warning line under a section and `aria-busy` |
 | `onChoose` | optional: called on every choice, after the menu closes and before the act runs, with the section it goes to |
 | `dismissed` | optional: true closes the menu at once without taking focus back (a command palette opened over it) |
 | `footerHint`, `footerAction` | optional: the footer's text (wide windows) and its one act |
-| `labels` | optional: every word the menu draws (`DEFAULT_LABELS` is English) |
+| `labels` | optional: every word the menu draws, the footer hint included (`DEFAULT_LABELS` is English) |
 | `scrimTop`, `panelTop` | optional CSS lengths below the host's header; default `3.5rem` and `4rem` |
 | `renderIcon` | optional: draws the host's own icons; default `MenuIcon` |
 | `ref` | optional: `SectionMenuHandle` with `openAt(id?)` and `close()` |

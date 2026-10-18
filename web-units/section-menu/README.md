@@ -2,9 +2,13 @@
 
 A website's section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's pages on the right. One column on a phone. The site passes its menu as data. Vue 3 / Nuxt 3.
 
-This is the default header menu of a website built by Agent.Website when the person asking for the site describes no menu of their own. The website starter (Engine A, `website-engine-a`) uses it. The app counterpart, in React, is `units/section-menu`; both behave the same.
+It is meant to be the default header menu of a website built by Agent.Website when the person asking for the site describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). The website starter (Engine A, `website-engine-a`) already uses it as its header menu. The app counterpart, in React, is `units/section-menu`; both behave the same.
 
 ## What this is
+
+**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links. Until the script runs, the button is a link to the panel (`#<panel id>`): the panel opens by CSS `:target`, shows every section's pages under their names, and Close and the dimmed edge are links back to the button. When the script runs it takes over as below; a panel the visitor opened by the link stays open, and a hover already on the button opens it. So a site with delayed hydration needs no eager hydration for its header.
+
+Once the script runs:
 
 `<SectionMenu :menu :current-path :link-component>` draws:
 
@@ -15,9 +19,9 @@ This is the default header menu of a website built by Agent.Website when the per
   - Next, where the site has sub-pages: "In <section>", the previewed section's pages. Resting the pointer on a section for 120 ms, or focusing it, previews it; a quick pass does not. Each opening starts from the section you are on. Every section's pages are in the HTML, only the shown list is visible, so a crawler finds them all.
   - Right: "Also useful here", places a section names (for example another site).
   - Footer: "Press Esc to close" and the site's call to action.
-- **four ways to close**: Close, Esc, the dimmed edge, or any link (and a route change). Esc, Close and the edge give focus back to the button.
+- **four ways to close**: Close, Esc, the dimmed edge, or any link (and a route change). Each gives focus back to the button.
 - **keyboard**: focus lands on the section you are on. Tab stays inside the panel: Close, every section, each followed (when previewed) by its pages and places, then the call to action, and wraps. Up, Down, Home and End move between sections; Right goes into the pages; Left comes back.
-- **phone** (under 600 px): one column; no hover preview; the pages shown are those of the section you are on. 600 to 839 px: two columns.
+- **phone** (under 600 px): one column; no hover preview; the pages shown are those of the section you are on. A section with pages but no page of its own is a button: tapping it shows its pages. 600 to 839 px: two columns.
 - Reduced motion: no transitions.
 
 Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, and the words (`DEFAULT_WEB_LABELS`).
@@ -89,7 +93,7 @@ Events: `navigate` (a link was chosen) and `open-change`. Exposed: `show()` and 
 
 ## Host must supply
 
-The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwise): `--section-menu-surface`, `--section-menu-fg`, `--section-menu-muted`, `--section-menu-accent`, `--section-menu-on-accent`, `--section-menu-line`, `--section-menu-soft`, `--section-menu-radius`, `--section-menu-shadow`. Map them from the site's own tokens. `--section-menu-top` is the header's height (default `4rem`); `--section-menu-z-scrim` and `--section-menu-z-panel` the paint order (default 100 and 101, the `overlay-layers` unit's menu layers). No Tailwind is needed: the styles ship in the component.
+The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwise): `--section-menu-surface`, `--section-menu-fg`, `--section-menu-muted`, `--section-menu-accent`, `--section-menu-on-accent`, `--section-menu-accent-text` (accent text on the accent tint; default the accent mixed 75% toward `--section-menu-fg`, which keeps WCAG AA), `--section-menu-line`, `--section-menu-soft`, `--section-menu-radius`, `--section-menu-shadow`. Map them from the site's own tokens. `--section-menu-top` is the header's height (default `4rem`); `--section-menu-z-scrim` and `--section-menu-z-panel` the paint order (default 100 and 101, the `overlay-layers` unit's menu layers). No Tailwind is needed: the styles ship in the component.
 
 ## Do not
 
@@ -98,8 +102,8 @@ The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwis
 
 ## Wrong readings
 
-- The panel is in the page while closed: test "closed" by `data-open`, `aria-hidden` or `inert`, not by its absence.
-- Every section's pages are in the HTML; only one list is visible at a time.
+- The panel is in the page while closed: test "closed" by `data-open` (and, after the script, `inert`), not by its absence. Before the script nothing is `inert`; the closed panel is `visibility: hidden`.
+- Every section's pages are in the HTML. Before the script all lists show; after it, only the shown one.
 - On a phone a section is a link to its page; it does not preview.
 
 ## Source

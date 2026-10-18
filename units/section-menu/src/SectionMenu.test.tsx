@@ -206,7 +206,7 @@ describe("SectionMenu", () => {
       expect(api.signOut).toHaveBeenCalledTimes(1);
       expect(document.activeElement).toBe(trigger());
     });
-    test("a second click on the button, after the hover grace, closes it", async () => {
+    test("a second click on the button closes it (a click-opened menu has no hover grace)", async () => {
       renderMenu();
       await userEvent.click(trigger());
       await userEvent.click(trigger());
@@ -411,6 +411,18 @@ describe("SectionMenu", () => {
       expect(panel().textContent).toContain("Pages");
       expect(screen.getByTestId("hint").textContent).toBe("Press ⌘K");
       expect(trigger().querySelector('[data-icon="records"]')).toBeTruthy();
+    });
+
+    test("an option's gate reads the gate prop; the footer hint is a label too", async () => {
+      const gated = SECTIONS.map((s) => s.id !== "notes" ? s : { ...s, options: [...s.options,
+        { id: "notes.admin", icon: "admin" as const, label: "Admin", description: "Managers.", show: (g: { admin: boolean }) => g.admin }] });
+      renderMenu({ sections: gated, gate: { admin: true }, labels: { hint: (esc) => <>Druk {esc}</> } } as Partial<SectionMenuProps<Id, Api>>);
+      await userEvent.click(trigger());
+      expect(option("notes.admin")).toBeTruthy();
+      expect(panel().textContent).toContain("Druk Esc");
+      cleanup();
+      renderMenu({ sections: gated, gate: { admin: false } } as Partial<SectionMenuProps<Id, Api>>);
+      expect(panel().querySelector('[data-option="notes.admin"]')).toBeNull();
     });
 
     test("with no footer act, the footer has the hint only; the default hint names Esc", () => {

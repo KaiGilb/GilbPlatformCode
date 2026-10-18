@@ -27,7 +27,10 @@ export interface MenuOption<Api = unknown, Gate = unknown, Icon extends string =
   /** An address outside the app, opened in a new tab. */
   href?: string;
   run?: (api: Api) => void;
-  /** Shown only when this returns true. */
+  /**
+   * Shown only when this returns true for the gate the host passes (the menu's `gate` prop, or the
+   * helpers' `gate` argument). With no gate given, an entry that has `show` is left out.
+   */
   show?: (gate: Gate) => boolean;
   /** A line saying why a gated entry is shown. */
   context?: string;
@@ -75,22 +78,37 @@ export function visibleSections<S extends { show?: (gate: G) => boolean }, G>(se
   return sections.filter((s) => !s.show || s.show(gate));
 }
 
-/**
- * A section's menu options: the command-palette-only ones left out.
- * @param section one section
- */
-export function menuOptionsOf<O extends { commandOnly?: boolean }>(section: { options: readonly O[] }): O[] {
-  return section.options.filter((o) => !o.commandOnly);
+/** True when an entry's gate lets it show: no gate on the entry, or the host's gate given and agreeing. */
+// `never` in the parameter accepts an entry of any gate type; the host's own types keep the gate it passes right.
+function passes(o: { show?: (gate: never) => boolean }, gate: unknown, hasGate: boolean): boolean {
+  return !o.show || (hasGate && o.show(gate as never));
 }
 
 /**
- * The places that fit a section, in the places' own order.
+ * A section's menu options: the command-palette-only ones and the gated-off ones left out.
+ * @param section one section
+ * @param gate what the options' gates read; without it, an option that has a gate is left out
+ */
+export function menuOptionsOf<O extends { commandOnly?: boolean; show?: (gate: never) => boolean }>(
+  section: { options: readonly O[] },
+  ...gate: [] | [unknown]
+): O[] {
+  return section.options.filter((o) => !o.commandOnly && passes(o, gate[0], gate.length > 0));
+}
+
+/**
+ * The places that fit a section, in the places' own order, gated-off ones left out.
  * @param section one section; its `also` names place ids
  * @param places the host's places
+ * @param gate what the places' gates read; without it, a place that has a gate is left out
  */
-export function placesFor<O extends { id: string }>(section: { also?: readonly string[] }, places: readonly O[] = []): O[] {
+export function placesFor<O extends { id: string; show?: (gate: never) => boolean }>(
+  section: { also?: readonly string[] },
+  places: readonly O[] = [],
+  ...gate: [] | [unknown]
+): O[] {
   const also = section.also ?? [];
-  return places.filter((p) => also.includes(p.id));
+  return places.filter((p) => also.includes(p.id) && passes(p, gate[0], gate.length > 0));
 }
 
 /**
@@ -126,7 +144,8 @@ export interface MenuCommandWords {
 
 /**
  * Every command-palette row from the list: "Go to" each visible section, then each section's options
- * (command-only ones too), the places, the "For you" entries this person sees and the extra commands.
+ * (command-only ones too), the places, the "For you" entries and the extra commands; every entry whose
+ * gate is closed for `gate` is left out.
  * When `current` is given, the current section's rows come first; otherwise the list order holds.
  * @param list the host's list
  * @param gate what the gates read
@@ -144,13 +163,14 @@ export function menuCommands<Id extends string, Api, Gate, Icon extends string>(
   for (const s of visibleSections(list.sections, gate)) {
     out.push({ id: `go.${s.id}`, icon: s.icon, label: goTo(s.label), keywords: [s.label, s.description],
       loc: s.label, section: s.id, coming: false, run: s.go });
-    for (const o of s.options) out.push(toCommand(o, s.label, s.id));
+    // Command-only options are rows here; gated-off ones are not.
+    for (const o of s.options.filter((x) => !x.show || x.show(gate))) out.push(toCommand(o, s.label, s.id));
   }
-  for (const p of list.places ?? []) out.push(toCommand<Id, Api, Gate, Icon>(p, "", null));
+  for (const p of forYouFor(list.places ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(p, "", null));
   for (const o of forYouFor(list.forYou ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(o, words.forYou ?? "For you", null));
   // The extra command's `loc` names its section even when the gate hides that section from this person.
   const labelOf = (id: Id | null) => list.sections.find((s) => s.id === id)?.label ?? "";
-  for (const o of list.extraCommands ?? []) out.push(toCommand(o, labelOf(o.section), o.section));
+  for (const o of forYouFor(list.extraCommands ?? [], gate)) out.push(toCommand(o, labelOf(o.section), o.section));
   if (!current) return out;
   // A stable partition: the current section's rows, then the rest, each in list order.
   return [...out.filter((c) => c.section === current), ...out.filter((c) => c.section !== current)];

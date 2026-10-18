@@ -36,6 +36,8 @@ export type MenuSizeClass = "compact" | "medium" | "expanded";
 
 /** Every word the menu draws. Each has an English default. */
 export interface SectionMenuLabels {
+  /** The footer's hint on a wide window, given the drawn Esc key. Replaced whole by `footerHint`. */
+  hint: (esc: ReactNode) => ReactNode;
   /** The panel's heading and its accessible name. */
   goTo: string;
   /** The button's accessible name. */
@@ -54,6 +56,7 @@ export interface SectionMenuLabels {
 }
 
 export const DEFAULT_LABELS: SectionMenuLabels = {
+  hint: (esc) => <>Press {esc} to close</>,
   goTo: "Go to",
   trigger: (label) => `Go to — you are in ${label}`,
   sections: "Your sections",
@@ -91,8 +94,10 @@ export interface SectionMenuHandle<Id extends string> {
 }
 
 export interface SectionMenuProps<Id extends string, Api, Icon extends string = MenuIconKey, Gate = unknown> {
-  /** The sections this person sees, in order (the host has applied the gates: `visibleSections`). */
+  /** The sections this person sees, in order (the host has applied the gates: `visibleSections`). None: nothing is drawn. */
   sections: readonly MenuSection<Id, Api, Gate, Icon>[];
+  /** What the options' gates read (`MenuOption.show`). Without it, an option that has a gate is left out. */
+  gate?: Gate;
   /** The section the person is in. An id not among `sections` reads as the first section. */
   current: Id;
   /** What the acts run against. While it is undefined a choice only closes the menu. */
@@ -109,7 +114,7 @@ export interface SectionMenuProps<Id extends string, Api, Icon extends string = 
   onChoose?: (target: Id | undefined) => void;
   /** When true the menu closes at once and does NOT take focus back: another surface (a command palette) took over. */
   dismissed?: boolean;
-  /** Footer text on a wide window. Default: "Press Esc to close". */
+  /** Footer text on a wide window, in place of `labels.hint`. Default: "Press Esc to close". */
   footerHint?: ReactNode;
   footerAction?: MenuFooterAction<Api, Icon>;
   labels?: Partial<SectionMenuLabels>;
@@ -136,12 +141,20 @@ function defaultIcon(icon: string, size: number): ReactNode {
 /**
  * The section menu: the trigger button, the dimmed edge and the always-mounted panel.
  * Put it in the host's header (for example `app-shell`'s `header` slot).
+ * With no sections (a gate can hide them all) it draws nothing.
  */
 export function SectionMenu<Id extends string, Api, Icon extends string = MenuIconKey, Gate = unknown>(props: SectionMenuProps<Id, Api, Icon, Gate>) {
+  if (props.sections.length === 0) return null;
+  return <SectionMenuBody {...props} />;
+}
+
+function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(props: SectionMenuProps<Id, Api, Icon, Gate>) {
   const {
     sections, current: currentId, api, sizeClass, places, forYou, sectionStatus, onChoose, dismissed = false,
     footerHint, footerAction, layers, scrimTop = "3.5rem", panelTop = "4rem", ref,
   } = props;
+  // The options' gate: passed on to the helpers only when the host gave one (see MenuOption.show).
+  const gateArgs = ("gate" in props ? [props.gate as Gate] : []) as [] | [Gate];
   const L: SectionMenuLabels = { ...DEFAULT_LABELS, ...props.labels };
   const icon = (name: Icon, size: number) => (props.renderIcon ?? defaultIcon)(name, size);
   const currentSection = sections.find((s) => s.id === currentId) ?? sections[0]!;
@@ -504,7 +517,7 @@ export function SectionMenu<Id extends string, Api, Icon extends string = MenuIc
               )}
             </ColumnHeading>
             <OptionList
-              options={menuOptionsOf(shown)}
+              options={menuOptionsOf(shown, ...gateArgs)}
               onChoose={(o) => choose(runOf(o), shown.id)}
               onKeyDown={onOptionKey}
               icon={icon}
@@ -536,7 +549,7 @@ export function SectionMenu<Id extends string, Api, Icon extends string = MenuIc
             (compact ? "px-3.5 py-2" : "px-6 py-3.5")
           }
         >
-          {!compact && <span>{footerHint ?? <>Press <Kbd>Esc</Kbd> to close</>}</span>}
+          {!compact && <span>{footerHint ?? L.hint(<Kbd>Esc</Kbd>)}</span>}
           {footerAction && (
             <button
               type="button"
@@ -593,7 +606,8 @@ function OptionList<Api, Icon extends string, Gate>({
             </span>
           </>
         );
-        if (o.href) {
+        // A coming entry is never a live link, even when it has an address (Agent.Tester D4).
+        if (o.href && !o.coming) {
           // The link opens the address itself; the choice only closes the menu, so no act is passed on.
           return (
             <a

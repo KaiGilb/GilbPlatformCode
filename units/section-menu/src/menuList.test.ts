@@ -42,6 +42,21 @@ describe("menuList", () => {
     });
   });
 
+  describe("gates on options and places", () => {
+    test("a gated option or place shows only when the gate given agrees; with no gate it is left out", () => {
+      const sec = { options: [
+        { id: "a", show: (g: Gate) => g.admin },
+        { id: "b" },
+      ], also: ["p"] };
+      const places = [{ id: "p", show: (g: Gate) => g.admin }];
+      expect(menuOptionsOf(sec).map((o) => o.id)).toEqual(["b"]);
+      expect(menuOptionsOf(sec, { ...GATE, admin: true }).map((o) => o.id)).toEqual(["a", "b"]);
+      expect(placesFor(sec, places)).toEqual([]);
+      expect(placesFor(sec, places, GATE)).toEqual([]);
+      expect(placesFor(sec, places, { ...GATE, admin: true }).map((p) => p.id)).toEqual(["p"]);
+    });
+  });
+
   describe("placesFor", () => {
     test("gives a section's places in the places' own order, not the section's", () => {
       expect(placesFor(LIST.sections[1]!, LIST.places).map((p) => p.id)).toEqual(["news", "help"]);

@@ -10,6 +10,8 @@ export const HOVER_CLICK_GRACE_MS = 600;
 
 /** Every word the menu draws. */
 export interface WebMenuLabels {
+  /** The accessible name of the menu's navigation landmark. */
+  navLabel: string;
   /** The panel's heading and its accessible name. */
   goTo: string;
   /** The button's text when the page is in no section. */
@@ -31,6 +33,7 @@ export interface WebMenuLabels {
 }
 
 export const DEFAULT_WEB_LABELS: WebMenuLabels = {
+  navLabel: "Site",
   goTo: "Go to",
   menu: "Menu",
   trigger: (label) => `Go to — you are on ${label}`,
