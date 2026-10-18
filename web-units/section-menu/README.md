@@ -47,7 +47,7 @@ echo <commit> > <site>/vendor/gilbwebsitecode-section-menu/SOURCE
 cd <site> && pnpm add ./vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run `pnpm install`.
+The dependency then reads `"file:vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 pnpm 11 also checks every package's age against the npm registry (`minimumReleaseAge`). This package is not on the registry, so a fresh install refuses it (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) unless the site's `pnpm-workspace.yaml` names it:
 
