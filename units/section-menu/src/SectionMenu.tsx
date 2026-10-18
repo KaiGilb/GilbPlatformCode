@@ -206,11 +206,12 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     // when previewed, by its options and "Also useful here"), then "For you", then the footer act.
     // The panel's DOM order cannot express "options after the previewed section" (they sit in the
     // next column), so the trap computes the order instead of leaving it to the browser.
-    const focusables = () => {
+    // `withComing` also lists the coming (aria-disabled) entries, in their places.
+    const focusables = (withComing = false) => {
       const p = panelRef.current;
       if (!p) return [];
       const usable = (root: ParentNode | null) =>
-        Array.from(root?.querySelectorAll<HTMLElement>("a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
+        Array.from(root?.querySelectorAll<HTMLElement>(withComing ? "a[href], button:not([disabled])" : "a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
       const closeBtn = p.querySelector<HTMLElement>("[data-testid='section-menu-close']");
       const here = usable(p.querySelector("[data-testid='section-menu-here']"));
       // "Also useful here" belongs to the previewed section too, so it follows that section's options:
@@ -241,6 +242,21 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
       e.preventDefault();
       const active = document.activeElement as HTMLElement | null;
       const i = active ? els.indexOf(active) : -1;
+      // A coming entry the arrows landed on is not a Tab stop, so it is not in the list. Step from its place in
+      // the same order, coming entries included, to the nearest usable entry in the key's direction, instead of
+      // jumping to the first one (Agent.Tester web round 8, D18; the same code was in both units).
+      const all = focusables(true);
+      const j = active ? all.indexOf(active) : -1;
+      if (i === -1 && j !== -1) {
+        const dir = e.shiftKey ? -1 : 1;
+        for (let k = 1; k <= all.length; k++) {
+          const c = all[(((j + dir * k) % all.length) + all.length) % all.length]!;
+          if (els.includes(c)) {
+            c.focus();
+            return;
+          }
+        }
+      }
       if (i === -1) {
         els[0]!.focus();
         return;

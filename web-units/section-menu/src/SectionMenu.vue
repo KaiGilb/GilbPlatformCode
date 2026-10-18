@@ -168,11 +168,12 @@ function shownList(): HTMLElement | null {
   return Array.from(panelEl.value?.querySelectorAll<HTMLElement>("[data-list-for]") ?? []).find((el) => el.getAttribute("data-list-for") === shown.value?.id) ?? null;
 }
 
-function focusables(): HTMLElement[] {
+/** The trap's Tab order; `withComing` also lists the coming (aria-disabled) entries, in their places. */
+function focusables(withComing = false): HTMLElement[] {
   const p = panelEl.value;
   if (!p) return [];
   const usable = (root: ParentNode | null) =>
-    Array.from(root?.querySelectorAll<HTMLElement>("a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
+    Array.from(root?.querySelectorAll<HTMLElement>(withComing ? "a[href], button:not([disabled])" : "a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
   const closeBtn = p.querySelector<HTMLElement>("[data-testid='section-menu-close']");
   const here = usable(shownList());
   const placeLinks = usable(p.querySelector("[data-testid='section-menu-places']"));
@@ -199,6 +200,21 @@ function onKeydown(e: KeyboardEvent) {
   e.preventDefault();
   const active = document.activeElement as HTMLElement | null;
   const i = active ? els.indexOf(active) : -1;
+  // A coming entry the arrows landed on is not a Tab stop, so it is not in the list. Step from its place in
+  // the same order, coming entries included, to the nearest usable entry in the key's direction, instead of
+  // jumping to the first one (Agent.Tester web round 8, D18; the same code was in both units).
+  const all = focusables(true);
+  const j = active ? all.indexOf(active) : -1;
+  if (i === -1 && j !== -1) {
+    const dir = e.shiftKey ? -1 : 1;
+    for (let k = 1; k <= all.length; k++) {
+    const c = all[(((j + dir * k) % all.length) + all.length) % all.length]!;
+    if (els.includes(c)) {
+      c.focus();
+      return;
+    }
+    }
+  }
   if (i === -1) {
     els[0]!.focus();
     return;
