@@ -107,16 +107,6 @@ describe("round 5 probes", () => {
   });
 
   // Observation probe: arrowing onto a coming option (aria-disabled, not a Tab stop) then Tab.
-  test("Q5-6 (observation) ArrowDown onto a coming option, then Tab: where focus goes", async () => {
-    renderMenu();
-    await userEvent.click(screen.getByTestId("section-menu-trigger"));
-    await frame();
-    (panel().querySelector('[data-option="notes.new"]') as HTMLElement).focus();
-    await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement?.getAttribute("data-option")).toBe("notes.soon");
-    await userEvent.tab();
-    // Record, do not judge: the trap finds no index for an element outside its order and goes to the first stop.
-    (globalThis as { __q56?: string }).__q56 = document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.getAttribute("data-option") ?? "";
-    console.log("Q5-6 focus after Tab from a coming option:", (globalThis as { __q56?: string }).__q56);
-  });
+  // Q5-6 was an observation with no assertion, and its comment described the pre-D18 trap; it is deleted as the
+  // drifted copy (RuleCommentAdjudicateFirst point 4). round8 and round9 own Tab from a coming option.
 });

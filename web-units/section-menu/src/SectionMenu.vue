@@ -16,13 +16,13 @@
  *  • Reduced motion: no transition.
  *
  * ⚠ BEFORE THE JAVASCRIPT RUNS (or with it off), the menu still works, as plain HTML: it is a `<nav>`
- * landmark whose button is a link to the panel (`#<panel id>`); the panel opens by CSS `:target`, lists
- * every section's pages as plain links, and closes by a link back to the button. Kai-Zen's decision, 2026-10-18:
- * websites must work before hydration and with JavaScript off (search engines, first impressions).
- * The script then takes over (`enhanced`), and a panel opened by the link stays open: it reads the fragment,
- * the fragment a host remembered early (`rememberSectionMenuTarget`), `:target` and focus, because a router
- * may have rewritten the address first (D19; measured in Chromium, Firefox and WebKit by the starter's
- * scripts/check-section-menu-browser.mjs).
+ * landmark holding a native `<details>`; its `<summary>` is the button, which opens and closes the panel on
+ * click, tap and Enter with no script, and the panel lists every section and every page as plain links.
+ * Kai-Zen's decisions, 2026-10-18: websites must work before hydration and with JavaScript off (search
+ * engines, first impressions); and the open state does NOT live in the address (an earlier `#<panel>` link
+ * with CSS :target caused D19-D21: a router rewrote the address, reloads and Back reopened the menu).
+ * When the script takes over (`enhanced`) it reads `details.open` once: a panel the visitor opened stays
+ * open. From then on `details` stays open for layout and the script's own state shows and hides the panel.
  *
  * Content is data (`menu`); nothing here is a page of any one site. Theme: the `--section-menu-*`
  * CSS variables, which the site maps to its own tokens.
@@ -33,7 +33,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type Component } from "vue";
 import { currentSectionId, normalisePath, placesFor, type WebMenu, type WebMenuLink, type WebMenuSection } from "./menu";
 import { DEFAULT_WEB_LABELS, HOVER_CLICK_GRACE_MS, HOVER_INTENT_MS, type WebMenuLabels } from "./labels";
-import { takeRememberedTarget } from "./target";
 
 const props = withDefaults(
   defineProps<{
@@ -87,7 +86,7 @@ const triggerEl = ref<HTMLElement | null>(null);
 const panelEl = ref<HTMLElement | null>(null);
 const uid = useId();
 const panelId = `section-menu-${uid}`;
-const triggerId = `section-menu-trigger-${uid}`;
+const detailsEl = ref<HTMLDetailsElement | null>(null);
 let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 // When the pointer's enter opened the menu, the click that usually follows must not close it.
 let hoverOpenedAt = 0;
@@ -134,7 +133,8 @@ function onTriggerPointerEnter(e: PointerEvent) {
 }
 
 function onTriggerClick(e: MouseEvent) {
-  // Before the script runs the button is a link to the panel and the browser opens it by `:target`.
+  // Before the script runs the <summary> toggles <details> natively. After it, the script decides, so the
+  // native toggle is stopped (a keyboard Enter or Space on <summary> arrives here as a click too).
   if (!enhanced.value) return;
   e.preventDefault();
   // The click that follows a hover-open keeps it open; a later click closes it.
@@ -143,9 +143,7 @@ function onTriggerClick(e: MouseEvent) {
   else show();
 }
 
-function onCloseClick(e: MouseEvent) {
-  if (!enhanced.value) return;
-  e.preventDefault();
+function onCloseClick() {
   close();
 }
 
@@ -321,44 +319,26 @@ onMounted(() => {
   onCompactChange();
   compactQuery?.addEventListener?.("change", onCompactChange);
 
-  // What the visitor did before the script ran is carried over, not lost (Agent.Tester D7, D19). Did they open
-  // the panel by its link? Any one of four signals says so, because a router may already have rewritten the
-  // address without the fragment (D19): the fragment now; the fragment the host remembered early
-  // (`rememberSectionMenuTarget`); the panel still matching `:target`; focus already inside the panel.
-  const panel = panelEl.value;
-  let targeted = false;
-  try {
-    targeted = !!panel?.matches(":target");
-  } catch {
-    // An engine that cannot answer :target leaves the other signals to decide.
-  }
-  const openedByLink =
-    takeRememberedTarget(panelId) ||
-    window.location.hash === `#${panelId}` ||
-    targeted ||
-    (!!panel && panel.contains(document.activeElement));
-  const hadFocus = document.activeElement === triggerEl.value;
+  // What the visitor did before the script ran is carried over, not lost (Agent.Tester D7, D19): the
+  // native <details> says whether they opened it. Nothing is read from or written to the address.
+  const details = detailsEl.value;
+  const openedBefore = !!details?.open;
   let hovering = false;
   try {
     hovering = !!triggerEl.value?.matches(":hover");
   } catch {
     // A browser (or test DOM) that cannot answer :hover simply does not carry a hover over.
   }
+  // From now on <details> stays open so the panel is laid out (always mounted, instant), and the
+  // script's own state (`open`, `inert`) shows and hides it.
+  if (details) details.open = true;
   enhanced.value = true;
-  if (openedByLink) {
-    // The panel was opened by its link (`:target`): keep it open, now under the script (focus moves to the
-    // section you are on), and drop the fragment so the back button does not reopen it.
-    if (window.location.hash === `#${panelId}`) {
-      window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
-    }
+  if (openedBefore) {
     show();
-    return;
   } else if (hovering && canHoverOpen()) {
     hoverOpenedAt = Date.now();
     show();
   }
-  // The link became a button: keep the keyboard where it was.
-  if (hadFocus) void nextTick(() => triggerEl.value?.focus({ preventScroll: true }));
 });
 
 onBeforeUnmount(() => {
@@ -372,14 +352,14 @@ defineExpose({ show, close });
 
 <template>
   <nav class="sm-root" :class="{ 'is-enhanced': enhanced }" :aria-label="L.navLabel" data-testid="section-menu">
-    <!-- Before the script: a link that opens the panel by :target. After: a button. -->
-    <component
-      :is="enhanced ? 'button' : 'a'"
-      :id="triggerId"
+    <!-- A native <details>: before the script its <summary> opens and closes the panel on click, tap and Enter,
+         with nothing in the address. After the script, <details> stays open and the script shows the panel. -->
+    <details ref="detailsEl" class="sm-details" data-testid="section-menu-details">
+    <summary
       ref="triggerEl"
-      v-bind="enhanced ? { type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' } : { href: `#${panelId}` }"
       class="sm-trigger"
       :class="{ 'is-open': open }"
+      v-bind="enhanced ? { 'aria-haspopup': 'dialog', 'aria-expanded': open ? 'true' : 'false' } : {}"
       :aria-controls="panelId"
       :aria-label="L.trigger(currentSection?.label ?? L.menu)"
       data-testid="section-menu-trigger"
@@ -390,7 +370,7 @@ defineExpose({ show, close });
       <svg class="sm-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
         <path d="m6 9 6 6 6-6" />
       </svg>
-    </component>
+    </summary>
 
     <!-- Always in the page (also in the server's HTML). Closed: hidden; after the script, also `inert`. -->
     <div
@@ -408,19 +388,13 @@ defineExpose({ show, close });
     >
       <div class="sm-head">
         <span class="sm-kicker">{{ L.goTo }}</span>
-        <!-- Before the script: a link back to the button, which ends :target. After: a button. -->
-        <component
-          :is="enhanced ? 'button' : 'a'"
-          v-bind="enhanced ? { type: 'button' } : { href: `#${triggerId}` }"
-          class="sm-close"
-          data-testid="section-menu-close"
-          @click="onCloseClick"
-        >
+        <!-- Close needs the script; before it, the <summary> closes the panel (Close is not drawn then). -->
+        <button type="button" class="sm-close" data-testid="section-menu-close" @click="onCloseClick">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
             <path d="M6 6l12 12M18 6 6 18" />
           </svg>
           {{ L.close }}
-        </component>
+        </button>
       </div>
 
       <div class="sm-body">
@@ -525,18 +499,10 @@ defineExpose({ show, close });
       </div>
     </div>
 
-    <!-- The dimmed edge, below the header so the header stays readable; a click goes back. Before the
-         script it is a link back to the button (shown by :target with the panel), named "Close" so no
-         page carries a nameless link (Agent.Tester round 2, D8: the starter's link check flagged it). -->
-    <component
-      :is="enhanced ? 'div' : 'a'"
-      v-bind="enhanced ? {} : { href: `#${triggerId}`, tabindex: '-1', 'aria-label': L.close, title: L.close }"
-      class="sm-scrim"
-      :class="{ 'is-open': open }"
-      aria-hidden="true"
-      data-testid="section-menu-scrim"
-      @click="close()"
-    />
+    <!-- The dimmed edge, below the header so the header stays readable; a click goes back. It needs the
+         script, so it is drawn only after it. -->
+    <div class="sm-scrim" :class="{ 'is-open': open }" aria-hidden="true" data-testid="section-menu-scrim" @click="close()" />
+    </details>
   </nav>
 </template>
 
@@ -600,17 +566,22 @@ defineExpose({ show, close });
   pointer-events: none;
   transition: opacity 90ms ease, transform 90ms ease, visibility 0s linear 90ms;
 }
-/* Open: by the script (.is-open), or, before the script, by its link (:target). */
+/* Open: by the script (.is-open), or, before the script, by the native <details> (its [open]). */
 .sm-panel.is-open,
-.sm-root:not(.is-enhanced) .sm-panel:target {
+.sm-root:not(.is-enhanced) .sm-details[open] > .sm-panel {
   visibility: visible;
   opacity: 1;
   transform: none;
   pointer-events: auto;
   transition: opacity 90ms ease, transform 90ms ease, visibility 0s;
 }
-.sm-panel.is-open ~ .sm-scrim,
-.sm-root:not(.is-enhanced) .sm-panel:target ~ .sm-scrim { opacity: 1; pointer-events: auto; }
+.sm-panel.is-open ~ .sm-scrim { opacity: 1; pointer-events: auto; }
+/* The <summary> is the button: no disclosure marker. Close and the dimmed edge need the script. */
+.sm-details > summary { list-style: none; }
+.sm-details > summary::-webkit-details-marker { display: none; }
+.sm-root:not(.is-enhanced) .sm-close,
+.sm-root:not(.is-enhanced) .sm-scrim { display: none; }
+.sm-root:not(.is-enhanced) .sm-details[open] .sm-chevron { transform: rotate(180deg); }
 
 .sm-head { display: flex; align-items: center; padding: 1rem 1.5rem 0.4rem; }
 .sm-kicker, .sm-heading {

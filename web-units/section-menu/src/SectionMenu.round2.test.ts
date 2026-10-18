@@ -75,10 +75,10 @@ describe("QA2 gaps — web SectionMenu takeover", () => {
   });
 
   // Spec: Rule_Code_accessibility RuleA11yKeyboard — the keyboard stays where it was when the link becomes a button.
-  test("focus on the button-link before the script stays on the button after it", async () => {
+  test("focus on the button before the script stays on the button after it (the same <summary>)", async () => {
     const root = await hydrateAfter((r) => r.querySelector<HTMLElement>("[data-testid='section-menu-trigger']")!.focus());
     const now = root.querySelector<HTMLElement>("[data-testid='section-menu-trigger']")!;
-    expect(now.tagName).toBe("BUTTON");
+    expect(now.tagName).toBe("SUMMARY");
     expect(document.activeElement).toBe(now);
     expect(root.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("false");
   });

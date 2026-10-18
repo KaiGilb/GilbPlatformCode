@@ -6,7 +6,7 @@ It is meant to be the default header menu of a website built by Agent.Website wh
 
 ## What this is
 
-**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links. Until the script runs, the button is a link to the panel (`#<panel id>`): the panel opens by CSS `:target`, shows every section's pages under their names, and Close and the dimmed edge are links back to the button. When the script runs it takes over as below; a panel the visitor opened by the link (a tap, a click, Enter) stays open with focus on the section they are on, and a hover already on the button opens it. Measured in Chromium, Firefox and WebKit by the website starter's `scripts/check-section-menu-browser.mjs` (a real-browser check: the page's scripts are held back, the visitor opens the menu, then the scripts run). A router may rewrite the address without the fragment before the menu mounts, so the menu also reads `:target` and focus; a host may call `rememberSectionMenuTarget()` as early as it can (the starter does, at the top of a Nuxt client plugin with `enforce: 'pre'`) so the fragment is kept even in an engine that drops `:target`. So a site with delayed hydration needs no eager hydration for its header.
+**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links, inside a native `<details>`. Until the script runs, the button is its `<summary>`: a click, a tap or Enter opens and closes the panel with no script, and the panel shows every section's pages under their names. Nothing is put in the address, so a reload, a bookmark or Back never opens the menu. When the script runs it reads `details.open` once and takes over as below: a panel the visitor opened stays open with focus on the section they are on, a menu nobody touched stays closed, and a hover already on the button opens it. Measured in Chromium, Firefox and WebKit by the website starter's `scripts/check-section-menu-browser.mjs`. So a site with delayed hydration needs no eager hydration for its header.
 
 Once the script runs:
 
@@ -24,7 +24,7 @@ Once the script runs:
 - **phone** (under 600 px): one column; no hover preview; the pages shown are those of the section you are on. A section with pages but no page of its own is a button: tapping it shows its pages. 600 to 839 px: two columns.
 - Reduced motion: no transitions.
 
-Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, `rememberSectionMenuTarget()`, and the words (`DEFAULT_WEB_LABELS`).
+Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, and the words (`DEFAULT_WEB_LABELS`).
 
 ## What this is not
 
@@ -120,7 +120,7 @@ The theme, as CSS variables on `:root` or the header (neutral fallbacks otherwis
 
 ## Wrong readings
 
-- The panel is in the page while closed: test "closed" by `data-open` (and, after the script, `inert`), not by its absence. Before the script nothing is `inert`; the closed panel is `visibility: hidden`.
+- The panel is in the page while closed: test "closed" by `data-open` (and, after the script, `inert`), not by its absence. Before the script nothing is `inert`, and a closed `<details>` does not render the panel. After it, `<details>` is always open (for layout) and `data-open` tells.
 - Every section's pages are in the HTML. Before the script all lists show; after it, only the shown one.
 - On a phone a section is a link to its page; it does not preview.
 

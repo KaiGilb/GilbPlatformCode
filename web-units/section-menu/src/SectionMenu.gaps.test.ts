@@ -164,42 +164,58 @@ describe("QA gaps — web SectionMenu", () => {
       for (const h of ["/", "/services", "/services/websites", "/products/a", "/about", "/contact"]) expect(hrefs).toContain(h);
     });
 
-    test("the button is a link to the panel, Close and the dimmed edge are links back; nothing is inert", async () => {
+    // Kai-Zen's decision, 2026-10-18 (after D19-D21): the pre-script open state lives in a native <details>,
+    // never in the address.
+    test("the button is the <summary> of a native <details>; no link points into the menu; nothing is inert", async () => {
       const host = await serverHtml();
       const panel = host.querySelector<HTMLElement>("[data-testid='section-menu-panel']")!;
       const trig = host.querySelector<HTMLElement>("[data-testid='section-menu-trigger']")!;
-      expect(trig.tagName).toBe("A");
-      expect(trig.getAttribute("href")).toBe(`#${panel.id}`);
-      for (const back of ["section-menu-close", "section-menu-scrim"]) {
-        const el = host.querySelector<HTMLElement>(`[data-testid='${back}']`)!;
-        expect(el.tagName, back).toBe("A");
-        expect(el.getAttribute("href"), back).toBe(`#${trig.id}`);
-      }
+      const details = host.querySelector<HTMLDetailsElement>("[data-testid='section-menu-details']")!;
+      expect(trig.tagName).toBe("SUMMARY");
+      expect(trig.parentElement).toBe(details);
+      expect(details.hasAttribute("open")).toBe(false);
+      expect(details.contains(panel)).toBe(true);
+      expect(host.querySelectorAll("a[href^='#']").length).toBe(0);
       expect(panel.hasAttribute("inert")).toBe(false);
       expect(host.querySelector(".sm-root")!.classList.contains("is-enhanced")).toBe(false);
     });
 
-    test("the stylesheet opens the panel by :target only before the script, and shows every list then", () => {
+    test("the stylesheet opens the panel by <details open> only before the script, and shows every list then", () => {
       const sfc = readFileSync(SFC, "utf8");
-      expect(sfc).toContain(".sm-root:not(.is-enhanced) .sm-panel:target {");
+      expect(sfc).toContain(".sm-root:not(.is-enhanced) .sm-details[open] > .sm-panel {");
+      expect(sfc).not.toMatch(/:target\s*[{~,]/);
       expect(sfc).toContain(".sm-root.is-enhanced .sm-group:not(.is-shown) { display: none; }");
       expect(sfc).toMatch(/\.sm-panel \{[^}]*visibility: hidden;/);
     });
 
-    test("a panel opened by its link before the script stays open when the script takes over, and the fragment is dropped", async () => {
+    async function hydrateWith(prepare: (root: HTMLElement) => void) {
       const { renderToString } = await import("vue/server-renderer");
       const { createSSRApp } = await import("vue");
       const html = await renderToString(createSSRApp(SectionMenu, { menu: MENU, currentPath: "/services/websites" }));
-      const id = /id="(section-menu-[^"]+)" class="sm-panel/.exec(html)![1];
-      window.history.replaceState(null, "", `/services/websites#${id}`);
       const root = document.createElement("div");
       root.innerHTML = html;
       document.body.appendChild(root);
+      prepare(root);
       const app = createSSRApp(SectionMenu, { menu: MENU, currentPath: "/services/websites" });
       app.mount(root);
       await flush();
+      return { root, app };
+    }
+
+    test("a panel the visitor opened before the script stays open when the script takes over; the address is untouched", async () => {
+      window.history.replaceState(null, "", "/services/websites");
+      const { root, app } = await hydrateWith((r) => { r.querySelector<HTMLDetailsElement>("details")!.open = true; });
       expect(root.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("true");
       expect(window.location.hash).toBe("");
+      expect(window.location.pathname).toBe("/services/websites");
+      app.unmount();
+    });
+
+    test("nobody touched the menu: it stays closed at takeover, and <details> is kept open only for layout", async () => {
+      const { root, app } = await hydrateWith(() => {});
+      expect(root.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("false");
+      expect(root.querySelector<HTMLDetailsElement>("details")!.open).toBe(true);
+      expect(root.querySelector("[data-testid='section-menu-panel']")!.hasAttribute("inert")).toBe(true);
       app.unmount();
     });
   });
