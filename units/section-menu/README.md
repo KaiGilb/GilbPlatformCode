@@ -22,7 +22,7 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
 
 Also in the unit:
 
-- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart. Every entry may carry a gate (`show`); each helper and the menu leave out an entry whose gate is closed for the gate the host passes, and one that has a gate when none is passed.
+- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart. Every entry may carry a gate (`show`); each helper (`visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, `menuCommands`) and the menu leave out an entry whose gate is closed for the gate the host passes, and one that has a gate when none is passed or the gate is undefined: one rule, so the menu and a palette agree.
 - `createIntentChannel()`: "act once the destination is mounted". A menu choice that must do something in the section it goes to (open a dialog, focus a search) leaves an intent; a component there runs it once it is on screen, and once only (also under React's StrictMode). A window event fired in the same tick would reach nobody.
 - `MenuIcon`: the line icon set, in `currentColor`.
 - `Kbd`: a key name as drawn in the footer hint.

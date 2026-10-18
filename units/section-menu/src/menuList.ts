@@ -72,13 +72,17 @@ export interface MenuList<Id extends string = string, Api = unknown, Gate = unkn
 /**
  * The sections this person sees, in list order.
  * @param sections the host's sections
- * @param gate what the gates read
+ * @param gate what the gates read; undefined counts as no gate, and a gated entry is then left out
  */
 export function visibleSections<S extends { show?: (gate: G) => boolean }, G>(sections: readonly S[], gate: G): S[] {
-  return sections.filter((s) => !s.show || s.show(gate));
+  return sections.filter((s) => passes(s, gate, gate !== undefined));
 }
 
-/** True when an entry's gate lets it show: no gate on the entry, or the host's gate given and agreeing. */
+/**
+ * True when an entry's gate lets it show: no gate on the entry, or the host's gate given and agreeing.
+ * ONE rule for every helper and the menu, so the menu and a palette cannot drift: an undefined gate (a
+ * host's gate still loading) is no gate, and a gated entry is then left out (Agent.Tester rounds 2-3, D8, D12).
+ */
 // `never` in the parameter accepts an entry of any gate type; the host's own types keep the gate it passes right.
 function passes(o: { show?: (gate: never) => boolean }, gate: unknown, hasGate: boolean): boolean {
   return !o.show || (hasGate && o.show(gate as never));
@@ -115,10 +119,10 @@ export function placesFor<O extends { id: string; show?: (gate: never) => boolea
 /**
  * The "For you" entries this person sees.
  * @param forYou the host's "For you" entries
- * @param gate what the gates read
+ * @param gate what the gates read; undefined counts as no gate, and a gated entry is then left out
  */
 export function forYouFor<O extends { show?: (gate: G) => boolean }, G>(forYou: readonly O[], gate: G): O[] {
-  return forYou.filter((o) => !o.show || o.show(gate));
+  return forYou.filter((o) => passes(o, gate, gate !== undefined));
 }
 
 /** One command-palette row, built from the list. */
@@ -149,7 +153,7 @@ export interface MenuCommandWords {
  * gate is closed for `gate` is left out.
  * When `current` is given, the current section's rows come first; otherwise the list order holds.
  * @param list the host's list
- * @param gate what the gates read
+ * @param gate what the gates read; undefined counts as no gate, and a gated entry is then left out
  * @param current the section the person is in, or null
  * @param words how the rows are worded
  */
@@ -165,7 +169,7 @@ export function menuCommands<Id extends string, Api, Gate, Icon extends string>(
     out.push({ id: `go.${s.id}`, icon: s.icon, label: goTo(s.label), keywords: [s.label, s.description],
       loc: s.label, section: s.id, coming: false, run: s.go });
     // Command-only options are rows here; gated-off ones are not.
-    for (const o of s.options.filter((x) => !x.show || x.show(gate))) out.push(toCommand(o, s.label, s.id));
+    for (const o of s.options.filter((x) => passes(x, gate, gate !== undefined))) out.push(toCommand(o, s.label, s.id));
   }
   for (const p of forYouFor(list.places ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(p, "", null));
   for (const o of forYouFor(list.forYou ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(o, words.forYou ?? "For you", null));
