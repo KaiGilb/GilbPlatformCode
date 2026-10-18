@@ -7,3 +7,10 @@ This repository is the **code home** (clone or package-install). It is **not** t
 Clone and package-install are both valid take paths; neither is exclusive.
 
 Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
+
+## Two folders, two libraries
+
+- **`units/`: app code.** React and TypeScript units for apps on GilbPlatform (the GilbApp and GilbPlatform tracks). Their reference documents are in the **GilbPlatformCode Library** group on appbuilder.
+- **`web-units/`: website code.** Vue 3 and Nuxt 3 units for websites (Agent.Website, the website starter `website-engine-a`). Their reference documents are in the **GilbWebsiteCode Library** group on appbuilder, not in the app library.
+
+The two never share a folder. A unit that exists for both (the section menu: `units/section-menu` and `web-units/section-menu`) is two units with the same behaviour, one per folder, each with its own reference document. A website takes a web unit with pnpm straight from this repository at a commit: `git+https://github.com/KaiGilb/GilbPlatformCode.git#<commit>&path:/web-units/<unit>`.
