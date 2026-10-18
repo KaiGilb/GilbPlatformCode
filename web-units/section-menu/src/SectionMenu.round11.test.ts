@@ -69,6 +69,8 @@ describe("QA11 gaps: web SectionMenu, the <details> takeover", () => {
       t.dispatchEvent(ev);
       await flush();
       expect(ev.defaultPrevented).toBe(true);
+      // On close <details> waits for the 90 ms fade.
+      if (want === "false") await new Promise((ok) => setTimeout(ok, 120));
       expect(details.open).toBe(want === "true");
       expect(q(root, "section-menu-panel").getAttribute("data-open")).toBe(want);
     }
@@ -90,8 +92,8 @@ describe("QA11 gaps: web SectionMenu, the <details> takeover", () => {
 
   // Spec: Rule_Code_accessibility RuleA11yWcagAa (4.1.2 Name, Role, Value: the button's expanded state). Measured in
   // Chromium (CDP Accessibility.getPartialAXTree, round 11): a <summary> whose <details> is open is exposed as
-  // expanded=true whatever its aria-expanded says. After takeover <details> is always open, so a closed menu is
-  // announced "expanded". The closed menu's button must not be a <summary> of an open <details>.
+  // expanded=true whatever its aria-expanded says. At ecc849b <details> was always open after takeover, so a
+  // closed menu was announced "expanded" (D23). The closed menu's button must not be a <summary> of an open <details>.
   test("D23: after takeover, the closed menu's button is not exposed as expanded", async () => {
     const root = await hydrate();
     const t = q(root, "section-menu-trigger");

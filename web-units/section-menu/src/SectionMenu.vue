@@ -13,7 +13,7 @@
  *    column. Each opening starts from the section you are on.
  *  • Phone (under 600 px): one column, no hover; the pages shown are those of the section you are on,
  *    or of a section that has no page of its own once it is tapped.
- *  • Reduced motion: no transition.
+ *  • Open and close fade over 90 ms, as in the app menu; reduced motion turns the fades off.
  *
  * ⚠ BEFORE THE JAVASCRIPT RUNS (or with it off), the menu still works, as plain HTML: it is a `<nav>`
  * landmark holding a native `<details>`; its `<summary>` is the button, which opens and closes the panel on
@@ -289,13 +289,56 @@ function linkTag(link: { to?: string; href?: string }) {
   return link.href ? "a" : props.linkComponent;
 }
 
+/** True while the panel fades out after a close (it stays rendered for the fade). */
+const closing = ref(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const CLOSE_FADE_MS = 90;
+
+function setDetailsFor(isOpen: boolean) {
+  const d = detailsEl.value;
+  if (closeTimer !== null) clearTimeout(closeTimer);
+  closeTimer = null;
+  if (!d) return;
+  if (isOpen) {
+    closing.value = false;
+    d.open = true;
+    return;
+  }
+  if (!d.open) return;
+  if (!enhanced.value || reducedMotion()) {
+    d.open = false;
+    return;
+  }
+  closing.value = true;
+  closeTimer = setTimeout(() => {
+    closeTimer = null;
+    closing.value = false;
+    if (!open.value) d.open = false;
+  }, CLOSE_FADE_MS);
+}
+
+/**
+ * The engine itself may open <details> after takeover (a link to the panel's id, find-in-page). The menu did
+ * not open, so <details> is shut again: the button never reads "expanded" on a closed menu (Agent.Tester
+ * round 12, D26).
+ */
+function onDetailsToggle() {
+  const d = detailsEl.value;
+  if (!enhanced.value || !d) return;
+  const want = open.value || closing.value;
+  if (d.open !== want) d.open = want;
+}
+
 let compactQuery: MediaQueryList | undefined;
 const onCompactChange = () => (compact.value = !!compactQuery?.matches);
 
 watch(open, (isOpen) => {
-  // The <summary> reports what is true: <details> is open exactly while the menu is (D23). Set before focus
-  // moves in, so the panel is rendered when it is focused.
-  if (detailsEl.value) detailsEl.value.open = isOpen;
+  // The <summary> reports what is true: <details> is open while the menu is (D23). On open it is set before
+  // focus moves in, so the panel is rendered when it is focused. On close the panel fades out for 90 ms, as
+  // the app menu's does, and <details> closes when the fade ends (at once under reduced motion). During those
+  // 90 ms the panel is already inert and aria-hidden; only the engine's own expanded state lags.
+  setDetailsFor(isOpen);
   emit("open-change", isOpen);
   if (typeof document === "undefined") return;
   if (isOpen) {
@@ -347,6 +390,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearHover();
+  if (closeTimer !== null) clearTimeout(closeTimer);
   document.removeEventListener("keydown", onKeydown);
   compactQuery?.removeEventListener?.("change", onCompactChange);
 });
@@ -357,8 +401,8 @@ defineExpose({ show, close });
 <template>
   <nav class="sm-root" :class="{ 'is-enhanced': enhanced }" :aria-label="L.navLabel" data-testid="section-menu">
     <!-- A native <details>: before the script its <summary> opens and closes the panel on click, tap and Enter,
-         with nothing in the address. After the script, <details> stays open and the script shows the panel. -->
-    <details ref="detailsEl" class="sm-details" data-testid="section-menu-details">
+         with nothing in the address. After the script, <details> is open while the menu is (the script decides). -->
+    <details ref="detailsEl" class="sm-details" data-testid="section-menu-details" @toggle="onDetailsToggle">
     <summary
       ref="triggerEl"
       class="sm-trigger"
@@ -381,7 +425,7 @@ defineExpose({ show, close });
       :id="panelId"
       ref="panelEl"
       class="sm-panel"
-      :class="{ 'is-open': open, 'is-single': !hasSubPages }"
+      :class="{ 'is-open': open, 'is-closing': closing && !open, 'is-single': !hasSubPages }"
       role="dialog"
       :aria-modal="enhanced ? 'true' : undefined"
       :aria-label="L.goTo"
@@ -563,16 +607,14 @@ defineExpose({ show, close });
   color: var(--section-menu-fg, #1a1a1a);
   box-shadow: var(--section-menu-shadow, 0 24px 70px rgb(0 0 0 / 0.18), 0 4px 14px rgb(0 0 0 / 0.1));
   /* Closed: out of sight, out of the tab order and the accessibility tree (visibility), before the
-     script as after it. Opening is instant; closing fades, then hides. */
+     script as after it. Open and close fade over 90 ms, as the app menu's do. The fades are animations, not
+     transitions, because the panel goes from unrendered to rendered when <details> opens, and a transition
+     does not run from an unrendered state. Closing keeps <details> open for the 90 ms (the script). */
   visibility: hidden;
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
-  transition: opacity 90ms ease, transform 90ms ease, visibility 0s linear 90ms;
 }
-/* Closing is instant: <details> closes with the menu (D23), and a closed <details> does not render the panel,
-   so a delayed visibility change would never run and the closed panel would keep reporting "visible". */
-.sm-panel:not(.is-open) { transition: none; }
 /* Open: by the script (.is-open), or, before the script, by the native <details> (its [open]). */
 .sm-panel.is-open,
 .sm-root:not(.is-enhanced) .sm-details[open] > .sm-panel {
@@ -580,8 +622,14 @@ defineExpose({ show, close });
   opacity: 1;
   transform: none;
   pointer-events: auto;
-  transition: opacity 90ms ease, transform 90ms ease, visibility 0s;
+  animation: sm-fade-in 90ms ease;
 }
+.sm-panel.is-closing {
+  visibility: visible;
+  animation: sm-fade-out 90ms ease forwards;
+}
+@keyframes sm-fade-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes sm-fade-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px); } }
 .sm-panel.is-open ~ .sm-scrim { opacity: 1; pointer-events: auto; }
 /* The <summary> is the button: no disclosure marker. Close and the dimmed edge need the script. */
 .sm-details > summary { list-style: none; }
@@ -725,5 +773,6 @@ defineExpose({ show, close });
 }
 @media (prefers-reduced-motion: reduce) {
   .sm-trigger, .sm-chevron, .sm-panel, .sm-panel.is-open { transition: none; }
+  .sm-panel.is-open, .sm-panel.is-closing, .sm-root:not(.is-enhanced) .sm-details[open] > .sm-panel { animation: none; }
 }
 </style>

@@ -6,7 +6,7 @@ It is meant to be the default header menu of a website built by Agent.Website wh
 
 ## What this is
 
-**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links, inside a native `<details>`. Until the script runs, the button is its `<summary>`: a click, a tap or Enter opens and closes the panel with no script, and the panel shows every section's pages under their names. Nothing is put in the address, so a reload, a bookmark or Back never opens the menu. When the script runs it reads `details.open` once and takes over as below: a panel the visitor opened stays open with focus on the section they are on, a menu nobody touched stays closed, and a hover already on the button opens it. Measured in Chromium, Firefox and WebKit by the website starter's `scripts/check-section-menu-browser.mjs`. So a site with delayed hydration needs no eager hydration for its header.
+**It works before the page's JavaScript runs, and with JavaScript off.** The server's HTML is a `<nav>` landmark (named "Site") holding every section and every page as plain links, inside a native `<details>`. Until the script runs, the button is its `<summary>`: a click, a tap or Enter opens and closes the panel with no script, and the panel shows every section's pages under their names. The menu never writes the address, so a reload or Back never opens it. (A link someone else writes to the panel's own id would make the browser open it, as it does for any `<details>`; after the script, an opening the menu did not make is shut again.) When the script runs it reads `details.open` once and takes over as below: a panel the visitor opened stays open with focus on the section they are on, a menu nobody touched stays closed, and a hover already on the button opens it. The opening, the takeover, reload, Back, the unchanged address and the expanded state are measured in Chromium, Firefox and WebKit by the website starter's `scripts/check-section-menu-browser.mjs` (the hover carry-over is not among its cases). So a site with delayed hydration needs no eager hydration for its header.
 
 Once the script runs:
 
@@ -22,7 +22,7 @@ Once the script runs:
 - **four ways to close**: Close, Esc, the dimmed edge, or any link (and a route change). Each gives focus back to the button.
 - **keyboard**: focus lands on the section you are on. Tab stays inside the panel: Close, every section, each followed (when previewed) by its pages and places, then the call to action, and wraps. Tab skips a coming page or place (before the script too); the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order, as in the app unit. Up, Down, Home and End move between sections; Right goes into the pages; Left comes back.
 - **phone** (under 600 px): one column; no hover preview; the pages shown are those of the section you are on. A section with pages but no page of its own is a button: tapping it shows its pages. 600 to 839 px: two columns.
-- Reduced motion: no transitions.
+- Open and close fade over 90 ms, as in the app menu; reduced motion turns the fades off.
 
 Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePath(path)`, and the words (`DEFAULT_WEB_LABELS`).
 
