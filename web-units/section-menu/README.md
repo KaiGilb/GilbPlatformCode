@@ -49,6 +49,15 @@ cd <site> && pnpm add ./vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitec
 
 The dependency then reads `"file:vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run `pnpm install`.
 
+pnpm 11 also checks every package's age against the npm registry (`minimumReleaseAge`). This package is not on the registry, so a fresh install refuses it (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`) unless the site's `pnpm-workspace.yaml` names it:
+
+```yaml
+minimumReleaseAgeExclude:
+  - '@kaigilb/gilbwebsitecode-section-menu'
+```
+
+Check it the way a fresh machine sees it: copy the site's `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` and `vendor/` into an empty folder and run `pnpm install --frozen-lockfile` with a new, empty store (`--store-dir`) and new `XDG_*` folders. The website starter does this as `pnpm check:fresh-install`. `pnpm add` passing on your own machine proves nothing: your store already holds the bytes.
+
 ⛔ Not from GitHub by a git URL with `&path:/web-units/section-menu`. pnpm 11 writes the lockfile's resolution without the path, so an install into an empty store gets the whole repository and the site does not build (measured 2026-10-18, Agent.Tester round 6). It works only where the store already holds that commit, which is why it looked right on the machine that added it.
 
 Nuxt: the package ships `.vue` and `.ts` source, so add it to `build.transpile` in `nuxt.config.ts`:

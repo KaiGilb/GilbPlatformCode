@@ -12,9 +12,10 @@
     "!src/**/*.test.ts"
   ],
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && npm run test:production",
     "typecheck": "vue-tsc --noEmit",
-    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs",
+    "test:production": "NODE_ENV=production vitest run --mode production src/SectionMenu.round6.test.ts"
   },
   "peerDependencies": {
     "vue": "^3.5.0"

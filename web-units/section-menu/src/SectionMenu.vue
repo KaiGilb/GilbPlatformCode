@@ -432,9 +432,11 @@ defineExpose({ show, close });
             <h3 class="sm-heading sm-list-title">{{ list.label }}</h3>
             <ul class="sm-options">
               <li v-for="o in list.links" :key="o.id">
-                <!-- A coming page is a focusable button with aria-disabled, as in the app unit: the arrows land
-                     on it and move past it, Tab skips it, a press does nothing (Kai-Zen's decision, 2026-10-18). -->
-                <button v-if="o.coming" type="button" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
+                <!-- A coming page is a button with aria-disabled, as in the app unit: the arrows land on it
+                     (they call focus()) and move past it, a press does nothing (Kai-Zen's decision, 2026-10-18).
+                     tabindex="-1" keeps Tab off it before the script and with JavaScript off too, where the
+                     script's trap does not run (Agent.Tester round 7, D15). -->
+                <button v-if="o.coming" type="button" tabindex="-1" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
                   <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
                   <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
                 </button>
@@ -460,7 +462,7 @@ defineExpose({ show, close });
           <h2 class="sm-heading">{{ L.alsoUseful }}</h2>
           <ul class="sm-options">
             <li v-for="o in shownPlaces" :key="o.id">
-              <button v-if="o.coming" type="button" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
+              <button v-if="o.coming" type="button" tabindex="-1" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
                 <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
                 <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
               </button>
