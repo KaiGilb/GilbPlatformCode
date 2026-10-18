@@ -84,7 +84,7 @@ sectionMenu: {
 
 | Prop | Meaning |
 |---|---|
-| `menu` | `{ sections, places?, cta? }`. A section: `id`, `label`, `description?`, `to` (a route) or `href` (an address), `links?` (its pages), `also?` (place ids). A page or a place may be `coming?`; a section may not (as in the app unit) |
+| `menu` | `{ sections, places?, cta? }`. A section: `id`, `label`, `description?`, `to` (a route) or `href` (an address), `links?` (its pages), `also?` (place ids). A page or a place may be `coming?`; a section may not (as in the app unit): its type forbids it, and one that arrives with `coming` anyway (untyped data) is left out entirely, with a console warning in development |
 | `currentPath` | the current route's path; it decides "You are here" and closes the menu when it changes |
 | `linkComponent` | the component that links a route, given `to` (Nuxt: `resolveComponent('NuxtLink')`); default a plain `<a href>` |
 | `labels` | optional: every word the menu draws |

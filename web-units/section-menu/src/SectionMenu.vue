@@ -17,7 +17,7 @@
  *
  * ⚠ BEFORE THE JAVASCRIPT RUNS (or with it off), the menu still works, as plain HTML: it is a `<nav>`
  * landmark whose button is a link to the panel (`#<panel id>`); the panel opens by CSS `:target`, lists
- * every section's pages as plain links, and closes by a link back to the button. Kai, 2026-10-18:
+ * every section's pages as plain links, and closes by a link back to the button. Kai-Zen's decision, 2026-10-18:
  * websites must work before hydration and with JavaScript off (search engines, first impressions).
  * The script then takes over (`enhanced`), and a panel opened by the link stays open.
  *
@@ -54,9 +54,24 @@ const emit = defineEmits<{
 
 const L = computed<WebMenuLabels>(() => ({ ...DEFAULT_WEB_LABELS, ...props.labels }));
 
-const currentId = computed(() => currentSectionId(props.menu, props.currentPath));
-const currentSection = computed(() => props.menu.sections.find((s) => s.id === currentId.value));
-const listed = computed(() => props.menu.sections.filter((s) => (s.links ?? []).length > 0));
+/**
+ * The sections drawn. A section is never "coming" (Kai-Zen's decision, 2026-10-18); its type forbids it, and
+ * one that arrives with `coming` anyway (untyped data, a CMS) is left out entirely, pages and all, so the menu
+ * never links an unbuilt destination. In development the console says so.
+ */
+const sections = computed(() =>
+  props.menu.sections.filter((s) => {
+    if (!(s as { coming?: unknown }).coming) return true;
+    if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+      console.warn(`[section-menu] section "${s.id}" is marked coming and is left out: a section is never coming; mark its pages instead.`);
+    }
+    return false;
+  }),
+);
+const drawnMenu = computed<WebMenu>(() => ({ ...props.menu, sections: sections.value }));
+const currentId = computed(() => currentSectionId(drawnMenu.value, props.currentPath));
+const currentSection = computed(() => sections.value.find((s) => s.id === currentId.value));
+const listed = computed(() => sections.value.filter((s) => (s.links ?? []).length > 0));
 const hasSubPages = computed(() => listed.value.length > 0);
 
 /** False in the server's HTML and until the component is mounted in the browser: the plain-HTML menu. */
@@ -77,7 +92,7 @@ let hoverOpenedAt = 0;
 const hasNoPage = (s: WebMenuSection) => !s.to && !s.href;
 
 const shown = computed<WebMenuSection | undefined>(() => {
-  const picked = props.menu.sections.find((s) => s.id === preview.value);
+  const picked = sections.value.find((s) => s.id === preview.value);
   // On a phone only a tap on a page-less section changes what is shown; hover and focus do not.
   if (compact.value) return picked && hasNoPage(picked) ? picked : currentSection.value;
   return picked ?? currentSection.value;
@@ -198,7 +213,7 @@ function sectionEl(id: string): HTMLElement | undefined {
 // Up/Down/Home/End move between sections (focus previews, as the pointer's rest does); Right goes into
 // the previewed pages and Left comes back. Tab alone reaches everything too.
 function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
-  const list = props.menu.sections;
+  const list = sections.value;
   const i = list.findIndex((x) => x.id === s.id);
   const to =
     e.key === "ArrowDown" ? list[(i + 1) % list.length]
@@ -218,7 +233,9 @@ function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
 
 function onOptionKey(e: KeyboardEvent) {
   const el = e.currentTarget as HTMLElement;
-  const items = Array.from(el.parentElement?.parentElement?.querySelectorAll<HTMLElement>("[data-option]") ?? []);
+  // A coming page or place is a <span> that cannot take focus, so the arrows pass over it, as in the app
+  // unit (Agent.Tester round 5, D12).
+  const items = Array.from(el.parentElement?.parentElement?.querySelectorAll<HTMLElement>("[data-option]:not([aria-disabled='true'])") ?? []);
   const i = items.indexOf(el);
   if (e.key === "ArrowLeft" && shown.value) {
     e.preventDefault();
@@ -373,8 +390,9 @@ defineExpose({ show, close });
         <div class="sm-col sm-sections" @mouseleave="clearHover">
           <h2 class="sm-heading">{{ L.sections }}</h2>
           <div role="group" :aria-label="L.sectionsGroup" data-testid="section-menu-sections" class="sm-list">
-            <!-- A section is never "coming" (as in the app unit, Kai 2026-10-18): only options and places may be. -->
-            <template v-for="s in menu.sections" :key="s.id">
+            <!-- A section is never "coming" (as in the app unit; Kai-Zen's decision, 2026-10-18): only pages and places may be.
+                 One that arrives with `coming` anyway (untyped data) is left out entirely: see `sections`. -->
+            <template v-for="s in sections" :key="s.id">
               <component
                 :is="hasNoPage(s) ? 'button' : linkTag(s)"
                 v-bind="hasNoPage(s) ? { type: 'button' } : linkAttrs(s)"

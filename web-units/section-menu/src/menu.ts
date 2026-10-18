@@ -27,7 +27,8 @@ export interface WebMenuLink {
 
 /**
  * One section: a main page on the menu's left, with its sub-pages previewed on the right. A section is
- * never `coming` (the app unit's sections have no such field either, Kai 2026-10-18): only a page or a
+ * never `coming` (the app unit's sections have no such field either; Kai-Zen's decision, 2026-10-18, while the
+ * question of coming entries is still open with Kai): only a page or a
  * place may be named as coming.
  */
 export interface WebMenuSection extends Omit<WebMenuLink, "coming"> {

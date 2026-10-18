@@ -146,7 +146,7 @@ describe("QA gaps — web SectionMenu", () => {
     expect(shop.getAttribute("target")).toBe("_blank");
   });
 
-  // Kai, 2026-10-18: websites work before hydration and with JavaScript off.
+  // Kai-Zen's decision, 2026-10-18: websites work before hydration and with JavaScript off.
   describe("before the script (server HTML, JavaScript off)", () => {
     async function serverHtml(menu: WebMenu = MENU) {
       const { renderToString } = await import("vue/server-renderer");

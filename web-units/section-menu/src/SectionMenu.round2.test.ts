@@ -1,7 +1,7 @@
 // Adopted from Agent.Tester round 2 (report AgentTester-WebUnit-1c1c469-EngineA-5c3a91d.md, 2026-10-18).
 // Agent.Tester round 2 gap tests (web-units/section-menu @ 1c1c469), written in the QA scratch copy.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
-// + Kai 2026-10-18: websites work before hydration and with JavaScript off (SEO, first impressions).
+// + Kai-Zen's decision, 2026-10-18: websites work before hydration and with JavaScript off (SEO, first impressions).
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createSSRApp, nextTick, type App } from "vue";
 import { renderToString } from "vue/server-renderer";
@@ -60,7 +60,7 @@ async function hydrateAfter(before: (root: HTMLElement) => void) {
 }
 
 describe("QA2 gaps — web SectionMenu takeover", () => {
-  // Spec: Outcome "opens instantly on hover"; Kai 2026-10-18 before hydration. A hover that began before the
+  // Spec: Outcome "opens instantly on hover"; Kai-Zen 2026-10-18 before hydration. A hover that began before the
   // script ran is carried over.
   test("a fine pointer already resting on the button when the script takes over opens the menu", async () => {
     const root = await hydrateAfter(() => { hovered = "section-menu-trigger"; });
@@ -83,7 +83,7 @@ describe("QA2 gaps — web SectionMenu takeover", () => {
     expect(root.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("false");
   });
 
-  // Spec: Kai 2026-10-18 SEO — the server HTML's links each carry a name a crawler or link checker can read
+  // Spec: Kai-Zen 2026-10-18 SEO — the server HTML's links each carry a name a crawler or link checker can read
   // (the starter's nuxt-link-checker flags an empty link as "Missing link textContent, title or aria-label").
   test("server HTML: every link has text, a title or an aria-label", async () => {
     const host = document.createElement("div");

@@ -1,7 +1,7 @@
-// Adopted from Agent.Tester round 4 (report AgentTester-WebUnit-b3efe88.md, 2026-10-18), adapted to Kai's
-// decision on its D11 (2026-10-18): a section is never `coming`, as in the app unit; only pages and places may be.
+// Adopted from Agent.Tester round 4 (report AgentTester-WebUnit-b3efe88.md, 2026-10-18), adapted to Kai-Zen's
+// decision on its D11 (2026-10-18; coming entries are still an open question with Kai): a section is never `coming`, as in the app unit; only pages and places may be.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3,
-// Rule_Code_gilb-app-nav-truth (RuleBaserenderNoUnbuiltDestination). Kai 2026-10-18: websites work before
+// Rule_Code_gilb-app-nav-truth (RuleBaserenderNoUnbuiltDestination). Kai-Zen 2026-10-18: websites work before
 // hydration and with JavaScript off, so the server HTML is what a visitor without the script, and a crawler, gets.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe("round 4 — coming", () => {
   test("a section cannot be named as coming (type check)", () => {
-    // @ts-expect-error a section has no `coming` (Kai, 2026-10-18)
+    // @ts-expect-error a section has no `coming` (Kai-Zen's decision, 2026-10-18)
     const bad: WebMenuSection = { id: "shop", label: "Shop", coming: true, links: [] };
     expect(bad.id).toBe("shop");
   });
