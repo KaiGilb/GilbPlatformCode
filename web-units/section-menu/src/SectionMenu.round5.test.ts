@@ -3,8 +3,8 @@
 // Agent.Tester round 5 gap tests (web-units/section-menu @ 71c948e), written in the QA scratch copy.
 // Spec: handoff 00.Handoff-2026-10-18-ToAgentCoder-SectionMenuAsDefaultSharedUnitAppAndWeb-GilbPlatformCode §3
 // ("bring it to the same behaviour as the app menu": arrows), Kai-Zen 2026-10-18 (only pages and places may be
-// coming, drawn greyed, not links). The app unit draws a coming option as a focusable
-// <button aria-disabled>, so Up/Down pass over it; the web unit draws a <span>, which cannot take focus.
+// coming, drawn greyed, not links). Kai-Zen's decision on round-6 D13 (2026-10-18): as in the app unit, a coming
+// entry is a focusable <button aria-disabled>; Up/Down land on it and move past it to the next entry.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { nextTick } from "vue";
@@ -48,26 +48,35 @@ async function openAtServices() {
   await flush();
 }
 
-describe("QA5 gaps — arrows over a coming page or place", () => {
-  test("ArrowDown from the page above a coming page reaches the page below it", async () => {
+describe("arrows over a coming page or place (land on it, then move past)", () => {
+  test("ArrowDown from the page above a coming page lands on it, and the next ArrowDown reaches the page below", async () => {
     await openAtServices();
     opt("services.web").focus();
     key(opt("services.web"), "ArrowDown");
+    expect(activeOption()).toBe("services.soon");
+    key(opt("services.soon"), "ArrowDown");
     expect(activeOption()).toBe("services.apps");
   });
 
-  test("ArrowUp from the page below a coming page reaches the page above it", async () => {
+  test("ArrowUp from the page below a coming page lands on it, and the next ArrowUp reaches the page above", async () => {
     await openAtServices();
     opt("services.apps").focus();
     key(opt("services.apps"), "ArrowUp");
+    expect(activeOption()).toBe("services.soon");
+    key(opt("services.soon"), "ArrowUp");
     expect(activeOption()).toBe("services.web");
   });
 
-  test("ArrowDown from the place above a coming place reaches the place below it", async () => {
+  test("the same for a coming place; pressing a coming entry does nothing and keeps the menu open", async () => {
     await openAtServices();
     opt("shop").focus();
     key(opt("shop"), "ArrowDown");
+    expect(activeOption()).toBe("planned");
+    key(opt("planned"), "ArrowDown");
     expect(activeOption()).toBe("docs");
+    opt("planned").click();
+    await nextTick();
+    expect(document.querySelector("[data-testid='section-menu-panel']")!.getAttribute("data-open")).toBe("true");
   });
 });
 

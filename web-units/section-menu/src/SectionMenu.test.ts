@@ -235,7 +235,8 @@ describe("web SectionMenu", () => {
       trigger().click();
       await flush();
       const soon = option("services.soon")!;
-      expect(soon.tagName).toBe("SPAN");
+      // As in the app unit: a focusable button that does nothing (Kai-Zen's decision, 2026-10-18).
+      expect(soon.tagName).toBe("BUTTON");
       expect(soon.getAttribute("aria-disabled")).toBe("true");
       expect(soon.textContent).toContain("Coming");
     });

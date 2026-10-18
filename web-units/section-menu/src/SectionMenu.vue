@@ -227,15 +227,15 @@ function onSectionKey(e: KeyboardEvent, s: WebMenuSection) {
     sectionEl(to.id)?.focus();
   } else if (e.key === "ArrowRight") {
     e.preventDefault();
-    shownList()?.querySelector<HTMLElement>("[data-option]:not([aria-disabled='true'])")?.focus();
+    shownList()?.querySelector<HTMLElement>("[data-option]")?.focus();
   }
 }
 
 function onOptionKey(e: KeyboardEvent) {
   const el = e.currentTarget as HTMLElement;
-  // A coming page or place is a <span> that cannot take focus, so the arrows pass over it, as in the app
-  // unit (Agent.Tester round 5, D12).
-  const items = Array.from(el.parentElement?.parentElement?.querySelectorAll<HTMLElement>("[data-option]:not([aria-disabled='true'])") ?? []);
+  // A coming page or place is a focusable aria-disabled button, so the arrows land on it and move past it,
+  // as in the app unit (Kai-Zen's decision on round-6 D13, 2026-10-18).
+  const items = Array.from(el.parentElement?.parentElement?.querySelectorAll<HTMLElement>("[data-option]") ?? []);
   const i = items.indexOf(el);
   if (e.key === "ArrowLeft" && shown.value) {
     e.preventDefault();
@@ -432,10 +432,12 @@ defineExpose({ show, close });
             <h3 class="sm-heading sm-list-title">{{ list.label }}</h3>
             <ul class="sm-options">
               <li v-for="o in list.links" :key="o.id">
-                <span v-if="o.coming" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true">
+                <!-- A coming page is a focusable button with aria-disabled, as in the app unit: the arrows land
+                     on it and move past it, Tab skips it, a press does nothing (Kai-Zen's decision, 2026-10-18). -->
+                <button v-if="o.coming" type="button" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
                   <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
                   <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
-                </span>
+                </button>
                 <component
                   :is="linkTag(o)"
                   v-else
@@ -458,10 +460,10 @@ defineExpose({ show, close });
           <h2 class="sm-heading">{{ L.alsoUseful }}</h2>
           <ul class="sm-options">
             <li v-for="o in shownPlaces" :key="o.id">
-              <span v-if="o.coming" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true">
+              <button v-if="o.coming" type="button" class="sm-item sm-option is-coming" :data-option="o.id" aria-disabled="true" @keydown="onOptionKey">
                 <span class="sm-option-label">{{ o.label }} <span class="sm-coming">{{ L.coming }}</span></span>
                 <span v-if="o.description" class="sm-desc">{{ o.description }}</span>
-              </span>
+              </button>
               <component :is="linkTag(o)" v-else v-bind="linkAttrs(o)" class="sm-item sm-option" :data-option="o.id" @keydown="onOptionKey" @click="choose(o)">
                 <span class="sm-option-label">{{ o.label }}<span v-if="o.href && o.newTab" aria-hidden="true"> ↗</span></span>
                 <span v-if="o.description" class="sm-desc">{{ o.description }}</span>

@@ -36,11 +36,19 @@ Also: `currentSectionId(menu, path)`, `placesFor(section, places)`, `normalisePa
 
 Package: `@kaigilb/gilbwebsitecode-section-menu`
 
-With pnpm (9 or later), from this repository at a commit, without a clone:
+Take it as a copy, the library's one way for every unit: from a clone of this repository at a commit, pack the unit and keep the packed file in the site's repository, so every install (a fresh machine, CI, Cloudflare Pages) gets the same bytes with no clone and no network fetch:
 
-```json
-"@kaigilb/gilbwebsitecode-section-menu": "git+https://github.com/KaiGilb/GilbPlatformCode.git#<commit>&path:/web-units/section-menu"
+```sh
+git clone https://github.com/KaiGilb/GilbPlatformCode.git
+cd GilbPlatformCode && git checkout <commit>
+cd web-units/section-menu && npm pack --pack-destination <site>/vendor/gilbwebsitecode-section-menu
+echo <commit> > <site>/vendor/gilbwebsitecode-section-menu/SOURCE
+cd <site> && pnpm add ./vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz
 ```
+
+The dependency then reads `"file:vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run `pnpm install`.
+
+⛔ Not from GitHub by a git URL with `&path:/web-units/section-menu`. pnpm 11 writes the lockfile's resolution without the path, so an install into an empty store gets the whole repository and the site does not build (measured 2026-10-18, Agent.Tester round 6). It works only where the store already holds that commit, which is why it looked right on the machine that added it.
 
 Nuxt: the package ships `.vue` and `.ts` source, so add it to `build.transpile` in `nuxt.config.ts`:
 
