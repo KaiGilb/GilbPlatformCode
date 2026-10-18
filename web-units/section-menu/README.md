@@ -41,6 +41,7 @@ Take it as a copy, the library's one way for every unit: from a clone of this re
 ```sh
 git clone https://github.com/KaiGilb/GilbPlatformCode.git
 cd GilbPlatformCode && git checkout <commit>
+mkdir -p <site>/vendor/gilbwebsitecode-section-menu
 cd web-units/section-menu && npm pack --pack-destination <site>/vendor/gilbwebsitecode-section-menu
 echo <commit> > <site>/vendor/gilbwebsitecode-section-menu/SOURCE
 cd <site> && pnpm add ./vendor/gilbwebsitecode-section-menu/kaigilb-gilbwebsitecode-section-menu-0.1.0.tgz
