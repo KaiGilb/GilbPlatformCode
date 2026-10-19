@@ -1,0 +1,34 @@
+{
+  "name": "@kaigilb/gilbwebsitecode-section-menu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A website's section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's pages on the right. One column on a phone. The site passes its menu as data. Vue 3 / Nuxt 3.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts"
+  ],
+  "scripts": {
+    "test": "vitest run && npm run test:production",
+    "typecheck": "vue-tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs",
+    "test:production": "NODE_ENV=production vitest run --mode production src/SectionMenu.round6.test.ts"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
+    "axe-core": "^4.14.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "vue": "^3.5.0",
+    "vue-tsc": "^2.1.10"
+  }
+}
