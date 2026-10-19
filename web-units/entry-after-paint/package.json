@@ -1,0 +1,32 @@
+{
+  "name": "@kaigilb/gilbwebsitecode-entry-after-paint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Moves a Nuxt page's entry script to after first paint or first interaction and holds a form submit made before the page's script is ready. Strings in, strings out; no component.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "scripts/check-rendered-entry.mjs",
+    "!src/**/*.test.ts"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs",
+    "check:rendered-entry": "node ./scripts/check-rendered-entry.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.6",
+    "axe-core": "^4.14.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "vue": "^3.5.0",
+    "vue-tsc": "^2.1.10"
+  }
+}
