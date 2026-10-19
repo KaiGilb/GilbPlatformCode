@@ -183,3 +183,26 @@ describe("claimGuardedForm", () => {
     expect(claimGuardedForm(f)).toBe(false);
   });
 });
+
+// Spec: D2 (Agent.Tester R1): Nitro cannot compile TypeScript in node_modules, so the package ships lib/*.mjs.
+describe("shipped lib/*.mjs", () => {
+  test("is exactly what scripts/build-lib.mjs makes from src/ (not stale)", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const r = spawnSync(process.execPath, ["scripts/build-lib.mjs", "--check"], { encoding: "utf8" });
+    expect(r.status, r.stderr).toBe(0);
+  });
+  test("behaves like the TypeScript source on a real tag, a drifted tag and the guard", async () => {
+    // @ts-ignore the generated file has no declaration; its types are src/index.ts
+    const lib: any = await import("../lib/index.mjs");
+    const ts: any = await import("./index");
+    expect(Object.keys(lib).sort()).toEqual(Object.keys(ts).sort());
+    const page = '<html><head><script type="module" src="/_nuxt/a.js" crossorigin></script></head></html>';
+    const drift = page.replace("crossorigin", "crossorigin defer");
+    for (const h of [page, drift]) {
+      expect(lib.rewriteEntry(h)).toBe(ts.rewriteEntry(h));
+      expect(lib.entryStatus(lib.rewriteEntry(h))).toBe(ts.entryStatus(ts.rewriteEntry(h)));
+    }
+    expect(lib.rewriteEntry(page)).toContain(lib.LOADER_MARK);
+    expect(lib.loaderScript("/_nuxt/a.js")).toBe(ts.loaderScript("/_nuxt/a.js"));
+  });
+});

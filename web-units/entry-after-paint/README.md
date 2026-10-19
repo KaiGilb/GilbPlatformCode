@@ -50,7 +50,9 @@ export default defineNitroPlugin((nitroApp) => {
 })
 ```
 
-Nuxt must be able to bundle the package's TypeScript into the server build; add it to `build.transpile` in `nuxt.config.ts` (`build: { transpile: ['@kaigilb/gilbwebsitecode-entry-after-paint'] }`).
+The package's server code is plain JavaScript (`lib/*.mjs`, generated from `src/*.ts` by `npm run build:lib`; a test fails if it is stale), because Nitro does not compile TypeScript inside `node_modules` (Agent.Tester R1 D2: `RollupError ... Expected '{', got 'type'`). Add the package to `build.transpile` in `nuxt.config.ts` (`build: { transpile: ['@kaigilb/gilbwebsitecode-entry-after-paint'] }`); the proving build had it, and a build without it was not run.
+
+Proved with a real build: website-engine-a 81362f4, the packed copy taken as above, the plugin file above, `pnpm exec nuxt generate` exit 0, then `node node_modules/@kaigilb/gilbwebsitecode-entry-after-paint/scripts/check-rendered-entry.mjs dist` exit 0 ("17 page(s) rewritten, none left unmoved"). The same build without the plugin file: exit 1 ("17 page(s) still load the entry in <head>, 0 rewritten"). Fresh-install check: PASS.
 
 In the form's own code, when it mounts: `if (claimGuardedForm(formEl)) submit()`. Mark the form `data-sc-guard`. Read what was typed before hydration yourself (the old site read each field before its `v-model` mounted).
 
@@ -88,6 +90,8 @@ n/a: it draws nothing. It moves a script, not content. A guarded form that is he
 - Do not mark a form `data-sc-guard` without calling `claimGuardedForm` when it mounts, or a submit made early is held for ever.
 
 ## Wrong readings
+
+- The package's `exports` point at `lib/*.mjs` (what Nitro and Node load); `src/*.ts` is the source and the types (`types` export). Edit `src/`, then run `npm run build:lib` and commit `lib/`.
 
 - **It matches one exact tag.** If a Nuxt upgrade changes the tag (another attribute order, `crossorigin=""`, a `nonce`, an `async`), nothing matches and the page ships as before, just slower. That is safe and silent; the build check is what makes it loud (tests plant five such changes). The tag was written for Nuxt 3.21 (the website starter locks 3.21.6); this unit's tests use a hand-written page, not a Nuxt build, because no Nuxt was installed here (see "Source").
 - "After first paint" is a measured gain on the old site (phone Lighthouse 88 to 98); it is not promised for another site.
