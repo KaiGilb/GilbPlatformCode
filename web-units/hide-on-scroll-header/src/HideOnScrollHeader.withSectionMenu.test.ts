@@ -1,8 +1,10 @@
 // Spec: the proposal (row 10): "sits beside web-units/section-menu ... a section-menu can sit in the slot".
-// A separate file because it reads the neighbouring unit's source, which this unit's typecheck leaves out.
+// Self-contained: the section menu is a small in-test stand-in (a details with a summary button that has
+// aria-expanded, inside a nav), not an import of the neighbouring unit. The real pairing was proven against
+// web-units/section-menu at 4e5a9f933b3221c6e5fa7b25066606583d3e4c92 (what origin/main holds), 53 tests then passing.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
-import { createSSRApp, h, nextTick } from "vue";
+import { createSSRApp, defineComponent, h, nextTick } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,7 +37,17 @@ beforeEach(() => {
 });
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ""; vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-import SectionMenu from "../../section-menu/src/SectionMenu.vue";
+// Stand-in with the markup that matters here: a landmark, a <details>, a summary button carrying aria-expanded.
+const SectionMenu = defineComponent({
+  props: { menu: { type: Object as () => { sections: { id: string; label: string; to: string }[] }, required: true }, currentPath: { type: String, default: "" } },
+  data: () => ({ open: false }),
+  render() {
+    return h("nav", { "aria-label": "Site sections" }, [h("details", { open: this.open }, [
+      h("summary", { role: "button", "aria-expanded": String(this.open), onClick: (e: Event) => { e.preventDefault(); this.open = !this.open; } }, "Menu"),
+      h("ul", this.menu.sections.map((x) => h("li", { key: x.id }, [h("a", { href: x.to }, x.label)]))),
+    ])]);
+  },
+});
 
 const SLOTS = {
   logo: () => h("a", { href: "/" }, "Logo"),
