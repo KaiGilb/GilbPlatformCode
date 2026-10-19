@@ -3,8 +3,8 @@
 // Spec: Kai-Zen's decision (a), 2026-10-18: "after takeover the button reports its real expanded state";
 // Rule_Code_accessibility RuleA11yWcagAa (WCAG 2.1 4.1.2). Measured in Chromium, Firefox and WebKit (probe12.mjs):
 // a fragment navigation to the panel's id (or to anything inside it) makes the engine open the closed <details>
-// itself; the unit does not listen to `toggle`, so the menu stays closed while the <summary> is exposed as
-// expanded (Chromium AX: expanded=true, aria-expanded="false"). jsdom has no engine auto-expand, so the test
+// itself. At 3c07cda the unit did not listen to `toggle`, so the menu stayed closed while the <summary> was exposed
+// as expanded (Chromium AX: expanded=true, aria-expanded="false"); 397f226 shuts such an opening again (D26). jsdom has no engine auto-expand, so the test
 // opens <details> as the engine does and waits for its `toggle` event.
 import { afterEach, describe, expect, test } from "vitest";
 import { createSSRApp, nextTick, type App } from "vue";
