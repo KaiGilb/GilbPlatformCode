@@ -100,6 +100,7 @@ Each card has a minimum height of `clamp(240px, 34vh, 320px)` and the gap betwee
 
 ## Wrong readings
 
+- Changed after QA R1 (D1, deliberate visual change): the inactive rail numbers were the muted colour at 45 % opacity (2.13:1 on white, failing 4.5:1). They are now the full `--site-block-muted` colour, so they pass whenever the host's muted text colour passes on the host's background; the active number is still the accent colour. Check it in a real browser with `scripts/check-contrast-browser.mjs` (see its header; jsdom cannot measure contrast).
 - The numbers 14 px (the step between pins), 44vh (the travel), 140 px and 70 % (where the cover starts and ends), 0.045 and 0.5 were tuned on the Gilb Websites page. `scaleBack` and `veil` are props; the rest are fixed. Without a different header height or card height they should be left alone.
 - The `card` slot is new in the unit. The original card was fixed to a tag, number, title and paragraph; that is the unit's default card now.
 - The original card had a glass look (blur and tint over a painted scene). The unit's card is a solid mix of `--site-block-bg` and `--site-block-fg`, because a covered card must hide the ones under it.

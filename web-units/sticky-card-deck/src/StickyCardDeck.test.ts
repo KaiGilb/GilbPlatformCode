@@ -171,3 +171,20 @@ describe("the unit's style", () => {
     expect(rm).toContain(".sd-veil, .sd-rail { display: none; }");
   });
 });
+
+// Spec: QA R1 D1. jsdom cannot measure contrast; scripts/check-contrast-browser.mjs does it in a browser.
+describe("rail number colour (D1)", () => {
+  test("the inactive rail numbers use the muted colour at full strength, not a transparent mix", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const style = readFileSync(join(process.cwd(), "src", "StickyCardDeck.vue"), "utf8").split("<style scoped>")[1] ?? "";
+    const tick = /\.sd-tick \{[^}]*\}/.exec(style)![0];
+    expect(tick).toContain("color: var(--site-block-muted, #4b5563);");
+    expect(tick).not.toMatch(/color:[^;]*transparent/);
+  });
+  test("the neutral fallback #4b5563 on white is at least 4.5:1", () => {
+    const lin = (c: number) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const L = (h: number[]) => 0.2126 * lin(h[0]!) + 0.7152 * lin(h[1]!) + 0.0722 * lin(h[2]!);
+    expect((1.05) / (L([0x4b, 0x55, 0x63]) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+});

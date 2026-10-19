@@ -125,7 +125,7 @@ onMounted(() => {
   }
   .sd-tick {
     position: relative; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
-    color: color-mix(in srgb, var(--site-block-muted, #4b5563) 45%, transparent); transition: color 300ms ease;
+    color: var(--site-block-muted, #4b5563); transition: color 300ms ease;
   }
   .sd-tick:not(:last-child)::after {
     content: ""; position: absolute; left: 50%; top: calc(100% + 0.2rem); width: 1px; height: 0.7rem;
