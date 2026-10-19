@@ -9,6 +9,10 @@
  * Turnstile widget's placeholder and sends the widget's token; the page loads Turnstile's script and the
  * site's server checks the token), `labels?` (every word it draws), `send?` (replaces the default sender;
  * it resolves with the answer and throws on failure).
+ * Added in 0.2.0, all off by default: `showCompany?` (a Company field), `requireName?` and `requireMessage?`
+ * (set false to make that field optional; the Email stays required), `compact?` (Name and Email only, a
+ * full-width button and a compact Turnstile widget). After every send the form's own Turnstile widget is
+ * asked for a fresh token, because a token works once.
  */
 import { reactive, ref, useId } from "vue";
 import { DEFAULT_CONTACT_LABELS, type ContactLabels, type ContactMessage } from "./labels";
@@ -20,49 +24,71 @@ const props = withDefaults(
     turnstileSiteKey?: string;
     labels?: Partial<ContactLabels>;
     send?: (body: ContactMessage) => Promise<unknown>;
+    showCompany?: boolean;
+    requireName?: boolean;
+    requireMessage?: boolean;
+    compact?: boolean;
   }>(),
-  { actionUrl: "/api/contact", labels: () => ({}) },
+  { actionUrl: "/api/contact", labels: () => ({}), showCompany: false, requireName: true, requireMessage: true, compact: false },
 );
 
 const words = () => ({ ...DEFAULT_CONTACT_LABELS, ...props.labels });
 // useId gives the same ids on the server and in the browser, and different ones for each form on a page.
 const id = useId();
-const ids = { name: `cf-name-${id}`, email: `cf-email-${id}`, message: `cf-message-${id}` };
-const state = reactive({ name: "", email: "", message: "" });
+const ids = { name: `cf-name-${id}`, email: `cf-email-${id}`, message: `cf-message-${id}`, company: `cf-company-${id}` };
+const state = reactive({ name: "", company: "", email: "", message: "" });
 const status = ref<"idle" | "sending" | "ok" | "error">("idle");
 const form = ref<HTMLFormElement | null>(null);
+
+// A Turnstile token works once. Whatever the answer, the server may have seen it, so every finished send asks
+// THIS form's widget for a new one (two forms on a page: reset by element, never globally).
+type TurnstileApi = { reset: (widget?: string | HTMLElement) => void };
+function resetTurnstile() {
+  const widget = form.value?.querySelector<HTMLElement>(".cf-turnstile");
+  const turnstile = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+  if (!widget || !turnstile) return;
+  try { turnstile.reset(widget); } catch { /* the widget is not drawn yet: nothing to refresh */ }
+}
 
 async function submit() {
   status.value = "sending";
   try {
     // Turnstile writes its token into a hidden input inside its widget, which sits inside this form.
     const token = form.value?.querySelector<HTMLInputElement>('[name="cf-turnstile-response"]')?.value;
-    const res = await (props.send ?? ((body) => postJson(props.actionUrl, body)))({ ...state, turnstileToken: token });
+    const { company, ...rest } = state;
+    const body = { ...rest, ...(props.showCompany && !props.compact ? { company } : {}), turnstileToken: token };
+    const res = await (props.send ?? ((b) => postJson(props.actionUrl, b)))(body);
     // As the starter's form did: an empty or falsy answer ("", false, 0, null) is not a confirmation.
     status.value = res ? "ok" : "error";
   } catch {
     status.value = "error";
+  } finally {
+    resetTurnstile();
   }
 }
 </script>
 
 <template>
-  <form ref="form" class="cf" @submit.prevent="submit">
+  <form ref="form" class="cf" :class="{ 'cf-compact': compact }" @submit.prevent="submit">
     <div>
-      <label class="cf-label" :for="ids.name">{{ words().name }}</label>
-      <input :id="ids.name" v-model="state.name" class="cf-field" required autocomplete="name" />
+      <label class="cf-label" :for="ids.name">{{ words().name }}{{ !requireName ? " " : "" }}<span v-if="!requireName" class="cf-opt">{{ words().optional }}</span></label>
+      <input :id="ids.name" v-model="state.name" class="cf-field" :required="requireName" autocomplete="name" />
+    </div>
+    <div v-if="showCompany && !compact">
+      <label class="cf-label" :for="ids.company">{{ words().company }}{{ " " }}<span class="cf-opt">{{ words().optional }}</span></label>
+      <input :id="ids.company" v-model="state.company" class="cf-field" autocomplete="organization" />
     </div>
     <div>
       <label class="cf-label" :for="ids.email">{{ words().email }}</label>
       <input :id="ids.email" v-model="state.email" class="cf-field" type="email" required autocomplete="email" />
     </div>
-    <div>
-      <label class="cf-label" :for="ids.message">{{ words().message }}</label>
-      <textarea :id="ids.message" v-model="state.message" class="cf-field cf-message" rows="5" required />
+    <div v-if="!compact">
+      <label class="cf-label" :for="ids.message">{{ words().message }}{{ !requireMessage ? " " : "" }}<span v-if="!requireMessage" class="cf-opt">{{ words().optional }}</span></label>
+      <textarea :id="ids.message" v-model="state.message" class="cf-field cf-message" rows="5" :required="requireMessage" />
     </div>
 
     <!-- The Cloudflare Turnstile widget's placeholder. Turnstile's script draws it; the server verifies. -->
-    <div v-if="turnstileSiteKey" class="cf-turnstile" :data-sitekey="turnstileSiteKey" />
+    <div v-if="turnstileSiteKey" class="cf-turnstile" :data-sitekey="turnstileSiteKey" :data-size="compact ? 'compact' : undefined" />
 
     <button class="cf-button" type="submit" :disabled="status === 'sending'">
       {{ status === "sending" ? words().sending : words().send }}
@@ -92,6 +118,8 @@ async function submit() {
   border-radius: var(--site-block-radius, 0.375rem); padding: 0.5rem 0.75rem;
   background: var(--site-block-bg, #ffffff);
 }
+.cf-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); }
+.cf-compact .cf-button { width: 100%; }
 .cf-message { resize: vertical; }
 .cf-button {
   margin: 0; font: inherit; line-height: inherit; cursor: pointer; border: 0;

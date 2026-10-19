@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-contact-form",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A website's contact form: name, email and message, optionally guarded by Cloudflare Turnstile, posted to the site's message address with an in-place answer. Vue 3 / Nuxt 3.",
