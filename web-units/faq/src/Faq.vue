@@ -4,13 +4,21 @@
  * opens the answer in place below it. It needs no script; with JavaScript off it works the same.
  *
  * Props: `heading?` and `items` (`{ q, a }[]`, the question and its answer as plain text).
+ * Added in 0.2.0, off by default: `icon?` ("plus-minus" draws two bars that turn from + to − when open, instead of
+ * the + that turns to ×) and `scrollMarginTop?` (a CSS length put on each summary, so a question reached by Tab
+ * stops clear of a fixed header).
  */
 import type { FaqItem } from "./types";
 
-defineProps<{
-  heading?: string;
-  items: FaqItem[];
-}>();
+withDefaults(
+  defineProps<{
+    heading?: string;
+    items: FaqItem[];
+    icon?: "plus-cross" | "plus-minus";
+    scrollMarginTop?: string;
+  }>(),
+  { icon: "plus-cross", scrollMarginTop: undefined },
+);
 </script>
 
 <template>
@@ -18,9 +26,10 @@ defineProps<{
     <h2 v-if="heading" class="faq-heading">{{ heading }}</h2>
     <div class="faq-list">
       <details v-for="item in items" :key="item.q" class="faq-item">
-        <summary class="faq-q">
+        <summary class="faq-q" :style="scrollMarginTop ? { scrollMarginTop } : undefined">
           {{ item.q }}
-          <span class="faq-sign" aria-hidden="true">+</span>
+          <span v-if="icon === 'plus-minus'" class="faq-sign faq-bars" aria-hidden="true" />
+          <span v-else class="faq-sign" aria-hidden="true">+</span>
         </summary>
         <p class="faq-a">{{ item.a }}</p>
       </details>
@@ -50,6 +59,17 @@ defineProps<{
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 .faq-item[open] .faq-sign { transform: rotate(45deg); }
+/* The plus-minus option: two bars; the vertical one lies flat when open. It does not use the turn above. */
+.faq-q:has(.faq-bars)::-webkit-details-marker { display: none; }
+.faq-bars { position: relative; flex: none; width: 1.25rem; height: 1.25rem; }
+.faq-item[open] .faq-bars { transform: none; }
+.faq-bars::before, .faq-bars::after {
+  content: ""; position: absolute; top: 50%; left: 0; width: 100%; height: 2px; margin-top: -1px;
+  border-radius: 1px; background: currentColor;
+}
+.faq-bars::after { transform: rotate(90deg); transition: transform var(--site-block-motion, 150ms) ease; }
+.faq-item[open] .faq-bars::after { transform: rotate(0deg); }
+@media (prefers-reduced-motion: reduce) { .faq-bars::after { transition: none; } }
 .faq-a { margin: 0.75rem 0 0; color: var(--site-block-muted, #4b5563); }
 @media (prefers-reduced-motion: reduce) { .faq-sign { transition: none; } }
 </style>

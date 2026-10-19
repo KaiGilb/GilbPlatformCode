@@ -23,10 +23,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-faq
 cd web-units/faq && npm pack --pack-destination <site>/vendor/gilbwebsitecode-faq
 echo <commit> > <site>/vendor/gilbwebsitecode-faq/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.0.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -66,6 +66,8 @@ const items: FaqItem[] = [
 |---|---|
 | `heading?` | the section's `<h2>` |
 | `items` | `{ q, a }[]`, plain text; questions are the list's keys, so keep them distinct |
+| `icon?` | 0.2.0. `plus-cross` (default: a + that turns into ×) or `plus-minus` (two bars drawn in CSS, − when open; the colour is the text colour, set it on `.faq-bars`' parent or the summary) |
+| `scrollMarginTop?` | 0.2.0. A CSS length put on each summary, e.g. `6rem`, so a question reached by Tab or Shift+Tab stops clear of a fixed header. Off by default |
 
 ## Host must supply
 
@@ -88,6 +90,16 @@ An answer opens only when the visitor asks for it, and pushes what is below it d
 - Do not put links or markup in `a`; it is drawn as plain text.
 - Do not hide an answer a visitor needs to act (a price, a deadline) only here.
 
+## Wrong readings (0.2.0)
+
+- With both new props off the unit draws exactly what 0.1.0 drew. No visible change by default.
+- `plus-minus` is not the Gilb Websites page's whole FAQ look: the page's frosted card, per-row reveal and the amber icon colour are the page's own. The unit's bars take `currentColor`.
+- `scrollMarginTop` only matters for keyboard focus and in-page links; it moves nothing on load.
+
 ## Source
 
 The website starter's `components/catalog/FAQ.vue` (website-engine-a 80ad391), written out without Tailwind: the same sizes and colours, and the sign's turn turned off under reduced motion.
+
+Version 0.2.0 (`icon`, `scrollMarginTop`): behaviour read from `Jairam-Gilb/gilb-websites-web`, `pages/index.vue` (FAQ section) and `assets/css/main.css` (`sc-faq*`) at `b78b1f9e247d23823ddf75c41c46d252adc393e8`. Tests are new, in `src/v2.test.ts`.
+
+Provenance, a one-time exception: this code was taken from the site's branch `redesign-scrollcraft` at commit `b78b1f9e247d23823ddf75c41c46d252adc393e8`, which is what websites.gilb.com serves, and which has not been merged to the site's `main` (`3b0fe2a`). The library rule `RuleGwcunitShareTest` and the process entry condition `ProcSwcEnSource` say shared code is on the site's main. Kai allowed taking this code from the branch for this one run ("1", 2026-10-20). It is not a precedent: when the site's branch is merged, take the merge commit's copy of this file for the next version.
