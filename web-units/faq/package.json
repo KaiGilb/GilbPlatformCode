@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-faq",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A website's FAQ: questions that open their answers in place, on native details/summary, with no script. Vue 3 / Nuxt 3.",
