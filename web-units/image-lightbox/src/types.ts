@@ -8,6 +8,8 @@ export interface LightboxItem {
   caption: string;
   /** The element to give focus back to when the viewer closes. */
   el?: HTMLElement | null;
+  /** The picture's own file, shown instead when the larger original fails to load. */
+  fallback?: string;
 }
 
 /** Every word the viewer shows or speaks. English defaults; pass your own language. */
@@ -25,4 +27,8 @@ export interface LightboxWords {
   fit: string;
   /** "3 of 12": builds the counter's text, shown and read when the picture changes. */
   count: (position: number, total: number) => string;
+  /** Shown (and read as a status) while the picture loads. */
+  loading: string;
+  /** Shown (and read as a status) when no version of the picture could be loaded. */
+  loadFailed: string;
 }

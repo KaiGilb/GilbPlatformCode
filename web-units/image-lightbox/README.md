@@ -108,11 +108,11 @@ Browser proof (not part of `npm test`): `scripts/check-lightbox-browser.mjs` dri
 | | other attributes | class, style, loading, fetchpriority, sizes, id ... reach the picture |
 | `LightboxScope` | default slot | the content whose pictures should open |
 | `ProseImg` | `src`, `alt`, `width?`, `height?`, `imageComponent?` | as Nuxt Content passes them |
-| all three | `words?` | any of `dialog`, `close`, `previous`, `next`, `zoomIn`, `zoomOut`, `zoomReset`, `fit`, `count(position, total)`: English by default; pass your language. `zoomReset` (the button's name) must contain `fit` (the word drawn on it) |
+| all three | `words?` | any of `dialog`, `close`, `previous`, `next`, `zoomIn`, `zoomOut`, `zoomReset`, `fit`, `count(position, total)`, `loading`, `loadFailed`: English by default; pass your language. `zoomReset` (the button's name) must contain `fit` (the word drawn on it) |
 | | `showCaption?` | show the text under the picture (default true) |
 | | `maxZoom?` | the largest zoom, as a multiple of the fit-to-screen size (default 4) |
 
-Which pictures open in a scope: those with alt text, not inside a link, and with no `data-no-lightbox` on them or a parent. A `<figure>`'s `<figcaption>` is shown under its picture. `data-full="/big.jpg"` on a picture names the larger file to show.
+Which pictures open in a scope: those with alt text, not inside a link, drawn at least 24 px on each side, and with no `data-no-lightbox` on them or a parent. A `<figure>`'s `<figcaption>` is shown under its picture. `data-full="/big.jpg"` on a picture names the larger file to show.
 
 ## Host must supply
 
@@ -137,6 +137,7 @@ n/a for the picture: the unit adds no box (a scope is `display: contents`), chan
 - Do not point `fullSrc` or `data-full` at an image-service address that a static build never made: the viewer shows the file you name.
 - Do not put the viewer's words only in English on a site in another language: pass `words`.
 - Do not rely on the gestures alone: every one has a key and a button; keep them.
+- Do not expect a picture drawn smaller than 24 px to open: it stays a plain picture (a button that small fails WCAG 2.2 target size, 2.5.8). Draw it larger or leave it plain.
 - Do not add `data-no-lightbox` to hide a picture a visitor needs to see larger.
 
 ## Wrong readings
@@ -145,7 +146,8 @@ n/a for the picture: the unit adds no box (a scope is `display: contents`), chan
 - **Safari and Tab.** Safari's default skips buttons when you press Tab. The unit moves Tab by hand inside the dialog, so the trap is the same in every browser (checked in WebKit).
 - **A picture in a link does not open.** The link keeps its job. To open it, take it out of the link or use `ImageLightbox` without the link.
 - **A picture with empty alt text does not open**, by design: it is decoration.
-- **The set is the pictures that open, in page order.** A picture added later (the content changed) joins it.
+- **The set is the pictures that open, in page order.** A picture added later (the content changed) joins it, and the scope follows changes to `alt`, `data-no-lightbox`, `src`, `width`, `height`, `class` and `style` on any picture or parent: remove an alt text and the picture stops being a button; add it back and it is one again. A picture with no layout yet (not loaded, hidden) is not counted as small; it is checked again when it loads or changes size. A very small picture that is drawn larger later becomes a button then.
+- **A slow or missing original.** While the file named by `data-full` / `fullSrc` loads, the viewer shows a "Loading picture" cue (a status, the figure is `aria-busy`). If it fails, the viewer shows the page's own picture with its alt text; if that fails too it says "The picture could not be loaded". Close, Escape and the arrow keys work throughout. Words: `loading`, `loadFailed`.
 - **The viewer shows `data-full`, else the picture's current file** (`currentSrc`, the variant the browser chose from a `srcset`).
 - **The starter remounts its page once.** In the website starter (with delayed hydration) the whole page is mounted twice about 40 ms apart; a click in those 40 ms is lost. Not a fault of the unit; a visitor cannot click that fast.
 - **Pinch and swipe were proven on real touch events in Chromium and on touch pointer events sent from the page in Chromium, Firefox and WebKit.** Not on a phone: Safari on iOS and Chrome on Android are unproven.

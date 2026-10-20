@@ -35,4 +35,14 @@ const single = () =>
     h("p", { id: "end" }, "The end of the page."),
   ]);
 
-createApp({ render: () => (scene === "single" ? single() : h(LightboxScope, null, { default: article })) }).mount("#app");
+// Scene "fix": the cases of the tester's R1 defects D1 to D3 (a tiny picture, attributes changed later, a slow and a missing original).
+const fix = () =>
+  h("main", [
+    h("h1", "Fixes"),
+    h("img", { id: "tiny", src: pic(1, 16, 16), alt: "A tiny picture", width: 16, height: 16 }),
+    h("img", { id: "ok", src: pic(2), alt: "A normal picture", width: 600, height: 400 }),
+    h("img", { id: "slow", src: pic(3), "data-full": "/__full/slow.svg", alt: "Slow original", width: 600, height: 400 }),
+    h("img", { id: "gone", src: pic(4), "data-full": "/__full/missing.svg", alt: "Missing original", width: 600, height: 400 }),
+    h("img", { id: "dead", src: "/__full/missing.svg", alt: "Broken everywhere", width: 600, height: 400 }),
+  ]);
+createApp({ render: () => (scene === "fix" ? h(LightboxScope, null, { default: fix }) : scene === "single" ? single() : h(LightboxScope, null, { default: article })) }).mount("#app");

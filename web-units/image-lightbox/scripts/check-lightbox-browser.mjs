@@ -195,6 +195,83 @@ async function a11yAt(browserName, ctxOf, width, height) {
   await ctx.close();
 }
 
+/** The tester's R1 defects D1 (tiny picture), D2 (attributes changed later) and D3 (slow or missing original). */
+async function fixChecks(browserName, ctxOf) {
+  const ctx = await ctxOf({ width: 1280, height: 800 });
+  await ctx.route("**/__full/slow.svg", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1600"><rect width="100%" height="100%" fill="#363"/></svg>' });
+  });
+  await ctx.route("**/__full/missing.svg", (route) => route.fulfill({ status: 404, body: "no" }));
+  const page = await ctx.newPage();
+  await page.goto(`${base}?scene=fix`);
+  await page.waitForFunction(() => document.getElementById("ok")?.getAttribute("role") === "button");
+  const attrs = (id) => page.evaluate((i) => { const e = document.getElementById(i); return [e.getAttribute("role"), e.getAttribute("tabindex")].join(); }, id);
+  // D1
+  check(browserName, "D1 a 16 px picture is not a button (no role, no tab stop); a normal one is", (await attrs("tiny")) === "," && (await attrs("ok")) === "button,0", `${await attrs("tiny")} | ${await attrs("ok")}`);
+  await page.click("#tiny", { force: true }); await settle(page);
+  check(browserName, "D1 a click on the 16 px picture opens nothing", !(await isOpen(page)));
+  const axeTiny = await page.evaluate(async (src) => { eval(src); const r = await window.axe.run(document.body, { runOnly: ["target-size"] }); return r.violations.length; }, await (await import("node:fs/promises")).readFile(axePath, "utf8"));
+  check(browserName, "D1 axe target-size: no violation on the page with the 16 px picture", axeTiny === 0, String(axeTiny));
+  await page.evaluate(() => { const t = document.getElementById("tiny"); t.style.width = "120px"; t.style.height = "120px"; });
+  await page.waitForFunction(() => document.getElementById("tiny").getAttribute("role") === "button", null, { timeout: 3000 }).catch(() => {});
+  check(browserName, "D1 when the picture is later drawn larger it becomes a button (size change seen)", (await attrs("tiny")) === "button,0", await attrs("tiny"));
+  await page.evaluate(() => { const t = document.getElementById("tiny"); t.style.width = "10px"; t.style.height = "10px"; });
+  await page.waitForFunction(() => !document.getElementById("tiny").hasAttribute("role"), null, { timeout: 3000 }).catch(() => {});
+  check(browserName, "D1 and back to plain when drawn small again", (await attrs("tiny")) === ",", await attrs("tiny"));
+  // D2
+  await page.evaluate(() => document.getElementById("ok").removeAttribute("alt"));
+  await page.waitForFunction(() => !document.getElementById("ok").hasAttribute("role"), null, { timeout: 3000 }).catch(() => {});
+  check(browserName, "D2 alt removed: the picture stops being a button", (await attrs("ok")) === ",", await attrs("ok"));
+  await page.evaluate(() => document.getElementById("ok").setAttribute("alt", "A normal picture"));
+  await page.waitForFunction(() => document.getElementById("ok").getAttribute("role") === "button", null, { timeout: 3000 }).catch(() => {});
+  check(browserName, "D2 alt added back: a button with a tab stop again", (await attrs("ok")) === "button,0", await attrs("ok"));
+  await page.evaluate(() => document.getElementById("ok").setAttribute("data-no-lightbox", ""));
+  await page.waitForFunction(() => !document.getElementById("ok").hasAttribute("role"), null, { timeout: 3000 }).catch(() => {});
+  const optedOut = await attrs("ok");
+  await page.evaluate(() => document.getElementById("ok").removeAttribute("data-no-lightbox"));
+  await page.waitForFunction(() => document.getElementById("ok").getAttribute("role") === "button", null, { timeout: 3000 }).catch(() => {});
+  check(browserName, "D2 data-no-lightbox added then removed follows (plain, then keyboard-reachable button)", optedOut === "," && (await attrs("ok")) === "button,0", `${optedOut} | ${await attrs("ok")}`);
+  await page.focus("#ok"); await page.keyboard.press("Enter"); await page.waitForSelector(DLG); await settle(page);
+  check(browserName, "D2 the restored picture opens from the keyboard", await isOpen(page));
+  await page.keyboard.press("Escape"); await settle(page);
+  // D3 slow
+  await page.evaluate(() => document.getElementById("slow").scrollIntoView({ block: "center" }));
+  await page.click("#slow"); await page.waitForSelector(DLG); await page.waitForTimeout(200);
+  const cue = await page.evaluate((s) => { const v = document.querySelector(s); const c = v.querySelector(".ilb-loading"); return [c?.textContent.trim(), c?.getAttribute("role"), v.querySelector("figure").getAttribute("aria-busy"), !!c && c.getBoundingClientRect().width > 0]; }, DLG);
+  check(browserName, "D3 while a slow original loads: a visible loading cue, role=status, figure aria-busy", cue.join() === "Loading picture,status,true,true", cue.join());
+  await page.keyboard.press("Tab"); await settle(page);
+  check(browserName, "D3 Tab still stays inside the dialog during the load", await inside(page));
+  await page.waitForFunction((s) => !document.querySelector(s + " .ilb-loading"), DLG, { timeout: 6000 });
+  check(browserName, "D3 when the original arrives the cue goes and busy is cleared", await page.evaluate((s) => !document.querySelector(s + " figure").hasAttribute("aria-busy"), DLG));
+  await page.keyboard.press("Escape"); await settle(page);
+  check(browserName, "D3 Escape closes after a slow load", !(await isOpen(page)));
+  // D3 slow, closed before it finishes
+  await page.click("#slow"); await page.waitForSelector(DLG); await page.keyboard.press("Escape"); await settle(page);
+  check(browserName, "D3 closing during the load leaves the page unlocked", await page.evaluate(() => document.body.style.position === "" && !document.getElementById("app").hasAttribute("inert")));
+  // D3 missing original: fall back to the page's own picture
+  await page.evaluate(() => document.getElementById("gone").scrollIntoView({ block: "center" }));
+  await page.click("#gone"); await page.waitForSelector(DLG);
+  await page.waitForFunction((s) => document.querySelector(s + " img.ilb-img")?.src.startsWith("data:image/svg"), DLG, { timeout: 4000 }).catch(() => {});
+  const fb = await page.evaluate((s) => { const i = document.querySelector(s + " img.ilb-img"); const r = i.getBoundingClientRect(); return [i.src.startsWith("data:image/svg"), i.alt, Math.round(r.width) > 200, !!document.querySelector(s + " .ilb-failed-note")]; }, DLG);
+  check(browserName, "D3 a missing original falls back to the page's own picture, with its alt text, drawn at picture size, no failure note", fb.join() === "true,Missing original,true,false", fb.join());
+  await page.keyboard.press("Escape"); await settle(page);
+  check(browserName, "D3 Escape closes after the fallback", !(await isOpen(page)));
+  // D3 both fail
+  await page.evaluate(() => document.getElementById("dead").scrollIntoView({ block: "center" }));
+  await page.click("#dead", { force: true }); await settle(page);
+  if (await isOpen(page)) {
+    await page.waitForSelector(DLG + " .ilb-failed-note", { timeout: 4000 }).catch(() => {});
+    const bad = await page.evaluate((s) => { const n = document.querySelector(s + " .ilb-failed-note"); return [n?.textContent.trim(), n?.getAttribute("role")]; }, DLG);
+    check(browserName, "D3 when nothing loads a visible, announced message says so", bad.join() === "The picture could not be loaded,status", bad.join());
+    await page.keyboard.press("Escape"); await settle(page);
+    check(browserName, "D3 Escape closes the failed viewer", !(await isOpen(page)));
+  } else {
+    check(browserName, "D3 a broken picture with no size is too small to open (nothing opens)", true);
+  }
+  await ctx.close();
+}
+
 for (const name of names) {
   let browser;
   try { browser = await pw[name].launch(); } catch (e) { console.log(`SKIP [${name}] could not launch: ${String(e).split("\n")[0]}`); continue; }
@@ -309,6 +386,7 @@ for (const name of names) {
     await c.close();
   }
 
+  await fixChecks(name, ctxOf);
   for (const [w, h] of [[375, 700], [800, 900], [1280, 800]]) await a11yAt(name, ctxOf, w, h);
 
   // touch

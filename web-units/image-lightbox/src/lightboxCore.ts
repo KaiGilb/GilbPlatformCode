@@ -16,6 +16,8 @@ export const defaultWords: LightboxWords = {
   zoomReset: "Fit picture to screen",
   fit: "Fit",
   count: (position, total) => `${position} of ${total}`,
+  loading: "Loading picture",
+  loadFailed: "The picture could not be loaded",
 };
 
 /** The host's words over the English ones. */
@@ -109,17 +111,32 @@ export const pinchScale = (startScale: number, startDistance: number, distance: 
   startDistance <= 0 ? startScale : clamp(startScale * (distance / startDistance), 1, max);
 
 /** Why a picture does not open, or null when it does. */
-export type Skip = "no-alt" | "opt-out" | "in-link" | "not-image";
+export type Skip = "no-alt" | "opt-out" | "in-link" | "not-image" | "too-small";
+
+/** The smallest side, in CSS px, of a picture that opens: a button must be at least this big (WCAG 2.2, 2.5.8). */
+export const MIN_TARGET = 24;
+
+/**
+ * Whether a picture is drawn smaller than the smallest touch target. A picture with no layout (not yet drawn,
+ * hidden, or a page with no layout engine) measures 0 by 0 and is not counted as small: it is checked again
+ * when it loads or changes size.
+ */
+export function isTooSmall(img: Element): boolean {
+  const r = img.getBoundingClientRect?.();
+  return !!r && r.width > 0 && r.height > 0 && (r.width < MIN_TARGET || r.height < MIN_TARGET);
+}
 
 /**
  * Whether a picture in an article opens full screen: it needs alt text (a picture with none is decoration),
- * must not carry `data-no-lightbox`, and must not sit inside a link (the link keeps its job).
+ * must not carry `data-no-lightbox`, must not sit inside a link (the link keeps its job), and must be drawn at
+ * least 24 px on each side (a smaller picture would be a button too small to hit).
  */
 export function whySkipped(img: Element | null): Skip | null {
   if (!img || img.tagName !== "IMG") return "not-image";
   if (!(img.getAttribute("alt") ?? "").trim()) return "no-alt";
   if (img.closest("[data-no-lightbox]")) return "opt-out";
   if (img.closest("a")) return "in-link";
+  if (isTooSmall(img)) return "too-small";
   return null;
 }
 
@@ -127,8 +144,11 @@ export function whySkipped(img: Element | null): Skip | null {
 export function itemFromImg(img: HTMLImageElement): LightboxItem {
   const alt = (img.getAttribute("alt") ?? "").trim();
   const fig = img.closest("figure")?.querySelector("figcaption")?.textContent?.trim();
+  const own = img.currentSrc || img.src;
+  const full = img.getAttribute("data-full") || "";
   return {
-    src: img.getAttribute("data-full") || img.currentSrc || img.src,
+    src: full || own,
+    fallback: full && own && full !== own ? own : undefined,
     alt,
     caption: fig || alt,
     el: img,

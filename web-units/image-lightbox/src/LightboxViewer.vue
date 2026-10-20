@@ -37,6 +37,35 @@ watch(() => props.index, (v) => { cur.value = v; });
 const item = computed(() => props.items[cur.value]!);
 const total = computed(() => props.items.length);
 const multi = computed(() => total.value > 1);
+// ---- loading the picture: a cue while it loads, the page's own picture if the original fails ---------------------
+const shownSrc = ref("");
+const status = ref<"loading" | "ready" | "failed">("loading");
+const usedFallback = ref(false);
+function startLoad(): void {
+  shownSrc.value = item.value.src;
+  status.value = "loading";
+  usedFallback.value = false;
+  void nextTick(checkCached);
+}
+/** A picture that finished before Vue's listener was on it (the cache) fires no event; read its state instead. */
+function checkCached(): void {
+  const i = imgEl.value;
+  if (!i || status.value !== "loading" || !i.complete) return;
+  if (i.naturalWidth > 0) onLoaded(); else onFailed();
+}
+function onLoaded(): void { if (status.value === "loading") status.value = "ready"; }
+function onFailed(): void {
+  const fb = item.value.fallback;
+  if (fb && !usedFallback.value && fb !== shownSrc.value) {
+    usedFallback.value = true;
+    shownSrc.value = fb;
+    status.value = "loading";
+    void nextTick(checkCached);
+  } else {
+    status.value = "failed";
+  }
+}
+watch(item, startLoad, { immediate: true });
 const captionText = computed(() => (props.showCaption ? item.value.caption : ""));
 // The caption repeats the alt text the picture already carries; a screen reader should hear it once.
 const captionDuplicatesAlt = computed(() => item.value.caption === item.value.alt);
@@ -296,18 +325,22 @@ onBeforeUnmount(() => {
         @pointercancel="onPointerCancel"
         @wheel="onWheel"
       >
-        <figure class="ilb-figure">
+        <figure class="ilb-figure" :aria-busy="status === 'loading' ? 'true' : undefined">
           <img
-            :key="item.src"
+            :key="shownSrc"
             ref="imgEl"
             class="ilb-img"
-            :class="{ 'ilb-anim': !dragging }"
-            :src="item.src"
+            :class="{ 'ilb-anim': !dragging, 'ilb-failed': status === 'failed' }"
+            :src="shownSrc"
+            @load="onLoaded"
+            @error="onFailed"
             :alt="item.alt"
             :style="imgStyle"
             :data-zoom="scale.toFixed(2)"
             draggable="false"
           />
+          <p v-if="status === 'loading'" class="ilb-status ilb-loading" role="status">{{ words.loading }}</p>
+          <p v-else-if="status === 'failed'" class="ilb-status ilb-failed-note" role="status">{{ words.loadFailed }}</p>
           <figcaption v-if="captionText" class="ilb-caption" :aria-hidden="captionDuplicatesAlt ? 'true' : undefined">
             {{ captionText }}
           </figcaption>
@@ -354,6 +387,16 @@ onBeforeUnmount(() => {
   display: block; flex: 0 1 auto; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain;
   transform-origin: center; will-change: transform; -webkit-user-drag: none;
 }
+.ilb-status {
+  margin: 0.5rem 0 0; padding: 0.25rem 0.75rem; text-align: center; font-size: 0.875rem; line-height: 1.5;
+  color: var(--site-block-on-overlay, #ffffff);
+}
+.ilb-loading::before {
+  content: ""; display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.5em; vertical-align: -0.1em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 999px;
+}
+@keyframes ilb-spin { to { transform: rotate(360deg); } }
+.ilb-img.ilb-failed { min-width: 12rem; min-height: 6rem; }
 .ilb-caption {
   flex: none; max-width: 40rem; margin-top: 0.75rem; text-align: center; font-size: 0.9375rem; line-height: 1.5;
   color: var(--site-block-on-overlay, #ffffff);
@@ -383,6 +426,7 @@ onBeforeUnmount(() => {
 .ilb-fit { font-size: 1rem; min-width: 3.25rem; }
 /* Motion: a fade on open and a glide on zoom, only for visitors who have not asked for less motion. */
 @media (prefers-reduced-motion: no-preference) {
+  .ilb-loading::before { animation: ilb-spin 0.8s linear infinite; }
   .ilb-backdrop { animation: ilb-fade var(--site-block-motion, 150ms) ease-out; }
   .ilb-img.ilb-anim { transition: transform var(--site-block-motion, 150ms) ease-out; }
 }

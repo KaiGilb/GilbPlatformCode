@@ -5,7 +5,7 @@
  * a "3 of 12" counter move through them in page order.
  *
  * A picture does not open if it has no alt text (decoration), if it or a parent carries `data-no-lightbox`
- * (the author's opt-out), or if it sits inside a link (the link keeps its job). A picture in a `<figure>` shows
+ * (the author's opt-out), if it sits inside a link (the link keeps its job), or if it is drawn under 24 px on a side (too small to be a button). A picture in a `<figure>` shows
  * the `<figcaption>` under it; `data-full="/big.jpg"` names a larger original to show.
  *
  * It adds no box (`display: contents`). Before the script runs the pictures are plain pictures; after, each
@@ -31,6 +31,7 @@ const items = shallowRef<LightboxItem[]>([]);
 const index = ref(0);
 const words = computed(() => resolveWords(props.words));
 let observer: MutationObserver | null = null;
+let sizeWatch: ResizeObserver | null = null;
 
 function target(e: Event): HTMLImageElement | null {
   const t = e.target as Element | null;
@@ -57,6 +58,7 @@ function onKeydown(e: KeyboardEvent): void {
 /** Mark the pictures that open: button role, tab stop, a cursor hook. Done after mount, never in the server's HTML. */
 function mark(): void {
   for (const img of root.value?.querySelectorAll("img") ?? []) {
+    sizeWatch?.observe(img); // observing twice is harmless; a size change marks again
     if (whySkipped(img) === null) {
       img.setAttribute("data-lightbox", "");
       img.setAttribute("role", "button");
@@ -68,13 +70,26 @@ function mark(): void {
   }
 }
 onMounted(() => {
+  if (typeof ResizeObserver !== "undefined") sizeWatch = new ResizeObserver(() => mark());
   mark();
   if (typeof MutationObserver !== "undefined" && root.value) {
+    // Pictures added or removed, and the attributes that decide whether a picture opens or how big it is drawn.
+    // The attributes this component writes (data-lightbox, role, tabindex, aria-haspopup) are not watched, so it never triggers itself.
     observer = new MutationObserver(() => mark());
-    observer.observe(root.value, { childList: true, subtree: true });
+    observer.observe(root.value, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ["alt", "data-no-lightbox", "src", "srcset", "sizes", "width", "height", "class", "style", "href"],
+    });
   }
+  window.addEventListener("resize", mark);
+  root.value?.addEventListener("load", mark, true); // a picture's size is known once it has loaded
 });
-onBeforeUnmount(() => observer?.disconnect());
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  sizeWatch?.disconnect();
+  window.removeEventListener("resize", mark);
+  root.value?.removeEventListener("load", mark, true);
+});
 </script>
 
 <template>

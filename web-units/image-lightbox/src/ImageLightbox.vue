@@ -10,9 +10,9 @@
  * Props: `src`, `alt`, `width?`, `height?`, `fullSrc?`, `caption?`, `imageComponent?`, `words?`, `showCaption?`,
  * `maxZoom?`, `disabled?`.
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import LightboxViewer from "./LightboxViewer.vue";
-import { MAX_ZOOM, resolveWords } from "./lightboxCore";
+import { MAX_ZOOM, isTooSmall, resolveWords } from "./lightboxCore";
 import type { LightboxItem, LightboxWords } from "./types";
 
 // A multi-root component does not pass attributes on by itself; they are given to the picture by hand.
@@ -42,14 +42,25 @@ const props = withDefaults(
 const ready = ref(false);
 const isOpen = ref(false);
 const picture = ref<unknown>(null);
-onMounted(() => { ready.value = true; });
+const small = ref(false);
+let sizeWatch: ResizeObserver | null = null;
+const elOf = () => ((picture.value as { $el?: HTMLElement } | null)?.$el ?? (picture.value as HTMLElement | null));
+const measure = () => { const el = elOf(); small.value = !!el && isTooSmall(el); };
+onMounted(() => {
+  ready.value = true;
+  measure();
+  const el = elOf();
+  if (typeof ResizeObserver !== "undefined" && el instanceof Element) { sizeWatch = new ResizeObserver(measure); sizeWatch.observe(el); }
+  el?.addEventListener?.("load", measure);
+});
+onBeforeUnmount(() => sizeWatch?.disconnect());
 
-const enabled = computed(() => !props.disabled && !!props.alt?.trim());
+const enabled = computed(() => !props.disabled && !!props.alt?.trim() && !small.value);
 const active = computed(() => ready.value && enabled.value);
 const words = computed(() => resolveWords(props.words));
 const items = computed<LightboxItem[]>(() => {
   const el = (picture.value as { $el?: HTMLElement } | null)?.$el ?? (picture.value as HTMLElement | null);
-  return [{ src: props.fullSrc || props.src, alt: props.alt.trim(), caption: props.caption?.trim() || props.alt.trim(), el }];
+  return [{ src: props.fullSrc || props.src, alt: props.alt.trim(), caption: props.caption?.trim() || props.alt.trim(), el, fallback: props.fullSrc && props.fullSrc !== props.src ? props.src : undefined }];
 });
 const index = ref(0);
 
