@@ -56,7 +56,9 @@ const name = computed(() => {
   const label = props.buttonLabel.replace("{name}", currentLanguage.value?.name ?? "");
   // The badge is put first unless the label already begins with that exact text as a whole word ("AR Arabic"): a
   // label that merely starts with the same letters ("Language", "Danish", "English") does not contain the badge.
-  const hasBadge = !!badgeText.value && new RegExp(`^${badgeText.value}(?![\\p{L}\\p{N}])`, "u").test(label);
+  // No pattern is built from the badge: it comes from host data and may hold any character ("+1", "(x", "a.").
+  const rest = label.startsWith(badgeText.value) ? label.slice(badgeText.value.length) : null;
+  const hasBadge = !!badgeText.value && rest !== null && !/^[\p{L}\p{N}]/u.test(rest);
   return badgeText.value && !hasBadge ? `${badgeText.value} ${label}` : label;
 });
 

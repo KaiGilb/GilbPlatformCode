@@ -237,6 +237,30 @@ describe("a language without a built-in flag", () => {
       wrapper.unmount(); document.body.innerHTML = "";
     }
   });
+  // Spec: Agent.Tester R3 D8: the badge is host data and may hold any character; no pattern is built from it.
+  const ODD = [["+1", "+1"], ["(x", "(X"], ["[a", "[A"], ["?", "?"], ["*b", "*B"], ["a.", "A."], ["\\d", "\\D"]] as const;
+  test.each(ODD)("a flag %s renders, the name leads with the badge %s, and axe finds no violation", async (flag, badge) => {
+    const langs = [{ code: "en", name: "English", flag: "us" }, { code: "xx", name: "Other", flag }];
+    for (const hrefFor of [undefined, (c: string) => `/${c}/`]) {
+      wrapper = mount(LanguageSwitcher, { props: { languages: langs, current: "xx", hrefFor }, attachTo: document.body });
+      const b = document.querySelector(".ls-button") as HTMLElement;
+      expect(b.textContent!.trim()).toBe(badge);
+      expect(b.getAttribute("aria-label")).toBe(`${badge} Language: Other. Change language`);
+      expect(await axeLabel()).toEqual([]);
+      wrapper.unmount(); document.body.innerHTML = "";
+    }
+  });
+  test("a label that starts with the badge as a whole token is not doubled, even for a badge with punctuation", () => {
+    for (const [flag, badge] of ODD) {
+      wrapper = mount(LanguageSwitcher, { props: { languages: [{ code: "xx", name: "Other", flag }], current: "xx", buttonLabel: `${badge} {name}` }, attachTo: document.body });
+      expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe(`${badge} Other`);
+      wrapper.unmount(); document.body.innerHTML = "";
+    }
+  });
+  test("a flag 'a.' is not matched by a label that starts with 'AX' (the dot is not a wildcard)", () => {
+    wrapper = mount(LanguageSwitcher, { props: { languages: [{ code: "xx", name: "Other", flag: "a." }], current: "xx", buttonLabel: "AX {name}" }, attachTo: document.body });
+    expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("A. AX Other");
+  });
   test("a built-in flag keeps the plain label, and a label that already starts with the badge is not doubled", () => {
     wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "en" }, attachTo: document.body });
     expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("Language: English. Change language");
