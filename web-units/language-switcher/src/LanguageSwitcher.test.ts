@@ -195,6 +195,35 @@ describe("LanguageSwitcher, rendering and accessibility", () => {
   });
 });
 
+// Spec: WCAG 2.5.3 Label in Name (axe label-content-name-mismatch), Agent.Tester R1 D4: a language without a built-in
+// flag is drawn as a text badge, whose text must be in the button's name.
+describe("a language without a built-in flag", () => {
+  const AR = [{ code: "en", name: "English", flag: "us" }, { code: "ar", name: "العربية" }, { code: "ja", name: "日本語", flag: "ja" }];
+  test("the button's name starts with the badge text and axe finds no violation, closed and open, as buttons and as links", async () => {
+    for (const hrefFor of [undefined, (c: string) => `/${c}/`]) {
+      wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "ar", hrefFor }, attachTo: document.body });
+      const b = document.querySelector(".ls-button") as HTMLElement;
+      expect(b.textContent!.trim()).toBe("AR");
+      expect(b.getAttribute("aria-label")).toBe("AR Language: العربية. Change language");
+      expect(await axeIds()).toEqual([]);
+      b.click(); await nextTick();
+      expect(await axeIds()).toEqual([]);
+      wrapper.unmount(); document.body.innerHTML = "";
+    }
+  });
+  test("a badge from a two-letter flag key other than the code is named by the badge", () => {
+    wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "ja" }, attachTo: document.body });
+    expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("JA Language: 日本語. Change language");
+  });
+  test("a built-in flag keeps the plain label, and a label that already starts with the badge is not doubled", () => {
+    wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "en" }, attachTo: document.body });
+    expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("Language: English. Change language");
+    wrapper.unmount();
+    wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "ar", buttonLabel: "AR {name}" }, attachTo: document.body });
+    expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("AR العربية");
+  });
+});
+
 describe("the unit's style", () => {
   const SFC = readFileSync(join(process.cwd(), "src", "LanguageSwitcher.vue"), "utf8");
   const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");

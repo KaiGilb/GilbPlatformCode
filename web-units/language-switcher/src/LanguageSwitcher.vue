@@ -14,7 +14,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
 import FlagIcon from "./FlagIcon.vue";
-import type { LanguageOption } from "./types";
+import { flagKeys, type LanguageOption } from "./types";
 
 const props = withDefaults(
   defineProps<{
@@ -44,7 +44,18 @@ const list = ref<HTMLElement | null>(null);
 const currentLanguage = computed(() => props.languages.find((l) => l.code === props.current) ?? props.languages[0]);
 const others = computed(() => props.languages.filter((l) => l.code !== currentLanguage.value?.code));
 const flagOf = (l: LanguageOption | undefined): string => l?.flag ?? l?.code ?? "";
-const name = computed(() => props.buttonLabel.replace("{name}", currentLanguage.value?.name ?? ""));
+// WCAG 2.5.3 (Label in Name): a flag without a drawing is shown as a two-letter badge of visible text, so the
+// button's name must contain that text. It is put first ("AR Language: ..."), which is the order a voice-control
+// user reads it in. A built-in flag is a picture with no text, so the name is the host's label alone. A host that
+// fills the `flag` slot with its own text must put that text in `buttonLabel`.
+const badgeText = computed(() => {
+  const f = flagOf(currentLanguage.value);
+  return (flagKeys as readonly string[]).includes(f) ? "" : f.slice(0, 2).toUpperCase();
+});
+const name = computed(() => {
+  const label = props.buttonLabel.replace("{name}", currentLanguage.value?.name ?? "");
+  return badgeText.value && !label.toUpperCase().startsWith(badgeText.value) ? `${badgeText.value} ${label}` : label;
+});
 
 const items = (): HTMLElement[] => Array.from(list.value?.querySelectorAll<HTMLElement>("a, button") ?? []);
 
