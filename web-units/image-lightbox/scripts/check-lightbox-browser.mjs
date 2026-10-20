@@ -219,6 +219,16 @@ async function fixChecks(browserName, ctxOf) {
   await page.evaluate(() => { const t = document.getElementById("tiny"); t.style.width = "10px"; t.style.height = "10px"; });
   await page.waitForFunction(() => !document.getElementById("tiny").hasAttribute("role"), null, { timeout: 3000 }).catch(() => {});
   check(browserName, "D1 and back to plain when drawn small again", (await attrs("tiny")) === ",", await attrs("tiny"));
+  // D6 a picture that scales in from 3 % keeps its layout size: judged by that, it is a button before, during and after
+  const growAt = await page.evaluate(() => { const g = document.getElementById("grow"); const r = g.getBoundingClientRect(); return [Math.round(r.width), g.offsetWidth, g.getAttribute("role"), g.getAttribute("tabindex")]; });
+  check(browserName, "D6 at the start of a 3 % scale-in the box is tiny but the picture is already a button with a tab stop", growAt[0] < 24 && growAt[1] >= 100 && growAt[2] === "button" && growAt[3] === "0", growAt.join());
+  await page.waitForFunction(() => document.getElementById("grow").getBoundingClientRect().width > 100, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(1600);
+  const growEnd = await page.evaluate(() => { const g = document.getElementById("grow"); return [Math.round(g.getBoundingClientRect().width) > 100, g.getAttribute("role"), g.getAttribute("tabindex")]; });
+  check(browserName, "D6 after the scale-in it is still a button and keyboard-reachable", growEnd.join() === "true,button,0", growEnd.join());
+  await page.focus("#grow"); await page.keyboard.press("Enter"); await settle(page);
+  check(browserName, "D6 Enter on the picture that scaled in opens the viewer", await isOpen(page));
+  await page.keyboard.press("Escape"); await settle(page);
   // D2
   await page.evaluate(() => document.getElementById("ok").removeAttribute("alt"));
   await page.waitForFunction(() => !document.getElementById("ok").hasAttribute("role"), null, { timeout: 3000 }).catch(() => {});

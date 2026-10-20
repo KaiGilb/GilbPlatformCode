@@ -117,11 +117,16 @@ export type Skip = "no-alt" | "opt-out" | "in-link" | "not-image" | "too-small";
 export const MIN_TARGET = 24;
 
 /**
- * Whether a picture is drawn smaller than the smallest touch target. A picture with no layout (not yet drawn,
+ * Whether a picture is laid out smaller than the smallest touch target (its layout size, not its transformed box). A picture with no layout (not yet drawn,
  * hidden, or a page with no layout engine) measures 0 by 0 and is not counted as small: it is checked again
  * when it loads or changes size.
  */
 export function isTooSmall(img: Element): boolean {
+  // The LAYOUT size (offsetWidth/offsetHeight) ignores CSS transforms; a picture that is scaling in from 3 % is
+  // still judged by the size it will have, not by the size it is drawn at this moment (tester R2, D6). Where an
+  // element has no layout box here (jsdom, or not drawn) the bounding box is the fallback.
+  const o = img as Partial<HTMLElement>;
+  if ((o.offsetWidth ?? 0) > 0 && (o.offsetHeight ?? 0) > 0) return o.offsetWidth! < MIN_TARGET || o.offsetHeight! < MIN_TARGET;
   const r = img.getBoundingClientRect?.();
   return !!r && r.width > 0 && r.height > 0 && (r.width < MIN_TARGET || r.height < MIN_TARGET);
 }

@@ -152,6 +152,7 @@ n/a for the picture: the unit adds no box (a scope is `display: contents`), chan
 - **The starter remounts its page once.** In the website starter (with delayed hydration) the whole page is mounted twice about 40 ms apart; a click in those 40 ms is lost. Not a fault of the unit; a visitor cannot click that fast.
 - **Pinch and swipe were proven on real touch events in Chromium and on touch pointer events sent from the page in Chromium, Firefox and WebKit.** Not on a phone: Safari on iOS and Chrome on Android are unproven.
 - **Page pinch-zoom still works** outside the viewer: only the viewer's stage takes touches (`touch-action: none`).
+- The 24 px rule is judged by the picture's layout size (`offsetWidth` and `offsetHeight`), not by its transformed box. A picture that scales in with a CSS animation from `scale(0.03)` is a button from the first moment, so a keyboard or screen-reader visitor can reach it; a picture that is laid out under 24 px stays plain even if a transform draws it larger.
 
 ## Source
 

@@ -32,6 +32,13 @@ describe("D1: a picture drawn under 24 px does not become a button", () => {
     sized(i, 24, 24); expect(isTooSmall(i)).toBe(false);
     sized(i, 0, 0); expect(isTooSmall(i)).toBe(false);
   });
+  test("D6: the layout size decides, not a transformed box (a picture scaling in is not judged by its moment size)", () => {
+    const i = document.createElement("img");
+    const lay = (w: number, h: number) => { Object.defineProperty(i, "offsetWidth", { value: w, configurable: true }); Object.defineProperty(i, "offsetHeight", { value: h, configurable: true }); };
+    sized(i, 9, 9); lay(300, 200); expect(isTooSmall(i)).toBe(false); // box shrunk by a transform, layout is 300 x 200
+    sized(i, 300, 200); lay(16, 16); expect(isTooSmall(i)).toBe(true);  // box enlarged by a transform, layout is 16 x 16
+    sized(i, 9, 9); lay(0, 0); expect(isTooSmall(i)).toBe(true);        // no layout box: the bounding box is the fallback
+  });
   test("whySkipped names it too-small", () => {
     const i = document.createElement("img"); i.alt = "x"; sized(i, 10, 10);
     expect(whySkipped(i)).toBe("too-small");

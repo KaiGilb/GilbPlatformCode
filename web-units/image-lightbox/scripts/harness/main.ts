@@ -43,6 +43,8 @@ const fix = () =>
     h("img", { id: "ok", src: pic(2), alt: "A normal picture", width: 600, height: 400 }),
     h("img", { id: "slow", src: pic(3), "data-full": "/__full/slow.svg", alt: "Slow original", width: 600, height: 400 }),
     h("img", { id: "gone", src: pic(4), "data-full": "/__full/missing.svg", alt: "Missing original", width: 600, height: 400 }),
+    h("img", { id: "grow", src: pic(5), alt: "A picture that scales in", width: 600, height: 400, style: "transform: scale(0.03); animation: ilb-grow 1.2s ease-out 0.4s forwards;" }),
+    h("style", "@keyframes ilb-grow { from { transform: scale(0.03); } to { transform: scale(1); } }"),
     h("img", { id: "dead", src: "/__full/missing.svg", alt: "Broken everywhere", width: 600, height: 400 }),
   ]);
 createApp({ render: () => (scene === "fix" ? h(LightboxScope, null, { default: fix }) : scene === "single" ? single() : h(LightboxScope, null, { default: article })) }).mount("#app");
