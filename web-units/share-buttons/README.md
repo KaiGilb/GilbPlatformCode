@@ -67,6 +67,7 @@ import { ShareButtons } from '@kaigilb/gilbwebsitecode-share-buttons'
 | `heading?` | the short word before the buttons (default "Share"); empty draws none |
 | `shareOn?` | the start of each link's name (default "Share on"), so "Share on X" |
 | `copyLabel?`, `copiedText?` | the copy button's name (default "Copy link") and what is said after it (default "Link copied") |
+| `copyFailedText?`, `copyFallbackLabel?` | said and shown when the clipboard could not take the address (default "Could not copy. Select the link below and copy it."), and the name of the read-only field that then shows the address (default "Link to copy") |
 | `newTabText?` | added to the name of a link that opens a new tab (default "(opens in a new tab)") |
 | `targets?` | `ShareTarget[]`: `{ id, label, href, icon, newTab? }`. `href` is a template with `{url}`, `{title}` and `{text}` (title and address joined), each URL-encoded; `icon` is an SVG path in a 24 by 24 box; `newTab: false` for `mailto:`. The default is `defaultShareTargets` (X, Facebook, WhatsApp, Reddit, email), exported so a host can filter or extend it |
 | `resetMs?` | how long "copied" stays (default 2000) |
@@ -97,7 +98,7 @@ The row is in the server's HTML at its final size: fixed 40 px round buttons, no
 
 - The links' names are built from words, not from the icon: "Share on X (opens in a new tab)". The Skalden file named them with a fixed English `aria-label`; here they come from props.
 - The "copied" status is always in the page, empty until a copy. The Skalden file drew it only after the copy, which many screen readers do not announce. This is a deliberate change.
-- If the clipboard is not allowed (an old browser or a page that is not secure) the button does nothing visible; the `copy(false)` event tells the host. Same as Skalden, plus the event.
+- **Deliberate change (tester R1 D5):** if the clipboard is denied or absent (an old browser, a page that is not secure, a permission refused), the live region says `copyFailedText` and a read-only field with the address appears with its text selected and focused, so the visitor can copy it by hand (Ctrl/Cmd+C). `copy(false)` is still emitted. The field stays until the next copy attempt succeeds. Skalden's button did nothing.
 - The email link says "Share on email"; Skalden's said "Share via email". Pass `shareOn` and a `targets` entry to word it your way.
 
 ## Source

@@ -100,20 +100,50 @@ describe("ShareButtons", () => {
     vi.advanceTimersByTime(600); await flushPromises();
     expect(document.querySelector("[role=status]")!.textContent).toBe("");
   });
-  test("when the clipboard refuses, nothing is said and the host is told", async () => {
+  test("when the clipboard refuses, it says so in the live region, shows the address selected in a read-only field, and tells the host", async () => {
     writeText.mockRejectedValue(new Error("denied"));
     wrapper = mount(ShareButtons, { props: PROPS, attachTo: document.body });
     (document.querySelector("button") as HTMLButtonElement).click();
     await flushPromises();
-    expect(document.querySelector("[role=status]")!.textContent).toBe("");
+    const status = document.querySelector("[role=status]")!;
+    expect(status.textContent).toBe("Could not copy. Select the link below and copy it.");
+    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(status.classList.contains("sb-sr")).toBe(false);
+    const f = document.querySelector("input.sb-field") as HTMLInputElement;
+    expect(f.readOnly).toBe(true);
+    expect(f.value).toBe(PROPS.url);
+    expect(f.getAttribute("aria-label")).toBe("Link to copy");
+    expect(document.activeElement).toBe(f);
+    expect([f.selectionStart, f.selectionEnd]).toEqual([0, PROPS.url.length]);
     expect(wrapper.emitted("copy")).toEqual([[false]]);
   });
-  test("when there is no clipboard at all, it does not throw", async () => {
+  test("when there is no clipboard at all, it does not throw and shows the same fallback", async () => {
     Object.defineProperty(globalThis.navigator, "clipboard", { value: undefined, configurable: true });
     wrapper = mount(ShareButtons, { props: PROPS, attachTo: document.body });
     (document.querySelector("button") as HTMLButtonElement).click();
     await flushPromises();
     expect(wrapper.emitted("copy")).toEqual([[false]]);
+    expect(document.querySelector("input.sb-field")).not.toBeNull();
+    expect(document.querySelector("[role=status]")!.textContent).toContain("Could not copy");
+  });
+  test("a later successful copy removes the fallback and says copied; the words are props", async () => {
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    wrapper = mount(ShareButtons, { props: { ...PROPS, copyFailedText: "Kopiering feilet", copyFallbackLabel: "Lenke" }, attachTo: document.body });
+    const b = document.querySelector("button") as HTMLButtonElement;
+    b.click(); await flushPromises();
+    expect(document.querySelector("[role=status]")!.textContent).toBe("Kopiering feilet");
+    expect(document.querySelector("input.sb-field")!.getAttribute("aria-label")).toBe("Lenke");
+    b.click(); await flushPromises();
+    expect(document.querySelector("input.sb-field")).toBeNull();
+    expect(document.querySelector("[role=status]")!.textContent).toBe("Link copied");
+    expect(wrapper.emitted("copy")).toEqual([[false], [true]]);
+  });
+  test("axe: no violations with the fallback shown (jsdom)", async () => {
+    writeText.mockRejectedValue(new Error("denied"));
+    wrapper = mount(ShareButtons, { props: PROPS, attachTo: document.body });
+    (document.querySelector("button") as HTMLButtonElement).click();
+    await flushPromises();
+    expect(await axeIds()).toEqual([]);
   });
   test("the server's HTML holds every link with its address and no script handler", async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ShareButtons, PROPS) }));
