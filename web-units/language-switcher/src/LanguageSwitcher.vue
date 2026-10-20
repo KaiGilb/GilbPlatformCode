@@ -54,7 +54,10 @@ const badgeText = computed(() => {
 });
 const name = computed(() => {
   const label = props.buttonLabel.replace("{name}", currentLanguage.value?.name ?? "");
-  return badgeText.value && !label.toUpperCase().startsWith(badgeText.value) ? `${badgeText.value} ${label}` : label;
+  // The badge is put first unless the label already begins with that exact text as a whole word ("AR Arabic"): a
+  // label that merely starts with the same letters ("Language", "Danish", "English") does not contain the badge.
+  const hasBadge = !!badgeText.value && new RegExp(`^${badgeText.value}(?![\\p{L}\\p{N}])`, "u").test(label);
+  return badgeText.value && !hasBadge ? `${badgeText.value} ${label}` : label;
 });
 
 const items = (): HTMLElement[] => Array.from(list.value?.querySelectorAll<HTMLElement>("a, button") ?? []);

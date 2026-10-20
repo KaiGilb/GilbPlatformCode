@@ -215,6 +215,28 @@ describe("a language without a built-in flag", () => {
     wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "ja" }, attachTo: document.body });
     expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("JA Language: 日本語. Change language");
   });
+  // Spec: Agent.Tester R2 D7: a label that only starts with the badge's letters does not contain the badge text.
+  const axeLabel = async () => (await axe.run(document.body, { rules: { "color-contrast": { enabled: false }, region: { enabled: false }, "label-content-name-mismatch": { enabled: true } } })).violations.map((v: { id: string }) => v.id);
+  const CASES: [string, string, Record<string, unknown>, string][] = [
+    ["la (Latina), default label", "la", {}, "LA Language: Latina. Change language"],
+    ["da (Danish), custom label that starts with the name", "da", { buttonLabel: "{name}. Change language" }, "DA Danish. Change language"],
+    ["en drawn as a badge (flag 'en'), custom label 'English'", "en", { buttonLabel: "{name}" }, "EN English"],
+    ["a custom label that already has the badge as a word is not doubled", "da", { buttonLabel: "DA {name}" }, "DA Danish"],
+    ["a custom label with the badge as a word before punctuation is not doubled", "da", { buttonLabel: "DA: {name}" }, "DA: Danish"],
+  ];
+  const WIDE = [{ code: "la", name: "Latina" }, { code: "da", name: "Danish" }, { code: "en", name: "English", flag: "en" }];
+  test.each(CASES)("%s", async (_n, current, extra, name) => {
+    for (const hrefFor of [undefined, (c: string) => `/${c}/`]) {
+      wrapper = mount(LanguageSwitcher, { props: { languages: WIDE, current, hrefFor, ...extra }, attachTo: document.body });
+      const b = document.querySelector(".ls-button") as HTMLElement;
+      expect(b.getAttribute("aria-label")).toBe(name);
+      expect(b.textContent!.trim()).toBe(current.toUpperCase());
+      expect(await axeLabel()).toEqual([]);
+      b.click(); await nextTick();
+      expect(await axeLabel()).toEqual([]);
+      wrapper.unmount(); document.body.innerHTML = "";
+    }
+  });
   test("a built-in flag keeps the plain label, and a label that already starts with the badge is not doubled", () => {
     wrapper = mount(LanguageSwitcher, { props: { languages: AR, current: "en" }, attachTo: document.body });
     expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("Language: English. Change language");
