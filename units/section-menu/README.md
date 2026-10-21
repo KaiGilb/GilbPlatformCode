@@ -8,7 +8,7 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
 
 `<SectionMenu sections current api sizeClass layers ...>` draws:
 
-- **a header button** with the current section's icon and name and a ▾. It opens the panel on pointer enter where the pointer can hover finely (a mouse), and on click or tap everywhere. A click right after a hover-open (within 600 ms) keeps it open; a later click closes it.
+- **a header button** with the current section's icon and name and a ▾, the header's main control (0.2.0): 48 px high, 16 px text, a 2 px accent outline. Closed it has the accent tint, the icon in accent and the chevron pointing down; a hover or keyboard focus deepens the tint; open it is the full accent with `--on-accent` text and the chevron turned up, so closed and open are told apart. Keyboard focus draws a 3 px accent ring outside a 2 px gap. It opens the panel on pointer enter where the pointer can hover finely (a mouse), and on click or tap everywhere. A click right after a hover-open (within 600 ms) keeps it open; a later click closes it.
 - **a dimmed edge** below the host's header. A click on it closes the menu.
 - **the panel**, always in the page, so opening it is a class change and nothing more. While closed it is `inert` and `aria-hidden`. It is a modal dialog named "Go to".
   - Left: the sections. The one you are in is marked "You are here". Resting the pointer on another section for 120 ms, or focusing it, previews its options; a quick pass does not. Each opening starts from the section you are in.
@@ -16,6 +16,7 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
   - Right: "Also useful here" (places that fit the previewed section) and "For you". Without either, there are two columns.
   - Footer: a hint ("Press Esc to close" unless the host passes its own) and one act of the host's, such as Sign out.
 - **four ways to close**: Close, Esc, the dimmed edge, or any choice. Focus goes back to the button.
+  - **Close sits straight below the button** (0.2.0), in the panel's top row: its left edge under the button's left edge, at least as wide as the button (and never under `CLOSE_MIN_WIDTH`, 96 px), kept inside the row. It is measured on each opening and on a resize while open, so the hand that opened the menu, by hover or by click, closes it with one short move down. "Go to" stays at the row's start when it fits before Close, and otherwise follows it. There is one Close only; 0.1.0's Close at the far right is gone.
 - **keyboard**: on open, focus lands on the section you are in. Tab stays inside the panel and visits Close, then every section, each followed (when it is previewed) by its options and places, then "For you", then the footer act, and wraps. Tab skips a coming entry; the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order. Up, Down, Home and End move between sections; Right goes into the options; Left comes back.
 - **phone** (`sizeClass="compact"`): one column, no hover preview; the options are those of the section you are in. Medium is two columns.
 - Reduced motion: the transitions switch off under `prefers-reduced-motion`.
@@ -104,7 +105,7 @@ An app that already takes sibling checkouts by link and a Vite alias (GilbApp ta
 
 ## What you get
 
-The button, the dimmed edge and the panel, side by side in the page. Test hooks: `data-testid` `section-menu-trigger`, `-trigger-label`, `-scrim`, `-panel` (with `data-open`), `-close`, `-sections`, `-here`, `-here-tag`, `-places`, `-foryou`, `-<section id>-warning`, and the footer act's `testId` (default `section-menu-footer-action`); `data-section`, `data-option`, `data-current`, `data-previewing` on the rows.
+The button, the dimmed edge and the panel, side by side in the page. Test hooks: `data-testid` `section-menu-trigger` (with `data-state` `open` or `closed`), `-trigger-label`, `-trigger-icon`, `-trigger-chevron`, `-top-row`, `-scrim`, `-panel` (with `data-open`), `-close`, `-sections`, `-here`, `-here-tag`, `-places`, `-foryou`, `-<section id>-warning`, and the footer act's `testId` (default `section-menu-footer-action`); `data-section`, `data-option`, `data-current`, `data-previewing` on the rows.
 
 ## Host must supply
 

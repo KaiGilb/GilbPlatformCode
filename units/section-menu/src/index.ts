@@ -8,6 +8,7 @@ export {
   DEFAULT_LABELS,
   HOVER_INTENT_MS,
   HOVER_CLICK_GRACE_MS,
+  CLOSE_MIN_WIDTH,
   type SectionMenuProps,
   type SectionMenuHandle,
   type SectionMenuLabels,

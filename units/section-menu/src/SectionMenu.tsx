@@ -9,6 +9,10 @@
  *  • Instant: the panel is always mounted, and opening it is a class change. Nothing here fetches.
  *  • Closes with Close, Esc, a click on the dimmed edge, or any choice; focus returns to the
  *    button. Focus moves into the panel on open and Tab stays inside it.
+ *  • Close sits in the panel's top row straight below the button (measured on open), so the hand
+ *    that opened the menu closes it with one short move down (GilbApp C214-UI1, Kai 2026-10-21).
+ *  • The button is the strongest control in the header: closed it is the accent outline and tint,
+ *    open (and on hover) it is stronger, so the two states can be told apart (Kai 2026-10-21).
  *  • Left: the sections. Resting on one ~120 ms (hover intent), or focusing it, previews its
  *    options in the next columns, so a diagonal move to an option keeps the preview.
  *    Each opening resets the preview to the section you are in.
@@ -22,7 +26,7 @@
  * library uses; a host maps its own tokens onto them.
  */
 import type React from "react";
-import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { MenuIcon, isMenuIconKey, type MenuIconKey } from "./MenuIcon";
 import { menuOptionsOf, type MenuOption, type MenuSection } from "./menuList";
 
@@ -30,6 +34,11 @@ import { menuOptionsOf, type MenuOption, type MenuSection } from "./menuList";
 export const HOVER_INTENT_MS = 120;
 /** A click this soon after a hover opened the menu is the same gesture, not a request to close. */
 export const HOVER_CLICK_GRACE_MS = 600;
+
+/** The Close below the button is at least this wide, so it is an easy target when the button shows only its icon (a phone). */
+export const CLOSE_MIN_WIDTH = 96;
+/** The space kept between the "Go to" heading and Close when they share the top row. */
+const ROW_GAP = 16;
 
 /** The three window widths (the `size-class` unit's names). */
 export type MenuSizeClass = "compact" | "medium" | "expanded";
@@ -168,6 +177,10 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
   const panelRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<number | null>(null);
   const panelId = useId();
+  const closeRowRef = useRef<HTMLDivElement>(null);
+  const goToRef = useRef<HTMLSpanElement>(null);
+  // Where Close and the "Go to" heading sit in the top row (px from the row's left edge); null until measured.
+  const [rowPlace, setRowPlace] = useState<{ close: number; width: number; heading: number } | null>(null);
 
   const clearHover = () => {
     if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
@@ -278,6 +291,27 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 
   useEffect(() => clearHover, []);
 
+  // Close goes straight below the button: its left edge under the button's left edge and at least the
+  // button's width, kept inside the row. Measured on every opening and on a resize while open (the
+  // button's width changes with the section's name). "Go to" stays at the row's start when it fits
+  // before Close; otherwise it follows Close.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const t = triggerRef.current?.getBoundingClientRect();
+      const row = closeRowRef.current?.getBoundingClientRect();
+      if (!t || !row) return;
+      const width = Math.max(t.width, CLOSE_MIN_WIDTH);
+      const close = Math.max(0, Math.min(t.left - row.left, row.width - width));
+      const headingWidth = goToRef.current?.getBoundingClientRect().width ?? 0;
+      const heading = headingWidth + ROW_GAP <= close ? 0 : close + width + ROW_GAP;
+      setRowPlace((p) => (p && p.close === close && p.width === width && p.heading === heading ? p : { close, width, heading }));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, currentSection.label, sizeClass]);
+
   // Another surface took over (a command palette opened over the menu): the menu closes and its focus
   // trap stops. It must not pull focus back under that surface, and a choice made there must not leave
   // the menu open over the new section (GilbApp, Agent.Tester D4, D5).
@@ -381,27 +415,42 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           if (open) close();
           else show();
         }}
+        data-state={open ? "open" : "closed"}
         className={
-          "flex-none flex items-center gap-2 h-11 min-h-[44px] pl-2.5 pr-2 rounded-[var(--r-md)] border font-semibold text-[14px] " +
-          "transition-colors motion-reduce:transition-none " +
+          // The header's main control: larger than its neighbours, an accent outline (2 px) and tint when closed,
+          // the full accent when open. A 3 px accent ring outside a gap shows keyboard focus in both states.
+          "flex-none flex items-center gap-2.5 h-12 min-h-[44px] pl-3 pr-2.5 rounded-[var(--r-md)] border-2 border-[var(--accent)] " +
+          "font-semibold text-[16px] tracking-[-0.01em] cursor-pointer " +
+          "transition-[background-color,color,box-shadow] motion-reduce:transition-none " +
+          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] " +
           (open
-            ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] border-[var(--accent)] text-[var(--ink)]"
-            : "bg-[var(--surface)] border-[var(--line)] text-[var(--ink)] hover:border-[var(--focus)]")
+            ? "bg-[var(--accent)] text-[var(--on-accent)] shadow-[0_2px_10px_color-mix(in_srgb,var(--accent)_35%,transparent)]"
+            : "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--ink)] " +
+              "hover:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)] hover:shadow-[0_2px_10px_color-mix(in_srgb,var(--accent)_30%,transparent)] " +
+              "focus-visible:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)]")
         }
       >
-        <span className="text-[var(--accent)] grid place-items-center">{icon(currentSection.icon, 20)}</span>
+        <span data-testid="section-menu-trigger-icon" className={(open ? "text-[var(--on-accent)]" : "text-[var(--accent)]") + " grid place-items-center"}>
+          {icon(currentSection.icon, 22)}
+        </span>
         <span className="hidden sm:inline" data-testid="section-menu-trigger-label">
           {currentSection.label}
         </span>
         <svg
-          width="16"
-          height="16"
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth={2.2}
+          strokeWidth={2.6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
           aria-hidden
-          className={"text-[var(--ink-faint)] transition-transform motion-reduce:transition-none " + (open ? "rotate-180" : "")}
+          data-testid="section-menu-trigger-chevron"
+          className={
+            "transition-transform motion-reduce:transition-none " +
+            (open ? "rotate-180 text-[var(--on-accent)]" : "text-[var(--accent-ink)]")
+          }
         >
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -439,19 +488,35 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           (open ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1.5 pointer-events-none")
         }
       >
-        <div className={"flex items-center " + (compact ? "px-3.5 pt-3 pb-1" : "px-6 pt-4 pb-1.5")}>
-          <span className="text-[13px] tracking-[0.14em] uppercase font-semibold text-[var(--ink-faint)]">{L.goTo}</span>
-          <button
-            type="button"
-            onClick={close}
-            data-testid="section-menu-close"
-            className="ml-auto flex items-center gap-1.5 h-11 min-h-[44px] px-4 rounded-full bg-[var(--paper-2)] text-[var(--ink)] hover:bg-[var(--sel)]"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-            {L.close}
-          </button>
+        {/* The top row: Close straight below the button, "Go to" before it when it fits (else after it).
+            One Close only: the far-right one it replaces would compete with it. */}
+        <div className={compact ? "px-3.5 pt-3 pb-1" : "px-6 pt-4 pb-1.5"}>
+          <div ref={closeRowRef} className="relative h-12" data-testid="section-menu-top-row">
+            <span
+              ref={goToRef}
+              style={{ left: rowPlace?.heading ?? 0 }}
+              className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[13px] tracking-[0.14em] uppercase font-semibold text-[var(--ink-faint)]"
+            >
+              {L.goTo}
+            </span>
+            <button
+              type="button"
+              onClick={close}
+              data-testid="section-menu-close"
+              style={{ left: rowPlace?.close ?? 0, width: rowPlace?.width ?? CLOSE_MIN_WIDTH }}
+              className={
+                "absolute top-1/2 -translate-y-1/2 flex items-center justify-center gap-2 h-12 min-h-[44px] px-4 " +
+                "rounded-[var(--r-md)] border-2 border-[var(--accent)] bg-[var(--surface)] text-[var(--ink)] font-semibold text-[15px] cursor-pointer " +
+                "hover:bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] " +
+                "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]"
+              }
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" aria-hidden className="text-[var(--accent-ink)]">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+              {L.close}
+            </button>
+          </div>
         </div>
 
         <div
