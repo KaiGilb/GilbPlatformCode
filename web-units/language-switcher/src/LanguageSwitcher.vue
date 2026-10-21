@@ -53,7 +53,8 @@ const badgeText = computed(() => {
   return (flagKeys as readonly string[]).includes(f) ? "" : f.slice(0, 2).toUpperCase();
 });
 const name = computed(() => {
-  const label = props.buttonLabel.replace("{name}", currentLanguage.value?.name ?? "");
+  // A function replacer, so $&, $', $` and $$ in a language name are kept as typed.
+  const label = props.buttonLabel.replace("{name}", () => currentLanguage.value?.name ?? "");
   // The badge is put first unless the label already begins with that exact text as a whole word ("AR Arabic"): a
   // label that merely starts with the same letters ("Language", "Danish", "English") does not contain the badge.
   // No pattern is built from the badge: it comes from host data and may hold any character ("+1", "(x", "a.").

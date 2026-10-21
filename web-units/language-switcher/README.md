@@ -24,10 +24,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-language-switcher
 cd web-units/language-switcher && npm pack --pack-destination <site>/vendor/gilbwebsitecode-language-switcher
 echo <commit> > <site>/vendor/gilbwebsitecode-language-switcher/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-language-switcher/kaigilb-gilbwebsitecode-language-switcher-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-language-switcher/kaigilb-gilbwebsitecode-language-switcher-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-language-switcher/kaigilb-gilbwebsitecode-language-switcher-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-language-switcher/kaigilb-gilbwebsitecode-language-switcher-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -100,6 +100,8 @@ The closed switcher is one fixed-size button (the flag is 22 by 16 px) in the se
 - Do not put the switcher where an ancestor has `overflow: hidden`; the open list would be cut off.
 
 ## Wrong readings
+
+- Version 0.1.1: a language name that holds `$&`, `$'`, `` $` `` or `$$` is shown and named as typed (0.1.0 turned those into pieces of the label).
 
 - **Deliberate change from Skalden:** the old list was `role="listbox"` made of buttons with `role="option"`, which is not the listbox pattern (options should be reached with arrow keys inside one tab stop). It is now a disclosure: `aria-expanded` and `aria-controls` on the button, a list of ordinary buttons or links reached with Tab. The arrow keys, Home and End also move between the items, and ArrowDown or ArrowUp on the button opens the list and focuses the first or last item. What the visitor does (open, pick, close) is the same.
 - **Deliberate change:** the old full-screen invisible click-away button is gone. A press outside, or focus moving outside, closes the list; Escape closes it and returns focus to the button, even when focus was still on the page (Safari does not focus a button on a click).

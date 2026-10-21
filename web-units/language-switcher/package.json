@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-language-switcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A flag button that opens a short list of the other languages: a disclosure with keyboard and focus handling. Languages, flags and words are props. Vue 3 / Nuxt 3.",

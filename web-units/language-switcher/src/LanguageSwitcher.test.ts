@@ -270,6 +270,28 @@ describe("a language without a built-in flag", () => {
   });
 });
 
+// Spec: Agent.Tester R3 D9: the language name is host data; "$&", "$'", "$`" and "$$" must come through as typed.
+describe("a language name with replacement patterns", () => {
+  const NAMES = ["A$&B", "A$'B", "A$`B", "A$$B"];
+  test.each(NAMES)("the name %s is in the button's accessible name and in the list verbatim", async (nm) => {
+    const langs = [{ code: "en", name: "English", flag: "us" }, { code: "xx", name: nm, flag: "xx" }];
+    for (const buttonLabel of [undefined, "{name}", "Language: {name}. Change language"]) {
+      wrapper = mount(LanguageSwitcher, { props: { languages: langs, current: "xx", ...(buttonLabel ? { buttonLabel } : {}) }, attachTo: document.body });
+      const b = document.querySelector(".ls-button") as HTMLElement;
+      expect(b.getAttribute("aria-label")).toContain(nm);
+      expect(b.getAttribute("aria-label")!.split(nm).length).toBe(2);
+      wrapper.unmount(); document.body.innerHTML = "";
+    }
+    wrapper = mount(LanguageSwitcher, { props: { languages: langs, current: "en" }, attachTo: document.body });
+    (document.querySelector(".ls-button") as HTMLElement).click(); await nextTick();
+    expect(document.body.textContent).toContain(nm);
+  });
+  test("a button label of exactly {name} equals the name", () => {
+    wrapper = mount(LanguageSwitcher, { props: { languages: [{ code: "xx", name: "A$&B", flag: "us" }], current: "xx", buttonLabel: "{name}" }, attachTo: document.body });
+    expect(document.querySelector(".ls-button")!.getAttribute("aria-label")).toBe("A$&B");
+  });
+});
+
 describe("the unit's style", () => {
   const SFC = readFileSync(join(process.cwd(), "src", "LanguageSwitcher.vue"), "utf8");
   const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
