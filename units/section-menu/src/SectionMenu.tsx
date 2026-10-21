@@ -29,6 +29,7 @@ import type React from "react";
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { MenuIcon, isMenuIconKey, type MenuIconKey } from "./MenuIcon";
 import { menuOptionsOf, type MenuOption, type MenuSection } from "./menuList";
+import { openColors, parseCssColor, type OpenColors } from "./openColors";
 
 /** How long the pointer must rest on a section before its options are previewed. */
 export const HOVER_INTENT_MS = 120;
@@ -181,6 +182,10 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
   const goToRef = useRef<HTMLSpanElement>(null);
   // Where Close and the "Go to" heading sit in the top row (px from the row's left edge); null until measured.
   const [rowPlace, setRowPlace] = useState<{ close: number; width: number; heading: number } | null>(null);
+  // The open button's label token and fill, chosen from the accent as drawn (see openColors.ts); null where the
+  // colours cannot be read (no layout engine), which keeps the full accent and `--on-accent`.
+  const colorProbeRef = useRef<HTMLSpanElement>(null);
+  const [openPaint, setOpenPaint] = useState<OpenColors | null>(null);
 
   const clearHover = () => {
     if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
@@ -291,6 +296,16 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 
   useEffect(() => clearHover, []);
 
+  // Read the accent and the two text tokens as drawn on each opening (a theme may have changed them while closed).
+  useLayoutEffect(() => {
+    if (!open || !colorProbeRef.current || typeof getComputedStyle !== "function") return;
+    const cs = getComputedStyle(colorProbeRef.current);
+    const accent = parseCssColor(cs.borderTopColor);
+    const ink = parseCssColor(cs.color);
+    const onAccent = parseCssColor(cs.backgroundColor);
+    setOpenPaint(accent && ink && onAccent ? openColors(accent, ink, onAccent) : null);
+  }, [open]);
+
   // Close goes straight below the button: its left edge under the button's left edge and at least the
   // button's width, kept inside the row. Measured on every opening and on a resize while open (the
   // button's width changes with the section's name). "Go to" stays at the row's start when it fits
@@ -321,6 +336,10 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
       setOpen(false);
     }
   }, [dismissed, open]);
+
+  // The open label, icon and chevron: whichever text token reads on the accent (both class names are written out
+  // whole so Tailwind finds them).
+  const openText = openPaint?.text === "ink" ? "text-[var(--ink)]" : "text-[var(--on-accent)]";
 
   const shown = compact ? currentSection : sections.find((s) => s.id === preview) ?? currentSection;
   const previewing = shown.id !== current;
@@ -416,21 +435,32 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           else show();
         }}
         data-state={open ? "open" : "closed"}
+        data-open-text={open ? (openPaint?.text ?? "on-accent") : undefined}
+        style={open && openPaint && openPaint.mix > 0 ? { backgroundColor: openFill(openPaint) } : undefined}
         className={
           // The header's main control: larger than its neighbours, an accent outline (2 px) and tint when closed,
           // the full accent when open. A 3 px accent ring outside a gap shows keyboard focus in both states.
-          "flex-none flex items-center gap-2.5 h-12 min-h-[44px] pl-3 pr-2.5 rounded-[var(--r-md)] border-2 border-[var(--accent)] " +
+          // Below `sm` the name is hidden and the padding is tighter, so the phone button is 64 px wide, as in 0.1.0
+          // (Agent.Tester s131 D2: 76 px pushed a 390 px header 10 px past the screen).
+          "flex-none flex items-center gap-1.5 sm:gap-2.5 h-12 min-h-[44px] pl-2 sm:pl-3 pr-1.5 sm:pr-2.5 rounded-[var(--r-md)] border-2 border-[var(--accent)] " +
           "font-semibold text-[16px] tracking-[-0.01em] cursor-pointer " +
           "transition-[background-color,color,box-shadow] motion-reduce:transition-none " +
           "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] " +
           (open
-            ? "bg-[var(--accent)] text-[var(--on-accent)] shadow-[0_2px_10px_color-mix(in_srgb,var(--accent)_35%,transparent)]"
+            ? "bg-[var(--accent)] " + openText + " shadow-[0_2px_10px_color-mix(in_srgb,var(--accent)_35%,transparent)]"
             : "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[var(--ink)] " +
               "hover:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)] hover:shadow-[0_2px_10px_color-mix(in_srgb,var(--accent)_30%,transparent)] " +
               "focus-visible:bg-[color-mix(in_srgb,var(--accent)_24%,transparent)]")
         }
       >
-        <span data-testid="section-menu-trigger-icon" className={(open ? "text-[var(--on-accent)]" : "text-[var(--accent)]") + " grid place-items-center"}>
+        {/* Not drawn: carries the accent and the two text tokens, so their drawn values can be read (openColors). */}
+        <span
+          ref={colorProbeRef}
+          aria-hidden
+          hidden
+          style={{ color: "var(--ink)", backgroundColor: "var(--on-accent)", borderTopColor: "var(--accent)" }}
+        />
+        <span data-testid="section-menu-trigger-icon" className={(open ? openText : "text-[var(--accent)]") + " grid place-items-center"}>
           {icon(currentSection.icon, 22)}
         </span>
         <span className="hidden sm:inline" data-testid="section-menu-trigger-label">
@@ -449,7 +479,7 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           data-testid="section-menu-trigger-chevron"
           className={
             "transition-transform motion-reduce:transition-none " +
-            (open ? "rotate-180 text-[var(--on-accent)]" : "text-[var(--accent-ink)]")
+            (open ? "rotate-180 " + openText : "text-[var(--accent-ink)]")
           }
         >
           <path d="m6 9 6 6 6-6" />
@@ -648,6 +678,12 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
       </div>
     </>
   );
+}
+
+/** The open fill when the accent is mixed toward a text token (tokens only, no colour values). */
+function openFill(p: OpenColors): string {
+  const toward = p.mixToward === "ink" ? "var(--ink)" : "var(--on-accent)";
+  return `color-mix(in srgb, var(--accent) ${100 - p.mix}%, ${toward} ${p.mix}%)`;
 }
 
 /** A column of options. A coming entry is greyed and does nothing; an address opens a new tab. */
