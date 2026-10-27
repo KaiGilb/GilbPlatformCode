@@ -1,0 +1,38 @@
+{
+  "name": "@kaigilb/gilbplatformcode-claude-code-connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Connect-Claude-Code button and badge for an app: pairs the page with the person's own Claude Code through a client the host builds, and shows the connection state. View only.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./claude-code.css": "./src/claude-code.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-claude-code-client": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-claude-code-client": "file:../claude-code-client",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
