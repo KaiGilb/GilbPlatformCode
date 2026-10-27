@@ -1,7 +1,7 @@
 /** The years a level's date may take (a mistyped year such as 0202 is "no date", not a Timeline that spans 1800 years). */
 export const MIN_YEAR = 1900;
 export const MAX_YEAR = 2200;
-export const YEAR_RANGE_SENTENCE = `Year must be ${MIN_YEAR}–${MAX_YEAR}`;
+export const YEAR_RANGE_SENTENCE = `Year must be ${MIN_YEAR}\u2013${MAX_YEAR}`;
 
 /** True when a `YYYY...` text names a year outside {@link MIN_YEAR}..{@link MAX_YEAR}. */
 export function yearOutOfRange(s: string): boolean {
