@@ -1,0 +1,34 @@
+{
+  "name": "@kaigilb/gilbplatformcode-card-group",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One framed group of a record card: a titled frame with an icon that holds its items, hidden in presentation when empty, registered with the card's mode so an add chooser can list it, with the pick-then-focus behaviour.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
