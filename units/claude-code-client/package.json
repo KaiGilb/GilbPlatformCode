@@ -1,0 +1,26 @@
+{
+  "name": "@kaigilb/gilbplatformcode-claude-code-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The page side of the person's own Claude Code as an app's agent: pairs with the local bridge, runs a chat turn, and relays the tool calls to the host's platform as the signed-in person.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-claude-code-bridge": "file:../claude-code-bridge",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
