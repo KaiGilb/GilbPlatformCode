@@ -37,6 +37,70 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import type { AddressInfo } from "node:net";
+import type { ChildProcess, ExecFileException } from "node:child_process";
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+/** What the code reads from a caught error (Node errors carry `code`; our own body errors carry `status`). */
+type ErrLike = { code?: string; message?: string; status?: number };
+/** A tool the app page offers for one turn. */
+interface ToolSpec { name: string; description?: string; inputSchema?: unknown }
+/** The answer to one relayed tool call. */
+interface ToolResult { text: string; isError: boolean }
+interface PendingCall { resolve: (r: ToolResult) => void; reject: (e: unknown) => void }
+/** One issued pairing secret, kept by the hash of the secret. */
+interface Pairing { origin: string | null; principalHash: string | null; issued: number; lastUsed: number; saved: number }
+/** A row of the pairings file, before it is checked. */
+type PairingRow = { hash?: unknown; origin?: unknown; principalHash?: unknown; issued?: unknown; lastUsed?: unknown } | null;
+/** One chat turn (a hand-off is a nested turn). */
+interface Turn {
+  id: string;
+  mcpToken: string;
+  system: string;
+  tools: ToolSpec[];
+  model: string;
+  pending: Map<string, PendingCall>;
+  closed: boolean;
+  child: ChildProcess | null;
+  send: (event: string, data: unknown) => void;
+  parent: Turn | null;
+  handoff: Turn | null;
+  root: { calls: number };
+}
+/** A JSON-RPC message from the local claude process. */
+interface McpMsg { id?: unknown; method?: string; params?: { protocolVersion?: string; name?: unknown; arguments?: unknown } }
+/** One line of claude's stream-json output (only the fields read here). */
+interface ClaudeEvent {
+  type?: string;
+  subtype?: string;
+  model?: string;
+  apiKeySource?: unknown;
+  tools?: unknown[];
+  mcp_servers?: unknown[];
+  num_turns?: number;
+  is_error?: boolean;
+  result?: unknown;
+}
+interface RunClaudeOut { result?: ClaudeEvent; error?: string; sessionId: string; model: string; apiKeyRefused?: boolean }
+interface ClaudeMode { sessionId: string; resume: boolean }
+/** The JSON `claude auth status` prints. */
+interface AuthStatus { loggedIn?: unknown; authMethod?: unknown; subscriptionType?: unknown; email?: string }
+/** The status.json file the CLI side writes next to the control token. */
+interface StatusFile { ok?: boolean; port?: number; at?: unknown; reason?: unknown; billing?: unknown }
+export interface LaunchctlResult { code: number; out: string }
+export interface ServiceResult { ok: boolean; message: string }
+export interface ServiceDeps {
+  launchctl: (args: string[]) => Promise<LaunchctlResult>;
+  uid: number;
+  home: string;
+  nodePath: string;
+  file: string;
+  env: NodeJS.ProcessEnv;
+  log?: ((line: string) => void) | undefined;
+  platform?: string | undefined;
+  check?: typeof checkSubscriptionLogin | undefined;
+  sleep?: ((ms: number) => Promise<unknown>) | undefined;
+}
 
 export const BRIDGE_VERSION = "1";
 export const DEFAULT_PORT = 47821;
@@ -125,8 +189,8 @@ export function loadAllowedOrigins(extra: unknown[] = []) {
   let file: { origins: readonly string[] } = { origins: DEFAULT_ALLOWED_ORIGINS };
   try {
     file = JSON.parse(fs.readFileSync(path.join(HERE, "allowed-origins.json"), "utf8"));
-  } catch (err: any) {
-    if (err?.code !== "ENOENT") throw err;
+  } catch (err) {
+    if ((err as ErrLike)?.code !== "ENOENT") throw err;
   }
   const fromEnv = (process.env.GILB_BRIDGE_ALLOW_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   // Added origins (flag, environment) must be well formed; the file and the built-in list are trusted as shipped.
@@ -149,9 +213,9 @@ const same = (a: unknown, b: unknown) => crypto.timingSafeEqual(sha(a), sha(b));
  * Runs with the billing variables removed, so what it reports is what every turn will use.
  * @returns {Promise<{ok:true, info:{email?:string, subscriptionType:string}} | {ok:false, reason:string}>}
  */
-export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; info: { email?: string; subscriptionType: string } } | { ok: false; reason: string }> {
+export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; info: { email?: string | undefined; subscriptionType: string } } | { ok: false; reason: string }> {
   return new Promise((resolve) => {
-    execFile(claudeBin, ["auth", "status"], { env: childEnv(env), timeout: 20000 }, (err: any, stdout) => {
+    execFile(claudeBin, ["auth", "status"], { env: childEnv(env), timeout: 20000 }, (err: ExecFileException | null, stdout) => {
       if (err && !stdout) {
         const missing = err.code === "ENOENT";
         resolve({
@@ -162,7 +226,7 @@ export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.Process
         });
         return;
       }
-      let st: any;
+      let st: AuthStatus;
       try {
         st = JSON.parse(String(stdout));
       } catch {
@@ -248,11 +312,11 @@ export function createBridge(opts: BridgeOptions = {}) {
   const maxPairings = opts.maxPairings ?? MAX_PAIRINGS;
   const now = opts.now ?? Date.now;
   /** sha256 hex of each issued secret -> { origin (the page it was issued to, or null for a non-browser), principalHash, issued, lastUsed, saved } */
-  const pairings = new Map<string, any>();
+  const pairings = new Map<string, Pairing>();
 
   function loadPairings() {
     if (!opts.pairingsFile) return;
-    let rows: any;
+    let rows: unknown;
     try {
       if (fs.statSync(opts.pairingsFile).size > 1024 * 1024) return; // far more than maxPairings rows: not our file
       rows = JSON.parse(fs.readFileSync(opts.pairingsFile, "utf8")).pairings;
@@ -260,7 +324,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return; // no file, or a damaged one: nobody is paired, the person pairs again
     }
     if (!Array.isArray(rows)) return;
-    for (const r of rows.slice(0, 1000)) {
+    for (const r of rows.slice(0, 1000) as PairingRow[]) {
       if (!r || typeof r.hash !== "string" || !/^[0-9a-f]{64}$/.test(r.hash)) continue;
       if (typeof r.issued !== "number" || typeof r.lastUsed !== "number") continue;
       if (!Number.isFinite(r.issued) || !Number.isFinite(r.lastUsed)) continue;
@@ -278,7 +342,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
   function dropOldest() {
     let oldest: string | null = null;
-    for (const [h, p] of pairings) if (oldest === null || p.lastUsed < pairings.get(oldest).lastUsed) oldest = h;
+    for (const [h, p] of pairings) if (oldest === null || p.lastUsed < pairings.get(oldest)!.lastUsed) oldest = h;
     if (oldest !== null) pairings.delete(oldest);
   }
   function savePairings() {
@@ -293,20 +357,20 @@ export function createBridge(opts: BridgeOptions = {}) {
       fs.writeFileSync(tmp, JSON.stringify({ version: 1, pairings: rows }), { mode: 0o600, flag: "wx" });
       fs.renameSync(tmp, opts.pairingsFile);
       for (const p of pairings.values()) p.saved = p.lastUsed;
-    } catch (e: any) {
-      log(`could not save pairings: ${e?.message ?? e}`); // the bridge still works; the person may have to pair again after a restart
+    } catch (e) {
+      log(`could not save pairings: ${(e as ErrLike)?.message ?? e}`); // the bridge still works; the person may have to pair again after a restart
     }
   }
   loadPairings();
   /** @type {Map<string, any>} */
-  const turns = new Map();
+  const turns = new Map<string, Turn>();
 
-  const hostOk = (req: any) => {
+  const hostOk = (req: IncomingMessage) => {
     const h = String(req.headers.host ?? "");
     return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
   };
 
-  function cors(req: any, res: any) {
+  function cors(req: IncomingMessage, res: ServerResponse) {
     const origin = req.headers.origin;
     if (origin === undefined) return true; // not a browser (curl, the tests)
     if (!allowedOrigins.includes(origin)) return false;
@@ -320,12 +384,12 @@ export function createBridge(opts: BridgeOptions = {}) {
     return true;
   }
 
-  const json = (res: any, status: number, body: unknown) => {
+  const json = (res: ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify(body));
   };
 
-  function readBody(req: any): Promise<any> {
+  function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       let size = 0;
       const chunks: Buffer[] = [];
@@ -351,7 +415,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /** True when the request carries a live secret that was issued to THIS origin. Using it slides its expiry. */
-  const hasSecret = (req: any) => {
+  const hasSecret = (req: IncomingMessage) => {
     const s = req.headers["x-bridge-secret"];
     if (typeof s !== "string" || !s) return false;
     const hash = sha(s).toString("hex");
@@ -376,7 +440,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   // ---- MCP server (one per turn), spoken to by `claude` over HTTP on 127.0.0.1 ----------------------------------
-  function mcpReply(turn: any, msg: any): any {
+  function mcpReply(turn: Turn, msg: McpMsg): unknown {
     const { id, method, params } = msg;
     const ok = (result: unknown) => ({ jsonrpc: "2.0", id, result });
     const bad = (code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
@@ -390,7 +454,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (method === "ping") return ok({});
     if (method === "tools/list") {
       return ok({
-        tools: turn.tools.map((t: any) => ({
+        tools: turn.tools.map((t: ToolSpec) => ({
           name: t.name,
           description: t.description ?? "",
           inputSchema: t.inputSchema ?? { type: "object", properties: {} },
@@ -399,16 +463,16 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (method === "tools/call") {
       const name = params?.name;
-      if (!turn.tools.some((t: any) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
+      if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
       return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {})).then(
         (r) => ok({ content: [{ type: "text", text: r.text }], isError: r.isError }),
-        (e) => ok({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true }),
+        (e: unknown) => ok({ content: [{ type: "text", text: String((e as ErrLike)?.message ?? e) }], isError: true }),
       );
     }
     return bad(-32601, `Method not found: ${method}`);
   }
 
-  function relayToolCall(turn: any, name: string, args: unknown): Promise<any> {
+  function relayToolCall(turn: Turn, name: string, args: unknown): Promise<ToolResult> {
     return new Promise((resolve, reject) => {
       if (turn.closed) return reject(new Error("The app page left; the turn was cancelled."));
       // One budget for the turn and its hand-offs: past it nothing more is relayed, and the model is told so.
@@ -422,7 +486,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         reject(new Error("The app did not answer the tool call in time."));
       }, TOOL_WAIT_MS);
       turn.pending.set(id, {
-        resolve: (r: unknown) => {
+        resolve: (r: ToolResult) => {
           clearTimeout(timer);
           resolve(r);
         },
@@ -435,7 +499,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     });
   }
 
-  async function handleMcp(req: any, res: any, turnId: string, token: string) {
+  async function handleMcp(req: IncomingMessage, res: ServerResponse, turnId: string, token: string) {
     // Only the local claude process uses this; a browser must never reach it.
     if (req.headers.origin !== undefined) return json(res, 403, { error: "no browsers here" });
     const turn = turns.get(turnId);
@@ -447,11 +511,11 @@ export function createBridge(opts: BridgeOptions = {}) {
     let body;
     try {
       body = await readBody(req);
-    } catch (e: any) {
-      return json(res, e.status ?? 400, { error: e.message });
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
     const batch = Array.isArray(body);
-    const msgs = batch ? body : [body];
+    const msgs: McpMsg[] = batch ? body as unknown as McpMsg[] : [body as McpMsg];
     const replies = [];
     for (const m of msgs) {
       if (m && m.id === undefined) continue; // a notification
@@ -467,7 +531,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   // ---- one chat turn ---------------------------------------------------------------------------------------------
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  function claudeArgs(turn: any, mode: any) {
+  function claudeArgs(turn: Turn, mode: ClaudeMode) {
     const mcp = { mcpServers: { gilb: { type: "http", url: `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}` } } };
     const args = [
       "-p",
@@ -494,7 +558,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused? }. */
-  function runClaude(turn: any, mode: any, prompt: string): Promise<any> {
+  function runClaude(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
     return new Promise((resolve) => {
       const child = spawn(claudeBin, claudeArgs(turn, mode), {
         cwd: workDir,
@@ -505,7 +569,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       let buf = "";
       let stderr = "";
       let model = "";
-      let result: any = null;
+      let result: ClaudeEvent | null = null;
       let refused = false;
       let sawInit = false;
       let initOk = false; // fail closed: a good init event (apiKeySource "none") must have been seen
@@ -519,7 +583,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           const line = buf.slice(0, i).trim();
           buf = buf.slice(i + 1);
           if (!line) continue;
-          let ev;
+          let ev: ClaudeEvent;
           try {
             ev = JSON.parse(line);
           } catch {
@@ -566,17 +630,17 @@ export function createBridge(opts: BridgeOptions = {}) {
     });
   }
 
-  async function handleTurn(req: any, res: any) {
+  async function handleTurn(req: IncomingMessage, res: ServerResponse) {
     let body;
     try {
       body = await readBody(req);
-    } catch (e: any) {
-      return json(res, e.status ?? 400, { error: e.message });
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
     // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
     // that asked. One level only, one at a time, on the parent's budget, and it never resumes or reads a session.
     const parentId = typeof body.parentTurnId === "string" ? body.parentTurnId : "";
-    let parent = null;
+    let parent: Turn | null = null;
     if (parentId) {
       parent = turns.get(parentId) ?? null;
       if (!parent || parent.closed) return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
@@ -587,14 +651,14 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     const system = typeof body.system === "string" ? body.system : "";
-    const tools = Array.isArray(body.tools) ? body.tools.filter((t: any) => t && typeof t.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(t.name)) : [];
+    const tools: ToolSpec[] = Array.isArray(body.tools) ? body.tools.filter((t: ToolSpec) => t && typeof t.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(t.name)) : [];
     if (!prompt.trim() || !system.trim()) return json(res, 400, { error: "prompt and system are required." });
     const model = parent
       ? parent.model
       : typeof body.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,79}$/.test(body.model) ? body.model : "";
     const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
 
-    const turn: any = {
+    const turn: Turn = {
       id: crypto.randomBytes(8).toString("hex"),
       mcpToken: crypto.randomBytes(24).toString("hex"),
       system,
@@ -679,8 +743,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           sessionId: out.sessionId,
         });
       }
-    } catch (e: any) {
-      send("error", { message: `The bridge failed: ${e?.message ?? e}` });
+    } catch (e) {
+      send("error", { message: `The bridge failed: ${(e as ErrLike)?.message ?? e}` });
     } finally {
       finish();
       res.end();
@@ -688,7 +752,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   // ---- routing -----------------------------------------------------------------------------------------------------
-  async function handle(req: any, res: any) {
+  async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!hostOk(req)) return json(res, 403, { error: "bad host" });
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
     const mcp = /^\/mcp\/([0-9a-f]+)\/([0-9a-f]+)$/.exec(url.pathname);
@@ -722,8 +786,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       let body;
       try {
         body = await readBody(req);
-      } catch (e: any) {
-        return json(res, e.status ?? 400, { error: e.message });
+      } catch (e) {
+        return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
       }
       if (normCode(body.code).length === 6 && normCode(body.code) === normCode(pairingCode)) {
         const secret = crypto.randomBytes(32).toString("hex");
@@ -752,8 +816,8 @@ export function createBridge(opts: BridgeOptions = {}) {
         let body;
         try {
           body = await readBody(req);
-        } catch (e: any) {
-          return json(res, e.status ?? 400, { error: e.message });
+        } catch (e) {
+          return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
         }
         const turn = turns.get(String(body.turnId));
         const p = turn?.pending.get(String(body.id));
@@ -790,7 +854,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return new Promise<number>((resolve, reject) => {
         server.once("error", reject);
         server.listen(port, "127.0.0.1", () => {
-          port = (server.address() as any).port;
+          port = (server.address() as AddressInfo).port;
           resolve(port);
         });
       });
@@ -833,6 +897,8 @@ export function parseCli(argv: string[]) {
     stateDir: val("--state-dir"),
   };
 }
+
+export type CliOptions = ReturnType<typeof parseCli>;
 
 const xmlEsc = (t: unknown) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -888,13 +954,13 @@ export function resolveBin(name: string, env: NodeJS.ProcessEnv = process.env, h
 }
 
 /** Real launchctl, used by the CLI. Tests pass their own. Resolves { code, out }. */
-export function runLaunchctl(args: string[]): Promise<any> {
+export function runLaunchctl(args: string[]): Promise<LaunchctlResult> {
   return new Promise((resolve) => {
     execFile("/bin/launchctl", args, (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, out: `${stdout}${stderr}`.trim() }));
   });
 }
 
-const serviceFiles = (opts: any, home: any) => {
+const serviceFiles = (opts: CliOptions, home: string) => {
   const stateDir = opts.stateDir ? path.resolve(opts.stateDir) : defaultStateDir(home);
   return {
     stateDir,
@@ -911,7 +977,7 @@ const serviceFiles = (opts: any, home: any) => {
  * with the absolute node, bridge file and claude paths recorded, and (re)loads it. Installing again restarts on the new file.
  * deps: { launchctl, uid, home, nodePath, file, env, log }
  */
-export async function serviceInstall(opts: any, deps: any): Promise<any> {
+export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const { launchctl, uid, home, nodePath, file, env, log } = deps;
   if ((deps.platform ?? process.platform) !== "darwin") return { ok: false, message: "--install works on macOS only. On other systems start the bridge in a terminal." };
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.label)) return { ok: false, message: "--label may use letters, digits, dot, dash and underscore only." };
@@ -928,8 +994,8 @@ export async function serviceInstall(opts: any, deps: any): Promise<any> {
   let extraOrigins: string[];
   try {
     extraOrigins = [...new Set<string>((opts.allowOrigins ?? (opts.allowOrigin ? [opts.allowOrigin] : [])).map(normalizeOrigin))];
-  } catch (e: any) {
-    return { ok: false, message: `Not installed.\n${e.message}` };
+  } catch (e) {
+    return { ok: false, message: `Not installed.\n${(e as ErrLike).message}` };
   }
   for (const o of extraOrigins) args.push("--allow-origin", o);
   const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
@@ -969,7 +1035,7 @@ export async function serviceInstall(opts: any, deps: any): Promise<any> {
   };
 }
 
-export async function serviceUninstall(opts: any, deps: any): Promise<any> {
+export async function serviceUninstall(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const f = serviceFiles(opts, deps.home);
   const r = await deps.launchctl(["bootout", `gui/${deps.uid}/${opts.label}`]);
   const had = fs.existsSync(f.plist);
@@ -978,10 +1044,10 @@ export async function serviceUninstall(opts: any, deps: any): Promise<any> {
 }
 
 /** Asks the running bridge for its pairing code over 127.0.0.1 with the token only this user can read. */
-export async function fetchCode(opts: any, deps: any): Promise<any> {
+export async function fetchCode(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const f = serviceFiles(opts, deps.home);
   let token;
-  let st: any = {};
+  let st: StatusFile = {};
   try {
     token = fs.readFileSync(f.tokenFile, "utf8").trim();
     st = JSON.parse(fs.readFileSync(f.statusFile, "utf8"));
@@ -992,7 +1058,7 @@ export async function fetchCode(opts: any, deps: any): Promise<any> {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/control/code`, { headers: { "x-bridge-control": token } });
     if (!res.ok) return { ok: false, message: `The bridge on port ${port} did not give the code (${res.status}). Is it the current one? Try --status.` };
-    const b = await res.json();
+    const b: { code?: unknown } = await res.json();
     return { ok: true, message: `Pairing code: ${b.code}\nIn the app, press Connect, choose Claude Code, and type it.` };
   } catch {
     return { ok: false, message: `The bridge is not answering on port ${port}. Try --status.${st.ok === false ? ` Last start failed: ${st.reason}` : ""}` };
@@ -1003,11 +1069,11 @@ export async function fetchCode(opts: any, deps: any): Promise<any> {
  * `--unpair-all`: every page loses its pairing. A running bridge is told over the local control door (it holds the list in
  * memory); if none answers, the file is emptied so the next start loads nothing.
  */
-export async function unpairAll(opts: any, deps: any): Promise<any> {
+export async function unpairAll(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const f = serviceFiles(opts, deps.home);
   const done = (n: number) => ({ ok: true, message: `Removed ${n} pairing${n === 1 ? "" : "s"}. Every app must be paired again with a new code.` });
   let token = null;
-  let st: any = {};
+  let st: StatusFile = {};
   try {
     token = fs.readFileSync(f.tokenFile, "utf8").trim();
     st = JSON.parse(fs.readFileSync(f.statusFile, "utf8"));
@@ -1018,7 +1084,7 @@ export async function unpairAll(opts: any, deps: any): Promise<any> {
     const port = opts.port ?? st.port ?? DEFAULT_PORT;
     try {
       const res = await fetch(`http://127.0.0.1:${port}/control/unpair-all`, { method: "POST", headers: { "x-bridge-control": token } });
-      if (res.ok) return done((await res.json()).removed ?? 0);
+      if (res.ok) return done(((await res.json()) as { removed?: number }).removed ?? 0);
       return { ok: false, message: `The bridge on port ${port} did not clear the pairings (${res.status}). Is it the current one? Try --status.` };
     } catch {
       /* not answering: clear the file below */
@@ -1032,13 +1098,13 @@ export async function unpairAll(opts: any, deps: any): Promise<any> {
   }
   try {
     if (fs.existsSync(f.pairingsFile)) fs.writeFileSync(f.pairingsFile, JSON.stringify({ version: 1, pairings: [] }), { mode: 0o600 });
-  } catch (e: any) {
-    return { ok: false, message: `Could not clear ${f.pairingsFile}: ${e.message}` };
+  } catch (e) {
+    return { ok: false, message: `Could not clear ${f.pairingsFile}: ${(e as ErrLike).message}` };
   }
   return done(n);
 }
 
-export async function serviceStatus(opts: any, deps: any): Promise<any> {
+export async function serviceStatus(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const f = serviceFiles(opts, deps.home);
   const lines = [];
   const installed = fs.existsSync(f.plist);
@@ -1046,7 +1112,7 @@ export async function serviceStatus(opts: any, deps: any): Promise<any> {
   const r = await deps.launchctl(["print", `gui/${deps.uid}/${opts.label}`]);
   const pid = /\bpid = (\d+)/.exec(r.out)?.[1];
   lines.push(`Loaded:     ${r.code === 0 ? (pid ? `yes, running (pid ${pid})` : "yes, not running right now") : "no"}`);
-  let st = null;
+  let st: StatusFile | null = null;
   try {
     st = JSON.parse(fs.readFileSync(f.statusFile, "utf8"));
   } catch {
@@ -1123,12 +1189,12 @@ async function main() {
   let allowedOrigins;
   try {
     allowedOrigins = loadAllowedOrigins(extra);
-  } catch (e: any) {
-    console.error(`\n${e.message}\n`);
+  } catch (e) {
+    console.error(`\n${(e as ErrLike).message}\n`);
     process.exit(2);
   }
   const f = serviceFiles(cli, home);
-  const writeStatus = (o: any) => {
+  const writeStatus = (o: Record<string, unknown>) => {
     try {
       fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
       fs.rmSync(f.statusFile, { force: true });
@@ -1150,10 +1216,10 @@ async function main() {
   const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), log: (l) => console.log(`  ${l}`) });
   try {
     await bridge.start();
-  } catch (e: any) {
-    const why = e.code === "EADDRINUSE" ? `port ${port} is already in use (is the bridge already running?)` : e.message;
+  } catch (e) {
+    const why = (e as ErrLike).code === "EADDRINUSE" ? `port ${port} is already in use (is the bridge already running?)` : (e as ErrLike).message;
     console.error(`\nThe bridge did not start: ${why}\n`);
-    if (e.code !== "EADDRINUSE") writeStatus({ ok: false, reason: why }); // a bridge that already runs keeps its own token and status
+    if ((e as ErrLike).code !== "EADDRINUSE") writeStatus({ ok: false, reason: why }); // a bridge that already runs keeps its own token and status
     process.exit(1);
   }
   try {
