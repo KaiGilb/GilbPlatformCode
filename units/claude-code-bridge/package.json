@@ -1,0 +1,24 @@
+{
+  "name": "@kaigilb/gilbplatformcode-claude-code-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-only bridge that lets a web app's agent pane talk to the Claude Code installed on the person's own computer.",
+  "exports": {
+    "./bridge.mjs": "./bridge/bridge.mjs",
+    "./vite": {
+      "types": "./bridge/vite-plugin.d.mts",
+      "default": "./bridge/vite-plugin.mjs"
+    },
+    "./fake-claude.mjs": "./src/fake-claude.mjs"
+  },
+  "files": ["src", "bridge"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build:bridge": "node ./scripts/build-bridge.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": { "@types/node": "^20.19.0", "typescript": "^5.6.3", "vite": "^5.4.0", "vitest": "^2.1.9" }
+}
