@@ -38,7 +38,7 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <app>/vendor/gilbplatformcode-claude-code-bridge
 cd units/claude-code-bridge && npm pack --pack-destination <app>/vendor/gilbplatformcode-claude-code-bridge
 echo <commit> > <app>/vendor/gilbplatformcode-claude-code-bridge/SOURCE
-cd <app> && npm install --save-dev ./vendor/gilbplatformcode-claude-code-bridge/kaigilb-gilbplatformcode-claude-code-bridge-0.1.0.tgz
+cd <app> && npm install --save-dev ./vendor/gilbplatformcode-claude-code-bridge/kaigilb-gilbplatformcode-claude-code-bridge-0.1.1.tgz
 ```
 
 The plugin runs in the app's `vite.config.ts` (Node), so a dev dependency is enough. `vite` 5 or newer is a peer of the plugin, which the app already has. To publish the bridge without Vite, serve `node_modules/@kaigilb/gilbplatformcode-claude-code-bridge/bridge/bridge.mjs` yourself, but then it carries no default origins and every person must pass `--allow-origin`.
@@ -114,3 +114,7 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 Repository `KaiGilb/gilb-claude-code`, path `bridge/`, tag v0.2.0, commit `3b032c0c6710faa8d24c5fd4848d82e6d5c73c3e`: `bridge.mjs`, `vite-plugin.mjs`, `vite-plugin.d.mts` and `test/` (bridge, service, pairing-persist, vite-plugin, fake-claude). Earlier, GilbApp `tools/claude-code-bridge/`.
 
 Changed on the way in, and only this: the source is TypeScript (type annotations; the build removes them again); the built-in `DEFAULT_ALLOWED_ORIGINS` is `[]` where v0.2.0 listed two Gilb origins, and `bridge/allowed-origins.json` is not carried; `claudeCodeBridgeFile` takes `defaultAllowedOrigins` and writes them into that one line; two comments that named the Gilb defaults. Tests: the two that asserted the default equals the Gilb origins or `allowed-origins.json` now assert the default is empty, one that listed the defaults next to an added origin now expects the added origin alone, and Gilb host names used as inputs are `*.example.test`.
+
+## Changes
+
+- 0.1.1: types tightened; no behaviour change (the built `bridge.mjs` is byte-identical to 0.1.0).
