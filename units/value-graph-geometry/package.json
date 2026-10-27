@@ -1,0 +1,32 @@
+{
+  "name": "@kaigilb/gilbplatformcode-value-graph-geometry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows. No DOM, no React.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-date-rules": "^0.1.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.1.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-date-rules": "file:../date-rules",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-qualifier-values": "file:../qualifier-values",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@kaigilb/gilbplatformcode-value-card-model": "file:../value-card-model",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
