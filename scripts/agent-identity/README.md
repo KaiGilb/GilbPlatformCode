@@ -2,7 +2,7 @@
 
 Gives a program its own identity on GilbPlatform, so it signs in with its own key instead of a person's token.
 
-It follows the machine-client route in the public guide Dev.Guide.AppAccess: the program makes a P-256 key pair and keeps the private half, registers the public half at `POST <id origin>/base/client/register`, and asks for one token straight away (the platform makes the client's principal at its first token). The owner then binds and grants it in GilbApp (below). From then on the program mints its own 5-minute tokens (no refresh: it mints again) and sends `Authorization: DPoP <token>` plus a fresh `DPoP` proof per request. The sign-in code is reused from `units/signin/src` (`machine.ts`, `dpop.ts`, `transport.ts`); nothing is copied.
+It follows the machine-client route in the public guide Dev.Guide.AppAccess: the program makes a P-256 key pair and keeps the private half, registers the public half at `POST <id origin>/base/client/register`, asks for one token straight away, and sends one signed `GET <id origin>/base/connect/skill-claims` (the platform makes the client's principal at its first verified request, not at the token call). The owner then binds and grants it in GilbApp (below). From then on the program mints its own 5-minute tokens (no refresh: it mints again) and sends `Authorization: DPoP <token>` plus a fresh `DPoP` proof per request. The sign-in code is reused from `units/signin/src` (`machine.ts`, `dpop.ts`, `transport.ts`); nothing is copied.
 
 ## Run
 
@@ -18,7 +18,7 @@ Exit codes: 0 ok or clean dry run, 1 called wrong, 2 refused (nothing sent), 4 t
 
 ## Commands
 
-- `init --name "<display name>" --declared-origin <https url> [--write]`. Without `--write` it is a dry run: it sends and writes nothing, and prints the body it would POST. With `--write` it makes the key if the file is absent (never regenerates an existing one), registers it, writes `<key-file>.client.json` (mode 0600), mints one token at scope `base.read`, and prints `clientId: ...`. Re-running is safe: the same key gives the same clientId.
+- `init --name "<display name>" --declared-origin <https url> [--write]`. Without `--write` it is a dry run: it sends and writes nothing, and prints the body it would POST. With `--write` it makes the key if the file is absent (never regenerates an existing one), registers it, writes `<key-file>.client.json` (mode 0600), mints one token at scope `base.read`, sends that one signed GET (non-2xx is exit 4; re-running is safe), and prints `clientId: ...` and `principal: made (verified GET → <status>)`. Re-running is safe: the same key gives the same clientId.
 - `check [--scope base.read|base.write]` (default `base.write`). Mints a token and prints `token: ok (scope ..., expires_in ...)`. Prints no token.
 - `get --url <https url>`. One signed GET with `Accept: application/ld+json`; prints `GET <url> → <status> <content-type>` and nothing of the body. A client that is bound and granted reads 200 where an unbound one reads 404.
 
@@ -30,7 +30,7 @@ In a folder with mode 0700 that is outside every git work tree (init refuses oth
 
 ## The owner's three GilbApp steps
 
-After `init --write` prints the clientId:
+The client is ready to bind once `init --write` prints `principal: made`. Then:
 
 1. Mint AI vault.
 2. Bind AI: paste the printed clientId.
