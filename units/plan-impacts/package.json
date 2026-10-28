@@ -18,7 +18,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
     "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
-    "@kaigilb/gilbplatformcode-entity-ref-value": "^0.1.0",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "^0.2.0",
     "@kaigilb/gilbplatformcode-id-tail": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-impacts-model": "^0.1.0",
