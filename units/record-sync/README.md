@@ -12,12 +12,12 @@ Plain functions and types, no React, no credential. The platform serves the list
 - `syncRecordChanges(platform, vaultId, typeNames, state, { maxPages? }?)`: the live list's changes since `state.live` (full rows, oldest first), then the ended list's deletes since `state.ended`. Answers `{ kind: "changes", rows, ended, state, complete, pages }`, or `null` when the caller must read its list again (a platform without the feed, or a position the platform no longer takes).
 - `RECORD_PAGE_LIMIT` (100): the most rows one full-row page carries.
 - `RecordListError`: a list that answered other than 200 (`status`, and `code`, the platform's error name such as `since_cursor_invalid`).
-- The platform client this talks through: `PlatformClient` (`{ origin, fetch }`), `PlatformFetch`, `PlatformError` (`status` 0 means not reached), `PlatformAnswer`, `request(platform, method, url, body?, headers?, cache?, bound?)`, `RequestBound` (`signal`, `timeoutMs`), `routeUrl(platform, path)`, `vaultSegment(vaultId)`.
+- The platform client this talks through: `PlatformClient` (`{ origin, fetch }`), `PlatformFetch`, `PlatformError` (`status` 0 means not reached), `PlatformAnswer`, `request(platform, method, url, body?, headers?, cache?, bound?)`, `RequestBound` (`signal`, `timeoutMs`), `routeUrl(platform, path)`, `vaultSegment(vaultId)`, and `expectStatus(answer, method, ok)`: the answer itself when its status is one of `ok`, else a `PlatformError` that says what was asked and what came back (`<METHOD> <url> answered <status>: <first 300 characters of the body>`).
 - Types: `RecordSyncState`, `RecordSync`, `RecordRow`.
 
 ## What this is not
 
-- Not the whole of `gilb-stakeholders`' `recordPages.ts` and `platform.ts`: only the symbols the Plan-card record hooks reach. Not here: `walkRecordPages`, `syncRecordPages`, `RECORD_WALK_MAX_PAGES` (the full walk, and the sync that starts again by itself), and in `platform.ts` `locate`, `retryAfterMs`, `expectStatus`, `isAbsoluteIri`, `originHostMismatch`.
+- Not the whole of `gilb-stakeholders`' `recordPages.ts` and `platform.ts`: only the symbols the Plan-card record hooks reach. Not here: `walkRecordPages`, `syncRecordPages`, `RECORD_WALK_MAX_PAGES` (the full walk, and the sync that starts again by itself), and in `platform.ts` `locate`, `retryAfterMs`, `isAbsoluteIri`, `originHostMismatch`.
 - Not a cache: each call is a request (or two). Where the rows go, and how a row replaces one a screen holds, is the app's.
 - Not a credential holder: it never sees a token or a proof. The fetch you give it adds them.
 - Not a writer: nothing here sends anything but a `GET`.
@@ -89,12 +89,15 @@ Dynamic imports in the files taken: none. The tracer does not follow `import()`,
 
 ## Where it came from
 
-`KaiGilb/gilb-stakeholders` (private repo), commit `27fe0cef35857c070354c0439c6e4e4ebcc62815`, copied by script, symbol by symbol (the reached ones only, found with a symbol tracer from the Plan card's host code in GilbApp at `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, which pins this package at that commit):
+`KaiGilb/gilb-stakeholders` (private repo), commit `0a261488be7c98d1ac5d79887c966a445b8928bd`, copied by script, symbol by symbol (the reached ones only, found with a symbol tracer from the Plan card's host code in GilbApp at `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, which pinned this package at `27fe0cef`; `expectStatus` was added from GilbApp at `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, which pins this package at `0a261488`):
 
-- `src/platform.ts` to `src/platform.ts`: lines 18-46, 69-162, 175-179 (`PlatformFetch`, `PlatformClient`, `PlatformError`, `trimOrigin`, `routeUrl`, `PlatformAnswer`, `request`, `RequestBound`, `boundedRequest`, `plainRequest`, `vaultSegment`);
+Changes in 0.2.0: adds `expectStatus` (gilb-stakeholders platform.ts 164-173); re-pinned to 0a261488, where every earlier range is byte-identical.
+
+
+- `src/platform.ts` to `src/platform.ts`: lines 18-46, 69-162, 164-173, 175-179 (`PlatformFetch`, `PlatformClient`, `PlatformError`, `trimOrigin`, `routeUrl`, `PlatformAnswer`, `request`, `RequestBound`, `boundedRequest`, `plainRequest`, `expectStatus`, `vaultSegment`);
 - `src/recordPages.ts` to `src/recordPages.ts`: lines 21-22, 27-41, 52-103, 153-202, 278-337 (`RECORD_PAGE_LIMIT`, `RecordRow`, `RecordListError`, `listUrl`, `rowOf`, `readPage`, `RecordSyncState`, `RecordSync`, `readFeed`, `headRecordState`, `syncRecordChanges`).
 
-Not taken: in `recordPages.ts` `RECORD_WALK_MAX_PAGES`, `RecordWalk`, `walkRecordPages`, `syncRecordPages`, `syncOnce` (lines 24-25, 43-50, 105-151, 204-276); in `platform.ts` `locate`, `retryAfterMs`, `expectStatus`, `isAbsoluteIri`, `originHostMismatch` (47-68, 163-174, 180-204).
+Not taken: in `recordPages.ts` `RECORD_WALK_MAX_PAGES`, `RecordWalk`, `walkRecordPages`, `syncRecordPages`, `syncOnce` (lines 24-25, 43-50, 105-151, 204-276); in `platform.ts` `locate`, `retryAfterMs`, `isAbsoluteIri`, `originHostMismatch` (47-68, 180-204).
 
 **Merged units compared and taken or not.** No merged unit holds a reached symbol of these two files (searched by name over every `units/*/src`): nothing to import. `lws-vault-sets` and `lws-session-bridge` are where the Plan card's `fetch` comes from; this unit does not import them, because the fetch is an argument.
 
@@ -103,6 +106,6 @@ Named changes, and only these:
 1. the imports of the source's own files lose `.ts` (`./platform`), and the import of `PlatformError, request, routeUrl, vaultSegment, PlatformAnswer, PlatformClient` in `recordPages.ts` lists only the symbols that are taken;
 2. the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed.
 
-`src/index.ts` is new. Tests (`src/*.test.ts`; no shared set-up; the hosts are `example.test` hosts): ported from `gilb-stakeholders` `test/` at the same commit, by test block: `recordPages-sp1b.test.ts` 7 of 7, `recordPages.s129.test.ts` 1 of 2. New: `platform.test.ts` (12), `recordSync.test.ts` (15), `recordSyncUnit.test.ts` (1: the export list), `recordSyncMore.test.ts` (4: what the other files left unpinned, found by mutation checks). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
+`src/index.ts` is new. Tests (`src/*.test.ts`; no shared set-up; the hosts are `example.test` hosts): ported from `gilb-stakeholders` `test/` at the same commit, by test block: `recordPages-sp1b.test.ts` 7 of 7, `recordPages.s129.test.ts` 1 of 2. New: `platform.test.ts` (16, of which 4 pin `expectStatus`), `recordSync.test.ts` (15), `recordSyncUnit.test.ts` (1: the export list), `recordSyncMore.test.ts` (4: what the other files left unpinned, found by mutation checks). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
 
 Left out, with reasons: `recordPages-sp1.test.ts` (11) and `recordPages-sp1.s127.test.ts` (11) (every test runs `walkRecordPages` or `syncRecordPages`, not taken); the other block of `recordPages.s129.test.ts` (it runs `syncRecordPages`); the tests of `pickOrCreate`, `tagResolve` and `holderReference`, which use `PlatformError` and the platform client with symbols that are not taken.

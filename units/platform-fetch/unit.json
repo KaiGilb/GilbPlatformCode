@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "unit": "units/platform-fetch",
+  "package": "@kaigilb/gilbplatformcode-platform-fetch",
+  "version": "0.1.0",
+  "purpose": "An authenticated fetch for a platform client: it moves every URL under the platform-host rule first, then signs it for that one request with the session's DPoP proof.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/stakeholderCard.ts",
+        "lines": [
+          641,
+          657
+        ],
+        "to": "src/platformFetch.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports: `atVaultOrigin` comes from the peer `vault-origin-rule` and `dpopWriteAuth` from the peer `lws-session-bridge` (the source imports them from the app's `./config` and `./dpop`);",
+    "`TermFetch` is declared in the file as the structural `(url: string, init?: RequestInit) => Promise<Response>` (the source imports the type from `gilb-stakeholders`, where it is the same one-line type);",
+    "comments: the ticket tag `(Agent.Tester Delta10 F3-1)` is removed, and the example host in the warning is written as an `example.test` host; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

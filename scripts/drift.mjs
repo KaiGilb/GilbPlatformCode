@@ -14,7 +14,10 @@
 // A null range compares the whole file. The app repo is private: only paths, ranges and verdicts
 // are printed, never a source line.
 //
-// Exit 0 ran (drift is information), 1 --fail-on-drift and something drifted, 2 could not run.
+// An entry whose path is `<repo>@<sha>:<path>` cites another repo: it is reported as `other` and not checked.
+// A unit that cannot be checked prints `error <unit>: <message>`, the run goes on, and the exit is 2.
+//
+// Exit 0 ran (drift is information), 1 --fail-on-drift and something drifted, 2 could not run or a unit errored.
 // Needs a local clone of the private app repo; CI does not run it. Plain Node ESM, no dependencies.
 
 import { readFileSync } from "node:fs";
@@ -58,12 +61,17 @@ export function compareWhole(oldText, newText) {
   return oldText === newText ? "same" : "changed";
 }
 
+/** An entry path `<repo>@<sha>:<path>` cites another repo: this clone cannot check it. */
+const OTHER_REPO = /^[A-Za-z0-9._-]+@[0-9a-f]{7,40}:/;
+
 /**
  * Pure. One manifest entry against two readers (path -> text | null).
- * Returns { path, lines, verdict: "same"|"changed"|"gone", moved?: [a, b] }.
+ * Returns { path, lines, verdict: "same"|"changed"|"gone"|"other", moved?: [a, b] }.
+ * "other": the entry cites another repo (`<repo>@<sha>:<path>`); it is not read and not checked.
  * A missing or out-of-range OLD source throws (the manifest is wrong, or the clone lacks the commit).
  */
 export function compareEntry(entry, readOld, readNew) {
+  if (OTHER_REPO.test(entry.path)) return { path: entry.path, lines: entry.lines, verdict: "other" };
   const oldText = readOld(entry.path);
   if (oldText === null) throw new Error(`${entry.path} is not in the app repo at the unit's own commit`);
   const base = { path: entry.path, lines: entry.lines };
@@ -76,27 +84,38 @@ export function compareEntry(entry, readOld, readNew) {
 }
 
 /**
- * Pure. One unit: { unit, verdict: "unchanged"|"drifted", entries } (entries = all; `bad` = those not same).
+ * Pure. One unit: { unit, verdict: "unchanged"|"drifted", entries } (entries = all; `bad` = those neither same nor other).
  * `trivial` (the target is the unit's own commit) makes every entry same without reading.
  */
 export function driftUnit(manifest, readOld, readNew, trivial = false) {
   const entries = manifest.source.files.map((f) =>
     trivial ? { path: f.path, lines: f.lines, verdict: "same" } : compareEntry(f, readOld, readNew),
   );
-  const bad = entries.filter((e) => e.verdict !== "same");
+  const bad = entries.filter((e) => e.verdict !== "same" && e.verdict !== "other");
   return { unit: manifest.unit, verdict: bad.length ? "drifted" : "unchanged", entries, bad };
 }
 
 const rangeText = (l) => (l ? ` ${l[0]}-${l[1]}` : "");
 
+/** The note for entries that cite another repo: how many, and each distinct `<repo>@<sha7>` once. */
+function otherNote(r) {
+  const other = r.entries.filter((e) => e.verdict === "other");
+  if (!other.length) return "";
+  const cited = [...new Set(other.map((e) => {
+    const m = /^([^@:]+)@([0-9a-f]+):/.exec(e.path);
+    return `${m[1]}@${m[2].slice(0, 7)}`;
+  }))];
+  return ` (${other.length} entries cite another repo, not checked: ${cited.join(", ")})`;
+}
+
 /** The line printed for a unit. */
 export function unitLine(r) {
   if (r.verdict === "drifted") {
-    return `drifted ${r.unit}  ${r.bad.map((e) => `${e.path}${rangeText(e.lines)} ${e.verdict}`).join("; ")}`;
+    return `drifted ${r.unit}  ${r.bad.map((e) => `${e.path}${rangeText(e.lines)} ${e.verdict}`).join("; ")}${otherNote(r)}`;
   }
   const moved = r.entries.filter((e) => e.moved);
-  if (!moved.length) return `unchanged ${r.unit}`;
-  return `unchanged ${r.unit}  (moved: ${moved.map((e) => `${e.path}${rangeText(e.lines)} → ${e.moved[0]}-${e.moved[1]}`).join("; ")})`;
+  if (!moved.length) return `unchanged ${r.unit}${otherNote(r)}`;
+  return `unchanged ${r.unit}  (moved: ${moved.map((e) => `${e.path}${rangeText(e.lines)} → ${e.moved[0]}-${e.moved[1]}`).join("; ")})${otherNote(r)}`;
 }
 
 function git(repo, args) {
@@ -169,15 +188,16 @@ export function main(argv, root = repoRoot(), out = (s) => process.stdout.write(
 
     const results = [];
     const skipped = [];
+    const errors = [];
     const readers = new Map();
     const reader = (sha) => { if (!readers.has(sha)) readers.set(sha, gitReader(repo, sha)); return readers.get(sha); };
     for (const m of manifests) {
       if (m.source.repo !== o.appRepoName) { skipped.push({ unit: m.unit, repo: m.source.repo }); continue; }
-      const from = resolveCommit(repo, m.source.commit);
       try {
+        const from = resolveCommit(repo, m.source.commit);
         results.push(driftUnit(m, reader(from), reader(to), from === to));
       } catch (e) {
-        throw new Error(`${m.unit}: ${e.message}`);
+        errors.push({ unit: m.unit, message: e.message });
       }
     }
     const drifted = results.filter((r) => r.verdict === "drifted").length;
@@ -187,13 +207,16 @@ export function main(argv, root = repoRoot(), out = (s) => process.stdout.write(
         to,
         units: results.map((r) => ({ unit: r.unit, verdict: r.verdict, entries: r.entries })),
         skipped,
+        errors,
         summary,
       }));
     } else {
       for (const r of results) out(unitLine(r));
       for (const s of skipped) out(`skipped ${s.unit}  cites ${s.repo}, not ${o.appRepoName}`);
-      out(`${summary.unchanged} unchanged, ${summary.drifted} drifted, ${summary.skipped} skipped`);
+      for (const x of errors) out(`error ${x.unit}: ${x.message}`);
+      out(`${summary.unchanged} unchanged, ${summary.drifted} drifted, ${summary.skipped} skipped${errors.length ? `, ${errors.length} error` : ""}`);
     }
+    if (errors.length) return 2;
     return o.failOnDrift && drifted ? 1 : 0;
   } catch (e) {
     err(e.message);
