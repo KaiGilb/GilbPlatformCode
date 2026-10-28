@@ -4,6 +4,8 @@ The whole Solution card: one component that draws the Plan card of a record of t
 
 ## What this is
 
+The whole Solution card: one component that draws the Plan card of a record of type Solution or Solution Constraint, with the lines of that type in order, every read and write supplied by the host.
+
 `SolutionCard` is the card of a record of type Solution (`t:Solution`) or Solution Constraint (`t:DesignConstraint`; the ontology calls the constraint's type DesignConstraint). A Solution is changed to its constraint, and back, through the Type switch on the card itself (the card asks first, and a constraint needs a named person as its Authority); the lines change as soon as the record's type does.
 
 - `SolutionCard(props)`: the card. `SolutionCardProps` is the props of `PlanFunctionForm` of `plan-card`: `{ record, vaultId, canEdit, onOpen, onNotice }`. `record` is the card's record (a `BaseRecord`), `vaultId` is the screen's vault, `canEdit` is whether the person may write, `onOpen(id)` opens a record, `onNotice(text | null)` shows or clears the card's notice. It draws `<div data-testid="plan-function-form">` with one `CardGroup` per line.
