@@ -14,6 +14,7 @@ describe("lws-records exports", () => {
       "VAULT_CONTEXT_RETRY_MS",
       "carriesReason",
       "createRecord",
+      "deleteRecord",
       "factsAsServed",
       "hasSubstitutedType",
       "isFactStringFaithful",
@@ -30,16 +31,18 @@ describe("lws-records exports", () => {
       "resetStoredSpellingCache",
       "resetVaultContextCache",
       "resolveStoredSpellings",
+      "retypeRecord",
       "serverErrorText",
       "serverReasonOrNull",
       "storedSpellingFor",
       "storedSpellings",
       "vaultContextUrl",
+      "withTypeUri",
       "writeSource",
     ]);
   });
   it("the symbols the later units need are functions or classes", () => {
-    for (const name of ["readRecord", "patchRecord", "createRecord", "hasSubstitutedType", "factsAsServed", "writeSource"] as const) expect(typeof unit[name]).toBe("function");
+    for (const name of ["readRecord", "patchRecord", "createRecord", "deleteRecord", "retypeRecord", "withTypeUri", "hasSubstitutedType", "factsAsServed", "writeSource"] as const) expect(typeof unit[name]).toBe("function");
     expect(new unit.RecordConflictError()).toBeInstanceOf(Error);
     expect(new unit.RecordForbiddenError()).toBeInstanceOf(Error);
     expect(new unit.ServedShortFormError("fvParent", "base:e/x")).toBeInstanceOf(Error);

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/base-origin",
   "package": "@kaigilb/gilbplatformcode-base-origin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "The one place an app sets the GilbPlatform origin and the hosts allowed to receive its credential, so every address and credential rule reads them the same way.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -11,12 +11,15 @@
   },
   "namedChanges": [
     "this unit replaces six host literals with settings",
-    "There is none. The app this came from falls back to a local address when its environment names no origin; this unit throws instead"
+    "There is none. The app this came from falls back to a local address when its environment names no origin; this unit throws instead",
+    "0.2.0 adds the settings `setOntologyApiOriginRaw` and `setVocabTypeBatchRevisions`, which replace the environment values `VITE_ONTOLOGY_API_ORIGIN` and `VITE_VOCAB_TYPE_BATCH_REVISIONS` read by `heldTypes.ts`"
   ],
   "newFiles": [
     "src/baseOrigin.ts",
     "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": false }
+  "library": {
+    "admitted": false
+  }
 }

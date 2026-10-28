@@ -10,6 +10,8 @@ let ontologyApi: string | null = null;
 let publicCorpus: string | null = null;
 const DEFAULT_MIN_ONTOLOGY_QUERY = 3;
 let minQuery: number = DEFAULT_MIN_ONTOLOGY_QUERY;
+let ontologyApiRaw: string | undefined;
+let vocabBatchRevisions: string | undefined;
 
 /** Parse an origin: http or https, a host, no path beyond "/", no query, no fragment, no sign-in part. Returns the URL standard's `origin`. */
 function parseOrigin(setter: string, value: string): string {
@@ -172,4 +174,43 @@ export function localRigHosts(): ReadonlySet<string> {
 /** Back to the empty set. For tests. */
 export function resetLocalRigHosts(): void {
   rigHosts = new Set();
+}
+
+/**
+ * Optional. Set the origin of the ontology API as the text is given, NOT parsed to an origin: the term-identity address of a
+ * held type is built from it as the trimmed text with one trailing "/" removed, so a development rig that serves terms over
+ * plain http, or under a path, can be named. A reader that wants a parsed origin uses `setOntologyApiOrigin` instead; an app
+ * that uses both sets both from the one text. A blank text clears it.
+ */
+export function setOntologyApiOriginRaw(value: string): void {
+  ontologyApiRaw = value.trim() === "" ? undefined : value;
+}
+
+/** The text set by `setOntologyApiOriginRaw`, exactly as given, or `undefined` when none was set (the default: no override). */
+export function ontologyApiOriginRaw(): string | undefined {
+  return ontologyApiRaw;
+}
+
+/** Forget the raw ontology API origin. For tests. */
+export function resetOntologyApiOriginRaw(): void {
+  ontologyApiRaw = undefined;
+}
+
+/**
+ * Optional. Set the platform revisions (or revision prefixes) at which the batched vocabulary read is served, as one comma
+ * separated text, for example `"abc123,def456"`. The text is kept as given; the reader splits it at commas, trims each part
+ * and drops the empty ones. Unset, or blank, means the batched read is not served on any revision (the default).
+ */
+export function setVocabTypeBatchRevisions(value: string): void {
+  vocabBatchRevisions = value;
+}
+
+/** The text set by `setVocabTypeBatchRevisions`, exactly as given, or `undefined` when none was set. */
+export function vocabTypeBatchRevisions(): string | undefined {
+  return vocabBatchRevisions;
+}
+
+/** Forget the batch revisions. For tests. */
+export function resetVocabTypeBatchRevisions(): void {
+  vocabBatchRevisions = undefined;
 }

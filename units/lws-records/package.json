@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-lws-records",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
@@ -26,7 +26,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-base-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-types": "^0.1.0",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0"

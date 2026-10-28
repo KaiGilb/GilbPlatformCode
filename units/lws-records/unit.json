@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-records",
   "package": "@kaigilb/gilbplatformcode-lws-records",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "purpose": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -139,6 +139,14 @@
       {
         "path": "src/lib/base/records.ts",
         "lines": [
+          361,
+          369
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
           371,
           380
         ],
@@ -227,6 +235,14 @@
       {
         "path": "src/lib/base/records.ts",
         "lines": [
+          885,
+          935
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
           937,
           948
         ],
@@ -237,6 +253,14 @@
         "lines": [
           950,
           1002
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          1004,
+          1029
         ],
         "to": "src/records.ts"
       },
@@ -463,7 +487,8 @@
     "in `vaultContext.ts` the imports `./config` and `./recordTypes` are replaced by `vault-origin-rule` and `record-types`",
     "the dynamic import `await import(\"./dpop\")` (line 448) is `await import(\"@kaigilb/gilbplatformcode-lws-session-bridge\")`",
     "`authHeader` (lines 245-246) takes an optional `method` and passes it to `bearerHeaderFor`, and `patchRecord` (line 984) calls `authHeader(reqUrl, \"PATCH\")`",
-    "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed"
+    "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed",
+    "in `records.ts` (0.3.0) the import from `record-types` gains `typeUriForVaultNamespace` (used by `retypeRecord`); `retypeRecord` (line 922) calls `authHeader(reqUrl, \"PUT\")` and `deleteRecord` (line 1017) calls `authHeader(reqUrl, \"DELETE\")`, so the credential is bound to the method (`authHeader` already takes the method, 0.1.0)"
   ],
   "newFiles": [
     "src/index.ts"

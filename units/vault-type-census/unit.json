@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "unit": "units/vault-type-census",
+  "package": "@kaigilb/gilbplatformcode-vault-type-census",
+  "version": "0.1.0",
+  "purpose": "Learning what a vault holds, by type and plane, from its census of held types: which of the held type names go on the records door, found by dereferencing each term, with the one catalogue read that stands in when the platform serves no census.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/heldTypes.ts",
+        "lines": [
+          65,
+          104
+        ],
+        "to": "src/heldTypes.ts"
+      },
+      {
+        "path": "src/lib/base/heldTypes.ts",
+        "lines": [
+          112,
+          114
+        ],
+        "to": "src/heldTypes.ts"
+      },
+      {
+        "path": "src/lib/base/heldTypes.ts",
+        "lines": [
+          152,
+          510
+        ],
+        "to": "src/heldTypes.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          8,
+          20
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          21,
+          28
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          40,
+          40
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          77,
+          81
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          94,
+          114
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          115,
+          195
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          199,
+          203
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          217,
+          227
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          228,
+          242
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          243,
+          255
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          256,
+          287
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          343,
+          356
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          357,
+          379
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          402,
+          426
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          427,
+          438
+        ],
+        "to": "src/vocabCatalog.ts"
+      },
+      {
+        "path": "src/lib/base/vocabCatalog.ts",
+        "lines": [
+          446,
+          484
+        ],
+        "to": "src/vocabCatalog.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "in `heldTypes.ts` the imports `./config`, `./recordPlane` and `./vocabCatalog` are replaced by imports of `base-origin`, `lws-vault-sets` and this unit's own `./vocabCatalog`; in `vocabCatalog.ts` the imports `./config` and `./recordTypes` are replaced by `base-origin`",
+    "in `heldTypes.ts` line 75 `typeof import(\"./ontologyBrowse\")` and line 78 `import(\"./ontologyBrowse\")` are `import(\"@kaigilb/gilbplatformcode-ontology-reads\")` (the dynamic import is kept, of the peer)",
+    "in `heldTypes.ts` line 179 `(import.meta.env.VITE_ONTOLOGY_API_ORIGIN as string | undefined)?.trim()` is `ontologyApiOriginRaw()?.trim()` and line 229 `import.meta.env.VITE_VOCAB_TYPE_BATCH_REVISIONS as string | undefined` is `vocabTypeBatchRevisions()` (settings of `base-origin` 0.2.0)",
+    "in `heldTypes.ts` lines 243 and 297 and `vocabCatalog.ts` line 203 `BASE_ORIGIN` is `baseOrigin()`",
+    "the long comments are rewritten shorter with the same facts, and tags, names and hosts are removed from the others; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

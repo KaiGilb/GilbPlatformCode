@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-lws-vault-sets",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Asking a vault what it holds over the platform's record interface: a page of its records or files, a find by attribute, a text search, and the cap on requests in flight.",
@@ -30,8 +30,8 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-base-origin": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-records": "^0.2.0",
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
     "@kaigilb/gilbplatformcode-narrow-total": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-types": "^0.1.0",

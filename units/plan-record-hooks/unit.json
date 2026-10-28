@@ -1,0 +1,505 @@
+{
+  "schema": 1,
+  "unit": "units/plan-record-hooks",
+  "package": "@kaigilb/gilbplatformcode-plan-record-hooks",
+  "version": "0.1.0",
+  "purpose": "The vault's records as a list a screen can scroll, and the three changes a person makes to one (create, retype, delete), each shown at once and written in the background, with the device's working-set replica kept in step.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          151,
+          156
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          162,
+          171
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          244,
+          249
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          251,
+          252
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          254,
+          255
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          256,
+          257
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          259,
+          292
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          294,
+          309
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          311,
+          322
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          323,
+          323
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          325,
+          329
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          334,
+          339
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          400,
+          419
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          421,
+          422
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          445,
+          449
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          469,
+          490
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          491,
+          491
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          493,
+          498
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          500,
+          504
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          506,
+          515
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          530,
+          532
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          555,
+          590
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          592,
+          631
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          633,
+          662
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          664,
+          670
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          672,
+          688
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          690,
+          707
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          709,
+          822
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          824,
+          1281
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1306,
+          1315
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1316,
+          1318
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1320,
+          1434
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1889,
+          1924
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1926,
+          1946
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1948,
+          2015
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2358,
+          2370
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2372,
+          2530
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2532,
+          2537
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2539,
+          2545
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2547,
+          2548
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2550,
+          2562
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2564,
+          2564
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2566,
+          2569
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2571,
+          2603
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2633,
+          2695
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/savedElsewhere.ts",
+        "lines": [
+          16,
+          38
+        ],
+        "to": "src/savedElsewhere.ts"
+      },
+      {
+        "path": "src/lib/base/workingSetFacets.ts",
+        "lines": [
+          43,
+          54
+        ],
+        "to": "src/workingSetFacets.ts"
+      },
+      {
+        "path": "src/lib/base/workingSetFacets.ts",
+        "lines": [
+          68,
+          80
+        ],
+        "to": "src/workingSetFacets.ts"
+      },
+      {
+        "path": "src/lib/base/workingSetFacets.ts",
+        "lines": [
+          81,
+          101
+        ],
+        "to": "src/workingSetFacets.ts"
+      },
+      {
+        "path": "src/lib/base/types.ts",
+        "lines": [
+          121,
+          131
+        ],
+        "to": "src/reachableVault.ts"
+      },
+      {
+        "path": "src/lib/base/types.ts",
+        "lines": [
+          132,
+          139
+        ],
+        "to": "src/reachableVault.ts"
+      },
+      {
+        "path": "src/lib/base/types.ts",
+        "lines": [
+          140,
+          187
+        ],
+        "to": "src/reachableVault.ts"
+      },
+      {
+        "path": "src/lib/base/types.ts",
+        "lines": [
+          194,
+          198
+        ],
+        "to": "src/reachableVault.ts"
+      },
+      {
+        "path": "src/lib/base/workingSetLoadVaults.ts",
+        "lines": [
+          37,
+          53
+        ],
+        "to": "src/workingSetLoadVaults.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          42,
+          75
+        ],
+        "to": "src/fileHooks.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          76,
+          78
+        ],
+        "to": "src/fileHooks.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          79,
+          84
+        ],
+        "to": "src/fileHooks.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          95,
+          117
+        ],
+        "to": "src/fileHooks.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          135,
+          137
+        ],
+        "to": "src/fileHooks.ts"
+      },
+      {
+        "path": "src/lib/base/fileHooks.ts",
+        "lines": [
+          138,
+          177
+        ],
+        "to": "src/fileHooks.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "in `recordHooks.ts` the imports are replaced by imports of `base-record`, `lws-records`, `lws-vault-sets`, `record-cache-kit`, `record-types`, `record-sync` (for `gilb-stakeholders`' `headRecordState`, `RECORD_PAGE_LIMIT`, `RecordSyncState`), `stakeholder-list-state`, `vault-origin-rule`, `vault-type-census`, `working-set-store`, `@tanstack/react-query`, `react` and this unit's `./savedElsewhere` and `./workingSetFacets`; the other files import their peers and this unit's own files",
+    "in `recordHooks.ts` source line 880 `async function hydrateRecordsPage(` is `export async function hydrateRecordsPage(`: a test seam standing in for the app's `__hydrateRecordsPageForTest` (line 1288, planned as not reached); the split proof lists this one `export` word; the package index does not export it",
+    "the long comments are rewritten shorter with the same facts, and tags, names and hosts are removed from the others; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

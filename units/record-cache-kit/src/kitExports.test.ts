@@ -14,6 +14,7 @@ describe("the unit's export list", () => {
         "applyPinsAndDrops",
         "dropPlanFind",
         "emptyPage",
+        "entityDisplayName",
         "ensureEtag",
         "ensureEtagUnchanged",
         "flattenRecordPages",
@@ -42,6 +43,7 @@ describe("the unit's export list", () => {
         "storePlanRow",
         "upsert",
         "usePlanFind",
+        "withCanonicalLabel",
       ].sort(),
     );
   });

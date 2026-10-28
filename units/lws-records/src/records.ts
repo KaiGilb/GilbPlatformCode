@@ -1,6 +1,6 @@
 import { LWS_RESOURCE_URL, LWS_VAULT_CONTAINER_URL } from "@kaigilb/gilbplatformcode-vault-origin-rule";
 import { NotSignedInError, bearerHeaderFor, dpopWriteAuth, invalidateDpop, tokenManager } from "@kaigilb/gilbplatformcode-lws-session-bridge";
-import { attrKey, normalizeTypeUri, typeUri } from "@kaigilb/gilbplatformcode-record-types";
+import { attrKey, normalizeTypeUri, typeUri, typeUriForVaultNamespace } from "@kaigilb/gilbplatformcode-record-types";
 import {
   loadVaultContext,
   omittableAssembledKeys,
@@ -327,6 +327,16 @@ function typeWasSubstituted(rawType: unknown): boolean {
 /** True when the record still carries the "unknown" marker type AND was marked as substituted: the one case a Plan card must refuse. */
 export function hasSubstitutedType(rec: Pick<BaseRecord, "typeUri" | "typeSubstituted">): boolean {
   return !!rec.typeSubstituted && normalizeTypeUri(rec.typeUri) === normalizeTypeUri(typeUriFromFrame(undefined));
+}
+
+/**
+ * `rec` with its type replaced by `typeUri` (a list row's type, a retype). The `typeSubstituted` mark says "the type here is the
+ * unknown marker, not a claim", so it is kept only while the new type is still that marker; any other type drops it.
+ */
+export function withTypeUri<T extends BaseRecord>(rec: T, typeUri: string): T {
+  const { typeSubstituted, ...rest } = rec;
+  const stillMarker = typeSubstituted && normalizeTypeUri(typeUri) === normalizeTypeUri(typeUriFromFrame(undefined));
+  return { ...rest, typeUri, ...(stillMarker ? { typeSubstituted: true as const } : {}) } as T;
 }
 
 /** Resolves the absolute BaseVeda Type URI from a framed doc's `@type` (which may be a
@@ -733,6 +743,56 @@ function servedAsAddress(v: unknown): boolean {
 }
 
 /**
+ * W-RETYPE — PUT /lws/r/<ID> with If-Match and a new type.
+ * Same `<ID>`. New `<TYPE_BARE>`. PUT only — PATCH will not retype
+ *
+ * ⛔ Not `readRecord` → merge → `replaceRecord` of every RENDERED (flattened) fact
+ *
+ * Base's PUT schema requires `facts` (missing → 400) and a full replace retracts
+ * omitted attributes and stores what it is sent verbatim. 🔴: the caller
+ * sends the facts {@link factsAsServed} builds from the RAW served document: every fact the
+ * person did not edit as served (a link stays `{"@id"}`), their edits as typed. Built from the
+ * editor's strings alone, `a:statedBy` was stored as text and every fact the editor never held
+ * (a grant included) was retracted. Server re-stamps `a:lwsSelf`.
+ *
+ * @param typeBare the local type name (`Task`), ⛔ not `t:Task` and ⛔ not a URI.
+ */
+export async function retypeRecord(
+  id: string,
+  typeBare: string,
+  ifMatch: string,
+  at: string | null,
+  /** the facts as {@link factsAsServed} builds them (served values for what the
+ * person did not edit), so a link goes back as a link. */
+  facts: RecordCreateFacts = {},
+  /** where these slugs came from; omit for app-authored facts. {@link WriteSource} */
+  source?: WriteSource,
+  /** slugs whose served `""` is carried ({@link factsAsServed}). */
+  keepEmpty?: ReadonlySet<string>,
+): Promise<{ etag: string | null }> {
+  const bare = typeBare.trim().replace(/^t:/, "").trim();
+  // A14: an empty type is refused before anything is sent (it would go out as "t:").
+  if (!bare) throw new Error("A retype needs the name of the new type; nothing was sent.");
+  const reqUrl = LWS_RESOURCE_URL(id, at);
+  const res = await fetch(reqUrl, {
+    method: "PUT",
+    headers: {
+      ...(await authHeader(reqUrl, "PUT")),
+      "content-type": "application/json",
+      "if-match": ifMatch,
+    },
+    // the type goes on the wire as the CURIE `t:<Type>`. GilbPlatform's write
+    // door refuses a bare word with 400 ("a bare slug carries no namespace"), so a bare `type`
+    // never reached the store. The parameter stays the bare local name. Built by the one helper
+    // the creates use (A14), ⛔ not by hand.
+    body: JSON.stringify({ type: typeUriForVaultNamespace(bare, ""), facts: await toWireFacts(facts, source, keepEmpty) }),
+    keepalive: true,
+  });
+  if (!res.ok) await throwForStatus(res);
+  return { etag: res.headers.get("etag") };
+}
+
+/**
  * A JSON Merge Patch member value (RFC 7386). Scalar string|null remains the common
  * single-attribute path; arrays and objects are needed for structured attributes
  * (e.g. a process `entryCondition` array — arrays replace WHOLESALE).
@@ -797,4 +857,31 @@ export async function patchRecord(
     }
   }
   return { etag: res.headers.get("etag") };
+}
+
+/** DELETE /lws/r/:id — atomic retract-all (a later GET 404s). Idempotent (404 → treated
+ * as already gone).
+ *
+ * @param at 🔴 the record's own entity URI — see {@link readRecord}. THIS is the parameter
+ * a reported defect was opened over: the pane listed a step at `https://<vaultHost>/base/e/<tail>`, kept
+ * only `<tail>`, and sent the DELETE to the API origin — "no such step", and the step still
+ * there. Addressed at its own origin it deletes the step it listed, and only that one. */
+export async function deleteRecord(id: string, at: string | null, precondition?: { ifMatch?: string | null }): Promise<void> {
+  const reqUrl = LWS_RESOURCE_URL(id, at);
+  const res = await fetch(reqUrl, {
+    method: "DELETE",
+    // Leave-time flush / delete may fire from RecordDetail's unmount cleanup — a
+    // leave-time op, same unload-survival rationale as the other writes above.
+    headers: { ...(await authHeader(reqUrl, "DELETE")), ...(precondition?.ifMatch ? { "if-match": precondition.ifMatch } : {}) },
+    keepalive: true,
+  });
+  // a CONDITIONAL delete (the caller read the record's version and means "end THAT version") does not treat a 404 as done:
+  // the record is already gone, so someone else replaced or removed it. The error carries status 404; a 412 is a RecordConflictError.
+  if (res.status === 404 && precondition?.ifMatch) {
+    const err = new Error("This record is already gone.");
+    (err as Error & { status: number }).status = 404;
+    throw err;
+  }
+  if (res.status === 404 || res.status === 204) return;
+  if (!res.ok) await throwForStatus(res);
 }
