@@ -93,12 +93,31 @@ describe("who can edit", () => {
     expect(screen.queryByRole("textbox", { name: "Part of System" })).toBeNull();
   });
 
-  it("is read-only when the host has no ConnectedCreateDialog", () => {
+  it("keeps picking and clearing when the host has no ConnectedCreateDialog, and offers no create", async () => {
     labels[uri("s1")] = "Core";
-    setup({ record: withPartOf({ "@id": uri("s1") }), offer: true }, makeHost({ without: ["ConnectedCreateDialog"] }));
+    const h = makeHost({ without: ["ConnectedCreateDialog"] });
+    h.fn.find.mockResolvedValue(page([sysHit("s2", "Edge")]));
+    const t = setup({ record: withPartOf({ "@id": uri("s1") }) }, h);
     expect(screen.getByText("Core")).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "Part of System" })).toBeNull();
-    expect(screen.queryByLabelText("Remove Part of System")).toBeNull();
+    await userEvent.click(screen.getByLabelText("Remove Part of System"));
+    expect(t.p.onWrite).toHaveBeenLastCalledWith(null);
+    await pick("Part of System", "Ed", "Edge", "plan-system-hits");
+    await waitFor(() => expect(t.p.onWrite).toHaveBeenLastCalledWith(uri("s2")));
+    expect(t.p.onWrite).toHaveBeenCalledTimes(2);
+    cleanup();
+    const g = makeHost({ without: ["ConnectedCreateDialog"] });
+    setup({}, g);
+    await typeInto("Part of System", "Brand");
+    await waitFor(() => expect(g.fn.tagUsed).toHaveBeenCalledWith(VAULT, "Brand"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("plan-link-create")).toBeNull();
+    cleanup();
+    const f = makeHost({ without: ["ConnectedCreateDialog"] });
+    setup({}, f);
+    await typeInto("Part of System", "core system");
+    await waitFor(() => expect(f.fn.find).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId("plan-link-create")).toBeNull();
   });
 });
 

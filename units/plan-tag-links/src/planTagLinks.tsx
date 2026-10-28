@@ -973,7 +973,6 @@ export function PlanPartOfSystem({
 }) {
   const mode = useCardMode();
   const host = usePlanTagLinksHost();
-  canEdit = canEdit && host.ConnectedCreateDialog !== undefined;
   const list = host.useRecords(vaultId);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1054,7 +1053,7 @@ export function PlanPartOfSystem({
               </button>
             </p>
           ) : null}
-          {search.canCreate ? (
+          {search.canCreate && host.ConnectedCreateDialog !== undefined ? (
             <button
               type="button"
               data-testid="plan-link-create"

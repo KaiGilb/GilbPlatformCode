@@ -41,6 +41,7 @@ describe("the provider", () => {
 });
 
 describe("a host with no writers", () => {
+  // PlanPartOfSystem is not in this list: its write is the caller's onWrite, and the host's dialog only creates (see partOfSystem.test).
   const NONE = ["patchRecord", "createRecord", "useCreateRecord", "writePairRelation", "endRelation", "ConnectedCreateDialog"] as const;
   const withLinks = (h: ReturnType<typeof makeHost>) => {
     h.state.relations = {
@@ -65,7 +66,6 @@ describe("a host with no writers", () => {
     ["PlanValueOfFunction", () => <PlanValueOfFunction {...edit()} record={row("self", "Door", { facts: { unitTag: "Door", measures: uri("f1") } })} />, "Door.One"],
     ["PlanSolutionOf", () => <PlanSolutionOf {...edit()} />, "Door.One"],
     ["PlanSolutions", () => <PlanSolutions {...edit()} />, "Door.Two"],
-    ["PlanPartOfSystem", () => <PlanPartOfSystem {...edit()} onWrite={vi.fn()} record={row("self", "Door", { facts: { unitTag: "Door", partOf: uri("s1") } })} />, "Core"],
   ])("%s still shows what is linked, and draws nothing to edit", (_n, ui, text) => {
     const h = makeHost({ without: NONE });
     withLinks(h);
