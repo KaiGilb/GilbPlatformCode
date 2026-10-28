@@ -9,6 +9,7 @@ Asking a vault what it holds over the platform's record interface: a page of its
 Plain functions and types, no React. Every request is signed through the auth seam (`lws-session-bridge`) and addressed at the origin the vault's own address names (`vault-origin-rule`).
 
 - `listVaultRecordsPage(vaultId, typeNames?, offset?, opts?)`: `GET /lws/vault/<namespace>/records`, one page, recent first. Answers `{ records, total, complete, pageSize, offset, types?, served, nextOffset? }`. Rows that are not records (relations, control-plane rows, UI-preferences rows, registered card parts) are dropped after the door sent them, so `served` says how many rows the door sent, and a reader that pages by `offset` must advance by `served`, not by `records.length`.
+- `listVaultHeldTypes(vaultId)`: `GET /lws/vault/<namespace>/types`, the vault's row-less, per-viewer type census: `{ types, totalItems, totalItemsKind, excludedTypes, vault, scannedVaults }`, each type with its count. `null` when the door answers 404 (a Base that does not serve it); any other failure throws. A 404 is remembered per Base origin for `CENSUS_DOOR_ABSENT_TTL_MS` (60 s) and asked again after it; a served census is never cached. `__resetCensusDoorProbeForTest()` empties that memory. Added in 0.2.0.
 - `listVaultFilesPage(vaultId, offset?, filter?)`, `listVaultFiles(vaultId, lifecycle?)`, `OPEN_PAGE_SIZE` (20): `GET /lws/vault/<namespace>/files`, the first page only.
 - `lwsReadFetch(url, init?)`: the authenticated `fetch` the vault reads use. Credential first, the DPoP read pair when none can be formed, and one DPoP retry on a 401.
 - `searchEntities(query, typeNames, facet?, vaultId?, match?, cursor?, opts?)`, `UNTYPED_FIND`, `SearchUnavailableError`, `bareTypeNames`, `idFromEntityUri`, and the types `SearchResult`, `FacetBucket`: `GET /base/search`, with the keyset cursor passed through unread.
@@ -23,6 +24,10 @@ Plain functions and types, no React. Every request is signed through the auth se
 - Not `searchPlanRecords` or the Plan-card search that calls `searchEntities`; not the hooks that call these readers; not a cache. Each call is a request.
 - Not the result-total or narrow-total behaviour: `search.ts` reads a total through the peer `result-total`, and `listVaultRecordsPage` narrows a total through the peer `narrow-total`.
 - Not a re-implementation of the record client: a failure sentence is read by `lws-records`.
+
+### Changes in 0.2.0
+
+Taken from the same GilbApp commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, because the record hooks ask the vault for its census of held types. New code, copied by script from `src/lib/base/vaultSets.ts`: lines 439-616 (see "Where it came from"). The import from `vault-origin-rule` gains `LWS_VAULT_TYPES_URL` and `vaultOriginOf`. The two long comment blocks (the banner and the one on the remembered absence) are rewritten shorter, with the same facts; no code changed. The unit keeps one more piece of module state, `censusDoorAbsentAt` (the instant a Base origin's census door answered 404); an app must have ONE copy. Nothing of 0.1.0 changed. Tests: `src/vaultSets.heldTypes.test.ts` (7) and `src/vaultSets.censusDoorProbe.test.ts` (7) are ported from `vaultSets.heldTypes.test.ts` (all 7) and `vaultSets.censusDoorProbe.test.ts` (all 7), with the app's token and DPoP mocks replaced by the fake host and the hosts made `example.test` hosts. New: `src/heldTypesEnvelope.test.ts` (5: the envelope members that are read tolerantly, and the census URL). The peer range of `lws-relations` and `record-cache-kit` on this unit is `^0.2.0`.
 
 ## How to take it
 
@@ -101,6 +106,7 @@ Dynamic imports in the files taken: none. The app's `heldTypes.ts` holds `import
 GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, copied by script, symbol by symbol (the reached ones only, found with a symbol tracer):
 
 - `src/lib/base/vaultSets.ts` to `src/vaultSets.ts`: lines 56-120 (`lwsReadAuth`, `lwsReadFetch`, `idFromUri`, `throwForStatus`), 209-430 (`VaultRecordRef`, `RecordsWire`, `VaultRecordsPage`, `listVaultRecordsPage`), 620-681 (`FileLifecycle`, `VaultFileRef`, `FilesWire`, `OPEN_PAGE_SIZE`), 686-757 (`FileListFilter`, `VaultFilesPage`, `mapWireFile`, `listVaultFilesPage`, `listVaultFiles`). Not taken: `FILE_PAGE_SIZE` (a deprecated alias, not reached);
+- `src/lib/base/vaultSets.ts` to `src/vaultSets.ts`, added in 0.2.0: lines 439-616 (the held-types banner, `VaultHeldTypes`, `HeldTypesWire`, `typeCountRows`, `CENSUS_DOOR_ABSENT_TTL_MS`, `censusDoorAbsentAt`, `__resetCensusDoorProbeForTest`, `listVaultHeldTypes`). Not taken: `listVaultRecords` (431-437), which no host member reaches;
 - `src/lib/base/search.ts` to `src/search.ts`: lines 41-45, 47-78, 80-88, 90-94, 96-100, 102-108, 119-137, 139-181, 183-266;
 - `src/lib/base/attributeFind.ts` to `src/attributeFind.ts`: lines 11-20, 22-76;
 - `src/lib/base/attributeFindPaging.ts` to `src/attributeFindPaging.ts`: lines 1-67, the whole file;

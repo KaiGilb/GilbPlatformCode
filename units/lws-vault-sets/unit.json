@@ -2,43 +2,131 @@
   "schema": 1,
   "unit": "units/lws-vault-sets",
   "package": "@kaigilb/gilbplatformcode-lws-vault-sets",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Asking a vault what it holds over the platform's record interface: a page of its records or files, a find by attribute, a text search, and the cap on requests in flight.",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
     "files": [
       {
-        "path": "src/lib/base/vaultSets.ts",
+        "path": "src/lib/base/attributeFind.ts",
         "lines": [
-          56,
-          120
+          11,
+          20
         ],
-        "to": "src/vaultSets.ts"
+        "to": "src/attributeFind.ts"
       },
       {
-        "path": "src/lib/base/vaultSets.ts",
+        "path": "src/lib/base/attributeFind.ts",
         "lines": [
-          209,
-          430
+          22,
+          76
         ],
-        "to": "src/vaultSets.ts"
+        "to": "src/attributeFind.ts"
       },
       {
-        "path": "src/lib/base/vaultSets.ts",
+        "path": "src/lib/base/attributeFindPaging.ts",
         "lines": [
-          620,
-          681
+          1,
+          67
         ],
-        "to": "src/vaultSets.ts"
+        "to": "src/attributeFindPaging.ts"
       },
       {
-        "path": "src/lib/base/vaultSets.ts",
+        "path": "src/lib/base/heldTypes.ts",
         "lines": [
-          686,
-          757
+          106,
+          111
         ],
-        "to": "src/vaultSets.ts"
+        "to": "src/mapWithConcurrency.ts"
+      },
+      {
+        "path": "src/lib/base/heldTypes.ts",
+        "lines": [
+          116,
+          151
+        ],
+        "to": "src/mapWithConcurrency.ts"
+      },
+      {
+        "path": "src/lib/base/planRequestLimit.ts",
+        "lines": [
+          1,
+          55
+        ],
+        "to": "src/planRequestLimit.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          34,
+          60
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          95,
+          104
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          106,
+          109
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          116,
+          119
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          121,
+          129
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          131,
+          147
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          149,
+          159
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          161,
+          190
+        ],
+        "to": "src/recordPlane.ts"
+      },
+      {
+        "path": "src/lib/base/recordPlane.ts",
+        "lines": [
+          192,
+          204
+        ],
+        "to": "src/recordPlane.ts"
       },
       {
         "path": "src/lib/base/search.ts",
@@ -113,124 +201,44 @@
         "to": "src/search.ts"
       },
       {
-        "path": "src/lib/base/attributeFind.ts",
+        "path": "src/lib/base/vaultSets.ts",
         "lines": [
-          11,
-          20
+          56,
+          120
         ],
-        "to": "src/attributeFind.ts"
+        "to": "src/vaultSets.ts"
       },
       {
-        "path": "src/lib/base/attributeFind.ts",
+        "path": "src/lib/base/vaultSets.ts",
         "lines": [
-          22,
-          76
+          209,
+          430
         ],
-        "to": "src/attributeFind.ts"
+        "to": "src/vaultSets.ts"
       },
       {
-        "path": "src/lib/base/attributeFindPaging.ts",
+        "path": "src/lib/base/vaultSets.ts",
         "lines": [
-          1,
-          67
+          439,
+          616
         ],
-        "to": "src/attributeFindPaging.ts"
+        "to": "src/vaultSets.ts"
       },
       {
-        "path": "src/lib/base/planRequestLimit.ts",
+        "path": "src/lib/base/vaultSets.ts",
         "lines": [
-          1,
-          55
+          620,
+          681
         ],
-        "to": "src/planRequestLimit.ts"
+        "to": "src/vaultSets.ts"
       },
       {
-        "path": "src/lib/base/heldTypes.ts",
+        "path": "src/lib/base/vaultSets.ts",
         "lines": [
-          106,
-          111
+          686,
+          757
         ],
-        "to": "src/mapWithConcurrency.ts"
-      },
-      {
-        "path": "src/lib/base/heldTypes.ts",
-        "lines": [
-          116,
-          151
-        ],
-        "to": "src/mapWithConcurrency.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          34,
-          60
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          95,
-          104
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          106,
-          109
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          116,
-          119
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          121,
-          129
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          131,
-          147
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          149,
-          159
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          161,
-          190
-        ],
-        "to": "src/recordPlane.ts"
-      },
-      {
-        "path": "src/lib/base/recordPlane.ts",
-        "lines": [
-          192,
-          204
-        ],
-        "to": "src/recordPlane.ts"
+        "to": "src/vaultSets.ts"
       }
     ]
   },
@@ -240,7 +248,8 @@
     "in `attributeFind.ts` the imports `./config`, `./dpop` and `./token` are replaced by `base-origin` and `lws-session-bridge`, and the default of `origin` (line 41) `BASE_ORIGIN` is `baseOrigin()`",
     "in `planRequestLimit.ts` the import of `MAX_PARALLEL_DEREFERENCES` (line 6) is `./mapWithConcurrency` and not `./heldTypes`",
     "in `lwsReadAuth` (`vaultSets.ts` line 64) `bearerHeaderFor(url)` is `bearerHeaderFor(url, method)`; `search.ts` line 93 is unchanged (its one caller sends GET)",
-    "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed"
+    "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed",
+    "in `vaultSets.ts` (0.2.0) the import from `vault-origin-rule` gains `LWS_VAULT_TYPES_URL` and `vaultOriginOf`, which the census code (lines 439-616) uses; the census code itself is the source's, with comments only reworded"
   ],
   "newFiles": [
     "src/index.ts"

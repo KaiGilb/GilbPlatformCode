@@ -2,15 +2,17 @@ import { describe, expect, it } from "vitest";
 import * as unit from "./index";
 
 describe("the unit's export list", () => {
-  it("is exactly the symbols the Plan-card readers reach", () => {
+  it("is exactly the symbols the Plan-card readers and the record hooks reach", () => {
     expect(Object.keys(unit).sort()).toEqual(
       [
         "APP_UI_PREFS_TYPE",
+        "CENSUS_DOOR_ABSENT_TTL_MS",
         "MAX_PARALLEL_DEREFERENCES",
         "OPEN_PAGE_SIZE",
         "PREFS_LABEL",
         "SearchUnavailableError",
         "UNTYPED_FIND",
+        "__resetCensusDoorProbeForTest",
         "bareTypeNames",
         "createLimiter",
         "findByAttribute",
@@ -24,6 +26,7 @@ describe("the unit's export list", () => {
         "isUiPrefsRecord",
         "listVaultFiles",
         "listVaultFilesPage",
+        "listVaultHeldTypes",
         "listVaultRecordsPage",
         "lwsReadFetch",
         "mapWithConcurrency",

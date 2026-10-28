@@ -1,4 +1,4 @@
-import { LWS_VAULT_FILES_URL, LWS_VAULT_RECORDS_URL } from "@kaigilb/gilbplatformcode-vault-origin-rule";
+import { LWS_VAULT_FILES_URL, LWS_VAULT_RECORDS_URL, LWS_VAULT_TYPES_URL, vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
 import { NotSignedInError, bearerHeaderFor, dpopReadAuth, invalidateDpop } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { normalizeTypeUri } from "@kaigilb/gilbplatformcode-record-types";
 import { narrowTotal } from "@kaigilb/gilbplatformcode-narrow-total";
@@ -291,6 +291,137 @@ export async function listVaultRecordsPage(
     types,
     served: body.records?.length ?? 0,
     ...(opts.includeBody ? { nextOffset: typeof body.nextOffset === "number" ? body.nextOffset : null } : {}),
+  };
+}
+
+// ── held types (the census) ─────────────────────────────────────────────────────────────
+//
+// "Which types does THIS vault hold, FOR ME, with counts?" is asked of the VAULT, never of the catalog. The catalog
+// answers "which types exist?"; only the vault can answer what it holds. The census is a distinct, row-less act on
+// its own door: the untyped records list and the `types[]` facet off a records page are not it, and nothing below
+// reads `RecordsWire.types` as the census. What a held name IS comes from dereferencing its term (the census
+// unit), never from an app-side list. The door groups the authorized read, so the answer is per viewer.
+
+/** The census answer — type identities the viewer may read in the vault, each with a count. */
+export interface VaultHeldTypes {
+  /** One row per held grid type, `typeUri` NORMALIZED to the one spelling the app resolves by
+   * (the door emits the store's own spelling, up to three forms — the merge is by bare name). */
+  types: { typeUri: string; count: number }[];
+  /** Σ count over `types` — exact, or a FLOOR when `totalItemsKind` is `atLeast`. */
+  totalItems: number;
+  /** The door's declared accuracy: `exact`, or `atLeast` when some type met the stated bound
+   * (an approximation is lawful only when disclosed; `?count=exact` asks
+   * for the census). Every per-type `count` inherits this kind. */
+  totalItemsKind: "exact" | "atLeast";
+  /** G7 in the door — the type groups the door's grid-record filter removed, DISCLOSED with
+   * their counts. Never issued on `?type=`. */
+  excludedTypes: { typeUri: string; count: number }[];
+  /** The vault that ANSWERED, echoed by the door. */
+  vault: string | null;
+  /** The vaults the census scanned (the named vault + nested vaults the principal reaches). */
+  scannedVaults: string[];
+}
+
+interface HeldTypesWire {
+  types?: unknown;
+  totalItems?: unknown;
+  totalItemsKind?: unknown;
+  excludedTypes?: unknown;
+  vault?: unknown;
+  scannedVaults?: unknown;
+  records?: unknown;
+}
+
+function typeCountRows(v: unknown): { typeUri: string; count: number }[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter(
+      (t): t is { typeUri: string; count: number } =>
+        !!t &&
+        typeof (t as { typeUri?: unknown }).typeUri === "string" &&
+        (t as { typeUri: string }).typeUri.length > 0 &&
+        typeof (t as { count?: unknown }).count === "number",
+    )
+    .map((t) => ({ typeUri: normalizeTypeUri(t.typeUri), count: t.count }));
+}
+
+// ── the census door's absence, remembered per Base origin ──────────────────────────────
+//
+// The caller asks `listVaultHeldTypes` on every hydrate, so a Base that does not serve the door paid one 404 per
+// vault, per page, per view. The verdict is therefore remembered, for a bounded window:
+//   - ABSENCE only. A 404 carries no payload the view needs. The census itself is never cached: a served door is
+//     asked on every call, because its answer is the vault's current holdings.
+//   - Per Base origin (`vaultOriginOf`), not per vault. The route's handler emits no 404 of its own (an unreachable
+//     vault is 403, a blank segment 400), so a 404 on this path says the server lacks the route, which is a fact
+//     about the server and not about the vault.
+//   - The window is bounded, not the session: a Base that gains the door under a running client is found again
+//     within one window (60 s, the same as the catalogue read's own TTL), with no reload.
+// What the window costs: while the door 404s and then starts serving inside it, the caller takes the catalogue
+// sweep, which cannot supply an uncatalogued held name, so such a row is absent for up to one window. The grid
+// never falls below what the catalogue sweep shows, and the shortfall heals within one window.
+// A mixed cluster can make sibling vaults on one origin ride an absence that a node without the door produced.
+
+/** How long an ABSENT verdict is trusted before the door is asked again. */
+export const CENSUS_DOOR_ABSENT_TTL_MS = 60_000;
+
+/** Base origin → the instant its census door answered 404. Absence only; never a census. */
+const censusDoorAbsentAt = new Map<string, number>();
+
+/** Test seam — forget every remembered absence. ⛔ Not for production use. */
+export function __resetCensusDoorProbeForTest(): void {
+  censusDoorAbsentAt.clear();
+}
+
+/**
+ * The NAMED vault's row-less, per-viewer type census (`GET /lws/vault/<vaultId>/types`).
+ *
+ * Returns `null` when the door is ABSENT (404). That is the capability probe: a Base that predates the route makes
+ * the caller take the catalogue sweep unchanged, so a client landing ahead of the server never shows a grid narrower
+ * than before. Never a `HEAD`, never a body-shape probe. Any other failure throws (the vault is unreachable, as for
+ * the records door).
+ *
+ * `records` is never read here. On the census it is absent or `[]`; a populated entry is reported and not consumed,
+ * so this client cannot be the door through which rows reach the grid.
+ */
+export async function listVaultHeldTypes(vaultId: string): Promise<VaultHeldTypes | null> {
+  // A door this Base was measured NOT to serve, inside the window: the same `null` verdict, and
+  // ⛔ no request at all. The caller's branch is byte-identical either way.
+  const baseOrigin = vaultOriginOf(vaultId);
+  const absentAt = censusDoorAbsentAt.get(baseOrigin);
+  if (absentAt !== undefined && Date.now() - absentAt < CENSUS_DOOR_ABSENT_TTL_MS) return null;
+  const url = LWS_VAULT_TYPES_URL(vaultId);
+  // the one sign-in-then-retry read (Bearer, then DPoP once on a 401), ⛔ not a copy of it.
+  const res = await lwsReadFetch(url);
+  if (res.status === 404) {
+    censusDoorAbsentAt.set(baseOrigin, Date.now());
+    return null;
+  }
+  // ⛔ Nothing is written on ANY other answer, and nothing needs to be: an absence is only ever
+  // consulted INSIDE its window, and inside its window no request is issued at all — so control
+  // reaches this line only when the remembered absence has already expired. A `delete` here
+  // would be a line no arm can redden (measured: mutation M3 removed it and all 14 arms stayed
+  // green), i.e. reassurance rather than a property. The window is what makes the door reachable
+  // again; a later 404 simply remembers a NEW instant and restarts it from there.
+  if (!res.ok) await throwForStatus(res);
+  const body = (await res.json()) as HeldTypesWire;
+  if (Array.isArray(body.records) && body.records.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[base] F-HELD ${vaultId}: the census door answered ${body.records.length} record row(s) — ` +
+        `the K2 falsifier (S1 ruling K2; S7 §0 row 6). Rows are NOT read here; report it.`,
+    );
+  }
+  const types = typeCountRows(body.types);
+  const summed = types.reduce((sum, t) => sum + t.count, 0);
+  return {
+    types,
+    totalItems: typeof body.totalItems === "number" ? body.totalItems : summed,
+    totalItemsKind: body.totalItemsKind === "atLeast" ? "atLeast" : "exact",
+    excludedTypes: typeCountRows(body.excludedTypes),
+    vault: typeof body.vault === "string" ? body.vault : null,
+    scannedVaults: Array.isArray(body.scannedVaults)
+      ? body.scannedVaults.filter((p): p is string => typeof p === "string")
+      : [],
   };
 }
 
