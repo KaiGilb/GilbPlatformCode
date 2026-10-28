@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/plan-card-facts",
+  "package": "@kaigilb/gilbplatformcode-plan-card-facts",
+  "version": "0.1.0",
+  "purpose": "The facts a Function, Solution or Value card reads and writes on the record itself, as plain functions over the stored wire shapes.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/lib/base/planCard.ts", "lines": [20, 71], "to": "src/planCardFacts.ts" },
+      { "path": "src/lib/base/planCard.ts", "lines": [130, 973], "to": "src/planCardFacts.ts" }
+    ]
+  },
+  "namedChanges": [
+    "lines 1-19 (the header comment and the imports from `gilb-stakeholders`, `./stakeholderKinds`, `./planKinds` and `./stakeholderCard`) are replaced by a new short header comment",
+    "lines 72-128 (`PLAN_CARD_VOCABULARY_STORE_KEY`, `PLAN_CARD_VOCABULARY_QUERY_KEY`, `planKinds`, `readPlanCardVocabulary` and `planCardVocabularyQuery`, the vocabulary loader) are deleted"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Specification.facts", "title": "Plan card facts (sources, meters, status lines)", "note": "Facts on the record itself; Value child records are value-card-model, links plan-links-model. Not the older spec-card-facts." }
+}

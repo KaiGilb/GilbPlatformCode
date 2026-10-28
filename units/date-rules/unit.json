@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/date-rules",
+  "package": "@kaigilb/gilbplatformcode-date-rules",
+  "version": "0.1.0",
+  "purpose": "The year range a level's date may take (1900 to 2200), the check for a real calendar day, and the check for whether a date field may be written.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/PlanValueGraph.geometry.ts", "lines": [184, 195], "to": null },
+      { "path": "src/components/records/PlanFunctionForm.tsx", "lines": [308, 316], "to": null }
+    ]
+  },
+  "namedChanges": [
+    "Comment scrubbed; no code change.",
+    "Code is verbatim; the one change is that the function is now exported (it was private there)."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": false }
+}

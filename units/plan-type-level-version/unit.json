@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/plan-type-level-version",
+  "package": "@kaigilb/gilbplatformcode-plan-type-level-version",
+  "version": "0.1.0",
+  "purpose": "Draws the one line every Plan card shows first, \"Type: <type> · Level: <level> · Version: <date>\", with the plain/constraint type switch and the level chooser.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanTypeLevelVersion.tsx", "lines": null, "to": "src/PlanTypeLevelVersion.tsx" },
+      { "path": "src/lib/base/planValue.ts", "lines": [2089, 2093], "to": "src/localDay.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`import { localDay } from \"../../lib/base/planValue\"` is `import { localDay } from \"./localDay\"`.",
+    "`TypePicture` (was `./TypePicture`) is from `@kaigilb/gilbplatformcode-type-picture`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:CauseEffectLevel.line", "title": "Type · Level · Version line", "note": "The first line of every Plan card with the level chooser; the project's levels come from project-levels." }
+}

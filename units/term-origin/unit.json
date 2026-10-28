@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "unit": "units/term-origin",
+  "package": "@kaigilb/gilbplatformcode-term-origin",
+  "version": "0.1.0",
+  "purpose": "The one setting \"which origin serves the GilbVeda type documents\", so every Plan unit builds type addresses the same way.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": []
+  },
+  "namedChanges": [
+    "this unit replaces the constant with a setting the app sets"
+  ],
+  "newFiles": [
+    "src/termOrigin.ts",
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

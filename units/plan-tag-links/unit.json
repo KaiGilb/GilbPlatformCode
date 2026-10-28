@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/plan-tag-links",
+  "package": "@kaigilb/gilbplatformcode-plan-tag-links",
+  "version": "0.1.0",
+  "purpose": "The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System), each shown by the linked records' live tags, with the host doing every read, cache and write.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [47, 47], "to": "src/planTagLinks.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [147, 177], "to": "src/planTagLinks.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [297, 1295], "to": "src/planTagLinks.tsx" },
+      { "path": "src/lib/base/planFind.ts", "lines": [16, 16], "to": "src/planFindNote.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [26, 33], "to": "src/planFindNote.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [35, 37], "to": "src/planFindNote.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [39, 41], "to": "src/planFindNote.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [43, 45], "to": "src/planFindNote.ts" },
+      { "path": "src/components/records/usePlanParts.ts", "lines": [22, 22], "to": "src/planFindNote.ts" },
+      { "path": "src/components/records/usePlanParts.ts", "lines": [57, 84], "to": "src/planFindNote.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [427, 433], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [447, 452], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [211, 211], "to": "src/planTagLinks.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "`useQueryClient()` is `usePlanTagLinksHost()` (a private hook reading `PlanTagLinksHostContext`, throwing an error that names the provider when there is none), placed after `useCardMode()` (in `PlanSubFunctions`, which has none, where the `useQueryClient()` stood is the first line). `writeLink`, `writeMeasures` and `writeSolutionOf` take `host` where they took `qc`. The host is typed with its optional writers read as present (`Required<PlanTagLinksHost>`) in one place, the private hook; each component's added read-only line is what keeps a missing writer from being reached.",
+    "Each call that reached outside the unit is the host member of the same name, with the same arguments but for `qc`: `useRecords`, `useRelations`, `usePlanFind`, `invalidatePlanFind`, `invalidatePlanSearch`, `liveRow`, `ensureEtagUnchanged`, `applyPatch`, `storePlanRow`, `dropPlanFind`, `prependPlanFind`, `putRecordInCaches`, `resolveType`, `typeUriForVaultNamespace`, `memberEntityUri`, `readRecord` (also the third argument of `wouldLoop`), `patchRecord`, `createRecord`, `writePairRelation`, `endRelation`, and `<ConnectedCreateDialog>` as `<host.ConnectedCreateDialog>`. `qc.setQueryData(planRecordKey(updated.id, updated.entityUri), updated)` is `host.setPlanRecord(updated.id, updated.entityUri, updated)`. In `writeSolutionOf`, `const key = relationsKey(...)` is dropped, `qc.getQueryData<RecordRelation[]>(key)` is `host.getRelations(viewing.id, viewing.entityUri)` and `qc.setQueryData(key, [...])` is `host.setRelations(viewing.id, viewing.entityUri, [...])`; in the two remove handlers `qc.setQueryData<RecordRelation[]>(relationsKey(record.id, record.entityUri ?? null), updater)` is `host.setRelations(record.id, record.entityUri ?? null, updater)`.",
+    "`useCreateRecord(planVault)` is `(host.useCreateRecord ?? useNoCreate)(planVault)`: the hook is called on every render in the same place; `useNoCreate` is a private stand-in whose `mutateAsync` rejects, never reached because the component is then read-only.",
+    "One added line per component with a writer: `canEdit = canEdit && … !== undefined;` (see \"What the host must supply\"). It is the only added statement in `PlanPartOf`, `PlanFunctionOfValue`, `PlanValueOfFunction`, `PlanSolutionOf` and `PlanSolutions`. `PlanPartOfSystem` has no such line; its one change is in the condition of the create button: `search.canCreate ? (` is `search.canCreate && host.ConnectedCreateDialog !== undefined ? (`, so a host without the dialog is not offered \"Create System\" (picking and clearing an existing system are unchanged).",
+    "The seven components were exported in the source and still are; `writeLink`, `writeMeasures`, `writeSolutionOf`, `SolutionChips`, `measuredAddresses`, `tagFor` and `SOFTWARE_SYSTEM_OPTION` stay private, as in the source."
+  ],
+  "newFiles": [
+    "src/planTagLinksHost.ts",
+    "src/index.ts",
+    "test/fakeHost.tsx",
+    "test/mount.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Specification.linklines", "title": "Link lines (Part of, Sub-functions, Solution of)", "note": "Seven link lines of a Plan card; the picker alone is plan-tag-picker, the pure model plan-links-model." }
+}

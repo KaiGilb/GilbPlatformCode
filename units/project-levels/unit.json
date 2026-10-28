@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/project-levels",
+  "package": "@kaigilb/gilbplatformcode-project-levels",
+  "version": "0.1.0",
+  "purpose": "Builds the tree of a project's levels (Business, Product, Solution and any the project added) for a level chooser, and gives a card the one hook that reads them and adds a level, with the host doing every read and write.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planLevels.ts", "lines": [20, 20], "to": "src/planLevels.ts" },
+      { "path": "src/lib/base/planLevels.ts", "lines": [26, 30], "to": "src/planLevels.ts" },
+      { "path": "src/lib/base/planLevels.ts", "lines": [33, 226], "to": "src/planLevels.ts" },
+      { "path": "src/lib/base/planLevels.ts", "lines": [398, 423], "to": "src/planLevels.ts" },
+      { "path": "src/lib/base/planLevels.ts", "lines": [470, 496], "to": "src/planLevels.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`const VEDA = \"https://veda.gilb.com/base/t\"` (line 31) is removed, and the `ontologyTerm` of each entry of `DEFAULT_LEVELS` (lines 39-42) is a getter. The source evaluated `DEFAULT_LEVELS` when the module loaded, before an app can set the term origin, so each entry is now `get ontologyTerm() { return `${termOrigin()}/base/t/BusinessLevel`; }` (and the same with `StakeholderLevel`, `ProductLevel`, `SolutionLevel`, the names of the source's literals). Read after `setTermOrigin` with the app's origin, it gives the string the source had. `termOrigin` is `@kaigilb/gilbplatformcode-term-origin`.",
+    "`useQueryClient()` (line 480) is `useContext(ProjectLevelsHostContext)`, throwing an error that names the provider when there is none. `useAllLevels(vaultId)` (line 481) is `host.useAllLevels(vaultId)` (host member 1). `waitForLevels(qc, vaultId)` (lines 487 and 492) is `host.waitForLevels(vaultId)` (member 2). `ensureDefaultLevels(vaultId, qc)` (line 488) is `host.ensureDefaultLevels(vaultId)` (member 3). `addProjectLevel(vaultId, qc, label, parentToken)` (line 493) is `host.addProjectLevel(vaultId, label, parentToken)` (member 4). In the two dependency arrays `qc` is `host`. The calls are in the source's places and order.",
+    "`directChildren` (line 398) and `nextPosition` (line 411), private in the source, are exported, so a host can write `addProjectLevel` with them."
+  ],
+  "newFiles": [
+    "src/projectLevelsHost.ts",
+    "src/index.ts"
+  ],
+  "host": [
+    { "member": "useAllLevels", "replaces": "src/lib/base/planLevels.ts:294-302" },
+    { "member": "waitForLevels", "replaces": "src/lib/base/planLevels.ts:462-468" },
+    { "member": "ensureDefaultLevels", "replaces": "src/lib/base/planLevels.ts:359-369,372-396" },
+    { "member": "addProjectLevel", "replaces": "src/lib/base/planLevels.ts:426-456" }
+  ],
+  "library": { "admitted": true, "tag": "t:CauseEffectLevel.project", "title": "Project levels (Business, Product, Solution)", "note": "Reads and adds a project's levels for the level chooser; the line that shows them is plan-type-level-version." }
+}

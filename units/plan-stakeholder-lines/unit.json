@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "unit": "units/plan-stakeholder-lines",
+  "package": "@kaigilb/gilbplatformcode-plan-stakeholder-lines",
+  "version": "0.1.0",
+  "purpose": "Draws the Stakeholder line and the Authority line of a Plan card, and on a Development Resource the Resource Owner line: linked people and organizations as chips with their role marks, names that are not records yet as text, the picker to link a record, creating a new stakeholder, removing, and an Authority's \"acts for\", with every read and write supplied by the host.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanStakeholders.tsx", "lines": null, "to": "src/PlanStakeholders.tsx" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [22, 22], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [28, 28], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [35, 42], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [45, 45], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [53, 53], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [155, 160], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [162, 169], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [177, 197], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [204, 260], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/ruleHooks.ts", "lines": [195, 215], "to": "src/vaultNamespaceOfEntityUri.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [427, 433], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [447, 452], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [942, 948], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/planSearch.ts", "lines": [34, 34], "to": "src/planSearch.ts" },
+      { "path": "src/lib/base/planSearch.ts", "lines": [37, 37], "to": "src/planSearch.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Imports (lines 5-59): `OrgRecordPicker`, `PickerFind`, `PickerIncomplete` from `record-picker`; `FieldRow` from `field-row`; `RemoveControl` from `remove-control`; `EntityRefValue` from `entity-ref-value`; `entityRefFromFact` from `entity-ref`; `alreadyLinked`, `authoritiesOf`, `actsForOnRelation`, `RESOURCE_OWNER_RELATION_TYPE`, `resourceOwnersOf`, `handleFromFacts`, `legacyAuthorityOf`, `sameRecord`, `stakeholdersOf`, `STAKEHOLDER_RELATION_FACT`, `STAKEHOLDER_RELATION_TYPE`, `STAKEHOLDER_ROLES`, `stakeholderTagTexts`, `stakeholdersWithoutTag`, `LinkedStakeholder`, `CONSTRAINT_AUTHORITY_WHY`, `CONSTRAINT_LAST_PERSON`, `NOT_A_PERSON`, `isPersonStakeholderType`, `removingLastPersonAuthority` from `plan-stakeholders-model`; `isResourceType` from `plan-kinds`; `rowServedFact`, `sameServedList` from `plan-card-facts`; `RecordRelation` from `relation-role`; `BaseRecord`, `GridRecord` from `base-record`. Each was compared with the source's own, comments stripped: `planStakeholders.ts` (minus the writers and finders, which are host members), `planConstraint.ts`, `planKinds.ts`, `rowServedFact`, `sameServedList`, `handleFromFacts` are the same; `entityRefFromFact` is the same but for guards against an undefined array element.",
+    "`@tanstack/react-query` is gone: each `useQuery` and `qc.*` call is a host member (see above), and `useQueryClient()` is not called (the query client stays in the host). `useShell()` is gone the same way. `hasSubstitutedType` (`records.ts:357`) and `memberEntityUri` (`relationWrite.ts:99`) are host members too, not copies: the first compares with the app's type namespace and the second falls back to the app's base origin, both from its configuration.",
+    "Each host call is made with the same arguments, in the same place and order as the source's call. `useHeldVaults` (lines 171-174) is `host.useHeldVaults()`; `useOpenInItsVault` takes `host.useOpenRecordInVault()` where it read `useShell()`; the line `const key = relationsKey(...)` in `remember` is gone (the host forms the key from `setRelations`' arguments); `stakeholderIncomplete` takes the host where it took the query client; `Awaited<ReturnType<typeof readRecord>>` is `Awaited<ReturnType<StakeholderLinesHost[\"readRecord\"]>>`; the `<ConnectedCreateDialog ... />` element is a call `host.renderCreateStakeholder!({ ... })` with the same props as one object; the writers are called with a `!` after the member.",
+    "Each component reads `host` from the new `StakeholderLinesHostContext` (`useStakeholderLinesHost`, private) first; with no provider it throws.",
+    "One added line in each component, before `showPicker`: `if (!(<its writers>)) { editing = false; offer = false; }`. That is the read-only behaviour: the same as `editing` false with no `offer`.",
+    "One comment in `useLoadedStakeholder` is reworded; other comments are the source's. `ConnectedCreateDialog`, `useConstraintPeople`, `ShellContext` and the app's query-key helpers are not in the unit."
+  ],
+  "newFiles": [
+    "src/host.ts",
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:StakeholderOf.line", "title": "Stakeholder, Authority and Resource Owner lines", "note": "Three Plan card lines in one unit; the pure rules are plan-stakeholders-model. Plan.DevelopmentResource" }
+}

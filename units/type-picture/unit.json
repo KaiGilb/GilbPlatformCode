@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/type-picture",
+  "package": "@kaigilb/gilbplatformcode-type-picture",
+  "version": "0.1.0",
+  "purpose": "Draws a GilbVeda type's picture at a given size, and draws nothing when the type has no picture or the picture fails to load.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/TypePicture.tsx", "lines": [9, 37], "to": "src/TypePicture.tsx" },
+      { "path": "src/lib/base/useTypePictureSrc.ts", "lines": null, "to": "src/useTypePictureSrc.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [15, 15], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [64, 68], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [91, 117], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [119, 121], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [133, 152], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [156, 161], "to": "src/pictureSource.ts" },
+      { "path": "src/lib/base/typePicture.ts", "lines": [184, 189], "to": "src/pictureSource.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`fetchTypePictureSrc` is `source.fetchTypePictureSrc`, where `source` is read from the new `TypePictureSourceContext` (`useContext`); with no source the hook returns null (the effect's first test became `!typeName || !source`); `source` is in the effect's dependency list after `typeName`.",
+    "bodies verbatim except: `TYPE_TERM_ORIGIN` is `opts.termOrigin`; `vaultOriginOf(id)` is `opts.originOf(id)`; `fetch(` is `(opts.fetch ?? globalThis.fetch)(`; the module-level `pictureCache` (line 89) is one `Map` per source, made inside the factory;"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:TypePicture.view", "title": "Type picture", "note": "Draws a type's picture or nothing; as a button that opens the definition take type-term-popover." }
+}

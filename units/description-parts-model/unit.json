@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/description-parts-model",
+  "package": "@kaigilb/gilbplatformcode-description-parts-model",
+  "version": "0.1.0",
+  "purpose": "Reads and plans the Description of a Solution or Solution Constraint, which is one record per Keyword part: it parses Keyword lines and Assumptions, builds the tree, orders and moves parts, previews a paste, and plans the move or the removal of a whole level, with the host supplying every read.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planParts.ts", "lines": null, "to": "src/planParts.ts" },
+      { "path": "src/lib/base/planLevelRead.ts", "lines": null, "to": "src/planLevelRead.ts" },
+      { "path": "src/lib/base/heldTypes.ts", "lines": [111, 111], "to": "src/mapWithConcurrency.ts" },
+      { "path": "src/lib/base/heldTypes.ts", "lines": [120, 150], "to": "src/mapWithConcurrency.ts" },
+      { "path": "src/lib/base/picture.ts", "lines": [73, 76], "to": "src/planLevelRead.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The I/O seam. The three functions that talked to the app's query cache (`readLevel`, `planPartialWrite`, `removalPlan`) take `host: LevelHost` where they took `qc: QueryClient` (same position), and each call is replaced by the host method, in the same order, with the same awaits and loop structure:",
+    "`const origin = vaultOriginOf(planVault);` (removalPlan) is removed: `origin` fed only the replaced find, and the host works the origin out of `planVault`. `vaultOriginOf` is used nowhere else in the file.",
+    "The interface `LevelHost` is added and exported (its comments name the GilbApp call each method replaces). The imports of `@tanstack/react-query`, `./config`, `./planFind` and `./picture` are removed.",
+    "`vaultIdOfEntity` of `./picture` (4 lines) is copied as a non-exported function (`src/picture.ts` lines 73-76).",
+    "Comments in the three functions that named `fetchQuery` and `readCached` say what a fresh read needs of any cache."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "test/fakeHost.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:SpecificationElement.model", "title": "Description parts model (Keyword parts)", "note": "Parsing, tree, ordering and removal plans; the editor on screen is description-parts-view." }
+}

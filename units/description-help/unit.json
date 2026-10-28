@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/description-help",
+  "package": "@kaigilb/gilbplatformcode-description-help",
+  "version": "0.1.0",
+  "purpose": "The help panel for writing a Solution's or Function's Description in Keyword parts: what a Keyword is, the Assumption part, sub-parts, moving parts, pasting many parts at once and naming a source, each with an example that uses the card's own tag.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/help/DescriptionHelp.tsx", "lines": null, "to": "src/DescriptionHelp.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Line 1: `ASSUMPTION_WARNING` is imported from `description-parts-model` instead of `../../lib/base/planParts`.",
+    "Line 2: the eight help components are imported from `help-doc` instead of `./HelpDoc` (`src/components/help/HelpDoc.tsx`, the whole file, which is that unit)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:HelpPage.description", "title": "Description help panel", "note": "Help for writing a Description in Keyword parts; built from help-doc." }
+}

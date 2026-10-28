@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/value-illustration",
+  "package": "@kaigilb/gilbplatformcode-value-illustration",
+  "version": "0.1.0",
+  "purpose": "Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [2596, 2615], "to": "src/PlanValuePictureBody.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Imports: `./PlanValueGraph` is `@kaigilb/gilbplatformcode-value-graph` (`PlanValueGraph`); `../../lib/base/planValue` is `@kaigilb/gilbplatformcode-value-card-model` (`carryOthers`, checked to be exported there); `ValueLineProps` is imported as a type from `@kaigilb/gilbplatformcode-value-line-kit`. The symbol is otherwise unchanged.",
+    "Comments: none; the source's line comment (\"The old stored list is read-only until it is moved into records.\") has no name or tag. The file's header comment is the unit's own.",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx",
+    "test/graph.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Value.illustration", "title": "Illustration line of a Value card", "note": "The card line around value-graph; for the graph alone take value-graph. Plan.Value" }
+}

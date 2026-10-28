@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "unit": "units/qualifier-values",
+  "package": "@kaigilb/gilbplatformcode-qualifier-values",
+  "version": "0.1.0",
+  "purpose": "Reads the values a level holds for one qualifier as a list, and packs a list back into the form a level stores.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/lib/base/planValue.ts", "lines": [1676, 1685], "to": null },
+      { "path": "src/lib/base/planValue.ts", "lines": [1704, 1714], "to": null }
+    ]
+  },
+  "namedChanges": [
+    "Comments scrubbed; the one code change is that `eq` is now exported (it was a private const there)."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": false }
+}

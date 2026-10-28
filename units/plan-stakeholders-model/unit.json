@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/plan-stakeholders-model",
+  "package": "@kaigilb/gilbplatformcode-plan-stakeholders-model",
+  "version": "0.1.0",
+  "purpose": "Reads the stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record from its relations and its text, and holds the rules that a Function Constraint or Solution Constraint names a person as its Authority.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planStakeholders.ts", "lines": [21, 226], "to": "src/planStakeholders.ts" },
+      { "path": "src/lib/base/planStakeholders.ts", "lines": [429, 436], "to": "src/planStakeholders.ts" },
+      { "path": "src/lib/base/relationDoc.ts", "lines": [11, 24], "to": "src/relationDoc.ts" },
+      { "path": "src/lib/base/planConstraint.ts", "lines": null, "to": "src/planConstraint.ts" },
+      { "path": "src/lib/base/stakeholderKinds.ts", "lines": [41, 57], "to": "src/kinds.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Code verbatim; the header and three doc comments (a round number in front of a sentence) are made generic.",
+    "Code verbatim except the imports: `./recordPlane` (`typeLocalName`) is `@kaigilb/gilbplatformcode-type-curie`; `./relations` (`RecordRelation`) is `@kaigilb/gilbplatformcode-relation-role`; `import { typeFacetKey } from \"./workingSetFacets\"` is `import { typeKey as typeFacetKey } from \"@kaigilb/gilbplatformcode-type-key\"` (the call sites are unchanged; the app's `typeFacetKey` asks its type registry first, the unit's default key does not, and `setTypeKey` puts the registry back); `kindDescendants` and the type `StakeholderKindType` of the private package `gilb-stakeholders` are `./kinds`; `StakeholderTypeSet` of `./stakeholderKinds` is `./kinds`; `./planStakeholders` is unchanged."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:StakeholderOf.model", "title": "Stakeholders, Authority and Resource Owner model", "note": "Pure reading and constraint person rules; the lines on screen are plan-stakeholder-lines. Plan.DevelopmentResource" }
+}

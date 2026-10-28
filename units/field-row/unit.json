@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/field-row",
+  "package": "@kaigilb/gilbplatformcode-field-row",
+  "version": "0.1.0",
+  "purpose": "One click-to-edit text field row on a card: it shows the value (or nothing, in view mode, when empty), turns into an input on a click in edit mode, commits on Enter or on leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/mynet/FieldRow.tsx", "lines": [36, 330], "to": "src/FieldRow.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the peers' (`useCardMode` from `@kaigilb/gilbplatformcode-card-mode`; `insideOpenLayer` and `modalIsOpen` from `@kaigilb/gilbplatformcode-open-popups`; in the source they were `../records/cardMode`, `../records/planLeave` and `../ui/layers`);",
+    "the picker branches are cut, because the Plan cards use only the text branch. Removed lines: 37-42 (the imports of `ContactLanguagePicker`, `TimeZonePicker`, `contactLanguageDisplay`, `timeZoneDisplay`, `BirthdayPicker`, `birthdayText`); 47-56 (the `FieldPicker` type and `pickedDisplay`); 64 (`picker = null,`); 80-81 (the `picker` prop and its comment); in the comment of `multiline` (line 82) the words \"or a picker\"; 202-237 (the birthday branch `editing && picker === \"birthday\" ? ( … )`, the picker branch `editing && picker ? ( … )`, and the head `) : editing ? (` of the text chain, which now starts as `{editing ? (`); at line 322 `pickedDisplay(picker, value)` is `value`. Nothing the text, choice or textarea branches run through is changed;",
+    "two comments inside the code are made generic (lines 162 and 318)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScreenCard.field", "title": "Field row (click-to-edit text)", "note": "Text only, on a card with card-mode; for a controlled form field take field-control." }
+}

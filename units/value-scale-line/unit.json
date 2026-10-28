@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "unit": "units/value-scale-line",
+  "package": "@kaigilb/gilbplatformcode-value-scale-line",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Scale line of a Value card or a Development Resource card: its unit, rate and context (each [Qualifier] in the rate and context is a chip that jumps to that qualifier's row), which direction is better, and its source, giving every change up whole through onChange.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [101, 105], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [734, 742], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [744, 787], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [791, 887], "to": "src/PlanScaleBody.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Imports: `../../lib/base/planValue` and `../../lib/base/planValueModel` are `@kaigilb/gilbplatformcode-value-card-model` (`carryRaw`, `scaleDirectionOf` and the type `ScaleDirection`, checked to be exported there); the shared pieces above are from `@kaigilb/gilbplatformcode-value-line-kit`. The symbols are otherwise unchanged.",
+    "Comments: none of these four symbols carried a name or a tag; the file's header comment is the unit's own.",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Scale.line", "title": "Scale line of a Value card", "note": "Unit, rate, context and direction; writes through onChange. The qualifiers of the Scale are value-qualifiers-line. Plan.Value" }
+}

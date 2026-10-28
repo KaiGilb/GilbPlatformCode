@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/value-qualifiers-line",
+  "package": "@kaigilb/gilbplatformcode-value-qualifiers-line",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the \"Not in the Scale\" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [891, 946], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [948, 986], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [988, 995], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [997, 1005], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1007, 1008], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1010, 1023], "to": "src/PlanVariablesBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1025, 1364], "to": "src/PlanVariablesBody.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Imports: `../../lib/base/planValue` and `../../lib/base/planValueModel` are `@kaigilb/gilbplatformcode-value-card-model` (each name was checked to be exported there: `blankVariable`, `carryOthers`, `carryRaw`, `listLikeDefinition`, `movableConditions`, `moveConditionIntoVariable`, `PRESET_QUALIFIERS`, `qualifierRows`, `renameCandidate`, `scaleQualifierNames` and the types `QualifierRow`, `ScaleVariable`); `../../lib/base/planCard` is `@kaigilb/gilbplatformcode-plan-card-facts` (`planSourceEmpty`); the shared pieces above are from `@kaigilb/gilbplatformcode-value-line-kit`. The symbols are otherwise unchanged.",
+    "Comments: the batch tags of the source's comments on `DEFAULT_BADGE` are removed, keeping the technical meaning.",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScaleQualifier.line", "title": "Qualifiers line of a Value card", "note": "Edits the Scale qualifiers and their options; to pick a qualifier's value take qualifier-value-picker. Plan.Value" }
+}

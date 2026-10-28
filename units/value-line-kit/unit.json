@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "unit": "units/value-line-kit",
+  "package": "@kaigilb/gilbplatformcode-value-line-kit",
+  "version": "0.1.0",
+  "purpose": "The shared pieces of the Value card's lines: the line props, text and select editors that save on Enter or on leaving, the source control slot, the menu of qualifiers a level or meter has not set, the move button for older stored lists, and the host the lines read through.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [66, 91], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [93, 94], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [95, 96], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [97, 97], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [98, 98], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [99, 99], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [112, 112], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [114, 116], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [118, 182], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [184, 209], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [214, 215], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [216, 217], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [219, 220], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [222, 222], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [224, 247], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [249, 259], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [261, 341], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [343, 393], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [395, 445], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [483, 484], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [523, 617], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [682, 732], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1887, 1896], "to": "src/lineKit.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1898, 1909], "to": "src/lineKit.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Imports: `./PlanSource` is `@kaigilb/gilbplatformcode-plan-source`; `../../lib/base/planCard` is `@kaigilb/gilbplatformcode-plan-card-facts` (`planSourceEmpty`, `PlanSourceValue`); `../../lib/base/planValueModel` is `@kaigilb/gilbplatformcode-value-card-model` (`ValueCardData`, checked to be exported there); the `BaseRecord` type from `../../lib/base/records` is `@kaigilb/gilbplatformcode-base-record`.",
+    "`export` is put before each symbol the source did not export (everything above except `ValueLineProps` and `legacyMoveLabel`), as the line units import them. No other change in a symbol.",
+    "`src/host.ts` is new: `ValueLinesHost`, `ValueLinesHostContext`, `useValueLinesHost()`. Its members replace the app calls the lines made outside the units: the whole hook `useLinkLabel` (source lines 447-466, whose body is the reference host implementation in this README), `useShell().openOntologyConcept` (lines 1376, 1395), and `searchLiveTerms` and the type chooser's defaults (lines 1435, 1466). The line units call them: the Levels line `useLinkLabel`, the Endpoint line the others.",
+    "Comments: the names of people, the batch and cycle tags and the QA ids are removed, keeping the technical meaning (two batch tags in the comments of `ValueLineProps`).",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx",
+    "src/host.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

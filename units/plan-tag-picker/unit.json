@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "unit": "units/plan-tag-picker",
+  "package": "@kaigilb/gilbplatformcode-plan-tag-picker",
+  "version": "0.1.0",
+  "purpose": "Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [48, 49], "to": "src/planTagPicker.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [51, 145], "to": "src/planTagPicker.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [179, 295], "to": "src/planTagPicker.tsx" },
+      { "path": "src/lib/base/planSearch.ts", "lines": [29, 31], "to": "src/planTagPicker.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "`useQueryClient()` (line 65) is the private `usePlanTagPickerHost()`, which reads `PlanTagPickerHostContext` and throws an error that names the provider when there is none. `searchPlanRecords(planVault, q, names, { qc })` (70) is `host.findPlanRecords(planVault, q, names)` (member 1); `tagUsedInVault(planVault, text)` (98) is `host.tagUsed(planVault, text)` (member 2); `qc.invalidateQueries({ queryKey })` (115) is `host.invalidateSearch(queryKey)` (member 3). In the two dependency arrays (77, 116) `qc` is `host`.",
+    "`SEARCH_ERROR`, `tagShaped`, `planSearchKey`, `usePlanPickerFind`, `rowOnHit`, `chosenRow`, `httpStatus`, `noticeFor` and `TagLink` are exported (private in the source), and `SEARCH_INCOMPLETE_CREATE`, which the source imported from `planSearch`, is copied here and exported, for the next unit's link views. `PlanTagPicker` was exported.",
+    "Two type assertions: `rowOnHit(hit: { uri: string; row?: BaseRecord })` takes `row?: PickerRow` (the record-picker's structural row type, which is what a hit carries) and returns `(hit.row as BaseRecord | undefined) ?? null`; in `rowFor` the found row is read as `as BaseRecord | undefined`. The row is the `BaseRecord` the host put in the hit; the picker passes it through unread."
+  ],
+  "newFiles": [
+    "src/planTagPickerHost.ts",
+    "src/index.ts",
+    "test/fakeHost.tsx"
+  ],
+  "host": [
+    { "member": "findPlanRecords", "replaces": "src/components/records/PlanTagLinks.tsx:70" },
+    { "member": "tagUsed", "replaces": "src/components/records/PlanTagLinks.tsx:98" },
+    { "member": "invalidateSearch", "replaces": "src/components/records/PlanTagLinks.tsx:115" }
+  ],
+  "library": { "admitted": true, "tag": "t:Specification.picker", "title": "Plan record picker by tag", "note": "Links to a Plan record by its tag or creates one; the link lines themselves are plan-tag-links." }
+}

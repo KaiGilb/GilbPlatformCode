@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/open-popups",
+  "package": "@kaigilb/gilbplatformcode-open-popups",
+  "version": "0.1.0",
+  "purpose": "The one registry of what is open in a page, create dialogs and portalled popovers alike, so that Escape, Tab and an outside click go to the top-most one.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/ui/layers.ts", "lines": null, "to": "src/layers.ts" },
+      { "path": "src/components/ui/openStack.ts", "lines": null, "to": "src/openStack.ts" },
+      { "path": "src/components/records/planLeave.ts", "lines": null, "to": "src/openLayer.ts" }
+    ]
+  },
+  "namedChanges": [
+    "No change.",
+    "Header comment made generic; no code change.",
+    "Comments made generic; the import became `./layers`; no other code change."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": false }
+}
