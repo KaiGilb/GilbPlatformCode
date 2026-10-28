@@ -1,0 +1,10 @@
+{
+  "name": "fixture-failtest",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"process.exit(1)\"",
+    "typecheck": "node -e \"require('fs').writeFileSync('typecheck-ran','1')\"",
+    "check:host-agnostic": "node -e \"process.exit(0)\""
+  }
+}

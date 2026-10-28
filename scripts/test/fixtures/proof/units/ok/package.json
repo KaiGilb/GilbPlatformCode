@@ -1,0 +1,10 @@
+{
+  "name": "fixture-ok",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "check:host-agnostic": "node -e \"process.exit(0)\""
+  }
+}
