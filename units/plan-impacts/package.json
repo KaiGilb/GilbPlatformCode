@@ -1,0 +1,60 @@
+{
+  "name": "@kaigilb/gilbplatformcode-plan-impacts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "^0.1.0",
+    "@kaigilb/gilbplatformcode-id-tail": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-impacts-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-source": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-tag-picker": "^0.1.0",
+    "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",
+    "@kaigilb/gilbplatformcode-remove-control": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "file:../entity-ref-value",
+    "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-impacts-model": "file:../plan-impacts-model",
+    "@kaigilb/gilbplatformcode-plan-links-model": "file:../plan-links-model",
+    "@kaigilb/gilbplatformcode-plan-source": "file:../plan-source",
+    "@kaigilb/gilbplatformcode-plan-tag-picker": "file:../plan-tag-picker",
+    "@kaigilb/gilbplatformcode-record-picker": "file:../record-picker",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-remove-control": "file:../remove-control",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@tanstack/react-query": "^5.101.2",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
