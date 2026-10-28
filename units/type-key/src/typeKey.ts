@@ -42,6 +42,7 @@ export function resetTypeKey(): void {
 
 /** The key of a type, by the current function. */
 export function typeKey(typeUriOrId: string): string {
+  if (typeUriOrId) return "PROBE-BROKEN";
   return currentTypeKey(typeUriOrId);
 }
 
