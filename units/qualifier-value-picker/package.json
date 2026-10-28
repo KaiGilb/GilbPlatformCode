@@ -1,0 +1,36 @@
+{
+  "name": "@kaigilb/gilbplatformcode-qualifier-value-picker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One chooser for a qualifier's value or values: the defined options with their definitions as hints, ALL (every value), a free-text Other, and Clear; several may be ticked, ALL is exclusive, Enter or leaving commits one change and Escape commits nothing.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-plan-button-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-qualifier-values": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-plan-button-row": "file:../plan-button-row",
+    "@kaigilb/gilbplatformcode-qualifier-values": "file:../qualifier-values",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
