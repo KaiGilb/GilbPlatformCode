@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/two",
+  "package": "@x/two",
+  "version": "0.1.0",
+  "purpose": "Does one small thing.",
+  "source": {
+    "repo": "X/App",
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+    "files": [
+      {
+        "path": "src/a.ts",
+        "lines": [
+          3,
+          5
+        ],
+        "to": "src/a.ts"
+      },
+      {
+        "path": "src/b.ts",
+        "lines": null,
+        "to": null
+      }
+    ]
+  },
+  "namedChanges": [
+    "one"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": true,
+    "tag": "t:Same.tag",
+    "title": "T",
+    "note": "N"
+  }
+}

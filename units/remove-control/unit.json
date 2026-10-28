@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "unit": "units/remove-control",
+  "package": "@kaigilb/gilbplatformcode-remove-control",
+  "version": "0.1.0",
+  "purpose": "The delete control of a record card: a named button drawn as a red round minus, which calls the host's `onClick`.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/mynet/RemoveControl.tsx", "lines": null, "to": "src/RemoveControl.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic; no code change."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScreenButton.remove", "title": "Remove control (red minus button)", "note": "Deletes the row it sits in; it calls the host and writes nothing itself. For a plain button take button." }
+}

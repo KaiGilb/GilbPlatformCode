@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/sortable-tree",
+  "package": "@kaigilb/gilbplatformcode-sortable-tree",
+  "version": "0.1.0",
+  "purpose": "A drag-and-drop tree of rows, with a keyboard way as well, that reorders and re-nests: it writes nothing, it reports where a dragged row was dropped.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/dnd/SortableTree.tsx", "lines": null, "to": "src/SortableTree.tsx" },
+      { "path": "src/components/dnd/treeDrop.ts", "lines": null, "to": "src/treeDrop.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic: the first two lines (which said the app's ONE drag and drop, that nothing else in `src` imports dnd-kit and that nothing uses HTML5 `draggable`) are reworded to \"meant to be an app's ONE drag and drop: nothing beside it should use HTML5 `draggable`\".",
+    "This unit's `tsconfig.json` leaves `noImplicitOverride` off (the source was built without it; `static activators` of the class `MousePointerSensor` does not compile with it on)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:SortableTree", "title": "Sortable tree (drag and keyboard reorder)", "note": "Reports drops and writes nothing; needs @dnd-kit/core 6.3.1. The Description editor that uses it is description-parts-view." }
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/resource-card",
+  "package": "@kaigilb/gilbplatformcode-resource-card",
+  "version": "0.1.0",
+  "purpose": "The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanFunctionForm.tsx", "lines": null, "to": null }
+    ]
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/ResourceCard.tsx",
+    "src/index.ts",
+    "test/example.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Resource.card", "title": "Development Resource card", "note": "The whole Development Resource card (Budget, Resource Owner); it is the Value card for t:Resource. Built on plan-card. Plan.DevelopmentResource" }
+}

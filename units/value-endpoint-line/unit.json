@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/value-endpoint-line",
+  "package": "@kaigilb/gilbplatformcode-value-endpoint-line",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Endpoint line of a Value card: the Subject and the Reference, each a type picked from the ontology (with its picture and definition) and some words, and a button that finds the types for an older \"Subject = X, reference = Y\" text, giving every change up whole through onChange.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1371, 1371], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1372, 1372], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1374, 1391], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1393, 1409], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1411, 1451], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1453, 1457], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1459, 1503], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1505, 1602], "to": "src/PlanEndpointBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1604, 1653], "to": "src/PlanEndpointBody.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Imports: `../../lib/base/planValue` and `../../lib/base/planValueModel` are `@kaigilb/gilbplatformcode-value-card-model` (`carryRaw` and the type `EndpointPart`, checked to be exported there); `../../lib/base/planCard` is `@kaigilb/gilbplatformcode-plan-card-facts` (`planSourceEmpty`); `./TypeChooser` and the type `TypeOption` of `../../lib/base/typeSearch` are `@kaigilb/gilbplatformcode-type-chooser`; `./TypeTermPopover` and `TypePictureButton` of `./TypePicture` are `@kaigilb/gilbplatformcode-type-term-popover`; the shared pieces above are from `@kaigilb/gilbplatformcode-value-line-kit`.",
+    "`useShell()` (source lines 1376 in `TypeChip` and 1395 in `PartPicture`) is `useValueLinesHost()` of the kit; the line read `openOntologyConcept` from it, and now reads it from the host of the lines (member `openOntologyConcept?: (typeName: string) => void`).",
+    "`GILBVEDA_MASTER_ORIGIN` (from `lib/base/stakeholderKinds`) is `termOrigin()` from `@kaigilb/gilbplatformcode-term-origin`, in the same expressions: `${termOrigin()}/base/t/${o.typeName}` in `PartPicker` (source line 1441) and in `FindTypes` (line 1476).",
+    "`PartPicker` (source line 1435): the `TypeChooser` got its search, its reach note and its icons from its own defaults in the app. It now gets them from the host of the lines: the new line `const { searchTypes, blankReach, renderTypeIcon } = useValueLinesHost();` and the props `search={searchTypes} blankReach={blankReach} renderTypeIcon={renderTypeIcon}`.",
+    "`FindTypes` (source line 1466): `searchLiveTerms(...)`, the app's search, is `searchTypes(...)` of the host of the lines (the new first line `const { searchTypes } = useValueLinesHost();`). It is the same function the chooser of 4 gets, as in the source, where both used `searchLiveTerms`.",
+    "Comments: none of these symbols carried a name or a tag; the file's header comment is the unit's own, and the comment block above `typeNameOf` in the source (two lines, not part of a symbol) is not copied.",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx",
+    "test/typeHosts.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Value.endpoint", "title": "Endpoint line of a Value card", "note": "Subject and Reference types with pictures; writes through onChange. Plan.Value" }
+}

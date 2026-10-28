@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/record-picker",
+  "package": "@kaigilb/gilbplatformcode-record-picker",
+  "version": "0.1.0",
+  "purpose": "A search-and-pick box for records: debounced search, grouped hits, \"nothing found\", an incomplete-answer note with Try again, and mouse picking; the caller decides what is searched.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/orgCard/OrgRecordPicker.tsx", "lines": null, "to": "src/RecordPicker.tsx" },
+      { "path": "src/components/records/orgCard/useDebouncedValue.ts", "lines": null, "to": "src/useDebouncedValue.ts" },
+      { "path": "src/lib/base/orgCard/orgRecords.ts", "lines": [60, 72], "to": "src/types.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The default `find` is removed (the source's lines 138-140 and 146 chose between the caller's `find` and `findOrganizationRecords` of the app's organization card): `find` is required in the props type; the default key `defaultKey` is the source's `find` branch alone, `[\"record-picker\", findKey ?? label, vaultId, debounced]`; the `queryFn` is `find(debounced)`. For a caller who passes `find` (every caller of this unit) nothing differs.",
+    "`useQuery` (lines 144-150: `queryKey`, `queryFn`, `enabled`, `staleTime`, `retry: false`) is a call to the host hook from `PickerQueryContext` with `{ key, run, enabled, staleTime }`, the same values; `retry: false` is the host hook's to pass. A missing provider throws. New exports `PickerQueryArgs`, `PickerQueryResult`, `UsePickerQuery`, `PickerQueryContext`. The result fields the component reads are `data`, `isFetching`, `isError`, `isSuccess`.",
+    "`OrgRecordHit` is imported from `./types`; the `@tanstack/react-query` and `orgRecords` imports are removed.",
+    "One new line at the end: `export const RecordPicker = OrgRecordPicker;`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:VaultRecord.picker", "title": "Record picker (search and pick)", "note": "The caller decides what is searched; for a GilbVeda type take type-chooser, for a Plan record by tag take plan-tag-picker." }
+}

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "unit": "units/plan-button-row",
+  "package": "@kaigilb/gilbplatformcode-plan-button-row",
+  "version": "0.1.0",
+  "purpose": "A right-aligned row of buttons for a card, in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/PlanButtonRow.tsx", "lines": null, "to": null }
+    ]
+  },
+  "namedChanges": [
+    "The header comment is reworded; no code change."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row (Mac order)", "note": "Only lays out buttons; for one button look take button. For the remove control take remove-control." }
+}

@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/card-mode",
+  "package": "@kaigilb/gilbplatformcode-card-mode",
+  "version": "0.1.0",
+  "purpose": "A record card's two modes, presentation and edit, as one React provider with a hook, and the Edit, Done and plus buttons that switch it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/cardMode.tsx", "lines": null, "to": "src/cardMode.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic; no code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

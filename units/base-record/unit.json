@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/base-record",
+  "package": "@kaigilb/gilbplatformcode-base-record",
+  "version": "0.1.0",
+  "purpose": "The record shapes the Plan units read, as TypeScript types: a record as the app holds it, the document the vault served for it, and one row of the record list.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/records.ts", "lines": [46, 154], "to": "src/records.ts" },
+      { "path": "src/lib/base/recordHooks.ts", "lines": [537, 554], "to": "src/records.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments are the ones of that unit (made generic: no person, project, cycle or host named).",
+    "The comment on `hydrated` is rewritten without its change tag and without the sample record id, keeping the meaning."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

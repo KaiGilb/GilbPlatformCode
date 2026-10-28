@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "unit": "units/level-date-input",
+  "package": "@kaigilb/gilbplatformcode-level-date-input",
+  "version": "0.1.0",
+  "purpose": "The date field of a level's popover in the value graph, as one component: a labelled date input that tells the host on change, on Enter, on blur and on Escape, and shows the year alert when the host asks for it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/PlanValueGraph.tsx", "lines": [1022, 1048], "to": null }
+    ]
+  },
+  "namedChanges": [
+    "the field is lifted into one component whose state and handlers are props (`setBadYearFor(...)` became `onYearCheck`, `commitWhen(openAt, value)` became `onCommit`, `setOpen(null)` became `onEscape`); the `key` stays with the host; the alert's visibility is the `showYearError` prop.",
+    "The markup and classes are as in the source. Comments are rewritten."
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Level.date", "title": "Date picker for a level", "note": "The date field of a level's popover in the value graph; the year rules are in date-rules. The Levels line's own dates are in value-levels-line. Plan.Value" }
+}

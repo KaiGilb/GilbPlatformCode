@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "unit": "units/type-term-popover",
+  "package": "@kaigilb/gilbplatformcode-type-term-popover",
+  "version": "0.1.0",
+  "purpose": "Shows a GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/TypeTermPopover.tsx", "lines": [20, 167], "to": "src/TypeTermPopover.tsx" },
+      { "path": "src/components/records/TypeDescription.tsx", "lines": [33, 34], "to": "src/termDefinition.ts" },
+      { "path": "src/components/records/TypeDescription.tsx", "lines": [37, 47], "to": "src/termDefinition.ts" },
+      { "path": "src/lib/base/termDefinition.ts", "lines": [51, 64], "to": "src/types.ts" },
+      { "path": "src/components/records/TypePicture.tsx", "lines": [39, 86], "to": "src/TypePictureButton.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "`useContext(QueryClientContext)` (line 50) is `useContext(TermDefinitionContext)`, and a missing provider throws; `typeDefinitionOnce(session, bare)` is `typeDefinitionOnce(read, bare)` and the effect's dependency `session` is `read`.",
+    "The link `defaultTermIri(bare)` (line 144) is `` `${termOrigin()}/base/t/${encodeURIComponent(bare)}` ``: the body of `defaultTermIri` (`src/lib/base/ontologyBrowse.ts` line 1644, `` `https://${host}/base/t/${encodeURIComponent(name)}` `` with `host` defaulting to the GilbVeda host) with `https://${host}` replaced by the term origin. The `ontology-ref` unit's `ontologyRefIri` is NOT the same function (it also trims, passes `http(s)://` through, reads CURIEs and picks the `e` plane for store ids), so it is not used.",
+    "`MODAL_LAYER_Z`, `useModalPortalTarget` (`../ui/layers`) and `registerOpen` (`../ui/openStack`) come from `@kaigilb/gilbplatformcode-open-popups`.",
+    "`onOpenOntology` was already a prop in the source (not read from the shell); no change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Type.popover", "title": "Type definition popover", "note": "Opens a type's definition and ontology link; to choose a type take type-chooser, for the picture alone take type-picture." }
+}

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "unit": "units/plan-source",
+  "package": "@kaigilb/gilbplatformcode-plan-source",
+  "version": "0.1.0",
+  "purpose": "One source control for every Plan line: who said it (a person, organization or AI agent record), the document or decision it came from, or words for someone with no record yet.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanSource.tsx", "lines": [1, 6], "to": "src/PlanSource.tsx" },
+      { "path": "src/components/records/PlanSource.tsx", "lines": [35, 231], "to": "src/PlanSource.tsx" },
+      { "path": "src/lib/base/ruleHooks.ts", "lines": [195, 215], "to": "src/PlanSource.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "`useShell()` (lines 64 and 105) is `host.useShell()`; `heldVaultIds(...)` (106) is `host.heldVaultIds(...)`; `useQuery({ ...STAKEHOLDER_TYPE_SET_QUERY, enabled: editing })` (107) is `host.useStakeholderTypes(editing)`; `useVaultFilesMulti(...)` (109) is `host.useVaultFilesMulti(...)`; `matchWorkingSetQuery(items, text)` (55) is `host.matchWorkingSetQuery(items, text)`; `findStakeholderRecords(...)` (115) is `host.findStakeholderRecords(...)`; `readRecord(...)` (221) is `host.readRecord(...)`; `memberEntityUri(...)` (222) is `host.memberEntityUri(...)`; `<ConnectedCreateDialog ...>` (210) is `<host.ConnectedCreateDialog ...>` with the same props. Nine host members, each in the source's place and order. The host reaches the component by `PlanSourceHostContext`: a private hook `usePlanSourceHost()` reads it (twice a render: in `useOpen` and in `PlanSource`) and throws an error that names the provider when there is none.",
+    "`documentHits(files, text)` (line 43) takes the host first, `documentHits(host, files, text)`, and its call (117) passes `host`, so that it can call `host.matchWorkingSetQuery`; the file type `VaultFileWithSource` is `PlanSourceFile`, declared beside the host (`id`, `sourceVaultId`, `typeUri?`, `name`, `updatedAt`, `entityUri?`).",
+    "The dependency arrays of `useMemo` and `useCallback` are unchanged: they do not list the host, which must be the same object for as long as the provider is mounted."
+  ],
+  "newFiles": [
+    "src/planSourceHost.ts",
+    "src/index.ts",
+    "test/fakeHost.tsx"
+  ],
+  "host": [
+    { "member": "useShell", "replaces": "src/components/records/PlanSource.tsx:64,105" },
+    { "member": "heldVaultIds", "replaces": "src/components/records/PlanSource.tsx:106" },
+    { "member": "useStakeholderTypes", "replaces": "src/components/records/PlanSource.tsx:107" },
+    { "member": "useVaultFilesMulti", "replaces": "src/components/records/PlanSource.tsx:109" },
+    { "member": "matchWorkingSetQuery", "replaces": "src/components/records/PlanSource.tsx:55" },
+    { "member": "findStakeholderRecords", "replaces": "src/components/records/PlanSource.tsx:115" },
+    { "member": "readRecord", "replaces": "src/components/records/PlanSource.tsx:221" },
+    { "member": "memberEntityUri", "replaces": "src/components/records/PlanSource.tsx:222" },
+    { "member": "ConnectedCreateDialog", "replaces": "src/components/records/PlanSource.tsx:210-228" }
+  ],
+  "library": { "admitted": true, "tag": "t:Specification.source", "title": "Source control (who said it)", "note": "statedBy, derivedFrom or words for one Plan line; writes only through onCommit." }
+}

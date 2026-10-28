@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/qualifier-value-picker",
+  "package": "@kaigilb/gilbplatformcode-qualifier-value-picker",
+  "version": "0.1.0",
+  "purpose": "One chooser for the value or values of a qualifier: the defined options with their definitions as hints, ALL (\"every value\"), a free-text \"Other…\" and Clear.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanQualifierValue.tsx", "lines": null, "to": "src/PlanQualifierValue.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (internal tags removed from the header comment and from the `notInScale` comment).",
+    "Code verbatim except the two imports: `./PlanButtonRow` is `@kaigilb/gilbplatformcode-plan-button-row`, and `../../lib/base/planValue` (`ALL_VALUE`, `packQualifierValues`, `qualifierValues`) is `@kaigilb/gilbplatformcode-qualifier-values`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScaleQualifier.picker", "title": "Qualifier value picker", "note": "Picks the value(s) of one Scale qualifier; to edit the qualifiers themselves take value-qualifiers-line. Plan.Value" }
+}

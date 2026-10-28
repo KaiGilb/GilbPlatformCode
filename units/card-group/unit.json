@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/card-group",
+  "package": "@kaigilb/gilbplatformcode-card-group",
+  "version": "0.1.0",
+  "purpose": "One framed group of a record card: a titled frame with an optional icon that holds its items, is left out when empty in presentation, and registers with the card's mode so an add chooser can list it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/components/records/CardGroup.tsx", "lines": [1, 293], "to": "src/CardGroup.tsx" },
+      { "path": "src/components/records/cardIcons.tsx", "lines": null, "to": "src/cardIcons.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "the imports of `gilb-stakeholders-ui` (`BothKeptLine`, `TheirRows`) and of `./oneCard` are deleted;",
+    "`const one = useOneCardGroup(kind);` and `const view = useOneCard();` are deleted;",
+    "`const ownEmpty = empty;` and `const groupEmpty = empty && !one?.theirs;` became the single line `const groupEmpty = empty;`;",
+    "in the non-inline return, the `{one && view ? one.groups.map(... TheirRows ...) : null}` block and the `{one?.bothKept ? <BothKeptLine /> : null}` line are deleted, and `{one?.theirs && ownEmpty && mode.managed && mode.presentation ? null : children}` became `{children}`;",
+    "the `useCardMode` import is from `@kaigilb/gilbplatformcode-card-mode` (the peer) and not `./cardMode`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScreenCard.group", "title": "Card group (framed group of a card)", "note": "Needs the card-mode provider; for a plain card surface take card. The person card's linked-person rows are not in it." }
+}

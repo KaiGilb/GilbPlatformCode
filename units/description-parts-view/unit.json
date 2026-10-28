@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "unit": "units/description-parts-view",
+  "package": "@kaigilb/gilbplatformcode-description-parts-view",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Description of a Plan card as one record per Keyword part in a tree: add a part, edit its text and source, paste many parts at once, move a part up, down, in or out by buttons, keys or drag, and remove a part with its sub-parts, all written in one queue so the order of the writes is kept, with every read and write supplied by the host.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanDescriptionParts.tsx", "lines": null, "to": "src/PlanDescriptionParts.tsx" },
+      { "path": "src/components/records/usePlanParts.ts", "lines": null, "to": "src/usePlanParts.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [15, 45], "to": "src/planFind.ts" },
+      { "path": "src/lib/base/planVault.ts", "lines": [6, 10], "to": "src/planVault.ts" },
+      { "path": "src/lib/base/picture.ts", "lines": [72, 76], "to": "src/planVault.ts" },
+      { "path": "src/lib/base/heldTypes.ts", "lines": [106, 111], "to": "src/mapWithConcurrency.ts" },
+      { "path": "src/lib/base/heldTypes.ts", "lines": [115, 151], "to": "src/mapWithConcurrency.ts" },
+      { "path": "src/lib/base/planRowCache.ts", "lines": [17, 70], "to": "src/planRowCache.ts" },
+      { "path": "src/lib/base/planRowCache.ts", "lines": [141, 142], "to": "src/planRowCache.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [427, 433], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [447, 452], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [942, 948], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [215, 221], "to": "src/recordFacts.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [234, 234], "to": "src/recordFacts.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Imports (lines 5-90): `PlanButtonRow` from `plan-button-row`; `DescriptionHelp` from `description-help`; `FieldRow` from `field-row`; `modalIsOpen` and `insideOpenLayer` from `open-popups`; `SortableTree`, `TreeItem`, `flattenTree`, `DropTarget` from `sortable-tree`; `useCardMode` from `card-mode`; `PlanSource` from `plan-source`; `planTypePair` from `plan-kinds`; `duplicateTagSentence`, `isTypeName`, `linkAddress`, `recordTag` from `plan-links-model`; `indexBefore`, `planPartialWrite`, `removalPlan`, `REMOVAL_TOO_DEEP`, `REMOVAL_TOO_MANY` and the types `Gone`, `Kept`, `LevelMovePlan`, `PartialTarget` from `description-parts-model`, and every part rule the file used (`ASSUMPTION_ELEMENT`, `ASSUMPTION_WARNING`, `assumptionHedge`, `descriptionTree`, `asGrid`, `dropPlan`, `isAssumptionPart`, `keywordProblem`, `moveInPlan`, `moveOutPlan`, `nextOrder`, `partBody`, `partKeyword`, `partOrder`, `previewPaste`, `reorderPlan`, `stepPlan`, `suggestKeyword`, `tagTaken`, `DescriptionNode`, `OrderChange`, `PastePart`); `planSourceEqual`, `readLineSources`, `rowServedFact`, `sameServedList`, `sourceWithStatedBy`, `writeLineSource`, `PlanSourceValue` from `plan-card-facts`; `BaseRecord`, `GridRecord` from `base-record`. Each was compared with the source's own, comments stripped (a script reads both and prints the same declaration): all are the same, except `isTypeName`, which is the `type-key` unit's (the source's compares with the app's type registry; `type-key` has the same result when the registry knows no type, and a host with a registry calls `setTypeKey`).",
+    "`@tanstack/react-query` is gone: `useQueryClient()` is not called (the query client stays in the host), and each `qc.*` call, query key and cache helper is a host member (see above). `reReadLevels` takes the host where it took the query client; `planPartialWrite` and `removalPlan` take the host (which contains the level members) where they took it. `planFindKey` and `planRecordKey` are not in the unit: the host forms its own keys from the arguments.",
+    "Each host call is made with the same arguments, in the same place and order as the source's call, but for what the key did: `qc.getQueryData(planFindKey(planVault, \"a:partOf\", id))` is `host.getFind(planVault, \"a:partOf\", id)` (the `const own = planFindKey(...)` line is gone); `qc.setQueryData(planFindKey(...), v)` is `host.setFind(planVault, \"a:partOf\", id, v)`; `qc.getQueriesData({ queryKey: [\"plan-find\", planVault] })` iterated as `[, data]` is `host.getFinds(planVault)` iterated as `data`; `qc.setQueryData(planRecordKey(id, uri), row)` is `host.setRecordRead(id, uri, row)`; the `qc.getQueryData(recordsKey(id))?.pages.flatMap(...) ?? []` expression is `host.cachedRecords(id)`; `useDeleteRecord(vaultId)` is `host.useDeleteRecord?.(vaultId)` and `del.mutateAsync` is `del!.mutateAsync`; the writers are called with a `!` after the member; `e instanceof RecordConflictError` is `host.isConflict(e)` (three places in `patchPart` and the two source and text handlers); `<HelpButton>` is `<host.HelpButton>`.",
+    "The view reads `host` from the new `DescriptionPartsHostContext` (`useDescriptionPartsHost`, private) first; with no provider it throws.",
+    "One added line, before `useCardMode()`: `if (!(host.createRecord && host.patchRecord && host.useDeleteRecord)) canEdit = false;`. That is the read-only behaviour: the same as `canEdit` false.",
+    "Kept inside, as in the source: the write queue (`run` on `tail`), `syncTree`, the move and removal plans, the focus-after-move effect, the document `mousedown` and Escape effects, `focusTagInput`, `onBindAdd` called on every render, `selfRef` (the latest person on every render). The comments are the source's."
+  ],
+  "newFiles": [
+    "src/host.ts",
+    "src/index.ts",
+    "test/fakeHost.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:SpecificationElement.view", "title": "Description editor (Keyword parts)", "note": "Draws and edits the Description as a tree of parts; the pure model is description-parts-model, the drag tree sortable-tree." }
+}

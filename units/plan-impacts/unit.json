@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "unit": "units/plan-impacts",
+  "package": "@kaigilb/gilbplatformcode-plan-impacts",
+  "version": "0.1.0",
+  "purpose": "The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanImpacts.tsx", "lines": [47, 63], "to": "src/planImpacts.tsx" },
+      { "path": "src/components/records/PlanImpacts.tsx", "lines": [77, 723], "to": "src/planImpacts.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "`useQueryClient()` is `usePlanImpactsHost()` (a private hook reading `PlanImpactsHostContext`, throwing an error that names the provider when there is none). In `PlanImpacts` it is placed after `useCardMode()`, and in `SavedImpact` where the `useQuery` stood. The host is typed with its optional writers read as present (`Required<PlanImpactsHost>`) in that one hook; the added read-only line is what keeps a missing writer from being reached.",
+    "`httpStatus` and `noticeFor` (lines 65-75) are the `plan-tag-picker` unit's exports of the same names (the code is the same); they are imported, not copied.",
+    "Each call that reached outside the unit is the host member of the same name with the same arguments but for `qc`: `useRecords`, `useRelations`, `useSelfSource`, `resolveType`, `invalidatePlanSearch`, `writePairRelation` (both calls), `endRelation`. The `useQuery({ queryKey: [\"plan-impact\", …], queryFn: readRelationDoc …, staleTime, retry })` of `SavedImpact` is `host.useRelationDoc(link.relation, planVault)`. `qc.setQueryData<RecordRelation[]>(relationsKey(id, at), updater)` is `host.setRelations(id, at, updater)` (two places; in `putCache` the `const key = relationsKey(...)` line is dropped). In `showCreatedOnScreen` (which takes `host` where it took `qc`), `qc.getQueryData<InfiniteData<RecordsPage>>(recordsKey(v))` is `host.getRecordPages(v)` and `qc.setQueryData<InfiniteData<RecordsPage>>(recordsKey(v), x)` is `host.setRecordPages(v, x)`. `InfiniteData<RecordsPage>` is the unit's structural `PlanRecordPages`.",
+    "`useCreateRecord(planVault)` is `(host.useCreateRecord ?? useNoCreate)(planVault)`: the hook is called on every render in the same place; `useNoCreate` is a private stand-in whose `mutateAsync` rejects, never reached because the table is then read-only.",
+    "One added line: `canEdit = canEdit && host.writePairRelation !== undefined && host.endRelation !== undefined && host.useCreateRecord !== undefined;`, after the host is read. It is the only added statement in `PlanImpacts`.",
+    "`PlanImpacts` is exported (it was); everything else is private, as in the source."
+  ],
+  "newFiles": [
+    "src/planImpactsHost.ts",
+    "src/index.ts",
+    "test/fakeHost.tsx",
+    "test/mount.tsx"
+  ],
+  "host": [
+    { "member": "useRecords", "replaces": "src/components/records/PlanImpacts.tsx:502" },
+    { "member": "useRelations", "replaces": "src/components/records/PlanImpacts.tsx:503" },
+    { "member": "useSelfSource", "replaces": "src/components/records/PlanImpacts.tsx:506" },
+    { "member": "useRelationDoc", "replaces": "src/components/records/PlanImpacts.tsx:395-400" },
+    { "member": "resolveType", "replaces": "src/components/records/PlanImpacts.tsx:573" },
+    { "member": "invalidatePlanSearch", "replaces": "src/components/records/PlanImpacts.tsx:586" },
+    { "member": "getRecordPages, setRecordPages", "replaces": "src/components/records/PlanImpacts.tsx:80,83,87" },
+    { "member": "setRelations", "replaces": "src/components/records/PlanImpacts.tsx:537,636" },
+    { "member": "useCreateRecord", "replaces": "src/components/records/PlanImpacts.tsx:505" },
+    { "member": "writePairRelation", "replaces": "src/components/records/PlanImpacts.tsx:415,548" },
+    { "member": "endRelation", "replaces": "src/components/records/PlanImpacts.tsx:633" }
+  ],
+  "library": { "admitted": true, "tag": "t:ImpactOn.line", "title": "Impacts table of a Solution", "note": "Impacts on Values and Development Resources; the pure model is plan-impacts-model." }
+}

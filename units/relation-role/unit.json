@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/relation-role",
+  "package": "@kaigilb/gilbplatformcode-relation-role",
+  "version": "0.1.0",
+  "purpose": "Tells whether a served relation role is a given role, with or without its `role:` prefix, and names the shape of one relation a record takes part in.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/relationDoc.ts", "lines": [103, 112], "to": "src/relationRole.ts" },
+      { "path": "src/lib/base/relations.ts", "lines": [63, 82], "to": "src/relationRole.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic: \"reverse-lookup\" became \"the platform's reverse lookup\", \"(Base reverse-lookup additive field)\" became \"(an additive field of the platform's reverse lookup)\", a leading internal tag was dropped from the `type` comment, and \"GilbPlatform sends it\" became \"The platform sends it\"."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
