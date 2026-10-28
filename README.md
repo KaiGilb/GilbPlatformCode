@@ -24,3 +24,11 @@ A unit's library peers must be installed before it; `scripts/peers.mjs` works ou
 ```
 node scripts/peers.mjs <unit>
 ```
+
+## Proof
+
+`scripts/proof.mjs` runs a unit's proofs (`npm ci`, `npm test`, then `typecheck` and `check:host-agnostic` when the unit has them) and says PASS or where it failed.
+
+```
+node scripts/proof.mjs <unit>
+```

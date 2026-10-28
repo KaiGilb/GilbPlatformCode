@@ -1,0 +1,1 @@
+{"name":"fixture-withdeps","version":"0.0.0","private":true,"dependencies":{"tiny":"file:../../lib/tiny"},"scripts":{"test":"node -e \"process.exit(0)\""}}
