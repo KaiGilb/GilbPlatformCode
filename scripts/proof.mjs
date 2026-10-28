@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Runs a unit's proofs: npm ci, npm test, npm run typecheck, npm run check:host-agnostic.
-// Usage: node scripts/proof.mjs <unit-folder>... [--changed <base-ref>] [--json] [--keep] [--repo <path>]
+// Usage: node scripts/proof.mjs <unit-folder>... [--changed <base-ref> [--with-dependents]] [--json] [--keep] [--repo <path>]
 // Exit: 0 every unit passed (or no units changed) · 1 a unit failed · 2 usage error or unknown folder.
 import { readFileSync, existsSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadGraph, dependents } from "./lib/graph.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -13,13 +14,15 @@ const val = (f) => { const i = argv.indexOf(f); return i < 0 ? null : argv[i + 1
 const asJson = argv.includes("--json"), keep = argv.includes("--keep");
 const repo = val("--repo") ? resolve(val("--repo")) : resolve(HERE, "..");
 const changedBase = val("--changed");
+const withDeps = argv.includes("--with-dependents");
 const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--repo" && argv[i - 1] !== "--changed");
-const usage = (m) => { console.error(m + "\nusage: node scripts/proof.mjs <unit-folder>... [--changed <base-ref>] [--json] [--keep] [--repo <path>]"); process.exit(2); };
+const usage = (m) => { console.error(m + "\nusage: node scripts/proof.mjs <unit-folder>... [--changed <base-ref> [--with-dependents]] [--json] [--keep] [--repo <path>]"); process.exit(2); };
 if (changedBase === "") usage("--changed needs a base ref");
+if (withDeps && changedBase === null) usage("--with-dependents works only together with --changed");
 if (!positional.length && changedBase === null) usage("no unit given");
 
 const keyOf = (name) => { const n = name.replace(/\/+$/, ""); return n.startsWith("units/") || n.startsWith("web-units/") ? n : `units/${n}`; };
-let keys;
+let keys, touched = null, depKeys = null;
 if (changedBase !== null) {
   const r = spawnSync("git", ["-C", repo, "diff", "--name-only", `${changedBase}...HEAD`], { encoding: "utf8", shell: false });
   if (r.status !== 0) usage(`git diff against ${changedBase} failed: ${(r.stderr || "").trim()}`);
@@ -30,6 +33,12 @@ if (changedBase !== null) {
   }
   keys = [...set].filter((k) => existsSync(join(repo, k, "package.json"))).sort();
   if (!keys.length) { console.log("no units changed"); process.exit(0); }
+  if (withDeps) {
+    touched = keys;
+    depKeys = dependents(loadGraph(repo, { web: true }), touched);
+    keys = [...touched, ...depKeys].sort();
+    (asJson ? console.error : console.log)(`touched ${touched.length}, dependents ${depKeys.length}, proving ${keys.length}`);
+  }
 } else keys = positional.map(keyOf);
 for (const k of keys) if (!existsSync(join(repo, k, "package.json"))) usage(`unknown unit folder: ${k}`);
 
@@ -61,7 +70,9 @@ for (const k of keys) {
 const passed = results.filter((r) => r.pass).length, nfail = results.length - passed;
 const skipped = results.reduce((n, r) => n + r.steps.filter((s) => s.skipped).length, 0);
 if (asJson) {
-  console.log(JSON.stringify({ units: results.map(({ folder, steps, pass }) => ({ folder, steps, pass })), passed, failed: nfail }, null, 2));
+  const out = { units: results.map(({ folder, steps, pass }) => ({ folder, steps, pass })), passed, failed: nfail };
+  if (withDeps) { out.touched = touched; out.dependents = depKeys; }
+  console.log(JSON.stringify(out, null, 2));
 } else {
   for (const r of results) {
     for (const s of r.steps) if (s.skipped) console.log(`${r.folder}: ${s.name} skipped (no script)`);
