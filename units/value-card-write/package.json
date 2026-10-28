@@ -1,0 +1,64 @@
+{
+  "name": "@kaigilb/gilbplatformcode-value-card-write",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Value card's write layer: its levels, Scale qualifiers and their option definitions, Meters and Meter lines and the Scale record kept as lists, where one edit becomes the smallest writes (one changed item is one PATCH of its record, a new item one POST, a removed item one DELETE), with conflict handling, rollback and the migration of older stored lists. The host provides every network call and cache.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "test"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-description-parts-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-fact-faithful": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-date-rules": "file:../date-rules",
+    "@kaigilb/gilbplatformcode-description-parts-model": "file:../description-parts-model",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-fact-faithful": "file:../fact-faithful",
+    "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-plan-button-row": "file:../plan-button-row",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",
+    "@kaigilb/gilbplatformcode-plan-links-model": "file:../plan-links-model",
+    "@kaigilb/gilbplatformcode-qualifier-value-picker": "file:../qualifier-value-picker",
+    "@kaigilb/gilbplatformcode-qualifier-values": "file:../qualifier-values",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@kaigilb/gilbplatformcode-type-name": "file:../type-name",
+    "@kaigilb/gilbplatformcode-type-picture": "file:../type-picture",
+    "@kaigilb/gilbplatformcode-type-term-popover": "file:../type-term-popover",
+    "@kaigilb/gilbplatformcode-value-card-model": "file:../value-card-model",
+    "@kaigilb/gilbplatformcode-value-graph": "file:../value-graph",
+    "@kaigilb/gilbplatformcode-value-graph-geometry": "file:../value-graph-geometry",
+    "@tanstack/react-query": "^5.101.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
