@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "unit": "units/plan-levels-io",
+  "package": "@kaigilb/gilbplatformcode-plan-levels-io",
+  "version": "0.1.0",
+  "purpose": "Reads every level of a project's vault page by page, writes the four default levels once when the vault has none, and adds one level, for the level chooser of a Plan card.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          17,
+          18
+        ],
+        "to": "src/planLevelsIo.ts"
+      },
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          20,
+          20
+        ],
+        "to": "src/planLevelsIo.ts"
+      },
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          22,
+          24
+        ],
+        "to": "src/planLevelsIo.ts"
+      },
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          228,
+          302
+        ],
+        "to": "src/planLevelsIo.ts"
+      },
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          304,
+          396
+        ],
+        "to": "src/planLevelsIo.ts"
+      },
+      {
+        "path": "src/lib/base/planLevels.ts",
+        "lines": [
+          425,
+          468
+        ],
+        "to": "src/planLevelsIo.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are replaced by imports of the peers `base-record` (`GridRecord`), `lws-records` (`createRecord`, `readRecord`, `recordFromServed`, `withTypeUri`, `RecordCreateFacts`), `lws-relations` (`memberEntityUri`), `lws-vault-sets` (`listVaultRecordsPage`, `planReadLimit`, `VaultRecordRef`), `project-levels` (`DEFAULT_LEVELS`, `directChildren`, `levelTag`, `levelTree`, `nextPosition`, `pascalCase`, `tagOf`, `tokenOf`, `LevelNode`), `record-cache-kit` (`recordsKey`, `RecordsPage`), `record-types` (`typeUriForVaultNamespace`) and `@tanstack/react-query`; `react` is not imported",
+    "`async function waitForLevels(` (line 462) is `export async function waitForLevels(`: private in the app, where the hook beside it called it; the host of `project-levels` calls it as its member `waitForLevels`",
+    "`DEFAULT_LEVELS`, `levelTree`, `tokenOf`, `tagOf`, `pascalCase`, `directChildren`, `nextPosition` and `levelTag` are not copied: `project-levels` holds them, each compared with the source's (comments stripped; the entries of `DEFAULT_LEVELS` differ only in the getter that unit names, so the string written is `${termOrigin()}/base/t/BusinessLevel` and its three siblings, read when the default is written); `directChildren` and `nextPosition` are the exports that unit added for a host that writes a level",
+    "the comment on the page ceiling and the one on `readAllLevels` no longer name a file of the app; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

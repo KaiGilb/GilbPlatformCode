@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "unit": "units/plan-stakeholder-io",
+  "package": "@kaigilb/gilbplatformcode-plan-stakeholder-io",
+  "version": "0.1.0",
+  "purpose": "The reads and writes behind the Stakeholder, Authority and Resource Owner lines of a Plan card: finding records to link, writing and ending an Authority, the stakeholder kinds the master serves, the person Authorities of a record, a record's relations, and the name a link shows.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/planStakeholders.ts",
+        "lines": [
+          228,
+          427
+        ],
+        "to": "src/planStakeholdersIo.ts"
+      },
+      {
+        "path": "src/lib/base/stakeholderKinds.ts",
+        "lines": [
+          59,
+          137
+        ],
+        "to": "src/stakeholderKinds.ts"
+      },
+      {
+        "path": "src/components/records/useConstraintPeople.ts",
+        "lines": [
+          12,
+          89
+        ],
+        "to": "src/useConstraintPeople.ts"
+      },
+      {
+        "path": "src/lib/base/relationHooks.ts",
+        "lines": [
+          13,
+          24
+        ],
+        "to": "src/relationHooks.ts"
+      },
+      {
+        "path": "src/components/records/EntityRefValue.tsx",
+        "lines": [
+          16,
+          38
+        ],
+        "to": "src/useResolvedRefLabel.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are replaced by imports of the peers `entity-ref` (`entityRefFromFact`), `entity-ref-value` (`refDisplayName`), `lws-records` (`readRecord`, `BaseRecord`), `lws-relations` (`endRelation`, `memberEntityUri`, `writePairRelation`, `readRelations`, `relationsKey`), `lws-vault-sets` (`listVaultRecordsPage`, `searchEntities`, `typeLocalName`), `plan-record-hooks` (`useRecords`), `plan-stakeholders-model` (the constants, `authoritiesOf`, `legacyAuthorityOf`, `personAuthorities`, `sameRecord`, `AuthorityWrite`, `StakeholderTypeSet`), `record-cache-kit` (`entityDisplayName`, `searchVaults`, `PlanSearchHit`, `isTempId`), `record-picker` (the type `OrgRecordHit`), `relation-role` (the type `RecordRelation`), `stakeholder-kinds` (the reader and its types, for `gilb-stakeholders`'), `term-origin` (`termOrigin`), `vault-origin-rule` (`vaultOriginOf`), `vocabulary-source` (`masterSource`, `TermFetch`), `@tanstack/react-query` and `react`, and of this unit's own files",
+    "in `stakeholderKinds.ts` the constant `GILBVEDA_MASTER_ORIGIN` (line 39, `TYPE_TERM_ORIGIN` of the app, evaluated when the module loaded) is not copied; its three uses (lines 69, 71, 72) are `termOrigin()`, read when the reader is asked for; `export const STAKEHOLDER_TYPE_SET_QUERY_KEY = [...]` (line 59) is `export function stakeholderTypeSetQueryKey() { return [...] as const; }` and `queryKey: STAKEHOLDER_TYPE_SET_QUERY_KEY,` (line 100) is a getter `get queryKey() { return stakeholderTypeSetQueryKey(); },`, so that the key names the term origin as it is when the options are used, not as it was when the module loaded (the app set it from the build, before any module ran; an app on this library sets it at start-up). The doc comment that named the constant names the function",
+    "`function useResolvedRefLabel(` (`EntityRefValue.tsx` line 16) is `export function useResolvedRefLabel(`: private in the app, where the component beside it called it; the component of `entity-ref-value` takes it through its `RefLabelContext`",
+    "comments: the long headers of the files are new and shorter; internal cycle, ticket and agent tags, rulings and names are removed from the others (two comments are reworded, where a tag stood in the middle of a sentence); no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
