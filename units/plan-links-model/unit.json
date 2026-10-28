@@ -2,15 +2,15 @@
   "schema": 1,
   "unit": "units/plan-links-model",
   "package": "@kaigilb/gilbplatformcode-plan-links-model",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Reads and builds the links on a Function, Solution, Value or Resource card as plain functions: which record a link points at, the tag drawn for it, the loop checks on the Part of chain, and the Solution of relations read back.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
-      { "path": "src/lib/base/planLinks.ts", "lines": [1, 27], "to": "src/planLinks.ts" },
-      { "path": "src/lib/base/planLinks.ts", "lines": [33, 213], "to": "src/planLinks.ts" },
-      { "path": "src/lib/base/planLinks.ts", "lines": [230, 279], "to": "src/planLinks.ts" },
+      { "path": "src/lib/base/planLinks.ts", "lines": [1, 29], "to": "src/planLinks.ts" },
+      { "path": "src/lib/base/planLinks.ts", "lines": [35, 215], "to": "src/planLinks.ts" },
+      { "path": "src/lib/base/planLinks.ts", "lines": [232, 281], "to": "src/planLinks.ts" },
       { "path": "src/lib/base/entityRefFacts.ts", "lines": [21, 33], "to": "src/planLinks.ts" },
       { "path": "src/lib/base/entityDisplayName.ts", "lines": [28, 28], "to": "src/planLinks.ts" },
       { "path": "src/lib/base/planSolution.ts", "lines": null, "to": "src/planSolution.ts" }

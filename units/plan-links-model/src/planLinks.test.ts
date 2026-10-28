@@ -32,6 +32,17 @@ describe("recordTag", () => {
     expect(recordTag(null)).toBe("");
     expect(recordTag(undefined)).toBe("");
   });
+  it("falls back to the main tag only when the record holds no unitTag or tag", () => {
+    expect(recordTag({ unitTag: "PT-1" }, "somethingelse")).toBe("PT-1");
+    expect(recordTag({ tag: "t" }, "somethingelse")).toBe("t");
+    expect(recordTag({}, "alpha")).toBe("alpha");
+    expect(recordTag({})).toBe("");
+  });
+  it("trims the main tag and treats a blank one as none", () => {
+    expect(recordTag(null, " beta ")).toBe("beta");
+    expect(recordTag({ tag: " " }, null)).toBe("");
+    expect(recordTag({ tag: " " }, "   ")).toBe("");
+  });
 });
 
 describe("isTypeName", () => {
