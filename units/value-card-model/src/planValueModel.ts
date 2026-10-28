@@ -5,6 +5,7 @@
  * are read-only (LEGACY_VALUE_SLUGS, bare slugs) and are never written again.
  */
 import type { PlanSourceValue } from "@kaigilb/gilbplatformcode-plan-card-facts";
+import { isResourceType } from "@kaigilb/gilbplatformcode-plan-kinds";
 
 /** The names the Value record is written under. */
 export const VALUE_TERMS = {
@@ -69,6 +70,20 @@ export interface ValueMeter {
 export const STANDARD_LEVEL_KINDS = ["Fail", "Survival", "Past", "Status", "Tolerable", "Goal", "Wish"] as const;
 export type StandardLevelKind = (typeof STANDARD_LEVEL_KINDS)[number];
 
+/** A Development Resource's points: the Value's with Budget in the place of Goal. */
+export const RESOURCE_LEVEL_KINDS = ["Fail", "Survival", "Past", "Status", "Tolerable", "Budget", "Wish"] as const;
+
+/** The kinds a card of this type offers. A Value gets the standard ones; a Resource (`t:Resource`) gets Budget for Goal. */
+export function levelKindsFor(cardTypeUri: string): readonly string[] {
+  return isResourceType(cardTypeUri) ? RESOURCE_LEVEL_KINDS : STANDARD_LEVEL_KINDS;
+}
+
+/** The lower-case kind the graph, the sort and the defaults reason with. On a Resource, Budget is the Goal point. */
+export function kindClass(kind: string, resource?: boolean): string {
+  const k = kind.trim().toLowerCase();
+  return resource && k === "budget" ? "goal" : k;
+}
+
 /** The qualifier in Goal [qualifier] 42. */
 export interface LevelQualifier {
   /** ISO date YYYY-MM-DD, or "" when none. */
@@ -110,6 +125,8 @@ export interface EndpointPart {
 
 /** Everything the Value card adds to the Solution card's lines. */
 export interface ValueCardData {
+  /** True on a Development Resource card: its Budget level is the Goal point. Not stored. */
+  resource?: boolean;
   scale: ValueScale;
   variables: ScaleVariable[];
   endpoint: { subject: EndpointPart; reference: EndpointPart; text: string; source: PlanSourceValue };

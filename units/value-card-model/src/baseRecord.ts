@@ -11,6 +11,11 @@ export interface BaseRecord {
   entityUri?: string;
   /** The absolute type URI (`https://<host>/base/t/<Type>`). */
   typeUri: string;
+  /**
+   * True when `typeUri` is the app's "unknown" marker `t:Resource`, put there because the document named no type (or a stub awaits
+   * hydration), not a claim about the record. The Plan card gates read it: such a record is never a Development Resource card.
+   */
+  typeSubstituted?: true;
   /** The typed facts, keyed by attribute slug (bare, e.g. `title`). */
   facts: Record<string, string>;
   /**

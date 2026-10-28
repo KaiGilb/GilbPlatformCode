@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-card-model",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The Value card's data, read and built from records: the Value's facts, its child records (Scale, qualifiers, levels, meters), the level-line text, numbers and dates. Pure functions over the stored wire shapes.",
@@ -17,12 +17,16 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
     "@kaigilb/gilbplatformcode-qualifier-values": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-key": "^0.1.0"
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",
     "@kaigilb/gilbplatformcode-qualifier-values": "file:../qualifier-values",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
     "@types/node": "^22.0.0",
     "typescript": "^5.9.2",
