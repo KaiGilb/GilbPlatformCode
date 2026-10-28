@@ -1,0 +1,122 @@
+{
+  "schema": 1,
+  "unit": "units/record-types",
+  "package": "@kaigilb/gilbplatformcode-record-types",
+  "version": "0.1.0",
+  "purpose": "The Plan record types, each with its fields and its BaseVeda type address, and the one way to resolve a type from its id or any spelling of its address.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          66,
+          79
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          81,
+          85
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          87,
+          90
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          92,
+          106
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          108,
+          163
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          165,
+          169
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          171,
+          190
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          192,
+          193
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          213,
+          225
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          227,
+          415
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          417,
+          444
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
+          456,
+          465
+        ],
+        "to": "src/recordTypes.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the one import, `import { BASE_ORIGIN } from \"./config\"`, is now `import { baseOrigin } from \"@kaigilb/gilbplatformcode-base-origin\"`, and `BASE_ORIGIN` is read as `baseOrigin()`",
+    "in `baseHost`, the `try`/`catch` with the fallback host is removed, so it is `return new URL(baseOrigin()).host;`",
+    "the constant `RECORD_TYPE_BY_URI` (built at load from `typeUri`) is now the function `recordTypeByUri()`, which builds the same table from the same expression and rebuilds it when `typeNamespace()` changes; `resolveType` calls it",
+    "comments that name a host or `BASE_ORIGIN` are reworded, no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
