@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/online-card-link",
+  "package": "@kaigilb/gilbplatformcode-online-card-link",
+  "version": "0.1.0",
+  "purpose": "Reading the link that joins a holder's record of a person to that person's own online card, from the record's served facts.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "files": [
+      {
+        "path": "src/onlineCard/link.ts",
+        "lines": [
+          16,
+          55
+        ],
+        "to": "src/link.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the header comment of the file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed. The file has no import to change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
