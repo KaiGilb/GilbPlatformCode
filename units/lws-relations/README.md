@@ -63,7 +63,7 @@ setSystemVaultHosts(["ontology.platform.example.test"]);
 setTermOrigin("https://ontology.platform.example.test");
 setLwsAuth(lwsAuthFromSession(new SessionCredential({ dpopMintUrl: "https://platform.example.test/base/auth/session/dpop-token" })));
 
-const vault = "https://kai.platform.example.test/base";
+const vault = "https://ann.platform.example.test/base";
 const a = `${vault}/e/note-a`;
 const b = `${vault}/e/note-b`;
 const { id } = await writePairRelation({ sourceId: "note-a", targetId: "note-b", sourceEntityUri: a, targetEntityUri: b, typeCurie: "t:Reference", vaultNamespace: vault });
