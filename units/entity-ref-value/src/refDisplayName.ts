@@ -8,6 +8,8 @@ const MASTER_TAG_SLUGS = ["unitTag", "tag"] as const;
 export function refDisplayName(
   facts: Record<string, string> | null | undefined,
   entityUri?: string | null,
+  /** The record's MAIN tag (the platform's), the tag fallback of a record that holds no label, name or `unitTag`/`tag`. */
+  mainTag?: string | null,
 ): string {
   if (facts) {
     for (const slug of ["label", "termLabel", "title", "name"] as const) {
@@ -18,6 +20,8 @@ export function refDisplayName(
       const v = facts[slug]?.trim();
       if (v) return v;
     }
+    const main = mainTag?.trim();
+    if (main) return main;
     // A file is named by its own file name (a source line says "from Customer contract.pdf", not the file's id).
     const fileName = facts.fileName?.trim();
     if (fileName) return fileName;
