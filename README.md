@@ -33,6 +33,8 @@ node scripts/peers.mjs <unit>
 node scripts/proof.mjs <unit>
 ```
 
+With `--changed <base-ref> --with-dependents`, it also proves every unit that depends on a touched one (through peer, `file:` dependency and `file:` dev-dependency edges, transitively), so a change in a leaf unit is checked against the cards built on it. CI runs it this way.
+
 ## Unit manifest
 
 `unit.json` sits in each unit that was copied from the app and records where it came from. `node scripts/manifest.mjs check` tests every one against the unit's README and `package.json` (`node scripts/manifest.mjs list` counts them; exit `0` pass, `1` fail, `2` bad input).
