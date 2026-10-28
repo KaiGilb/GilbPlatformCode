@@ -20,6 +20,7 @@ const dry = process.argv.includes("--dry-run");
 
 console.log("Stance: converging — reads References first; an existing tag is read, not re-created.");
 
+const EXITING = Symbol("exiting"); // thrown by exitFlushed to unwind the caller
 let deleted = false;
 function destroyKey() {
   if (deleted || !tokenFile) return;
@@ -29,7 +30,7 @@ function destroyKey() {
 }
 process.on("exit", destroyKey);
 for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(s, () => { destroyKey(); process.exit(130); });
-process.on("uncaughtException", (e) => { console.log("crash: " + String(e.message).slice(0, 200)); destroyKey(); process.exit(1); });
+process.on("uncaughtException", (e) => { if (e === EXITING) return; console.log("crash: " + String(e.message).slice(0, 200)); destroyKey(); process.exit(1); });
 
 // Input is read AFTER the handlers above, so a missing or malformed input still deletes the key file.
 const inputPath = arg("--input") || join(HERE, "out", "refdocs-input.json");
@@ -37,11 +38,18 @@ const { notice, units } = JSON.parse(readFileSync(inputPath, "utf8"));
 
 const receipt = { stance: "converging", vault: VAULT, items: {}, counts: { created: 0, "not-created": 0, unknown: 0, "never-sent": 0 } };
 const state = (k, s, extra = {}) => { receipt.items[k] = { state: s, ...extra }; };
+// Exit only after stdout has flushed (a pipe is written asynchronously; process.exit could drop the tail).
+// The 'exit' handler (destroyKey) still runs. The thrown sentinel unwinds the caller, so no later code runs while the
+// flush is pending; the uncaughtException handler ignores it.
+function exitFlushed(code) {
+  process.stdout.write("", () => process.exit(code));
+  throw EXITING;
+}
 function finish(code) {
   for (const v of Object.values(receipt.items)) receipt.counts[v.state]++;
   console.log(JSON.stringify(receipt, null, 1));
   destroyKey();
-  process.exit(code);
+  exitFlushed(code);
 }
 function neverSent(msg, code = 2) {
   for (const u of units) { state(u.tag + " doc", "never-sent"); state(u.tag + " exhibit", "never-sent"); }
@@ -72,7 +80,7 @@ if (dry) {
     console.log(JSON.stringify({ POST: CREATE, body: { type: "t:ReferenceExhibit", facts: exhibitFacts(u, "<document address from the create>") } }, null, 1));
   }
   console.log("dry-run: nothing sent, no key read");
-  process.exit(0);
+  exitFlushed(0);
 }
 
 // ---- preflight: credential shape (Rule_Code_gilb-vault-write-run, RuleBasewrunPreflightCredentialShape)

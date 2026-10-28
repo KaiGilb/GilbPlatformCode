@@ -162,3 +162,31 @@ test("T9b a run on 900e918 (after unit.json moved the pins) differs from the fix
   const got = readFileSync(join(OUT, "refdocs-input.json"));
   assert.ok(!got.equals(readFileSync(FIXTURE_SRC)), "expected moved pins to differ from the fixture");
 });
+
+test("T10 piped dry run keeps its last line, 5 times", () => {
+  const s = sandbox("t10");
+  try {
+    for (let i = 0; i < 5; i++) {
+      const r = run([W, "--dry-run", "--input", s.fixture]);
+      assert.equal(r.status, 0);
+      assert.ok(r.stdout.length > 50000, "output should be large enough to need several pipe writes");
+      assert.equal(r.stdout.trimEnd().split("\n").at(-1), "dry-run: nothing sent, no key read", `run ${i}`);
+    }
+  } finally { s.clean(); }
+});
+
+test("T11 piped mock run prints a whole receipt and deletes the key, 5 times", () => {
+  const s = sandbox("t11");
+  try {
+    for (let i = 0; i < 5; i++) {
+      writeFileSync(s.tok, TOKEN);
+      const r = mockRun(s);
+      const rc = receiptOf(r.stdout);
+      const total = Object.values(rc.counts).reduce((a, b) => a + b, 0);
+      assert.equal(total, Object.keys(rc.items).length, `run ${i}`);
+      assert.equal(total, fixtureUnits.length * 2, `run ${i}`);
+      assert.ok(!existsSync(s.tok), `run ${i}: token file still there`);
+      assert.equal(r.stdout.trimEnd().split("\n").at(-1), "key file deleted", `run ${i}`);
+    }
+  } finally { s.clean(); }
+});
