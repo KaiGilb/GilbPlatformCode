@@ -4,6 +4,8 @@ Draws one Plan card for a record of type Function, Function Constraint, Solution
 
 ## What this is
 
+Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.
+
 One component, `PlanFunctionForm` (also exported as `PlanForm`), and the small things it shares. It is the engine of the four Plan cards (Function and Function Constraint, Solution and Solution Constraint, Value, Development Resource): they are one component in the source, which picks its lines from the record's type and changes them when the type is changed.
 
 - `PlanFunctionForm({ record, vaultId, canEdit, onOpen, onNotice })`: `record` is the card's record (a `BaseRecord`), `vaultId` is the screen's vault, `canEdit` is whether the person may write, `onOpen(id)` opens a record, `onNotice(text | null)` shows or clears the card's notice. It draws `<div data-testid="plan-function-form">` with one `CardGroup` per line.

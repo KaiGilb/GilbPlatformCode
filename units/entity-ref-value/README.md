@@ -4,6 +4,8 @@ Shows a stored reference to another record as that record's name, a button that 
 
 ## What this is
 
+Shows a stored reference to another record as that record's name, a button that opens it, with the stored address on a quiet second line.
+
 - `EntityRefValue({ value, vaultId, onOpen?, quiet? })`: `value` is the stored string. If it is a record address (`http(s)://<host>/<base-or-vault>/e/<id>`), it draws the record's name: a `<button type="button">` that calls `onOpen(id)` when `onOpen` is given, a plain `<span>` when it is not. The name carries `title={value}`. Under it, the stored address, small and faint, also titled with the value, unless `quiet` is set (the card look: the name alone). While the host's hook says it has no name yet (`null`), the name is shown as `…`. If `value` is not a record address, it is drawn as it is, in a `<span class="break-words">`.
 - `isEntityRefValue(value)`: true when `value` is a record address (the same test the component makes, from the `entity-ref` unit's `entityRefFromFact`: surrounding spaces are fine, a query or hash or a path after the id is ignored, a type address `/t/`, a relation address `/r/` and a bare word are not).
 - `RefLabelContext` and `UseRefLabel`: how the host gives the component the hook that finds the name: `(ref: { id: string; uri: string } | null, vaultId: string) => string | null`. `null` means still loading. The hook is called on every render, with `null` for a value that is not a record address.

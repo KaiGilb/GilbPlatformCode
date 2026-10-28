@@ -4,6 +4,8 @@ One click-to-edit text field row on a card: it shows the value (or nothing, in v
 
 ## What this is
 
+One click-to-edit text field row on a card: it shows the value (or nothing, in view mode, when empty), turns into an input on a click in edit mode, commits on Enter or on leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.
+
 `FieldRow({ label, value, onCommitValue, readOnly?, options?, multiline?, hideLabel?, prominent?, onEditingChange?, retainFocusWithinSection?, enterCard?, initialEditing? })`.
 
 - The row is the sub-label (`label`, in italics) above the value, as a button named `Edit <label>`. A click on it opens the editor in place: an input of type text, focused, with the whole value selected and scrolled into view (where the browser has `scrollIntoView`).

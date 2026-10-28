@@ -4,6 +4,8 @@ Draws the Illustration line of a Value card: the value graph of its levels, read
 
 ## What this is
 
+Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.
+
 One component, `PlanValuePictureBody`, the body of the group titled "Illustration" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the `valueGraph` line to both; `PLAN_VALUE_LINE_LABELS.valueGraph` is "Illustration"). On the card it comes first. It takes the props of `ValueLineProps` (`value-line-kit`), puts the `PlanValueGraph` of `value-graph` in a block (`w-full py-2`) and wires it to the card; it never writes to a vault.
 
 - The graph draws `data` (see `value-graph` for the Arrow and the Timeline, the markers, the "+ New" menu, the chips and the full-screen view).

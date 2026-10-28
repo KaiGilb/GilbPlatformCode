@@ -4,6 +4,8 @@ One framed group of a record card: a titled frame with an optional icon that hol
 
 ## What this is
 
+One framed group of a record card: a titled frame with an optional icon that holds its items, is left out when empty in presentation, and registers with the card's mode so an add chooser can list it.
+
 One framed group of a record card. A group is a frame with a title (and a small icon) that holds its items, separated by hairlines, with a gap between frames. The title names what the frame holds. In presentation a group with nothing in it (`empty`) is not drawn at all.
 
 - `CardGroup({ kind, title, icon?, helper?, aside?, empty?, keepInEdit?, addable?, label?, children, className?, testId?, dataAttrs?, addOwn?, inline? })`: a `section` (`data-testid` `card-group`, or `testId`; `data-group` = `kind`; `dataAttrs` spread on it; `aria-labelledby` the title). Not inline: a header (icon, title, aside), an optional helper line (`card-group-helper`), then the items (`card-group-items`). Inline (`data-inline="true"`): icon, title, items and aside on one line, wrapping under the title on a narrow card; no helper and no `addOwn`.

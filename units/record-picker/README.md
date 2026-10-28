@@ -4,6 +4,8 @@ A search-and-pick box for records: debounced search, grouped hits, "nothing foun
 
 ## What this is
 
+A search-and-pick box for records: debounced search, grouped hits, "nothing found", an incomplete-answer note with Try again, and mouse picking; the caller decides what is searched.
+
 One component, `OrgRecordPicker` (also exported as `RecordPicker`, the same function under a neutral name), and the small hook it uses.
 
 - The box searches by itself: the text you type is trimmed and settles after 250 ms of stillness; then the caller's `find(text)` is asked through the host's query hook (see "What the host must supply"). There is no minimum length: an empty box is searched on mount unless `searchOnMount={false}`.

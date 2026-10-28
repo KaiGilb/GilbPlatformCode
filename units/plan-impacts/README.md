@@ -4,6 +4,8 @@ The Impacts table of a Solution or Solution Constraint: one row per Value or Dev
 
 ## What this is
 
+The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.
+
 One component, `PlanImpacts`, drawn at `data-testid="plan-impacts"`. Each impact is one `t:ImpactOn` relation between this record (`role:solution`) and a Value (`role:value`) or a Resource (`role:resource`). The numbers live on the relation; nothing is written on the Solution, the Value or the Resource.
 
 - Props: `record` (the Solution), `vaultId` (the screen vault), `planVault` (the record's own vault, `vaultId` unless given: impact relations and a new Value or Resource are made there), `canEdit`, `offer`, `onOpen(id)`, `onNotice(text | null)`, `onPicked()`.

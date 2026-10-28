@@ -4,6 +4,8 @@ The shared pieces of the Value card's lines: the line props, text and select edi
 
 ## What this is
 
+The shared pieces of the Value card's lines: the line props, text and select editors that save on Enter or on leaving, the source control slot, the menu of qualifiers a level or meter has not set, the move button for older stored lists, and the host the lines read through.
+
 The parts that two or more of the Value card's lines use, taken out of one source file so that each line unit can be taken alone (`value-scale-line`, `value-qualifiers-line`, `value-endpoint-line`, `value-meters-line`, `value-levels-line` and `value-illustration` all depend on this unit). The lines write nothing to a vault: every change goes up whole through `onChange(next: ValueCardData)`, and the card saves it.
 
 - `ValueLineProps`: the props every line takes.

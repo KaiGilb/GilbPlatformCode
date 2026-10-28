@@ -4,6 +4,8 @@ Builds the tree of a project's levels (Business, Product, Solution and any the p
 
 ## What this is
 
+Builds the tree of a project's levels (Business, Product, Solution and any the project added) for a level chooser, and gives a card the one hook that reads them and adds a level, with the host doing every read and write.
+
 A project's levels are `CauseEffectLevel` records in its vault. A record's `a:level` stays the token: the level's tag without the leading `Level.`. This unit holds the rules over those records and the hook a card calls.
 
 - Constants: `NOT_A_PROJECT_LEVEL` (the sentence for a level that is not one of the project's), `ADD_LEVEL` (the select value that opens the add-level form; never stored), `DEFAULT_LEVELS` (the four defaults `Business`, `Stakeholder`, `Product`, `Solution`, with label, position and `ontologyTerm`).

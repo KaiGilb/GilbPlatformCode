@@ -4,6 +4,8 @@ Lets a person search for a GilbVeda type and pick one from a short list with pla
 
 ## What this is
 
+Lets a person search for a GilbVeda type and pick one from a short list with planes, definitions, a detail view and a note when more terms match than are shown.
+
 One component, `TypeChooser`, and the types of what it is given and hands back.
 
 - `TypeChooser({ search, blankReach, onPick, value?, pinned?, label?, autoFocus?, disabled?, idPrefix?, maxListHeight?, fill?, planes?, blankEmptyLabel?, showSpecHint?, searchPlaceholder?, searchClassName?, extraOptions?, renderTypeIcon? })`.

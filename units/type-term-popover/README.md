@@ -4,6 +4,8 @@ Shows a GilbVeda type's name or picture as a button that opens a small popover w
 
 ## What this is
 
+Shows a GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology.
+
 Two components, the reader of definitions they share, and the context the host gives that reader through.
 
 - `TypeTermPopover({ typeName, label?, children, className?, triggerTestId?, popoverTestId?, ariaLabel?, onOpenOntology? })`: `children` is drawn inside a `<button type="button">` (`aria-haspopup="dialog"`, `aria-expanded`). A click (and so Enter or Space on the focused button) opens the popover and a second click closes it. The click does not reach a parent's click handler.

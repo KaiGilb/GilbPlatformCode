@@ -4,6 +4,8 @@ Draws and edits the Levels line of a Value card: every level (Fail, Survival, Pa
 
 ## What this is
 
+Draws and edits the Levels line of a Value card: every level (Fail, Survival, Past, Status, Tolerable, Goal or on a Development Resource Budget, Wish, or a word of your own) as one line with its number, date, qualifiers, conditions, source and note, with the kind menu, paste of many level lines, and the move of older stored lists, giving every change up whole through onChange.
+
 One component, `PlanValueLevelsBody`, the body of the group titled "Levels" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the `valueLevels` line to both; `PLAN_VALUE_LINE_LABELS.valueLevels` is "Levels"). On the card it comes fifth, after the Qualifiers and before the Meter. It takes the props of `ValueLineProps` (`value-line-kit`) and reads `data.levels`, `data.scale`, `data.variables` and `data.resource`; it never writes to a vault.
 
 - A level is a kind (a standard word or any word), a number, and a qualifier: a date, choices for the Scale's qualifiers (Country = Norway), free conditions, and for a Scale where a range in the middle is best, a side (low or high). It has a source and a note. A line is written `Goal [2027-06-30, Release 3.0, Norway] 5 <- Ann estimate`. On a Development Resource the word Goal is stored as Budget, whether typed, pasted or chosen, and a Budget sorts where a Goal does.

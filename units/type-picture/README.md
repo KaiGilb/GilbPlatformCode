@@ -4,6 +4,8 @@ Draws a GilbVeda type's picture at a given size, and draws nothing when the type
 
 ## What this is
 
+Draws a GilbVeda type's picture at a given size, and draws nothing when the type has no picture or the picture fails to load.
+
 Draws a GilbVeda type's picture at a given size, and draws nothing when the type has no picture or the picture fails to load: no stand-in glyph and no empty space. The picture is the type's `a:typePicture` (a pointer to a file) on the type's own document; the host says where those documents and the files live, once.
 
 - `createTypePictureSource({ termOrigin, originOf, fetch? })` makes the source: `termOrigin` is the origin that serves type documents (`<termOrigin>/base/t/<Type>`), `originOf(entityIri)` is the origin a file entity's bytes are served from (`<origin>/files/<id>`), and `fetch` defaults to `globalThis.fetch`. The source holds the cache, so make ONE, once.

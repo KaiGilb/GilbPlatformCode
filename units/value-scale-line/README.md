@@ -4,6 +4,8 @@ Draws and edits the Scale line of a Value card or a Development Resource card: i
 
 ## What this is
 
+Draws and edits the Scale line of a Value card or a Development Resource card: its unit, rate and context (each [Qualifier] in the rate and context is a chip that jumps to that qualifier's row), which direction is better, and its source, giving every change up whole through onChange.
+
 One component, `PlanScaleBody`, the body of the group titled "Scale" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the Scale line to both; `PLAN_VALUE_LINE_LABELS.scale` is "Scale"). On the card it comes second, after the Illustration and before the Endpoint. It takes the props of `ValueLineProps` (`value-line-kit`) and reads `data.scale`; it never writes to a vault.
 
 - Read (the card is not in Edit): one block, `data-testid="plan-scale-view"`.

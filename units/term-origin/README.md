@@ -4,6 +4,8 @@ The one setting "which origin serves the GilbVeda type documents", so every Plan
 
 ## What this is
 
+The one setting "which origin serves the GilbVeda type documents", so every Plan unit builds type addresses the same way.
+
 The one setting "which origin serves the GilbVeda type documents". A Plan unit that has to write a type address (`<origin>/base/t/<Name>`, for example the Value card's default Endpoint) asks `termOrigin()` and builds the address from it, so all of them build it the same way. A shared unit must not name a host, so the app sets the origin once at start-up. Plain functions, no React, no network.
 
 - `setTermOrigin(origin)`: set the origin. The text is trimmed and parsed with `new URL(...)`. It must be an `http:` or `https:` origin only: a host (with an optional port), a path of `/` at most, no query, no fragment and no user name or password. Otherwise it throws a `TypeError` (message starts with `term-origin:` and names what was wrong), and the earlier origin stays. What is stored is the URL standard's `origin`, so a trailing `/`, an explicit default port (`:443` on https, `:80` on http) and upper-case letters in the scheme or host are normalised.

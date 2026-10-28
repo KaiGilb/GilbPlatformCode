@@ -4,6 +4,8 @@ Shows the Type line of a Plan card: one GilbVeda type chosen with the type choos
 
 ## What this is
 
+Shows the Type line of a Plan card: one GilbVeda type chosen with the type chooser, shown as a chip that opens the type's definition, stored as the term address ("No GilbVeda type" stores `none`), with a question before an earlier concept is replaced.
+
 Two components that belong together (the field looks for the question in the page to decide who gets the focus), and the constants around them.
 
 - `PlanTypeField({ term, canEdit, editing, onChoose, search, blankReach, onOpenChange?, onOpenOntology?, renderTypeIcon? })`:

@@ -4,6 +4,8 @@ The building blocks of an in-app help page: a layout with a contents list, secti
 
 ## What this is
 
+The building blocks of an in-app help page: a layout with a contents list, sections, steps, lists, examples, keys, notes and in-page links.
+
 Eight small React components that a help page is made of. They hold no state and read no data; they draw what they are given.
 
 - `HelpLayout({ contents, children })`: the page frame. A `nav` named "Contents" (`aria-label="Contents"`) with the word "Contents" and one button per entry of `contents` (`{ id, title }[]`), in order; beside it (below it on a narrow screen) the children, in a column no wider than 72 characters. Pressing an entry scrolls the element with that `id` to the top, smoothly: `document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" })`. An id that is not in the page does nothing.

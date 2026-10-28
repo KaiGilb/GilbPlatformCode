@@ -4,6 +4,8 @@ The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value 
 
 ## What this is
 
+The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System), each shown by the linked records' live tags, with the host doing every read, cache and write.
+
 Seven components, one per line of the card. A link is stored as the address of the record it points at (`{"@id": <address>}`); the name drawn for it is that record's live tag, read at render, never a copy kept on the link. Every line takes the same props: `record` (the card's record), `vaultId` (the screen vault), `planVault` (the record's own vault, `vaultId` unless given), `canEdit`, `offer`, `onOpen(id)`, `onNotice(text | null)` and `onPicked()`; the lines noted below take one more. Each draws its root with the test id in brackets.
 
 - `PlanPartOf` (`plan-part-of`): the record's one parent Function, from its `a:fvParent` link, or "(none fits)". In edit mode a remove control (`Remove Part of`) retracts the link and a picker (`PlanTagPicker` of the `plan-tag-picker` unit, searching `Function` and `FunctionConstraint`) sets it. A pick first walks the chosen record's own parents (`wouldLoop`, at most 50 reads, through the host's `readRecord`): when the chain reaches this record, nothing is written and the notice is "<chosen> is under <this>, so it cannot be its Part of."; when a parent cannot be read, "Could not check the chain — try again."; when the chain is too long, "This chain is too deep to check.". Records that already sit under this one are not offered. A free tag offers "Create Function", which makes the Function with the host's optimistic create (`useCreateRecord`) and links it.

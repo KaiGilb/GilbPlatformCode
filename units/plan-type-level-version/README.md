@@ -4,6 +4,8 @@ Draws the one line every Plan card shows first, "Type: <type> · Level: <level> 
 
 ## What this is
 
+Draws the one line every Plan card shows first, "Type: <type> · Level: <level> · Version: <date>", with the plain/constraint type switch and the level chooser.
+
 One component, `PlanTypeLevelVersion`, and its prop types (`PlanTypeLevelVersionProps`, `PlanTypeSwitch`, `PlanLevelOption`). It holds no data: the card passes in what to show and what to do.
 
 - **Type.** `typeLabel` is the Plan word (Value, Function Constraint, ...). With `typeName` (the GilbVeda type behind the word) the type's picture is drawn at 20 px before the word (`TypePicture` of `type-picture`; nothing when there is no picture, no name, or an empty name).

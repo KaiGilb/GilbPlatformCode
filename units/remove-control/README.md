@@ -4,6 +4,8 @@ The delete control of a record card: a named button drawn as a red round minus, 
 
 ## What this is
 
+The delete control of a record card: a named button drawn as a red round minus, which calls the host's `onClick`.
+
 A red round (minus) button that deletes the row it sits in front of. It is one React component, `RemoveControl`, with these props:
 
 - `label` (required): the accessible name. It must name the thing being removed, for example `Remove address home`. The glyph is `aria-hidden`, so `label` is the button's only name.

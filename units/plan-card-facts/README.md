@@ -4,6 +4,8 @@ The facts a Function, Solution or Value card reads and writes on the record itse
 
 ## What this is
 
+The facts a Function, Solution or Value card reads and writes on the record itself, as plain functions over the stored wire shapes.
+
 The facts a Function, Solution or Value card reads and writes on the record itself: who a line came from (its source), the meters, the status lines (Status and Past), the concept, and the vault's inline lists (served lists). Plain functions and constants, no React, no network. The vocabulary loader of the source file is NOT in this unit; an app loads its own vocabulary.
 
 - Wire keys it reads and writes, verbatim: `a:source` (the words), `a:statedBy` and `a:derivedFrom` (each `{ "@id": <uri> }`), `a:sourceOf` (which line a source member belongs to, for example `a:body`), `a:meterAgentKind` (`human`, `ai`, `instrument`), `a:method`, `a:status`, `a:statusWhen`, `a:label` and `@id` (the concept). It also reads the bare and full-IRI spellings of each (`memberValue`: `a:<name>`, else `<name>`, else a key ending `/a/<name>` or `/<name>`), and, for `planValueText`, the keys `unitTag`, `label` and `tag` of a stakeholder. The list fields it knows by their local names are `stakeholders`, `concept`, `fvParent`, `hasMeter`, `levelStatements` and `lineSources` (`PLAN_SHOWN_FIELDS`).
