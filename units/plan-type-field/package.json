@@ -1,0 +1,47 @@
+{
+  "name": "@kaigilb/gilbplatformcode-plan-type-field",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Type line of a Plan card: one GilbVeda type chosen with the type chooser and shown as a chip that opens the type's definition; stored as the term address, with \"No GilbVeda type\" stored as none, and a question before an earlier concept is replaced.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-card-group": "^0.1.0",
+    "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-chooser": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-picture": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-term-popover": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-card-group": "file:../card-group",
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-chooser": "file:../type-chooser",
+    "@kaigilb/gilbplatformcode-type-name": "file:../type-name",
+    "@kaigilb/gilbplatformcode-type-picture": "file:../type-picture",
+    "@kaigilb/gilbplatformcode-type-term-popover": "file:../type-term-popover",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
