@@ -77,7 +77,7 @@ test("--write with no key: creates key, registers, writes sidecar, mints one tok
     assert.equal(mode(kf), 0o600);
     const jwk = JSON.parse(fs.readFileSync(kf, "utf8"));
     assert.deepEqual(Object.keys(jwk).sort(), ["crv", "d", "kty", "x", "y"]);
-    assert.equal(transport.calls.length, 2);
+    assert.equal(transport.calls.length, 3); // register, token, verified GET (was 2)
     const reg = transport.calls[0];
     assert.equal(reg.method, "POST");
     const body = JSON.parse(reg.body);
@@ -105,6 +105,13 @@ test("--write with no key: creates key, registers, writes sidecar, mints one tok
     assert.ok(!out.includes(jwk.d));
     assert.ok(!out.includes(TOKEN));
     assert.ok(!out.includes(form.get("client_assertion")));
+    assert.match(out, /principal: made \(verified GET → 200\)/);
+    const ver = transport.calls[2];
+    assert.equal(ver.url, `${ID}/base/connect/skill-claims`);
+    assert.equal(ver.method, "GET");
+    assert.equal(ver.headers.Authorization, `DPoP ${TOKEN}`);
+    assert.ok(ver.headers.DPoP);
+    assert.ok(!out.includes(BODY_MARKER));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -180,6 +187,18 @@ test("register 500 and token 401 are exit 4 with honest messages", { skip }, asy
     assert.equal(await run(INIT(kf, "--write"), h.deps), 4);
     assert.match(h.text(), /registered .*first token failed \(HTTP 401\)/);
     assert.ok(fs.existsSync(`${kf}.client.json`));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a 401 on the verified request is exit 4 with the message, body never printed", { skip }, async () => {
+  const dir = scratch();
+  try {
+    const kf = path.join(dir, "k.jwk");
+    const h = harness({ transport: fakeTransport({ getStatus: 401 }) });
+    assert.equal(await run(INIT(kf, "--write"), h.deps), 4);
+    assert.match(h.text(), /registered, first token ok, but the verified request that makes the principal failed \(HTTP 401\); re-running init --write is safe/);
+    assert.ok(!h.text().includes("principal: made"));
+    assert.ok(!h.text().includes(BODY_MARKER));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

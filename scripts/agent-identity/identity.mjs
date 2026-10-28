@@ -129,7 +129,8 @@ async function cmdInit(flags, deps, say) {
     say(`would POST ${registerUrl}`);
     say(JSON.stringify({ clientPublicKey: pub, declaredOrigin, clientDisplayName: name }, null, 2));
     say(`then: 1. write ${sidecarPath(keyFile)} (clientId, idOrigin, name, declaredOrigin, registeredAt, created)`);
-    say(`      2. mint one token at scope base.read (the platform makes the client's principal at its first token)`);
+    say(`      2. mint one token at scope base.read`);
+    say(`      3. send one signed GET ${idOrigin}/base/connect/skill-claims (the platform makes the client's principal at its first verified request)`);
     say(`add --write to do it.`);
     return 0;
   }
@@ -170,17 +171,30 @@ async function cmdInit(flags, deps, say) {
   fs.chmodSync(side, 0o600);
 
   // 4. first token
-  let expiresIn;
+  let expiresIn, cred;
   try {
-    ({ expiresIn } = await mintOne({ key, clientId, idOrigin, scope: "base.read", transport, now }));
+    ({ cred, expiresIn } = await mintOne({ key, clientId, idOrigin, scope: "base.read", transport, now }));
   } catch (e) {
     const st = e instanceof MachineTokenError ? ` (HTTP ${e.status})` : "";
     throw new PlatformError(`the client is registered (clientId ${clientId}, sidecar ${side}) but the first token failed${st}. Re-running init --write is safe.`);
   }
 
-  // 5. report
+  // 5. the first verified request: the platform makes the client's principal here, not at the token call (bind needs it)
+  const verifyUrl = `${idOrigin}/base/connect/skill-claims`;
+  let vres;
+  try {
+    vres = await transport(verifyUrl, { method: "GET", headers: { ...(await cred.authHeaders("GET", verifyUrl)), Accept: "application/json" }, timeoutMs: TIMEOUT_MS });
+  } catch {
+    throw new PlatformError(`registered, first token ok, but the verified request that makes the principal got no answer; re-running init --write is safe.`);
+  }
+  if (vres.status < 200 || vres.status > 299) {
+    throw new PlatformError(`registered, first token ok, but the verified request that makes the principal failed (HTTP ${vres.status}); re-running init --write is safe.`);
+  }
+
+  // 6. report
   say(`registered: created ${answer.created === true}`);
   say(`first token: ok (scope base.read, expires_in ${expiresIn})`);
+  say(`principal: made (verified GET → ${vres.status})`);
   say(`clientId: ${clientId}`);
   return 0;
 }
