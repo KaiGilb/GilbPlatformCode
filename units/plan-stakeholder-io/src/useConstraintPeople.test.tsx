@@ -24,6 +24,9 @@ beforeEach(() => {
   setUp();
   setTermOrigin(RIG);
   forgetStakeholderKindReaders();
+  // A fresh device store each test: a kind set kept by an earlier test would answer at once and the held master would not be waited for.
+  const kept = new Map<string, string>();
+  vi.stubGlobal("localStorage", { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v) });
   hoisted.rows = [];
   hoisted.asked = [];
 });
@@ -203,7 +206,10 @@ describe("usePersonAuthorities", () => {
     wire.setRecord("bob", { "@id": BOB, "@type": "t:Passenger" });
     const release = wire.hold(kind);
     const { result } = renderHook(() => usePersonAuthorities(record, VAULT), { wrapper: wrapper(client()) });
-    await new Promise((r) => setTimeout(r, 120));
+    // Wait for each read that is not held to have been made, then assert while the held one is still out.
+    if (kind !== "relations") await waitFor(() => expect(wire.relationReads.length).toBeGreaterThan(0));
+    if (kind !== "master") await waitFor(() => expect(wire.master.requested.length).toBeGreaterThan(0));
+    if (kind === "master") await waitFor(() => expect(wire.reads.length).toBeGreaterThan(0));
     expect(result.current.pending).toBe(true);
     release();
     await waitFor(() => expect(result.current.pending).toBe(false));
