@@ -1,0 +1,35 @@
+{
+  "name": "@kaigilb/gilbplatformcode-plan-stakeholders-model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record, read from its relations and its text, and the rules that a constraint names a person as its Authority. Pure functions over the stored wire shapes.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-entity-ref": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-curie": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-key": "^0.1.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
