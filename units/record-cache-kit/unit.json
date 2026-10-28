@@ -1,0 +1,669 @@
+{
+  "schema": 1,
+  "unit": "units/record-cache-kit",
+  "package": "@kaigilb/gilbplatformcode-record-cache-kit",
+  "version": "0.1.0",
+  "purpose": "The Plan card's record cache: one writer for a row in every list and read that holds it, the membership finds of a card's lines with their pins and drops, and the picker search, all over one query client.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          128,
+          140
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          142,
+          148
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          149,
+          149
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          194,
+          242
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          464,
+          467
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1290,
+          1304
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1796,
+          1799
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1801,
+          1819
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1821,
+          1832
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1834,
+          1849
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1851,
+          1868
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1869,
+          1876
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          1878,
+          1887
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2943,
+          2951
+        ],
+        "to": "src/recordCaches.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          1,
+          2
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          17,
+          17
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          19,
+          28
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          30,
+          70
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          72,
+          75
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          77,
+          83
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          85,
+          93
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          95,
+          111
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          113,
+          124
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          126,
+          139
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          144,
+          159
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planRowCache.ts",
+        "lines": [
+          161,
+          170
+        ],
+        "to": "src/planRowCache.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          1,
+          3
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          13,
+          13
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          15,
+          16
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          26,
+          33
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          35,
+          37
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          47,
+          50
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          52,
+          55
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          57,
+          60
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          62,
+          64
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          66,
+          70
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          72,
+          76
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          78,
+          102
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          104,
+          106
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          108,
+          112
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          114,
+          122
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          124,
+          136
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          138,
+          161
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          163,
+          170
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          172,
+          176
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          178,
+          185
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          187,
+          196
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          198,
+          211
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          213,
+          259
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          261,
+          284
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          286,
+          302
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          304,
+          307
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          309,
+          335
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          337,
+          362
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planFind.ts",
+        "lines": [
+          364,
+          382
+        ],
+        "to": "src/planFind.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          1,
+          4
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          18,
+          19
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          24,
+          27
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          39,
+          76
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          78,
+          87
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          89,
+          97
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          99,
+          116
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          118,
+          124
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          126,
+          131
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          133,
+          201
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          203,
+          251
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          253,
+          257
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          259,
+          285
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          287,
+          294
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          1,
+          18
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          21,
+          22
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          24,
+          28
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          30,
+          42
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          44,
+          45
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          47,
+          53
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          155,
+          160
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          162,
+          168
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          170,
+          197
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/entityDisplayName.ts",
+        "lines": [
+          199,
+          260
+        ],
+        "to": "src/entityDisplayName.ts"
+      },
+      {
+        "path": "src/lib/base/partyName.ts",
+        "lines": [
+          21,
+          38
+        ],
+        "to": "src/partyName.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "in each file the imports are replaced by imports of the peers `base-record`, `description-parts-model`, `lws-records`, `lws-vault-sets`, `plan-links-model`, `vault-origin-rule`, `@tanstack/react-query` and this unit's own files; `entityDisplayName.ts` keeps its one import line (`./partyName`)",
+    "in `recordCaches.ts` the word `export` is added in front of `flattenRecordPages`, `emptyPage`, `setList`, `upsert` and `setRecordReads`, private in the app (`recordHooks.ts:1291`, `:1797`, `:1851`, `:1878`, `:2949`) and used by the hooks of the next unit",
+    "in `planFind.ts` line 371 `[\"plan-find\", vaultId]` is `planFindVaultKey(vaultId)`; in `planSearch.ts` line 26 `[\"plan-search\", planVault]` is `planSearchKey(planVault)`; the new file `cacheKeys.ts` is the one definition of `STAKEHOLDER_SEARCH_AUTHORITY_KEY`, `planSearchKey` and `planFindVaultKey` (later sites: `PlanStakeholders.tsx:920`, `PlanFunctionForm.tsx:1468`, `PlanDescriptionParts.tsx:997`, `PlanTagLinks.tsx:58`)",
+    "in `partyName.ts` line 33 the text of the field `source` of `PARTY_NAME_FLOOR` (a host and an internal ruling name) is reworded; no code reads the field",
+    "`GridRecord`, `asGrid` and `recordTag` are imported from `base-record`, `description-parts-model` and `plan-links-model` (equal to the app's, comments stripped) and not copied",
+    "comments that name a host, a person or an internal ruling are reworded; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/cacheKeys.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
