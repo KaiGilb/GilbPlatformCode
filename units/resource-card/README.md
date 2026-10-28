@@ -4,6 +4,8 @@ The whole Development Resource card: one component that draws the Plan card of a
 
 ## What this is
 
+The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.
+
 `ResourceCard` is the card of a record of type Development Resource (`t:Resource`). It is the Value card with four changes: the Levels line offers a Budget level where a Value offers a Goal, the Level is preselected as Business, there is a Resource Owner line just before Stakeholder, and the Type word is Development Resource. It has no Type switch and no Value of Function line. Its Scale, Endpoint, Qualifiers, Levels and Meter lines read and write records of their own, through the write layer of `value-card-write`, which the host supplies.
 
 - `ResourceCard(props)`: the card. `ResourceCardProps` is the props of `PlanFunctionForm` of `plan-card`: `{ record, vaultId, canEdit, onOpen, onNotice }`. `record` is the card's record (a `BaseRecord`), `vaultId` is the screen's vault, `canEdit` is whether the person may write, `onOpen(id)` opens a record, `onNotice(text | null)` shows or clears the card's notice. It draws `<div data-testid="plan-function-form">` with one `CardGroup` per line.

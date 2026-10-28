@@ -4,6 +4,8 @@ The whole Value card: one component that draws the Plan card of a record of type
 
 ## What this is
 
+The whole Value card: one component that draws the Plan card of a record of type Value, with its picture, Scale, Endpoint, Qualifiers, Levels and Meter lines and the lines of a Plan record, every read and write supplied by the host.
+
 `ValueCard` is the card of a record of type Value (`t:Value`). It has no Type switch: a Value stays a Value. Its Scale, Endpoint, Qualifiers, Levels and Meter lines read and write records of their own (a level, a qualifier, a meter and the Scale are records), through the write layer of `value-card-write`, which the host supplies.
 
 - `ValueCard(props)`: the card. `ValueCardProps` is the props of `PlanFunctionForm` of `plan-card`: `{ record, vaultId, canEdit, onOpen, onNotice }`. `record` is the card's record (a `BaseRecord`), `vaultId` is the screen's vault, `canEdit` is whether the person may write, `onOpen(id)` opens a record, `onNotice(text | null)` shows or clears the card's notice. It draws `<div data-testid="plan-function-form">` with one `CardGroup` per line.
