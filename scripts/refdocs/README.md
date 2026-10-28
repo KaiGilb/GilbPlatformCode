@@ -15,7 +15,7 @@ node scripts/refdocs/check-dry-run.mjs
 node scripts/refdocs/write-refdocs.mjs --token-file <path>
 ```
 
-`build-input.mjs` fetches origin first (`--no-fetch` skips it; `--repo <path>` names another checkout). Generated files go to `scripts/refdocs/out/`, which git ignores.
+`build-input.mjs` fetches origin first (`--no-fetch` skips it; `--repo <path>` names another checkout; `--main <ref>` reads that ref instead of `origin/main`, which pins a test or a re-run to a known commit). Generated files go to `scripts/refdocs/out/`, which git ignores.
 
 The live run needs the vault owner's key, handed over as a file path. The key file is deleted on every exit path, including refusals and crashes.
 

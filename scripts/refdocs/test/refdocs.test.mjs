@@ -144,9 +144,21 @@ test("T8 exact-tag match: t:Level.date is created despite t:Level.dat and t:Leve
   } finally { s.clean(); }
 });
 
+// The fixture was built when main was at 0ff75e2 (342f585 gives the same bytes: no unit folder changed between them).
+// Pinned there, a later main cannot break the test. PR #52 added units/<x>/unit.json to 53 folders, which moved each
+// folder's latest commit (the pin); the 44 written exhibits keep the older pins, which stay valid ancestors.
+const FIXTURE_MAIN = "0ff75e204aff064b7e0ea788136a0480f5fabffc";
 test("T9 build-input offline is byte-identical to the b16 input", () => {
-  const r = run([BUILD, "--no-fetch"]);
+  const r = run([BUILD, "--no-fetch", "--main", FIXTURE_MAIN]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout.split("\n")[0], new RegExp("^" + FIXTURE_MAIN + " at [0-9a-f]{40}$"));
   const got = readFileSync(join(OUT, "refdocs-input.json"));
   assert.ok(got.equals(readFileSync(FIXTURE_SRC)), "built input differs from the fixture");
+});
+
+test("T9b a run on 900e918 (after unit.json moved the pins) differs from the fixture", () => {
+  const r = run([BUILD, "--no-fetch", "--main", "900e918"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const got = readFileSync(join(OUT, "refdocs-input.json"));
+  assert.ok(!got.equals(readFileSync(FIXTURE_SRC)), "expected moved pins to differ from the fixture");
 });
