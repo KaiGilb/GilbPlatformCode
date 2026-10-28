@@ -20,10 +20,10 @@ jobs:
         with:
           node-version: 22
       - name: Scripts' tests
-        run: node --test "scripts/**/*.test.mjs"
+        run: node --experimental-transform-types --no-warnings --import ./scripts/lib/ts-resolve.mjs --test "scripts/**/*.test.mjs"
       - name: Proofs of the units this change touches (pull request)
         if: github.event_name == 'pull_request'
-        run: node scripts/proof.mjs --changed origin/${{ github.base_ref }}
+        run: node scripts/proof.mjs --changed origin/${{ github.base_ref }} --with-dependents
       - name: Proofs of the units this change touches (push)
         if: github.event_name == 'push'
         env:
@@ -32,5 +32,5 @@ jobs:
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             echo "new branch (before is all zeros): no proofs run"
           else
-            node scripts/proof.mjs --changed "$BEFORE"
+            node scripts/proof.mjs --changed "$BEFORE" --with-dependents
           fi
