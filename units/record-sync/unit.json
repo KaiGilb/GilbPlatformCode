@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "unit": "units/record-sync",
+  "package": "@kaigilb/gilbplatformcode-record-sync",
+  "version": "0.1.0",
+  "purpose": "A vault's typed record list over the platform's record interface, and only what changed in it since a stored position, read through the authenticated fetch the host injects.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "files": [
+      {
+        "path": "src/platform.ts",
+        "lines": [
+          18,
+          46
+        ],
+        "to": "src/platform.ts"
+      },
+      {
+        "path": "src/platform.ts",
+        "lines": [
+          69,
+          162
+        ],
+        "to": "src/platform.ts"
+      },
+      {
+        "path": "src/platform.ts",
+        "lines": [
+          175,
+          179
+        ],
+        "to": "src/platform.ts"
+      },
+      {
+        "path": "src/recordPages.ts",
+        "lines": [
+          21,
+          22
+        ],
+        "to": "src/recordPages.ts"
+      },
+      {
+        "path": "src/recordPages.ts",
+        "lines": [
+          27,
+          41
+        ],
+        "to": "src/recordPages.ts"
+      },
+      {
+        "path": "src/recordPages.ts",
+        "lines": [
+          52,
+          103
+        ],
+        "to": "src/recordPages.ts"
+      },
+      {
+        "path": "src/recordPages.ts",
+        "lines": [
+          153,
+          202
+        ],
+        "to": "src/recordPages.ts"
+      },
+      {
+        "path": "src/recordPages.ts",
+        "lines": [
+          278,
+          337
+        ],
+        "to": "src/recordPages.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of the source's own files lose `.ts` (`./platform`), and the import of `PlatformError, request, routeUrl, vaultSegment, PlatformAnswer, PlatformClient` in `recordPages.ts` lists only the symbols that are taken;",
+    "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
