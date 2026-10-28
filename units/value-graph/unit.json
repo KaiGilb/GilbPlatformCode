@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/value-graph",
+  "package": "@kaigilb/gilbplatformcode-value-graph",
+  "version": "0.1.0",
+  "purpose": "The Value card's graph: the Scale as an arrow and as a timeline, with the levels as markers you can drag, a \"+ New\" menu, qualifier chips, endpoint pictures and a full-screen view; it never writes, the host saves what onChangeLevels gives.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueGraph.tsx", "lines": null, "to": "src/PlanValueGraph.tsx" },
+      { "path": "src/components/records/PlanValueGraph.ui.tsx", "lines": null, "to": "src/ui.tsx" },
+      { "path": "src/components/records/PlanValueGraph.chips.tsx", "lines": null, "to": "src/chips.tsx" },
+      { "path": "src/components/records/PlanValueGraph.endpoint.tsx", "lines": null, "to": "src/endpoint.tsx" },
+      { "path": "src/components/records/PlanValueGraph.newMenu.tsx", "lines": null, "to": "src/newMenu.tsx" },
+      { "path": "src/lib/base/planFind.ts", "lines": [15, 16], "to": "src/planCapSentence.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [39, 41], "to": "src/planCapSentence.ts" }
+    ]
+  },
+  "namedChanges": [
+    "File names: the prefix `PlanValueGraph.` is dropped from the four parts (`ui`, `chips`, `endpoint`, `newMenu`), as the unit's import check allows only names without a dot; the imports between the five files follow (`./PlanValueGraph.newMenu` is `./newMenu`, and so on). The component and function names are unchanged.",
+    "Imports: `../../lib/base/planValueModel` and `../../lib/base/planValue` are `@kaigilb/gilbplatformcode-value-card-model` (each name was checked to be exported there: `kindClass`, `ALL_VALUE`, `carryRaw`, `levelNumberDisplay`, `levelRangeEnds`, `levelNumberTyped`, `levelHasQualifierValue`, `levelKey`, `levelLike`, `qualifierValues`, `resolveLevelKey`, `scaleDirectionOf`, `scaleQualifierNames`, `withScaleQualifiers` and the types `ValueCardData`, `ValueLevel`, `EndpointPart`); `./PlanValueGraph.geometry` is `@kaigilb/gilbplatformcode-value-graph-geometry` (every name checked); `../ui/layers` and `../ui/openStack` are `@kaigilb/gilbplatformcode-open-popups`; `./PlanQualifierValue` is `@kaigilb/gilbplatformcode-qualifier-value-picker`; `useTypePicture` from `./TypePicture` is `@kaigilb/gilbplatformcode-type-picture`; `./TypeTermPopover` is `@kaigilb/gilbplatformcode-type-term-popover`; `planCapSentence` from `../../lib/base/planFind` is `./planCapSentence`.",
+    "`src/planCapSentence.ts` is new in this unit: the app's `PLAN_FIND_CAP` (with its doc comment) and `planCapSentence`, copied unchanged. The same function is in the `plan-tag-links` unit (`src/planFindNote.ts`); the two texts were compared and are identical.",
+    "Comments: the names of people, the batch and cycle tags and the QA ids are removed, keeping the technical meaning; a note that named two components of the app (the layer \"follows OrgListSheet and Modal\") says what the layer does instead, and \"in the order the brief names them\" is \"in this order\". No code line changed.",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx",
+    "src/planCapSentence.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Value.graph", "title": "Value graph (Scale arrow and timeline)", "note": "Draws and drags levels and never writes; the card line that holds it is value-illustration, the math value-graph-geometry. Plan.Value" }
+}

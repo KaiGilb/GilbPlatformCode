@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/value-card-model",
+  "package": "@kaigilb/gilbplatformcode-value-card-model",
+  "version": "0.2.0",
+  "purpose": "The Value card's data, read from the Value record and its child records and built back into the facts to store, as plain functions with no React and no network.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planValueModel.ts", "lines": null, "to": "src/planValueModel.ts" },
+      { "path": "src/lib/base/planValue.ts", "lines": null, "to": "src/planValue.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [45, 139], "to": "src/baseRecord.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [141, 154], "to": "src/baseRecord.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Code verbatim except its two imports: `from \"./planCard\"` is now `from \"@kaigilb/gilbplatformcode-plan-card-facts\"`, and `import { isResourceType } from \"./planKinds\"` is now `from \"@kaigilb/gilbplatformcode-plan-kinds\"`.",
+    "the import of `./planCard` is from `@kaigilb/gilbplatformcode-plan-card-facts` (same names);",
+    "`import { isResourceType } from \"./planKinds\"` is from `@kaigilb/gilbplatformcode-plan-kinds`;",
+    "`import { TYPE_TERM_ORIGIN } from \"./typePicture\"` is `import { termOrigin } from \"@kaigilb/gilbplatformcode-term-origin\"`, and in `defaultEndpointPart` (line 97) `` `${TYPE_TERM_ORIGIN}/base/t/${typeName}` `` is `` `${termOrigin()}/base/t/${typeName}` ``. Nothing else changed: the origin is read when the Endpoint default is built, not when the module loads;",
+    "the import of `isTypeName` from `./planLinks` is from `@kaigilb/gilbplatformcode-type-key`;",
+    "`import type { BaseRecord } from \"./records\"` is `from \"./baseRecord\"`: `src/baseRecord.ts` holds `BaseRecord` and `ServedDocument` of `src/lib/base/records.ts` (lines 45-139 and 141-154), copied field for field with their types, with no other import (comments made generic). `BaseRecord` has the field `typeSubstituted?: true` since 0.2.0;",
+    "the four definitions now in `qualifier-values` are deleted: `const eq` (line 1726), `ALL_VALUE` (1728-1729), `qualifierValues` (1731-1736) and `packQualifierValues` (1753-1765). Their bodies were compared with `units/qualifier-values/src/qualifierValues.ts` (comments stripped) and are identical (the unit exports `eq`; the source did not). They are replaced by `import { ALL_VALUE, eq, packQualifierValues, qualifierValues } from \"@kaigilb/gilbplatformcode-qualifier-values\"` and `export { ALL_VALUE, packQualifierValues, qualifierValues };`, so the export list is the source's. `listLikeDefinition` stays here and uses `eq`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Value.model", "title": "Value card model", "note": "Pure read and fact builders for the Value and Development Resource card; writes are value-card-write, the screen is value-card. Plan.Value, Plan.DevelopmentResource" }
+}

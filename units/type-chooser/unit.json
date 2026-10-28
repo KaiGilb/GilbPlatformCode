@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "unit": "units/type-chooser",
+  "package": "@kaigilb/gilbplatformcode-type-chooser",
+  "version": "0.1.0",
+  "purpose": "Lets a person search for a GilbVeda type and pick one from a short list with planes, definitions, a detail view and a note when more terms match than are shown.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/TypeChooser.tsx", "lines": [50, 541], "to": "src/TypeChooser.tsx" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [102, 103], "to": "src/types.ts" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [105, 105], "to": "src/types.ts" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [126, 179], "to": "src/types.ts" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [120, 124], "to": "src/typeSearch.ts" },
+      { "path": "src/lib/base/typeSearch.ts", "lines": [484, 488], "to": "src/typeSearch.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The default `search = searchLiveTerms` (line 151) is removed: `search: TypeSearchFn` is required.",
+    "`BLANK_QUERY_REACH` (line 176, the first value of the `reach` state; in the source it comes from `src/lib/base/typeSearch.ts` line 553, built from the environment setting `VITE_MIN_ONTOLOGY_QUERY`) is the new required prop `blankReach: string`. It is always shown until the first answer, so it is required, with no fallback text.",
+    "`readTermDefinition` (line 48 import, line 257 call) is the reader from `TermDefinitionContext` of the `type-term-popover` unit; `TypeTermPopover` and the `TermDefinition` type come from that unit too. A missing provider throws.",
+    "`TypeIcon` (`./recordIcons`; lines 364-368 in the detail view and 483-489 in a row) is the new optional prop `renderTypeIcon(option, className)`, called with the same class strings; when absent nothing is drawn. The wrapper elements around it are unchanged. (`typeId={o.spec?.id ?? \"note\"}` and `typeName` are the host's to derive from the option.)"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Type.chooser", "title": "Type chooser (GilbVeda type search)", "note": "Search and pick a GilbVeda type; the Plan card's Type line is plan-type-field. For records take record-picker." }
+}

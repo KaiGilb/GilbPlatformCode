@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "unit": "units/plan-card",
+  "package": "@kaigilb/gilbplatformcode-plan-card",
+  "version": "0.1.0",
+  "purpose": "Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanFunctionForm.tsx", "lines": null, "to": "src/PlanFunctionForm.tsx" },
+      { "path": "src/components/records/PersonAuthoritySearch.tsx", "lines": null, "to": "src/PersonAuthoritySearch.tsx" },
+      { "path": "src/lib/base/planFind.ts", "lines": [15, 37], "to": "src/planFind.ts" },
+      { "path": "src/lib/base/planVault.ts", "lines": [6, 10], "to": "src/planVault.ts" },
+      { "path": "src/lib/base/picture.ts", "lines": [72, 76], "to": "src/planVault.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [427, 433], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [447, 452], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/records.ts", "lines": [942, 948], "to": "src/writeSource.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [22, 22], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [28, 28], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [35, 42], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [45, 45], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [53, 53], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [155, 160], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [162, 169], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [177, 197], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [204, 260], "to": "src/entityDisplayName.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Imports (lines 5-136): each component and function of a merged unit is imported from that unit: `PlanButtonRow` from `plan-button-row`; `FieldRow` from `field-row`; `modalIsOpen` and `insideOpenLayer` from `open-popups` (`insideOpenLayer` is `components/records/planLeave.ts` and is the same code: only its import of `modalIsOpen` differs); `CardGroup` and `CardIconName` from `card-group`; `useCardMode` from `card-mode`; `PlanImpacts` from `plan-impacts`; the seven link lines from `plan-tag-links`; `PlanDescriptionParts` from `description-parts-view`; `PlanTypeLevelVersion` from `plan-type-level-version`; `PlanAuthority` and `PlanStakeholders` from `plan-stakeholder-lines`; `PlanSource` from `plan-source`; the five Value bodies and `PlanValuePictureBody` from `value-scale-line`, `value-qualifiers-line`, `value-endpoint-line`, `value-levels-line`, `value-meters-line` and `value-illustration`, and `ValueLineProps` from `value-line-kit`; `isTypeName`, `linkAddress`, `readPartOfFact`, `solutionOfFunctions` and `solutionsTargeting` from `plan-links-model`; the `planCard.ts` names from `plan-card-facts`; the `planConstraint.ts` names and the pure parts of `planStakeholders.ts` from `plan-stakeholders-model`; `PlanTypeField`, `TYPE_TRIGGER_ATTR` and `PlanTypeReplaceAsk` from `plan-type-field`; the `planKinds.ts` names from `plan-kinds`; the `planValue.ts` names and `ValueCardData` from `value-card-model`; `MoveStopped` and the four Value hooks from `value-card-write`; `isPartType` from `description-parts-model`; `impactsOnSolution` from `plan-impacts-model`; `typeLocalName` from `type-curie`; the `planLevels.ts` names (`useProjectLevels` and the rest) from `project-levels`; `OrgRecordHit` from `record-picker`; `RecordRelation` from `relation-role`; `BaseRecord` and `GridRecord` from `base-record`. Every function and constant of these that is a plain function was compared with the source's, comments aside, and is the same code, except `typeLocalName`, which `type-curie` writes with a local for the match so that an unchecked index is not used (the same result); `isTypeName` is `type-key`'s, re-exported by `plan-links-model`, and compares the same two keys. The private copies below were compared the same way.",
+    "`@tanstack/react-query` is gone: `useQueryClient()` is not called (the query client stays in the host), and each `qc.*` call, query key and cache helper is a host member (see above). `planRecordKey`, `relationsKey` and `STAKEHOLDER_TYPE_SET_QUERY_KEY` are not in the unit: the host forms its own keys from the arguments.",
+    "Each host call is made with the same arguments, in the same place and order as the source's call, but for what the query client or the key did: `liveCachedRow(qc, planVault, ...)` is `host.liveRow(planVault, ...)`; `ensureEtagUnchanged(qc, planVault, ...)` is `host.ensureEtagUnchanged(planVault, ...)`; `qc.getQueryData<RecordRelation[]>(relationsKey(id, uri))` is `host.getRelations(id, uri)` (the `const key = relationsKey(...)` lines are gone); `qc.setQueryData(key, ...)` is `host.setRelations(id, uri, ...)`; `qc.getQueryData<StakeholderTypeSet>(STAKEHOLDER_TYPE_SET_QUERY_KEY)` is `host.getKindSet()`; `qc.setQueryData(planRecordKey(id, uri), stored)` is `host.setRecordRead(id, uri, stored)`; `storePlanRow(qc, planVault, stored)` is `host.storePlanRow(planVault, stored)`; `reconcileAfterConflict(qc, planVault, ready)` is `host.reconcileAfterConflict(planVault, ready)`; `applyPatch`, `readRecord`, `memberEntityUri` are `host.applyPatch`, `host.readRecord`, `host.memberEntityUri`; the writers are called with a `!` after the member (`host.patchRecord!`, `host.migratedAuthorityRelation!`, `host.writeAuthorityRelation!`, `retype!.mutateAsync`); `e instanceof RecordConflictError` is `host.isConflict(e)`; the hooks `useSelfSource`, `useRelations`, `usePlanFind` (three calls), `usePersonAuthorities` are `host.useX`, and `useRetypeRecord(vaultId)` is `host.useRetypeRecord?.(vaultId)`; `qc.invalidateQueries({ queryKey: [\"stakeholder-search\", \"authority\"], refetchType: \"active\" })` is `host.invalidateAuthoritySearch()`; `<ConnectedCreateDialog open stakeholders source={null} initialTypeId=\"person\" drawnVaultIds={[vaultId, planVault]} onClose onCreated />` is `host.renderCreateStakeholder({ open: true, stakeholders: true, source: null, initialTypeId: \"person\", drawnVaultIds: [vaultId, planVault], onClose, onCreated })`.",
+    "The card reads `host` from the new `PlanCardHostContext` (`usePlanCardHost`, private) first, in the component's first line; with no provider it throws.",
+    "One added line, after it: `if (!(host.patchRecord && host.useRetypeRecord && host.migratedAuthorityRelation && host.writeAuthorityRelation)) canEdit = false;`. That is the read-only behaviour: the same as `canEdit` false.",
+    "`PlanTypeField` is given four props the unit takes and the source's Type field read from the app: `search={host.searchTypes}`, `blankReach={host.blankReach}`, `onOpenOntology={host.openOntologyConcept}` and `renderTypeIcon={host.renderTypeIcon}`.",
+    "Comments: the tags of the changes that added them (`V19`, `V31`, `V32`, `V36 M1`..`M3`, `V37`, `V21 F6`, `V29/V30`) are taken out; the meaning is kept.",
+    "Kept inside, as in the source: the module counter `statusLineSerial` and the hidden `lineKey`, `setDraft` called during render (the baseline sync), `applyBuild` and its promise queue, `rollBackAfterFailure`, the status engine (`rememberStatusLine`, `commitStatusDate`, `putLines`, `addStatus`, `onNewStatusClick` with its script-click guard), the retype flow (`askType`, `adoptPerson`, `changeType`), the Value-only block (the version floor, the older lists, `moveOldLists`, `removeMade`, `retryRemoving`, `applyValueChange`, `enqueueScale`, `mergeQualifier`, `onRenameQualifier`), `QuietScope` (a document keydown in the capture phase and a mousedown), the focus-return effect (it looks up `[data-testid=\"plan-type-field\"] [data-plan-type-trigger]`), `readRecord(id, planVault)` with the vault id in the `at` slot, and `migratedAuthorityRelation(..., vaultId, ...)` against `writeAuthorityRelation({ ..., vaultId: planVault })`."
+  ],
+  "newFiles": [
+    "src/host.ts",
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ScreenCard.plan", "title": "Plan card engine", "note": "One engine for all four Plan cards; to start from one card take function-card, solution-card, value-card or resource-card." }
+}

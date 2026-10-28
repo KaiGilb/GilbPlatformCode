@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "unit": "units/type-key",
+  "package": "@kaigilb/gilbplatformcode-type-key",
+  "version": "0.1.0",
+  "purpose": "The one test \"is this type the type named X\", so every Plan unit compares types the same way.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [
+      { "path": "src/lib/base/planLinks.ts", "lines": [28, 31], "to": "src/typeKey.ts" },
+      { "path": "src/lib/base/workingSetFacets.ts", "lines": [70, 80], "to": null },
+      { "path": "src/lib/base/recordTypes.ts", "lines": [152, 163], "to": "src/typeKey.ts" }
+    ]
+  },
+  "namedChanges": [
+    "the body is verbatim with `typeFacetKey` replaced by `typeKey`",
+    "the registry lookup (`resolveType`, lines 71-72) is removed, as if it returned nothing; the fallback lines 73-79 are verbatim",
+    "The branches, the regex `/\\/base\\/t\\/([^/#?]+)/i`, the `decodeURIComponent`, the `t:` strip and the empty-string case are as in the source; `typeUri(x)` (lines 83-90, `https://${baseHost()}/base/t/` + name) is written as the literal path `/base/t/` + name, with no host: the host never changes the result, because the fallback keeps only the text after the last `/`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

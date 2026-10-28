@@ -32,3 +32,40 @@ node scripts/peers.mjs <unit>
 ```
 node scripts/proof.mjs <unit>
 ```
+
+## Unit manifest
+
+`unit.json` sits in each unit that was copied from the app and records where it came from. `node scripts/manifest.mjs check` tests every one against the unit's README and `package.json` (`node scripts/manifest.mjs list` counts them; exit `0` pass, `1` fail, `2` bad input).
+
+```json
+{
+  "schema": 1,
+  "unit": "units/type-key",
+  "package": "@kaigilb/gilbplatformcode-type-key",
+  "version": "0.1.0",
+  "purpose": "The first sentence of the README's \"What this is\".",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "files": [{ "path": "src/lib/base/planLinks.ts", "lines": [28, 31], "to": "src/typeKey.ts" }]
+  },
+  "namedChanges": ["a change, in the README's words"],
+  "newFiles": ["src/index.ts"],
+  "host": [{ "member": "tagUsed", "replaces": "src/components/records/PlanTagLinks.tsx:98" }],
+  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row (Mac order)", "note": "Only lays out buttons." }
+}
+```
+
+`lines` is `[from, to]` (1-based, inclusive) or `null` for a file copied whole; `to` is the unit file the lines went into, or `null`. `library` is `{ "admitted": false }` for a unit not in the library. Peers are not here: they are in `package.json`, and `peers.mjs` reads them.
+
+## Drift
+
+Which units' source ranges changed in the app since the unit was copied.
+
+```sh
+node scripts/drift.mjs --app-repo <path> --to <sha> [<unit> ...]   # default: every unit with a unit.json
+node scripts/drift.mjs ... --json
+node scripts/drift.mjs ... --fail-on-drift                         # exit 1 when a unit drifted
+```
+
+It reads each source file at the unit's `source.commit` and at `--to` with `git show` (read only) and reports each unit as `unchanged` or `drifted`; it never prints a source line. Exit `0` means it ran, `1` only with `--fail-on-drift`, `2` when it could not run. It needs a local clone of the private app repo; CI does not run it.

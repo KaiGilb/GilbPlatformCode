@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/plan-impacts-model",
+  "package": "@kaigilb/gilbplatformcode-plan-impacts-model",
+  "version": "0.1.0",
+  "purpose": "Reads, parses and builds the impacts of a Solution on Values and Development Resources as plain functions: one `t:ImpactOn` relation per pair, with the numbers on the relation.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planImpacts.ts", "lines": null, "to": "src/planImpacts.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The only change is the four imports (lines 4-7): `./planCard` (`memberValue`, the type `PlanSourceValue`) is `@kaigilb/gilbplatformcode-plan-card-facts`; `./recordPlane` (`typeLocalName`) is `@kaigilb/gilbplatformcode-type-curie`; `./relationDoc` (`roleIs`) and `./relations` (the type `RecordRelation`) are `@kaigilb/gilbplatformcode-relation-role`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:ImpactOn.model", "title": "Impacts model (Solution on Value and Resource)", "note": "Pure; the Impacts table on screen is plan-impacts." }
+}

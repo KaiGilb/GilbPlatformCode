@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/demo",
+  "package": "@x/demo",
+  "version": "0.1.0",
+  "purpose": "Does one small thing.",
+  "source": {
+    "repo": "X/App",
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab",
+    "files": [
+      {
+        "path": "src/a.ts",
+        "lines": [
+          3,
+          5
+        ],
+        "to": "src/a.ts"
+      },
+      {
+        "path": "src/b.ts",
+        "lines": null,
+        "to": null
+      }
+    ]
+  },
+  "namedChanges": [
+    "one"
+  ],
+  "newFiles": [
+    "src/nope.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": true,
+    "tag": "t:Demo.row",
+    "title": "T",
+    "note": "N"
+  }
+}

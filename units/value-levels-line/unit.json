@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "unit": "units/value-levels-line",
+  "package": "@kaigilb/gilbplatformcode-value-levels-line",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Levels line of a Value card: every level (Fail, Survival, Past, Status, Tolerable, Goal or on a Development Resource Budget, Wish, or a word of your own) as one line with its number, date, qualifiers, conditions, source and note, with the kind menu, paste of many level lines, and the move of older stored lists, giving every change up whole through onChange.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [447, 466], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [468, 481], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [486, 521], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [619, 636], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [638, 680], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1831, 1860], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1862, 1885], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1911, 1925], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [1927, 2023], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [2025, 2592], "to": "src/PlanValueLevelsBody.tsx" },
+      { "path": "src/lib/base/planFind.ts", "lines": [15, 16], "to": "src/planCapSentence.ts" },
+      { "path": "src/lib/base/planFind.ts", "lines": [39, 41], "to": "src/planCapSentence.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`useLinkLabel` (source lines 447-466, whose body read `useRecords`, `useQuery`, `readRecord`, `vaultOriginOf` and `refDisplayName`) is the host member `useLinkLabel(uri, vaultId)` of the host of the lines (`value-line-kit`); here the function keeps its name, its doc comment and its signature, and its body is `return useValueLinesHost().useLinkLabel(uri, vaultId);`. `WithSourceLabel` calls it unchanged. GilbApp's body, verbatim, is the reference host implementation in the kit's README.",
+    "Imports: `../ui/layers` and `../ui/openStack` are `@kaigilb/gilbplatformcode-open-popups` (`MODAL_LAYER_Z`, `useModalPortalTarget`, `registerOpen`); `./PlanQualifierValue` is `@kaigilb/gilbplatformcode-qualifier-value-picker`; `../../lib/base/planCard` is `@kaigilb/gilbplatformcode-plan-card-facts` (`sourceWithText`, `PlanSourceValue`); `../../lib/base/planValue` and `../../lib/base/planValueModel` are `@kaigilb/gilbplatformcode-value-card-model` (each name was checked to be exported there: `blankLevel`, `carryOthers`, `carryRaw`, `defaultLevelRowsFor`, `levelGroupKey`, `levelIsBlank`, `levelLineSegments`, `levelNumberDisplay`, `levelOfTyped`, `newLevelFromClick`, `offeredLevelKindsFor`, `parseLevelLineWarn`, `qualifierValues`, `resourceKind`, `scaleDirectionOf`, `scaleQualifierNames`, `sortLevels`, `withScaleQualifiers`, `RESOURCE_LEVEL_KINDS`, `STANDARD_LEVEL_KINDS` and the type `ValueLevel`); `planCapSentence` from `../../lib/base/planFind` is `./planCapSentence`; the shared pieces above are from `@kaigilb/gilbplatformcode-value-line-kit`. The remaining symbols are otherwise unchanged.",
+    "Comments: the batch tags of the source's comments (in `LevelKindMenu` and `PlanValueLevelsList`, and on `NumberText`) are removed, keeping the technical meaning. The paste placeholder is not a comment and is kept (see \"Wrong readings\").",
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/mount.tsx",
+    "src/planCapSentence.ts",
+    "test/levels.tsx"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Level.line", "title": "Levels line of a Value card (Goal, Budget)", "note": "Every level with number, date, qualifiers and source; the drawn graph is value-graph. Plan.Value, Plan.DevelopmentResource" }
+}

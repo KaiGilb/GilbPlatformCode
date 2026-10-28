@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/plan-kinds",
+  "package": "@kaigilb/gilbplatformcode-plan-kinds",
+  "version": "0.1.0",
+  "purpose": "The Plan record types and what each one shows: the type names, the Development Resource and Value-card gates, each type's line order, its default level and the words of its lines.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/planKinds.ts", "lines": null, "to": "src/planKinds.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (a person's name and the names of internal tools removed from four doc comments).",
+    "the one import, `import { typeFacetKey } from \"./workingSetFacets\"`, is now `import { typeKey as typeFacetKey } from \"@kaigilb/gilbplatformcode-type-key\"`, so every call site is as in the source. The source's `typeFacetKey` asks the app's type registry first; the `type-key` default answers as if the registry knew no type, and a host with a registry calls `setTypeKey`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Specification.kinds", "title": "Plan card types and their lines", "note": "Which lines each Plan type shows, in order; the drawn card is plan-card. Plan.Type" }
+}

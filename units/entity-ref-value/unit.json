@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "unit": "units/entity-ref-value",
+  "package": "@kaigilb/gilbplatformcode-entity-ref-value",
+  "version": "0.1.0",
+  "purpose": "Shows a stored reference to another record as that record's name, a button that opens it, with the stored address on a quiet second line.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/EntityRefValue.tsx", "lines": [1, 2], "to": "src/EntityRefValue.tsx" },
+      { "path": "src/components/records/EntityRefValue.tsx", "lines": [40, 83], "to": "src/EntityRefValue.tsx" },
+      { "path": "src/lib/base/entityRefFacts.ts", "lines": [61, 83], "to": "src/refDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [28, 28], "to": "src/refDisplayName.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`useResolvedRefLabel(parsed, vaultId)` is `useRefLabel(parsed, vaultId)`, the hook read from the new `RefLabelContext` (`useContext`) and called in the same place; with no provider it throws. `UseRefLabel` and `RefLabelContext` are new exports. `entityRefFromFact` is imported from `@kaigilb/gilbplatformcode-entity-ref`.",
+    "Comments made generic."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:VaultRecord.reference", "title": "Record reference shown by name", "note": "Shows a stored link as the record's name; includes GilbApp's refDisplayName (not entity-ref's)." }
+}

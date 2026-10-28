@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "unit": "units/value-graph-geometry",
+  "package": "@kaigilb/gilbplatformcode-value-graph-geometry",
+  "version": "0.2.0",
+  "purpose": "The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/components/records/PlanValueGraph.geometry.ts", "lines": null, "to": "src/geometry.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (tags of internal projects, review rounds and people removed).",
+    "the one import, `import { kindClass, type ScaleDirection, type ValueCardData, type ValueLevel } from \"../../lib/base/planValueModel\"`, is now `from \"@kaigilb/gilbplatformcode-value-card-model\"` (a value import since 0.2.0, for `kindClass`)",
+    "the block `MIN_YEAR`, `MAX_YEAR`, `YEAR_RANGE_SENTENCE`, `yearOutOfRange` (lines 184-195, with their doc comments) is replaced by `import { MAX_YEAR, MIN_YEAR, YEAR_RANGE_SENTENCE, yearOutOfRange } from \"@kaigilb/gilbplatformcode-date-rules\"` and `export { MAX_YEAR, MIN_YEAR, YEAR_RANGE_SENTENCE, yearOutOfRange };`, so the export list is the source's.",
+    "The one function that changed is `markerHalf(kind, resource?)`: it takes the card's flag and reads the kind through `kindClass(kind, resource)` (Budget is the Goal point on a Resource; the kind is trimmed)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": true, "tag": "t:Value.geometry", "title": "Value graph geometry (axes, date ticks, bands)", "note": "Math only; the drawn graph is value-graph." }
+}
