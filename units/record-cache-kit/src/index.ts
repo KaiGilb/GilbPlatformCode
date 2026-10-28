@@ -3,3 +3,4 @@ export * from "./recordCaches";
 export * from "./planRowCache";
 export * from "./planFind";
 export * from "./planSearch";
+export { entityDisplayName, withCanonicalLabel } from "./entityDisplayName";

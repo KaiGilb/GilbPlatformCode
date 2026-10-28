@@ -159,3 +159,53 @@ export function entityDisplayName(
 
   return fallback;
 }
+
+/**
+ * Ensure writes carry `a:label` when a display name exists.
+ *
+ * Sources: nameField / bridges / unitTag / identity human ids (dual content only).
+ */
+export function withCanonicalLabel(
+  facts: Record<string, string>,
+  nameField?: string | null,
+): Record<string, string> {
+  // When nameField is itself "label", still treat facts.label as the source.
+  const sourceSlug =
+    nameField && nameField !== CANONICAL_DISPLAY_SLUG ? nameField : CANONICAL_DISPLAY_SLUG;
+  const fromSource = factTrim(facts, sourceSlug);
+
+  if (fromSource) {
+    let next: Record<string, string> = facts;
+    if (factTrim(facts, CANONICAL_DISPLAY_SLUG) !== fromSource) {
+      next = { ...next, [CANONICAL_DISPLAY_SLUG]: fromSource };
+    }
+    // Bridge: keep a:title aligned with master label for older note clients.
+    if (factTrim(next, "title") !== fromSource) {
+      next = { ...next, title: fromSource };
+    }
+    return next;
+  }
+
+  if (factTrim(facts, CANONICAL_DISPLAY_SLUG)) {
+    const lab = factTrim(facts, CANONICAL_DISPLAY_SLUG);
+    if (factTrim(facts, "title") !== lab) return { ...facts, title: lab };
+    return facts;
+  }
+
+  for (const slug of BRIDGE_SLUGS) {
+    const v = factTrim(facts, slug);
+    if (v) return { ...facts, [CANONICAL_DISPLAY_SLUG]: v, title: factTrim(facts, "title") || v };
+  }
+
+  for (const slug of MASTER_TAG_SLUGS) {
+    const v = factTrim(facts, slug);
+    if (v) return { ...facts, [CANONICAL_DISPLAY_SLUG]: v };
+  }
+
+  for (const slug of IDENTITY_DISPLAY_SLUGS) {
+    const v = factTrim(facts, slug);
+    if (v) return { ...facts, [CANONICAL_DISPLAY_SLUG]: displayFriendly(v) };
+  }
+
+  return facts;
+}
