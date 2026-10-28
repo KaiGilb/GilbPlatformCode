@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "unit": "units/plan-self-source",
+  "package": "@kaigilb/gilbplatformcode-plan-self-source",
+  "version": "0.1.0",
+  "purpose": "The signed-in person's own card as the source of what they write: the finding of that card in their landing vault, read once and kept by the page's query cache, and the hook that answers the card's address or nothing.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          47,
+          48
+        ],
+        "to": "src/vaultRoot.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          106,
+          118
+        ],
+        "to": "src/vaultRoot.ts"
+      },
+      {
+        "path": "src/lib/base/personName.ts",
+        "lines": [
+          23,
+          26
+        ],
+        "to": "src/personName.ts"
+      },
+      {
+        "path": "src/lib/contact/ownVault.ts",
+        "lines": [
+          12,
+          23
+        ],
+        "to": "src/ownVault.ts"
+      },
+      {
+        "path": "src/lib/base/ownCard.ts",
+        "lines": [
+          120,
+          211
+        ],
+        "to": "src/ownCardFinding.ts"
+      },
+      {
+        "path": "src/components/records/useSelfSource.ts",
+        "lines": [
+          13,
+          32
+        ],
+        "to": "src/useSelfSource.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are replaced by imports of the peers `base-origin` (`baseOrigin`), `lws-records` (`readRecord`), `own-card` (`findOwnCard`, `FindOwnCardDeps`, `OwnCardFinding`), `plan-record-hooks` (the type `ReachableVault`), `vault-origin-rule` (`selfCardIdForVault`, `VAULT_PATH_SEGMENTS` for `gilb-photo`'s, and `vaultSegmentOf`), `@tanstack/react-query` and `react`, and of this unit's own files; the names the code taken does not use are dropped from the import lists",
+    "`BASE_ORIGIN` (`ownCard.ts` line 163) is `baseOrigin()`",
+    "`useSelfSource()` (`useSelfSource.ts` line 20) is `useSelfSource(shell: SelfSourceShell)`, and the line `const shell = useShell();` (line 21) is gone: the shell is an argument, of the type `SelfSourceShell` (new: `vaults`, `contentScope.reach` and `session.vault.entity`, the three things the body read). `useShell` and `ShellContext` stay in the app; the rest of the body is the source's, line for line",
+    "comments are made generic: the header comments are new and shorter; a ticket, a ruling and an agent name in the others are removed; `{@link useOwnCard}` (not taken) is removed; the comment on `vaultRootOf` no longer names the app's `personEntityUri`; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
