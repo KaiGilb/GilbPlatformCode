@@ -18,7 +18,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
     "@kaigilb/gilbplatformcode-entity-ref-value": "^0.1.0",
-    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.2.0",
     "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
     "react": "^19.0.0"
   },

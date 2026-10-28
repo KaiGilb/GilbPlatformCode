@@ -22,7 +22,7 @@
     "@kaigilb/gilbplatformcode-entity-ref-value": "^0.1.0",
     "@kaigilb/gilbplatformcode-id-tail": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
-    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-tag-picker": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
     "@kaigilb/gilbplatformcode-remove-control": "^0.1.0",

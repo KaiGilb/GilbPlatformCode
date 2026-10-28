@@ -28,7 +28,7 @@
     "@kaigilb/gilbplatformcode-plan-button-row": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
-    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-source": "^0.1.0",
     "@kaigilb/gilbplatformcode-sortable-tree": "^0.1.0",
     "react": "^19.0.0"
