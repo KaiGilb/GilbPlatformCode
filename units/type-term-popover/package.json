@@ -1,0 +1,41 @@
+{
+  "name": "@kaigilb/gilbplatformcode-type-term-popover",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology. The host provides the definition reader once.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-picture": "^0.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-name": "file:../type-name",
+    "@kaigilb/gilbplatformcode-type-picture": "file:../type-picture",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
