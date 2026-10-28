@@ -44,7 +44,7 @@
     "@kaigilb/gilbplatformcode-base-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-direct-shares": "^0.1.0",
     "@kaigilb/gilbplatformcode-folder-part": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-records": "^0.2.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.1.0",
     "@kaigilb/gilbplatformcode-ontology-reads": "^0.1.0",
