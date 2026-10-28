@@ -1,0 +1,1172 @@
+{
+  "schema": 1,
+  "unit": "units/plan-card-hosts-gilbplatform",
+  "package": "@kaigilb/gilbplatformcode-plan-card-hosts-gilbplatform",
+  "version": "0.1.0",
+  "purpose": "The ready-made GilbPlatform host for the four Plan cards: one provider that sets the platform's origins and the session and mounts the fourteen host contexts, so the Value, Function, Solution and Resource cards draw, read and save with no host object written.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/planLinks.ts",
+        "lines": [
+          220,
+          228
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/picture.ts",
+        "lines": [
+          73,
+          76
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/PlanValueLines.tsx",
+        "lines": [
+          448,
+          466
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/PlanStakeholders.tsx",
+        "lines": [
+          134,
+          139
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/PlanStakeholders.tsx",
+        "lines": [
+          534,
+          540
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/PlanImpacts.tsx",
+        "lines": [
+          395,
+          400
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/orgCard/OrgRecordPicker.tsx",
+        "lines": [
+          144,
+          150
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/hooks.ts",
+        "lines": [
+          108,
+          125
+        ],
+        "to": "src/shell.ts"
+      },
+      {
+        "path": "src/main.tsx",
+        "lines": [
+          72,
+          76
+        ],
+        "to": "src/provider.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "src/inline.ts holds six inline copies: `tagUsedInVault` (planLinks.ts 220-228) with its `vaultIdOfEntity` (picture.ts 73-76); `useLinkLabel` (PlanValueLines.tsx 448-466); `useRecordRead` (PlanStakeholders.tsx 134-139); the two `useRelationDoc` queries (PlanStakeholders.tsx 534-540 and PlanImpacts.tsx 395-400); `usePickerQuery` (OrgRecordPicker.tsx 144-150). Each is the source's code with its free names replaced by the peers' exports; no code was changed.",
+    "src/shell.ts maps the session's vault set to the rows the cards read as `useVaults` did when `GET /lws/vaults` had not answered (hooks.ts 108-125); it does not make that second call.",
+    "src/provider.tsx takes the query client's defaults from main.tsx 72-76.",
+    "every other member is a function a pilot unit exports, or one expression on the query client at the call site its `host` entry names (src/cacheAccess.ts, src/hosts/): `qc.getQueryData`, `qc.setQueryData`, `qc.invalidateQueries`, `qc.fetchQuery` and `useQueries`, with the key helpers of `record-cache-kit`, `lws-relations` and `plan-stakeholder-io`, and `instanceof` against the error classes of `lws-records`."
+  ],
+  "newFiles": [
+    "scripts/check-host-agnostic.mjs",
+    "src/cacheAccess.ts",
+    "src/cards.test.tsx",
+    "src/env.ts",
+    "src/example.test.tsx",
+    "src/hostAgnostic.test.ts",
+    "src/hosts/contextValues.ts",
+    "src/hosts/descriptionPartsHost.ts",
+    "src/hosts/index.ts",
+    "src/hosts/planCardHost.ts",
+    "src/hosts/planImpactsHost.ts",
+    "src/hosts/planSourceHost.ts",
+    "src/hosts/planTagLinksHost.ts",
+    "src/hosts/planTagPickerHost.ts",
+    "src/hosts/projectLevelsHost.ts",
+    "src/hosts/stakeholderLinesHost.ts",
+    "src/hosts/valueLinesHost.ts",
+    "src/hosts/valueWriteHost.ts",
+    "src/index.ts",
+    "src/inline.ts",
+    "src/provider.test.tsx",
+    "src/provider.tsx",
+    "src/settings.ts",
+    "src/shell.ts",
+    "test/example.tsx",
+    "test/fakeSession.ts",
+    "test/fakeVault.ts",
+    "test/harness.tsx",
+    "test/seed.ts",
+    "test/setup.ts"
+  ],
+  "host": [
+    {
+      "context": "PlanCard",
+      "member": "useSelfSource",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:480",
+      "implementedBy": "provider prop `self` (null by default), or plan-self-source.useSelfSource when `ownCard`"
+    },
+    {
+      "context": "PlanCard",
+      "member": "useRelations",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:488",
+      "implementedBy": "plan-stakeholder-io.useRelations"
+    },
+    {
+      "context": "PlanCard",
+      "member": "usePlanFind",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:491",
+      "implementedBy": "record-cache-kit.usePlanFind"
+    },
+    {
+      "context": "PlanCard",
+      "member": "usePersonAuthorities",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:566",
+      "implementedBy": "plan-stakeholder-io.usePersonAuthorities"
+    },
+    {
+      "context": "PlanCard",
+      "member": "useRetypeRecord",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:545",
+      "implementedBy": "plan-record-hooks.useRetypeRecord"
+    },
+    {
+      "context": "PlanCard",
+      "member": "useShell",
+      "replaces": "src/components/records/PersonAuthoritySearch.tsx:26",
+      "implementedBy": "this unit (src/shell.ts): the session's vaults"
+    },
+    {
+      "context": "PlanCard",
+      "member": "heldVaultIds",
+      "replaces": "src/components/records/PersonAuthoritySearch.tsx:27",
+      "implementedBy": "plan-record-hooks.heldVaultIds + plan-record-hooks.ReachableVault"
+    },
+    {
+      "context": "PlanCard",
+      "member": "useStakeholderKindSet",
+      "replaces": "src/components/records/PersonAuthoritySearch.tsx:28",
+      "implementedBy": "plan-stakeholder-io.STAKEHOLDER_TYPE_SET_QUERY"
+    },
+    {
+      "context": "PlanCard",
+      "member": "findStakeholderRecords",
+      "replaces": "src/components/records/PersonAuthoritySearch.tsx:30",
+      "implementedBy": "plan-stakeholder-io.findStakeholderRecords"
+    },
+    {
+      "context": "PlanCard",
+      "member": "searchTypes",
+      "replaces": "src/components/records/TypeChooser.tsx:151",
+      "implementedBy": "ontology-reads.searchLiveTerms"
+    },
+    {
+      "context": "PlanCard",
+      "member": "blankReach",
+      "replaces": "src/components/records/TypeChooser.tsx:176",
+      "implementedBy": "ontology-reads.blankQueryReach"
+    },
+    {
+      "context": "PlanCard",
+      "member": "openOntologyConcept",
+      "replaces": "src/components/records/PlanTypeField.tsx:90",
+      "implementedBy": "provider prop navigate.openOntologyConcept (absent: member left out)"
+    },
+    {
+      "context": "PlanCard",
+      "member": "renderTypeIcon",
+      "replaces": "src/components/records/TypeChooser.tsx:364",
+      "implementedBy": "provider prop renderTypeIcon (absent: member left out)"
+    },
+    {
+      "context": "PlanCard",
+      "member": "getRelations",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:624",
+      "implementedBy": "this unit (src/cacheAccess.ts): getRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanCard",
+      "member": "getKindSet",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:846",
+      "implementedBy": "this unit (src/cacheAccess.ts): getKindSet, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanCard",
+      "member": "liveRow",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:583",
+      "implementedBy": "record-cache-kit.liveRow"
+    },
+    {
+      "context": "PlanCard",
+      "member": "readRecord",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:845",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "PlanCard",
+      "member": "memberEntityUri",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:851",
+      "implementedBy": "lws-relations.memberEntityUri"
+    },
+    {
+      "context": "PlanCard",
+      "member": "ensureEtagUnchanged",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:584",
+      "implementedBy": "record-cache-kit.ensureEtagUnchanged"
+    },
+    {
+      "context": "PlanCard",
+      "member": "applyPatch",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:642",
+      "implementedBy": "record-cache-kit.applyPatch"
+    },
+    {
+      "context": "PlanCard",
+      "member": "isConflict",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:654",
+      "implementedBy": "lws-records.RecordConflictError"
+    },
+    {
+      "context": "PlanCard",
+      "member": "reconcileAfterConflict",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:655",
+      "implementedBy": "record-cache-kit.reconcileAfterConflict"
+    },
+    {
+      "context": "PlanCard",
+      "member": "storePlanRow",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:643",
+      "implementedBy": "record-cache-kit.storePlanRow"
+    },
+    {
+      "context": "PlanCard",
+      "member": "setRecordRead",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:645",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRecordRead, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanCard",
+      "member": "setRelations",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:632",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanCard",
+      "member": "invalidateAuthoritySearch",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:1468",
+      "implementedBy": "this unit (src/cacheAccess.ts): invalidateAuthoritySearch, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanCard",
+      "member": "patchRecord",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:640",
+      "implementedBy": "lws-records.patchRecord"
+    },
+    {
+      "context": "PlanCard",
+      "member": "migratedAuthorityRelation",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:625",
+      "implementedBy": "plan-stakeholder-io.migratedAuthorityRelation"
+    },
+    {
+      "context": "PlanCard",
+      "member": "writeAuthorityRelation",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:869",
+      "implementedBy": "plan-stakeholder-io.writeAuthorityRelation"
+    },
+    {
+      "context": "PlanCard",
+      "member": "renderCreateStakeholder",
+      "replaces": "src/components/records/PlanFunctionForm.tsx:1459",
+      "implementedBy": "provider prop createStakeholderDialog (absent: renders nothing)"
+    },
+    {
+      "context": "PlanSource",
+      "member": "useShell",
+      "replaces": "src/components/records/PlanSource.tsx:64; src/components/records/PlanSource.tsx::105",
+      "implementedBy": "this unit (src/shell.ts): the session's vaults, and navigate.openRecordInVault"
+    },
+    {
+      "context": "PlanSource",
+      "member": "heldVaultIds",
+      "replaces": "src/components/records/PlanSource.tsx:106",
+      "implementedBy": "plan-record-hooks.heldVaultIds + plan-record-hooks.ReachableVault"
+    },
+    {
+      "context": "PlanSource",
+      "member": "useStakeholderTypes",
+      "replaces": "src/components/records/PlanSource.tsx:107",
+      "implementedBy": "plan-stakeholder-io.STAKEHOLDER_TYPE_SET_QUERY"
+    },
+    {
+      "context": "PlanSource",
+      "member": "useVaultFilesMulti",
+      "replaces": "src/components/records/PlanSource.tsx:109",
+      "implementedBy": "plan-record-hooks.useVaultFilesMulti"
+    },
+    {
+      "context": "PlanSource",
+      "member": "matchWorkingSetQuery",
+      "replaces": "src/components/records/PlanSource.tsx:55",
+      "implementedBy": "plan-record-hooks.matchWorkingSetQuery"
+    },
+    {
+      "context": "PlanSource",
+      "member": "findStakeholderRecords",
+      "replaces": "src/components/records/PlanSource.tsx:115",
+      "implementedBy": "plan-stakeholder-io.findStakeholderRecords"
+    },
+    {
+      "context": "PlanSource",
+      "member": "readRecord",
+      "replaces": "src/components/records/PlanSource.tsx:221",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "PlanSource",
+      "member": "memberEntityUri",
+      "replaces": "src/components/records/PlanSource.tsx:222",
+      "implementedBy": "lws-relations.memberEntityUri"
+    },
+    {
+      "context": "PlanSource",
+      "member": "ConnectedCreateDialog",
+      "replaces": "src/components/records/PlanSource.tsx:210",
+      "implementedBy": "provider prop createStakeholderDialog (absent: renders nothing)"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "useRecords",
+      "replaces": "src/components/records/PlanImpacts.tsx:502",
+      "implementedBy": "plan-record-hooks.useRecords"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "useRelations",
+      "replaces": "src/components/records/PlanImpacts.tsx:503",
+      "implementedBy": "plan-stakeholder-io.useRelations"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "useSelfSource",
+      "replaces": "src/components/records/PlanImpacts.tsx:506",
+      "implementedBy": "provider prop `self` (null by default), or plan-self-source.useSelfSource when `ownCard`"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "useRelationDoc",
+      "replaces": "src/components/records/PlanImpacts.tsx:395",
+      "implementedBy": "this unit (src/inline.ts).useImpactRelationDoc"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "resolveType",
+      "replaces": "src/components/records/PlanImpacts.tsx:573",
+      "implementedBy": "record-types.resolveType"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "invalidatePlanSearch",
+      "replaces": "src/components/records/PlanImpacts.tsx:586",
+      "implementedBy": "record-cache-kit.invalidatePlanSearch"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "getRecordPages",
+      "replaces": "src/components/records/PlanImpacts.tsx:80",
+      "implementedBy": "this unit (src/cacheAccess.ts): getRecordPages, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "setRecordPages",
+      "replaces": "src/components/records/PlanImpacts.tsx:87",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRecordPages, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "setRelations",
+      "replaces": "src/components/records/PlanImpacts.tsx:537",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "useCreateRecord",
+      "replaces": "src/components/records/PlanImpacts.tsx:505",
+      "implementedBy": "plan-record-hooks.useCreateRecord"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "writePairRelation",
+      "replaces": "src/components/records/PlanImpacts.tsx:548",
+      "implementedBy": "lws-relations.writePairRelation"
+    },
+    {
+      "context": "PlanImpacts",
+      "member": "endRelation",
+      "replaces": "src/components/records/PlanImpacts.tsx:633",
+      "implementedBy": "lws-relations.endRelation"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "useRecords",
+      "replaces": "src/components/records/PlanTagLinks.tsx:319",
+      "implementedBy": "plan-record-hooks.useRecords"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "useRelations",
+      "replaces": "src/components/records/PlanTagLinks.tsx:908",
+      "implementedBy": "plan-stakeholder-io.useRelations"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "usePlanFind",
+      "replaces": "src/components/records/PlanTagLinks.tsx:443",
+      "implementedBy": "record-cache-kit.usePlanFind"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "invalidatePlanFind",
+      "replaces": "src/components/records/PlanTagLinks.tsx:446",
+      "implementedBy": "record-cache-kit.invalidatePlanFind"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "invalidatePlanSearch",
+      "replaces": "src/components/records/PlanTagLinks.tsx:409",
+      "implementedBy": "record-cache-kit.invalidatePlanSearch"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "liveRow",
+      "replaces": "src/components/records/PlanTagLinks.tsx:349",
+      "implementedBy": "record-cache-kit.liveRow"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "ensureEtagUnchanged",
+      "replaces": "src/components/records/PlanTagLinks.tsx:159",
+      "implementedBy": "record-cache-kit.ensureEtagUnchanged"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "applyPatch",
+      "replaces": "src/components/records/PlanTagLinks.tsx:170",
+      "implementedBy": "record-cache-kit.applyPatch"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "storePlanRow",
+      "replaces": "src/components/records/PlanTagLinks.tsx:171",
+      "implementedBy": "record-cache-kit.storePlanRow"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "setPlanRecord",
+      "replaces": "src/components/records/PlanTagLinks.tsx:172",
+      "implementedBy": "this unit (src/cacheAccess.ts): qc.setQueryData(record-cache-kit.planRecordKey)"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "dropPlanFind",
+      "replaces": "src/components/records/PlanTagLinks.tsx:175",
+      "implementedBy": "record-cache-kit.dropPlanFind"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "prependPlanFind",
+      "replaces": "src/components/records/PlanTagLinks.tsx:176",
+      "implementedBy": "record-cache-kit.prependPlanFind"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "putRecordInCaches",
+      "replaces": "src/components/records/PlanTagLinks.tsx:606",
+      "implementedBy": "record-cache-kit.putRecordInCaches"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "getRelations",
+      "replaces": "src/components/records/PlanTagLinks.tsx:839",
+      "implementedBy": "this unit (src/cacheAccess.ts): getRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "setRelations",
+      "replaces": "src/components/records/PlanTagLinks.tsx:841",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "resolveType",
+      "replaces": "src/components/records/PlanTagLinks.tsx:402",
+      "implementedBy": "record-types.resolveType"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "typeUriForVaultNamespace",
+      "replaces": "src/components/records/PlanTagLinks.tsx:585",
+      "implementedBy": "record-types.typeUriForVaultNamespace"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "memberEntityUri",
+      "replaces": "src/components/records/PlanTagLinks.tsx:593",
+      "implementedBy": "lws-relations.memberEntityUri"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "readRecord",
+      "replaces": "src/components/records/PlanTagLinks.tsx:1276",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "patchRecord",
+      "replaces": "src/components/records/PlanTagLinks.tsx:168",
+      "implementedBy": "lws-records.patchRecord"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "createRecord",
+      "replaces": "src/components/records/PlanTagLinks.tsx:585",
+      "implementedBy": "lws-records.createRecord"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "useCreateRecord",
+      "replaces": "src/components/records/PlanTagLinks.tsx:321",
+      "implementedBy": "plan-record-hooks.useCreateRecord"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "writePairRelation",
+      "replaces": "src/components/records/PlanTagLinks.tsx:827",
+      "implementedBy": "lws-relations.writePairRelation"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "endRelation",
+      "replaces": "src/components/records/PlanTagLinks.tsx:956",
+      "implementedBy": "lws-relations.endRelation"
+    },
+    {
+      "context": "PlanTagLinks",
+      "member": "ConnectedCreateDialog",
+      "replaces": "src/components/records/PlanTagLinks.tsx:1266",
+      "implementedBy": "provider prop createStakeholderDialog (absent: member left out)"
+    },
+    {
+      "context": "PlanTagPicker",
+      "member": "findPlanRecords",
+      "replaces": "src/components/records/PlanTagLinks.tsx:70",
+      "implementedBy": "record-cache-kit.searchPlanRecords (hits mapped to uri, label, row)"
+    },
+    {
+      "context": "PlanTagPicker",
+      "member": "tagUsed",
+      "replaces": "src/components/records/PlanTagLinks.tsx:98",
+      "implementedBy": "this unit (src/inline.ts).tagUsedInVault"
+    },
+    {
+      "context": "PlanTagPicker",
+      "member": "invalidateSearch",
+      "replaces": "src/components/records/PlanTagLinks.tsx:115",
+      "implementedBy": "this unit (src/cacheAccess.ts): qc.invalidateQueries({ queryKey })"
+    },
+    {
+      "context": "ProjectLevels",
+      "member": "useAllLevels",
+      "replaces": "src/lib/base/planLevels.ts:294",
+      "implementedBy": "plan-levels-io.useAllLevels"
+    },
+    {
+      "context": "ProjectLevels",
+      "member": "waitForLevels",
+      "replaces": "src/lib/base/planLevels.ts:462",
+      "implementedBy": "plan-levels-io.waitForLevels"
+    },
+    {
+      "context": "ProjectLevels",
+      "member": "ensureDefaultLevels",
+      "replaces": "src/lib/base/planLevels.ts:359",
+      "implementedBy": "plan-levels-io.ensureDefaultLevels"
+    },
+    {
+      "context": "ProjectLevels",
+      "member": "addProjectLevel",
+      "replaces": "src/lib/base/planLevels.ts:426",
+      "implementedBy": "plan-levels-io.addProjectLevel"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useRecords",
+      "replaces": "src/components/records/PlanStakeholders.tsx:128",
+      "implementedBy": "plan-record-hooks.useRecords"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useRecordRead",
+      "replaces": "src/components/records/PlanStakeholders.tsx:134",
+      "implementedBy": "this unit (src/inline.ts).useRecordRead"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useRelations",
+      "replaces": "src/components/records/PlanStakeholders.tsx:226",
+      "implementedBy": "plan-stakeholder-io.useRelations"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useStakeholderKinds",
+      "replaces": "src/components/records/PlanStakeholders.tsx:227",
+      "implementedBy": "plan-stakeholder-io.STAKEHOLDER_TYPE_SET_QUERY"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "usePersonAuthorities",
+      "replaces": "src/components/records/PlanStakeholders.tsx:624",
+      "implementedBy": "plan-stakeholder-io.usePersonAuthorities"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useHeldVaults",
+      "replaces": "src/components/records/PlanStakeholders.tsx:171",
+      "implementedBy": "plan-record-hooks.heldVaultIds over the session's vaults"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useOpenRecordInVault",
+      "replaces": "src/components/records/PlanStakeholders.tsx:110",
+      "implementedBy": "provider prop navigate.openRecordInVault (undefined when absent)"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "useRelationDoc",
+      "replaces": "src/components/records/PlanStakeholders.tsx:534",
+      "implementedBy": "this unit (src/inline.ts).useAuthorityRelationDoc"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "hasSubstitutedType",
+      "replaces": "src/components/records/PlanStakeholders.tsx:241",
+      "implementedBy": "lws-records.hasSubstitutedType"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "getRelations",
+      "replaces": "src/components/records/PlanStakeholders.tsx:267",
+      "implementedBy": "this unit (src/cacheAccess.ts): getRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "getKindSet",
+      "replaces": "src/components/records/PlanStakeholders.tsx:666",
+      "implementedBy": "this unit (src/cacheAccess.ts): getKindSet, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "liveRow",
+      "replaces": "src/components/records/PlanStakeholders.tsx:250",
+      "implementedBy": "record-cache-kit.liveRow"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "readRecord",
+      "replaces": "src/components/records/PlanStakeholders.tsx:479",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "memberEntityUri",
+      "replaces": "src/components/records/PlanStakeholders.tsx:266",
+      "implementedBy": "lws-relations.memberEntityUri"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "findStakeholders",
+      "replaces": "src/components/records/PlanStakeholders.tsx:440",
+      "implementedBy": "plan-stakeholder-io.findStakeholderRecords"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "findAnyRecords",
+      "replaces": "src/components/records/PlanStakeholders.tsx:658",
+      "implementedBy": "plan-stakeholder-io.findAnyRecords"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "ensureEtagUnchanged",
+      "replaces": "src/components/records/PlanStakeholders.tsx:88",
+      "implementedBy": "record-cache-kit.ensureEtagUnchanged"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "applyPatch",
+      "replaces": "src/components/records/PlanStakeholders.tsx:104",
+      "implementedBy": "record-cache-kit.applyPatch"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "storePlanRow",
+      "replaces": "src/components/records/PlanStakeholders.tsx:105",
+      "implementedBy": "record-cache-kit.storePlanRow"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "setRecordRead",
+      "replaces": "src/components/records/PlanStakeholders.tsx:106",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRecordRead, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "setRelations",
+      "replaces": "src/components/records/PlanStakeholders.tsx:303",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRelations, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "invalidateSearch",
+      "replaces": "src/components/records/PlanStakeholders.tsx:195",
+      "implementedBy": "this unit (src/cacheAccess.ts): invalidateFilters, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "writePairRelation",
+      "replaces": "src/components/records/PlanStakeholders.tsx:283",
+      "implementedBy": "lws-relations.writePairRelation (a null uri becomes absent)"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "endRelation",
+      "replaces": "src/components/records/PlanStakeholders.tsx:309",
+      "implementedBy": "lws-relations.endRelation"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "patchRecord",
+      "replaces": "src/components/records/PlanStakeholders.tsx:102",
+      "implementedBy": "lws-records.patchRecord"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "writeAuthorityRelation",
+      "replaces": "src/components/records/PlanStakeholders.tsx:738",
+      "implementedBy": "plan-stakeholder-io.writeAuthorityRelation"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "endThenWriteAuthority",
+      "replaces": "src/components/records/PlanStakeholders.tsx:738",
+      "implementedBy": "plan-stakeholder-io.endThenWriteAuthority"
+    },
+    {
+      "context": "StakeholderLines",
+      "member": "renderCreateStakeholder",
+      "replaces": "src/components/records/PlanStakeholders.tsx:467",
+      "implementedBy": "provider prop createStakeholderDialog (absent: member left out, so the lines are read-only)"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "pageChildIds",
+      "replaces": "src/lib/base/planLevelRead.ts:45",
+      "implementedBy": "record-cache-kit.pageAttributeIds (the cap, and the query client's read limit)"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "markStale",
+      "replaces": "src/lib/base/planLevelRead.ts:53",
+      "implementedBy": "this unit (src/cacheAccess.ts): qc.invalidateQueries on planRecordKey, refetchType none"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "readMember",
+      "replaces": "src/lib/base/planLevelRead.ts:58",
+      "implementedBy": "record-cache-kit.readCached"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "applyPinsAndDrops",
+      "replaces": "src/lib/base/planLevelRead.ts:76",
+      "implementedBy": "record-cache-kit.applyPinsAndDrops"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "useRecords",
+      "replaces": "src/components/records/usePlanParts.ts:90",
+      "implementedBy": "plan-record-hooks.useRecords"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "usePlanFind",
+      "replaces": "src/components/records/usePlanParts.ts:91",
+      "implementedBy": "record-cache-kit.usePlanFind"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "useSubFinds",
+      "replaces": "src/components/records/usePlanParts.ts:103",
+      "implementedBy": "@tanstack/react-query.useQueries over record-cache-kit.loadPlanFind"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "useSelfSource",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:242",
+      "implementedBy": "provider prop `self` (null by default), or plan-self-source.useSelfSource when `ownCard`"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "cachedRecords",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:377",
+      "implementedBy": "this unit (src/cacheAccess.ts): cachedRecords, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "getFind",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:488",
+      "implementedBy": "this unit (src/cacheAccess.ts): getFind, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "getFinds",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:997",
+      "implementedBy": "this unit (src/cacheAccess.ts): getFinds, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "liveRow",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:527",
+      "implementedBy": "record-cache-kit.liveRow"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "readRecord",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:450",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "tagUsedInVault",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:706",
+      "implementedBy": "this unit (src/inline.ts).tagUsedInVault"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "ensureEtagUnchanged",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:530",
+      "implementedBy": "record-cache-kit.ensureEtagUnchanged"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "reconcileAfterConflict",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:564",
+      "implementedBy": "record-cache-kit.reconcileAfterConflict"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "isConflict",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:563",
+      "implementedBy": "lws-records.RecordConflictError"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "typeUriForVaultNamespace",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:437",
+      "implementedBy": "record-types.typeUriForVaultNamespace"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "storePlanRow",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:478",
+      "implementedBy": "record-cache-kit.storePlanRow"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "setRecordRead",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:559",
+      "implementedBy": "this unit (src/cacheAccess.ts): setRecordRead, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "invalidatePlanSearch",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:479",
+      "implementedBy": "record-cache-kit.invalidatePlanSearch"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "prependPlanFind",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:480",
+      "implementedBy": "record-cache-kit.prependPlanFind"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "dropPlanFind",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:1056",
+      "implementedBy": "record-cache-kit.dropPlanFind"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "patchPlanFindRows",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:538",
+      "implementedBy": "record-cache-kit.patchPlanFindRows"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "invalidatePlanFind",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:542",
+      "implementedBy": "record-cache-kit.invalidatePlanFind"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "setFind",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:489",
+      "implementedBy": "this unit (src/cacheAccess.ts): setFind, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "rememberRecord",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:452",
+      "implementedBy": "working-set-store.rememberRecord"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "markFreshlyCreated",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:453",
+      "implementedBy": "plan-record-hooks.markFreshlyCreated"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "HelpButton",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:1856",
+      "implementedBy": "provider prop HelpButton (absent: renders nothing)"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "createRecord",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:448",
+      "implementedBy": "lws-records.createRecord"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "patchRecord",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:554",
+      "implementedBy": "lws-records.patchRecord"
+    },
+    {
+      "context": "DescriptionParts",
+      "member": "useDeleteRecord",
+      "replaces": "src/components/records/PlanDescriptionParts.tsx:248",
+      "implementedBy": "plan-record-hooks.useDeleteRecord"
+    },
+    {
+      "context": "ValueLines",
+      "member": "useLinkLabel",
+      "replaces": "src/components/records/PlanValueLines.tsx:448",
+      "implementedBy": "this unit (src/inline.ts).useLinkLabel"
+    },
+    {
+      "context": "ValueLines",
+      "member": "openOntologyConcept",
+      "replaces": "src/components/records/PlanValueLines.tsx:1376",
+      "implementedBy": "provider prop navigate.openOntologyConcept (absent: member left out)"
+    },
+    {
+      "context": "ValueLines",
+      "member": "searchTypes",
+      "replaces": "src/components/records/PlanValueLines.tsx:1466",
+      "implementedBy": "ontology-reads.searchLiveTerms"
+    },
+    {
+      "context": "ValueLines",
+      "member": "blankReach",
+      "replaces": "src/components/records/PlanValueLines.tsx:1435",
+      "implementedBy": "ontology-reads.blankQueryReach"
+    },
+    {
+      "context": "ValueLines",
+      "member": "renderTypeIcon",
+      "replaces": "src/components/records/PlanValueLines.tsx:1435",
+      "implementedBy": "provider prop renderTypeIcon (absent: member left out)"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "createRecord",
+      "replaces": "src/components/records/valueChildRecords.ts:131",
+      "implementedBy": "lws-records.createRecord"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "readRecord",
+      "replaces": "src/components/records/valueChildRecords.ts:137",
+      "implementedBy": "lws-records.readRecord"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "patchRecord",
+      "replaces": "src/components/records/valueChildRecords.ts:214",
+      "implementedBy": "lws-records.patchRecord"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "useDeleteRecord",
+      "replaces": "src/components/records/useValueChildren.ts:46",
+      "implementedBy": "plan-record-hooks.useDeleteRecord"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "isConflict",
+      "replaces": "src/components/records/valueChildRecords.ts:220",
+      "implementedBy": "lws-records.RecordConflictError"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "isForbidden",
+      "replaces": "src/components/records/useValueScale.ts:153",
+      "implementedBy": "lws-records.RecordForbiddenError"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "cachedPlanFind",
+      "replaces": "src/components/records/valueChildRecords.ts:102",
+      "implementedBy": "this unit (src/cacheAccess.ts): getFind, one expression on the query client with the keys of record-cache-kit, lws-relations and plan-stakeholder-io"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "fetchPlanFind",
+      "replaces": "src/components/records/valueChildRecords.ts:343-347",
+      "implementedBy": "@tanstack/react-query.fetchQuery over record-cache-kit.loadPlanFind"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "usePlanFinds",
+      "replaces": "src/components/records/useValueMeters.ts:52-60",
+      "implementedBy": "@tanstack/react-query.useQueries over record-cache-kit.loadPlanFind"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "prependPlanFind",
+      "replaces": "src/components/records/valueChildRecords.ts:160",
+      "implementedBy": "record-cache-kit.prependPlanFind"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "dropPlanFind",
+      "replaces": "src/components/records/valueChildRecords.ts:248",
+      "implementedBy": "record-cache-kit.dropPlanFind"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "patchPlanFindRows",
+      "replaces": "src/components/records/valueChildRecords.ts:223",
+      "implementedBy": "record-cache-kit.patchPlanFindRows"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "invalidatePlanFind",
+      "replaces": "src/components/records/valueChildRecords.ts:192",
+      "implementedBy": "record-cache-kit.invalidatePlanFind"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "liveRow",
+      "replaces": "src/components/records/valueChildRecords.ts:182",
+      "implementedBy": "record-cache-kit.liveRow"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "ensureEtagUnchanged",
+      "replaces": "src/components/records/valueChildRecords.ts:186",
+      "implementedBy": "record-cache-kit.ensureEtagUnchanged"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "reconcileAfterConflict",
+      "replaces": "src/components/records/valueChildRecords.ts:222",
+      "implementedBy": "record-cache-kit.reconcileAfterConflict"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "storePlanRow",
+      "replaces": "src/components/records/valueChildRecords.ts:158",
+      "implementedBy": "record-cache-kit.storePlanRow"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "setPlanRecord",
+      "replaces": "src/components/records/valueChildRecords.ts:236",
+      "implementedBy": "this unit (src/cacheAccess.ts): qc.setQueryData(record-cache-kit.planRecordKey)"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "invalidatePlanSearch",
+      "replaces": "src/components/records/valueChildRecords.ts:159",
+      "implementedBy": "record-cache-kit.invalidatePlanSearch"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "rememberRecord",
+      "replaces": "src/components/records/valueChildRecords.ts:139",
+      "implementedBy": "working-set-store.rememberRecord"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "markFreshlyCreated",
+      "replaces": "src/components/records/valueChildRecords.ts:140",
+      "implementedBy": "plan-record-hooks.markFreshlyCreated"
+    },
+    {
+      "context": "ValueWrite",
+      "member": "typeUriForVaultNamespace",
+      "replaces": "src/components/records/valueChildRecords.ts:119",
+      "implementedBy": "record-types.typeUriForVaultNamespace"
+    },
+    {
+      "context": "RefLabel",
+      "member": "useRefLabel",
+      "replaces": "src/components/records/EntityRefValue.tsx:16",
+      "implementedBy": "plan-stakeholder-io.useResolvedRefLabel"
+    },
+    {
+      "context": "PickerQuery",
+      "member": "usePickerQuery",
+      "replaces": "src/components/records/orgCard/OrgRecordPicker.tsx:144",
+      "implementedBy": "this unit (src/inline.ts): usePickerQuery, copied from lines 144-150"
+    },
+    {
+      "context": "TypePicture",
+      "member": "fetchTypePictureSrc",
+      "replaces": "src/lib/base/typePicture.ts:92",
+      "implementedBy": "type-picture.createTypePictureSource({ termOrigin: ontologyOrigin, originOf: vault-origin-rule.vaultOriginOf })"
+    },
+    {
+      "context": "TermDefinition",
+      "member": "readTermDefinition",
+      "replaces": "src/components/records/TypeDescription.tsx:35",
+      "implementedBy": "ontology-reads.readTermDefinition"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
