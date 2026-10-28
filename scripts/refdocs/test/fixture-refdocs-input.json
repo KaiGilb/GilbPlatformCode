@@ -1,0 +1,313 @@
+{
+ "notice": "© 2026 Kai Gilb. All rights reserved. GilbPlatform customers, their apps, those apps' users, and their AI may read, follow and run it inside GilbPlatform. Do not export it or keep a copy outside GilbPlatform, and do not train AI on it. Terms: GilbPlatform.Licence.",
+ "units": [
+  {
+   "folder": "plan-button-row",
+   "tag": "t:ScreenButton.row",
+   "title": "Button row (Mac order)",
+   "note": "Only lays out buttons; for one button look take button. For the remove control take remove-control.",
+   "exhibit": "**What it does:** A right-aligned row of buttons for a card, in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.\n\nGitHub folder: units/plan-button-row\nCommit: f551b868cc397b512f22a55c1cb6f4f6a3d5e7da\nPackage: @kaigilb/gilbplatformcode-plan-button-row\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "level-date-input",
+   "tag": "t:Level.date",
+   "title": "Date picker for a level",
+   "note": "The date field of a level's popover in the value graph; the year rules are in date-rules. The Levels line's own dates are in value-levels-line. Plan.Value",
+   "exhibit": "**What it does:** The date field of a level's popover in the value graph, as one component: a labelled date input that tells the host on change, on Enter, on blur and on Escape, and shows the year alert when the host asks for it.\n\nGitHub folder: units/level-date-input\nCommit: 104c93d6475d673f578bf94cd29605b9dcd11ae3\nPackage: @kaigilb/gilbplatformcode-level-date-input\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "remove-control",
+   "tag": "t:ScreenButton.remove",
+   "title": "Remove control (red minus button)",
+   "note": "Deletes the row it sits in; it calls the host and writes nothing itself. For a plain button take button.",
+   "exhibit": "**What it does:** The delete control of a record card: a named button drawn as a red round minus, which calls the host's `onClick`.\n\nGitHub folder: units/remove-control\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-remove-control\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "card-group",
+   "tag": "t:ScreenCard.group",
+   "title": "Card group (framed group of a card)",
+   "note": "Needs the card-mode provider; for a plain card surface take card. The person card's linked-person rows are not in it.",
+   "exhibit": "**What it does:** One framed group of a record card: a titled frame with an optional icon that holds its items, is left out when empty in presentation, and registers with the card's mode so an add chooser can list it.\n\nGitHub folder: units/card-group\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-card-group\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-card-facts",
+   "tag": "t:Specification.facts",
+   "title": "Plan card facts (sources, meters, status lines)",
+   "note": "Facts on the record itself; Value child records are value-card-model, links plan-links-model. Not the older spec-card-facts.",
+   "exhibit": "**What it does:** The facts a Function, Solution or Value card reads and writes on the record itself, as plain functions over the stored wire shapes.\n\nGitHub folder: units/plan-card-facts\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-card-facts\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-card-model",
+   "tag": "t:Value.model",
+   "title": "Value card model",
+   "note": "Pure read and fact builders for the Value and Development Resource card; writes are value-card-write, the screen is value-card. Plan.Value, Plan.DevelopmentResource",
+   "exhibit": "**What it does:** The Value card's data, read from the Value record and its child records and built back into the facts to store, as plain functions with no React and no network.\n\nGitHub folder: units/value-card-model\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-card-model\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-graph-geometry",
+   "tag": "t:Value.geometry",
+   "title": "Value graph geometry (axes, date ticks, bands)",
+   "note": "Math only; the drawn graph is value-graph.",
+   "exhibit": "**What it does:** The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows.\n\nGitHub folder: units/value-graph-geometry\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-graph-geometry\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "type-picture",
+   "tag": "t:TypePicture.view",
+   "title": "Type picture",
+   "note": "Draws a type's picture or nothing; as a button that opens the definition take type-term-popover.",
+   "exhibit": "**What it does:** Draws a GilbVeda type's picture at a given size, and draws nothing when the type has no picture or the picture fails to load.\n\nGitHub folder: units/type-picture\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-type-picture\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-kinds",
+   "tag": "t:Specification.kinds",
+   "title": "Plan card types and their lines",
+   "note": "Which lines each Plan type shows, in order; the drawn card is plan-card. Plan.Type",
+   "exhibit": "**What it does:** The Plan record types and what each one shows: the type names, the Development Resource and Value-card gates, each type's line order, its default level and the words of its lines.\n\nGitHub folder: units/plan-kinds\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-kinds\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-links-model",
+   "tag": "t:Specification.links",
+   "title": "Plan card links model (Part of, Solution of)",
+   "note": "Pure link reading and loop checks; the link lines on screen are plan-tag-links.",
+   "exhibit": "**What it does:** Reads and builds the links on a Function, Solution, Value or Resource card as plain functions: which record a link points at, the tag drawn for it, the loop checks on the Part of chain, and the Solution of relations read back.\n\nGitHub folder: units/plan-links-model\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-links-model\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-impacts-model",
+   "tag": "t:ImpactOn.model",
+   "title": "Impacts model (Solution on Value and Resource)",
+   "note": "Pure; the Impacts table on screen is plan-impacts.",
+   "exhibit": "**What it does:** Reads, parses and builds the impacts of a Solution on Values and Development Resources as plain functions: one `t:ImpactOn` relation per pair, with the numbers on the relation.\n\nGitHub folder: units/plan-impacts-model\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-impacts-model\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "qualifier-value-picker",
+   "tag": "t:ScaleQualifier.picker",
+   "title": "Qualifier value picker",
+   "note": "Picks the value(s) of one Scale qualifier; to edit the qualifiers themselves take value-qualifiers-line. Plan.Value",
+   "exhibit": "**What it does:** One chooser for the value or values of a qualifier: the defined options with their definitions as hints, ALL (\"every value\"), a free-text \"Other…\" and Clear.\n\nGitHub folder: units/qualifier-value-picker\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-qualifier-value-picker\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "sortable-tree",
+   "tag": "t:SortableTree",
+   "title": "Sortable tree (drag and keyboard reorder)",
+   "note": "Reports drops and writes nothing; needs @dnd-kit/core 6.3.1. The Description editor that uses it is description-parts-view.",
+   "exhibit": "**What it does:** A drag-and-drop tree of rows, with a keyboard way as well, that reorders and re-nests: it writes nothing, it reports where a dragged row was dropped.\n\nGitHub folder: units/sortable-tree\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-sortable-tree\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-stakeholders-model",
+   "tag": "t:StakeholderOf.model",
+   "title": "Stakeholders, Authority and Resource Owner model",
+   "note": "Pure reading and constraint person rules; the lines on screen are plan-stakeholder-lines. Plan.DevelopmentResource",
+   "exhibit": "**What it does:** Reads the stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record from its relations and its text, and holds the rules that a Function Constraint or Solution Constraint names a person as its Authority.\n\nGitHub folder: units/plan-stakeholders-model\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-stakeholders-model\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "description-parts-model",
+   "tag": "t:SpecificationElement.model",
+   "title": "Description parts model (Keyword parts)",
+   "note": "Parsing, tree, ordering and removal plans; the editor on screen is description-parts-view.",
+   "exhibit": "**What it does:** Reads and plans the Description of a Solution or Solution Constraint, which is one record per Keyword part: it parses Keyword lines and Assumptions, builds the tree, orders and moves parts, previews a paste, and plans the move or the removal of a whole level, with the host supplying every read.\n\nGitHub folder: units/description-parts-model\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-description-parts-model\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "record-picker",
+   "tag": "t:VaultRecord.picker",
+   "title": "Record picker (search and pick)",
+   "note": "The caller decides what is searched; for a GilbVeda type take type-chooser, for a Plan record by tag take plan-tag-picker.",
+   "exhibit": "**What it does:** A search-and-pick box for records: debounced search, grouped hits, \"nothing found\", an incomplete-answer note with Try again, and mouse picking; the caller decides what is searched.\n\nGitHub folder: units/record-picker\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-record-picker\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "entity-ref-value",
+   "tag": "t:VaultRecord.reference",
+   "title": "Record reference shown by name",
+   "note": "Shows a stored link as the record's name; includes GilbApp's refDisplayName (not entity-ref's).",
+   "exhibit": "**What it does:** Shows a stored reference to another record as that record's name, a button that opens it, with the stored address on a quiet second line.\n\nGitHub folder: units/entity-ref-value\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-entity-ref-value\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "field-row",
+   "tag": "t:ScreenCard.field",
+   "title": "Field row (click-to-edit text)",
+   "note": "Text only, on a card with card-mode; for a controlled form field take field-control.",
+   "exhibit": "**What it does:** One click-to-edit text field row on a card: it shows the value (or nothing, in view mode, when empty), turns into an input on a click in edit mode, commits on Enter or on leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.\n\nGitHub folder: units/field-row\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-field-row\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "type-term-popover",
+   "tag": "t:Type.popover",
+   "title": "Type definition popover",
+   "note": "Opens a type's definition and ontology link; to choose a type take type-chooser, for the picture alone take type-picture.",
+   "exhibit": "**What it does:** Shows a GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology.\n\nGitHub folder: units/type-term-popover\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-type-term-popover\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "type-chooser",
+   "tag": "t:Type.chooser",
+   "title": "Type chooser (GilbVeda type search)",
+   "note": "Search and pick a GilbVeda type; the Plan card's Type line is plan-type-field. For records take record-picker.",
+   "exhibit": "**What it does:** Lets a person search for a GilbVeda type and pick one from a short list with planes, definitions, a detail view and a note when more terms match than are shown.\n\nGitHub folder: units/type-chooser\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-type-chooser\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-type-field",
+   "tag": "t:Type.field",
+   "title": "Type field of a Plan card",
+   "note": "One GilbVeda type as a chip with the Replace question; the first line Type · Level · Version is plan-type-level-version. Plan.Type",
+   "exhibit": "**What it does:** Shows the Type line of a Plan card: one GilbVeda type chosen with the type chooser, shown as a chip that opens the type's definition, stored as the term address (\"No GilbVeda type\" stores `none`), with a question before an earlier concept is replaced.\n\nGitHub folder: units/plan-type-field\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-type-field\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-type-level-version",
+   "tag": "t:CauseEffectLevel.line",
+   "title": "Type · Level · Version line",
+   "note": "The first line of every Plan card with the level chooser; the project's levels come from project-levels.",
+   "exhibit": "**What it does:** Draws the one line every Plan card shows first, \"Type: <type> · Level: <level> · Version: <date>\", with the plain/constraint type switch and the level chooser.\n\nGitHub folder: units/plan-type-level-version\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-type-level-version\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "project-levels",
+   "tag": "t:CauseEffectLevel.project",
+   "title": "Project levels (Business, Product, Solution)",
+   "note": "Reads and adds a project's levels for the level chooser; the line that shows them is plan-type-level-version.",
+   "exhibit": "**What it does:** Builds the tree of a project's levels (Business, Product, Solution and any the project added) for a level chooser, and gives a card the one hook that reads them and adds a level, with the host doing every read and write.\n\nGitHub folder: units/project-levels\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-project-levels\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-source",
+   "tag": "t:Specification.source",
+   "title": "Source control (who said it)",
+   "note": "statedBy, derivedFrom or words for one Plan line; writes only through onCommit.",
+   "exhibit": "**What it does:** One source control for every Plan line: who said it (a person, organization or AI agent record), the document or decision it came from, or words for someone with no record yet.\n\nGitHub folder: units/plan-source\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-source\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-tag-picker",
+   "tag": "t:Specification.picker",
+   "title": "Plan record picker by tag",
+   "note": "Links to a Plan record by its tag or creates one; the link lines themselves are plan-tag-links.",
+   "exhibit": "**What it does:** Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.\n\nGitHub folder: units/plan-tag-picker\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-tag-picker\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-stakeholder-lines",
+   "tag": "t:StakeholderOf.line",
+   "title": "Stakeholder, Authority and Resource Owner lines",
+   "note": "Three Plan card lines in one unit; the pure rules are plan-stakeholders-model. Plan.DevelopmentResource",
+   "exhibit": "**What it does:** Draws the Stakeholder line and the Authority line of a Plan card, and on a Development Resource the Resource Owner line: linked people and organizations as chips with their role marks, names that are not records yet as text, the picker to link a record, creating a new stakeholder, removing, and an Authority's \"acts for\", with every read and write supplied by the host.\n\nGitHub folder: units/plan-stakeholder-lines\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-stakeholder-lines\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-tag-links",
+   "tag": "t:Specification.linklines",
+   "title": "Link lines (Part of, Sub-functions, Solution of)",
+   "note": "Seven link lines of a Plan card; the picker alone is plan-tag-picker, the pure model plan-links-model.",
+   "exhibit": "**What it does:** The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System), each shown by the linked records' live tags, with the host doing every read, cache and write.\n\nGitHub folder: units/plan-tag-links\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-tag-links\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-impacts",
+   "tag": "t:ImpactOn.line",
+   "title": "Impacts table of a Solution",
+   "note": "Impacts on Values and Development Resources; the pure model is plan-impacts-model.",
+   "exhibit": "**What it does:** The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.\n\nGitHub folder: units/plan-impacts\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-impacts\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "help-doc",
+   "tag": "t:HelpPage.blocks",
+   "title": "Help page building blocks",
+   "note": "Layout, sections, steps and notes of an in-app help page; the Description help is description-help.",
+   "exhibit": "**What it does:** The building blocks of an in-app help page: a layout with a contents list, sections, steps, lists, examples, keys, notes and in-page links.\n\nGitHub folder: units/help-doc\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-help-doc\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "description-help",
+   "tag": "t:HelpPage.description",
+   "title": "Description help panel",
+   "note": "Help for writing a Description in Keyword parts; built from help-doc.",
+   "exhibit": "**What it does:** The help panel for writing a Solution's or Function's Description in Keyword parts: what a Keyword is, the Assumption part, sub-parts, moving parts, pasting many parts at once and naming a source, each with an example that uses the card's own tag.\n\nGitHub folder: units/description-help\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-description-help\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "description-parts-view",
+   "tag": "t:SpecificationElement.view",
+   "title": "Description editor (Keyword parts)",
+   "note": "Draws and edits the Description as a tree of parts; the pure model is description-parts-model, the drag tree sortable-tree.",
+   "exhibit": "**What it does:** Draws and edits the Description of a Plan card as one record per Keyword part in a tree: add a part, edit its text and source, paste many parts at once, move a part up, down, in or out by buttons, keys or drag, and remove a part with its sub-parts, all written in one queue so the order of the writes is kept, with every read and write supplied by the host.\n\nGitHub folder: units/description-parts-view\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-description-parts-view\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-graph",
+   "tag": "t:Value.graph",
+   "title": "Value graph (Scale arrow and timeline)",
+   "note": "Draws and drags levels and never writes; the card line that holds it is value-illustration, the math value-graph-geometry. Plan.Value",
+   "exhibit": "**What it does:** The Value card's graph: the Scale as an arrow and as a timeline, with the levels as markers you can drag, a \"+ New\" menu, qualifier chips, endpoint pictures and a full-screen view; it never writes, the host saves what onChangeLevels gives.\n\nGitHub folder: units/value-graph\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-graph\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-card-write",
+   "tag": "t:Value.write",
+   "title": "Value card write layer",
+   "note": "Saves levels, qualifiers, meters and Scale as child records; a read-only Value card does not need it. Plan.Value",
+   "exhibit": "**What it does:** The Value card's write layer: its levels, Scale qualifiers and their option definitions, Meters and Meter lines, and the Scale record kept as lists, where one edit becomes the smallest writes (one changed item is one PATCH of its record, a new item one POST, a removed item one DELETE), with conflict handling, rollback and the migration of older stored lists, and every network call and cache supplied by the host.\n\nGitHub folder: units/value-card-write\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-card-write\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-scale-line",
+   "tag": "t:Scale.line",
+   "title": "Scale line of a Value card",
+   "note": "Unit, rate, context and direction; writes through onChange. The qualifiers of the Scale are value-qualifiers-line. Plan.Value",
+   "exhibit": "**What it does:** Draws and edits the Scale line of a Value card or a Development Resource card: its unit, rate and context (each [Qualifier] in the rate and context is a chip that jumps to that qualifier's row), which direction is better, and its source, giving every change up whole through onChange.\n\nGitHub folder: units/value-scale-line\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-scale-line\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-qualifiers-line",
+   "tag": "t:ScaleQualifier.line",
+   "title": "Qualifiers line of a Value card",
+   "note": "Edits the Scale qualifiers and their options; to pick a qualifier's value take qualifier-value-picker. Plan.Value",
+   "exhibit": "**What it does:** Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the \"Not in the Scale\" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.\n\nGitHub folder: units/value-qualifiers-line\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-qualifiers-line\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-endpoint-line",
+   "tag": "t:Value.endpoint",
+   "title": "Endpoint line of a Value card",
+   "note": "Subject and Reference types with pictures; writes through onChange. Plan.Value",
+   "exhibit": "**What it does:** Draws and edits the Endpoint line of a Value card: the Subject and the Reference, each a type picked from the ontology (with its picture and definition) and some words, and a button that finds the types for an older \"Subject = X, reference = Y\" text, giving every change up whole through onChange.\n\nGitHub folder: units/value-endpoint-line\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-endpoint-line\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-meters-line",
+   "tag": "t:Meter.line",
+   "title": "Meters line of a Value card",
+   "note": "Each Meter with its Human, AI and Instrument lines; writes through onChange. Plan.Value",
+   "exhibit": "**What it does:** Draws and edits the Meters line of a Value card: each Meter with its qualifiers and its Human, AI and Instrument lines, each line with its method and source, giving every change up whole through onChange.\n\nGitHub folder: units/value-meters-line\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-meters-line\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-levels-line",
+   "tag": "t:Level.line",
+   "title": "Levels line of a Value card (Goal, Budget)",
+   "note": "Every level with number, date, qualifiers and source; the drawn graph is value-graph. Plan.Value, Plan.DevelopmentResource",
+   "exhibit": "**What it does:** Draws and edits the Levels line of a Value card: every level (Fail, Survival, Past, Status, Tolerable, Goal or on a Development Resource Budget, Wish, or a word of your own) as one line with its number, date, qualifiers, conditions, source and note, with the kind menu, paste of many level lines, and the move of older stored lists, giving every change up whole through onChange.\n\nGitHub folder: units/value-levels-line\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-levels-line\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-illustration",
+   "tag": "t:Value.illustration",
+   "title": "Illustration line of a Value card",
+   "note": "The card line around value-graph; for the graph alone take value-graph. Plan.Value",
+   "exhibit": "**What it does:** Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.\n\nGitHub folder: units/value-illustration\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-value-illustration\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "plan-card",
+   "tag": "t:ScreenCard.plan",
+   "title": "Plan card engine",
+   "note": "One engine for all four Plan cards; to start from one card take function-card, solution-card, value-card or resource-card.",
+   "exhibit": "**What it does:** Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.\n\nGitHub folder: units/plan-card\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-plan-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "function-card",
+   "tag": "t:Function.card",
+   "title": "Function card",
+   "note": "The whole card for a Function or Function Constraint; for one line take its line unit. Built on plan-card.",
+   "exhibit": "**What it does:** The whole Function card: one component that draws the Plan card of a record of type Function or Function Constraint, with the lines of that type in order, every read and write supplied by the host.\n\nGitHub folder: units/function-card\nCommit: bd038a94d907e668d8f8ac63bcea2e64de9fbdc8\nPackage: @kaigilb/gilbplatformcode-function-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "solution-card",
+   "tag": "t:Solution.card",
+   "title": "Solution card",
+   "note": "The whole card for a Solution or Solution Constraint; for one line take its line unit. Built on plan-card.",
+   "exhibit": "**What it does:** The whole Solution card: one component that draws the Plan card of a record of type Solution or Solution Constraint, with the lines of that type in order, every read and write supplied by the host.\n\nGitHub folder: units/solution-card\nCommit: bd038a94d907e668d8f8ac63bcea2e64de9fbdc8\nPackage: @kaigilb/gilbplatformcode-solution-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "value-card",
+   "tag": "t:Value.card",
+   "title": "Value card",
+   "note": "The whole Value card; for one line take its line unit (value-scale-line, value-levels-line …). Built on plan-card. Plan.Value",
+   "exhibit": "**What it does:** The whole Value card: one component that draws the Plan card of a record of type Value, with its picture, Scale, Endpoint, Qualifiers, Levels and Meter lines and the lines of a Plan record, every read and write supplied by the host.\n\nGitHub folder: units/value-card\nCommit: bd038a94d907e668d8f8ac63bcea2e64de9fbdc8\nPackage: @kaigilb/gilbplatformcode-value-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "resource-card",
+   "tag": "t:Resource.card",
+   "title": "Development Resource card",
+   "note": "The whole Development Resource card (Budget, Resource Owner); it is the Value card for t:Resource. Built on plan-card. Plan.DevelopmentResource",
+   "exhibit": "**What it does:** The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.\n\nGitHub folder: units/resource-card\nCommit: bd038a94d907e668d8f8ac63bcea2e64de9fbdc8\nPackage: @kaigilb/gilbplatformcode-resource-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  }
+ ]
+}
