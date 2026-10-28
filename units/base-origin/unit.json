@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/base-origin",
+  "package": "@kaigilb/gilbplatformcode-base-origin",
+  "version": "0.1.0",
+  "purpose": "The one place an app sets the GilbPlatform origin and the hosts allowed to receive its credential, so every address and credential rule reads them the same way.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": []
+  },
+  "namedChanges": [
+    "this unit replaces six host literals with settings",
+    "There is none. The app this came from falls back to a local address when its environment names no origin; this unit throws instead"
+  ],
+  "newFiles": [
+    "src/baseOrigin.ts",
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

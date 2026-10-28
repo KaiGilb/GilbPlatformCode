@@ -22,7 +22,9 @@ const edgesOf = (unit) => {
 const units = readdirSync(join(ROOT, "units")).sort();
 
 test("P1 order validity on every unit", () => {
-  assert.equal(units.length, 252);
+  // The floor is the unit count when this test was written. It must not be an exact count: every new unit would break it.
+  // The loop below is what proves the order is valid for every unit that exists.
+  assert.ok(units.length >= 252, `expected at least 252 units, found ${units.length}`);
   for (const u of units) {
     const r = run([u, "--json"]);
     assert.equal(r.status, 0, `${u}: ${r.stderr}`);

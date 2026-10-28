@@ -1,0 +1,203 @@
+{
+  "schema": 1,
+  "unit": "units/vault-origin-rule",
+  "package": "@kaigilb/gilbplatformcode-vault-origin-rule",
+  "version": "0.1.0",
+  "purpose": "The one rule for which origin a vault address names and which URL may receive the app's credential, so every address and credential check answers the same way.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          19,
+          72
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          74,
+          98
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          100,
+          140
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          169,
+          175
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          177,
+          194
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          196,
+          220
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          222,
+          235
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          237,
+          277
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          279,
+          281
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          316,
+          321
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          384,
+          390
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          402,
+          408
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          413,
+          421
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          467,
+          468
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          470,
+          474
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          476,
+          484
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          486,
+          497
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          521,
+          527
+        ],
+        "to": "src/vaultOriginRule.ts"
+      },
+      {
+        "path": "gilb-photo@bf56ec7d8bfeb573b338d7248f953fe8e0fdd827:src/photoRef.ts",
+        "lines": [
+          17,
+          20
+        ],
+        "to": "src/photoSegments.ts"
+      },
+      {
+        "path": "gilb-photo@bf56ec7d8bfeb573b338d7248f953fe8e0fdd827:src/photoRef.ts",
+        "lines": [
+          79,
+          93
+        ],
+        "to": "src/photoSegments.ts"
+      },
+      {
+        "path": "gilb-photo@bf56ec7d8bfeb573b338d7248f953fe8e0fdd827:src/selfCard.ts",
+        "lines": [
+          38,
+          49
+        ],
+        "to": "src/photoSegments.ts"
+      },
+      {
+        "path": "gilb-photo@bf56ec7d8bfeb573b338d7248f953fe8e0fdd827:src/selfCard.ts",
+        "lines": [
+          51,
+          74
+        ],
+        "to": "src/photoSegments.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "every read of `BASE_ORIGIN` becomes `baseOrigin()` (peer `base-origin`)",
+    "`SYSTEM_VAULT_HOSTS.has(...)` becomes `systemVaultHosts().has(...)`",
+    "become the functions `sessionTokenUrl()` and `sessionDpopTokenUrl()`",
+    "the local-rig test `base.hostname === \"localhost\"` (line 138) becomes `localRigHosts().has(base.hostname)`",
+    "comments that name a host (`gilb.com`, `localhost` and example hosts) are reworded, no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
