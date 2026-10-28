@@ -6,7 +6,7 @@ The one setting "which origin serves the GilbVeda type documents", so every Plan
 
 The one setting "which origin serves the GilbVeda type documents". A Plan unit that has to write a type address (`<origin>/base/t/<Name>`, for example the Value card's default Endpoint) asks `termOrigin()` and builds the address from it, so all of them build it the same way. A shared unit must not name a host, so the app sets the origin once at start-up. Plain functions, no React, no network.
 
-- `setTermOrigin(origin)`: set the origin. The text is trimmed and one trailing `/` is removed. It throws a `TypeError` (message starts with `term-origin:`) when the text is empty or does not start with `http://` or `https://`.
+- `setTermOrigin(origin)`: set the origin. The text is trimmed and parsed with `new URL(...)`. It must be an `http:` or `https:` origin only: a host (with an optional port), a path of `/` at most, no query, no fragment and no user name or password. Otherwise it throws a `TypeError` (message starts with `term-origin:` and names what was wrong), and the earlier origin stays. What is stored is the URL standard's `origin`, so a trailing `/`, an explicit default port (`:443` on https, `:80` on http) and upper-case letters in the scheme or host are normalised.
 - `termOrigin()`: the origin that was set. If it was never set, it throws an `Error`: `term-origin: call setTermOrigin(<origin>) once at start-up`.
 - `resetTermOrigin()`: forget the origin (for tests).
 
@@ -15,7 +15,7 @@ The unit holds one piece of module state (the origin). An app must have ONE copy
 ## What this is not
 
 - Not a type registry and not a fetcher. It never asks the origin anything; it only keeps the text.
-- Not a URL parser. It checks the start of the text and trims the end; it does not check that a host follows.
+- Not a URL builder. It accepts an origin and nothing longer; it does not join paths.
 - Not a default. There is no built-in origin: a unit that needs one throws until the app has set it.
 
 ## How to take it
@@ -56,13 +56,14 @@ termOrigin(); // "https://<your ontology host>"
 
 - Do not call `setTermOrigin` per render or per record: it changes the address every unit builds, all at once.
 - Do not install a second copy of this unit: a unit that reads the origin would read a copy your `setTermOrigin` never set, and throw.
-- Do not put a path or a trailing slash you do not mean: a path is kept as typed (only one final `/` is cut).
+- Do not pass a path, a query or a fragment (`https://host/base`, `https://host?x=1`): it throws. Pass the origin, and let each unit add `/base/t/<Name>`.
 
 ## Wrong readings
 
-- "It is cleaned up like a URL." It is not: the text is trimmed and ONE final `/` is cut. `https://x.test//` gives `https://x.test/`. A path is kept: `https://x.test/a/` gives `https://x.test/a`.
-- "A scheme alone is refused." It is not: `https://` passes the start check and, with its last `/` cut, is kept as `https:/`. The unit checks the start of the text only.
-- "The scheme check ignores case." It does not: `HTTPS://x.test` is refused.
+- "It keeps the text as typed." It keeps the URL standard's origin: `https://Ontology.Example.Test:443/` is stored as `https://ontology.example.test`, and `http://example.test:8080` keeps its port.
+- "A path is allowed if it is the ontology's." It is not: `https://example.test/base` and `https://example.test//` throw (a path other than `/`). The same for `?x=1` (even a bare `?`), `#top` (even a bare `#`) and `user:secret@` in front of the host.
+- "A scheme alone is an origin." It is not: `https://` is not a URL and throws; so do `ftp://example.test` and `file:///x` (the scheme must be http or https).
+- "The scheme check is case-sensitive." It is not: `HTTPS://example.test` is stored as `https://example.test`.
 - "A refused value clears the old one." It does not: a `TypeError` leaves the earlier origin as it was.
 - "`termOrigin()` has a fallback." It has none: before `setTermOrigin` it throws.
 
