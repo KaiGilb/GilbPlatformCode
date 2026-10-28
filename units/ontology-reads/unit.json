@@ -2,12 +2,340 @@
   "schema": 1,
   "unit": "units/ontology-reads",
   "package": "@kaigilb/gilbplatformcode-ontology-reads",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "The public reads of the ontology: a term's definition, a type's picture and the live search of terms, none carrying a credential.",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
     "files": [
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          18,
+          18
+        ],
+        "to": "src/ontologyBrowse.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          1644,
+          1646
+        ],
+        "to": "src/ontologyBrowse.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          19,
+          20
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          43,
+          72
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          104,
+          105
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          112,
+          116
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          117,
+          131
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          132,
+          150
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          151,
+          161
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          162,
+          167
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          168,
+          175
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          176,
+          204
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          205,
+          205
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          206,
+          209
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          210,
+          231
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          232,
+          251
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          252,
+          259
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          260,
+          273
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          274,
+          292
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          421,
+          434
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          491,
+          529
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          530,
+          557
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          589,
+          591
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          592,
+          606
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          607,
+          609
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          610,
+          610
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          1104,
+          1152
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          1153,
+          1228
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          1229,
+          1266
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/ontologyBrowse.ts",
+        "lines": [
+          1267,
+          1313
+        ],
+        "to": "src/ontologyTerms.ts"
+      },
+      {
+        "path": "src/lib/base/termDefinition.ts",
+        "lines": [
+          51,
+          64
+        ],
+        "to": "src/termDefinition.ts"
+      },
+      {
+        "path": "src/lib/base/termDefinition.ts",
+        "lines": [
+          66,
+          74
+        ],
+        "to": "src/termDefinition.ts"
+      },
+      {
+        "path": "src/lib/base/termDefinition.ts",
+        "lines": [
+          76,
+          121
+        ],
+        "to": "src/termDefinition.ts"
+      },
+      {
+        "path": "src/lib/base/termSearch.ts",
+        "lines": [
+          69,
+          76
+        ],
+        "to": "src/termSearch.ts"
+      },
+      {
+        "path": "src/lib/base/termSearch.ts",
+        "lines": [
+          78,
+          90
+        ],
+        "to": "src/termSearch.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          15,
+          15
+        ],
+        "to": "src/typePicture.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          20,
+          32
+        ],
+        "to": "src/typePicture.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          64,
+          68
+        ],
+        "to": "src/typePicture.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          89,
+          117
+        ],
+        "to": "src/typePicture.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          123,
+          152
+        ],
+        "to": "src/typePicture.ts"
+      },
+      {
+        "path": "src/lib/base/typePicture.ts",
+        "lines": [
+          154,
+          161
+        ],
+        "to": "src/typePicture.ts"
+      },
       {
         "path": "src/lib/base/typeSearch.ts",
         "lines": [
@@ -167,110 +495,6 @@
           577
         ],
         "to": "src/typeSearch.ts"
-      },
-      {
-        "path": "src/lib/base/termSearch.ts",
-        "lines": [
-          69,
-          76
-        ],
-        "to": "src/termSearch.ts"
-      },
-      {
-        "path": "src/lib/base/termSearch.ts",
-        "lines": [
-          78,
-          90
-        ],
-        "to": "src/termSearch.ts"
-      },
-      {
-        "path": "src/lib/base/termDefinition.ts",
-        "lines": [
-          51,
-          64
-        ],
-        "to": "src/termDefinition.ts"
-      },
-      {
-        "path": "src/lib/base/termDefinition.ts",
-        "lines": [
-          66,
-          74
-        ],
-        "to": "src/termDefinition.ts"
-      },
-      {
-        "path": "src/lib/base/termDefinition.ts",
-        "lines": [
-          76,
-          121
-        ],
-        "to": "src/termDefinition.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          15,
-          15
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          20,
-          32
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          64,
-          68
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          89,
-          117
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          123,
-          152
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/typePicture.ts",
-        "lines": [
-          154,
-          161
-        ],
-        "to": "src/typePicture.ts"
-      },
-      {
-        "path": "src/lib/base/ontologyBrowse.ts",
-        "lines": [
-          18,
-          18
-        ],
-        "to": "src/ontologyBrowse.ts"
-      },
-      {
-        "path": "src/lib/base/ontologyBrowse.ts",
-        "lines": [
-          1644,
-          1646
-        ],
-        "to": "src/ontologyBrowse.ts"
       }
     ]
   },
@@ -281,7 +505,8 @@
     "`isLocalDevHost` tests `localRigHosts().has(h)` in place of the three fixed loopback names",
     "`DEFAULT_ONTOLOGY_HOST` (`\"veda.gilb.com\"`, line 18 of `ontologyBrowse.ts`) becomes `defaultOntologyHost()`",
     "`TYPE_TERM_ORIGIN` (`typePicture.ts` line 18, not copied) becomes `termOrigin()` in `typeTermUrl`",
-    "comments that name a host or a replaced constant are reworded, no code changed"
+    "comments that name a host or a replaced constant are reworded, no code changed",
+    "in `ontologyTerms.ts` (0.2.0) `DEFAULT_ONTOLOGY_HOST` (line 221, the default of `ontologyRefIri`'s `host`) is `defaultOntologyHost()` from `./ontologyBrowse`; the module's import is that one line; five long comments are rewritten shorter and the others lose tags and names; the test seam `__resetOntologyTermsForTest` is new code"
   ],
   "newFiles": [
     "src/index.ts"

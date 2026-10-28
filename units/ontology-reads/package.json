@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-ontology-reads",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The public reads of the ontology: a term's definition, a type's picture and the live search of terms, none carrying a credential.",
