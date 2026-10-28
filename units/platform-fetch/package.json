@@ -1,0 +1,31 @@
+{
+  "name": "@kaigilb/gilbplatformcode-platform-fetch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An authenticated fetch for a platform client: it moves every URL under the platform-host rule first, then signs it for that one request with the session's DPoP proof.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0"
+  }
+}
