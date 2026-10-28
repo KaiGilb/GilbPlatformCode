@@ -78,7 +78,7 @@
     "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
     "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
-    "@kaigilb/gilbplatformcode-plan-record-hooks": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-record-hooks": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-cache-kit": "^0.3.0",
     "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
