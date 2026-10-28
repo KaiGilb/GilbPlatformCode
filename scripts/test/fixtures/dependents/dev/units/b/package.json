@@ -1,0 +1,7 @@
+{
+  "name": "@kaigilb/gilbplatformcode-b",
+  "version": "0.0.0",
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-a": "file:../a"
+  }
+}

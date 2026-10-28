@@ -2,9 +2,9 @@
 // A unit's library peers in install order, with the npm install line.
 // Usage: node scripts/peers.mjs <unit-folder> [--json] [--repo <path>]
 // Exit: 0 ok · 1 usage · 2 unknown folder · 3 conflicting third-party peer ranges · 4 cycle · 5 peer name with no folder.
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadGraph } from "./lib/graph.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -14,27 +14,11 @@ const repo = flag("--repo") ? resolve(flag("--repo")) : resolve(HERE, "..");
 const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--repo");
 if (positional.length !== 1) { console.error("usage: node scripts/peers.mjs <unit-folder> [--json] [--repo <path>]"); process.exit(1); }
 
-const LIB = /^@kaigilb\/(gilbplatformcode|gilbwebsitecode)-/;
 const given = positional[0].replace(/\/+$/, "");
 const key = given.startsWith("web-units/") ? given : given.startsWith("units/") ? given : `units/${given}`;
 const wantWeb = key.startsWith("web-units/");
 
-// key ("units/x" | "web-units/x") -> { name, peers, files, third }
-const pkgs = new Map();
-for (const dir of wantWeb ? ["units", "web-units"] : ["units"]) {
-  const root = join(repo, dir);
-  if (!existsSync(root)) continue;
-  for (const f of readdirSync(root).sort()) {
-    const p = join(root, f, "package.json");
-    if (!existsSync(p)) continue;
-    const j = JSON.parse(readFileSync(p, "utf8"));
-    const libs = [], third = {};
-    for (const [n, r] of Object.entries(j.peerDependencies || {})) if (LIB.test(n)) libs.push(n); else third[n] = r;
-    for (const [n, v] of Object.entries(j.dependencies || {})) if (LIB.test(n) && String(v).startsWith("file:")) libs.push(n);
-    pkgs.set(`${dir}/${f}`, { name: j.name, libs: [...new Set(libs)], third });
-  }
-}
-const byName = new Map([...pkgs].map(([k, v]) => [v.name, k]));
+const { pkgs, byName } = loadGraph(repo, { web: wantWeb });
 if (!pkgs.has(key)) { console.error(`unknown unit folder: ${given}`); process.exit(2); }
 
 // Depth-first from the given unit; children visited in name order, so the order is deterministic.
