@@ -15,14 +15,20 @@ A unit that builds a vault address, or decides whether a URL may receive the app
 - `systemVaultHosts()`: the list as a `ReadonlySet<string>` (use `.has(hostname)`). Throws when never set.
 - `resetSystemVaultHosts()`: forget the list (for tests).
 
-Four more settings are optional and belong to the term and type search reads:
+Six more settings are optional. Four belong to the term and type search reads; two (added in 0.2.0) belong to the census of a vault's held types:
 
 - `setOntologyApiOrigin(origin)` / `ontologyApiOrigin()` / `resetOntologyApiOrigin()`: the origin that answers the public term search when it is not the platform origin. Same rules as `setBaseOrigin`. Unset gives `undefined` (no override); a blank text clears it.
 - `setMinOntologyQuery(n)` / `minOntologyQuery()` / `resetMinOntologyQuery()`: the shortest query, in letters, that reaches the ontology. A whole number of 0 or more. Unset gives `3`.
 - `setPublicCorpusOrigin(origin)` / `publicCorpusOrigin()` / `resetPublicCorpusOrigin()`: the origin of the public term corpus, used instead of the platform origin when that origin is a local rig that holds no ontology. Same rules as `setBaseOrigin`. Throws when never set. A unit reads it ONLY inside the local-rig branch, so a production host never needs it.
 - `setLocalRigHosts(names)` / `localRigHosts()` / `resetLocalRigHosts()`: the bare host names (an IPv6 literal in brackets) of a local development rig. A rule that applies only on a local rig tests `localRigHosts().has(<the platform origin's host>)`. The default is the empty set, so every rig branch is NOT taken until the app names its rig hosts.
+- `setOntologyApiOriginRaw(text)` / `ontologyApiOriginRaw()` / `resetOntologyApiOriginRaw()` (0.2.0): the ontology API origin as the app's census code reads it, **verbatim**: the text as given, not parsed to an origin and never refused. The census builds a term's address from it as the trimmed text with one trailing `/` removed, so a rig that serves terms over plain http, or under a path, can be named. Unset gives `undefined` (no override); a blank text clears it. The app read one environment value in two places, with two rules: `setOntologyApiOrigin` is the term search's (a parsed origin), this one is the census's (the text). An app that uses both sets both from the one text.
+- `setVocabTypeBatchRevisions(text)` / `vocabTypeBatchRevisions()` / `resetVocabTypeBatchRevisions()` (0.2.0): the platform revisions, or prefixes, at which the batched vocabulary read is served, as one comma-separated text; the reader splits, trims and drops empty parts. Unset gives `undefined`, which the app read as the empty text it got from an unset environment value: the batched read is served on no revision.
 
-The unit holds module state. An app must have ONE copy of it: every unit that reads these settings takes this unit as a peer dependency (`^0.1.0`), and the app installs it once.
+The unit holds module state. An app must have ONE copy of it: every unit that reads these settings takes this unit as a peer dependency (`^0.2.0`), and the app installs it once.
+
+### Changes in 0.2.0
+
+New settings only; nothing of 0.1.0 changed. `setOntologyApiOriginRaw` replaces the environment value `VITE_ONTOLOGY_API_ORIGIN` at `src/lib/base/heldTypes.ts` line 179 (read there as trimmed text with one trailing `/` removed, scheme included); `setVocabTypeBatchRevisions` replaces `VITE_VOCAB_TYPE_BATCH_REVISIONS` at `heldTypes.ts` line 229 (split at commas, trimmed, empty parts dropped). Both default to the no-environment value of the app (unset). Tests: 11 new in `src/baseOrigin.test.ts`. The peer range of `lws-records`, `lws-session-bridge`, `lws-vault-sets`, `ontology-reads`, `record-types`, `vault-origin-rule`, `lws-relations` and `record-cache-kit` on this unit is `^0.2.0`.
 
 ## What this is not
 
@@ -65,7 +71,7 @@ systemVaultHosts().has("ontology.example.test"); // true
 
 - One call to `setBaseOrigin("https://<your platform origin>")` at start-up, before any unit builds an address.
 - One call to `setSystemVaultHosts([...])` at start-up with the bare host names of the platform's system vaults (an empty list if you have none).
-- Optionally `setLocalRigHosts` (a development build names its rig host here, for example the loopback name it serves from; a production build leaves it empty), `setOntologyApiOrigin`, `setMinOntologyQuery` and `setPublicCorpusOrigin`, if the term and type search units are used and the defaults above are not right.
+- Optionally `setOntologyApiOriginRaw` and `setVocabTypeBatchRevisions` when the census of held types is used, and `setLocalRigHosts` (a development build names its rig host here, for example the loopback name it serves from; a production build leaves it empty), `setOntologyApiOrigin`, `setMinOntologyQuery` and `setPublicCorpusOrigin`, if the term and type search units are used and the defaults above are not right.
 
 ## Do not
 
@@ -86,7 +92,7 @@ systemVaultHosts().has("ontology.example.test"); // true
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`. No source lines are copied; this unit replaces six host literals with settings:
+GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`. No source lines are copied; this unit replaces six host literals with settings (two more since 0.2.0, listed under "Changes in 0.2.0"):
 
 - `BASE_ORIGIN`, `src/lib/base/config.ts` lines 16-17 (the environment value `VITE_BASE_ORIGIN`, falling back to a local address): replaced by `setBaseOrigin` / `baseOrigin()`.
 - `SYSTEM_VAULT_HOSTS`, `src/lib/base/config.ts` lines 161-167 (a fixed set of five host names): replaced by `setSystemVaultHosts` / `systemVaultHosts()`.

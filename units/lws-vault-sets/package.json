@@ -30,7 +30,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-base-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
     "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
     "@kaigilb/gilbplatformcode-narrow-total": "^0.1.0",

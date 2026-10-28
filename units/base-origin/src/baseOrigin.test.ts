@@ -2,6 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   baseOrigin,
   localRigHosts,
+  ontologyApiOriginRaw,
+  resetOntologyApiOriginRaw,
+  resetVocabTypeBatchRevisions,
+  setOntologyApiOriginRaw,
+  setVocabTypeBatchRevisions,
+  vocabTypeBatchRevisions,
   minOntologyQuery,
   ontologyApiOrigin,
   publicCorpusOrigin,
@@ -28,6 +34,8 @@ afterEach(() => {
   resetMinOntologyQuery();
   resetPublicCorpusOrigin();
   resetLocalRigHosts();
+  resetOntologyApiOriginRaw();
+  resetVocabTypeBatchRevisions();
 });
 
 describe("setBaseOrigin / baseOrigin", () => {
@@ -302,6 +310,62 @@ describe("the settings are independent", () => {
   });
 });
 
+describe("setOntologyApiOriginRaw / ontologyApiOriginRaw (0.2.0)", () => {
+  test("unset is undefined: no override", () => {
+    expect(ontologyApiOriginRaw()).toBeUndefined();
+  });
+  test("the text is kept exactly as given: a scheme, a port, a path and a trailing slash all stay", () => {
+    setOntologyApiOriginRaw("http://rig.example.test:8787/base/");
+    expect(ontologyApiOriginRaw()).toBe("http://rig.example.test:8787/base/");
+  });
+  test("it is not parsed to an origin and never throws", () => {
+    expect(() => setOntologyApiOriginRaw("not a url")).not.toThrow();
+    expect(ontologyApiOriginRaw()).toBe("not a url");
+  });
+  test("surrounding blanks are kept (the reader trims), a blank text clears it", () => {
+    setOntologyApiOriginRaw("  https://a.example.test ");
+    expect(ontologyApiOriginRaw()).toBe("  https://a.example.test ");
+    setOntologyApiOriginRaw("   ");
+    expect(ontologyApiOriginRaw()).toBeUndefined();
+  });
+  test("it is separate from the parsed ontology API origin", () => {
+    setOntologyApiOrigin("https://a.example.test");
+    expect(ontologyApiOriginRaw()).toBeUndefined();
+    setOntologyApiOriginRaw("https://b.example.test/x/");
+    expect(ontologyApiOrigin()).toBe("https://a.example.test");
+  });
+  test("reset forgets it", () => {
+    setOntologyApiOriginRaw("https://a.example.test");
+    resetOntologyApiOriginRaw();
+    expect(ontologyApiOriginRaw()).toBeUndefined();
+  });
+});
+
+describe("setVocabTypeBatchRevisions / vocabTypeBatchRevisions (0.2.0)", () => {
+  test("unset is undefined: the batched read is served on no revision", () => {
+    expect(vocabTypeBatchRevisions()).toBeUndefined();
+  });
+  test("a freshly loaded module starts unset, for both new settings", async () => {
+    vi.resetModules();
+    const fresh = await import("./baseOrigin");
+    expect(fresh.vocabTypeBatchRevisions()).toBeUndefined();
+    expect(fresh.ontologyApiOriginRaw()).toBeUndefined();
+  });
+  test("the text is kept exactly as given", () => {
+    setVocabTypeBatchRevisions(" abc123, def456 ,");
+    expect(vocabTypeBatchRevisions()).toBe(" abc123, def456 ,");
+  });
+  test("an empty text is kept as the empty text", () => {
+    setVocabTypeBatchRevisions("");
+    expect(vocabTypeBatchRevisions()).toBe("");
+  });
+  test("reset forgets it", () => {
+    setVocabTypeBatchRevisions("abc123");
+    resetVocabTypeBatchRevisions();
+    expect(vocabTypeBatchRevisions()).toBeUndefined();
+  });
+});
+
 describe("the export list", () => {
   test("is exactly these functions", () => {
     expect(Object.keys(api).sort()).toEqual([
@@ -309,20 +373,26 @@ describe("the export list", () => {
       "localRigHosts",
       "minOntologyQuery",
       "ontologyApiOrigin",
+      "ontologyApiOriginRaw",
       "publicCorpusOrigin",
       "resetBaseOrigin",
       "resetLocalRigHosts",
       "resetMinOntologyQuery",
       "resetOntologyApiOrigin",
+      "resetOntologyApiOriginRaw",
       "resetPublicCorpusOrigin",
       "resetSystemVaultHosts",
+      "resetVocabTypeBatchRevisions",
       "setBaseOrigin",
       "setLocalRigHosts",
       "setMinOntologyQuery",
       "setOntologyApiOrigin",
+      "setOntologyApiOriginRaw",
       "setPublicCorpusOrigin",
       "setSystemVaultHosts",
+      "setVocabTypeBatchRevisions",
       "systemVaultHosts",
+      "vocabTypeBatchRevisions",
     ]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-base-origin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The one place an app sets the GilbPlatform origin and the hosts allowed to receive its credential, so every address and credential rule reads them the same way.",
