@@ -193,7 +193,10 @@ describe("planValue card round trip", () => {
       expect(d.levels).toEqual([]);
       expect(d.scale.text).toBe("");
     }
-    expect(Object.values(valueCardPatch(readValueCard({}))).every((v) => v === null)).toBe(true);
+    // An empty Value shows Thing / Person; the patch of that read carries them (written only with a first Endpoint save).
+    const empty = valueCardPatch(readValueCard({})) as Record<string, Record<string, Record<string, unknown>>>;
+    expect(empty.endpoint["a:endpointSubject"]!["@id"]).toBe("https://ontology.example.test/base/t/Thing");
+    expect(empty.endpoint["a:endpointReference"]!["@id"]).toBe("https://ontology.example.test/base/t/Person");
   });
 });
 

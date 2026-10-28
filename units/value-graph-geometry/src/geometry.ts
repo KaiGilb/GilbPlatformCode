@@ -2,7 +2,7 @@
  * Pure geometry for the Value card's Picture: grouping levels into rows, the shared axis,
  * value <-> pixel mapping and snapping. No React here, so it can be tested alone.
  */
-import type { ScaleDirection, ValueCardData, ValueLevel } from "@kaigilb/gilbplatformcode-value-card-model";
+import { kindClass, type ScaleDirection, type ValueCardData, type ValueLevel } from "@kaigilb/gilbplatformcode-value-card-model";
 
 /**
  * Marker sizes shared by the Arrow and the Timeline. `half` is the half-height the labels clear
@@ -20,8 +20,8 @@ export const MARKER = {
 } as const;
 
 /** The half-height of a kind's marker, for placing labels clear of it. */
-export function markerHalf(kind: string): number {
-  const k = kind.toLowerCase();
+export function markerHalf(kind: string, resource?: boolean): number {
+  const k = kindClass(kind, resource);
   if (k === "status") return MARKER.status.half;
   if (k === "past") return MARKER.past.half;
   if (k === "goal") return MARKER.goal.half;

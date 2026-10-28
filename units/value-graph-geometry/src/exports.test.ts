@@ -70,7 +70,7 @@ describe("markers", () => {
     });
   });
   it("markerHalf is the half-height of a kind, without case; any other word is a diamond", () => {
-    expect(["Status", "past", "GOAL", "Tolerable", "fail", "Survival", "Wish", "Budget", ""].map(markerHalf)).toEqual([12, 12.5, 17, 15, 15, 15, 15.3, 12.8, 12.8]);
+    expect(["Status", "past", "GOAL", "Tolerable", "fail", "Survival", "Wish", "Budget", ""].map((k) => markerHalf(k))).toEqual([12, 12.5, 17, 15, 15, 15, 15.3, 12.8, 12.8]);
   });
 });
 

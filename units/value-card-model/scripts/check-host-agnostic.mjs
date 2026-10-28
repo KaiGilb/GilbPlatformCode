@@ -23,6 +23,7 @@ const FORBIDDEN = [/gilb\.com/i, /veda\./i, /localhost/i, /127\.0\.0\.1/, /w3id\
 const ALLOWED_IMPORT = [
   /^\.\/[A-Za-z0-9_-]+$/,
   /^@kaigilb\/gilbplatformcode-(plan-card-facts|qualifier-values|type-key)$/,
+  /^@kaigilb\/gilbplatformcode-(plan-kinds|term-origin)$/,
 ];
 
 if (!existsSync(srcRoot)) {

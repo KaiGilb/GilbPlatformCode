@@ -1,7 +1,7 @@
 /**
  * The Value card's reading, writing and level-line text. Pure: no React.
  *
- * Every stored name is a live GilbVeda term : VALUE_TERMS (planValueModel.ts), LEVEL_TERMS and
+ * Every stored name is a live GilbVeda term: VALUE_TERMS (planValueModel.ts), LEVEL_TERMS and
  * VALUE_CHILD_TERMS below. The older names are read as bare slugs only (fallback) and are never written; a record that
  * holds them gets the new keys and the old ones nulled in the same patch.
  * Reading never throws: junk in is empty data. Members this file does not own are kept and written back.
@@ -16,11 +16,14 @@ import {
   writeLineSource,
   type PlanSourceValue,
 } from "@kaigilb/gilbplatformcode-plan-card-facts";
+import { isResourceType } from "@kaigilb/gilbplatformcode-plan-kinds";
 import { ALL_VALUE, eq, packQualifierValues, qualifierValues } from "@kaigilb/gilbplatformcode-qualifier-values";
+import { termOrigin } from "@kaigilb/gilbplatformcode-term-origin";
 import { isTypeName } from "@kaigilb/gilbplatformcode-type-key";
 import type { BaseRecord } from "./baseRecord";
 import {
   STANDARD_LEVEL_KINDS,
+  kindClass,
   LEGACY_VALUE_SLUGS,
   VALUE_TERMS,
   type EndpointPart,
@@ -62,7 +65,7 @@ export function blankLevelQualifier(): LevelQualifier {
   return { when: "", variables: {}, conditions: [], side: "" };
 }
 
-export function blankLevel(kind = "Goal"): ValueLevel {
+export function blankLevel(kind = "Goal"): ValueLevel {  // a Resource card passes "Budget"
   return { kind, value: null, qualifier: blankLevelQualifier(), source: {}, note: "" };
 }
 
@@ -80,13 +83,15 @@ export interface LevelLikeOpts {
   when?: string;
   /** Click-to-place: this value replaces the default value. */
   value?: number;
+  /** The card is a Development Resource: Budget counts as the Goal point. */
+  resource?: boolean;
 }
 
 /** The member of `kinds` (lower case) with the latest date, ties to the later one, that has a value. */
-function latestOf(members: readonly ValueLevel[], kinds: string[], needValue: boolean): ValueLevel | undefined {
+function latestOf(members: readonly ValueLevel[], kinds: string[], needValue: boolean, resource?: boolean): ValueLevel | undefined {
   let best: ValueLevel | undefined;
   for (const l of members) {
-    if (!kinds.includes(l.kind.toLowerCase())) continue;
+    if (!kinds.includes(kindClass(l.kind, resource))) continue;
     if (needValue && l.value === null) continue;
     if (!best || l.qualifier.when >= best.qualifier.when) best = l;
   }
@@ -115,13 +120,13 @@ export function levelLike(from: ValueLevel, kind: string, opts: LevelLikeOpts): 
   if (opts.when !== undefined) when = opts.when;
   else if (k === "status") when = opts.today ?? localToday();
   else if (k === "past") when = "";
-  else when = latestOf(opts.members, ["tolerable", "goal", "wish"], false)?.qualifier.when ?? "";
+  else when = latestOf(opts.members, ["tolerable", "goal", "wish"], false, opts.resource)?.qualifier.when ?? "";
   let value: number;
   if (opts.value !== undefined) value = opts.value;
   else {
     const status = latestOf(opts.members, ["status"], true);
     const tol = latestOf(opts.members, ["tolerable"], true);
-    const goal = latestOf(opts.members, ["goal"], true);
+    const goal = latestOf(opts.members, ["goal"], true, opts.resource);
     if (status) value = status.value as number;
     else if (tol && goal) value = ((tol.value as number) + (goal.value as number)) / 2;
     else value = opts.axisMid;
@@ -132,6 +137,21 @@ export function levelLike(from: ValueLevel, kind: string, opts: LevelLikeOpts): 
 
 export function blankEndpointPart(): EndpointPart {
   return { typeIri: "", typeLabel: "", words: "" };
+}
+
+/** An Endpoint part built as a type pick builds it (same IRI form and label), words empty. */
+function defaultEndpointPart(typeName: string): EndpointPart {
+  return { typeIri: `${termOrigin()}/base/t/${typeName}`, typeLabel: typeName, words: "" };
+}
+
+/** The Endpoint types a card shows before any Endpoint is stored: a Value Thing / Person, a Development Resource Organization / Person. */
+export function defaultEndpointFor(resource?: boolean): { subject: EndpointPart; reference: EndpointPart } {
+  return { subject: defaultEndpointPart(resource ? "Organization" : "Thing"), reference: defaultEndpointPart("Person") };
+}
+
+/** The Scale direction a card shows before any Scale is stored: a Development Resource "lower" (less cost is better), a Value "higher". */
+export function defaultDirectionFor(resource?: boolean): ScaleDirection {
+  return resource ? "lower" : "higher";
 }
 
 export function emptyValueCard(): ValueCardData {
@@ -344,7 +364,7 @@ function readScale(raw: unknown): ValueCardData["scale"] {
  * The facts of the Value's Scale RECORD (a t:Scale, `a:partOf` the Value), keyed `a:`. Null when the Scale is empty.
  * The Value itself carries only `a:hasScale` = `{"@id": record}`; the Scale is never written inline.
  */
-export function scaleFacts(s: ValueCardData["scale"]): Rec | null {
+export function scaleFacts(s: ValueCardData["scale"], resource?: boolean): Rec | null {
   const entry = base(s, SCALE_OWNED);
   const text = s.text.trim();
   set(entry, "description", text);
@@ -352,7 +372,7 @@ export function scaleFacts(s: ValueCardData["scale"]): Rec | null {
   set(entry, "rate", s.rate.trim());
   set(entry, "scaleContext", s.context.trim());
   const facts = sourceWire(s.source);
-  const any = text || s.unit.trim() || s.rate.trim() || s.context.trim() || Object.keys(facts).length || s.direction !== "higher";
+  const any = text || s.unit.trim() || s.rate.trim() || s.context.trim() || Object.keys(facts).length || s.direction !== defaultDirectionFor(resource);
   if (!any && !hasUnknown(entry, SCALE_OWNED)) return null;
   // Always stored, "lower" included, so a later change of the default can never flip a saved Value.
   entry["a:scaleDirection"] = s.direction;
@@ -560,9 +580,19 @@ const slugOf = (term: string) => term.slice(2);
 /** The type name (no `t:`) of a custom-word level. The word itself is in `a:label`. */
 export const CUSTOM_LEVEL_TYPE = "Level";
 
-/** The record type name a level kind is stored under. */
-export function levelTypeName(kind: string): string {
+/** The stored type of a Development Resource's Budget level (`t:Budget`). A Value's custom word "Budget" stays `t:Level`. */
+export const BUDGET_LEVEL_TYPE = "Budget";
+
+/** On a Development Resource the level word "Goal" is Budget (typed, pasted or chosen). Any other kind, and every Value, is unchanged. */
+export function resourceKind(kind: string, resource?: boolean): string {
+  return resource && kind.trim().toLowerCase() === "goal" ? "Budget" : kind;
+}
+
+/** The record type name a level kind is stored under. On a Resource card, "Budget" is `t:Budget`; `cardTypeUri` is left out for a Value. */
+export function levelTypeName(kind: string, cardTypeUri?: string): string {
+  if (cardTypeUri) kind = resourceKind(kind, isResourceType(cardTypeUri));
   const hit = STANDARD_LEVEL_KINDS.find((k) => k.toLowerCase() === kind.trim().toLowerCase());
+  if (!hit && cardTypeUri && isResourceType(cardTypeUri) && kind.trim().toLowerCase() === "budget") return BUDGET_LEVEL_TYPE;
   return hit ?? CUSTOM_LEVEL_TYPE;
 }
 
@@ -571,6 +601,7 @@ export function isLevelType(typeUri: string): boolean {
   return (
     isTypeName(typeUri, CUSTOM_LEVEL_TYPE) ||
     isTypeName(typeUri, LEGACY_CUSTOM_LEVEL_TYPE) ||
+    isTypeName(typeUri, BUDGET_LEVEL_TYPE) ||
     STANDARD_LEVEL_KINDS.some((k) => isTypeName(typeUri, k))
   );
 }
@@ -652,7 +683,7 @@ export function levelNumberTyped(level: object | null | undefined): string | und
 export function levelDrawNumber(text: string): number | null {
   const one = (t: string): number | null => {
     const s = t.trim();
-    // V38b: one comma + exactly 3 digits is thousands (1,000); other digit counts are a decimal comma (1,5); with both marks the last
+    // One comma + exactly 3 digits is thousands (1,000); other digit counts are a decimal comma (1,5); with both marks the last
     // one is the decimal (1.000,5 and 1,000.5 are 1000.5); several commas are thousands (1,000,000). That is parseNumberText.
     const parsed = parseNumberText(s);
     if (parsed !== null) return Number.isFinite(parsed) ? parsed : null;
@@ -729,7 +760,7 @@ export function levelNumberText(level: ValueLevel): string | null {
 }
 
 /** The facts of one level, keyed by slug, as a level record holds them. Empty facts are left out. */
-function levelFacts(level: ValueLevel): Rec {
+function levelFacts(level: ValueLevel, cardTypeUri?: string): Rec {
   const out: Rec = {};
   const q = level.qualifier;
   const numText = levelNumberText(level);
@@ -740,7 +771,7 @@ function levelFacts(level: ValueLevel): Rec {
   if (choice.length) out[slugOf(LEVEL_TERMS.choice)] = choice;
   if (q.side) out[slugOf(LEVEL_TERMS.side)] = q.side;
   if (level.note.trim()) out[slugOf(LEVEL_TERMS.note)] = level.note.trim();
-  if (levelTypeName(level.kind) === CUSTOM_LEVEL_TYPE) out[slugOf(LEVEL_TERMS.label)] = level.kind.trim();
+  if (levelTypeName(level.kind, cardTypeUri) === CUSTOM_LEVEL_TYPE) out[slugOf(LEVEL_TERMS.label)] = level.kind.trim();
   return out;
 }
 
@@ -774,12 +805,12 @@ export function levelTagTry(tag: string, n: number): string {
 }
 
 /** The facts to create a level record with (slugs). `order` is its `a:elementOrder`; `source` rides in `a:lineSources`. */
-export function levelCreateFacts(level: ValueLevel, tag: string, parentUri: string, order: number): Rec {
+export function levelCreateFacts(level: ValueLevel, tag: string, parentUri: string, order: number, cardTypeUri?: string): Rec {
   const facts: Rec = {
     [slugOf(LEVEL_TERMS.tag)]: tag,
     [slugOf(LEVEL_TERMS.partOf)]: { "@id": parentUri },
     [slugOf(LEVEL_TERMS.order)]: order,
-    ...levelFacts(level),
+    ...levelFacts(level, cardTypeUri),
   };
   if (!planSourceEmpty(level.source)) {
     facts[slugOf(LEVEL_TERMS.sources)] = writeLineSource([], LEVEL_TERMS.value, level.source);
@@ -834,8 +865,8 @@ function withoutSourceKey(raw: unknown, legacyKey: string): unknown[] {
  * Empty when nothing changed. Does not include the tag (the caller rebuilds it when this is not empty).
  * A record that still holds an older key is rewritten whole when it is edited: the new keys are written and the old ones nulled.
  */
-export function levelPatch(row: BaseRecord, level: ValueLevel): Record<string, unknown> {
-  const want = levelFacts(level);
+export function levelPatch(row: BaseRecord, level: ValueLevel, cardTypeUri?: string): Record<string, unknown> {
+  const want = levelFacts(level, cardTypeUri);
   const patch: Record<string, unknown> = {};
   const slugs = [...LEVEL_FACT_SLUGS, slugOf(LEVEL_TERMS.label)];
   for (const slug of slugs) {
@@ -874,6 +905,7 @@ export function levelPatch(row: BaseRecord, level: ValueLevel): Record<string, u
 
 function kindOfRow(row: BaseRecord): string | null {
   for (const k of STANDARD_LEVEL_KINDS) if (isTypeName(row.typeUri, k)) return k;
+  if (isTypeName(row.typeUri, BUDGET_LEVEL_TYPE)) return "Budget";
   if (isTypeName(row.typeUri, CUSTOM_LEVEL_TYPE) || isTypeName(row.typeUri, LEGACY_CUSTOM_LEVEL_TYPE)) {
     const word = rowServedFact(row, slugOf(LEVEL_TERMS.label));
     return typeof word === "string" && word.trim() ? word.trim() : null;
@@ -1081,15 +1113,15 @@ export function readScaleRecord(row: BaseRecord): ValueCardData["scale"] {
 }
 
 /** The facts to create the Scale record with (slugs): tag, `a:partOf`, then the Scale's own facts (direction always). */
-export function scaleCreateFacts(s: ValueCardData["scale"], tag: string, parentUri: string, _order?: number): Rec {
+export function scaleCreateFacts(s: ValueCardData["scale"], tag: string, parentUri: string, _order?: number, resource?: boolean): Rec {
   const facts: Rec = { [slugOf(CT.tag)]: tag, [slugOf(CT.partOf)]: { "@id": parentUri } };
-  for (const [k, v] of Object.entries(scaleFacts(s) ?? { "a:scaleDirection": s.direction })) facts[k.slice(2)] = v;
+  for (const [k, v] of Object.entries(scaleFacts(s, resource) ?? { "a:scaleDirection": s.direction })) facts[k.slice(2)] = v;
   return facts;
 }
 
 /** The patch that takes the stored Scale record to `s`: only the facts that differ. Empty when nothing changed. */
-export function scalePatch(row: BaseRecord, s: ValueCardData["scale"]): Record<string, unknown> {
-  const want = scaleFacts(s) ?? {};
+export function scalePatch(row: BaseRecord, s: ValueCardData["scale"], resource?: boolean): Record<string, unknown> {
+  const want = scaleFacts(s, resource) ?? {};
   const patch: Record<string, unknown> = {};
   for (const slug of SCALE_FACT_SLUGS) {
     const next = textOf(want[`a:${slug}`]) || null;
@@ -1463,7 +1495,7 @@ export function readLegacyLevels(raw: unknown): ValueLevel[] {
 /* ----------------------------------------------------- the whole card data */
 
 /** Read the five Value members from a record's facts (bare slug or `a:` key, object or JSON string). Never throws. */
-export function readValueCard(facts: Record<string, unknown> | null | undefined, scaleRow?: BaseRecord | null): ValueCardData {
+export function readValueCard(facts: Record<string, unknown> | null | undefined, scaleRow?: BaseRecord | null, resource?: boolean): ValueCardData {
   const f = facts ?? {};
   const safe = <T>(fn: () => T, empty: T): T => {
     try {
@@ -1473,7 +1505,7 @@ export function readValueCard(facts: Record<string, unknown> | null | undefined,
     }
   };
   const blank = emptyValueCard();
-  return {
+  const card: ValueCardData = {
     // The Scale record (a:hasScale -> @id), else an inline a:hasScale, else the older a:valueScale.
     // A reference with no record behind it (gone, or not among the Value's parts) is no Scale: the older a:valueScale shows if it is there.
     scale: safe(
@@ -1490,6 +1522,12 @@ export function readValueCard(facts: Record<string, unknown> | null | undefined,
     meters: safe(() => readMeters(memberValue(f, VALUE_SLUGS.meters)), []),
     levels: safe(() => readLegacyLevels(memberValue(f, VALUE_SLUGS.levels)), []),
   };
+  // Defaults are shown until something is stored (`raw` is set only on a stored member): a Resource's Scale direction is "lower"
+  // (a Value's stays "higher"), and the Endpoint types come from defaultEndpointFor. A stored Scale or Endpoint is never overridden,
+  // an old stored Scale with no direction still reads "lower", and nothing is written by showing them.
+  if (resource && !rawOf(card.scale)) card.scale = { ...card.scale, direction: defaultDirectionFor(true) };
+  if (!rawOf(card.endpoint)) card.endpoint = { ...card.endpoint, ...defaultEndpointFor(resource) };
+  return card;
 }
 
 /** The patch for the whole card, keyed by slug. An empty member is `null` (removed). */
@@ -1606,9 +1644,21 @@ export const PRESET_QUALIFIERS: readonly string[] = [
 
 /** The three blank rows an empty Value shows in Edit, ready to fill. */
 export const DEFAULT_LEVEL_ROWS: readonly string[] = ["Status", "Tolerable", "Goal"];
+/** The same three rows on a Development Resource: Budget for Goal. */
+export const RESOURCE_DEFAULT_LEVEL_ROWS: readonly string[] = ["Status", "Tolerable", "Budget"];
 
 /** The kinds "+ Level" offers directly, always, even when one exists. Fail and Survival are behind "More ▾"; any other word is typed. */
 export const OFFERED_LEVEL_KINDS: readonly string[] = ["Past", "Status", "Tolerable", "Goal", "Wish"];
+/** The same on a Development Resource: Budget for Goal. */
+export const RESOURCE_OFFERED_LEVEL_KINDS: readonly string[] = ["Past", "Status", "Tolerable", "Budget", "Wish"];
+
+/** The per-type lists the Levels line and the graph's menu use. `resource` = the card is a Development Resource. */
+export function defaultLevelRowsFor(resource?: boolean): readonly string[] {
+  return resource ? RESOURCE_DEFAULT_LEVEL_ROWS : DEFAULT_LEVEL_ROWS;
+}
+export function offeredLevelKindsFor(resource?: boolean): readonly string[] {
+  return resource ? RESOURCE_OFFERED_LEVEL_KINDS : OFFERED_LEVEL_KINDS;
+}
 
 /**
  * The row a "+ Level" click adds. Status gets today, any other kind no date. The qualifier choices (names, conditions, side)
@@ -1768,7 +1818,8 @@ function parseLevelLineInner(text: string, variables: readonly ScaleVariable[], 
     const tail = m[3]!.trim();
     let value: number | null = null;
     if (tail) {
-      const n = parseNumberText(tail);
+      // "2 000" (space-grouped thousands) reads as 2000; the author's text stays in valueText.
+      const n = parseNumberText(/^-?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:[.,]\d+)?$/.test(tail) ? tail.replace(/[ \u00a0\u202f]/g, "") : tail);
       if (n === null || !Number.isFinite(n)) return null;
       value = n;
     }
@@ -1975,13 +2026,13 @@ export function levelGroupKey(level: ValueLevel): string {
   return groupKey(level.qualifier);
 }
 
-function kindRank(kind: string): number {
-  const i = STANDARD_LEVEL_KINDS.findIndex((k) => k.toLowerCase() === kind.toLowerCase());
+function kindRank(kind: string, resource?: boolean): number {
+  const i = STANDARD_LEVEL_KINDS.findIndex((k) => k.toLowerCase() === kindClass(kind, resource));
   return i >= 0 ? i : STANDARD_LEVEL_KINDS.length;
 }
 
 /** Groups in first-seen order; inside a group the standard kinds in their order, custom words after Wish. */
-export function sortLevels(levels: readonly ValueLevel[], _direction?: ScaleDirection): ValueLevel[] {
+export function sortLevels(levels: readonly ValueLevel[], _direction?: ScaleDirection, resource?: boolean): ValueLevel[] {
   const order: string[] = [];
   const groups = new Map<string, ValueLevel[]>();
   for (const l of levels) {
@@ -1995,7 +2046,7 @@ export function sortLevels(levels: readonly ValueLevel[], _direction?: ScaleDire
   const out: ValueLevel[] = [];
   for (const key of order) {
     const g = groups.get(key)!.map((l, i) => ({ l, i }));
-    g.sort((a, b) => kindRank(a.l.kind) - kindRank(b.l.kind) || a.i - b.i);
+    g.sort((a, b) => kindRank(a.l.kind, resource) - kindRank(b.l.kind, resource) || a.i - b.i);
     out.push(...g.map((x) => x.l));
   }
   return out;
