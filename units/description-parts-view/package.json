@@ -1,0 +1,71 @@
+{
+  "name": "@kaigilb/gilbplatformcode-description-parts-view",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Description line of a Solution or Solution Constraint: one record per Keyword part, shown as a tree; add, edit the text and source, paste many parts, move by buttons, keys or drag, remove a part with its sub-parts, all written in one queue. The host provides every read and write.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "test"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
+    "@kaigilb/gilbplatformcode-description-help": "^0.1.0",
+    "@kaigilb/gilbplatformcode-description-parts-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-fact-faithful": "^0.1.0",
+    "@kaigilb/gilbplatformcode-field-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-button-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-source": "^0.1.0",
+    "@kaigilb/gilbplatformcode-sortable-tree": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-description-help": "file:../description-help",
+    "@kaigilb/gilbplatformcode-description-parts-model": "file:../description-parts-model",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "file:../entity-ref-value",
+    "@kaigilb/gilbplatformcode-fact-faithful": "file:../fact-faithful",
+    "@kaigilb/gilbplatformcode-field-row": "file:../field-row",
+    "@kaigilb/gilbplatformcode-help-doc": "file:../help-doc",
+    "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-plan-button-row": "file:../plan-button-row",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",
+    "@kaigilb/gilbplatformcode-plan-links-model": "file:../plan-links-model",
+    "@kaigilb/gilbplatformcode-plan-source": "file:../plan-source",
+    "@kaigilb/gilbplatformcode-record-picker": "file:../record-picker",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-remove-control": "file:../remove-control",
+    "@kaigilb/gilbplatformcode-sortable-tree": "file:../sortable-tree",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
