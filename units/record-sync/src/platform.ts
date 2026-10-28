@@ -126,6 +126,17 @@ async function plainRequest(
   return { status: res.status, url, headers: res.headers, json, text };
 }
 
+/** Refuse an answer whose status is not one of `ok`, saying what was asked and what came back. */
+export function expectStatus(answer: PlatformAnswer, method: string, ok: readonly number[]): PlatformAnswer {
+  if (ok.includes(answer.status)) return answer;
+  throw new PlatformError(
+    `${method} ${answer.url} answered ${answer.status}: ${answer.text.slice(0, 300)}`,
+    answer.status,
+    answer.url,
+    answer.text,
+  );
+}
+
 /** A vault id as a path segment. The vault id is the `vaultId` the platform's own vault
  *  enumeration serves (`GET /lws/vaults`), percent-encoded. ⛔ Never a name or a host label. */
 export function vaultSegment(vaultId: string): string {

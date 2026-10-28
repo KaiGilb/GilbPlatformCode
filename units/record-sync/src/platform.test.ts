@@ -1,6 +1,6 @@
 // New tests: the exports of platform.ts, pinned.
 import { describe, expect, it, vi } from "vitest";
-import { PlatformError, request, routeUrl, vaultSegment, type PlatformClient } from "./platform";
+import { PlatformError, expectStatus, request, routeUrl, vaultSegment, type PlatformAnswer, type PlatformClient } from "./platform";
 
 const ORIGIN = "https://holder.platform.example.test";
 function client(handler: (url: string, init?: RequestInit) => Response | Promise<Response>) {
@@ -110,5 +110,50 @@ describe("request", () => {
     const c = client(() => Response.json({}));
     await request(c.platform, "GET", `${ORIGIN}/x`, undefined, undefined, undefined, {});
     expect(c.sent[0]!.init).toEqual({ method: "GET" });
+  });
+});
+
+describe("expectStatus", () => {
+  const answer = (status: number, text = ""): PlatformAnswer => ({ status, url: "https://h.example.test/base/tag/masters", headers: new Headers(), json: null, text });
+
+  it("hands an answer with an accepted status back unchanged: the same object", () => {
+    const a = answer(200, "{}");
+    expect(expectStatus(a, "POST", [200, 201])).toBe(a);
+    const b = answer(201);
+    expect(expectStatus(b, "POST", [200, 201])).toBe(b);
+  });
+
+  it("throws a PlatformError with the status, the url and the body, and a message that says what was asked and what came back", () => {
+    let caught: unknown;
+    try {
+      expectStatus(answer(403, "no way"), "POST", [200]);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(PlatformError);
+    const e = caught as PlatformError;
+    expect(e.status).toBe(403);
+    expect(e.url).toBe("https://h.example.test/base/tag/masters");
+    expect(e.body).toBe("no way");
+    expect(e.message).toBe("POST https://h.example.test/base/tag/masters answered 403: no way");
+  });
+
+  it("cuts the body in the message to 300 characters and keeps all of it on the error", () => {
+    const long = "x".repeat(400);
+    let caught: unknown;
+    try {
+      expectStatus(answer(500, long), "GET", [200]);
+    } catch (e) {
+      caught = e;
+    }
+    const e = caught as PlatformError;
+    expect(e.message).toBe(`GET https://h.example.test/base/tag/masters answered 500: ${"x".repeat(300)}`);
+    expect(e.body).toBe(long);
+  });
+
+  it("refuses every status when none is accepted, and accepts only the listed ones", () => {
+    expect(() => expectStatus(answer(200), "GET", [])).toThrow(PlatformError);
+    expect(() => expectStatus(answer(204), "GET", [200])).toThrow(PlatformError);
+    expect(expectStatus(answer(204), "GET", [200, 204]).status).toBe(204);
   });
 });

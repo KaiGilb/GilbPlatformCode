@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "units/record-sync",
   "package": "@kaigilb/gilbplatformcode-record-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "A vault's typed record list over the platform's record interface, and only what changed in it since a stored position, read through the authenticated fetch the host injects.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
-    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
     "files": [
       {
         "path": "src/platform.ts",
@@ -21,6 +21,14 @@
         "lines": [
           69,
           162
+        ],
+        "to": "src/platform.ts"
+      },
+      {
+        "path": "src/platform.ts",
+        "lines": [
+          164,
+          173
         ],
         "to": "src/platform.ts"
       },
