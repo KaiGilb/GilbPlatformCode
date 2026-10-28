@@ -1,0 +1,56 @@
+{
+  "name": "@kaigilb/gilbplatformcode-value-qualifiers-line",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the \"Not in the Scale\" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-line-kit": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "file:../entity-ref-value",
+    "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",
+    "@kaigilb/gilbplatformcode-plan-source": "file:../plan-source",
+    "@kaigilb/gilbplatformcode-qualifier-values": "file:../qualifier-values",
+    "@kaigilb/gilbplatformcode-record-picker": "file:../record-picker",
+    "@kaigilb/gilbplatformcode-remove-control": "file:../remove-control",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-chooser": "file:../type-chooser",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@kaigilb/gilbplatformcode-type-name": "file:../type-name",
+    "@kaigilb/gilbplatformcode-type-picture": "file:../type-picture",
+    "@kaigilb/gilbplatformcode-type-term-popover": "file:../type-term-popover",
+    "@kaigilb/gilbplatformcode-value-card-model": "file:../value-card-model",
+    "@kaigilb/gilbplatformcode-value-line-kit": "file:../value-line-kit",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
