@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/working-set-store",
+  "package": "@kaigilb/gilbplatformcode-working-set-store",
+  "version": "0.1.0",
+  "purpose": "The browser-local index of which records and files this device has touched in each vault, so a list can draw its rows before the vault answers.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      { "path": "src/lib/base/workingSet.ts", "lines": [1, 255], "to": "src/workingSet.ts" }
+    ]
+  },
+  "namedChanges": [
+    "three comment edits, nothing else",
+    "No code line is changed, so the store name, the version, the stores and the indexes are as in the app."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
