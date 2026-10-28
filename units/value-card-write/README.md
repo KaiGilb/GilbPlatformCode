@@ -103,7 +103,7 @@ Network:
 - `createRecord(vaultNamespace, typeUri, facts, nameHint?)`: make a record; `{ id, etag }`. A 409 means the tag is taken. Replaces `createRecord(planVault, typeUri, facts, tag)` (valueChildRecords.ts:131).
 - `readRecord(id, at)`: read a record; `null` when it is not there. The unit passes the plan vault id in the `at` place in one call, on purpose: accept it. Replaces `readRecord(made.id, planVault)` (valueChildRecords.ts:137), `readRecord(oldRow.id, oldRow.entityUri ?? null)` (:332), `readRecord(<tail of the reference>, <reference>)` (useValueScale.ts:90).
 - `patchRecord(id, patch, at, source, precondition)`: a JSON merge patch conditional on `precondition.ifMatch`; `source` is `undefined` when the record carries no served document. A failure keeps its numeric `status`. Replaces `patchRecord(...)` (valueChildRecords.ts:214-215).
-- `useDeleteRecord(vaultId)`: a hook; `{ mutateAsync({ id, entityUri, ifMatch? }) }` ends a record. The app's optimistic removal from its lists, the rollback and the delete watcher stay in this hook. Replaces `useDeleteRecord(vaultId)` (useValueChildren.ts:46, useValueMeters.ts:46, useValueScale.ts:68).
+- `useDeleteRecord(vaultId)`: a hook; `{ mutateAsync({ id, entityUri, ifMatch? }) }` ends a record. Replaces `useDeleteRecord(vaultId)` (useValueChildren.ts:46, useValueMeters.ts:46, useValueScale.ts:68, from lib/base/recordHooks.ts:2634). What GilbApp's hook does, and the host's must do: it installs the app's delete watcher (`watchRecordDeletes(qc)`) when it is called, on every call, before any delete runs; it is a mutation whose function deletes with `deleteRecord(id, entityUri ?? vaultId ?? null, { ifMatch })` when `ifMatch` is given and `deleteRecord(id, entityUri ?? vaultId ?? null)` (no third argument) when not, then forgets the record's page link and its working-set entry; before the delete it removes the record from the vault's list at once (optimistic removal, remembering the row and its index), and if the delete fails it puts that row back at its index (it does not re-stamp it), and on success it invalidates the vault's ended list. The unit relies on the failure reaching its caller (`mutateAsync` rejects) and on a 404 or a conflict keeping its `status`/class.
 
 Error predicates:
 
@@ -113,8 +113,31 @@ Error predicates:
 Find caches (the finds by `a:partOf`; `PlanFind` is `{ rows, total, capped, unread, cap? }`):
 
 - `cachedPlanFind(planVault, attr, parentId)`: the find the host holds now, or `undefined`. Called at click time, never snapshotted. Replaces `qc.getQueryData<PlanFind>(planFindKey(...))` (valueChildRecords.ts:102, :123; useValueMeters.ts:135; useValueQualifiers.ts:52; useValueScale.ts:75).
-- `fetchPlanFind(planVault, attr, parentId, parentUri, { staleTime })`: read the find unless the cached one is younger than `staleTime` ms (0: always read) and give it back; fails when it cannot be read. Replaces `qc.fetchQuery({ queryKey, queryFn: loadPlanFind(...), staleTime })` (valueChildRecords.ts:343-347 with 0; useValueQualifiers.ts:53 with 15 000).
-- `usePlanFinds(planVault, attr, parents)`: a hook; one find for each `{ id, entityUri, enabled }`, read when `enabled`, fresh for 15 000 ms, not retried; returns `[{ data }]` in the order of `parents`. Replaces `useQueries` (useValueMeters.ts:52-60, useValueQualifiers.ts:121-129).
+- `fetchPlanFind(planVault, attr, parentId, parentUri, { staleTime })`: read the find unless the cached one is younger than `staleTime` ms (0: always read) and give it back; it fails when the find cannot be read. GilbApp's call is `qc.fetchQuery({ queryKey: planFindKey(planVault, "a:partOf", parentId), queryFn: () => loadPlanFind(qc, planVault, "a:partOf", parentId, parentUri), staleTime })`, with `staleTime: 0` at valueChildRecords.ts:343-347 (migration: the twin lookup must see the vault now) and `staleTime: 15_000` at useValueQualifiers.ts:53 (the option-definition find, read only when the cached one is missing). No `retry` is set on this call. Replaces those two calls, from lib/base/planFind.ts:213.
+- `usePlanFinds(planVault, attr, parents)`: a hook; `parents` is `[{ id, entityUri, enabled }]`; returns one `{ data }` for each parent, in the order of `parents`. Replaces the `useQueries` of useValueMeters.ts:52-60 (the lines of each Meter) and useValueQualifiers.ts:121-129 (the option definitions of each variable). What GilbApp passed, for each parent, exactly:
+  - `queryKey`: the plan-find key for (`planVault`, `"a:partOf"`, the parent's id), as the app's `planFindKey` builds it (`["plan-find", vault, attr, id]`);
+  - `queryFn`: `loadPlanFind(qc, planVault, "a:partOf", parent.id, parent.entityUri ?? "")`;
+  - `enabled`: as passed per parent (the unit computes it: `!!planVault && !!meter.entityUri` for a Meter, `!!planVault` for a variable);
+  - `staleTime: 15_000`;
+  - `retry: false`.
+  - `data` must keep its identity from one render to the next while the find has not changed (see the stability rule below).
+
+  The reference implementation, with the query library the app uses:
+
+  ```tsx
+  const usePlanFinds: ValueWriteHost["usePlanFinds"] = (planVault, attr, parents) => {
+    const qc = useQueryClient();
+    return useQueries({
+      queries: parents.map((p) => ({
+        queryKey: planFindKey(planVault, attr, p.id),
+        enabled: p.enabled,
+        retry: false,
+        staleTime: 15_000,
+        queryFn: () => loadPlanFind(qc, planVault, attr, p.id, p.entityUri ?? ""),
+      })),
+    });
+  };
+  ```
 - `prependPlanFind(planVault, attr, parentId, row, { members, refresh })`: show the row at the head at once and pin it, so a re-read that is late does not drop it. The unit always passes `refresh: false`. Replaces `prependPlanFind(...)` (valueChildRecords.ts:160).
 - `dropPlanFind(planVault, attr, parentId, id, { members, refresh })`: take the row out at once and remember it as dropped, so a re-read that still returns it does not bring it back. The unit passes `refresh: false`. Replaces `dropPlanFind(...)` (valueChildRecords.ts:248, :256, :271).
 - `patchPlanFindRows(planVault, id, next)`: show a patch of one record on every find that holds it, and in the pinned rows. Replaces `patchPlanFindRows(...)` (valueChildRecords.ts:223, :237).
