@@ -1,0 +1,40 @@
+{
+  "name": "@kaigilb/gilbplatformcode-project-levels",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Builds the tree of a project's levels (Business, Product, Solution and any the project added) for a level chooser, and gives a card the one hook that reads them and adds a level, with the host doing every read and write.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-key": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

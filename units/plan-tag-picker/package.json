@@ -1,0 +1,48 @@
+{
+  "name": "@kaigilb/gilbplatformcode-plan-tag-picker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-entity-ref-value": "file:../entity-ref-value",
+    "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-links-model": "file:../plan-links-model",
+    "@kaigilb/gilbplatformcode-record-picker": "file:../record-picker",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@tanstack/react-query": "^5.101.2",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
