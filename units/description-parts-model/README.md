@@ -4,6 +4,8 @@ Reads and plans the Description of a Solution or Solution Constraint, which is o
 
 ## What this is
 
+Reads and plans the Description of a Solution or Solution Constraint, which is one record per Keyword part: it parses Keyword lines and Assumptions, builds the tree, orders and moves parts, previews a paste, and plans the move or the removal of a whole level, with the host supplying every read.
+
 A Description is a tree of records, each with a Keyword. A Solution `Walk` has parts `Walk.Run` and `Walk.Step`; `Walk.Step` has the sub-part `Walk.Step.Lift`. A part is a `t:SpecificationElement`, or a `t:Assumption`; it names the part (or the Solution) it belongs to in `a:partOf`, and its place among its siblings in `a:elementOrder`. The words of the part are `a:body`, and who stated them are `a:lineSources`. Assumptions sit under one section: the tag `Walk.Assumption`, and `Walk.Assumption.Floor` is one assumption. Pure functions over those stored shapes, plus three functions that read and plan through a `LevelHost` that the host implements: no React, no network, no cache of its own.
 
 From `planParts` (all pure):

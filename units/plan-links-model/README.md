@@ -4,6 +4,8 @@ Reads and builds the links on a Function, Solution, Value or Resource card as pl
 
 ## What this is
 
+Reads and builds the links on a Function, Solution, Value or Resource card as plain functions: which record a link points at, the tag drawn for it, the loop checks on the Part of chain, and the Solution of relations read back.
+
 The links of a Plan card: Part of, Sub-functions, Function of Value, Solution of, Part of System. A link is stored as one fact whose served value is `{ "@id": <address> }`; the name drawn for it is the target's live tag, never a copy stored on the link. Pure functions and constants over the stored wire shapes: no React, no network.
 
 From `planLinks`:

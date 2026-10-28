@@ -4,6 +4,8 @@ Reads, parses and builds the impacts of a Solution on Values and Development Res
 
 ## What this is
 
+Reads, parses and builds the impacts of a Solution on Values and Development Resources as plain functions: one `t:ImpactOn` relation per pair, with the numbers on the relation.
+
 A Solution (or a Solution Constraint) has impacts on Values and on Development Resources. Each impact is one `t:ImpactOn` relation between the Solution and one Value, or between the Solution and one Resource. The numbers live on the relation; neither end stores them. This unit reads the relations, parses what a person types into the numbers, builds the facts stored on the relation, and gives the words shown for them. Pure: no React, no network.
 
 - Reading the relations: `impactsOnSolution(rows)` (the rows of the platform's reverse lookup where the record is `role:solution`: one `ImpactLink { relation, targetUri, targetRole }` per Value or Resource member; roles are read with or without `role:`, the stored role is always the prefixed constant), `sortImpacts(links, tagOf)` (Values first, then Resources, each side by tag, then address).

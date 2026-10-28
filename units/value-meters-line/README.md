@@ -4,6 +4,8 @@ Draws and edits the Meters line of a Value card: each Meter with its qualifiers 
 
 ## What this is
 
+Draws and edits the Meters line of a Value card: each Meter with its qualifiers and its Human, AI and Instrument lines, each line with its method and source, giving every change up whole through onChange.
+
 One component, `PlanValueMetersBody`, the body of the group titled "Meter" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the `valueMeters` line to both; `PLAN_VALUE_LINE_LABELS.valueMeters` is "Meter"). On the card it comes last of the Value's own lines, after the Levels. It takes the props of `ValueLineProps` (`value-line-kit`) and reads `data.meters` and, for the qualifier chip, `data.scale` and `data.variables`; it never writes to a vault.
 
 - A Meter is a qualifier (text such as `During Development`, or `Country = Norway`) and up to three lines: HumanAgent, AiAgent, Instrument. Each line is a method (text) and a source.

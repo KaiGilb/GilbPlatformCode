@@ -4,6 +4,8 @@ Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale
 
 ## What this is
 
+Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the "Not in the Scale" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.
+
 One component, `PlanVariablesBody`, the body of the group titled "Qualifiers" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the `scaleVariables` line to both; `PLAN_VALUE_LINE_LABELS.scaleVariables` is "Qualifiers"). On the card it comes fourth, after the Endpoint and before the Levels. It takes the props of `ValueLineProps` (`value-line-kit`) and reads `data.scale`, `data.variables` and `data.levels`; it never writes to a vault.
 
 - One row for each name the Scale gives (the `[Name]` words of its unit, rate and context, once each, matched without case, in Scale order), then one for each defined name the Scale no longer has (greyed, with "Not in the Scale"). A Scale name that has no record yet is a blank row; its record is made, once, by the first value or definition added to it (the new variable is appended to `data.variables`; the card's save writes the record).

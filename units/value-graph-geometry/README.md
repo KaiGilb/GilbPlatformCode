@@ -4,6 +4,8 @@ The math under the Value graph: the value axis, the date axis and its ticks, sna
 
 ## What this is
 
+The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows.
+
 The math under the Value card's graph (the Arrow and the Timeline), as plain functions: no DOM, no React. The graph itself is a later unit (`value-graph`); this one is what it asks for the numbers and the pixels.
 
 - Qualifier sets: `groupLevels(data)` (the sets of a Value in order of first appearance: one for the Arrow rows, the Timeline series and the "+ New" menu), `groupKey`, `groupLabel`. A set is its qualifier (choices with defaults filled in, conditions and side), never the date of a level.

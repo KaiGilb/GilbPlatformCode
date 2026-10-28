@@ -4,6 +4,8 @@ Lets a Plan card link to another Plan record by its tag: it searches the plan va
 
 ## What this is
 
+Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.
+
 One component, `PlanTagPicker`, and the pieces the card's other link views share with it.
 
 - `PlanTagPicker` draws a record picker (`OrgRecordPicker` of the `record-picker` unit) with `data-testid="plan-link-picker"` around it and the hits under `plan-link-hits`. It searches the plan vault (`planVault`, which is `vaultId` unless given) for records of `typeNames` (or of `typeName`) by the host's search; nothing is searched until the box is clicked, focused or typed in (`searchOnMount` is off), and the answer is kept 30 s. Hits are named by their label; `excluded` addresses are not offered. A failed search says "Could not search — try again" (`SEARCH_ERROR`). No hit and no answer say nothing (the none and partial words are empty).

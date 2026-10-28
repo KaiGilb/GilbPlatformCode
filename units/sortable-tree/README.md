@@ -4,6 +4,8 @@ A drag-and-drop tree of rows, with a keyboard way as well, that reorders and re-
 
 ## What this is
 
+A drag-and-drop tree of rows, with a keyboard way as well, that reorders and re-nests: it writes nothing, it reports where a dragged row was dropped.
+
 A tree of rows that a person can reorder and re-nest by dragging a grip: with the mouse, with a finger, or with the keyboard. It writes nothing. It reads the rows, shows where the dragged row will land (a line), and tells the caller (`onDrop`) the new parent and the place; the caller does the write. Built on `@dnd-kit/core`.
 
 - `SortableTree({ rows, onDrop, refuse?, disabled?, indent?, status?, children })`: the wrapper. `rows` are the visible rows, top to bottom, parents before their children (`TreeRow`: `id`, `parentId`, `depth`, `label`). `onDrop(drop)` is called once for a drop that changes something, with a `DropTarget`; it may return a promise, and a string it resolves with is the reason the write failed, said in the status region as "The move was not saved: <reason>." (a failure that arrives after another drag has begun is not said). `refuse(move)` is the caller's own rule: a sentence refuses that move (a part going inside itself is always refused). `disabled` turns the grips off. `indent` (default 24 px) is how far right one level is. `status` is a sentence for the one polite region. A drag failure wins while it is set.

@@ -4,6 +4,8 @@ Draws the Stakeholder line and the Authority line of a Plan card, and on a Devel
 
 ## What this is
 
+Draws the Stakeholder line and the Authority line of a Plan card, and on a Development Resource the Resource Owner line: linked people and organizations as chips with their role marks, names that are not records yet as text, the picker to link a record, creating a new stakeholder, removing, and an Authority's "acts for", with every read and write supplied by the host.
+
 Two components in one unit. It is three lines: the Stakeholder line, the Authority line, and the Resource Owner line (the Authority line again, with `resourceOwner`).
 
 - Which card shows which, as the source's `planLinesFor` lists them: the Function card, the Solution card and the Value card show a Stakeholder line and an Authority line. The two constraint cards (a Function Constraint, a Design Constraint) show an Authority line (person only, required) and a Stakeholder line. The Development Resource card shows all three: Resource Owner, Stakeholder and Authority (its lines are the Value lines without "Value of Function", with Resource Owner before Stakeholder).

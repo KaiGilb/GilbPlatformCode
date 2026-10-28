@@ -4,6 +4,8 @@ The Value card's graph: the Scale as an arrow and as a timeline, with the levels
 
 ## What this is
 
+The Value card's graph: the Scale as an arrow and as a timeline, with the levels as markers you can drag, a "+ New" menu, qualifier chips, endpoint pictures and a full-screen view; it never writes, the host saves what onChangeLevels gives.
+
 One component, `PlanValueGraph`, with its parts. It draws the Illustration line of a Value card (and of a Development Resource card) from the card's data, and gives every change back as the whole new list of levels.
 
 - Two views, chosen by the tabs `Arrow` and `Timeline`:

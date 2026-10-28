@@ -4,6 +4,8 @@ A record card's two modes, presentation and edit, as one React provider with a h
 
 ## What this is
 
+A record card's two modes, presentation and edit, as one React provider with a hook, and the Edit, Done and plus buttons that switch it.
+
 A record card's two modes: presentation (values read as text, no remove control, no empty field, no placeholder) and edit (the remove control and the add rows are shown and every field is editable in place). One flag, held by `CardModeProvider`, for the whole card; the components inside read it with `useCardMode()`.
 
 The mode turns ON when the host calls `enter()` (a click into a value, or the card's Edit button) and OFF on Done, on Escape, on a click outside the card, or on Tab out of it.

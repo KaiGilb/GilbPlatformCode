@@ -4,6 +4,8 @@ One chooser for the value or values of a qualifier: the defined options with the
 
 ## What this is
 
+One chooser for the value or values of a qualifier: the defined options with their definitions as hints, ALL ("every value"), a free-text "Other…" and Clear.
+
 One chooser for the value or values of a qualifier: it lists the qualifier's defined options with their definitions as hints, ALL ("every value"), a free-text "Other…" and Clear. Several options may be ticked; ALL is exclusive. Enter or leaving commits ONE change; Escape commits nothing. It is shared by the level lines, the Meter qualifier and the Illustration filter of the Value card.
 
 `PlanQualifierValue({ label, name, options, defaultOption?, value, used?, single?, notInScale?, onCommit, close })`:

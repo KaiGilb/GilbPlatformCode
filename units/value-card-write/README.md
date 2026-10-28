@@ -4,6 +4,8 @@ The Value card's write layer: its levels, Scale qualifiers and their option defi
 
 ## What this is
 
+The Value card's write layer: its levels, Scale qualifiers and their option definitions, Meters and Meter lines, and the Scale record kept as lists, where one edit becomes the smallest writes (one changed item is one PATCH of its record, a new item one POST, a removed item one DELETE), with conflict handling, rollback and the migration of older stored lists, and every network call and cache supplied by the host.
+
 Five hooks and the functions under them. The Value card (and the Development Resource card, which is the same card) keeps each kind of child as its own record, a part of the Value (`a:partOf`). The card edits a whole list; these hooks turn the edit into records.
 
 - `useValueLevels({ enabled, record, vaultId, planVault, rows, variableOrder, onNotice, onTouched? })`: the levels. Gives `{ items, commit, commitAndWait, moveIn, busy, progress }`. `items` are the levels read from the Value's `rows` (its find by `a:partOf`, all part types) until a write is queued, then the person's latest edit. `commit(next)` writes the difference between the shown list and `next`. `commitAndWait(next)` does the same and answers `false` when a write of that commit failed and was rolled back, `true` otherwise. `moveIn(old)` makes records for old items (a move) and gives back `{ undo }`. `busy` is true while an edit is shown that the records do not yet hold. `progress` is `{ done, total }` while a group of patches runs, else `null`.

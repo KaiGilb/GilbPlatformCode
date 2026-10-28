@@ -4,6 +4,8 @@ Draws and edits the Endpoint line of a Value card: the Subject and the Reference
 
 ## What this is
 
+Draws and edits the Endpoint line of a Value card: the Subject and the Reference, each a type picked from the ontology (with its picture and definition) and some words, and a button that finds the types for an older "Subject = X, reference = Y" text, giving every change up whole through onChange.
+
 One component, `PlanEndpointBody`, and one function, `parseEndpointText`. The body is the one of the group titled "Endpoint" on a Value card and on a Development Resource card (`planLinesFor` of `plan-kinds` gives the `endpoint` line to both; `PLAN_VALUE_LINE_LABELS.endpoint` is "Endpoint"). On the card it comes third, after the Scale and before the Qualifiers. It takes the props of `ValueLineProps` (`value-line-kit`) and reads `data.endpoint`; it never writes to a vault.
 
 - The Endpoint is two parts. Each is a type from the ontology (stored as its address, `<term origin>/base/t/<Name>`, with its label) and free words. A Value starts with Thing and Person, a Development Resource with Organization and Person; those defaults are `defaultEndpointFor` of `value-card-model`, put into the data when the card is read, not drawn by this line.

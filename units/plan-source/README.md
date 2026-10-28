@@ -4,6 +4,8 @@ One source control for every Plan line: who said it (a person, organization or A
 
 ## What this is
 
+One source control for every Plan line: who said it (a person, organization or AI agent record), the document or decision it came from, or words for someone with no record yet.
+
 One component, `PlanSource`, and two constants.
 
 - A person, organization or AI agent that said a line is `a:statedBy`. A document it was taken from (a file the Files section lists) or a decision is `a:derivedFrom`. Words are only for someone with no record yet. The value is `PlanSourceValue` (`{ text?, statedBy?, derivedFrom? }`) of the `plan-card-facts` unit; a bare string is read as `{ text }`.

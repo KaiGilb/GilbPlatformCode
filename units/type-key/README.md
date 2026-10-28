@@ -4,6 +4,8 @@ The one test "is this type the type named X", so every Plan unit compares types 
 
 ## What this is
 
+The one test "is this type the type named X", so every Plan unit compares types the same way.
+
 The one test "is this type the type named X". Every Plan unit (the Value card model, the links, the constraints) asks `isTypeName(typeUri, name)` and nothing else, so they all compare types under one key. The key is the type's name, lower-cased; a host that has its own type registry swaps the key once at start-up. Plain functions, no React, no network.
 
 - `isTypeName(typeUri, name)`: `typeKey(typeUri) === typeKey(name)`.

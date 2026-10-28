@@ -4,6 +4,8 @@ The Value card's data, read from the Value record and its child records and buil
 
 ## What this is
 
+The Value card's data, read from the Value record and its child records and built back into the facts to store, as plain functions with no React and no network.
+
 The Value card's data model: it reads a Value's facts and the records that are parts of it (the Scale, the Scale qualifiers and their option definitions, the level records, the Meters and Meter lines) into one `ValueCardData`, and builds the create facts and the patches that write an edit back. It also holds the level-line text (a level typed or pasted as one line, and shown as one line), the numbers a level is typed with and the dates it takes. Pure: no React, no I/O.
 
 The same model serves the Development Resource card (`t:Resource`), which is the Value card with Budget in the place of Goal, a Scale direction of "lower" and an Endpoint of Organization / Person shown by default. The functions that differ take the card's type (`levelTypeName(kind, cardTypeUri)`, `levelCreateFacts(..., cardTypeUri)`) or a `resource` flag (`readValueCard(facts, scaleRow, resource)`, `sortLevels(levels, direction, resource)`, `scaleFacts(scale, resource)`, `kindClass(kind, resource)`); without it they behave as the Value card.

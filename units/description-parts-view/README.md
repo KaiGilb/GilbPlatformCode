@@ -4,6 +4,8 @@ Draws and edits the Description of a Plan card as one record per Keyword part in
 
 ## What this is
 
+Draws and edits the Description of a Plan card as one record per Keyword part in a tree: add a part, edit its text and source, paste many parts at once, move a part up, down, in or out by buttons, keys or drag, and remove a part with its sub-parts, all written in one queue so the order of the writes is kept, with every read and write supplied by the host.
+
 Two modules in one unit, as in the source: the view and the hook it reads the parts with.
 
 - `PlanDescriptionParts({ record, vaultId, planVault?, canEdit, onOpen, onNotice, onBindAdd })`: the Description line of a Solution, a Solution Constraint, a Function or a Value card. `record` is the card's record (its tag is the base of every part's tag); `vaultId` is the screen vault; `planVault` is the record's own vault (default `vaultId`), where creates, paste, moves and removals go (the reads of the parts use the vault `record.entityUri` names, else `vaultId`); `canEdit` is whether the person may write; `onOpen(id)` opens a record; `onNotice(text | null)` shows or clears the card's notice; `onBindAdd(open)` is called on EVERY render with a function that opens the add row and focuses its Text box (the card's "+" calls the latest one).

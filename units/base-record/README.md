@@ -4,6 +4,8 @@ The record shapes the Plan units read, as TypeScript types: a record as the app 
 
 ## What this is
 
+The record shapes the Plan units read, as TypeScript types: a record as the app holds it, the document the vault served for it, and one row of the record list.
+
 Three types and nothing else, exported with `export type`. They are the shapes the Plan units take as arguments (a Function, Solution, Value or Development Resource record, a list of them, a served fact):
 
 - `BaseRecord`: one record. Required: `id` (the opaque record id), `typeUri` (the absolute type address, `https://<host>/base/t/<Type>`), `facts` (the typed facts, `Record<string, string>`, keyed by the bare attribute name), `opaqueFacts` (`readonly string[]`: the keys in `facts` whose string is a stand-in for a value the editor cannot show as a string, handed over as `""`; an empty array means nothing was lost) and `etag` (`string | null`: the strong ETag, the If-Match token for the next write). Optional: `entityUri` (the canonical entity address from the framed `@id`), `typeSubstituted` (`true` only: the type is the app's "unknown" marker `t:Resource`, put there because the document named no type, or a stub awaits hydration; such a record is never a Development Resource card), `servedKeys` (the keys in `facts` that came off the vault's own served document; absent means no served document stands behind the record) and `served` (a `ServedDocument`).

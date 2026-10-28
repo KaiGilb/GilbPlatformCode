@@ -4,6 +4,8 @@ Reads the stakeholders, the Authority and (on a Development Resource) the Resour
 
 ## What this is
 
+Reads the stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record from its relations and its text, and holds the rules that a Function Constraint or Solution Constraint names a person as its Authority.
+
 Who is on a Plan record, as plain functions over what the vault stores. A linked stakeholder is one relation per (record, stakeholder). A name that is not a record yet stays text on the record's `a:stakeholders`. The Authority is a kind of stakeholder; on a Development Resource the Resource Owner is a third kind with the Authority's shape. A Function Constraint or Solution Constraint (`DesignConstraint`) must name the person who requires it as its Authority. Pure: no React, no network, no search.
 
 From `planStakeholders`:

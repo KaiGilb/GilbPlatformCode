@@ -4,6 +4,8 @@ The help panel for writing a Solution's or Function's Description in Keyword par
 
 ## What this is
 
+The help panel for writing a Solution's or Function's Description in Keyword parts: what a Keyword is, the Assumption part, sub-parts, moving parts, pasting many parts at once and naming a source, each with an example that uses the card's own tag.
+
 One React component and three constants. It draws seven help sections beside a contents list, using the building blocks of `help-doc`.
 
 - `DescriptionHelp({ tag, kind? })`: the panel. `kind` is `"Solution"` (the default) or `"Function"`. `tag` is the tag of the card's record; every example uses it (`Ben.Bones`, `Ben.Bones.Hip`, `Ben.Assumption.Weight`), and an empty `tag` (`""` exactly; a space is a tag) falls back to `MySolution` or `MyFunction`. `kind` changes the wording ("The Description of a Function", "what this Function takes as true", "the Function's tag") and the examples (Bones, Hip and Knee for a Solution; Step, Lift, Land and Swing for a Function).

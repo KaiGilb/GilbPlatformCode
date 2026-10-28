@@ -4,6 +4,8 @@ The Plan record types and what each one shows: the type names, the Development R
 
 ## What this is
 
+The Plan record types and what each one shows: the type names, the Development Resource and Value-card gates, each type's line order, its default level and the words of its lines.
+
 The table of the Plan card's types, as plain functions and constants: no React, no network. It answers "which types does Plan hold", "does this type use the Value card", "which lines does this type show, in which order", "what level does it show before one is chosen" and "what is this line called". A type is compared through `type-key`, so a spelling as `t:Resource`, `Resource` or an address ending `/base/t/Resource` is one type.
 
 - The types: `PLAN_CREATE_TYPES` (the create order, each with its dialog `label` and the stored `typeName`), `planTypeNames()`, `planSolutionTypeNames()` (Solution and `DesignConstraint`, the Solution Constraint), `planCardTypeNames()` (the four types of the managed card: Function, FunctionConstraint, Solution, DesignConstraint), `isPlanType` (the card edits it: those four, Value and Resource), `isPlanRecordType` (the Plan list holds it), `PLAN_ONLY_TYPE_IDS` (registry ids that the Records "+ New" list must not offer).
