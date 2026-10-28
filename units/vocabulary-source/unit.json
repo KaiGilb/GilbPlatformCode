@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "unit": "units/vocabulary-source",
+  "package": "@kaigilb/gilbplatformcode-vocabulary-source",
+  "version": "0.1.0",
+  "purpose": "Reading the GilbVeda master's term documents, each request and each whole reading bounded in time, so a master that does not answer is \"not known yet\" and never \"nothing\".",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "files": [
+      {
+        "path": "src/terms.ts",
+        "lines": [
+          11,
+          44
+        ],
+        "to": "src/terms.ts"
+      },
+      {
+        "path": "src/terms.ts",
+        "lines": [
+          58,
+          142
+        ],
+        "to": "src/terms.ts"
+      },
+      {
+        "path": "src/terms.ts",
+        "lines": [
+          162,
+          232
+        ],
+        "to": "src/terms.ts"
+      },
+      {
+        "path": "src/deadline.ts",
+        "lines": [
+          15,
+          148
+        ],
+        "to": "src/deadline.ts"
+      },
+      {
+        "path": "src/source.ts",
+        "lines": [
+          6,
+          360
+        ],
+        "to": "src/source.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of the source's own files (`./terms.ts`, `./deadline.ts`, `./source.ts`) are the unit's own files without `.ts` (the host-agnostic check allows `./name` only); no import of another package is needed;",
+    "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

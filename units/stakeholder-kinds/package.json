@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-stakeholder-kinds",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Which stakeholder kinds exist and their words, read from the GilbVeda master in as few requests as it allows, kept across sessions, and shared by every reader in a page.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.1.0"
+  }
+}
