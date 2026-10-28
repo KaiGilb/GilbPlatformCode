@@ -60,21 +60,21 @@ afterEach(() => {
 describe("factsAsServed — what a full-state write sends", () => {
   it("C214-42-N1-U1: no edit (a share): every served fact as served — a link stays {\"@id\"}, a list stays a list, a language value and a grant are kept", async () => {
     contextServed(VAULT_CTX);
-    const { facts } = await factsAsServed(doc({ name: "Tom", statedBy: LINK, memberOf: LIST, jobTitle: LANG, directReader: GRANT }), AT);
-    expect(facts).toEqual({ name: "Tom", statedBy: LINK, memberOf: LIST, jobTitle: LANG, directReader: GRANT });
+    const { facts } = await factsAsServed(doc({ name: "Ann", statedBy: LINK, memberOf: LIST, jobTitle: LANG, directReader: GRANT }), AT);
+    expect(facts).toEqual({ name: "Ann", statedBy: LINK, memberOf: LIST, jobTitle: LANG, directReader: GRANT });
   });
 
   it("C214-42-N1-U2: with an edit: an unedited fact goes as served; the person's edit as typed; a fact the editor held but the write drops is omitted; a fact the editor never held is kept; a new fact as typed", async () => {
     contextServed(VAULT_CTX);
-    const served = doc({ name: "Tom", label: "Tom", email: "a@x.test", statedBy: LINK, memberOf: LIST, directReader: GRANT });
+    const served = doc({ name: "Ann", label: "Ann", email: "a@x.test", statedBy: LINK, memberOf: LIST, directReader: GRANT });
     // The editor's strings, as `factToString` handed them over.
-    const held = { name: "Tom", label: "Tom", email: "b@x.test", statedBy: LINK["@id"], memberOf: `${LIST[0]!["@id"]}, ${LIST[1]!["@id"]}` };
+    const held = { name: "Ann", label: "Ann", email: "b@x.test", statedBy: LINK["@id"], memberOf: `${LIST[0]!["@id"]}, ${LIST[1]!["@id"]}` };
     // The retype into a party kind drops the legacy label (W4) and adds a new field.
     const { label: _dropped, ...rest } = held;
     void _dropped;
     const send = { ...rest, phone: "123" };
     const { facts } = await factsAsServed(served, AT, { held, send });
-    expect(facts).toEqual({ name: "Tom", email: "b@x.test", statedBy: LINK, memberOf: LIST, directReader: GRANT, phone: "123" });
+    expect(facts).toEqual({ name: "Ann", email: "b@x.test", statedBy: LINK, memberOf: LIST, directReader: GRANT, phone: "123" });
   });
 
   it("C214-42-N1-U3: a served empty string nobody edited is carried (keepEmpty); a field the person cleared is not", async () => {
@@ -196,13 +196,13 @@ describe("factsAsServed — term types from the vault's own context (F2, B1)", (
     // The rig half needs the rig's platform origin and rig host (set here in place of the environment and the module reload).
     setBaseOrigin("http://rig.example.test:8787");
     setLocalRigHosts(["rig.example.test"]);
-    expect(vaultContextUrl("https://kai.rig.example.test:8787/vault/e/rec1")).toBe("http://kai.rig.example.test:8787/base/context.jsonld");
+    expect(vaultContextUrl("https://ann.rig.example.test:8787/vault/e/rec1")).toBe("http://ann.rig.example.test:8787/base/context.jsonld");
   });
 
   it("C214-42-F2-U13: control: a record whose links are all full {\"@id\"} objects and whose text is plain makes no request at all", async () => {
     contextServed(VAULT_CTX);
-    const { facts } = await factsAsServed(doc({ name: "Tom", statedBy: LINK, memberOf: LIST }), AT);
-    expect(facts).toEqual({ name: "Tom", statedBy: LINK, memberOf: LIST });
+    const { facts } = await factsAsServed(doc({ name: "Ann", statedBy: LINK, memberOf: LIST }), AT);
+    expect(facts).toEqual({ name: "Ann", statedBy: LINK, memberOf: LIST });
     expect(fetchMock.mock.calls.length).toBe(0);
   });
 });
@@ -212,15 +212,15 @@ describe("readRecord keeps the served document", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
-        new Response(JSON.stringify({ "@context": CTX, "@id": AT, "@type": "t:Person", "a:name": "Tom", "a:statedBy": LINK, memberOf: LIST }), {
+        new Response(JSON.stringify({ "@context": CTX, "@id": AT, "@type": "t:Person", "a:name": "Ann", "a:statedBy": LINK, memberOf: LIST }), {
           status: 200,
           headers: { etag: '"sha256:7"' },
         }),
       ),
     );
     const rec = (await readRecord("rec1", AT))!;
-    expect(rec.facts).toEqual({ name: "Tom", statedBy: LINK["@id"], memberOf: `${LIST[0]!["@id"]}, ${LIST[1]!["@id"]}` });
-    expect(rec.served).toEqual({ facts: { name: "Tom", statedBy: LINK, memberOf: LIST }, context: CTX, etag: '"sha256:7"', prefixedKeys: ["name", "statedBy"] });
+    expect(rec.facts).toEqual({ name: "Ann", statedBy: LINK["@id"], memberOf: `${LIST[0]!["@id"]}, ${LIST[1]!["@id"]}` });
+    expect(rec.served).toEqual({ facts: { name: "Ann", statedBy: LINK, memberOf: LIST }, context: CTX, etag: '"sha256:7"', prefixedKeys: ["name", "statedBy"] });
   });
 });
 
