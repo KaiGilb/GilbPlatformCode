@@ -1,0 +1,36 @@
+{
+  "name": "@kaigilb/gilbplatformcode-plan-type-level-version",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The one line every Plan card shows first: Type, Level and Version, with the plain/constraint type switch and the level chooser.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-type-picture": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-type-name": "file:../type-name",
+    "@kaigilb/gilbplatformcode-type-picture": "file:../type-picture",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
