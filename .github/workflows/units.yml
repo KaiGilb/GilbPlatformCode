@@ -1,0 +1,36 @@
+name: units
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scripts' tests
+        run: node --test "scripts/**/*.test.mjs"
+      - name: Proofs of the units this change touches (pull request)
+        if: github.event_name == 'pull_request'
+        run: node scripts/proof.mjs --changed origin/${{ github.base_ref }}
+      - name: Proofs of the units this change touches (push)
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "new branch (before is all zeros): no proofs run"
+          else
+            node scripts/proof.mjs --changed "$BEFORE"
+          fi
