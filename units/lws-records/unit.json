@@ -1,0 +1,451 @@
+{
+  "schema": 1,
+  "unit": "units/lws-records",
+  "package": "@kaigilb/gilbplatformcode-lws-records",
+  "version": "0.1.0",
+  "purpose": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "files": [
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          45,
+          139
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          141,
+          154
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          156,
+          163
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          165,
+          187
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          189,
+          220
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          222,
+          234
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          240,
+          241
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          243,
+          247
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          249,
+          264
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          266,
+          283
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          285,
+          290
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          292,
+          303
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          305,
+          348
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          350,
+          354
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          356,
+          359
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          371,
+          380
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          382,
+          408
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          410,
+          433
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          454,
+          505
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          507,
+          512
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          514,
+          553
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          626,
+          647
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          649,
+          657
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          659,
+          701
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          937,
+          948
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          950,
+          1002
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/serverError.ts",
+        "lines": [
+          1,
+          132
+        ],
+        "to": "src/serverError.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          1,
+          49
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          54,
+          69
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          71,
+          72
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          74,
+          75
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          77,
+          104
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          106,
+          117
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          119,
+          121
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          122,
+          124
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          126,
+          126
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          128,
+          129
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          131,
+          147
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          149,
+          169
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          171,
+          185
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          187,
+          205
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          207,
+          212
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          214,
+          274
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          276,
+          283
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          285,
+          358
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          360,
+          397
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          399,
+          403
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          405,
+          408
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          410,
+          415
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          417,
+          467
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          469,
+          512
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          514,
+          534
+        ],
+        "to": "src/vaultContext.ts"
+      },
+      {
+        "path": "src/lib/base/vaultContext.ts",
+        "lines": [
+          540,
+          618
+        ],
+        "to": "src/vaultContext.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "in `records.ts` the imports `./config`, `./token`, `./bearer`, `./dpop` and `./recordTypes` are replaced by imports of `vault-origin-rule`, `lws-session-bridge` and `record-types`; the names the taken code does not use are dropped from the import lists",
+    "in `vaultContext.ts` the imports `./config` and `./recordTypes` are replaced by `vault-origin-rule` and `record-types`",
+    "the dynamic import `await import(\"./dpop\")` (line 448) is `await import(\"@kaigilb/gilbplatformcode-lws-session-bridge\")`",
+    "`authHeader` (lines 245-246) takes an optional `method` and passes it to `bearerHeaderFor`, and `patchRecord` (line 984) calls `authHeader(reqUrl, \"PATCH\")`",
+    "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

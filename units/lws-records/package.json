@@ -1,0 +1,34 @@
+{
+  "name": "@kaigilb/gilbplatformcode-lws-records",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-types": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0"
+  }
+}
