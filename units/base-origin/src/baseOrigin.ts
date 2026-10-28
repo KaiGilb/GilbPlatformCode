@@ -5,6 +5,7 @@
 
 let origin: string | null = null;
 let systemHosts: ReadonlySet<string> | null = null;
+let rigHosts: ReadonlySet<string> = new Set();
 let ontologyApi: string | null = null;
 let publicCorpus: string | null = null;
 const DEFAULT_MIN_ONTOLOGY_QUERY = 3;
@@ -40,6 +41,24 @@ function parseOrigin(setter: string, value: string): string {
   return url.origin;
 }
 
+/** Parse a list of bare host names: trimmed, lower-cased, a repeated name counts once. Throws a TypeError naming the setter. */
+function parseHosts(setter: string, hosts: readonly string[]): ReadonlySet<string> {
+  const next = new Set<string>();
+  for (const host of hosts) {
+    if (typeof host !== "string") throw new TypeError(`base-origin: ${setter}: every host must be a string`);
+    const h = host.trim().toLowerCase();
+    let ok = false;
+    try {
+      ok = new URL(`https://${h}`).hostname === h;
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw new TypeError(`base-origin: ${setter}: not a bare host name (got ${JSON.stringify(host)})`);
+    next.add(h);
+  }
+  return next;
+}
+
 /**
  * Set the GilbPlatform origin once at start-up. The text is trimmed and parsed as a URL; it must be an http or https origin only.
  * What is kept is the URL standard's `origin`. Throws a TypeError (message starts with `base-origin:`) otherwise, and then leaves
@@ -66,20 +85,7 @@ export function resetBaseOrigin(): void {
  * `base-origin:`) and the earlier list stays. An empty list is allowed: no system host.
  */
 export function setSystemVaultHosts(hosts: readonly string[]): void {
-  const next = new Set<string>();
-  for (const host of hosts) {
-    if (typeof host !== "string") throw new TypeError("base-origin: setSystemVaultHosts: every host must be a string");
-    const h = host.trim().toLowerCase();
-    let ok = false;
-    try {
-      ok = new URL(`https://${h}`).hostname === h;
-    } catch {
-      ok = false;
-    }
-    if (!ok) throw new TypeError(`base-origin: setSystemVaultHosts: not a bare host name (got ${JSON.stringify(host)})`);
-    next.add(h);
-  }
-  systemHosts = next;
+  systemHosts = parseHosts("setSystemVaultHosts", hosts);
 }
 
 /** The system vault hosts that were set. Throws when `setSystemVaultHosts` has not been called. */
@@ -147,4 +153,23 @@ export function publicCorpusOrigin(): string {
 /** Forget the public corpus origin. For tests. */
 export function resetPublicCorpusOrigin(): void {
   publicCorpus = null;
+}
+
+/**
+ * Optional. Set the host names of a local development rig (bare host names, as for `setSystemVaultHosts`; an IPv6 literal is
+ * written in brackets). A rule that only applies when the platform origin is a local rig takes its branch only when the origin's
+ * host is in this list. The default is the empty list: no branch is taken. An empty list is allowed.
+ */
+export function setLocalRigHosts(names: readonly string[]): void {
+  rigHosts = parseHosts("setLocalRigHosts", names);
+}
+
+/** The local rig host names that were set; the empty set when none were. */
+export function localRigHosts(): ReadonlySet<string> {
+  return rigHosts;
+}
+
+/** Back to the empty set. For tests. */
+export function resetLocalRigHosts(): void {
+  rigHosts = new Set();
 }

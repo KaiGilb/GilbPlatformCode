@@ -1,15 +1,18 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   baseOrigin,
+  localRigHosts,
   minOntologyQuery,
   ontologyApiOrigin,
   publicCorpusOrigin,
   resetBaseOrigin,
+  resetLocalRigHosts,
   resetMinOntologyQuery,
   resetOntologyApiOrigin,
   resetPublicCorpusOrigin,
   resetSystemVaultHosts,
   setBaseOrigin,
+  setLocalRigHosts,
   setMinOntologyQuery,
   setOntologyApiOrigin,
   setPublicCorpusOrigin,
@@ -24,6 +27,7 @@ afterEach(() => {
   resetOntologyApiOrigin();
   resetMinOntologyQuery();
   resetPublicCorpusOrigin();
+  resetLocalRigHosts();
 });
 
 describe("setBaseOrigin / baseOrigin", () => {
@@ -232,6 +236,52 @@ describe("publicCorpusOrigin (optional, no built-in value)", () => {
   });
 });
 
+describe("setLocalRigHosts / localRigHosts (optional)", () => {
+  test("unset: the empty set, so no rig branch is taken", () => {
+    expect(localRigHosts().size).toBe(0);
+    expect(localRigHosts().has("rig.example.test")).toBe(false);
+  });
+
+  test("a fresh copy of the module starts with the empty set", async () => {
+    vi.resetModules();
+    const fresh = await import("./baseOrigin");
+    expect(fresh.localRigHosts().size).toBe(0);
+  });
+
+  test("set: the names, trimmed and lower-cased; an IPv6 literal keeps its brackets", () => {
+    setLocalRigHosts([" Rig.Example.Test ", "127.0.0.1", "[::1]"]);
+    expect([...localRigHosts()].sort()).toEqual(["127.0.0.1", "[::1]", "rig.example.test"]);
+    expect(localRigHosts().has("rig.example.test")).toBe(true);
+    expect(localRigHosts().has("other.example.test")).toBe(false);
+  });
+
+  test("an empty list clears it", () => {
+    setLocalRigHosts(["rig.example.test"]);
+    setLocalRigHosts([]);
+    expect(localRigHosts().size).toBe(0);
+  });
+
+  test.each([[""], ["http://rig.example.test"], ["rig.example.test:8787"], ["rig.example.test/x"], ["rig example"]])(
+    "%j is not a bare host: a TypeError that starts with base-origin: setLocalRigHosts:, the earlier list stays",
+    (bad) => {
+      setLocalRigHosts(["rig.example.test"]);
+      expect(() => setLocalRigHosts([bad])).toThrow(TypeError);
+      expect(() => setLocalRigHosts([bad])).toThrow(/^base-origin: setLocalRigHosts: /);
+      expect([...localRigHosts()]).toEqual(["rig.example.test"]);
+    },
+  );
+
+  test("a value that is not a string is refused", () => {
+    expect(() => setLocalRigHosts([1 as unknown as string])).toThrow(/setLocalRigHosts: every host must be a string/);
+  });
+
+  test("reset puts the empty set back", () => {
+    setLocalRigHosts(["rig.example.test"]);
+    resetLocalRigHosts();
+    expect(localRigHosts().size).toBe(0);
+  });
+});
+
 describe("the settings are independent", () => {
   test("setting or resetting one leaves the others", () => {
     setBaseOrigin("https://platform.example.test");
@@ -239,7 +289,9 @@ describe("the settings are independent", () => {
     setOntologyApiOrigin("https://ontology.example.test");
     setMinOntologyQuery(9);
     setPublicCorpusOrigin("https://corpus.example.test");
+    setLocalRigHosts(["rig.example.test"]);
     resetBaseOrigin();
+    expect(localRigHosts().size).toBe(1);
     expect(systemVaultHosts().size).toBe(1);
     expect(ontologyApiOrigin()).toBe("https://ontology.example.test");
     expect(minOntologyQuery()).toBe(9);
@@ -254,15 +306,18 @@ describe("the export list", () => {
   test("is exactly these functions", () => {
     expect(Object.keys(api).sort()).toEqual([
       "baseOrigin",
+      "localRigHosts",
       "minOntologyQuery",
       "ontologyApiOrigin",
       "publicCorpusOrigin",
       "resetBaseOrigin",
+      "resetLocalRigHosts",
       "resetMinOntologyQuery",
       "resetOntologyApiOrigin",
       "resetPublicCorpusOrigin",
       "resetSystemVaultHosts",
       "setBaseOrigin",
+      "setLocalRigHosts",
       "setMinOntologyQuery",
       "setOntologyApiOrigin",
       "setPublicCorpusOrigin",

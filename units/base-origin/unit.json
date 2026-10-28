@@ -10,7 +10,7 @@
     "files": []
   },
   "namedChanges": [
-    "this unit replaces five host literals with settings",
+    "this unit replaces six host literals with settings",
     "There is none. The app this came from falls back to a local address when its environment names no origin; this unit throws instead"
   ],
   "newFiles": [
