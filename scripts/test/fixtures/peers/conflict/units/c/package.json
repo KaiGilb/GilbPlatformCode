@@ -1,0 +1,7 @@
+{
+  "name": "@kaigilb/gilbplatformcode-c",
+  "version": "0.1.0",
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

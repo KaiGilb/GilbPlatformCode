@@ -1,0 +1,7 @@
+{
+  "name": "@kaigilb/gilbplatformcode-a",
+  "version": "0.1.0",
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-b": "^0.1.0"
+  }
+}

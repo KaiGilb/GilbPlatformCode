@@ -16,3 +16,11 @@ Clone: `git clone https://github.com/KaiGilb/GilbPlatformCode.git`
 The two never share a folder. A unit that exists for both (the section menu: `units/section-menu` and `web-units/section-menu`) is two units with the same behaviour, one per folder, each with its own reference document (`t:SectionMenu.app`, `t:SectionMenu.web`). A website takes a web unit as a copy, the same way an app takes a unit: pack the unit from a clone at a commit (`npm pack`) and keep the packed file in the site's repository (see the unit's README, "How to take it"). ⛔ Not by a pnpm git URL with `&path:`: its lockfile loses the path, and an install into an empty store gets the whole repository. Under pnpm 11 the site's `pnpm-workspace.yaml` must also exclude the packed unit from `minimumReleaseAge`; prove a take with an install into an empty store (the unit's README says how).
 
 The web units: `section-menu` (the header menu), and the website starter's ten building blocks, moved here from its `components/catalog/` and `components/ContactForm.vue`: `hero`, `feature-grid`, `testimonial`, `pricing`, `faq`, `cta-section`, `blog-post-card`, `image-gallery`, `newsletter-signup` and `contact-form`. Every one of the ten reads one set of theme variables, `--site-block-*`, so a site maps its tokens once (each unit's README, "Host must supply").
+
+## Install order
+
+A unit's library peers must be installed before it; `scripts/peers.mjs` works out that order from the `package.json` files and prints the `npm install` line.
+
+```
+node scripts/peers.mjs <unit>
+```
