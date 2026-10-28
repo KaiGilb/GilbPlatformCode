@@ -61,6 +61,17 @@ export interface ReachableVault {
    * a member, never an appended extra element. When the landing vault is not reachable, NO
    * member carries it and none is substituted. */
   isLandingVault: boolean;
+  /**
+   * The vault's registered SHORT name (`podName` on `GET /lws/vaults`), or null.
+   * ⛔ Not the display name (`name`). Null with {@link shortNameKnown} true means none is
+   * registered. Null with the flag false or absent means the register was not read.
+   */
+  shortName?: string | null;
+  /**
+   * TRUE only when this row read the name register. A missing flag is not known
+   * (the platform's rule for a missing `podNameKnown` key).
+   */
+  shortNameKnown?: boolean;
 }
 
 /** True when the principal holds the read mode on this vault. */
