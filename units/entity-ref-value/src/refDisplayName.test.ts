@@ -70,3 +70,43 @@ describe("refDisplayName", () => {
     expect(entityRefName({ label: "L", termLabel: "T" })).toBe(refDisplayName({ label: "L", termLabel: "T" }));
   });
 });
+
+describe("refDisplayName with the record's main tag", () => {
+  const MAIN = "platform-tag";
+  it("label, termLabel, title and name win over the main tag", () => {
+    expect(refDisplayName({ label: "L" }, undefined, MAIN)).toBe("L");
+    expect(refDisplayName({ termLabel: "TL" }, undefined, MAIN)).toBe("TL");
+    expect(refDisplayName({ title: "T" }, undefined, MAIN)).toBe("T");
+    expect(refDisplayName({ name: "N" }, undefined, MAIN)).toBe("N");
+  });
+
+  it("unitTag and tag win over the main tag", () => {
+    expect(refDisplayName({ unitTag: "PT-1" }, undefined, "somethingelse")).toBe("PT-1");
+    expect(refDisplayName({ tag: "t1" }, undefined, "somethingelse")).toBe("t1");
+  });
+
+  it("the main tag wins over the file name, the tail of the address and Untitled", () => {
+    expect(refDisplayName({ fileName: "x.pdf" }, undefined, MAIN)).toBe(MAIN);
+    expect(refDisplayName({}, "https://example.test/base/e/abc123", MAIN)).toBe(MAIN);
+    expect(refDisplayName({}, undefined, MAIN)).toBe(MAIN);
+  });
+
+  it("the main tag is trimmed, and a blank one, null or undefined is ignored", () => {
+    expect(refDisplayName({}, undefined, "  alpha  ")).toBe("alpha");
+    expect(refDisplayName({ fileName: "x.pdf" }, undefined, "  ")).toBe("x.pdf");
+    expect(refDisplayName({}, "https://example.test/base/e/abc123", "")).toBe("abc123");
+    expect(refDisplayName({}, undefined, null)).toBe("Untitled");
+    expect(refDisplayName({}, undefined, undefined)).toBe("Untitled");
+  });
+
+  it("a call with two arguments answers as before", () => {
+    expect(refDisplayName({ fileName: " Customer contract.pdf " }, "https://example.test/base/e/abc123")).toBe("Customer contract.pdf");
+    expect(refDisplayName({}, "https://example.test/base/e/abc123")).toBe("abc123");
+    expect(refDisplayName(null, undefined)).toBe("Untitled");
+  });
+
+  it("with no facts the main tag is not read: the tail of the address, else Untitled", () => {
+    expect(refDisplayName(null, "https://example.test/base/e/abc123", MAIN)).toBe("abc123");
+    expect(refDisplayName(undefined, undefined, MAIN)).toBe("Untitled");
+  });
+});

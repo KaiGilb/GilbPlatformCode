@@ -32,14 +32,17 @@ export type PlanLinkFacts = {
 };
 
 /** The record's tag (unitTag, then tag). Empty when it has neither. */
-export function recordTag(facts: Record<string, string> | null | undefined): string {
-  if (!facts) return "";
-  for (const slug of MASTER_TAG_SLUGS) {
-    const v = facts[slug]?.trim();
-    if (v) return v;
+export function recordTag(facts: Record<string, string> | null | undefined, mainTag?: string | null): string {
+  if (facts) {
+    for (const slug of MASTER_TAG_SLUGS) {
+      const v = facts[slug]?.trim();
+      if (v) return v;
+    }
   }
-  return "";
+  // One tag rule, the platform's: a record with no `unitTag` is named by its MAIN tag, when the caller has read it (`useMainTag(s)`).
+  return mainTag?.trim() ?? "";
 }
+
 
 function linkObject(raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;

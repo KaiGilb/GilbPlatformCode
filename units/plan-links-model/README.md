@@ -16,7 +16,7 @@ From `planLinks`:
 - `partOfExcludedIds(self, pool)`: the record and every record that reaches it through `fvParent`, as ids and addresses. Offering one of these as Part of would loop.
 - `wouldLoop(self, chosenParentUri, read)`: whether the chosen parent already sits under `self`. Walks up through `fvParent` with the host's `read(id, address)`, at most 50 reads. True only when the chain reaches `self`; a chain that ends is false; a 50th record whose parent is not `self` throws `PlanChainError` ("This chain is too deep to check."); a read that throws or returns nothing throws `PlanChainError` ("Could not check the chain — try again."). Nothing is written.
 - `PlanChainError`: the error `wouldLoop` throws; its message is the notice.
-- `recordTag(facts)`: the record's tag, `unitTag` then `tag`, trimmed; empty when it has neither.
+- `recordTag(facts, mainTag?)`: the record's tag, `unitTag` then `tag`, trimmed; when it has neither, the `mainTag` argument trimmed (the record's main tag, if the caller has read it); empty when there is none. `facts` may be null.
 - `tagMatches(tag, needle)`: an empty needle matches every tag; otherwise a case-insensitive contains on the tag alone.
 - `alreadyMeasuresSentence(valueTag, otherTag)` and `duplicateTagSentence(tag)`: the two notices.
 - `withLinkFact(facts, servedFacts, slug, uri)`: the next flat and served facts after setting (`uri`) or retracting (`null`) one link. The served value is only `{ "@id": uri }`.
@@ -32,6 +32,10 @@ From `planSolution`:
 - `readPartOf(raw)` and `readPartOfFact(record)`: a Part of System value as `{ kind: "link", uri }`, `{ kind: "label", label }` or `{ kind: "empty" }`. `{ "@id" }` is the link; an older `{ "a:label" }` is words, not a link. `PartOfReading` is the type.
 
 Wire vocabulary, verbatim from the code: the fact names `fvParent`, `partOf`, `unitTag` and `tag` (a caller passes any link name as `slug`); the served link `{ "@id": <address> }`; `{ "a:label" }`; the relation type `t:SolutionOf`; the roles `role:source` and `role:target`; an entity address `http(s)://<host>/(base|vault)/e/<id>`.
+
+## Changes in 0.2.0
+
+- `recordTag` takes the record's main tag as an optional second argument, the fallback when the record holds no `unitTag` or `tag`. A call with one argument answers as before.
 
 ## What this is not
 
@@ -117,10 +121,10 @@ if (await tagUsedHere(tag)) notice(duplicateTagSentence(tag));
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`:
+GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`:
 
-- `src/lib/base/planLinks.ts` lines 1-27, 33-213 and 230-279 to `src/planLinks.ts`. Comments made generic (the two header lines, unchanged in sense). Code verbatim except:
-  - the imports of `./config` (`vaultOriginOf`), `./planFind` (`pageAttributeIds`) and `./picture` (`vaultIdOfEntity`) are removed: they were used only by `tagUsedInVault`, which is cut (lines 214-228 with its doc comment). `typeFacetKey` of `./workingSetFacets` was used only by `isTypeName`;
+- `src/lib/base/planLinks.ts` lines 1-29, 35-215 and 232-281 to `src/planLinks.ts`. Comments made generic (the two header lines, unchanged in sense). Code verbatim except:
+  - the imports of `./config` (`vaultOriginOf`), `./planFind` (`pageAttributeIds`) and `./picture` (`vaultIdOfEntity`) are removed: they were used only by `tagUsedInVault`, which is cut (lines 216-230 with its doc comment). `typeFacetKey` of `./workingSetFacets` was used only by `isTypeName`;
   - `./entityRefFacts` (`childrenPointingAt`, `entityRefFromFact`) is `@kaigilb/gilbplatformcode-entity-ref`; `./search` (`idFromEntityUri`) is `@kaigilb/gilbplatformcode-id-tail`; `./planCard` (`memberValue`) is `@kaigilb/gilbplatformcode-plan-card-facts`;
   - `MASTER_TAG_SLUGS` of `./entityDisplayName` (line 28) is a non-exported `const MASTER_TAG_SLUGS = ["unitTag", "tag"] as const;` in the file, with the same value;
   - `isTypeName` (lines 28-31) is deleted and imported from `@kaigilb/gilbplatformcode-type-key`, then re-exported (`export { isTypeName };`), so the export list is the source's;

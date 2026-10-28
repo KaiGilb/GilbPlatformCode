@@ -30,7 +30,7 @@
     "@kaigilb/gilbplatformcode-plan-impacts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-impacts-model": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
-    "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-links-model": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-source": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-stakeholder-lines": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.1.0",

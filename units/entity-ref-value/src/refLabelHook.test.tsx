@@ -1,9 +1,13 @@
 // The host hook of the README, run for real: the rules of the source's own label hook, with the host's
-// loaded-records list and record read replaced by fakes.
+// loaded-records list and record read replaced by fakes, and the main tag read through the `main-tag` unit
+// over a fake tag platform (a fake `fetch`, a fake signing session; no network).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { resetBaseOrigin, resetLocalRigHosts, resetSystemVaultHosts, setBaseOrigin, setSystemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
+import { resetLwsAuth, setLwsAuth, type LwsAuthHost } from "@kaigilb/gilbplatformcode-lws-session-bridge";
+import { needsMainTag, useMainTag } from "@kaigilb/gilbplatformcode-main-tag";
 import { EntityRefValue, RefLabelContext, refDisplayName } from "./index";
 import type { UseRefLabel } from "./index";
 
@@ -26,9 +30,15 @@ const useRefLabel: UseRefLabel = (ref, vaultId) => {
     staleTime: 30_000,
   });
 
-  if (cached) return cached;
+  // A record with no label, name or `unitTag`/`tag` is named by its MAIN tag (the same cache entry the Tags section changes).
+  // Only such a record asks; a named one costs no request.
+  const facts = fromList?.facts ?? q.data?.facts;
+  const main = useMainTag(ref && facts && needsMainTag(facts) ? ref.uri : null);
+  const mainTag = main.data?.known ? main.data.tag : null;
+
+  if (fromList) return refDisplayName(fromList.facts, fromList.entityUri, mainTag);
   if (q.isPending) return null;
-  if (q.data) return refDisplayName(q.data.facts, q.data.entityUri || ref?.uri);
+  if (q.data) return refDisplayName(q.data.facts, q.data.entityUri || ref?.uri, mainTag);
   return ref ? refDisplayName(null, ref.uri) : null;
 };
 // ---- end ----
@@ -41,11 +51,46 @@ const wrap = (c: QueryClient) => ({ children }: { children: ReactNode }) => (
   </QueryClientProvider>
 );
 
+// A fake tag platform: it answers POST /base/tag/masters with the main tags in `mains`, and counts the calls.
+const mains = new Map<string, string>();
+let masterCalls: string[][];
+function fakeAuth() {
+  return {
+    bearerHeaderFor: vi.fn(async (_url: string, _method?: string) => ({ authorization: "DPoP t-bearer", dpop: "p-bearer" })),
+    dpopReadAuth: vi.fn(async (_m: string, _u: string) => ({ authorization: "DPoP t-read", dpop: "p-read" })),
+    dpopWriteAuth: vi.fn(async (_m: string, _u: string) => ({ authorization: "DPoP t-write", dpop: "p-write" })),
+    invalidateDpop: vi.fn(),
+    tokenManager: { getSession: vi.fn(async () => ({ principal: "https://geo.example.test/base/p/ann", vault: null, vaults: [] })), invalidate: vi.fn() },
+  } satisfies LwsAuthHost;
+}
+
 beforeEach(() => {
   listed = undefined;
   readRecord.mockReset();
+  mains.clear();
+  masterCalls = [];
+  setBaseOrigin("https://geo.example.test");
+  setSystemVaultHosts(["veda.geo.example.test"]);
+  setLwsAuth(fakeAuth());
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).endsWith("/base/tag/masters")) return new Response("{}", { status: 404 });
+    const body = JSON.parse(String(init?.body)) as { targetEntities: string[] };
+    masterCalls.push(body.targetEntities);
+    return Response.json({
+      masterTags: body.targetEntities.map((t) =>
+        mains.has(t) ? { targetEntity: t, tagString: mains.get(t), tagKnown: true } : { targetEntity: t, tagString: null, tagKnown: false, tagUnknownReason: "none" },
+      ),
+    });
+  });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  resetLwsAuth();
+  resetBaseOrigin();
+  resetSystemVaultHosts();
+  resetLocalRigHosts();
+});
 
 describe("the README host hook", () => {
   it("a hit in the loaded list wins, by id or by address, and nothing is read", async () => {
@@ -110,5 +155,62 @@ describe("the README host hook", () => {
     render(<EntityRefValue value="Paris" vaultId="v1" />, { wrapper: wrap(client()) });
     expect(readRecord).not.toHaveBeenCalled();
     expect(screen.getByText("Paris")).toBeTruthy();
+  });
+
+  it("a list hit with no name, label, unitTag or tag is named by its MAIN tag, from ONE masters call; the address shows until it answers", async () => {
+    mains.set(REF, "platform-tag");
+    listed = [{ id: "osm-r-59470", entityUri: REF, facts: {} }];
+    render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+    expect(screen.getByText("osm-r-59470")).toBeTruthy();
+    expect(await screen.findByText("platform-tag")).toBeTruthy();
+    expect(masterCalls).toEqual([[REF]]);
+    expect(readRecord).not.toHaveBeenCalled();
+  });
+
+  it("a list hit that holds a name, a label, a unitTag or a tag asks the platform nothing, and its own name wins over the main tag", async () => {
+    mains.set(REF, "platform-tag");
+    for (const facts of [{ name: "Ann" }, { label: "Ann" }, { unitTag: "PT-1" }, { tag: "t1" }] as Record<string, string>[]) {
+      listed = [{ id: "osm-r-59470", entityUri: REF, facts }];
+      const view = render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+      expect(view.container.textContent).toBe(Object.values(facts)[0]!);
+      view.unmount();
+    }
+    expect(masterCalls).toEqual([]);
+  });
+
+  it("a record with a unitTag keeps it, although its main tag differs", async () => {
+    mains.set(REF, "somethingelse");
+    listed = [{ id: "osm-r-59470", entityUri: REF, facts: { unitTag: "PT-1" } }];
+    const view = render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+    expect(view.container.textContent).toBe("PT-1");
+    expect(masterCalls).toEqual([]);
+  });
+
+  it("a record that is not listed and, once read, holds no name is named by its main tag", async () => {
+    mains.set(REF, "platform-tag");
+    readRecord.mockResolvedValue({ id: "osm-r-59470", entityUri: REF, facts: {} });
+    render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+    expect(await screen.findByText("platform-tag")).toBeTruthy();
+    expect(readRecord).toHaveBeenCalledTimes(1);
+    expect(masterCalls).toEqual([[REF]]);
+  });
+
+  it("a main tag the platform does not state leaves the name as it was", async () => {
+    listed = [{ id: "osm-r-59470", entityUri: REF, facts: {} }];
+    render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+    await waitFor(() => expect(masterCalls).toHaveLength(1));
+    expect(screen.getByText("osm-r-59470")).toBeTruthy();
+  });
+
+  it("a record read that fails is named by the link's address and asks for no main tag", async () => {
+    readRecord.mockRejectedValue(new Error("403"));
+    render(<EntityRefValue value={REF} vaultId="v1" quiet />, { wrapper: wrap(client()) });
+    expect(await screen.findByText("osm-r-59470")).toBeTruthy();
+    expect(masterCalls).toEqual([]);
+  });
+
+  it("a value that is not a reference asks no main tag", () => {
+    render(<EntityRefValue value="Paris" vaultId="v1" />, { wrapper: wrap(client()) });
+    expect(masterCalls).toEqual([]);
   });
 });
