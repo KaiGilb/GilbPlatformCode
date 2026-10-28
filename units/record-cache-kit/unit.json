@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "units/record-cache-kit",
   "package": "@kaigilb/gilbplatformcode-record-cache-kit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "purpose": "The Plan card's record cache: one writer for a row in every list and read that holds it, the membership finds of a card's lines with their pins and drops, and the picker search, all over one query client.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       {
         "path": "src/lib/base/entityDisplayName.ts",
@@ -60,39 +60,39 @@
         "path": "src/lib/base/entityDisplayName.ts",
         "lines": [
           155,
-          160
+          165
         ],
         "to": "src/entityDisplayName.ts"
       },
       {
         "path": "src/lib/base/entityDisplayName.ts",
         "lines": [
-          162,
-          168
+          167,
+          173
         ],
         "to": "src/entityDisplayName.ts"
       },
       {
         "path": "src/lib/base/entityDisplayName.ts",
         "lines": [
-          170,
-          197
+          185,
+          212
         ],
         "to": "src/entityDisplayName.ts"
       },
       {
         "path": "src/lib/base/entityDisplayName.ts",
         "lines": [
-          199,
-          260
+          214,
+          278
         ],
         "to": "src/entityDisplayName.ts"
       },
       {
         "path": "src/lib/base/entityDisplayName.ts",
         "lines": [
-          262,
-          310
+          280,
+          328
         ],
         "to": "src/entityDisplayName.ts"
       },
@@ -443,47 +443,47 @@
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          18,
-          19
+          19,
+          20
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          24,
-          27
+          25,
+          28
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          39,
-          76
+          40,
+          77
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          78,
-          87
+          79,
+          88
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          89,
-          97
+          90,
+          98
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          99,
+          100,
           116
         ],
         "to": "src/planSearch.ts"
@@ -492,55 +492,63 @@
         "path": "src/lib/base/planSearch.ts",
         "lines": [
           118,
-          124
+          135
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          126,
-          131
+          137,
+          143
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          133,
-          201
+          145,
+          150
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          203,
-          251
+          152,
+          220
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          253,
-          257
+          222,
+          270
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          259,
-          285
+          272,
+          276
         ],
         "to": "src/planSearch.ts"
       },
       {
         "path": "src/lib/base/planSearch.ts",
         "lines": [
-          287,
-          294
+          278,
+          304
+        ],
+        "to": "src/planSearch.ts"
+      },
+      {
+        "path": "src/lib/base/planSearch.ts",
+        "lines": [
+          306,
+          313
         ],
         "to": "src/planSearch.ts"
       },
@@ -651,8 +659,8 @@
       {
         "path": "src/lib/base/recordHooks.ts",
         "lines": [
-          2943,
-          2951
+          2963,
+          2971
         ],
         "to": "src/recordCaches.ts"
       }
@@ -665,7 +673,9 @@
     "in `partyName.ts` line 33 the text of the field `source` of `PARTY_NAME_FLOOR` (a host and an internal ruling name) is reworded; no code reads the field",
     "`GridRecord`, `asGrid` and `recordTag` are imported from `base-record`, `description-parts-model` and `plan-links-model` (equal to the app's, comments stripped) and not copied",
     "comments that name a host, a person or an internal ruling are reworded; no code changed",
-    "0.2.0: `src/index.ts` exports `entityDisplayName` and `withCanonicalLabel` from `./entityDisplayName`; `withCanonicalLabel` (source lines 262-310) is copied with no code change"
+    "0.2.0: `src/index.ts` exports `entityDisplayName` and `withCanonicalLabel` from `./entityDisplayName`; `withCanonicalLabel` (source lines 262-310) is copied with no code change",
+    "0.3.0: in `planSearch.ts` the source import `import { fetchMainTagsForRows } from \"./recordTags\";` (source line 12) is `import { fetchMainTagsForRows } from \"@kaigilb/gilbplatformcode-main-tag\";`, a peer: the app function is the unit `main-tag`, read directly (`searchPlanRecords` is a plain function that already receives the query client, so there is no host object)",
+    "0.3.0: `needsMainTag` (source lines 175-183, between `factTrim` and `displayFriendly`) is not copied: it lives in the unit `main-tag`, which this unit imports, so a copy here would be a second home (and `main-tag` cannot import it back from here without a cycle); the source range 170-197 is taken as its moved part, 185-212"
   ],
   "newFiles": [
     "src/index.ts",

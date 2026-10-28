@@ -9,7 +9,7 @@
 //   0. a:name, where the record holds one (the ontology steward's D1 ruling L1/L2: "on any
 //      instance record that holds a:name, a:name is its name"; the seed is `PARTY_NAME_FLOOR`)
 //   1. master label  a:label
-//   2. master tag    unitTag, then tag
+//   2. master tag    unitTag, then tag, then the record's MAIN tag from the platform (`mainTag` option)
 //   3. identity human ids (BaseID) — email first, then subject, principal/alias/vault registration
 //   4. type nameField / bridges title · processName · name
 //   5. a file's own name  fileName (read-only; C210)
@@ -58,6 +58,11 @@ export type EntityDisplayOpts = {
   fallback?: string;
   /** Entity @id when facts are thin (e.g. Principal with only markers). */
   entityUri?: string | null;
+  /**
+   * One tag rule, the platform's: the record's MAIN tag, read from the platform (`useMainTag(s)`). It is the tag fallback of the chrome read
+   * order: a record that holds a label or `unitTag` / `tag` keeps it, and a record that holds none of them shows its main tag before an identity id.
+   */
+  mainTag?: string | null;
 };
 
 function factTrim(
@@ -124,6 +129,9 @@ export function entityDisplayName(
       const v = factTrim(facts, slug);
       if (v) return v;
     }
+
+    const main = opts?.mainTag?.trim();
+    if (main) return main;
 
     for (const slug of IDENTITY_DISPLAY_SLUGS) {
       const v = factTrim(facts, slug);
