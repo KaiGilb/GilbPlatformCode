@@ -19,6 +19,10 @@ node scripts/refdocs/write-refdocs.mjs --token-file <path>
 
 The live run needs the vault owner's key, handed over as a file path. The key file is deleted on every exit path, including refusals and crashes.
 
+The key file is deleted on every exit, including --dry-run: never pass --token-file to a dry run.
+
+Exit 1 also when a tag was already present and skipped; read the receipt's counts, not only the exit code.
+
 ## Stance
 
 Converging: it reads References first, never re-creates an exact tag, never overwrites an exhibit, and reads back once after all creates.
@@ -26,5 +30,7 @@ Converging: it reads References first, never re-creates an exact tag, never over
 ## Test
 
 ```
-node --test scripts/refdocs/test/
+node --test "scripts/refdocs/test/**/*.test.mjs"
 ```
+
+Node 25 does not take a directory here.
