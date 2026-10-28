@@ -4,6 +4,9 @@ import { attrKey, normalizeTypeUri, typeUri } from "@kaigilb/gilbplatformcode-re
 import {
   loadVaultContext,
   omittableAssembledKeys,
+  parseVaultContext,
+  parseVaultPrefixes,
+  readVaultContext,
   resolveStoredSpellings,
   storedSpellingFor,
   vaultContextUrl,
@@ -201,6 +204,10 @@ export type RecordFactValue =
  */
 export type RecordCreateFacts = Record<string, RecordFactValue>;
 
+/** The facts map the typed editor holds and `replaceRecord` writes — bare slugs, STRING
+ * values. Deliberately NOT widened; see {@link RecordCreateFacts}. */
+export type RecordFacts = Record<string, string>;
+
 /** The reserved JSON-LD keys a framed document carries that are NOT record facts. */
 const FRAME_META_KEYS = new Set(["@context", "@id", "@type"]);
 
@@ -387,6 +394,25 @@ export interface WriteSource {
 }
 
 /**
+ * The {@link WriteSource} for a record — or `undefined` when the record carries no served
+ * document, which is the same thing as *"there is nothing to invert"*.
+ *
+ * ⚠ It SPREADS — `patchRecord(id, patch, at, ...writeSource(rec))` — rather than passing a value,
+ * so a record with no vault provenance produces a call of the SAME ARITY it had before `S33`. That
+ * is not cosmetic and it is measured: passing an object turned three suite files RED against my
+ * own baseline on call-argument assertions alone, and passing an explicit `undefined` turned the
+ * same three RED again, because `toHaveBeenCalledWith` counts a trailing `undefined` as an
+ * argument. A placeholder row, a cache-built row and a hand-built fixture therefore all take
+ * byte-identically the path they took before, and ⛔ no shipped assertion moves.
+ */
+export function writeSource(
+  rec: { entityUri?: string; servedKeys?: readonly string[] },
+): [] | [WriteSource] {
+  if (!rec.servedKeys?.length) return [];
+  return [{ at: rec.entityUri ?? null, servedKeys: rec.servedKeys }];
+}
+
+/**
  * Resolves one slug→stored-key function for a write. ⛔ No `source` ⇒ the pre-`S33` mint.
  *
  * 🔴 Cycle161 `D` — RETURNS `null` FOR A KEY THAT NAMES NO STORED FACT, meaning **omit it**.
@@ -562,6 +588,148 @@ export function recordFromServed(id: string, doc: Record<string, unknown>, etag:
     etag,
     served: { facts: served, context: doc["@context"], etag, ...(prefixed.size ? { prefixedKeys: [...prefixed] } : {}) },
   };
+}
+
+/**
+ * The served value of a fact cannot be sent back as a full address: a short form (`base:e/…`) whose
+ * prefix the document's own `@context` does not declare. Nothing is written.
+ * ([[Rule_Code_gilb-record-io#RuleBaseioNoReadReplaceRoundTrip]]: a short form that cannot be
+ * expanded from the document's own context is refused, ⛔ not guessed.)
+ */
+export class ServedShortFormError extends Error {
+  constructor(slug: string, value: string) {
+    super(`This record holds a link this app cannot read in full (${slug}: ${value}), so nothing was changed.`);
+    this.name = "ServedShortFormError";
+  }
+}
+
+/**
+ * GAPP214.42 F2 — a fact served as a bare address may be a link (a term the vault types
+ * `"@type": "@id"`) or text, and the vault's own context, which says which, could not be read.
+ * Sent as text, a link would be stored as text, so nothing is written.
+ */
+export class ServedLinkUnreadableError extends Error {
+  constructor(slug: string, value: string) {
+    super(`This app could not read the vault's description to tell whether ${slug} (${value}) is a link, so nothing was changed. Try again in a minute.`);
+    this.name = "ServedLinkUnreadableError";
+  }
+}
+
+/** The inline parts of a served `@context` (an object, or the objects in a list), merged. A URL in
+ *  it is ⛔ never fetched: on `GET /lws/r` it is the LWS address (www.w3.org, 404). */
+function inlineContext(ctx: unknown): Record<string, unknown> {
+  const parts = Array.isArray(ctx) ? ctx : [ctx];
+  return Object.assign({}, ...parts.filter((x) => x && typeof x === "object" && !Array.isArray(x)));
+}
+
+/** An address that names itself in full (`https://…`, `urn:…`) — no prefix to expand. */
+const ABSOLUTE_IRI = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/;
+/** A `prefix:rest` short form. */
+const SHORT_FORM = /^([A-Za-z][A-Za-z0-9_.-]*):(.*)$/s;
+
+/**
+ * 🔴 GAPP214.42 (N1) — the facts a FULL-STATE write sends for a record: every fact the person did
+ * not edit EXACTLY as the vault served it, and the person's own edits as typed.
+ *
+ * Why: a full replace (`PUT /lws/r/:id`, the share act) retracts every fact it omits and stores what
+ * it is sent verbatim. Sent from {@link BaseRecord.facts}, a link `{"@id": X}` was stored as the text
+ * `"X"` (measured: `a:statedBy` after a retype, `is_ref` false), a list of links became one string,
+ * and every fact the editor never held (a grant, a value with no string form, another app's fact)
+ * was retracted. ([[Rule_Code_gilb-record-io#RuleBaseioNoReadReplaceRoundTrip]]: send back what you
+ * received for every attribute you did not edit.)
+ *
+ * Per served fact `k`:
+ *   - `k` in `edit.send`: unedited when the string equals what the editor was handed
+ *     (`factToString(served)`) ⇒ the SERVED value; else the person's string.
+ *   - `k` held by the editor but not in `edit.send` ⇒ omitted: the write drops it on purpose (a retype
+ *     into a party kind writes the name under its one home only).
+ *   - `k` never held by the editor ⇒ the served value.
+ * Then every `edit.send` key the document does not serve, as typed. No `edit` (a share) ⇒ every
+ * served fact as served.
+ *
+ * A served value goes out with full addresses: a short form is expanded only by a prefix the
+ * document itself declares inline ({@link ServedShortFormError} otherwise: nothing is sent). A term
+ * typed `"@type": "@id"` (served as a bare string) goes back as `{"@id"}`.
+ *
+ * 🔴 GAPP214.42 F2/B1 — the term types come from the VAULT'S OWN context (`vaultContextUrl(at)`),
+ * ⛔ not from the document's `@context`: on `GET /lws/r` that is `https://www.w3.org/ns/lws/v1`
+ * (404), so the id-valued arm never ran and every such write asked www.w3.org. The vault's context
+ * is read once ({@link readVaultContext}: time limit, kept), and only when a kept fact is a bare
+ * address-shaped string. Its prefixes are ⛔ not used: `/lws/r` compacts with OWNER_HOST's, not the
+ * vault host's. Not read ⇒ such a fact may be a link we cannot tell ⇒
+ * {@link ServedLinkUnreadableError}: nothing is sent.
+ *
+ * 🔴 GAPP214.42 A1 (BVedanta) — a term's type applies only to a value served under the term's OWN
+ * name. The read serves a link as `fvParent`; a value stored as TEXT under `a:fvParent` is served as
+ * `a:fvParent` (the context's `"@type": "@id"` does not match it). That value goes back as served:
+ * turning it into a link would change a value the person did not edit
+ * ([[Rule_Code_gilb-record-io#RuleBaseioNoReadReplaceRoundTrip]]). It never asks for the context.
+ *
+ * @param served the document as {@link readRecord} served it — read at the ETag the write binds to
+ * @param at the record's own entity URI (names the vault whose context is read when one is needed)
+ * @param edit the editor's facts (`held`) and the write's string facts built from them (`send`)
+ * @returns the facts, and the slugs whose served value is `""` (carried, ⛔ not dropped as unset)
+ */
+export async function factsAsServed(
+  served: ServedDocument,
+  at: string | null,
+  edit?: { held: RecordFacts; send: RecordFacts },
+): Promise<{ facts: RecordCreateFacts; keepEmpty: ReadonlySet<string> }> {
+  const out: RecordCreateFacts = {};
+  const keepEmpty = new Set<string>();
+  const kept: [string, unknown][] = [];
+  for (const [k, raw] of Object.entries(served.facts)) {
+    if (raw == null) continue;
+    if (edit) {
+      if (k in edit.send) {
+        if (edit.send[k] !== factToString(raw)) continue;
+      } else if (k in edit.held) continue;
+    }
+    kept.push([k, raw]);
+  }
+  const inline = inlineContext(served.context);
+  const prefixes = parseVaultPrefixes(inline);
+  const inlineTerms = parseVaultContext(inline);
+  const prefixed = new Set(served.prefixedKeys ?? []);
+  const untyped = kept.filter(([k, raw]) => !prefixed.has(k) && !inlineTerms.has(k) && servedAsAddress(raw));
+  const vault = untyped.length ? await readVaultContext(vaultContextUrl(at)) : null;
+  if (vault && !vault.answered) {
+    const [k, raw] = untyped[0]!;
+    throw new ServedLinkUnreadableError(k, String(Array.isArray(raw) ? raw.find((x) => typeof x === "string") : raw));
+  }
+  const idValued = (k: string): boolean => !prefixed.has(k) && (inlineTerms.get(k) ?? vault?.terms.get(k))?.idValued === true;
+  const full = (slug: string, id: string): string => {
+    if (ABSOLUTE_IRI.test(id)) return id;
+    const m = SHORT_FORM.exec(id);
+    const base = m ? prefixes.get(m[1]!) : undefined;
+    if (m && base) return `${base}${m[2]}`;
+    throw new ServedShortFormError(slug, id);
+  };
+  const expand = (slug: string, v: unknown, idValued: boolean): unknown => {
+    if (Array.isArray(v)) return v.map((x) => expand(slug, x, idValued));
+    if (typeof v === "string") return idValued ? { "@id": full(slug, v) } : v;
+    if (v && typeof v === "object") {
+      const o: Record<string, unknown> = {};
+      for (const [key, x] of Object.entries(v as Record<string, unknown>)) {
+        o[key] = key === "@id" && typeof x === "string" ? full(slug, x) : expand(slug, x, false);
+      }
+      return o;
+    }
+    return v;
+  };
+  for (const [k, raw] of kept) {
+    out[k] = expand(k, raw, idValued(k)) as RecordFactValue;
+    if (raw === "") keepEmpty.add(k);
+  }
+  if (edit) for (const [k, v] of Object.entries(edit.send)) if (!(k in out)) out[k] = v;
+  return { facts: out, keepEmpty };
+}
+
+/** True when `v` is served as a bare string shaped like an address or short form (or a list holding
+ *  one): what a term typed `"@type": "@id"` is served as, so its type decides link or text. */
+function servedAsAddress(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(servedAsAddress);
+  return typeof v === "string" && SHORT_FORM.test(v) && !/\s/.test(v);
 }
 
 /**

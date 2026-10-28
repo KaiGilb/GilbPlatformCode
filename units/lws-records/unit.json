@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-records",
   "package": "@kaigilb/gilbplatformcode-lws-records",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -53,6 +53,14 @@
         "lines": [
           222,
           234
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          236,
+          238
         ],
         "to": "src/records.ts"
       },
@@ -155,6 +163,14 @@
       {
         "path": "src/lib/base/records.ts",
         "lines": [
+          435,
+          452
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
           454,
           505
         ],
@@ -197,6 +213,14 @@
         "lines": [
           659,
           701
+        ],
+        "to": "src/records.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          703,
+          843
         ],
         "to": "src/records.ts"
       },

@@ -48,7 +48,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
     "@kaigilb/gilbplatformcode-description-parts-model": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-records": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.2.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-links-model": "^0.1.0",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0",
