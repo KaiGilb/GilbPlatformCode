@@ -1,0 +1,42 @@
+{
+  "name": "@kaigilb/gilbplatformcode-vault-type-census",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Learning what a vault holds, by type and plane, from its census of held types: which of the held type names go on the records door, found by dereferencing each term, with the one catalogue read that stands in when the platform serves no census.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "file:../lws-vault-sets",
+    "@kaigilb/gilbplatformcode-narrow-total": "file:../narrow-total",
+    "@kaigilb/gilbplatformcode-ontology-reads": "file:../ontology-reads",
+    "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-result-total": "file:../result-total",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@tanstack/react-query": "^5.101.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
+    "@kaigilb/gilbplatformcode-ontology-reads": "^0.2.0"
+  }
+}
