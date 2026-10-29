@@ -1,0 +1,35 @@
+{
+  "name": "@kaigilb/gilbplatformcode-one-card-merge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Merges a person's published rows with the holder's own rows into one list of groups, each row marked theirs, yours or both.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-online-card": "file:../online-card",
+    "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
+    "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-online-card": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.0"
+  }
+}
