@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/use-cached",
+  "package": "@kaigilb/gilbplatformcode-use-cached",
+  "version": "0.1.0",
+  "purpose": "A React hook that shows a page's data on the first render when the session cache holds it, revalidates behind it, and says when an update is running.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/useCached.ts",
+        "lines": [
+          1,
+          31
+        ],
+        "to": "src/useCached.ts"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedPaintFromMemory"
+  ],
+  "namedChanges": [
+    "the import of the cache reads from the package \"@kaigilb/gilbplatformcode-session-cache\" instead of \"./sessionCache\";",
+    "the first comment line loses its cycle tag; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

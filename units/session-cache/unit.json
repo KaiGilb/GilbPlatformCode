@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "unit": "units/session-cache",
+  "package": "@kaigilb/gilbplatformcode-session-cache",
+  "version": "0.1.0",
+  "purpose": "An in-memory cache that a page opens from at once and revalidates behind, keyed by person and workspace, bounded by entries and bytes, and emptied when the person changes.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/sessionCache.ts",
+        "lines": [
+          1,
+          235
+        ],
+        "to": "src/sessionCache.ts"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedPaintFromMemory",
+    "RuleAppspeedFreshBeforeWrite",
+    "RuleAppspeedChangesOnly"
+  ],
+  "namedChanges": [
+    "the import of the person hub reads from the package \"@kaigilb/gilbplatformcode-principal-hub\" instead of \"./principalHub\";",
+    "the last line of the module, which installed the focus listener on the window when the module loaded (`if (typeof window !== \"undefined\") sessionCache.installFocus(window);`), is removed: the host calls `sessionCache.installFocus(window)` once;",
+    "comments lose their cycle tags, and the third line no longer names the source app's workspace file; no other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
