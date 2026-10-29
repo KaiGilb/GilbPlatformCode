@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "unit": "units/person-connections",
+  "package": "@kaigilb/gilbplatformcode-person-connections",
+  "version": "0.1.0",
+  "purpose": "Reads which of a holder's circles each person is placed in, and resolves a person's public card.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/connections/canonical.ts",
+        "lines": [
+          1,
+          140
+        ],
+        "to": "src/canonical.ts"
+      },
+      {
+        "path": "src/connections/compose.ts",
+        "lines": [
+          1,
+          119
+        ],
+        "to": "src/compose.ts"
+      },
+      {
+        "path": "src/connections/placements.ts",
+        "lines": [
+          1,
+          183
+        ],
+        "to": "src/placements.ts"
+      },
+      {
+        "path": "src/connections/read.ts",
+        "lines": [
+          1,
+          101
+        ],
+        "to": "src/read.ts"
+      },
+      {
+        "path": "src/connections/personCard.ts",
+        "lines": [
+          1,
+          129
+        ],
+        "to": "src/personCard.ts"
+      },
+      {
+        "path": "src/connections/heldNotes.ts",
+        "lines": [
+          1,
+          52
+        ],
+        "to": "src/heldNotes.ts"
+      },
+      {
+        "path": "src/onlineCard/anchorResolver.ts",
+        "lines": [
+          1,
+          59
+        ],
+        "to": "src/anchorResolver.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of the source's own files lose `.ts` (`./compose`, `./placements`, `./canonical`, `./read`, `./anchorResolver`); `./platform.ts` (`request`, `routeUrl`, `retryAfterMs`, `PlatformError`, `PlatformClient`, `RequestBound`) is the peer `@kaigilb/gilbplatformcode-record-sync`; the type import `LinkReading` from `../onlineCard/link.ts` is the peer `@kaigilb/gilbplatformcode-online-card-link`; `../onlineCard/anchorResolver.ts` (in `personCard.ts` and `heldNotes.ts`) is `./anchorResolver`, a file of this unit;",
+    "comments only: person names, cycle, round, batch and ticket tags, agent names, app names, branch and commit names and a legacy host name are removed or reworded and the technical meaning is kept (`heldNotes.ts` has a new, shorter header comment); no code line changed (checked token by token, comments and imports excluded);",
+    "no string literal carries a tag, a name or a host, so none was changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

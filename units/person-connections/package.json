@@ -1,0 +1,29 @@
+{
+  "name": "@kaigilb/gilbplatformcode-person-connections",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads which of a holder's circles each person is placed in, and resolves a person's public card.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-online-card-link": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-sync": "^0.3.0"
+  }
+}

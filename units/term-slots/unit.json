@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/term-slots",
+  "package": "@kaigilb/gilbplatformcode-term-slots",
+  "version": "0.1.0",
+  "purpose": "Finds a card field by its ontology term, and reads its spelling, label and value set from the master.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/termSlots.ts",
+        "lines": [
+          38,
+          194
+        ],
+        "to": "src/termSlots.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "**the host constant becomes the setting** (RuleGhsSettingUnit): the import `GILBVEDA_MASTER_ORIGIN` from `./stakeholderKinds` is `import { termOrigin } from \"@kaigilb/gilbplatformcode-term-origin\"`, and each of the four URLs that began `${GILBVEDA_MASTER_ORIGIN}` (source lines 48, 133, 158 and 178) begins `${termOrigin()}`, read when the URL is built, never when the module loads;",
+    "**the host literal in `termLabelOfIri` becomes the same setting**: the pattern `/^https:\\/\\/veda\\.gilb\\.com\\/base\\/t\\/([A-Za-z0-9]+)$/` (source line 153) is `new RegExp(`^${escapeRegExp(termOrigin())}/base/t/([A-Za-z0-9]+)$`)`, built each call, with `escapeRegExp` as a new private function at the end of the file. On the origin the app used (`https://veda.gilb.com`) the two patterns match the same texts (measured over a scripted scenario against the source: same answers, same requests);",
+    "**a test seam** (new code, not in the source): `__resetTermSlotsForTest()` empties the four caches; the app has no call that forgets them;",
+    "lines 1-37 of the source are not taken (`termName` and `fieldOfTerm`, which go to a later unit; no taken line calls either); the file's header comment is a new, shorter one;",
+    "comments only otherwise: cycle and step tags, person names, agent names, app names and one specification-clause number are removed or reworded, and one host name in a comment is `<origin>`; no code changed. No string literal carried a tag."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
