@@ -44,9 +44,11 @@ On a Value the Description is titled Ambition Level (and is not drawn until it h
 
 ## How to take it
 
+**On GilbPlatform, take the ready-made host as well.** `plan-card-hosts-gilbplatform` is one provider that answers every host context this card needs, so the card draws, reads and saves in a GilbPlatform vault with no host object written. Its README gives the whole install (`node scripts/peers.mjs units/plan-card-hosts-gilbplatform`, which includes this card's peers but not the card itself: add this card to that line) and one wiring example. The rest of this section, and "What the host must supply", are for a host other than GilbPlatform.
+
 Package: `@kaigilb/gilbplatformcode-value-card`
 
-Take it with its peer `plan-card` (0.1.0 or later in the 0.1 line) and everything `plan-card` needs; the command below names all of them (54 units in all, this one last), in an order that installs. Third-party: `@dnd-kit/core` 6.3.1 and `react-dom` 19, which `plan-card` passes on as its own peers, and `react` 19. Put this line in your app's own `.npmrc` so all are installed as copies and not links (one copy of React, one copy of each unit, so one copy of each context and of each module's state):
+Take it with its peer `plan-card` (0.2.0 or later in the 0.2 line) and everything `plan-card` needs; the command below names all of them (54 units in all, this one last), in an order that installs. Third-party: `@dnd-kit/core` 6.3.1 and `react-dom` 19, which `plan-card` passes on as its own peers, and `react` 19. Put this line in your app's own `.npmrc` so all are installed as copies and not links (one copy of React, one copy of each unit, so one copy of each context and of each module's state):
 
 ```
 install-links=true
@@ -357,7 +359,7 @@ The `record` must change when the host's `storePlanRow` runs (the screen takes i
 
 ## What the host must supply
 
-The full list is in `units/plan-card/README.md`, section "What the host must supply": the `PlanCardHostContext` members (reads, person search, Type picker, click-time getters, cache writes, the four writers, the dialog) and the contexts of the units the card draws. This unit adds nothing to it.
+The full list is in `units/plan-card/README.md`, section "What the host must supply": the `PlanCardHostContext` members (reads, person search, Type picker, click-time getters, cache writes, the four writers, the dialog) and the contexts of the units the card draws. This unit adds nothing to it. On GilbPlatform, `plan-card-hosts-gilbplatform` supplies all of it.
 
 What this card draws: the Type · Level · Version line, Illustration, Scale, Endpoint, Qualifiers, Levels, Meter, Stakeholder, Value of Function, Ambition Level, Authority and Type.
 
