@@ -13,6 +13,8 @@ import {
   checkSubscriptionLogin,
   childEnv,
   createBridge,
+  HOP_MAX_MS,
+  MCP_TOOL_TIMEOUT_MS,
   loadAllowedOrigins,
   normalizeOrigin,
   parseCli,
@@ -686,5 +688,145 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
     });
     expect(h.events.find((e) => e[0] === "message")).toBeUndefined();
     expect(h.events.find((e) => e[0] === "error")[1].message).toMatch(/API key/);
+  });
+});
+
+describe("the Claude CLI waits as long as the bridge allows (MCP_TOOL_TIMEOUT)", () => {
+  it("the constant is the hand-off limit plus a minute, in milliseconds", () => {
+    expect(MCP_TOOL_TIMEOUT_MS).toBe(HOP_MAX_MS + 60000);
+  });
+
+  it("childEnv sets it when the person has none", () => {
+    expect(childEnv({ PATH: "/bin" }).MCP_TOOL_TIMEOUT).toBe(String(HOP_MAX_MS + 60000));
+  });
+
+  it("childEnv keeps a larger value of the person's own, and raises a smaller one", () => {
+    expect(childEnv({ MCP_TOOL_TIMEOUT: String(HOP_MAX_MS * 10) }).MCP_TOOL_TIMEOUT).toBe(String(HOP_MAX_MS * 10));
+    expect(childEnv({ MCP_TOOL_TIMEOUT: "30000" }).MCP_TOOL_TIMEOUT).toBe(String(HOP_MAX_MS + 60000));
+    expect(childEnv({ MCP_TOOL_TIMEOUT: "not a number" }).MCP_TOOL_TIMEOUT).toBe(String(HOP_MAX_MS + 60000));
+  });
+
+  it("the spawned claude gets it", async () => {
+    const { body } = await pair();
+    await turn(body.secret, { prompt: "hello" });
+    expect(runs().find((r) => r.event === "run").mcpToolTimeout).toBe(String(HOP_MAX_MS + 60000));
+  });
+
+  it("a larger value in the person's environment reaches the spawned claude; a smaller one is raised", async () => {
+    await bridge.close();
+    await start({ MCP_TOOL_TIMEOUT: String(HOP_MAX_MS * 10) });
+    let { body } = await pair();
+    await turn(body.secret, { prompt: "hello" });
+    expect(runs().find((r) => r.event === "run").mcpToolTimeout).toBe(String(HOP_MAX_MS * 10));
+    await bridge.close();
+    await start({ MCP_TOOL_TIMEOUT: "1000" });
+    ({ body } = await pair());
+    await turn(body.secret, { prompt: "hello" });
+    expect(runs().find((r) => r.event === "run").mcpToolTimeout).toBe(String(HOP_MAX_MS + 60000));
+  });
+});
+
+describe("an abandoned hand-off is stopped", () => {
+  const PARENT_TOOLS = [
+    { name: "list_vaults", description: "d", inputSchema: { type: "object", properties: {} } },
+    { name: "run_named_role", description: "d", inputSchema: { type: "object", properties: {} } },
+  ];
+  const until = async (fn, what) => {
+    for (let i = 0; i < 100; i++) {
+      if (fn()) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  /** Opens a parent turn that stays alive, collecting its stream events; returns its turn id and the MCP address of its claude. */
+  async function openParent(secret) {
+    const events = [];
+    const res = await fetch(`${base}/v1/turn`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bridge-secret": secret },
+      body: JSON.stringify({ system: "s", tools: PARENT_TOOLS, prompt: "WAITFOREVER" }),
+    });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    void (async () => {
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read().catch(() => ({ done: true }));
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const blk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const ev = /event: (.*)/.exec(blk)?.[1];
+          const data = /data: (.*)/.exec(blk)?.[1];
+          if (ev && data) events.push([ev, JSON.parse(data)]);
+        }
+      }
+    })();
+    await until(() => events.some((e) => e[0] === "start") && runs().some((r) => r.event === "run"), "the parent turn to start");
+    const turnId = events.find((e) => e[0] === "start")[1].turnId;
+    const cfg = JSON.parse(runs().find((r) => r.event === "run").argv[runs().find((r) => r.event === "run").argv.indexOf("--mcp-config") + 1]);
+    return { events, turnId, mcpUrl: cfg.mcpServers.gilb.url, close: () => reader.cancel().catch(() => undefined) };
+  }
+  const rpc = (url, msg) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", ...msg }) });
+
+  it("notifications/cancelled for a pending run_named_role call stops the nested claude, frees the turn for the next hand-off, and tells the page", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const call = rpc(parent.mcpUrl, { id: 77, method: "tools/call", params: { name: "run_named_role", arguments: { role: "R", task: "t" } } });
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const reqId = parent.events.find((e) => e[0] === "tool_request")[1].id;
+
+    // The hand-off the page opened for it.
+    const nested = hop(body.secret, parent.turnId, { prompt: "WAITFOREVER" });
+    await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
+    // While it runs, a second one is refused.
+    expect((await hop(body.secret, parent.turnId)).status).toBe(429);
+
+    // The parent's claude abandons the call.
+    expect((await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 77, reason: "timed out" } })).status).toBe(202);
+
+    await until(() => runs().some((r) => r.event === "sigterm"), "the nested claude to get SIGTERM");
+    await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled on the parent stream");
+    expect(parent.events.find((e) => e[0] === "tool_cancelled")[1]).toEqual({ type: "tool_cancelled", id: reqId });
+    await nested; // its stream ends
+    // The turn is free: the next hand-off is accepted, not 429.
+    const next = await hop(body.secret, parent.turnId, { prompt: "again" });
+    expect(next.status).toBe(200);
+    expect(next.events.find((e) => e[0] === "message")[1].content).toBe("echo: again");
+    // The abandoned call itself was settled, so nothing waits on it.
+    const settled = await call;
+    expect(settled.status).toBe(200);
+    await parent.close();
+  });
+
+  it("a cancel for a call that is not a hand-off leaves a running hand-off alone", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    void rpc(parent.mcpUrl, { id: 5, method: "tools/call", params: { name: "list_vaults", arguments: {} } });
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const nested = hop(body.secret, parent.turnId, { prompt: "WAITFOREVER" });
+    await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
+    await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 5 } });
+    await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
+    expect(runs().some((r) => r.event === "sigterm")).toBe(false);
+    expect((await hop(body.secret, parent.turnId)).status).toBe(429);
+    await parent.close();
+    void nested;
+  });
+
+  it("the parent's claude exiting while a hand-off call is pending stops the nested claude", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    void rpc(parent.mcpUrl, { id: 9, method: "tools/call", params: { name: "run_named_role", arguments: {} } });
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const nested = hop(body.secret, parent.turnId, { prompt: "WAITFOREVER" });
+    await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
+    // Kill the PARENT claude only (the first run).
+    process.kill(runs().find((r) => r.event === "run").pid, "SIGKILL");
+    await until(() => runs().filter((r) => r.event === "sigterm").length >= 1, "the nested claude to get SIGTERM");
+    const r = await nested;
+    expect(r.status).toBe(200);
   });
 });

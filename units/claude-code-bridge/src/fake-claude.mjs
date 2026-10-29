@@ -35,6 +35,8 @@ process.stdin.on("end", async () => {
     hasBaseUrl: process.env.ANTHROPIC_BASE_URL !== undefined,
     hasAuthToken: process.env.ANTHROPIC_AUTH_TOKEN !== undefined,
     keepEnv: process.env.KEEP_ME,
+    mcpToolTimeout: process.env.MCP_TOOL_TIMEOUT,
+    pid: process.pid,
     envKeys: Object.keys(process.env),
     cwd: process.cwd(),
   });
