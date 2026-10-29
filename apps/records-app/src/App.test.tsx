@@ -88,3 +88,12 @@ test("a second own card shows as a warning line", async () => {
   wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
   expect((await screen.findByRole("status")).textContent).toContain("vsc-other");
 });
+
+test("D6: the file input is reset after each pick, so the same picture can be picked again", async () => {
+  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  const input = (await screen.findByLabelText("Profile picture")) as HTMLInputElement;
+  const setValue = vi.fn();
+  Object.defineProperty(input, "value", { configurable: true, get: () => "", set: setValue });
+  fireEvent.change(input, { target: { files: [new File(["x"], "me.png", { type: "image/png" })] } });
+  await waitFor(() => expect(setValue).toHaveBeenCalledWith(""));
+});

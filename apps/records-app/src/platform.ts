@@ -22,7 +22,7 @@ export const ID_ORIGIN = env.VITE_ID_ORIGIN ?? "https://id.gilb.com";
 export const VEDA_ORIGIN = env.VITE_VEDA_ORIGIN ?? "https://veda.gilb.com";
 export const SYSTEM_HOSTS = ["id", "veda", "geo", "kaizen", "connect", "maintain"].map((h) => `${h}.${new URL(PLATFORM_ORIGIN).hostname}`);
 
-export const credential = new SessionCredential({ dpopMintUrl: `${ID_ORIGIN}/base/auth/session/dpop-token` });
+export const credential = new SessionCredential({ dpopMintUrl: `${PLATFORM_ORIGIN}/base/auth/session/dpop-token` });
 
 /** Called once at start-up (and by tests). */
 export function initPlatform(): void {

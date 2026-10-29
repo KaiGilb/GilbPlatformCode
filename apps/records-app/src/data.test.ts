@@ -176,7 +176,7 @@ test("search keeps an entry only when every word is in its name or description",
 
 test("addEntry creates the entry type with name and description in the named vault", async () => {
   await data.addEntry(VAULT, " Kettle ", " Red ");
-  expect(createRecord).toHaveBeenCalledWith(VAULT, data.RECORD_TYPE, { name: "Kettle", description: "Red" }, "Kettle");
+  expect(createRecord).toHaveBeenCalledWith(VAULT, "t:Thing", { name: "Kettle", description: "Red" }, "Kettle");
 });
 
 test("addEntry refuses an empty name and sends nothing", async () => {
@@ -191,11 +191,29 @@ test("listEntries pages until complete, using nextOffset, and lists only the ent
   const all = await data.listEntries("v");
   expect(all.map((t) => t.name)).toEqual(["A", "B"]);
   expect(listVaultRecordsPage.mock.calls[1][2]).toBe(100);
-  expect(listVaultRecordsPage.mock.calls[0][1]).toEqual([data.RECORD_LIST_TYPE]);
+  expect(listVaultRecordsPage.mock.calls[0][1]).toEqual(["Thing"]);
 });
 
 test("listEntries throws, naming the cap, when the page guard trips", async () => {
   listVaultRecordsPage.mockResolvedValue({ records: [], complete: false, nextOffset: 1 });
   await expect(data.listEntries("v")).rejects.toThrow(`longer than ${data.MAX_LIST_PAGES} pages`);
   expect(listVaultRecordsPage).toHaveBeenCalledTimes(data.MAX_LIST_PAGES);
+});
+
+test("M13: pickVault takes the writable landing vault, else the first writable, skips a read-only landing vault, else null", () => {
+  const row = (id: string, modes: string[], landing = false) => ({ vaultId: id, modes, isLandingVault: landing });
+  expect(pickVault([row("w1", ["read", "write"]), row("w2", ["read", "write"], true)])!.vaultId).toBe("w2");
+  expect(pickVault([row("r", ["read"], true), row("w1", ["read", "write"]), row("w2", ["write"])])!.vaultId).toBe("w1");
+  expect(pickVault([row("r", ["read"], true), row("r2", ["read"])])).toBeNull();
+  expect(pickVault([])).toBeNull();
+});
+
+test("a card with no entityUri is never patched with a null address, and no picture is uploaded for it", async () => {
+  const card = { id: "c", entityUri: "", etag: null, road: "derived" as const, source: [], name: "A", email: "", phone: "", photo: "", moreEmails: 0, morePhones: 0, rawEmail: undefined, rawPhone: undefined };
+  await expect(data.saveProfile(card, { name: "B", email: "", phone: "" })).rejects.toThrow("no address");
+  const upload = vi.fn();
+  vi.stubGlobal("fetch", upload);
+  await expect(data.setProfilePhoto(VAULT, card, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("no address");
+  expect(patchRecord).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
 });

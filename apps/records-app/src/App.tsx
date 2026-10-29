@@ -1,37 +1,55 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SignInCard } from "@kaigilb/gilbplatformcode-signin";
+import { NotSignedInError } from "@kaigilb/gilbplatformcode-signin/session";
 import { pickContactActions } from "@kaigilb/gilbplatformcode-contact-actions";
 import type { ColorSchemePreference } from "@kaigilb/gilbplatformcode-color-scheme";
 import { credential, findMyVault, signInApp, signInAuth } from "./platform";
 import { addEntry, listEntries, loadProfile, photoObjectUrl, saveProfile, searchEntries, setProfilePhoto, type Entry, type OwnCard } from "./data";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
-import { loadPreference, nextPreference, setPreference } from "./theme";
+import { loadPreference, nextPreference, setPreference, systemQuery } from "./theme";
+import { signOut } from "./signOut";
 
 type View = { kind: "list" } | { kind: "card"; entry: Entry } | { kind: "profile" };
 
 export function App() {
+  const qc = useQueryClient();
   const [signedIn, setSignedIn] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => {
-    // A sign-in kept by the session bridge survives a reload; no bridge session means the card.
-    credential.getSession().then(() => setSignedIn(true), () => undefined).finally(() => setChecked(true));
+    // A sign-in kept by the session bridge survives a reload. Only "no session" means the quiet card;
+    // any other failure (origin not admitted, network) is shown.
+    credential.getSession().then(
+      () => setSignedIn(true),
+      (e) => { if (!(e instanceof NotSignedInError)) setSessionError((e as Error).message); },
+    ).finally(() => setChecked(true));
   }, []);
 
   if (!checked) return <p className="muted" style={{ padding: 16 }}>Loading…</p>;
   if (!signedIn) {
     return (
       <div className="signin card">
-        <SignInCard app={signInApp} auth={signInAuth} onSignedIn={() => setSignedIn(true)} />
+        {sessionError && <p className="error" role="alert">{sessionError}</p>}
+        <SignInCard app={signInApp} auth={signInAuth} onSignedIn={() => { setSessionError(null); setSignedIn(true); }} />
       </div>
     );
   }
-  return <Signed onSignOut={() => { credential.invalidate(true); setSignedIn(false); }} />;
+  // Server logout, key dropped and cache cleared BEFORE the signed-out view renders.
+  return <Signed onSignOut={() => { void signOut(qc, credential).then(() => setSignedIn(false)); }} />;
 }
 
 function ThemeToggle() {
   const [pref, setPref] = useState<ColorSchemePreference>(loadPreference());
+  useEffect(() => {
+    if (pref !== "system") return;
+    const mql = systemQuery();
+    if (!mql) return;
+    const follow = () => setPreference("system");
+    mql.addEventListener("change", follow);
+    return () => mql.removeEventListener("change", follow);
+  }, [pref]);
   return (
     <button
       aria-label="Colour mode"
@@ -54,8 +72,10 @@ function Signed({ onSignOut }: { onSignOut: () => void }) {
     <>
       <header>
         <h1>Records</h1>
-        <button onClick={() => setView({ kind: "list" })}>Records</button>
-        <button onClick={() => setView({ kind: "profile" })}>Profile</button>
+        <nav>
+          <button onClick={() => setView({ kind: "list" })}>Records</button>
+          <button onClick={() => setView({ kind: "profile" })}>Profile</button>
+        </nav>
         <ThemeToggle />
         <button onClick={onSignOut}>Sign out</button>
       </header>
@@ -77,11 +97,16 @@ export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: E
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const entries = useQuery({ queryKey: ["entries", vaultId], queryFn: () => listEntries(vaultId) });
   const shown = searchEntries(entries.data ?? [], query);
 
   async function add(e: FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return; // a second press or Enter while the create is on the wire
+    inFlight.current = true;
+    setPending(true);
     setError(null);
     try {
       await addEntry(vaultId, name, description);
@@ -90,6 +115,9 @@ export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: E
       await qc.invalidateQueries({ queryKey: ["entries", vaultId] });
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      inFlight.current = false;
+      setPending(false);
     }
   }
 
@@ -101,21 +129,23 @@ export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: E
         <label htmlFor="rec-desc">Description</label>
         <textarea id="rec-desc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
         {error && <p className="error" role="alert">{error}</p>}
-        <p><button className="primary" type="submit">Add record</button></p>
+        <p><button className="primary" type="submit" disabled={pending}>Add record</button></p>
       </form>
       <label htmlFor="rec-search">Search records</label>
       <input id="rec-search" type="search" placeholder="Search name or description" value={query} onChange={(e) => setQuery(e.target.value)} />
       {entries.isLoading && <p className="muted">Loading records…</p>}
       {entries.error && <p className="error" role="alert">{(entries.error as Error).message}</p>}
-      <div className="list" aria-label="Records">
+      <ul className="list">
         {shown.map((t) => (
-          <button key={t.id} className="card row" onClick={() => onOpen(t)}>
-            <strong>{t.name}</strong>
-            <span>{t.description}</span>
-          </button>
+          <li key={t.id}>
+            <button className="card row" onClick={() => onOpen(t)}>
+              <strong>{t.name}</strong>
+              <span>{t.description}</span>
+            </button>
+          </li>
         ))}
-        {entries.data && shown.length === 0 && <p className="muted">{query ? "No record matches." : "No records yet. Add the first one above."}</p>}
-      </div>
+      </ul>
+      {entries.data && shown.length === 0 && <p className="muted">{query ? "No record matches." : "No records yet. Add the first one above."}</p>}
     </>
   );
 }
@@ -130,14 +160,22 @@ export function RecordCard({ entry, onBack }: { entry: Entry; onBack: () => void
   );
 }
 
-function Avatar({ vaultId, location, small }: { vaultId: string; location: string; small?: boolean }) {
+export function Avatar({ vaultId, location, small }: { vaultId: string; location: string; small?: boolean }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    photoObjectUrl(vaultId, location).then((u) => live && setSrc(u), () => undefined);
-    return () => { live = false; };
+    let made: string | null = null;
+    photoObjectUrl(vaultId, location).then(
+      (u) => { if (live) { made = u; setSrc(u); } else if (u) URL.revokeObjectURL(u); },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+      if (made) URL.revokeObjectURL(made); // on change and on unmount
+    };
   }, [vaultId, location]);
-  return src ? <img className={small ? "avatar sm" : "avatar"} src={src} alt="Profile picture" /> : <div className={small ? "avatar sm" : "avatar"} aria-label="No picture" />;
+  const cls = small ? "avatar sm" : "avatar";
+  return src ? <img className={cls} src={src} alt="Profile picture" /> : <div className={cls} role="img" aria-label="No picture" />;
 }
 
 export function ProfileView({ vault }: { vault: ReachableVault }) {
@@ -178,7 +216,7 @@ function ProfileForm({ vaultId, card, onSaved }: { vaultId: string; card: OwnCar
       {off && <p className="error" role="alert">No profile card was found in your vault.</p>}
       <Avatar vaultId={vaultId} location={card?.photo ?? ""} />
       <label htmlFor="pic">Profile picture</label>
-      <input id="pic" type="file" accept="image/*" disabled={off} onChange={(e) => { const file = e.target.files?.[0]; if (file) void run(() => setProfilePhoto(vaultId, card, file), "Picture saved."); }} />
+      <input id="pic" type="file" accept="image/*" disabled={off} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void run(() => setProfilePhoto(vaultId, card, file), "Picture saved."); }} />
       <label htmlFor="p-name">Name</label>
       <input id="p-name" disabled={off} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
       <label htmlFor="p-email">Email{card && card.moreEmails > 0 ? ` (first of ${card.moreEmails + 1}; the others are kept)` : ""}</label>

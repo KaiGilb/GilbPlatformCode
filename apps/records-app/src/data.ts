@@ -132,6 +132,11 @@ function withFirst(raw: unknown, value: string): unknown {
   return rest.length === 0 ? value : [value, ...rest];
 }
 
+/** A patch with no address could reach the default vault; refuse it. */
+function needAddress(card: OwnCard): void {
+  if (!card.entityUri) throw new Error("The profile card was read with no address, so it cannot be changed safely.");
+}
+
 /** Change only the facts that differ on the own card. A cleared first value with no others removes the fact. */
 export async function saveProfile(card: OwnCard, next: { name: string; email: string; phone: string }): Promise<void> {
   const patch: Record<string, string | readonly unknown[] | null> = {};
@@ -144,7 +149,8 @@ export async function saveProfile(card: OwnCard, next: { name: string; email: st
     else patch[k] = (more === 0 ? v : withFirst(k === "email" ? card.rawEmail : card.rawPhone, v)) as string | readonly unknown[];
   }
   if (Object.keys(patch).length === 0) return;
-  await patchRecord(card.id, patch, card.entityUri || null, card.source[0], { ifMatch: card.etag });
+  needAddress(card);
+  await patchRecord(card.id, patch, card.entityUri, card.source[0], { ifMatch: card.etag });
 }
 
 // ---- the picture -----------------------------------------------------------------------------
@@ -169,9 +175,10 @@ export async function uploadPhoto(vaultId: string, file: File): Promise<string> 
 /** Upload, then point the own card at the file: patch `profilePhoto` (vaultProfilePhoto.ts:504). Without a card nothing is uploaded. */
 export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<void> {
   if (!card) throw new Error("No profile card was found in your vault.");
+  needAddress(card);
   const location = await uploadPhoto(vaultId, file);
   const slug = (await photoTerm.get()).writeKeyBare;
-  await patchRecord(card.id, { [slug]: location }, card.entityUri || null, card.source[0], { ifMatch: card.etag });
+  await patchRecord(card.id, { [slug]: location }, card.entityUri, card.source[0], { ifMatch: card.etag });
 }
 
 /** The picture's bytes need the credential, so fetch them and show a blob address. */

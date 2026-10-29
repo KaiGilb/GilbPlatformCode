@@ -65,3 +65,26 @@ Start 2026-10-29 00:41:42 UTC. End 2026-10-29 00:45:16 UTC. About 30 tool calls.
 - Road none: the app shows the message and disables the form. What the platform does for a vault with no own card is not known to me; Kai-Zen is finding out.
 - Fixture for the pointer road: I wrote my own small fake of GET /lws/r/<id> in data.test.ts (plan-self-source keeps its own under test/, not shipped).
 - Unproven: everything against a live vault, as in batch 1.
+
+## Batch 3 (directed by Kai-Zen)
+Start 2026-10-29 00:50:02 UTC. End 2026-10-29 00:54 UTC. About 25 tool calls.
+
+### Method
+Tests first, run against 60ff8bc's code (the only change before the red run: `Avatar` exported so a test can render it), 12 red; then the fixes; then 42 green. Mutants for the M items were run against the final code with /tmp/mut.py (a small replace-run-restore script, not kept): 12 mutants, all red.
+
+### Searches and findings
+- D3: `git grep -i -E "signOut|sign-out|logout|/auth/session" 9a602ea7`. Production GilbApp signs out with `POST {BASE_ORIGIN}/onboard/logout`, `credentials: "include"`, `redirect: "manual"` (a 303 is opaque), failure not fatal (src/lib/base/signOut.ts:16-24), then drops token and key (:25-26), then `queryClient.clear()` (:41). grep of units/signin: `SessionCredential.invalidate(true)` is sign-out of the in-memory key only; no unit does the server call. So `src/signOut.ts` is a HOST OBJECT I wrote, copied from GilbApp.
+- The session mint URL: GilbApp uses `${BASE_ORIGIN}/base/auth/session/dpop-token` (src/lib/base/config.ts:321). Batch 1 had pointed it at the id host (my guess). Changed to PLATFORM_ORIGIN to match GilbApp. Unproven live.
+- D4: signin.css names (grep `var(--` in units/signin/src/signin.css): --signin-ink, -card, -field, -sheet, -muted, -brand, -on-brand, -error-bg, -error-ink, -line. README has no "What the host must supply" list of colours; I read the CSS. Set all but -line in both themes, aliased to the app tokens. The test parses styles.css and fails below 4.5:1 for 16 pairs per theme.
+- The old red for D4 first came from my own regex failing to read the light block (all "not set"); I fixed the test parser and re-ran (a real red: 8 sign-in pairs not set). Lost about 3 min.
+- Node 25 localStorage again: in-memory stub in the new tests.
+
+### Stuck / unsure
+- `fireEvent.change` on a file input cannot show that `value` was reset (jsdom derives it from its own file list), so the reset test spies on the `value` setter.
+- A `findByRole("list")` matched the empty list while loading: a test bug, fixed by waiting for the first row.
+
+### Known and not done (as directed)
+- URL routing (a reload returns to the list; a card has no address).
+- Photo-orphan cleanup (an uploaded file whose card patch failed stays in the vault).
+- Refetch-after-save message (the profile does not say it re-read the card).
+- Still open from batch 2: vault `entity` on /lws/vaults rows; no-card behaviour; the owner-path POST /files fallback; fieldMeta labels; given/family name.

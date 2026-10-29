@@ -11,7 +11,7 @@ import {
 export const THEME_KEY = "records-app.theme";
 
 export function systemIsDark(): boolean {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return systemQuery()?.matches === true;
 }
 
 export function loadPreference(): ColorSchemePreference {
@@ -29,4 +29,9 @@ export function setPreference(pref: ColorSchemePreference, root: HTMLElement = d
 /** The next choice when the person presses the toggle: light -> dark -> system -> light. */
 export function nextPreference(pref: ColorSchemePreference): ColorSchemePreference {
   return pref === "light" ? "dark" : pref === "dark" ? "system" : "light";
+}
+
+/** The OS colour-scheme query, or null where the browser has none. */
+export function systemQuery(): MediaQueryList | null {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
 }

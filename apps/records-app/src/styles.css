@@ -1,8 +1,10 @@
 :root, :root[data-theme="light"] {
   --bg: #f6f7f9; --surface: #ffffff; --ink: #14171c; --muted: #5b6573; --line: #d9dee5; --accent: #2457d6; --accent-ink: #ffffff; --danger: #b3261e;
+  --signin-ink: var(--ink); --signin-card: var(--surface); --signin-field: var(--bg); --signin-sheet: var(--surface); --signin-muted: var(--muted); --signin-brand: var(--accent); --signin-on-brand: var(--accent-ink); --signin-error-bg: #ffdada; --signin-error-ink: #8b0000;
 }
 :root[data-theme="dark"] {
   --bg: #0f1216; --surface: #181c22; --ink: #e8ecf1; --muted: #9aa5b3; --line: #2a313a; --accent: #7aa2ff; --accent-ink: #0b1020; --danger: #ff8a80;
+  --signin-error-bg: #4a1d1b; --signin-error-ink: #ffb4ab;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
@@ -24,3 +26,5 @@ label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: .9re
 .avatar.sm { width: 36px; height: 36px; }
 .list { max-height: 60vh; overflow-y: auto; }
 .signin { max-width: 420px; margin: 48px auto; }
+nav { display: flex; gap: 8px; }
+ul.list { list-style: none; padding: 0; margin: 0; }
