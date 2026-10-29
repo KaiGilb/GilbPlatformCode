@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-find",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-find",
+  "version": "0.1.0",
+  "purpose": "Looks up the holder's existing records of a name as they type, before a new one is made.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/components/records/useStakeholderCreate.ts",
+        "lines": null,
+        "to": "src/useStakeholderCreate.ts"
+      },
+      {
+        "path": "src/components/records/StakeholderMatches.tsx",
+        "lines": null,
+        "to": "src/StakeholderMatches.tsx"
+      },
+      {
+        "path": "src/lib/base/stakeholderNoun.ts",
+        "lines": null,
+        "to": "src/stakeholderNoun.ts"
+      },
+      {
+        "path": "src/lib/base/sameLabel.ts",
+        "lines": null,
+        "to": "src/sameLabel.ts"
+      },
+      {
+        "path": "src/components/records/IdTail.tsx",
+        "lines": null,
+        "to": "src/IdTail.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers `person-create`, `stakeholder-card-vocabulary`, `stakeholder-card-model`, `contact-kind-model`, `ontology-reads`, `pick-or-create`, `plan-record-hooks`, `record-types` and `id-tail`, and the third-party `@tanstack/react-query` and `react`; `./stakeholderNoun`, `./sameLabel`, `./IdTail` and `./useStakeholderCreate` are the unit's own.",
+    "`import type { CreateMode } from \"./CreateModeChooser\"` is the type `CreateMode` written in the unit (the same five strings); `FOLDER_TYPE_ID` (`\"folder\"`) is a private constant; `BaseSession` is the exported interface `StakeholderFindSession` (`principal: string`).",
+    "The interface `StakeholderFindHost` is added and exported, and `UseStakeholderCreateArgs` gets `host: StakeholderFindHost`; `useStakeholderNoun(inStakeholders && open)` is `useStakeholderNoun(host.vocabulary, inStakeholders && open)`; `stakeholderCardVocabularyQuery()` is `stakeholderCardVocabularyQuery(host.vocabulary)`; `defaultWriteVaultId(` is `host.defaultWriteVaultId(`; `recordPerson(` and `afterRecordPerson(` take `host.person` as their first argument.",
+    "`useStakeholderNoun` (stakeholderNoun.ts) takes the vocabulary host as its first argument and passes it to `stakeholderCardVocabularyQuery(host)`; `sameLabel.ts` and `IdTail.tsx` are the source.",
+    "Comments that name a cycle, a ticket, a person, a ruling or the host app are reworded; no code changed. No string literal carries a tag."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "member": "defaultWriteVaultId",
+      "replaces": "defaultWriteVaultId(writable, contentScope.readVaultId), GilbApp src/components/records/useStakeholderCreate.ts:174 (src/lib/base/writableVaults.ts:61)"
+    },
+    {
+      "member": "vocabulary",
+      "replaces": "stakeholderCardVocabularyQuery() with no host, GilbApp src/components/records/useStakeholderCreate.ts:110 and src/lib/base/stakeholderNoun.ts:11 (the host of stakeholder-card-vocabulary)"
+    },
+    {
+      "member": "person",
+      "replaces": "recordPerson(...) and afterRecordPerson(...) with no host, GilbApp src/components/records/useStakeholderCreate.ts:282 and :296 (the host of person-create)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
