@@ -1,14 +1,17 @@
 // The default wiring of readOrgEmployeesPage: which host member and which peer answers each read, with what arguments, how often.
-// The peers that reach the platform (the find, the record read, the term spellings, the card vocabulary) are replaced; the host is the fake.
+// The peers that reach the platform (the find, the record read, the term spellings, the card vocabulary, the employment link spellings of
+// `org-terms`) are replaced; the host is the fake.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const finds = vi.hoisted(() => vi.fn());
 const records = vi.hoisted(() => vi.fn());
 const vocabReads = vi.hoisted(() => vi.fn());
 const storedVocab = vi.hoisted(() => vi.fn());
+const vocab = vi.hoisted(() => vi.fn());
 
 vi.mock("@kaigilb/gilbplatformcode-lws-vault-sets", async (importOriginal) => ({ ...(await importOriginal<object>()), findByAttribute: finds }));
 vi.mock("@kaigilb/gilbplatformcode-lws-records", async (importOriginal) => ({ ...(await importOriginal<object>()), readRecord: records }));
+vi.mock("@kaigilb/gilbplatformcode-org-terms", async (importOriginal) => ({ ...(await importOriginal<object>()), resolveEmploymentLinkVocab: vocab }));
 vi.mock("@kaigilb/gilbplatformcode-term-slots", () => ({ attributeSpelling: async (n: string) => n }));
 vi.mock("@kaigilb/gilbplatformcode-plan-stakeholder-io", () => ({ masterKindReader: () => ({ kinds: "reader" }) }));
 vi.mock("@kaigilb/gilbplatformcode-stakeholder-card-vocabulary", () => ({
@@ -37,9 +40,8 @@ let host: ReturnType<typeof setup>;
 function setup() {
   const resourceLog: string[][] = [];
   const photoKeys = vi.fn(async () => ["profilePhoto"] as readonly string[]);
-  const vocab = vi.fn(async () => ({ employer: "a:employer", employee: "a:employee" }));
   const readResources = vi.fn(memoryResources(docs, resourceLog));
-  return { h: fakeHost({ readResources, photoReadKeys: photoKeys, resolveEmploymentLinkVocab: vocab }), readResources, photoKeys, vocab, resourceLog };
+  return { h: fakeHost({ readResources, photoReadKeys: photoKeys }), readResources, photoKeys, resourceLog };
 }
 
 beforeEach(() => {
@@ -48,6 +50,8 @@ beforeEach(() => {
   records.mockReset();
   vocabReads.mockReset();
   storedVocab.mockReset();
+  vocab.mockReset();
+  vocab.mockResolvedValue({ employer: "a:employer", employee: "a:employee" });
   storedVocab.mockReturnValue(undefined);
   vocabReads.mockResolvedValue({ persons: ["Person"] });
   finds.mockImplementation(async (attr: string, value: { "@id": string }) => {
@@ -58,7 +62,7 @@ beforeEach(() => {
   host = setup();
 });
 
-describe("the default reads go through the host's three data members", () => {
+describe("the default reads go through the host's two data members and the org-terms peer", () => {
   it("reads the employments with the host, once per page, with the addresses found and the vault", async () => {
     const page = await readOrgEmployeesPage(host.h, ORG, VAULT);
     expect(host.readResources).toHaveBeenCalledTimes(1);
@@ -70,15 +74,23 @@ describe("the default reads go through the host's three data members", () => {
     expect(host.photoKeys).toHaveBeenCalledTimes(1);
     expect(page.employees.map((p) => p.photoRef)).toEqual(["/files/ann1", null]);
   });
-  it("asks the host for the employment link spellings twice (employer and employee), and reads the employment under them", async () => {
+  it("asks the org-terms peer for the employment link spellings twice (employer and employee), and reads the employment under them", async () => {
     await readOrgEmployeesPage(host.h, ORG, VAULT);
-    expect(host.vocab).toHaveBeenCalledTimes(2);
+    expect(vocab).toHaveBeenCalledTimes(2);
     expect(finds.mock.calls.map((c) => c[0])).toContain("a:employer");
   });
-  it("a host that cannot name the employment link fails the page (not an empty list)", async () => {
+  it("a master that cannot name the employment link fails the page (not an empty list)", async () => {
     const bad = setup();
-    bad.vocab.mockRejectedValue(new Error("the master did not answer"));
+    vocab.mockRejectedValue(new Error("the master did not answer"));
     await expect(readOrgEmployeesPage(bad.h, ORG, VAULT)).rejects.toThrow("the master did not answer");
+  });
+  it("never asks the host for the employment link: a host member of that name (0.1.0's) is not called", async () => {
+    const asked = vi.fn();
+    const old = fakeHost({ readResources: host.readResources, photoReadKeys: host.photoKeys });
+    Object.assign(old, { resolveEmploymentLinkVocab: asked });
+    await readOrgEmployeesPage(old, ORG, VAULT);
+    expect(asked).not.toHaveBeenCalled();
+    expect(vocab).toHaveBeenCalledTimes(2);
   });
   it("a host whose photo spellings fail still lists the people, without pictures", async () => {
     host.photoKeys.mockRejectedValue(new Error("no term"));
@@ -93,7 +105,7 @@ describe("the default reads go through the host's three data members", () => {
         return memoryResources(docs)(uris, v);
       },
     });
-    Object.assign(h, { photoReadKeys: async () => ["profilePhoto"], resolveEmploymentLinkVocab: async () => ({ employer: "a:employer", employee: "a:employee" }) });
+    Object.assign(h, { photoReadKeys: async () => ["profilePhoto"] });
     await readOrgEmployeesPage(h, ORG, VAULT);
     expect(seen).toEqual([h]);
   });

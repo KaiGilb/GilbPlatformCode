@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-org-employees",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Lists an organization's employees inline and in a searchable sheet.",
@@ -20,6 +20,7 @@
     "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
     "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
+    "@kaigilb/gilbplatformcode-org-terms": "^0.1.0",
     "@kaigilb/gilbplatformcode-photo-term": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-stakeholder-io": "^0.2.0",
     "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
@@ -59,6 +60,7 @@
     "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
     "@kaigilb/gilbplatformcode-ontology-reads": "file:../ontology-reads",
     "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-org-terms": "file:../org-terms",
     "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
     "@kaigilb/gilbplatformcode-photo-term": "file:../photo-term",
     "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",

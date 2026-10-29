@@ -42,7 +42,7 @@ import { pagedFindBothSpellings } from "./pagedFind";
 import { attributeSpelling } from "@kaigilb/gilbplatformcode-term-slots";
 import { idFromResourceUri } from "@kaigilb/gilbplatformcode-resource-id";
 import type { OrgEmployeesHost, ReadResource } from "./orgEmployeesHost";
-import { refsOf, servedValue } from "./servedValue";
+import { refsOf, resolveEmploymentLinkVocab, servedValue } from "@kaigilb/gilbplatformcode-org-terms";
 
 /** Employments asked per page (the platform's cap is 200; a person-sized page keeps the people reads bounded). */
 export const EMPLOYEES_PAGE = 50;
@@ -103,8 +103,8 @@ const defaultDepsOf = (host: OrgEmployeesHost): EmployeesDeps => ({
   },
   photoKeys: () => host.photoReadKeys(),
   personKinds: () => sessionPersonKinds(),
-  employerAttr: async () => (await host.resolveEmploymentLinkVocab()).employer,
-  employeeKey: async () => (await host.resolveEmploymentLinkVocab()).employee.replace(/^a:/, ""),
+  employerAttr: async () => (await resolveEmploymentLinkVocab()).employer,
+  employeeKey: async () => (await resolveEmploymentLinkVocab()).employee.replace(/^a:/, ""),
   jobTitleKey: async () => {
     const k = await attributeSpelling("jobTitle");
     if (!k) throw new Error("The ontology did not name a/jobTitle, so titles cannot be read right now.");
