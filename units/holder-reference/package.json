@@ -1,0 +1,33 @@
+{
+  "name": "@kaigilb/gilbplatformcode-holder-reference",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Adds a reference from a card field to another record with a version-checked write and the ontology's rules for which references are allowed.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-record-sync": "^0.3.0",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.3.0",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.0"
+  }
+}
