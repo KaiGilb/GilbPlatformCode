@@ -34,3 +34,8 @@ jobs:
           else
             node scripts/proof.mjs --changed "$BEFORE" --with-dependents
           fi
+      - name: Taking apps
+        run: |
+          for app in apps/*/; do
+            (cd "$app" && npm ci && npm run typecheck && npm test && npm run build)
+          done
