@@ -79,6 +79,7 @@
     "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../../units/stakeholder-kinds",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "file:../../units/stakeholder-list-state",
     "@kaigilb/gilbplatformcode-tag-client": "file:../../units/tag-client",
+    "@kaigilb/gilbplatformcode-tag-grammar": "file:../../units/tag-grammar",
     "@kaigilb/gilbplatformcode-term-origin": "file:../../units/term-origin",
     "@kaigilb/gilbplatformcode-type-chooser": "file:../../units/type-chooser",
     "@kaigilb/gilbplatformcode-type-curie": "file:../../units/type-curie",
