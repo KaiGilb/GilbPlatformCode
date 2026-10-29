@@ -39,6 +39,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
   const [ownError, setOwnError] = useState<string | null>(null);
   const [copiedAuth, setCopiedAuth] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedNode, setCopiedNode] = useState(false);
   const codeId = useId();
   const uid = useId();
 
@@ -157,11 +158,12 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
     "code",
     "3 · Enter your pairing code",
     <>
-      <p className="gcc-text">Get your code (Always on): paste this in Terminal.</p>
+      <p className="gcc-text">Option Always On: get your code by pasting this in Terminal.</p>
       {cmdBox({ text: commands.code, testId: "claude-code-code-command", copyLabel: "Copy code command", copiedFlag: copiedCode, onCopied: () => setCopiedCode(true) })}
       <p className="gcc-note" data-testid="claude-code-node-note">
         Type it exactly, starting with node. Without node your Mac answers "Permission denied".
       </p>
+      <p className="gcc-text">Option One Session: the code is shown in the Terminal window.</p>
       {codeEntry}
     </>,
   );
@@ -174,18 +176,40 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
             "before",
             "1 · Before you start",
             <>
-              <p className="gcc-text">You need Claude Code installed and signed in with your Claude subscription, and Node 18 or newer.</p>
-              <p className="gcc-text">Sign in once in Terminal:</p>
-              {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
+              <p className="gcc-text">You need two programs on your computer:</p>
+              <ul className="gcc-list">
+                <li>
+                  <p className="gcc-text">
+                    <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in Terminal:
+                  </p>
+                  {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
+                </li>
+                <li>
+                  <p className="gcc-text">
+                    <strong>Node.js 18 or newer</strong>, the free program that runs the bridge. To check, type this in Terminal; it should show v18 or higher:
+                  </p>
+                  {cmdBox({ text: "node --version", testId: "claude-code-node-check", copyLabel: "Copy node check command", copiedFlag: copiedNode, onCopied: () => setCopiedNode(true) })}
+                  <p className="gcc-text">
+                    Get it from{" "}
+                    <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
+                      nodejs.org
+                    </a>{" "}
+                    if it is missing.
+                  </p>
+                </li>
+              </ul>
               <p className="gcc-text">It is billed to your Claude subscription, and your turns stay on your computer.</p>
             </>,
           )}
           {section(
             "start",
             "2 · Start the bridge on your computer",
+            <>
+            <p className="gcc-text">Choose one option.</p>
             <div className="gcc-choices">
               <div className="gcc-choice">
-                <p className="gcc-choice__title">Always on (Mac, recommended)</p>
+                <p className="gcc-choice__title">Option Always On</p>
+                <p className="gcc-muted">Mac only for now.</p>
                 <p className="gcc-text">Paste this once in Terminal. It starts by itself each time you log in.</p>
                 {cmdBox({
                   text: commands.install,
@@ -197,11 +221,14 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
                 })}
               </div>
               <div className="gcc-choice">
-                <p className="gcc-choice__title">Just this time</p>
+                <p className="gcc-choice__title">Option One Session</p>
+                <p className="gcc-muted">Mac and Linux.</p>
                 <p className="gcc-text">Paste this in Terminal and keep that window open. It shows your pairing code.</p>
                 {cmdBox({ text: commands.start, testId: "claude-code-command", copiedFlag: copied, onCopied: () => setCopied(true) })}
               </div>
-            </div>,
+            </div>
+            <p className="gcc-muted">Windows: not supported yet.</p>
+            </>,
           )}
           {sectionThree}
         </div>

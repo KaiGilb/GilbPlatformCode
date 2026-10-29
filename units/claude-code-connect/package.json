@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-claude-code-connect",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "The Connect-Claude-Code button and badge for an app: pairs the page with the person's own Claude Code through a client the host builds, and shows the connection state. View only.",
