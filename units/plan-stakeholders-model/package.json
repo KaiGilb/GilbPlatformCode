@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-stakeholders-model",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record, read from its relations and its text, and the rules that a constraint names a person as its Authority. Pure functions over the stored wire shapes.",

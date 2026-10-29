@@ -21,7 +21,6 @@ describe("the unit's exports", () => {
         "actsForOnRelation",
         "alreadyLinked",
         "authoritiesOf",
-        "handleFromFacts",
         "isConstraintType",
         "isPersonStakeholderType",
         "kindDescendants",
