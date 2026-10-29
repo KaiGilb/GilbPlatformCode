@@ -60,7 +60,7 @@ describe("<ClaudeCodeConnect>", () => {
     expect(steps).toHaveTextContent("Claude subscription");
     expect(steps).toHaveTextContent("claude auth login");
     expect(steps).toHaveTextContent("Node 18");
-    expect(steps).toHaveTextContent("Always on (starts when you log in)");
+    expect(steps).toHaveTextContent("Always on (Mac, recommended)");
     expect(screen.getByTestId("claude-code-command")).toHaveTextContent(commands.start);
     expect(screen.getByTestId("claude-code-install-command")).toHaveTextContent(commands.install);
     expect(steps).toHaveTextContent(commands.code);
@@ -135,9 +135,51 @@ describe("<ClaudeCodeConnect>", () => {
   it("an app's own Button component is used for every button", () => {
     const Button = ({ variant, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => <button data-my-button={variant} {...rest} />;
     const { container } = render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} Button={Button} />);
-    expect(container.querySelectorAll("button")).toHaveLength(3);
-    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(2);
+    expect(container.querySelectorAll("button")).toHaveLength(5);
+    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(4);
     expect(container.querySelectorAll(".gcc-btn")).toHaveLength(0);
+  });
+});
+
+describe("<ClaudeCodeConnect> sections", () => {
+  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+
+  it("shows three separate groups with the exact headings", () => {
+    renderIt();
+    for (const name of ["1 · Before you start", "2 · Start the bridge on your computer", "3 · Enter your pairing code"]) {
+      expect(screen.getByRole("group", { name })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("gives the get-code command its own box with a Copy that copies exactly it", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    renderIt();
+    expect(screen.getByTestId("claude-code-code-command")).toHaveTextContent(commands.code);
+    await user.click(screen.getByRole("button", { name: "Copy code command" }));
+    expect(writeText).toHaveBeenLastCalledWith(commands.code);
+  });
+
+  it("notes that the command must start with node", () => {
+    renderIt();
+    expect(screen.getByTestId("claude-code-node-note")).toHaveTextContent('Type it exactly, starting with node. Without node your Mac answers "Permission denied".');
+  });
+
+  it("gives claude auth login its own Copy", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    renderIt();
+    await user.click(screen.getByRole("button", { name: "Copy sign-in command" }));
+    expect(writeText).toHaveBeenLastCalledWith("claude auth login");
+  });
+
+  it("puts the enter-code button in section 3 and the two start choices in section 2", () => {
+    renderIt();
+    expect(screen.getByRole("group", { name: "3 · Enter your pairing code" })).toContainElement(screen.getByRole("button", { name: /I've started it/ }));
+    const two = screen.getByRole("group", { name: "2 · Start the bridge on your computer" });
+    expect(two).toContainElement(screen.getByTestId("claude-code-install-command"));
+    expect(two).toContainElement(screen.getByTestId("claude-code-command"));
   });
 });
 
