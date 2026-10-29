@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(base-origin|card-mode|description-parts-view|entity-ref|entity-ref-value|lws-records|lws-relations|lws-session-bridge|lws-vault-sets|ontology-reads|own-card|plan-card|plan-impacts|plan-levels-io|plan-record-hooks|plan-self-source|plan-source|plan-stakeholder-io|plan-stakeholder-lines|plan-stakeholders-model|plan-tag-links|plan-tag-picker|project-levels|record-cache-kit|record-picker|record-types|relation-role|signin|term-origin|type-chooser|type-key|type-picture|type-term-popover|value-card-write|value-line-kit|vault-origin-rule|working-set-store)$/,
+  /^@kaigilb\/gilbplatformcode-(base-origin|card-mode|description-parts-view|entity-ref|entity-ref-value|lws-records|lws-relations|lws-session-bridge|lws-vault-sets|main-tag|ontology-reads|own-card|plan-card|plan-impacts|plan-levels-io|plan-record-hooks|plan-self-source|plan-source|plan-stakeholder-io|plan-stakeholder-lines|plan-stakeholders-model|plan-tag-links|plan-tag-picker|project-levels|record-cache-kit|record-picker|record-types|relation-role|signin|term-origin|type-chooser|type-key|type-picture|type-term-popover|value-card-write|value-line-kit|vault-origin-rule|working-set-store)$/,
   /^@kaigilb\/gilbplatformcode-signin\/session$/,
 ];
 

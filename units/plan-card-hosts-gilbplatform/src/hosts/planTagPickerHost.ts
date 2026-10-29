@@ -10,7 +10,7 @@ export function createPlanTagPickerHost(env: HostEnv): PlanTagPickerHost {
   const { qc } = env;
   const cache = cacheAccess(qc);
   return {
-    // PlanTagLinks.tsx:70: label only; the type name is the picker's own.
+    // PlanTagLinks.tsx:71: label only; the type name is the picker's own.
     findPlanRecords: async (planVault, text, typeNames) => {
       const page = await searchPlanRecords(planVault, text, typeNames, { qc });
       return {
@@ -18,9 +18,9 @@ export function createPlanTagPickerHost(env: HostEnv): PlanTagPickerHost {
         complete: page.complete,
       };
     },
-    // PlanTagLinks.tsx:98
+    // PlanTagLinks.tsx:99
     tagUsed: (planVault, tag) => tagUsedInVault(planVault, tag),
-    // PlanTagLinks.tsx:115
+    // PlanTagLinks.tsx:116
     invalidateSearch: cache.invalidateSearch,
   };
 }

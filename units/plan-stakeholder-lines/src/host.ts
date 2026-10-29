@@ -57,31 +57,39 @@ export interface StakeholderLinesHost {
   /**
    * The cached read of one record, by its address, that the record-name hook of `entity-ref-value` fills. It never fetches on its
    * own. Replaces the `useQuery` with `enabled: false` and key `["base", "record", id, origin of ref?.uri ?? uri]` (:134-139).
-   * Only `data` is read (`facts`, `served.facts`).
+   * Only `data.facts` is read.
    */
   useRecordRead(ref: { id: string; uri: string } | null, uri: string): { data?: BaseRecord | null };
 
   /**
-   * The relations the record takes part in. Replaces `useRelations(record.id, record.entityUri ?? null)` (:226, :623). `data`
+   * The record's MAIN tag, read from the platform, whose `@handle` the chip shows. A hook, called on every render for every chip, after
+   * `useRecordRead` and not gated: one request per chip, key `["main-tag", entityUri]`. Replaces `useMainTag(uri)` (:144, from
+   * recordTags.ts); the app's options are `staleTime: 60_000, retry: false, refetchOnWindowFocus: false`. Only `data` is read: `known` and `tag`.
+   * While the answer is pending, or `known` is false, or `tag` is null, no `@handle` is drawn; the record's `tagString` fact is no fallback.
+   */
+  useMainTag(entityUri: string | null | undefined): { data?: { known: boolean; tag: string | null } };
+
+  /**
+   * The relations the record takes part in. Replaces `useRelations(record.id, record.entityUri ?? null)` (:229, :626). `data`
    * and `isError` are read.
    */
   useRelations(recordId: string, recordUri: string | null): RelationsRead;
 
   /**
    * The stakeholder kinds the master serves. `enabled` is true while the picker is shown. Replaces
-   * `useQuery({ ...STAKEHOLDER_TYPE_SET_QUERY, enabled: showPicker })` (:227, :625). Only `data` is read.
+   * `useQuery({ ...STAKEHOLDER_TYPE_SET_QUERY, enabled: showPicker })` (:230, :628). Only `data` is read.
    */
   useStakeholderKinds(enabled: boolean): { data?: StakeholderTypeSet };
 
   /**
-   * The Authorities of the record whose stakeholder record is a person. Replaces `usePersonAuthorities(record, vaultId)` (:624,
+   * The Authorities of the record whose stakeholder record is a person. Replaces `usePersonAuthorities(record, vaultId)` (:627,
    * from useConstraintPeople.ts:74). Only `people` is read.
    */
   usePersonAuthorities(record: BaseRecord, vaultId: string): { people: readonly { uri: string }[] };
 
   /**
    * The ids of the vaults the person holds. The array must keep its identity while the vaults do not change (it is a dependency of
-   * callbacks). Replaces `useHeldVaults()` (:171-174: `useShell()` then `useMemo(() => heldVaultIds(shell.vaults ?? []), ...)`).
+   * callbacks). Replaces `useHeldVaults()` (:174-177: `useShell()` then `useMemo(() => heldVaultIds(shell.vaults ?? []), ...)`).
    */
   useHeldVaults(): string[];
 
@@ -94,43 +102,43 @@ export interface StakeholderLinesHost {
   /**
    * The relation document of one Authority relation, read for its "acts for". `relation` is null for the older record-level
    * holder (nothing to read). Replaces the `useQuery` with key `["plan", "authority-relation", relation ?? ""]`, `queryFn`
-   * `readRelationDoc(relation!, planVault)`, `enabled: !!relation`, stale time 15 000 ms, no retry (:534-540). Only `data` is read.
+   * `readRelationDoc(relation!, planVault)`, `enabled: !!relation`, stale time 15 000 ms, no retry (:537-543). Only `data` is read.
    */
   useRelationDoc(relation: string | null, planVault: string): { data?: RelationDoc | null };
 
-  /** Whether the record carries the app's "unknown type" marker as its type. Replaces `hasSubstitutedType(record)` (:241, from records.ts:357). */
+  /** Whether the record carries the app's "unknown type" marker as its type. Replaces `hasSubstitutedType(record)` (:244, from records.ts:357). */
   hasSubstitutedType(record: Pick<BaseRecord, "typeUri" | "typeSubstituted">): boolean;
 
   // ---- Click-time getters: called when the person acts, never snapshotted at render ----
 
   /**
    * The relations of a record as the app holds them now, or `undefined`. Replaces
-   * `qc.getQueryData<RecordRelation[]>(relationsKey(id, uri))` (:267, :295, :671).
+   * `qc.getQueryData<RecordRelation[]>(relationsKey(id, uri))` (:270, :298, :674).
    */
   getRelations(recordId: string, recordUri: string | null): RecordRelation[] | undefined;
 
-  /** The stakeholder kinds as the app holds them now. Replaces `qc.getQueryData(STAKEHOLDER_TYPE_SET_QUERY_KEY)` (:666). */
+  /** The stakeholder kinds as the app holds them now. Replaces `qc.getQueryData(STAKEHOLDER_TYPE_SET_QUERY_KEY)` (:669). */
   getKindSet(): StakeholderTypeSet | undefined;
 
   /**
    * The newest copy of a record the app holds, from its list and its own read, falling back to `fallback`. Replaces
-   * `liveRow(qc, planVault, id, fallback)` (:250, :268, :281, :683, :716, :747, :760, from planRowCache.ts:101).
+   * `liveRow(qc, planVault, id, fallback)` (:253, :271, :284, :686, :719, :750, :763, from planRowCache.ts:101).
    */
   liveRow(planVault: string, id: string, fallback: BaseRecord): GridRecord;
 
-  /** Read one record. Replaces `readRecord(id, at)` (:479, :925, :928). */
+  /** Read one record. Replaces `readRecord(id, at)` (:482, :928, :931). */
   readRecord(id: string, at: string | null): Promise<BaseRecord | null>;
 
   /**
    * The address of a record from its id, the address the list gave, and the vault namespace. Replaces
-   * `memberEntityUri(idOrUri, preferredUri, vaultNamespace)` (:266, :321, :480, :704, :926, from relationWrite.ts:99).
+   * `memberEntityUri(idOrUri, preferredUri, vaultNamespace)` (:269, :324, :483, :707, :929, from relationWrite.ts:99).
    */
   memberEntityUri(idOrUri: string, preferredUri?: string | null, vaultNamespace?: string | null): string;
 
-  /** Records whose name matches `text`, typed by the stakeholder kind names. Replaces `findStakeholderRecords(vaults, names, text)` (:440, :647, from planStakeholders.ts:322). */
+  /** Records whose name matches `text`, typed by the stakeholder kind names. Replaces `findStakeholderRecords(vaults, names, text)` (:443, :650, from planStakeholders.ts:322). */
   findStakeholders(vaults: readonly string[], names: readonly string[], text: string): Promise<StakeholderFind>;
 
-  /** Records of any kind whose name matches `text`. Replaces `findAnyRecords(vaults, text)` (:658, from planStakeholders.ts:378). */
+  /** Records of any kind whose name matches `text`. Replaces `findAnyRecords(vaults, text)` (:661, from planStakeholders.ts:378). */
   findAnyRecords(vaults: readonly string[], text: string): Promise<StakeholderFind>;
 
   /**
@@ -160,7 +168,7 @@ export interface StakeholderLinesHost {
 
   /**
    * Replace the relations the app holds for a record, with the new list or with a function of the old one. Replaces
-   * `qc.setQueryData(relationsKey(id, uri), next)` (:303, :310, :344, :676, :804).
+   * `qc.setQueryData(relationsKey(id, uri), next)` (:306, :313, :347, :679, :807).
    */
   setRelations(
     recordId: string,
@@ -171,16 +179,16 @@ export interface StakeholderLinesHost {
   /**
    * Drop the app's cached searches that match `queryKey`. The picker's own key is `["stakeholder-search", role, vaultsKey, text]`
    * (role `line`, `authority`, `owner` or `acts`): pass the same key to the query hook given to the picker. Replaces
-   * `qc.invalidateQueries({ queryKey, refetchType? })` (:195, :475, :920).
+   * `qc.invalidateQueries({ queryKey, refetchType? })` (:198, :478, :923).
    */
   invalidateSearch(filters: { queryKey: readonly unknown[]; refetchType?: "active" }): void | Promise<unknown>;
 
   // ---- Writers (optional). Leave a line's writers out and that line is read-only: it behaves as with `editing` false. ----
 
-  /** Write one relation between the record and a stakeholder. Replaces `writePairRelation(input)` (:283, from relationWrite.ts:217). */
+  /** Write one relation between the record and a stakeholder. Replaces `writePairRelation(input)` (:286, from relationWrite.ts:217). */
   writePairRelation?(input: PairRelationWrite): Promise<{ id: string; uri?: string }>;
 
-  /** End a relation. Replaces `endRelation(relation, vaultNamespace)` (:309, :343, :803, from relationWrite.ts:491). */
+  /** End a relation. Replaces `endRelation(relation, vaultNamespace)` (:312, :346, :806, from relationWrite.ts:491). */
   endRelation?(relation: string, vaultNamespace: string): Promise<unknown>;
 
   /**
@@ -195,10 +203,10 @@ export interface StakeholderLinesHost {
     precondition?: { ifMatch?: string | null },
   ): Promise<{ etag: string | null }>;
 
-  /** Write one Authority (or Resource Owner) relation. Replaces `writeAuthorityRelation(input)` (:738, :767, from planStakeholders.ts:236). */
+  /** Write one Authority (or Resource Owner) relation. Replaces `writeAuthorityRelation(input)` (:741, :770, from planStakeholders.ts:236). */
   writeAuthorityRelation?(input: AuthorityWrite): Promise<RecordRelation>;
 
-  /** End a relation, then write an Authority relation. Replaces `endThenWriteAuthority(endId, input)` (:738, :748, from planStakeholders.ts:266). */
+  /** End a relation, then write an Authority relation. Replaces `endThenWriteAuthority(endId, input)` (:741, :751, from planStakeholders.ts:266). */
   endThenWriteAuthority?(endId: string, input: AuthorityWrite): Promise<RecordRelation>;
 
   // ---- Dialog ----
@@ -206,7 +214,7 @@ export interface StakeholderLinesHost {
   /**
    * The dialog that creates a stakeholder record. The lines call this as a function while the dialog is open; if yours uses hooks,
    * return an element of a component of your own. Replaces `<ConnectedCreateDialog open stakeholders source={null} drawnVaultIds
-   * onClose onCreated />` (:467-485, :912-938). Counts as a writer: leave it out and the line is read-only.
+   * onClose onCreated />` (:470-488, :915-941). Counts as a writer: leave it out and the line is read-only.
    */
   renderCreateStakeholder?(props: CreateStakeholderProps): ReactNode;
 }

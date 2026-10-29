@@ -1,6 +1,6 @@
 // The shell the cards read, built from the session. GilbApp's shell took its vault set from the session (`session.vaults`, the lean
-// `{vaultId, modes}` rows) and decorated each row from `GET /lws/vaults` when that answered (src/lib/base/hooks.ts:108-125, `useVaults`).
-// This host does not make that second call: a row is the session's, with the decoration left empty.
+// `{vaultId, modes}` rows) and decorated each row from `GET /lws/vaults` when that answered (src/lib/base/hooks.ts:108-129, `useVaults`).
+// This host does not make that second call: a row is the session's, with the decoration left empty: no `entity`, `name`, `parent`, `represents`, and no short name (`shortName: null`, `shortNameKnown: false`, as the app's own lean row has them, hooks.ts:126-129).
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -37,6 +37,8 @@ export function createUseSessionState(session: SessionCredential, openRecordInVa
               modes: [...sp.modes],
               represents: null,
               isLandingVault: false,
+              shortName: null,
+              shortNameKnown: false,
             }))
           : NO_VAULTS,
       [set],

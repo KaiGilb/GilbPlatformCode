@@ -15,7 +15,6 @@ import {
   actsForOnRelation,
   RESOURCE_OWNER_RELATION_TYPE,
   resourceOwnersOf,
-  handleFromFacts,
   legacyAuthorityOf,
   sameRecord,
   stakeholdersOf,
@@ -114,12 +113,15 @@ function useLoadedStakeholder(uri: string, vaultId: string): { label: string; ha
     ? (list.data ?? []).find((r) => r.id === ref.id || r.entityUri === ref.uri || r.entityUri === uri)
     : undefined;
   // The record read the name control of `entity-ref-value` already holds, and not a fetch of our own: the chip name is that
-  // control's read. `@tag` is drawn only when tagString is already on the loaded record.
+  // control's read.
   const q = host.useRecordRead(ref, uri);
   const facts = fromList?.facts ?? q.data?.facts;
-  const served = (fromList?.served?.facts ?? q.data?.served?.facts) as Record<string, unknown> | undefined;
   const label = facts ? entityDisplayName(facts, { entityUri: uri, fallback: ref?.id || uri }) : ref?.id || uri;
-  return { label, handle: handleFromFacts(facts) ?? handleFromFacts(served) };
+  // The `@tag` beside the chip is the record's MAIN tag, read from the platform, ⛔ not the `tagString` fact of the
+  // loaded record. It is the same cache entry the pane's Tags section changes, so Make main shows here at once.
+  const main = host.useMainTag(uri);
+  const handle = main.data?.known && main.data.tag ? `@${main.data.tag}` : null;
+  return { label, handle };
 }
 
 function StakeholderChip({

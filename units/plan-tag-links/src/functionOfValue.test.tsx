@@ -303,3 +303,69 @@ describe("creating a Value", () => {
     expect(h.fn.createRecord).not.toHaveBeenCalled();
   });
 });
+
+describe("the Values named by their main tag", () => {
+  const noName = (id: string, more: Parameters<typeof row>[2] = {}) => value(id, "x", { facts: {}, ...more });
+
+  it("labels the remove control of a Value that has no name or unitTag with the main tag the host answers", () => {
+    const h = makeHost();
+    find(h, [noName("a")]);
+    h.state.mains.set(uri("a"), "Alpha");
+    setup({}, h);
+    expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+    expect(screen.queryByLabelText("Remove a")).toBeNull();
+  });
+
+  it("keeps the unitTag of a Value over a main tag the host holds for it", () => {
+    const h = makeHost();
+    find(h, [value("a", "Speed.A")]);
+    h.state.mains.set(uri("a"), "Alpha");
+    setup({}, h);
+    expect(screen.getByLabelText("Remove Speed.A")).toBeTruthy();
+    expect(screen.queryByLabelText("Remove Alpha")).toBeNull();
+  });
+
+  it("asks the host once per render, with the Values of the find and no other record", () => {
+    const h = makeHost();
+    find(h, [noName("b"), row("f", "Door.Fn"), noName("a")]);
+    const t = setup({}, h);
+    const calls = h.fn.useMainTagsForRows.mock.calls;
+    expect(calls.length).toBe(h.fn.useRecords.mock.calls.length);
+    expect(calls.at(-1)![0].map((r) => r.entityUri)).toEqual([uri("a"), uri("b")]);
+    t.view.rerender(<PlanFunctionOfValue {...t.p} />);
+    expect(h.fn.useMainTagsForRows.mock.calls.length).toBe(h.fn.useRecords.mock.calls.length);
+  });
+
+  it("calls the hook before any Value is known, and again when they arrive (hook order)", () => {
+    const h = makeHost();
+    const t = setup({}, h);
+    expect(h.fn.useMainTagsForRows.mock.calls.at(-1)![0]).toEqual([]);
+    find(h, [noName("a")]);
+    h.state.mains.set(uri("a"), "Alpha");
+    t.view.rerender(<PlanFunctionOfValue {...t.p} />);
+    expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+  });
+
+  it("names the other Function in the refusal by its main tag when it holds no name or unitTag", async () => {
+    const h = makeHost();
+    h.fn.find.mockResolvedValue(page([hit("a", "Speed.A", { typeUri: "t:Value", facts: { unitTag: "Speed.A", measures: uri("other") } })]));
+    h.state.pool = [{ ...gridRow("other", "x"), facts: {} }];
+    h.state.mains.set(uri("other"), "Mainx");
+    const t = setup({ offer: true }, h);
+    await pick("Function of Value", "Speed", "Speed.A");
+    await waitFor(() => expect(t.p.onNotice).toHaveBeenCalledWith('"Speed.A" already measures "Mainx".'));
+  });
+
+  it("looks the key \"\" up for a Value that has no address (quirk): a main tag stored under \"\" names it", () => {
+    const h = makeHost();
+    find(h, [noName("a", { entityUri: undefined })]);
+    setup({}, h);
+    expect(screen.getByLabelText("Remove a")).toBeTruthy();
+    cleanup();
+    const g = makeHost();
+    find(g, [noName("a", { entityUri: undefined })]);
+    g.state.mains.set("", "Ghost");
+    setup({}, g);
+    expect(screen.getByLabelText("Remove Ghost")).toBeTruthy();
+  });
+});

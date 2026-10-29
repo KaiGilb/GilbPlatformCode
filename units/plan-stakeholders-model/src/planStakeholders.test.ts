@@ -12,7 +12,6 @@ import {
   actsForOnRelation,
   alreadyLinked,
   authoritiesOf,
-  handleFromFacts,
   legacyAuthorityOf,
   linkedStakeholders,
   resourceOwnersOf,
@@ -324,33 +323,6 @@ describe("actsForOnRelation", () => {
 
   it("expands a bare 'base:' to the vault root with nothing after it", () => {
     expect(actsForOnRelation(doc(REL, { authorityActsFor: "base:" }))).toBe("https://vault.example.test/base/");
-  });
-});
-
-describe("handleFromFacts", () => {
-  it("gives @tag, with every leading @ taken off and one put back, trimmed", () => {
-    expect(handleFromFacts({ tagString: "ann" })).toBe("@ann");
-    expect(handleFromFacts({ tagString: "@ann" })).toBe("@ann");
-    expect(handleFromFacts({ tagString: "@@ann" })).toBe("@ann");
-    expect(handleFromFacts({ tagString: "  @ann  " })).toBe("@ann");
-    expect(handleFromFacts({ tagString: " a @b " })).toBe("@a @b");
-  });
-
-  it("reads the a: key and a full-IRI key through the member reader", () => {
-    expect(handleFromFacts({ "a:tagString": "ann" })).toBe("@ann");
-    expect(handleFromFacts({ "https://ontology.example.test/base/a/tagString": "ann" })).toBe("@ann");
-  });
-
-  it("is null when there is no usable tag", () => {
-    expect(handleFromFacts(null)).toBeNull();
-    expect(handleFromFacts(undefined)).toBeNull();
-    expect(handleFromFacts({})).toBeNull();
-    expect(handleFromFacts({ tagString: "" })).toBeNull();
-    expect(handleFromFacts({ tagString: "  " })).toBeNull();
-    expect(handleFromFacts({ tagString: "@" })).toBeNull();
-    expect(handleFromFacts({ tagString: "@@ " })).toBeNull();
-    expect(handleFromFacts({ tagString: 5 })).toBeNull();
-    expect(handleFromFacts({ tagString: { "@id": ANN } })).toBeNull();
   });
 });
 

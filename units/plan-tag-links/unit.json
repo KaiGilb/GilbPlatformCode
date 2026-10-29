@@ -2,15 +2,15 @@
   "schema": 1,
   "unit": "units/plan-tag-links",
   "package": "@kaigilb/gilbplatformcode-plan-tag-links",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System), each shown by the linked records' live tags, with the host doing every read, cache and write.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
-      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [47, 47], "to": "src/planTagLinks.tsx" },
-      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [147, 177], "to": "src/planTagLinks.tsx" },
-      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [297, 1295], "to": "src/planTagLinks.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [48, 48], "to": "src/planTagLinks.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [148, 178], "to": "src/planTagLinks.tsx" },
+      { "path": "src/components/records/PlanTagLinks.tsx", "lines": [298, 1303], "to": "src/planTagLinks.tsx" },
       { "path": "src/lib/base/planFind.ts", "lines": [16, 16], "to": "src/planFindNote.ts" },
       { "path": "src/lib/base/planFind.ts", "lines": [26, 33], "to": "src/planFindNote.ts" },
       { "path": "src/lib/base/planFind.ts", "lines": [35, 37], "to": "src/planFindNote.ts" },
@@ -28,6 +28,7 @@
     "Each call that reached outside the unit is the host member of the same name, with the same arguments but for `qc`: `useRecords`, `useRelations`, `usePlanFind`, `invalidatePlanFind`, `invalidatePlanSearch`, `liveRow`, `ensureEtagUnchanged`, `applyPatch`, `storePlanRow`, `dropPlanFind`, `prependPlanFind`, `putRecordInCaches`, `resolveType`, `typeUriForVaultNamespace`, `memberEntityUri`, `readRecord` (also the third argument of `wouldLoop`), `patchRecord`, `createRecord`, `writePairRelation`, `endRelation`, and `<ConnectedCreateDialog>` as `<host.ConnectedCreateDialog>`. `qc.setQueryData(planRecordKey(updated.id, updated.entityUri), updated)` is `host.setPlanRecord(updated.id, updated.entityUri, updated)`. In `writeSolutionOf`, `const key = relationsKey(...)` is dropped, `qc.getQueryData<RecordRelation[]>(key)` is `host.getRelations(viewing.id, viewing.entityUri)` and `qc.setQueryData(key, [...])` is `host.setRelations(viewing.id, viewing.entityUri, [...])`; in the two remove handlers `qc.setQueryData<RecordRelation[]>(relationsKey(record.id, record.entityUri ?? null), updater)` is `host.setRelations(record.id, record.entityUri ?? null, updater)`.",
     "`useCreateRecord(planVault)` is `(host.useCreateRecord ?? useNoCreate)(planVault)`: the hook is called on every render in the same place; `useNoCreate` is a private stand-in whose `mutateAsync` rejects, never reached because the component is then read-only.",
     "One added line per component with a writer: `canEdit = canEdit && … !== undefined;` (see \"What the host must supply\"). It is the only added statement in `PlanPartOf`, `PlanFunctionOfValue`, `PlanValueOfFunction`, `PlanSolutionOf` and `PlanSolutions`. `PlanPartOfSystem` has no such line; its one change is in the condition of the create button: `search.canCreate ? (` is `search.canCreate && host.ConnectedCreateDialog !== undefined ? (`, so a host without the dialog is not offered \"Create System\" (picking and clearing an existing system are unchanged).",
+    "`useMainTagsForRows(...)` (the import from `../../lib/base/recordTags`, called at `PlanTagLinks.tsx:492` in `PlanFunctionOfValue` and `:869` in `SolutionChips`) is the host member `host.useMainTagsForRows(...)`, a new required hook with the same argument, in the same place: in `PlanFunctionOfValue` right after `values`, and as the first statement of `SolutionChips`. `SolutionChips` had no host in the source; ONE line is added, `const host = usePlanTagLinksHost();`, as its first statement, so that the hook is called before the early return for no links and the hook count is the same on every render. `tagFor(pool, uri, mains?)`, `otherTag` and the Remove label of Function of Value take the answer.",
     "The seven components were exported in the source and still are; `writeLink`, `writeMeasures`, `writeSolutionOf`, `SolutionChips`, `measuredAddresses`, `tagFor` and `SOFTWARE_SYSTEM_OPTION` stay private, as in the source."
   ],
   "newFiles": [
@@ -36,6 +37,8 @@
     "test/fakeHost.tsx",
     "test/mount.tsx"
   ],
-  "host": [],
+  "host": [
+    { "member": "useMainTagsForRows", "replaces": "src/components/records/PlanTagLinks.tsx:492, :869" }
+  ],
   "library": { "admitted": true, "tag": "t:Specification.linklines", "title": "Link lines (Part of, Sub-functions, Solution of)", "note": "Seven link lines of a Plan card; the picker alone is plan-tag-picker, the pure model plan-links-model." }
 }
