@@ -126,7 +126,7 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       ...(at.useContactLabels ? { useContactLabels: at.useContactLabels } : {}),
     });
     const oneCard: OneCardHost = createOneCardHost({
-      geoOrigin: at.geoOrigin,
+      geoOrigin: props.geoOrigin,
       listPlaceClaimsInVault: (...a) => (latest.current.listPlaceClaimsInVault ?? defaultListPlaceClaimsInVault)(...a),
       claimsAbout: (...a) => (latest.current.claimsAbout ?? defaultClaimsAbout)(...a),
       claimFieldText: (...a) => (latest.current.claimFieldText ?? defaultClaimFieldText)(...a),

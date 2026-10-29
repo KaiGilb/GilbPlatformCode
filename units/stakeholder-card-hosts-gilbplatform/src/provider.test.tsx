@@ -341,3 +341,18 @@ describe("the required props", () => {
     expect(Object.keys(providerProps(world)).sort()).toEqual(["geoOrigin", "ontologyOrigin", "origin", "session", "systemHostLabels", "systemVaultHosts"]);
   });
 });
+
+describe("a changed geoOrigin", () => {
+  test("the one-card host is rebuilt over the NEW geoOrigin, not the first one", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    const view = mountInProvider(world, <Probe />);
+    const first = seen.at(-1)!.oneCard!;
+    expect(first.isGeoEntityId(GEO + "/base/e/x")).toBe(true);
+    view.rerenderWith(<Probe />, { geoOrigin: "https://elsewhere.example" });
+    const next = seen.at(-1)!.oneCard!;
+    expect(next).not.toBe(first);
+    expect(next.isGeoEntityId("https://elsewhere.example/base/e/x")).toBe(true);
+    expect(next.isGeoEntityId(GEO + "/base/e/x")).toBe(false);
+  });
+});
