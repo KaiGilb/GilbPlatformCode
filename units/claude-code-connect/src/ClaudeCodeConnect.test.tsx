@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import { ClaudeCodeConnect, ClaudeCodeBadge } from "./index";
@@ -59,8 +59,8 @@ describe("<ClaudeCodeConnect>", () => {
     const steps = screen.getByTestId("claude-code-steps");
     expect(steps).toHaveTextContent("Claude subscription");
     expect(steps).toHaveTextContent("claude auth login");
-    expect(steps).toHaveTextContent("Node 18");
-    expect(steps).toHaveTextContent("Always on (Mac, recommended)");
+    expect(steps).toHaveTextContent("Node.js 18 or newer");
+    expect(steps).toHaveTextContent("Option Always On");
     expect(screen.getByTestId("claude-code-command")).toHaveTextContent(commands.start);
     expect(screen.getByTestId("claude-code-install-command")).toHaveTextContent(commands.install);
     expect(steps).toHaveTextContent(commands.code);
@@ -135,8 +135,8 @@ describe("<ClaudeCodeConnect>", () => {
   it("an app's own Button component is used for every button", () => {
     const Button = ({ variant, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => <button data-my-button={variant} {...rest} />;
     const { container } = render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} Button={Button} />);
-    expect(container.querySelectorAll("button")).toHaveLength(5);
-    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(4);
+    expect(container.querySelectorAll("button")).toHaveLength(6);
+    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(5);
     expect(container.querySelectorAll(".gcc-btn")).toHaveLength(0);
   });
 });
@@ -180,6 +180,46 @@ describe("<ClaudeCodeConnect> sections", () => {
     const two = screen.getByRole("group", { name: "2 · Start the bridge on your computer" });
     expect(two).toContainElement(screen.getByTestId("claude-code-install-command"));
     expect(two).toContainElement(screen.getByTestId("claude-code-command"));
+  });
+});
+
+describe("<ClaudeCodeConnect> wording round CM2", () => {
+  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+
+  it("section 1 says signed in using Terminal, explains Node.js, links nodejs.org, and copies node --version", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    renderIt();
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    expect(one).toHaveTextContent("signed in");
+    expect(one).toHaveTextContent("Terminal");
+    expect(one).toHaveTextContent("Node.js 18 or newer");
+    expect(screen.getByTestId("claude-code-node-check")).toHaveTextContent("node --version");
+    await user.click(screen.getByRole("button", { name: "Copy node check command" }));
+    expect(writeText).toHaveBeenLastCalledWith("node --version");
+    const link = screen.getByRole("link", { name: "nodejs.org" });
+    expect(link).toHaveAttribute("href", "https://nodejs.org");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("section 2 has the two option headings, the platform lines and the Windows line", () => {
+    renderIt();
+    const two = screen.getByRole("group", { name: "2 · Start the bridge on your computer" });
+    expect(within(two).getByText("Option Always On")).toBeInTheDocument();
+    expect(within(two).getByText("Option One Session")).toBeInTheDocument();
+    expect(within(two).getByText("Mac only for now.")).toBeInTheDocument();
+    expect(within(two).getByText("Mac and Linux.")).toBeInTheDocument();
+    expect(within(two).getByText("Windows: not supported yet.")).toBeInTheDocument();
+    expect(two).toHaveTextContent("Choose one option.");
+    expect(two).not.toHaveTextContent("Just this time");
+  });
+
+  it("section 3 has both option lines", () => {
+    renderIt();
+    const three = screen.getByRole("group", { name: "3 · Enter your pairing code" });
+    expect(three).toHaveTextContent("Option Always On: get your code by pasting this in Terminal.");
+    expect(three).toHaveTextContent("Option One Session: the code is shown in the Terminal window.");
   });
 });
 
