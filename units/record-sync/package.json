@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "A vault's typed record list over the platform's record interface, and only what changed in it since a stored position, read through the authenticated fetch the host injects.",
