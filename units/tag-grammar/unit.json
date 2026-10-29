@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "unit": "units/tag-grammar",
+  "package": "@kaigilb/gilbplatformcode-tag-grammar",
+  "version": "0.1.0",
+  "purpose": "Parses, formats and checks record tags against the ontology's grammar and write rule.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/tag.ts",
+        "lines": [
+          37,
+          305
+        ],
+        "to": "src/tag.ts"
+      },
+      {
+        "path": "src/tagWriteRule.ts",
+        "lines": [
+          29,
+          411
+        ],
+        "to": "src/tagWriteRule.ts"
+      },
+      {
+        "path": "src/tagResolve.ts",
+        "lines": [
+          19,
+          74
+        ],
+        "to": "src/tagResolve.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of the source's own files lose `.ts` (`./tag`); the imports of `./terms.ts` and `./source.ts` (`spellingOfTermDoc`, `valuesUnder`, `refsUnder`, `VocabularyUnavailableError`, `TermDoc`, `VocabularySource`) are one import of the peer `@kaigilb/gilbplatformcode-vocabulary-source`, and the import of `./platform.ts` (`expectStatus`, `request`, `routeUrl`, `PlatformClient`) is an import of the peer `@kaigilb/gilbplatformcode-record-sync`;",
+    "the header comment of each file is a new, shorter one, and comments that name a person, an agent, a cycle or a ticket are reworded (in `tag.ts` the TagStandard record is no longer called by its ticket number and the example tags in comments are Ann's; in `tagWriteRule.ts` \"Kai's 64\" reads \"64\" and \"(N-4 r6)\" reads \"(a platform refusal)\"; in `tagResolve.ts` the platform commit hash in the header is dropped); no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
