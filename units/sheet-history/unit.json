@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "unit": "units/sheet-history",
+  "package": "@kaigilb/gilbplatformcode-sheet-history",
+  "version": "0.1.0",
+  "purpose": "Ties an open sheet to the browser's Back button.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/components/records/useSheetHistory.ts",
+        "lines": null,
+        "to": "src/useSheetHistory.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Comments that name a cycle, an agent, a ticket or a ruling are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

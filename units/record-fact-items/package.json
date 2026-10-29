@@ -1,0 +1,40 @@
+{
+  "name": "@kaigilb/gilbplatformcode-record-fact-items",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Changes the items of one fact of a record, with If-Match and a queue per record.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-holder-reference": "file:../holder-reference",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-holder-reference": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0"
+  }
+}
