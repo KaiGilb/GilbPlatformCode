@@ -39,3 +39,25 @@ jobs:
           for app in apps/*/; do
             (cd "$app" && npm ci && npm run typecheck && npm test && npm run build)
           done
+
+  apps:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # A new app adds its folder name (under apps/) to this list.
+        app: [records-app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm ci
+        working-directory: apps/${{ matrix.app }}
+      - name: Test
+        run: npm test
+        working-directory: apps/${{ matrix.app }}
+      - name: Build
+        run: npm run build
+        working-directory: apps/${{ matrix.app }}
