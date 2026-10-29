@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/add-your-own",
+  "package": "@kaigilb/gilbplatformcode-add-your-own",
+  "version": "0.1.0",
+  "purpose": "Draws the \"+ Add your own\" button and its inline form for a merged card.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders-ui",
+    "commit": "69015111d0f8dc98406acb1579dba10f9ae471bb",
+    "files": [
+      { "path": "src/AddYourOwn.tsx", "lines": [1, 244], "to": "src/AddYourOwn.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (person names, cycle and ticket tags, agent names, app names, a spec reference and a mobile-rule tag removed from the file's comments); no code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
