@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "unit": "units/contact-rows",
+  "package": "@kaigilb/gilbplatformcode-contact-rows",
+  "version": "0.1.0",
+  "purpose": "Edits a person's Email, Phone, Social and Skills rows, any number of each.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/components/records/ContactRows.tsx",
+        "lines": [
+          62,
+          762
+        ],
+        "to": "src/ContactRows.tsx"
+      },
+      {
+        "path": "src/lib/base/emailFormat.ts",
+        "lines": null,
+        "to": "src/emailFormat.ts"
+      },
+      {
+        "path": "src/lib/base/onlineAccount.ts",
+        "lines": null,
+        "to": "src/onlineAccount.ts"
+      },
+      {
+        "path": "src/lib/mynet/phone/dialCode.ts",
+        "lines": [
+          20,
+          27
+        ],
+        "to": "src/dialCode.ts"
+      },
+      {
+        "path": "src/lib/mynet/heldnote/useHeldNotes.ts",
+        "lines": [
+          73,
+          106
+        ],
+        "to": "src/heldNotesState.ts"
+      },
+      {
+        "path": "src/lib/mynet/skills/thinSkills.ts",
+        "lines": [
+          19,
+          46
+        ],
+        "to": "src/thinSkills.ts"
+      },
+      {
+        "path": "src/lib/mynet/skills/thinSkills.ts",
+        "lines": [
+          60,
+          81
+        ],
+        "to": "src/thinSkills.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers': `add-your-own`, `card-group` (`CardGroup`, `CardIconName`), `card-mode`, `contact-actions` (`phoneForUri`, `resolvableSocialHref`, `toMailtoHref`), `contact-rows-model`, `one-card-context` (`useAddInPlace`, `useOneCardOwn`), `one-card-rows` (`YourRow`), `open-popups`, `remove-control`, `term-origin`, plus `./contactRowsHost` and the unit's own copies.",
+    "At the start of `ContactRows`: `const host = useContactRowsHost();` and the destructuring of the ten host members; in `PresentRow`: `const { SocialLogo, socialPlatformName } = useContactRowsHost();`.",
+    "ADDED BEHAVIOUR (production always has the writer): no `saveRecordSidecar` makes the section read-only. Before: `canEdit = canEdit && !!metaKey;` and the save function goes on to `contactRowsPatch`. After: `canEdit = canEdit && !!saveRecordSidecar;` follows the first line, and `if (!saveRecordSidecar) return Promise.resolve(false);` follows the save function's `metaKey` guard. With the writer nothing changes.",
+    "ADDED BEHAVIOUR: no `noteServedVersion` notes nothing. Before: `noteServedVersion(recordId, etag, served.meta);`. After: `noteServedVersion?.(recordId, etag, served.meta);`.",
+    "ADDED BEHAVIOUR: no `PhoneValue` shows the plain phone text. Before: `canEdit ? (<PhoneValue .../>) : (text)`. After: `canEdit && PhoneValue ? (<PhoneValue .../>) : (text)`.",
+    "ADDED BEHAVIOUR: no `SkillPickerSheet` draws no picker. Before: `{picking && createPortal(<SkillPickerSheet .../>, document.body)}`. After: `{picking && SkillPickerSheet && createPortal(...)}`.",
+    "ADDED BEHAVIOUR: no `SkillDepthNote` draws no note. Before (presentation row): `<SkillDepthNote .../>`; after: `{SkillDepthNote ? (<SkillDepthNote .../>) : null}`. Before (edit row): `{skillNotes && (<SkillDepthNote .../>)}`; after: `{skillNotes && SkillDepthNote && (...)}`.",
+    "ADDED BEHAVIOUR: no `SocialLogo`, or no `socialPlatformName`, draws no logo and the label still shows. At both uses (the edit row and the presentation row function) before: `<SocialLogo platform={socialPlatformName(platformOf(r.value), r.label)} className=... />`; after: `{SocialLogo && socialPlatformName ? <SocialLogo .../> : null}`.",
+    "ADDED BEHAVIOUR: no `HeldVisibilitySwitch` draws no switch. At both uses the condition `C` becomes `HeldVisibilitySwitch && C` (presentation: `HeldVisibilitySwitch && skillNotes.markFor(r.ref) === \"private\"`; edit: `HeldVisibilitySwitch && skillNotes && skillNotes.markFor(r.ref) !== null`).",
+    "ADDED BEHAVIOUR: no `AddedByLine` draws no line. At both uses the condition `C` becomes `AddedByLine && C` (presentation: `AddedByLine && skillNotes.sourceFor(r.ref)`; edit: `AddedByLine && skillNotes && skillNotes.sourceFor(r.ref)`).",
+    "`skillReferentUri` (named copy of the app's): the master's origin is read at the call from `term-origin` (the source read a constant); the pattern is built inside the function from `termOrigin()`, and the error words use `termOrigin()` and say \"the platform refuses it\".",
+    "`joinPhone` (named copy, FALSE FRIEND of `phone-text`'s `joinPhone`): the app's returns a national number that already starts with \"+\" unchanged; `phone-text`'s does not. Measured: 49 of 140 inputs differ. `toMailtoHref`, `phoneForUri` and `resolvableSocialHref` of `contact-actions` are equal to the app's on 32,915 inputs and are imported.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the other app are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/contactRowsHost.tsx"
+  ],
+  "host": [
+    {
+      "member": "useHomeDial",
+      "replaces": "useHomeDial(claims) of GilbApp src/lib/mynet/phone/useHomeDial.ts:34, imported at src/components/records/ContactRows.tsx:44, called at :113",
+      "optional": false
+    },
+    {
+      "member": "saveRecordSidecar",
+      "replaces": "saveRecordSidecar(...) of GilbApp src/lib/base/recordSidecarSave.ts:75, imported at ContactRows.tsx:39, called at :198",
+      "optional": true
+    },
+    {
+      "member": "noteServedVersion",
+      "replaces": "noteServedVersion(recordId, etag, meta) of GilbApp src/lib/base/recordSidecarSave.ts:50, called at ContactRows.tsx:147",
+      "optional": true
+    },
+    {
+      "member": "PhoneValue",
+      "replaces": "PhoneValue of GilbApp src/components/mynet/PhoneValue.tsx, used at ContactRows.tsx:550",
+      "optional": true
+    },
+    {
+      "member": "SkillPickerSheet",
+      "replaces": "SkillPickerSheet of GilbApp src/components/mynet/SkillPickerSheet.tsx, used at ContactRows.tsx:411",
+      "optional": true
+    },
+    {
+      "member": "SkillDepthNote",
+      "replaces": "SkillDepthNote of GilbApp src/components/mynet/SkillDepthNote.tsx, used at ContactRows.tsx:430 and :526",
+      "optional": true
+    },
+    {
+      "member": "SocialLogo",
+      "replaces": "SocialLogo of GilbApp src/components/mynet/SocialLogo.tsx, used at ContactRows.tsx:506 and :679",
+      "optional": true
+    },
+    {
+      "member": "socialPlatformName",
+      "replaces": "socialPlatformName(platformOfValue, label) of GilbApp src/lib/base/socialLogos.ts, imported at ContactRows.tsx:50, used at :506 and :679",
+      "optional": true
+    },
+    {
+      "member": "HeldVisibilitySwitch",
+      "replaces": "HeldVisibilitySwitch of GilbApp src/components/records/HeldVisibilitySwitch.tsx, used at ContactRows.tsx:441 and :539",
+      "optional": true
+    },
+    {
+      "member": "AddedByLine",
+      "replaces": "AddedByLine of GilbApp src/components/records/AddedByLine.tsx, used at ContactRows.tsx:439 and :536",
+      "optional": true
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
