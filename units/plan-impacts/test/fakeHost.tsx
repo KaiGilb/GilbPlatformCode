@@ -13,6 +13,7 @@ import type { RecordRelation } from "@kaigilb/gilbplatformcode-relation-role";
 import {
   PlanImpactsHostContext,
   type PlanCreated,
+  type MainTagRow,
   type PlanImpactsHost,
   type PlanRecordPages,
   type PlanRelationDocRead,
@@ -64,11 +65,14 @@ export function makeHost(opts: { without?: readonly (typeof WRITERS)[number][] }
     types: { value: { id: "value" }, resource: { id: "resource" } } as Record<string, object | null>,
     pages: {} as Record<string, PlanRecordPages | undefined>,
     cachedRelations: undefined as RecordRelation[] | undefined,
+    /** The main tags the host answers, by record address. */
+    mains: new Map<string, string>(),
   };
   const fn = {
     useRecords: vi.fn((_vaultId: string) => ({ data: state.pool })),
     useRelations: vi.fn((_id: string | null, _at: string | null) => state.relations),
     useSelfSource: vi.fn(() => state.self),
+    useMainTagsForRows: vi.fn((_rows: readonly MainTagRow[]): ReadonlyMap<string, string> => state.mains),
     useRelationDoc: vi.fn((relation: string, _vault: string): PlanRelationDocRead => state.docs[relation] ?? {}),
     resolveType: vi.fn((kind: string) => state.types[kind] ?? null),
     invalidatePlanSearch: vi.fn((_vault: string) => {}),
@@ -86,6 +90,7 @@ export function makeHost(opts: { without?: readonly (typeof WRITERS)[number][] }
     useRecords: (v) => fn.useRecords(v),
     useRelations: (id, at) => fn.useRelations(id, at),
     useSelfSource: () => fn.useSelfSource(),
+    useMainTagsForRows: (rows) => fn.useMainTagsForRows(rows),
     useRelationDoc: (relation, v) => fn.useRelationDoc(relation, v),
     resolveType: (kind) => fn.resolveType(kind),
     invalidatePlanSearch: (v) => {

@@ -1001,3 +1001,118 @@ describe("showing a created record on the screen vault's list", () => {
     expect(JSON.stringify(h.state.pages[VAULT])).toBe(before);
   });
 });
+
+describe("a linked record named by its main tag", () => {
+  /** One impact whose target holds no name and no unitTag, in the pool. */
+  function nameless(h: ReturnType<typeof makeHost>, ...ids: string[]) {
+    h.state.relations = { isPending: false, isError: false, data: ids.map((id, i) => impactRelation(`rel${i + 1}`, id)) };
+    h.state.pool = ids.map((id) => ({ ...gridRow(id, "x"), facts: {} }));
+    ids.forEach((id, i) => (h.state.docs[`rel${i + 1}`] = { data: { extras: { "a:valueEstimate": "1", "a:unit": "s", "a:impactBasis": "estimate" } } }));
+  }
+  const rowTags = () => [...document.querySelectorAll("[data-impact-row]")].map((r) => r.getAttribute("data-impact-row"));
+
+  it("shows a linked record that has no name or unitTag by the main tag the host answers, and labels its remove control with it", () => {
+    const h = makeHost();
+    nameless(h, "v1");
+    h.state.mains.set(uri("v1"), "Alpha");
+    setup({}, h);
+    expect(rowOf("Alpha")).toBeTruthy();
+    expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+  });
+
+  it("falls back to the name or the id tail while the host has no main tag for it", () => {
+    const h = makeHost();
+    nameless(h, "v1");
+    setup({}, h);
+    expect(rowOf("v1")).toBeTruthy();
+    expect(rowOf("Alpha")).toBeNull();
+  });
+
+  it("keeps a linked record's unitTag over a main tag the host holds for it", () => {
+    const h = makeHost();
+    withImpacts(h, speed());
+    h.state.mains.set(uri("v1"), "Alpha");
+    setup({}, h);
+    expect(rowOf("Speed")).toBeTruthy();
+    expect(rowOf("Alpha")).toBeNull();
+  });
+
+  it("sorts the rows by the main tags", () => {
+    const h = makeHost();
+    nameless(h, "v1", "v2");
+    h.state.mains.set(uri("v1"), "Zed");
+    h.state.mains.set(uri("v2"), "Alpha");
+    setup({}, h);
+    expect(rowTags()).toEqual(["Alpha", "Zed"]);
+  });
+
+  it("asks the host once per render, with the pool's records that the links point at and no others", () => {
+    const h = makeHost();
+    nameless(h, "v1");
+    h.state.pool = [...h.state.pool!, gridRow("other", "Other")];
+    const t = setup({}, h);
+    expect(h.fn.useMainTagsForRows.mock.calls.length).toBe(h.fn.useRecords.mock.calls.length);
+    const rows = h.fn.useMainTagsForRows.mock.calls.at(-1)![0];
+    expect(rows.map((r) => r.entityUri)).toEqual([uri("v1")]);
+    expect(rows[0]!.facts).toEqual({});
+    const before = h.fn.useMainTagsForRows.mock.calls.length;
+    t.view.rerender(<PlanImpacts {...t.p} />);
+    expect(h.fn.useMainTagsForRows.mock.calls.length - before).toBe(h.fn.useRecords.mock.calls.length - before);
+    expect(h.fn.useMainTagsForRows.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("matches a link to a pool record by id as well as by address", () => {
+    const h = makeHost();
+    const byId = { ...impactRelation("rel1", "v1"), members: [{ member: "v1", role: "role:value" }] };
+    h.state.relations = { isPending: false, isError: false, data: [byId] };
+    h.state.pool = [{ ...gridRow("v1", "x"), facts: {}, entityUri: undefined }];
+    setup({}, h);
+    const rows = h.fn.useMainTagsForRows.mock.calls.at(-1)![0];
+    expect(rows.map((r) => r.entityUri)).toEqual([undefined]);
+  });
+
+  it("looks the main tag up by the pool record's own address, also when the link names the record by id", () => {
+    const h = makeHost();
+    const byId = { ...impactRelation("rel1", "v1"), members: [{ member: "v1", role: "role:value" }] };
+    h.state.relations = { isPending: false, isError: false, data: [byId] };
+    h.state.pool = [{ ...gridRow("v1", "x"), facts: {} }];
+    h.state.docs.rel1 = { data: { extras: {} } };
+    h.state.mains.set(uri("v1"), "Alpha");
+    setup({}, h);
+    expect(rowOf("Alpha")).toBeTruthy();
+  });
+
+  it("calls the hook on every render, with no rows, while the relations are still being read or failed (hook order)", () => {
+    const h = makeHost();
+    h.state.relations = { isPending: true, isError: false };
+    const t = setup({}, h);
+    expect(h.fn.useMainTagsForRows).toHaveBeenCalled();
+    expect(h.fn.useMainTagsForRows.mock.calls.at(-1)![0]).toEqual([]);
+    nameless(h, "v1");
+    h.state.mains.set(uri("v1"), "Alpha");
+    t.view.rerender(<PlanImpacts {...t.p} />);
+    expect(rowOf("Alpha")).toBeTruthy();
+    expect(h.fn.useMainTagsForRows.mock.calls.at(-1)![0].map((r) => r.entityUri)).toEqual([uri("v1")]);
+  });
+
+  it("names the record by its main tag in the 409 sentence when its end is refused", async () => {
+    const h = makeHost();
+    nameless(h, "v1");
+    h.state.mains.set(uri("v1"), "Alpha");
+    h.fn.endRelation.mockRejectedValue(Object.assign(new Error("x"), { status: 409 }));
+    const t = setup({}, h);
+    await userEvent.click(screen.getByLabelText("Remove Alpha"));
+    await waitFor(() => expect(t.p.onNotice).toHaveBeenCalledWith('The tag "Alpha" is already used in this vault. Pick another.'));
+  });
+
+  it("passes a new array of rows every render while the links are known (the memo never holds), so the host must key on the rows' content", () => {
+    const h = makeHost();
+    nameless(h, "v1");
+    const t = setup({}, h);
+    t.view.rerender(<PlanImpacts {...t.p} />);
+    const calls = h.fn.useMainTagsForRows.mock.calls;
+    expect(calls.at(-1)![0]).not.toBe(calls.at(-2)![0]);
+    expect(calls.at(-1)![0]).toEqual(calls.at(-2)![0]);
+  });
+});
+

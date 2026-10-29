@@ -86,9 +86,10 @@ function showCreatedOnScreen(host: PlanHost, screenVault: string, recordVault: s
   });
 }
 
-function tagFor(pool: readonly GridRecord[], uri: string): string {
+/** The tag a linked record is named by: its `unitTag`, else its MAIN tag from `mains`, else its name or id. */
+function tagFor(pool: readonly GridRecord[], uri: string, mains?: ReadonlyMap<string, string>): string {
   const row = pool.find((r) => r.entityUri === uri || r.id === uri);
-  const tag = row ? recordTag(row.facts) : "";
+  const tag = row ? recordTag(row.facts, mains?.get(row.entityUri ?? uri)) : "";
   return tag || refDisplayName(row?.facts ?? null, uri);
 }
 
@@ -503,7 +504,12 @@ export function PlanImpacts({
   const [overrideRev, setOverrideRev] = useState(0);
   const pool = list.data ?? [];
   const known = !relations.isPending && !relations.isError;
-  const links = known ? sortImpacts(impactsOnSolution(relations.data), (uri) => tagFor(pool, uri)) : [];
+  const impactLinks = known ? impactsOnSolution(relations.data) : [];
+  // The linked records that hold no name or `unitTag` are named by their main tag: ONE batch call for all of them, never one per link.
+  const mains = host.useMainTagsForRows(
+    useMemo(() => impactLinks.flatMap((l) => pool.filter((r) => r.entityUri === l.targetUri || r.id === l.targetUri)), [impactLinks, pool]),
+  );
+  const links = known ? sortImpacts(impactLinks, (uri) => tagFor(pool, uri, mains)) : [];
   const editing = mode.editing && canEdit;
   const showPicker = (editing || (offer && canEdit)) && !!record.entityUri;
   const excluded = useMemo(
@@ -604,7 +610,7 @@ export function PlanImpacts({
         <SavedImpact
           key={link.relation}
           link={link}
-          tag={tagFor(pool, link.targetUri)}
+          tag={tagFor(pool, link.targetUri, mains)}
           pool={pool}
           record={record}
           vaultId={vaultId}
@@ -630,7 +636,7 @@ export function PlanImpacts({
                 );
                 onNotice(null);
               } catch (e) {
-                onNotice(noticeFor(e, tagFor(pool, link.targetUri)));
+                onNotice(noticeFor(e, tagFor(pool, link.targetUri, mains)));
               } finally {
                 setBusy(false);
               }
