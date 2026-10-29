@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/online-card",
+  "package": "@kaigilb/gilbplatformcode-online-card",
+  "version": "0.1.0",
+  "purpose": "Controls the link between a holder's record of a person and that person's own online card: find, link, unlink, refresh.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      { "path": "src/onlineCard/controller.ts", "lines": [1, 301], "to": "src/controller.ts" },
+      { "path": "src/onlineCard/find.ts", "lines": [1, 84], "to": "src/find.ts" },
+      { "path": "src/onlineCard/publicCard.ts", "lines": [1, 137], "to": "src/publicCard.ts" },
+      { "path": "src/onlineCard/rungs.ts", "lines": [1, 50], "to": "src/rungs.ts" },
+      { "path": "src/onlineCard/link.ts", "lines": [13, 14], "to": "src/linkWrite.ts" },
+      { "path": "src/onlineCard/link.ts", "lines": [56, 100], "to": "src/linkWrite.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`link.ts` is split (RuleGhsSplitFile): lines 16-55 (`LinkReading`, `readLink`) stay in the unit `online-card-link`, a peer; lines 56-100 (`LinkRefusedError`, `LinkWrite`, `linkWrite`, `unlinkWrite`) and lines 13-14 (`LINK_SLUG`, which only these use) are `src/linkWrite.ts`. `LINK_SLUG` is outside the brief's range 56-100 and is added by the placement rule: a symbol used by one new unit goes into it.",
+    "In `controller.ts`: the import of `readLink` and the type `LinkReading` from `./link.ts` is the peer `@kaigilb/gilbplatformcode-online-card-link`; `linkWrite`, `unlinkWrite` and the type `LinkWrite` come from `./linkWrite`; `resolveOnlineCard` and the type `ResolveOutcome` from `./anchorResolver.ts` are the peer `@kaigilb/gilbplatformcode-person-connections`; the type `PlatformClient` from `../platform.ts` is the peer `@kaigilb/gilbplatformcode-record-sync`; the own-file imports lose `.ts`.",
+    "In `find.ts` and `publicCard.ts`: the imports from `../platform.ts` (`request`, `routeUrl`, `retryAfterMs`, `expectStatus`, `PlatformError`, `PlatformClient`, `RequestBound`) are the peer `@kaigilb/gilbplatformcode-record-sync`; the own-file imports lose `.ts`.",
+    "In `rungs.ts`: the import from `../connections/placements.ts` (`ATOMIC_PLACEMENTS`, `CONTEXT_WORDS`, `DEPTH_WORDS`, `atomicRungTerm`, `placementLabel`, the type `AudienceDepth`) is the peer `@kaigilb/gilbplatformcode-person-connections`.",
+    "Comments made generic (person names, cycle and ticket tags, app names, a claim name and a platform file name removed from the files' comments); no code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
