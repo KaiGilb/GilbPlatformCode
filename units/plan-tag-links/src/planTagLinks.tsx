@@ -289,6 +289,8 @@ export function PlanFunctionOfValue({
   const [adding, setAdding] = useState(false);
   const pool = list.data ?? [];
   const values = planFindRows(find.data).filter((r) => isTypeName(r.typeUri, "Value")).sort(byTag);
+  // The values that hold no name or `unitTag` are named by their main tag: ONE batch call for the list.
+  const mains = host.useMainTagsForRows(values);
   const retryValues = () => void host.invalidatePlanFind(planVault, "a:measures", record.id);
   const editing = mode.editing && canEdit;
   const showAdd = editing || (offer && canEdit);
@@ -311,7 +313,7 @@ export function PlanFunctionOfValue({
   function otherTag(addr: string): string {
     const canonical = linkAddress({ facts: { measures: addr } }, "measures") ?? addr;
     const named = pool.find((r) => r.id === canonical || r.entityUri === canonical || r.id === addr || r.entityUri === addr);
-    const tag = named ? recordTag(named.facts) : "";
+    const tag = named ? recordTag(named.facts, mains.get(named.entityUri ?? canonical)) : "";
     return tag || refDisplayName(null, canonical);
   }
 
@@ -326,7 +328,7 @@ export function PlanFunctionOfValue({
           <div key={v.id} className="flex items-start gap-2">
             {editing ? (
               <RemoveControl
-                label={`Remove ${recordTag(v.facts) || v.id}`}
+                label={`Remove ${recordTag(v.facts, mains.get(v.entityUri ?? "")) || v.id}`}
                 disabled={busy}
                 onClick={() => {
                   if (!pointsAt(v, "measures", record)) return;
@@ -614,9 +616,10 @@ const SOFTWARE_SYSTEM_OPTION = {
   kind: "type" as const,
 };
 
-function tagFor(pool: readonly GridRecord[], uri: string): string {
+/** The tag a linked record is named by: its `unitTag`, else its MAIN tag from `mains`, else its name or id. */
+function tagFor(pool: readonly GridRecord[], uri: string, mains?: ReadonlyMap<string, string>): string {
   const row = pool.find((r) => r.entityUri === uri || r.id === uri);
-  const tag = row ? recordTag(row.facts) : "";
+  const tag = row ? recordTag(row.facts, mains?.get(row.entityUri ?? uri)) : "";
   return tag || refDisplayName(row?.facts ?? null, uri);
 }
 
@@ -663,11 +666,16 @@ function SolutionChips({
   onOpen: (id: string) => void;
   onRemove: (relation: string) => void;
 }) {
+  const host = usePlanTagLinksHost();
+  // The linked records that hold no name or `unitTag` are named by their main tag: ONE batch call for all of them, never one per link.
+  const mains = host.useMainTagsForRows(
+    useMemo(() => links.flatMap((l) => pool.filter((r) => r.entityUri === l.uri || r.id === l.uri)), [links, pool]),
+  );
   if (links.length === 0) return null;
   return (
     <>
       {links.map((link) => {
-        const tag = tagFor(pool, link.uri);
+        const tag = tagFor(pool, link.uri, mains);
         const row = pool.find((r) => r.entityUri === link.uri || r.id === link.uri);
         return (
           <div key={link.relation || link.uri} className="flex items-start gap-2">

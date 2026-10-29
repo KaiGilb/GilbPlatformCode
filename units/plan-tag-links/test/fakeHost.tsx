@@ -11,6 +11,7 @@ import type { BaseRecord, GridRecord } from "@kaigilb/gilbplatformcode-base-reco
 import type { RecordRelation } from "@kaigilb/gilbplatformcode-relation-role";
 import {
   PlanTagLinksHostContext,
+  type MainTagRow,
   type PlanCreated,
   type PlanFindRead,
   type PlanLinkPatch,
@@ -70,11 +71,14 @@ export function makeHost(opts: { without?: readonly (typeof WRITERS)[number][] }
     cachedRelations: undefined as RecordRelation[] | undefined,
     nextEtag: '"e2"',
     dialogProps: [] as PlanTagLinksCreateDialogProps[],
+    /** The main tags the host answers, by record address (the key "" is looked up for a row with no address). */
+    mains: new Map<string, string>(),
   };
   const fn = {
     useRecords: vi.fn((_vaultId: string) => ({ data: state.pool })),
     useRelations: vi.fn((_id: string | null, _at: string | null) => state.relations),
     usePlanFind: vi.fn((_vault: string, attr: string, _parent: unknown): PlanFindRead => state.finds[attr] ?? { isError: false }),
+    useMainTagsForRows: vi.fn((_rows: readonly MainTagRow[]): ReadonlyMap<string, string> => state.mains),
     invalidatePlanFind: vi.fn((..._a: unknown[]) => {}),
     invalidatePlanSearch: vi.fn((_vault: string) => {}),
     ensureEtagUnchanged: vi.fn(async (_vault: string, r: GridRecord, _same: (fresh: GridRecord) => boolean) => ({ row: r }) as Awaited<ReturnType<PlanTagLinksHost["ensureEtagUnchanged"]>>),
@@ -96,6 +100,7 @@ export function makeHost(opts: { without?: readonly (typeof WRITERS)[number][] }
     useRecords: (v) => fn.useRecords(v),
     useRelations: (id, at) => fn.useRelations(id, at),
     usePlanFind: (v, attr, parent) => fn.usePlanFind(v, attr, parent),
+    useMainTagsForRows: (rows) => fn.useMainTagsForRows(rows),
     invalidatePlanFind: (v, attr, parentId) => {
       log("invalidatePlanFind", v, attr, parentId);
       return fn.invalidatePlanFind(v, attr, parentId);

@@ -42,6 +42,7 @@ const host: PlanTagLinksHost = {
   useRecords: () => ({ data: [...rows.values()] }),
   useRelations: () => ({ isPending: false, isError: false, data: [] }),
   usePlanFind: () => ({ isError: false }),
+  useMainTagsForRows: () => new Map<string, string>(),
   invalidatePlanFind: () => {},
   invalidatePlanSearch: (vault) => void client.invalidateQueries({ queryKey: ["plan-search", vault] }),
   liveRow: (_vault, id, fallback) => rows.get(id) ?? { updatedAt: 0, ...fallback },
