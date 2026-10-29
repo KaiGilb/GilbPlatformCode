@@ -1,10 +1,10 @@
 # tag-client
 
-Reads the main tag of many records of one vault from the platform's batch route, fifty to a call, and says plainly when the platform has no tag routes.
+Reads and writes the tags of a vault's records over the platform's tag routes: the main tag of one record or of a page of records, the tag list, adding, removing and making a tag main, and a plain sentence when the platform has no tag routes.
 
 ## What this is
 
-Reads the main tag of many records of one vault from the platform's batch route, fifty to a call, and says plainly when the platform has no tag routes.
+Reads and writes the tags of a vault's records over the platform's tag routes: the main tag of one record or of a page of records, the tag list, adding, removing and making a tag main, and a plain sentence when the platform has no tag routes.
 
 Plain functions and types, no React, no credential. The platform makes a record's main tag itself, when the record is created. This unit reads it, asks the platform to make one when a record has none, lists a record's tags, adds one, makes one the main tag and removes one, each through a typed call of the platform's tag routes on the platform client's origin. A platform that has not shipped the tag routes answers Fastify's own 404 (`Route … not found`); that becomes a `NoTagRoutesError` with the plain sentence, never a quiet empty answer.
 
