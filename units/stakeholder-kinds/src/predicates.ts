@@ -27,3 +27,19 @@ export async function resolvePredicate(source: VocabularySource, key: keyof Stak
   const iri = source.termIri(PREDICATE_TERMS[key]);
   return spellingOfTermDoc(await source.term(iri), iri);
 }
+
+/** Dereference each predicate term and derive its spellings, all at once. Fails loudly if any
+ *  cannot be read: a resolver missing a predicate would read nothing, and nothing looks like "no
+ *  stakeholders". `known` holds spellings this pass already read; those terms are not read again
+ *  (the field-set read reads `a/fieldOf` first, to ask the carrier selector before anything else). */
+export async function resolvePredicates(
+  source: VocabularySource,
+  known: Partial<StakeholderPredicates> = {},
+): Promise<StakeholderPredicates> {
+  const entries = await Promise.all(
+    (Object.keys(PREDICATE_TERMS) as (keyof StakeholderPredicates)[]).map(
+      async (key) => [key, known[key] ?? (await resolvePredicate(source, key))] as const,
+    ),
+  );
+  return Object.fromEntries(entries) as unknown as StakeholderPredicates;
+}
