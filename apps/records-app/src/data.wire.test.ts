@@ -8,6 +8,8 @@ const VAULT = "https://alice.platform.example.test/vault";
 let calls: { url: string; method: string; body: string | null }[];
 
 beforeEach(() => {
+  vi.stubEnv("VITE_ALLOW_CREATE", "1");
+  vi.stubEnv("VITE_VAULT_URL", VAULT);
   setBaseOrigin("https://platform.example.test");
   setSystemVaultHosts(["id.platform.example.test"]);
   const a = { authorization: "DPoP t", dpop: "p" };
@@ -21,7 +23,7 @@ beforeEach(() => {
     return new Response("{}", { status: 404 });
   });
 });
-afterEach(() => { vi.unstubAllGlobals(); resetLwsAuth(); resetBaseOrigin(); resetSystemVaultHosts(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); resetLwsAuth(); resetBaseOrigin(); resetSystemVaultHosts(); });
 
 test("M6: the create goes out with the type 't:CatalogEntry' and the list asks for type 'CatalogEntry'", async () => {
   await addEntry(VAULT, "Kettle", "Red");

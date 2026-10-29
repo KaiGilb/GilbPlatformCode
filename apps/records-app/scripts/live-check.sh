@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Live check of records-app against the PRODUCTION test vault. Kai signs in himself; this script only serves the app.
+# - Scope: this run WRITES, and only in the pinned test vault: add records, create the own card (self-card door), store a picture.
+#   The app refuses every create unless VITE_ALLOW_CREATE=1 AND the selected vault is VITE_VAULT_URL.
 # - Origin http://localhost:5251: one of the two localhost entries of production FIRST_PARTY_ORIGINS
 #   (RuleRigdevProdFirstPartyOrigin); strictPort so a busy port fails loudly (RuleRigdevNoInventPort).
 # - VITE_PLATFORM_ORIGIN is the value GilbApp production builds use: VITE_BASE_ORIGIN=https://gilb.com
@@ -10,7 +12,7 @@
 set -euo pipefail
 
 export VITE_VAULT_URL="https://testappvaultaccess.gilb.com/vault"
-export VITE_SUPERSEDE_ONLY=1
+export VITE_ALLOW_CREATE=1
 export VITE_ID_ORIGIN="https://id.gilb.com"
 export VITE_PLATFORM_ORIGIN="https://gilb.com"
 

@@ -1,7 +1,8 @@
 // The entries and the holder's own card: what is stored, how it is listed, searched and written.
 // GilbVeda terms: the entry type (RECORD_TYPE, pending), a:name, a:description; the own card carries
 // a:name, a:email, a:phone, a:profilePhoto (spelling from photo-term). Findings: RUNLOG.md.
-import { createRecord, patchRecord, readRecord, writeSource, type BaseRecord, type WriteSource } from "@kaigilb/gilbplatformcode-lws-records";
+import { createRecord, patchRecord, readRecord, storedSpellings, writeSource, type BaseRecord, type RecordCreateFacts, type WriteSource } from "@kaigilb/gilbplatformcode-lws-records";
+import { typeUriForVaultNamespace } from "@kaigilb/gilbplatformcode-record-types";
 import { listVaultRecordsPage, lwsReadFetch } from "@kaigilb/gilbplatformcode-lws-vault-sets";
 import { textHits } from "@kaigilb/gilbplatformcode-text-filter";
 import { appendFaceQuery, faceLocationFor, type UploadAck } from "@kaigilb/gilbplatformcode-face-crop";
@@ -12,20 +13,29 @@ import { createPhotoTermResolver, photoRefFromFacts } from "@kaigilb/gilbplatfor
 import { ownCardFindingQuery } from "@kaigilb/gilbplatformcode-plan-self-source";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { VEDA_ORIGIN } from "./platform";
+import { sameUrl } from "./sameUrl";
 
 // Minted by Agent.Concept 2026-10-29: https://veda.gilb.com/base/t/CatalogEntry (Suggested; a:name and a:description list it in a:fieldOf).
 export const RECORD_TYPE = "t:CatalogEntry";
 export const RECORD_LIST_TYPE = RECORD_TYPE.replace(/^t:/, "");
 
-/** VITE_SUPERSEDE_ONLY=1: this run only changes existing records (nothing is added, no picture is stored). */
-export const supersedeOnly = (): boolean => import.meta.env.VITE_SUPERSEDE_ONLY === "1";
+/**
+ * Creates (a record, the own card, a picture) are allowed ONLY when VITE_ALLOW_CREATE=1 AND the vault is the pinned one
+ * (VITE_VAULT_URL, compared as pickVault compares). Anything else is read and change-only.
+ */
+export const createsAllowed = (vaultId: string): boolean =>
+  import.meta.env.VITE_ALLOW_CREATE === "1" && sameUrl(vaultId, import.meta.env.VITE_VAULT_URL ?? "");
 
-export class SupersedeOnlyError extends Error {
+export class CreateNotAllowedError extends Error {
   constructor(what: string) {
     super(`This run changes existing records only; ${what} is off.`);
-    this.name = "SupersedeOnlyError";
+    this.name = "CreateNotAllowedError";
   }
 }
+
+const needCreate = (vaultId: string, what: string): void => {
+  if (!createsAllowed(vaultId)) throw new CreateNotAllowedError(what);
+};
 
 export interface Entry {
   id: string;
@@ -67,13 +77,17 @@ export async function listEntries(vaultId: string): Promise<Entry[]> {
   throw new Error(`The list is longer than ${MAX_LIST_PAGES} pages (${MAX_LIST_PAGES * 100} records); the app stops there rather than show a part as the whole.`);
 }
 
-export async function addEntry(vaultId: string, name: string, description: string): Promise<{ id: string }> {
-  if (supersedeOnly()) throw new SupersedeOnlyError("adding records");
+/** Create, then READ THE RECORD BACK by its id and address: confirmed only when the read-back holds the name. */
+export async function addEntry(vaultId: string, name: string, description: string): Promise<{ id: string; confirmed: boolean }> {
+  needCreate(vaultId, "adding records");
   const bad = validateEntry(name);
   if (bad) throw new Error(bad);
   const facts: Record<string, string> = { name: name.trim() };
   if (description.trim()) facts.description = description.trim();
-  return createRecord(vaultId, RECORD_TYPE, facts, name.trim());
+  const { id } = await createRecord(vaultId, RECORD_TYPE, facts, name.trim());
+  const back = await readRecord(id, `${vaultId.replace(/\/+$/, "")}/e/${id}`);
+  const served = back?.served?.facts ?? back?.facts ?? {};
+  return { id, confirmed: back !== null && (back.facts.name ?? firstText(served.name)) === name.trim() };
 }
 
 // ---- the holder's own card -------------------------------------------------------------------
@@ -182,6 +196,80 @@ export async function saveProfile(card: OwnCard, next: { name: string; email: st
   return { confirmed: back !== null && failed.length === 0, failed: back === null ? Object.keys(patch) : failed };
 }
 
+// ---- the own card: create through the idempotent self-card door ------------------------------
+// HOST OBJECT. Library gap: lws-records has createRecord but no ensureSelfCardRecord (RUNLOG.md, batch 6).
+
+/** 409 SelfCardIdentityUnknown: the vault holds an ambiguous pile and says which is yours nowhere. A refusal, never a reason to create. */
+export class SelfCardRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SelfCardRefusedError";
+  }
+}
+
+export interface ProfileInput {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+/** The id out of a `…/lws/r/<id>` address (the Location header or the body's @id), as createRecord reads it. */
+const idFromResourceUrl = (url: string): string => {
+  const marker = "/lws/r/";
+  const i = url.indexOf(marker);
+  return i === -1 ? url : url.slice(i + marker.length);
+};
+
+/**
+ * POST {origin}/lws/vault/<vault>/selfcard: 201 created, 200 ADOPTED (the existing card, untouched, our facts NOT written).
+ * Copied from GilbApp bf1d681c src/lib/base/records.ts:561-602; server GilbPlatform src/lws/routes.ts:772-807 (route at 783).
+ * No Slug header: this door mints at a derived address. 409 is a refusal; any other status throws with the status.
+ */
+export async function ensureSelfCard(vaultId: string, input: ProfileInput): Promise<{ id: string; etag: string | null; adopted: boolean }> {
+  needCreate(vaultId, "creating the profile card");
+  const url = `${vaultOriginOf(vaultId)}/lws/vault/${encodeURIComponent(vaultId)}/selfcard`;
+  const given: RecordCreateFacts = {};
+  for (const k of ["name", "email", "phone"] as const) if (input[k].trim() !== "") given[k] = input[k].trim();
+  // Same wire spelling createRecord uses for facts it authors: the stored spelling of each slug (a: + slug).
+  const spell = await storedSpellings(Object.keys(given), undefined);
+  const facts: Record<string, unknown> = {};
+  for (const [slug, value] of Object.entries(given)) {
+    const key = spell(slug);
+    if (key !== null) facts[key] = value;
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...(await dpopWriteAuth("POST", url)), "content-type": "application/json" },
+    body: JSON.stringify({ type: typeUriForVaultNamespace("Person", vaultId), facts }),
+    keepalive: true,
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { message?: unknown };
+    throw new SelfCardRefusedError(typeof body.message === "string" && body.message ? body.message : "The vault could not tell which card is yours, so it made none.");
+  }
+  if (res.status !== 200 && res.status !== 201) throw new Error(`The profile card was not created (HTTP ${res.status}).`);
+  const location = res.headers.get("location");
+  const id = location ? idFromResourceUrl(location) : idFromResourceUrl(String(((await res.json().catch(() => ({}))) as Record<string, unknown>)["@id"] ?? ""));
+  return { id, etag: res.headers.get("etag"), adopted: res.status === 200 };
+}
+
+/** True when the card holds every non-empty value typed (the read-back test for "created"). */
+export function cardHolds(card: OwnCard, typed: ProfileInput): boolean {
+  return (["name", "email", "phone"] as const).every((k) => typed[k].trim() === "" || card[k] === typed[k].trim());
+}
+
+/**
+ * Ensure the card through the door. An ADOPTED card was returned untouched, so the typed values follow by the saveProfile patch
+ * (the card is read first for its etag). The caller refetches the own-card finding and checks {@link cardHolds}.
+ */
+export async function createProfileCard(vault: ReachableVault, typed: ProfileInput): Promise<{ id: string; etag: string | null; adopted: boolean; save?: SaveResult }> {
+  const made = await ensureSelfCard(vault.vaultId, typed);
+  if (!made.adopted) return made;
+  const state = await loadProfile(vault);
+  if (state.kind !== "card") return made;
+  return { ...made, save: await saveProfile(state.card, typed) };
+}
+
 // ---- the picture -----------------------------------------------------------------------------
 
 /**
@@ -189,7 +277,7 @@ export async function saveProfile(card: OwnCard, next: { name: string; email: st
  * GilbApp 9a602ea7 src/lib/base/files.ts:189,198,223-239; photo ref `/files/<id>` of the face: vaultProfilePhoto.ts:891.
  */
 export async function uploadPhoto(vaultId: string, file: File): Promise<string> {
-  if (supersedeOnly()) throw new SupersedeOnlyError("storing pictures");
+  needCreate(vaultId, "storing pictures");
   const params = new URLSearchParams({ name: file.name });
   appendFaceQuery(params, null);
   const url = `${LWS_VAULT_FILES_URL(vaultId)}?${params}`;
@@ -202,14 +290,20 @@ export async function uploadPhoto(vaultId: string, file: File): Promise<string> 
   return faceLocationFor((await res.json()) as UploadAck);
 }
 
-/** Upload, then point the own card at the file: patch `profilePhoto` (vaultProfilePhoto.ts:504). Without a card nothing is uploaded. */
-export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<void> {
-  if (supersedeOnly()) throw new SupersedeOnlyError("storing pictures");
+/**
+ * Upload, then point the own card at the file (patch `profilePhoto`, vaultProfilePhoto.ts:504), then READ THE CARD AGAIN:
+ * confirmed only when the card's photo fact equals the uploaded location under the read key. Without a card nothing is uploaded.
+ */
+export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<SaveResult> {
+  needCreate(vaultId, "storing pictures");
   if (!card) throw new Error("No profile card was found in your vault.");
   needAddress(card);
   const location = await uploadPhoto(vaultId, file);
   const slug = (await photoTerm.get()).writeKeyBare;
   await patchRecord(card.id, { [slug]: location }, card.entityUri, card.source[0], { ifMatch: card.etag });
+  const back = await readRecord(card.id, card.entityUri);
+  const held = back ? (await cardFromRecord(back, card.road)).photo : "";
+  return held === location ? { confirmed: true, failed: [] } : { confirmed: false, failed: [slug] };
 }
 
 /** The picture's bytes need the credential, so fetch them and show a blob address. */

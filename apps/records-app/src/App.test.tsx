@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -7,7 +7,7 @@ const entries = [
   { id: "1", entityUri: "u1", name: "Red kettle", description: "boils water" },
   { id: "2", entityUri: "u2", name: "Blue pot", description: "for soup" },
 ];
-const addEntry = vi.fn(async () => ({ id: "3" }));
+const addEntry = vi.fn(async () => ({ id: "3", confirmed: true }));
 const card = { id: "p", entityUri: "e", etag: null, road: "derived", source: [], name: "Ada", email: "ada@x.test", phone: "+1 555 0100", photo: "", moreEmails: 0, morePhones: 0, rawEmail: "ada@x.test", rawPhone: "+1 555 0100" };
 const loadProfile = vi.fn(async () => ({ kind: "card", card, otherOwnerCards: [] }));
 const saveProfile = vi.fn(async (..._a: unknown[]) => ({ confirmed: true, failed: [] as string[] }));
@@ -30,11 +30,13 @@ vi.mock("./platform", () => ({ VEDA_ORIGIN: "https://veda.example.test", credent
 const { RecordCard, RecordList, ProfileView } = await import("./App");
 
 const wrap = (ui: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
-afterEach(cleanup);
+const PIN = "https://a.gilb.com/vault";
+beforeEach(() => { vi.stubEnv("VITE_ALLOW_CREATE", "1"); vi.stubEnv("VITE_VAULT_URL", PIN); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 test("records are listed and a click opens the record on a card", async () => {
   let opened: unknown = null;
-  wrap(<RecordList vaultId="v" onOpen={(t) => (opened = t)} />);
+  wrap(<RecordList vaultId={PIN} onOpen={(t) => (opened = t)} />);
   fireEvent.click(await screen.findByText("Blue pot"));
   expect(opened).toMatchObject({ id: "2" });
   cleanup();
@@ -44,7 +46,7 @@ test("records are listed and a click opens the record on a card", async () => {
 });
 
 test("typing in the search box narrows the list", async () => {
-  wrap(<RecordList vaultId="v" onOpen={() => undefined} />);
+  wrap(<RecordList vaultId={PIN} onOpen={() => undefined} />);
   await screen.findByText("Red kettle");
   fireEvent.change(screen.getByLabelText("Search records"), { target: { value: "soup" } });
   expect(screen.queryByText("Red kettle")).toBeNull();
@@ -54,16 +56,16 @@ test("typing in the search box narrows the list", async () => {
 });
 
 test("the add form sends name and description", async () => {
-  wrap(<RecordList vaultId="v" onOpen={() => undefined} />);
+  wrap(<RecordList vaultId={PIN} onOpen={() => undefined} />);
   await screen.findByText("Red kettle");
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Spoon" } });
   fireEvent.change(screen.getByLabelText("Description"), { target: { value: "steel" } });
   fireEvent.click(screen.getByRole("button", { name: "Add record" }));
-  await waitFor(() => expect(addEntry).toHaveBeenCalledWith("v", "Spoon", "steel"));
+  await waitFor(() => expect(addEntry).toHaveBeenCalledWith(PIN, "Spoon", "steel"));
 });
 
 test("the profile shows contact information, saves changes, and takes a picture", async () => {
-  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
   const email = (await screen.findByLabelText("Email")) as HTMLInputElement;
   expect(email.value).toBe("ada@x.test");
   expect(screen.getByText("Call")).toBeTruthy();
@@ -72,25 +74,26 @@ test("the profile shows contact information, saves changes, and takes a picture"
   await waitFor(() => expect(saveProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "p" }), { name: "Ada", email: "new@x.test", phone: "+1 555 0100" }));
   const file = new File(["x"], "me.png", { type: "image/png" });
   fireEvent.change(screen.getByLabelText("Profile picture"), { target: { files: [file] } });
-  await waitFor(() => expect(setProfilePhoto).toHaveBeenCalledWith("v", expect.objectContaining({ id: "p" }), file));
+  await waitFor(() => expect(setProfilePhoto).toHaveBeenCalledWith(PIN, expect.objectContaining({ id: "p" }), file));
 });
 
-test("with no own card the message shows, the form is disabled and nothing can be saved", async () => {
+test("with no own card the message shows, the form is editable, and the only button creates the card", async () => {
   loadProfile.mockResolvedValueOnce({ kind: "none" } as never);
-  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
   expect(await screen.findByText("No profile card was found in your vault.")).toBeTruthy();
-  expect((screen.getByLabelText("Email") as HTMLInputElement).disabled).toBe(true);
-  expect((screen.getByRole("button", { name: "Save profile" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Email") as HTMLInputElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Create my profile card" }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 test("a second own card shows as a warning line", async () => {
   loadProfile.mockResolvedValueOnce({ kind: "card", card, otherOwnerCards: ["vsc-other"] } as never);
-  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
   expect((await screen.findByRole("status")).textContent).toContain("vsc-other");
 });
 
 test("D6: the file input is reset after each pick, so the same picture can be picked again", async () => {
-  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
   const input = (await screen.findByLabelText("Profile picture")) as HTMLInputElement;
   const setValue = vi.fn();
   Object.defineProperty(input, "value", { configurable: true, get: () => "", set: setValue });
@@ -99,7 +102,7 @@ test("D6: the file input is reset after each pick, so the same picture can be pi
 });
 
 test("4.4: 'Saved' is shown only when the vault confirmed; otherwise the not-confirmed line names the field", async () => {
-  wrap(<ProfileView vault={{ vaultId: "v" } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
   fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "new@x.test" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   expect((await screen.findByRole("status")).textContent).toBe("Profile saved.");

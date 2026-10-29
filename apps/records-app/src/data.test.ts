@@ -27,6 +27,8 @@ const person = (id: string, over: Doc = {}): Doc => ({ "@id": `${VAULT}/e/${id}`
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("VITE_ALLOW_CREATE", "1");
+  vi.stubEnv("VITE_VAULT_URL", VAULT);
   setBaseOrigin("https://platform.example.test");
   setSystemVaultHosts(["id.platform.example.test"]);
   setSystemHostLabels(["id", "veda"]);
@@ -43,7 +45,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
+  vi.unstubAllGlobals(); vi.unstubAllEnvs();
   resetLwsAuth(); resetBaseOrigin(); resetSystemVaultHosts(); resetSystemHostLabels();
 });
 
@@ -145,7 +147,8 @@ test("the picture is PUT as raw bytes with name and face=whole, then the own car
     return base(input, init);
   });
   const file = new File(["x"], "me.png", { type: "image/png" });
-  await data.setProfilePhoto(VAULT, state.card, file);
+  patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:profilePhoto": "/files/abc12345" }); return { etag: null }; });
+  expect(await data.setProfilePhoto(VAULT, state.card, file)).toEqual({ confirmed: true, failed: [] });
   expect(calls).toHaveLength(1);
   expect(calls[0].url.startsWith(`${HOST}/lws/vault/`)).toBe(true);
   expect(calls[0].url).toContain("/files?");
@@ -154,6 +157,29 @@ test("the picture is PUT as raw bytes with name and face=whole, then the own car
   expect(calls[0].init.body).toBe(file);
   expect((calls[0].init.headers as Record<string, string>)["content-type"]).toBe("image/png");
   expect(patchRecord.mock.calls[0].slice(0, 2)).toEqual([derived, { profilePhoto: "/files/abc12345" }]);
+});
+
+async function uploadingCard() {
+  const derived = await selfCardIdForVault(VAULT);
+  records.set(derived, person(derived));
+  const state = await data.loadProfile(vault);
+  if (state.kind !== "card") throw new Error("expected a card");
+  const base = globalThis.fetch;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === "PUT" ? Response.json({ entity: `${VAULT}/e/abc12345`, contentHash: "h", byteSize: 1, created: true }, { status: 201 }) : base(input, init));
+  return { derived, card: state.card };
+}
+
+test("W4: a picture whose read-back card does not hold the uploaded location is not confirmed", async () => {
+  const { card } = await uploadingCard();
+  patchRecord.mockImplementationOnce(async () => ({ etag: null })); // accepted, nothing stored under the read key
+  expect(await data.setProfilePhoto(VAULT, card, new File(["x"], "me.png", { type: "image/png" }))).toEqual({ confirmed: false, failed: ["profilePhoto"] });
+});
+
+test("W4: a picture stored under a key the read does not return (a different location) is not confirmed", async () => {
+  const { derived, card } = await uploadingCard();
+  patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:profilePhoto": "/files/other" }); return { etag: null }; });
+  expect((await data.setProfilePhoto(VAULT, card, new File(["x"], "me.png", { type: "image/png" }))).confirmed).toBe(false);
 });
 
 // ---- the entries ----
@@ -175,12 +201,28 @@ test("search keeps an entry only when every word is in its name or description",
 });
 
 test("addEntry creates the entry type with name and description in the named vault", async () => {
+  createRecord.mockResolvedValueOnce({ id: "new1", etag: null });
   await data.addEntry(VAULT, " Kettle ", " Red ");
   expect(createRecord).toHaveBeenCalledWith(VAULT, "t:CatalogEntry", { name: "Kettle", description: "Red" }, "Kettle");
 });
 
+test("W3: addEntry reads the new record back by its id and address, and is confirmed only when the read-back holds the name", async () => {
+  createRecord.mockResolvedValueOnce({ id: "new1", etag: null });
+  records.set("new1", { "@id": `${VAULT}/e/new1`, "@type": "t:CatalogEntry", "a:name": "Kettle" });
+  expect(await data.addEntry(VAULT, "Kettle", "")).toEqual({ id: "new1", confirmed: true });
+  expect(reads.some((u) => u === `${HOST}/vault/r/new1` || u.includes("/r/new1"))).toBe(true);
+});
+
+test("W3: addEntry whose read-back lacks the name, or finds no record, is not confirmed", async () => {
+  createRecord.mockResolvedValueOnce({ id: "new1", etag: null });
+  records.set("new1", { "@id": `${VAULT}/e/new1`, "@type": "t:CatalogEntry", "a:description": "only this" });
+  expect((await data.addEntry(VAULT, "Kettle", "")).confirmed).toBe(false);
+  createRecord.mockResolvedValueOnce({ id: "gone", etag: null });
+  expect((await data.addEntry(VAULT, "Kettle", "")).confirmed).toBe(false);
+});
+
 test("addEntry refuses an empty name and sends nothing", async () => {
-  await expect(data.addEntry("v", "  ", "x")).rejects.toThrow("Give the record a name.");
+  await expect(data.addEntry(VAULT, "  ", "x")).rejects.toThrow("Give the record a name.");
   expect(createRecord).not.toHaveBeenCalled();
 });
 

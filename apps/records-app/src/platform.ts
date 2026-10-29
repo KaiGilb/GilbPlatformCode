@@ -14,6 +14,7 @@ import {
 import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { lwsReadFetch } from "@kaigilb/gilbplatformcode-lws-vault-sets";
+import { sameUrl } from "./sameUrl";
 
 /** The apex the units treat as the platform (vault hosts are its subdomains). */
 export const PLATFORM_ORIGIN = import.meta.env.VITE_PLATFORM_ORIGIN ?? "https://gilb.com";
@@ -83,15 +84,6 @@ export class CredentialExpiredError extends Error {
     this.name = "CredentialExpiredError";
   }
 }
-
-const sameUrl = (a: string | null | undefined, b: string): boolean => {
-  if (!a) return false;
-  try {
-    return new URL(a).href.replace(/\/+$/, "") === new URL(b).href.replace(/\/+$/, "");
-  } catch {
-    return false;
-  }
-};
 
 function toVault(row: VaultRow, count: number): AppVault {
   // Only the fields the units read are real; the rest are empty. HOST OBJECT: no unit builds this from /lws/vaults.
