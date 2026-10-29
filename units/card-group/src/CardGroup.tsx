@@ -8,8 +8,10 @@
  * The frame uses the theme's own tokens: the lifted `--surface` and a hairline from `--lines`; both themes.
  */
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { BothKeptLine, TheirRows } from "@kaigilb/gilbplatformcode-one-card-rows";
 import { CardIcon, type CardIconName } from "./cardIcons";
 import { useCardMode } from "@kaigilb/gilbplatformcode-card-mode";
+import { useOneCard, useOneCardGroup } from "@kaigilb/gilbplatformcode-one-card-context";
 
 /** The chooser's heading a group is listed under (Name, Connection points, Companies, Skills and interests, ...). */
 export function chooserSectionOf(kind: string): string {
@@ -146,7 +148,8 @@ export function CardGroup({
   testId?: string;
   /** Extra data attributes of the section (a test or a tool addresses the group by them). */
   dataAttrs?: Record<string, string>;
-  /** The group's "+ Add your own" (and its open form), drawn last in the group. */
+  /** The group's "+ Add your own" (and its open form), drawn last in the group, after the both-kept line. Drawn even when the own side
+   *  is empty under rows of theirs: that is where the first own value is added. */
   addOwn?: ReactNode;
   /** One line: the icon, the title, the group's content and the aside side by side (an empty note is much smaller this way).
    *  It wraps under the title on a narrow card. */
@@ -155,7 +158,12 @@ export function CardGroup({
   const mode = useCardMode();
   const id = useId();
   const ref = useRef<HTMLElement>(null);
-  const groupEmpty = empty;
+  // A linked person's rows of THEIR online card are drawn first in the group that holds the field, shaded and read-only; the group's
+  // own children (the holder's editors) follow, as they were. A group with a row of theirs is never empty.
+  const one = useOneCardGroup(kind);
+  const view = useOneCard();
+  const ownEmpty = empty;
+  const groupEmpty = empty && !one?.theirs;
   // A group that has had a value during this edit stays (removing its last value must not make the whole frame vanish under the finger).
   const seen = useRef(false);
   if (mode.presentation) seen.current = false;
@@ -225,7 +233,23 @@ export function CardGroup({
       </header>
       {helper ? <p className="pt-0.5 text-[12px] text-[var(--ink-faint)]" data-testid="card-group-helper">{helper}</p> : null}
       <div className="flex flex-col [&>*+*]:border-t [&>*+*]:border-[var(--line)]" data-testid="card-group-items">
-        {children}
+        {one && view
+          ? one.groups.map((g) => (
+              <TheirRows
+                key={g.field}
+                rows={g.rows}
+                label={() => view.rowLabel(kind, g)}
+                valueText={view.valueText}
+                editing={mode.editing}
+                marks={one.marks}
+              />
+            ))
+          : null}
+        {/* No Yours mark over a block of yours, at the title or under their rows. */}
+        {/* An own side with nothing to show, under rows of theirs, is not drawn while presented (an empty own list would
+            draw a hairline under their rows; without rows of theirs such a group is not drawn at all). */}
+        {one?.theirs && ownEmpty && mode.managed && mode.presentation ? null : children}
+        {one?.bothKept ? <BothKeptLine /> : null}
         {addOwn ?? null}
       </div>
     </section>
@@ -262,5 +286,29 @@ export function CardSection({
       </h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * The two cards for the very top of the person card: "My Note" and "Where / How we met", and the
+ * kind-of-contact chips beside the name. Not built here (their content is a later step); this is their PLACE, so they drop in
+ * without a re-layout: `myNote` then `howWeMet` stand directly under the header and above the Name group (the order is fixed
+ * here, not by the caller), and `nameAside` sits at the right of the Name group's title. A slot left empty draws nothing.
+ */
+export interface CardSlots {
+  myNote?: ReactNode;
+  howWeMet?: ReactNode;
+  nameAside?: ReactNode;
+}
+
+export function CardTopSlots({ slots }: { slots?: CardSlots }) {
+  if (!slots || (!slots.myNote && !slots.howWeMet)) return null;
+  return (
+    // A slot whose content draws nothing (a note that is empty in presentation) takes no room, and neither does the strip when
+    // both are empty: `empty:hidden` on each slot, and the strip is hidden unless a slot has something in it.
+    <div className="hidden flex-col gap-4 has-[[data-card-slot]>*]:flex" data-testid="card-top-slots">
+      {slots.myNote ? <div className="empty:hidden" data-card-slot="my-note">{slots.myNote}</div> : null}
+      {slots.howWeMet ? <div className="empty:hidden" data-card-slot="how-we-met">{slots.howWeMet}</div> : null}
+    </div>
   );
 }

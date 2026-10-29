@@ -20,7 +20,7 @@
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
     "@kaigilb/gilbplatformcode-entity-ref": "^0.1.0",
     "@kaigilb/gilbplatformcode-entity-ref-value": "^0.2.0",
-    "@kaigilb/gilbplatformcode-field-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-field-row": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.2.0",
@@ -31,6 +31,8 @@
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-birthday-picker": "file:../birthday-picker",
+    "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
     "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
     "@kaigilb/gilbplatformcode-entity-ref-value": "file:../entity-ref-value",

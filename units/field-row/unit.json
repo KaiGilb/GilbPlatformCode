@@ -2,23 +2,30 @@
   "schema": 1,
   "unit": "units/field-row",
   "package": "@kaigilb/gilbplatformcode-field-row",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "One click-to-edit text field row on a card: it shows the value (or nothing, in view mode, when empty), turns into an input on a click in edit mode, commits on Enter or on leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       { "path": "src/components/mynet/FieldRow.tsx", "lines": [36, 330], "to": "src/FieldRow.tsx" }
     ]
   },
   "namedChanges": [
-    "the imports are the peers' (`useCardMode` from `@kaigilb/gilbplatformcode-card-mode`; `insideOpenLayer` and `modalIsOpen` from `@kaigilb/gilbplatformcode-open-popups`; in the source they were `../records/cardMode`, `../records/planLeave` and `../ui/layers`);",
-    "the picker branches are cut, because the Plan cards use only the text branch. Removed lines: 37-42 (the imports of `ContactLanguagePicker`, `TimeZonePicker`, `contactLanguageDisplay`, `timeZoneDisplay`, `BirthdayPicker`, `birthdayText`); 47-56 (the `FieldPicker` type and `pickedDisplay`); 64 (`picker = null,`); 80-81 (the `picker` prop and its comment); in the comment of `multiline` (line 82) the words \"or a picker\"; 202-237 (the birthday branch `editing && picker === \"birthday\" ? ( … )`, the picker branch `editing && picker ? ( … )`, and the head `) : editing ? (` of the text chain, which now starts as `{editing ? (`); at line 322 `pickedDisplay(picker, value)` is `value`. Nothing the text, choice or textarea branches run through is changed;",
-    "two comments inside the code are made generic (lines 162 and 318)."
+    "the imports are the peers': `useCardMode` from `@kaigilb/gilbplatformcode-card-mode`; `insideOpenLayer` and `modalIsOpen` from `@kaigilb/gilbplatformcode-open-popups`; `BirthdayPicker` from `@kaigilb/gilbplatformcode-birthday-picker`; `birthdayText` from `@kaigilb/gilbplatformcode-birthday-text` (in the source: `../records/cardMode`, `../records/planLeave`, `../ui/layers`, `gilb-stakeholders-ui`, `gilb-stakeholders`);",
+    "the four host imports `ContactLanguagePicker`, `TimeZonePicker`, `contactLanguageDisplay`, `timeZoneDisplay` are optional members of `FieldPickers` (src/fieldPickers.tsx), read with `useFieldPickers()`: `pickedDisplay` takes the pickers as a third argument and calls `pickers.contactLanguageDisplay` / `pickers.timeZoneDisplay` (absent: the value as stored); `const Picker = ...` reads `pickers.ContactLanguagePicker` / `pickers.TimeZonePicker` (with `!`);",
+    "added: the function `pickerOf` (null when the host has no component for the asked-for picker), the prop `picker = null` is destructured as `picker: pickerAsked = null`, and the lines `const pickers = useFieldPickers();` and `const picker = pickerOf(pickerAsked, pickers);` follow `const mode = useCardMode();`;",
+    "comments made generic (cycle, step and ruling tags, dates, person and app names removed; \"(\u2212)\" is \"remove control\"); no other code change."
   ],
   "newFiles": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/fieldPickers.tsx"
   ],
-  "host": [],
-  "library": { "admitted": true, "tag": "t:ScreenCard.field", "title": "Field row (click-to-edit text)", "note": "Text only, on a card with card-mode; for a controlled form field take field-control." }
+  "host": [
+    { "member": "ContactLanguagePicker", "replaces": "src/components/mynet/ContactLanguagePicker.tsx, imported at src/components/mynet/FieldRow.tsx:37", "optional": true },
+    { "member": "TimeZonePicker", "replaces": "src/components/mynet/TimeZonePicker.tsx, imported at src/components/mynet/FieldRow.tsx:38", "optional": true },
+    { "member": "contactLanguageDisplay", "replaces": "src/lib/mynet/languages/contactLanguageTag.ts, imported at src/components/mynet/FieldRow.tsx:39", "optional": true },
+    { "member": "timeZoneDisplay", "replaces": "src/lib/mynet/time/timeZones.ts, imported at src/components/mynet/FieldRow.tsx:40", "optional": true }
+  ],
+  "library": { "admitted": true, "tag": "t:ScreenCard.field", "title": "Field row (click-to-edit text)", "note": "Needs the card-mode provider; for a controlled form field take field-control. Text, choice and birthday editing; the contact-language and time-zone pickers are optional host members." }
 }
