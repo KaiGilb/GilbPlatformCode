@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-ui-kit",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-ui-kit",
+  "version": "0.1.0",
+  "purpose": "Gives the colour tokens, the name face, the chain-link badge, the image-shape rule and the two name-state words that the stakeholder screens share.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders-ui",
+    "commit": "69015111d0f8dc98406acb1579dba10f9ae471bb",
+    "files": [
+      { "path": "src/tokens.ts", "lines": [1, 34], "to": "src/tokens.ts" },
+      { "path": "src/linkGlyph.tsx", "lines": [1, 71], "to": "src/linkGlyph.tsx" },
+      { "path": "src/imageShape.ts", "lines": [1, 28], "to": "src/imageShape.ts" },
+      { "path": "src/StakeholderList.tsx", "lines": [265, 269], "to": "src/nameWords.ts" }
+    ]
+  },
+  "namedChanges": [
+    "**a split** (RuleGhsSplitFile): the two constants `NAME_NOT_READ` and `NAME_NOT_YET` (lines 265-269 of `StakeholderList.tsx`, the first with its doc comment on line 265) move into their own file `src/nameWords.ts`; nothing else of the list is taken;",
+    "**one import**: `linkGlyph.tsx` has `import { W } from \"./tokens\"`; the source has `\"./tokens.ts\"`. The extension is dropped as the other units do, because their `tsconfig.json` has no `allowImportingTsExtensions`;",
+    "comments made generic (person names, cycle and ticket tags, agent names and a ruling citation removed; app names in comments made generic); no other code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
