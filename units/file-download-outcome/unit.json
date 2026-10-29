@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "unit": "units/file-download-outcome",
+  "package": "@kaigilb/gilbplatformcode-file-download-outcome",
+  "version": "0.1.0",
+  "purpose": "Downloads a vault file and says what happened, without throwing, or gives just its bytes.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          670,
+          671
+        ],
+        "to": "src/fileDownloadOutcome.ts"
+      },
+      {
+        "path": "src/lib/base/files.ts",
+        "lines": [
+          150,
+          152
+        ],
+        "to": "src/fileDownloadOutcome.ts"
+      },
+      {
+        "path": "src/lib/base/files.ts",
+        "lines": [
+          412,
+          412
+        ],
+        "to": "src/fileDownloadOutcome.ts"
+      },
+      {
+        "path": "src/lib/base/files.ts",
+        "lines": [
+          414,
+          507
+        ],
+        "to": "src/fileDownloadOutcome.ts"
+      },
+      {
+        "path": "src/lib/base/files.ts",
+        "lines": [
+          515,
+          518
+        ],
+        "to": "src/fileDownloadOutcome.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are peers: `vaultOriginOf` from `vault-origin-rule`, `baseOrigin` from `base-origin`, `NotSignedInError`, `bearerHeaderFor` and `dpopReadAuth` from `lws-session-bridge`, `serverReasonOrNull` from `lws-records` and the type `FileFetchOutcome` from `file-words`; they replace `./config`, `./token`, `./bearer`, `./dpop`, `./serverError` and the local type.",
+    "`FILE_RESOURCE_URL` (GilbApp `config.ts` lines 670-671) is an inline named copy in this unit, exported; it is the same two lines over `vaultOriginOf`, which is a function over the platform origin setting (`baseOrigin()`) in `vault-origin-rule`.",
+    "`vaultOriginOf(addressedAt) !== BASE_ORIGIN` is `vaultOriginOf(addressedAt) !== baseOrigin()`: the module-load constant is a function over the setting, read when the function runs.",
+    "`FILE_TOO_LARGE` (`files.ts` line 412) is a named copy; it is equal to the copy in `org-mark` (`\"too large\"`).",
+    "`authHeader` (`files.ts` lines 150-152) is copied as it is, over `bearerHeaderFor` of `lws-session-bridge`.",
+    "`downloadFile` (`files.ts` lines 515-518), the blob-or-null shim, is taken and exported, so that `vault-profile-photo` imports it from here.",
+    "Comments that name a cycle, an agent, a ticket, a ruling or a host are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
