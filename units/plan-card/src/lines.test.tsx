@@ -5,7 +5,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { __startCardsInEditMode } from "@kaigilb/gilbplatformcode-card-mode";
 import { PlanFunctionForm } from "./index";
-import { App, SCREEN, makeApp, mountCard } from "../test/app";
+import { App, SCREEN, makeApp, mountCard, rowOf } from "../test/app";
+import { entityUriOf } from "../test/server";
 import { planKinds, settle } from "../test/helpers";
 
 const FUNCTION_ORDER = [
@@ -309,5 +310,25 @@ describe("the Solution's level", () => {
     await shown(app, "t:Resource", { unitTag: "A.B" }, "legacy");
     expect((screen.getByRole("combobox", { name: "Level" }) as HTMLSelectElement).value).toBe("Business");
     expect(app.server.log).toEqual([]);
+  });
+});
+
+describe("a linked record that holds no name and no unitTag", () => {
+  const impact = { relation: "rel1", role: "role:solution", type: "t:ImpactOn", members: [{ member: entityUriOf("val1"), role: "role:value" }] } as never;
+
+  test("is shown on the Impacts line by the main tag the host reads for it (useMainTagsForRows)", async () => {
+    const app = makeApp({
+      relations: { rec1: [impact] },
+      pool: [rowOf("val1", "t:Value", {})],
+      mainTags: { [entityUriOf("val1")]: "Speed.Main" },
+    });
+    await shown(app, "t:Solution", { unitTag: "Hinge.Tighten" }, "legacy");
+    await waitFor(() => expect(document.querySelector('[data-impact-row="Speed.Main"]')).toBeTruthy());
+  });
+
+  test("keeps the id tail where the host has no main tag for it", async () => {
+    const app = makeApp({ relations: { rec1: [impact] }, pool: [rowOf("val1", "t:Value", {})] });
+    await shown(app, "t:Solution", { unitTag: "Hinge.Tighten" }, "legacy");
+    await waitFor(() => expect(document.querySelector('[data-impact-row="val1"]')).toBeTruthy());
   });
 });
