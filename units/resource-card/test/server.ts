@@ -33,6 +33,8 @@ export interface ServerOptions {
   ifMatch?: boolean;
   /** A patch whose `unitTag` another record holds is refused with a 409. */
   patchTagCheck?: boolean;
+  /** The platform's MAIN tag of a record, by its entity address. Empty by default: no record has one. */
+  mainTags?: Record<string, string>;
 }
 
 export function createServer(options: ServerOptions = {}) {
@@ -40,6 +42,8 @@ export function createServer(options: ServerOptions = {}) {
   const s = {
     options,
     recs,
+    /** The main tags the vault's platform would answer, by entity address (the seed's `mainTags`). */
+    mainTags: new Map<string, string>(Object.entries(options.mainTags ?? {})),
     made: 0,
     createCount: 0,
     patchCount: 0,

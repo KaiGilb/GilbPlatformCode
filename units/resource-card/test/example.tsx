@@ -90,6 +90,7 @@ const valueWriteHost: ValueWriteHost = {
 const stakeholderLinesHost: StakeholderLinesHost = {
   useRecords: () => ({ data: none }), //                              your list of a vault's records
   useRecordRead: () => ({ data: null }), //                           your read hook for one record
+  useMainTag: () => ({ data: { known: false, tag: null } }), //  your read of one record's main tag (main-tag's useMainTag)
   useRelations: () => ({ data: none, isError: false }), //            your relations of a record
   useStakeholderKinds: () => ({ data: undefined }),
   usePersonAuthorities: () => ({ people: none }),
@@ -116,6 +117,7 @@ const stakeholderLinesHost: StakeholderLinesHost = {
 // ---- PlanTagLinksHostContext (plan-tag-links): Part of, Sub-functions, Function of Value, Solutions and the other links.
 const planTagLinksHost: PlanTagLinksHost = {
   useRecords: () => ({ data: none }),
+  useMainTagsForRows: () => new Map(), //  your batch read of records' main tags (main-tag's useMainTagsForRows)
   useRelations: () => ({ isPending: false, isError: false, data: none }),
   usePlanFind: () => ({ data: undefined, isError: false }), //         your find of linked records
   invalidatePlanFind: nothing,
@@ -147,6 +149,7 @@ const planTagPickerHost: PlanTagPickerHost = {
 // ---- PlanImpactsHostContext (plan-impacts): the Impacts line.
 const planImpactsHost: PlanImpactsHost = {
   useRecords: () => ({ data: none }),
+  useMainTagsForRows: () => new Map(), //  your batch read of records' main tags (main-tag's useMainTagsForRows)
   useRelations: () => ({ isPending: false, isError: false, data: none }),
   useSelfSource: () => null, //                                       the signed-in person as a source
   useRelationDoc: () => ({ data: null }),
