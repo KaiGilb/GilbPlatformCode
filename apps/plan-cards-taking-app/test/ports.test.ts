@@ -123,4 +123,23 @@ describe("main", () => {
     expect(process.listenerCount("SIGINT")).toBe(sigint);
     expect(process.listenerCount("SIGTERM")).toBe(sigterm);
   });
+
+  it("reports a failed vite start and leaves no signal listeners", async () => {
+    const { server, port } = await listen("127.0.0.1");
+    await close(server);
+    const sigint = process.listenerCount("SIGINT");
+    const sigterm = process.listenerCount("SIGTERM");
+    const err = vi.fn();
+    const spawnFn = vi.fn(() => {
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+      queueMicrotask(() => child.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })));
+      return child;
+    });
+    const code = await main({ port, spawnFn, log: vi.fn(), err });
+    expect(code).toBe(1);
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(String(err.mock.calls[0][0])).toContain("Run npm ci");
+    expect(process.listenerCount("SIGINT")).toBe(sigint);
+    expect(process.listenerCount("SIGTERM")).toBe(sigterm);
+  });
 });

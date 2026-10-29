@@ -45,10 +45,19 @@ export async function main({ port = 5197, spawnFn = spawn, log = console.log, er
   process.on("SIGINT", onInt);
   process.on("SIGTERM", onTerm);
   return new Promise((resolve) => {
-    child.once("exit", (code) => {
+    let done = false;
+    const finish = (code) => {
+      if (done) return;
+      done = true;
       process.off("SIGINT", onInt);
       process.off("SIGTERM", onTerm);
-      resolve(code ?? 1);
+      resolve(code);
+    };
+    child.once("exit", (code) => finish(code ?? 1));
+    child.once("error", (e) => {
+      if (done) return;
+      err(`Could not start vite (${e.code ?? e.message}). Run npm ci in apps/plan-cards-taking-app first.`);
+      finish(1);
     });
   });
 }
