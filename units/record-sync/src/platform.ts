@@ -31,6 +31,27 @@ export function routeUrl(platform: PlatformClient, path: string): string {
   return `${trimOrigin(platform.origin)}/${path.replace(/^\/+/, "")}`;
 }
 
+/** The URL an IRI is requested at: the IRI's own path and query, on the platform's origin.
+ *  ⛔ Not a derived address: nothing is computed from the IRI but where to send the request. */
+export function locate(platform: PlatformClient, iri: string): string {
+  let u: URL;
+  try {
+    u = new URL(iri);
+  } catch (cause) {
+    throw new PlatformError(`${JSON.stringify(iri)} is not an address: ${String(cause)}`, 0, iri, "");
+  }
+  return `${trimOrigin(platform.origin)}${u.pathname}${u.search}`;
+}
+
+/** Milliseconds a `Retry-After` header asks for (seconds or an HTTP date); null when absent or unreadable. */
+export function retryAfterMs(headers: Headers | undefined, now: number = Date.now()): number | null {
+  const v = headers?.get("retry-after")?.trim();
+  if (!v) return null;
+  if (/^\d+(\.\d+)?$/.test(v)) return Math.round(Number(v) * 1000);
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : Math.max(0, t - now);
+}
+
 export interface PlatformAnswer {
   status: number;
   url: string;
@@ -141,4 +162,28 @@ export function expectStatus(answer: PlatformAnswer, method: string, ok: readonl
  *  enumeration serves (`GET /lws/vaults`), percent-encoded. ⛔ Never a name or a host label. */
 export function vaultSegment(vaultId: string): string {
   return encodeURIComponent(vaultId);
+}
+
+/** True for an absolute http(s) IRI. A shape check only; it looks nothing up. */
+export function isAbsoluteIri(value: unknown): value is string {
+  return typeof value === "string" && /^https?:\/\/[^\s/?#]+\/\S*$/.test(value);
+}
+
+/**
+ * Why `platform.origin` cannot write in `vaultId`, or `null` when it can. A write goes to the
+ * vault's OWN host: a user vault has one address, at `/vault`, its `/base` spelling answers 404 on
+ * purpose, and every LWS route is routed by host. So the origin's host (name
+ * AND port) must be the vault's host. A system vault
+ * on the node's own host passes: there the hosts are equal. Used by every writer of records.
+ */
+export function originHostMismatch(platform: PlatformClient, vaultId: string): string | null {
+  let originHost: string;
+  try {
+    originHost = new URL(platform.origin).host;
+  } catch {
+    return `the platform origin ${JSON.stringify(platform.origin)} is not an address`;
+  }
+  const vaultHost = new URL(vaultId).host;
+  if (originHost === vaultHost) return null;
+  return `${vaultId} is written at its own host ${vaultHost}, and this platform client's origin is ${originHost}. Give the client the vault's own origin`;
 }

@@ -6,6 +6,9 @@ import { PlatformError, request, routeUrl, vaultSegment, type PlatformAnswer, ty
 /** The most rows one full-row page carries (GilbPlatform `FULL_ROWS_PAGE_CAP`; a larger `limit` is clamped, never refused). */
 export const RECORD_PAGE_LIMIT = 100;
 
+/** The most pages one walk or one sync reads before it stops and says it is not complete. */
+export const RECORD_WALK_MAX_PAGES = 500;
+
 /** One row of the typed list, as the platform served it. */
 export interface RecordRow {
   /** The record's address (`entity`; `@id` on a row that carries no `entity`). */
@@ -20,6 +23,15 @@ export interface RecordRow {
   etag?: string;
   /** The whole row, for fields this module does not name (`vault`, `vaultAmbiguous`, …). */
   row: Readonly<Record<string, unknown>>;
+}
+
+/** What a walk read. */
+export interface RecordWalk {
+  rows: RecordRow[];
+  /** True only when the list said `complete: true` on its last page. */
+  complete: boolean;
+  /** Requests sent. */
+  pages: number;
 }
 
 /** A list that could not be read. `status` is the platform's answer (0: not reached). Its `name` stays `PlatformError`: callers
@@ -73,6 +85,54 @@ async function readPage(platform: PlatformClient, url: string): Promise<{ rows: 
     if (row) rows.push(row);
   }
   return { rows, json: answer.json! };
+}
+
+/**
+ * Walk a vault's typed list in full rows (`include=body&limit=100`), newest first (the list's own order), stepping by the page's
+ * `nextOffset` until the list says `complete`. A platform that sends no `nextOffset` (a platform before the full-row page) is walked as before, by the rows
+ * it served, and a page that serves nothing past a "more" ends the walk as not complete.
+ *
+ * @param platform the platform client (the host app's authenticated fetch, at the vault's own origin)
+ * @param vaultId the vault, as `GET /lws/vaults` names it
+ * @param typeNames bare type names (`Person`, not `t:Person`); ⛔ an empty list would read the whole vault, so it is refused
+ * @param opts `until`: stop once it answers true for the rows read so far (the walk is then not complete); `maxRows`: stop past
+ *   this many rows; `maxPages`: stop past this many requests ({@link RECORD_WALK_MAX_PAGES})
+ * @returns the rows in list order, whether the list was read to its end, and the requests sent
+ * @throws RecordListError when a page answers other than 200; PlatformError when the platform cannot be reached
+ */
+export async function walkRecordPages(
+  platform: PlatformClient,
+  vaultId: string,
+  typeNames: readonly string[],
+  opts: { until?: (rows: readonly RecordRow[]) => boolean; maxRows?: number; maxPages?: number } = {},
+): Promise<RecordWalk> {
+  if (typeNames.length === 0) throw new PlatformError("a typed list needs at least one type", 0, vaultId, "");
+  const maxPages = opts.maxPages ?? RECORD_WALK_MAX_PAGES;
+  const rows: RecordRow[] = [];
+  let offset = 0;
+  let pages = 0;
+  while (pages < maxPages) {
+    const params: Record<string, string> = { include: "body", limit: String(RECORD_PAGE_LIMIT) };
+    if (offset > 0) params.offset = String(offset);
+    const page = await readPage(platform, listUrl(platform, vaultId, typeNames, params));
+    pages += 1;
+    rows.push(...page.rows);
+    // Only an explicit `true` ends the walk as complete.
+    if (page.json.complete === true) return { rows, complete: true, pages };
+    if (opts.until?.(rows)) break;
+    if (opts.maxRows !== undefined && rows.length >= opts.maxRows) break;
+    const next = page.json.nextOffset;
+    if (typeof next === "number") {
+      // The window position after the rows the page examined. It always moves forward; one that does not is not walked again.
+      if (next <= offset) break;
+      offset = next;
+    } else {
+      // A platform without full rows: the rows it served, as before. Nothing served past a "more" cannot advance.
+      if (page.rows.length === 0) break;
+      offset += page.rows.length;
+    }
+  }
+  return { rows, complete: false, pages };
 }
 
 /** Where a sync of one typed list stands: the two stored positions. Opaque; keep it per (vault, type set) and caller. */
