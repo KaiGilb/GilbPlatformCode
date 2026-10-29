@@ -247,6 +247,8 @@ export const KIND_SET_CHECK_DELAY_MS = 3000;
 /** The store key's head. `v1` is the shape of `StakeholderKindSet`; a change to that shape changes it, and an older entry is
  *  left where it is and not read. */
 const STORE_KEY_HEAD = "gilb-stakeholders.kind-set.v1";
+/** The same, for a `TypeTree`. */
+const TREE_KEY_HEAD = "gilb-stakeholders.type-tree.v1";
 
 interface Stored<T> {
   v: 1;
@@ -537,7 +539,57 @@ export function createStakeholderKindReader(opts: KindReaderOptions): Stakeholde
   });
 }
 
+/** Every type below one type by is-a, as the master answered it. Plain data: it is kept in a store as JSON. */
+export interface TypeTree {
+  /** The root's address on the master read. */
+  root: string;
+  /** Every transitive is-a child of the root, as served, each once, breadth first in served order. The root is not in it. */
+  terms: string[];
+  /** False when a children listing said it was not complete: the tree is then a floor. */
+  complete: boolean;
+  /** The types whose listing was not complete. */
+  incompleteAt: string[];
+}
+
+export type TypeTreeReader = CachedReader<TypeTree>;
+
+export interface TypeTreeReaderOptions extends CacheOptions {
+  source: VocabularySource;
+  origin: string;
+  /** The root type's address (a path under `/base/`, e.g. `t/ContactPoint`). */
+  rootTerm: string;
+}
+
+function usableTree(x: unknown): x is TypeTree {
+  return isRecord(x) && isText(x.root) && isTextList(x.terms) && typeof x.complete === "boolean" && isTextList(x.incompleteAt);
+}
+
+/**
+ * Read every type below `rootTerm` by is-a: one round of children listings per level (the same walk as the kinds').
+ *
+ * @throws VocabularyUnavailableError when a listing cannot be read
+ */
+export async function readTypeTree(source: VocabularySource, rootTerm: string): Promise<TypeTree> {
+  const root = source.termIri(termPath(rootTerm));
+  const { types, incompleteAt } = await expandDownIsA(source, [root]);
+  return { root, terms: types.filter((k) => k.term !== root).map((k) => k.term), complete: incompleteAt.length === 0, incompleteAt };
+}
+
+/**
+ * One cached reader of the type tree below `rootTerm` for one master origin. Prefer {@link typeTreeReader}.
+ */
+export function createTypeTreeReader(opts: TypeTreeReaderOptions): TypeTreeReader {
+  const root = termPath(opts.rootTerm);
+  return createCachedReader<TypeTree>({
+    ...opts,
+    key: `${TREE_KEY_HEAD}:${opts.origin}|${root}`,
+    usable: usableTree,
+    read: async (_inHand, bind) => ({ value: await readTypeTree(bind(opts.source), root), unread: [] }),
+  });
+}
+
 const readersByOrigin = new Map<string, StakeholderKindReader>();
+const treesByOrigin = new Map<string, TypeTreeReader>();
 
 export interface SharedKindReaderOptions {
   /** The master's ORIGIN (`https://ontology.example.test`). A trailing slash is fine; a path or a relative address is refused. */
@@ -611,8 +663,32 @@ export function stakeholderKindReader(opts: SharedKindReaderOptions): Stakeholde
   return r;
 }
 
+export interface SharedTypeTreeReaderOptions extends Omit<SharedKindReaderOptions, "roleTerm"> {
+  /** The root type (a path under `/base/`). */
+  rootTerm: string;
+}
+
+/**
+ * THE type-tree reader of a master origin and root in this page.
+ *
+ * @throws VocabularyUnavailableError for an address that is not a bare origin
+ * @throws RangeError when `timeoutMs` or `readCapMs` is given and is not a finite number above 0, at most 2,147,483,647
+ */
+export function typeTreeReader(opts: SharedTypeTreeReaderOptions): TypeTreeReader {
+  checkSharedBounds(opts);
+  const origin = masterOrigin(opts.vedaOrigin);
+  const root = termPath(opts.rootTerm);
+  const at = `${origin}|${root}`;
+  let r = treesByOrigin.get(at);
+  if (!r) {
+    r = createTypeTreeReader({ ...sharedParts(origin, opts), rootTerm: root });
+    treesByOrigin.set(at, r);
+  }
+  return r;
+}
+
 /** Forget every shared reader, kinds and trees (tests; a page never needs it). */
 export function forgetStakeholderKindReaders(): void {
   readersByOrigin.clear();
-
+  treesByOrigin.clear();
 }
