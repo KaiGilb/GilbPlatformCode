@@ -1,6 +1,9 @@
 // A small vault behind a fake `fetch`: it serves the records it is given at the addresses the platform clients ask, keeps what a PATCH
 // changes, and logs every request (method, URL, headers, body) in the order it came. An address it does not serve answers 404.
 // Not a model of the platform: only the few reads and the one write the cards make in the tests.
+// It also answers the platform's batch read of main tags (`POST <origin>/base/tag/masters`, body `{ vault, targetEntities }`, answer
+// `{ masterTags: [{ targetEntity, tagString, tagKnown }] }`) for the records it serves at that origin. That is a READ made with POST: it
+// is kept in `tagReads` and is not in `log`, `created` or `requests(...)`, so it is never counted as a write.
 
 import { recordFromServed, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
 
@@ -20,6 +23,8 @@ export interface ServedRecord {
   /** The facts as stored (the served document minus its frame). */
   facts: Record<string, unknown>;
   version: number;
+  /** The record's MAIN tag as the platform would answer it. Absent: the record has none (`tagKnown: false`). */
+  mainTag?: string;
 }
 
 export interface LoggedRequest {
@@ -53,12 +58,19 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-export function createFakeVault(initial: ServedRecord[] = []) {
+export interface FakeVaultOptions {
+  /** The relations `GET /base/e/<id>/relations` serves for a record id, as the wire spells them (`{ relation, role, type, members }`). */
+  relations?: Record<string, unknown[]>;
+}
+
+export function createFakeVault(initial: ServedRecord[] = [], options: FakeVaultOptions = {}) {
   const records = new Map<string, ServedRecord>(initial.map((r) => [r.id, { ...r }]));
   const log: LoggedRequest[] = [];
   const unserved: string[] = [];
   /** The records a POST made, in order. */
   const created: ServedRecord[] = [];
+  /** The batch reads of main tags (`POST /base/tag/masters`), in order. Reads, not writes: not in `log`. */
+  const tagReads: LoggedRequest[] = [];
 
   async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -66,9 +78,21 @@ export function createFakeVault(initial: ServedRecord[] = []) {
     const headers: Record<string, string> = {};
     new Headers(init?.headers).forEach((v, k) => (headers[k.toLowerCase()] = v));
     const body = typeof init?.body === "string" ? init.body : null;
+    const u = new URL(url);
+    if (method === "POST" && u.pathname === "/base/tag/masters") {
+      tagReads.push({ method, url, headers, body });
+      const asked = (JSON.parse(body ?? "{}") as { targetEntities?: string[] }).targetEntities ?? [];
+      const here = [...records.values()].filter((r) => new URL(uriOf(r)).origin === u.origin);
+      const masterTags = asked.map((targetEntity) => {
+        const r = here.find((x) => uriOf(x) === targetEntity);
+        return r?.mainTag ? { targetEntity, tagString: r.mainTag, tagKnown: true } : { targetEntity, tagString: null, tagKnown: false };
+      });
+      return json(200, { masterTags });
+    }
     log.push({ method, url, headers, body });
 
-    const u = new URL(url);
+    const relOf = /^\/base\/e\/([^/]+)\/relations$/.exec(u.pathname);
+    if (method === "GET" && relOf) return json(200, { member: relOf[1], relations: options.relations?.[relOf[1]!] ?? [] });
     if (method === "GET" && u.pathname === "/base/find-by-attribute") {
       const attr = u.searchParams.get("attr") ?? "";
       const value = u.searchParams.get("value") ?? "";
@@ -119,6 +143,7 @@ export function createFakeVault(initial: ServedRecord[] = []) {
     recordOf,
     log,
     created,
+    tagReads,
     unserved,
     fetch: handle as typeof fetch,
     requests(method: string, pattern: RegExp) {

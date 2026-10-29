@@ -240,7 +240,7 @@ describe("what it mounts", () => {
   });
 });
 
-describe("the 174 members", () => {
+describe("the 177 members", () => {
   function envWithEverything(qc: QueryClient): HostEnv {
     return {
       qc,
@@ -270,8 +270,8 @@ describe("the 174 members", () => {
       descriptionParts: count(hosts.descriptionParts),
       valueLines: count(hosts.valueLines),
       valueWrite: count(hosts.valueWrite),
-    }).toEqual({ planCard: 30, planSource: 9, planImpacts: 12, planTagLinks: 25, planTagPicker: 3, projectLevels: 4, stakeholderLines: 28, descriptionParts: 32, valueLines: 5, valueWrite: 22 });
-    // The four contexts whose value is one function or one source object: 4 more, 174 in all.
+    }).toEqual({ planCard: 30, planSource: 9, planImpacts: 13, planTagLinks: 26, planTagPicker: 3, projectLevels: 4, stakeholderLines: 29, descriptionParts: 32, valueLines: 5, valueWrite: 22 });
+    // The four contexts whose value is one function or one source object: 4 more, 177 in all.
     expect([typeof hosts.refLabel, typeof hosts.pickerQuery, typeof hosts.termDefinition, typeof hosts.typePicture.fetchTypePictureSrc]).toEqual(["function", "function", "function", "function"]);
   });
 

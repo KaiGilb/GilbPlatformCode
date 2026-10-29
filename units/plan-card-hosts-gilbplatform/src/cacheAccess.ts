@@ -39,15 +39,15 @@ export function cacheAccess(qc: QueryClient) {
     /** PlanFunctionForm.tsx:1468 */
     invalidateAuthoritySearch: (): Promise<void> =>
       qc.invalidateQueries({ queryKey: STAKEHOLDER_SEARCH_AUTHORITY_KEY, refetchType: "active" }),
-    /** PlanTagLinks.tsx:115 */
+    /** PlanTagLinks.tsx:116 */
     invalidateSearch: (queryKey: readonly unknown[]): Promise<void> => qc.invalidateQueries({ queryKey }),
-    /** PlanStakeholders.tsx:195 */
+    /** PlanStakeholders.tsx:198 */
     invalidateFilters: (filters: { queryKey: readonly unknown[]; refetchType?: "active" }): Promise<void> =>
       qc.invalidateQueries(filters),
-    /** PlanImpacts.tsx:80, :83 */
+    /** PlanImpacts.tsx:81, :84 */
     getRecordPages: (vaultId: string): InfiniteData<RecordsPage> | undefined =>
       qc.getQueryData<InfiniteData<RecordsPage>>(recordsKey(vaultId)),
-    /** PlanImpacts.tsx:87 */
+    /** PlanImpacts.tsx:88 */
     setRecordPages: (vaultId: string, pages: InfiniteData<RecordsPage>): void => {
       qc.setQueryData<InfiniteData<RecordsPage>>(recordsKey(vaultId), pages);
     },

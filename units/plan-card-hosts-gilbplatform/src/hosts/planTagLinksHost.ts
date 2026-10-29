@@ -1,4 +1,4 @@
-// PlanTagLinksHostContext (plan-tag-links): Part of, Sub-functions, Function of Value, Solutions and the other links. 25 members.
+// PlanTagLinksHostContext (plan-tag-links): Part of, Sub-functions, Function of Value, Solutions and the other links. 26 members.
 
 import { createElement } from "react";
 import type { PlanTagLinksCreateDialogProps, PlanTagLinksHost } from "@kaigilb/gilbplatformcode-plan-tag-links";
@@ -6,6 +6,7 @@ import { createRecord, patchRecord, readRecord } from "@kaigilb/gilbplatformcode
 import { endRelation, memberEntityUri, writePairRelation } from "@kaigilb/gilbplatformcode-lws-relations";
 import { resolveType, typeUriForVaultNamespace } from "@kaigilb/gilbplatformcode-record-types";
 import { useRelations } from "@kaigilb/gilbplatformcode-plan-stakeholder-io";
+import { useMainTagsForRows } from "@kaigilb/gilbplatformcode-main-tag";
 import { useCreateRecord, useRecords } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import {
   applyPatch,
@@ -27,55 +28,57 @@ export function createPlanTagLinksHost(env: HostEnv): PlanTagLinksHost {
   const cache = cacheAccess(qc);
   const Dialog = env.createDialog;
   return {
-    // PlanTagLinks.tsx:319
+    // PlanTagLinks.tsx:320
     useRecords: (vaultId) => useRecords(vaultId),
-    // PlanTagLinks.tsx:908
+    // PlanTagLinks.tsx:492, :869
+    useMainTagsForRows: (rows) => useMainTagsForRows(rows),
+    // PlanTagLinks.tsx:916
     useRelations: (id, at) => useRelations(id, at),
-    // PlanTagLinks.tsx:443
+    // PlanTagLinks.tsx:444
     usePlanFind: (planVault, attr, parent) => usePlanFind(planVault, attr, parent),
-    // PlanTagLinks.tsx:446
+    // PlanTagLinks.tsx:447
     invalidatePlanFind: (planVault, attr, parentId) => invalidatePlanFind(qc, planVault, attr, parentId),
-    // PlanTagLinks.tsx:409
+    // PlanTagLinks.tsx:410
     invalidatePlanSearch: (planVault) => invalidatePlanSearch(qc, planVault),
-    // PlanTagLinks.tsx:349
+    // PlanTagLinks.tsx:350
     liveRow: (vaultId, id, fallback) => liveRow(qc, vaultId, id, fallback),
-    // PlanTagLinks.tsx:159
+    // PlanTagLinks.tsx:160
     ensureEtagUnchanged: (planVault, row, sameFor) => ensureEtagUnchanged(qc, planVault, row, sameFor),
-    // PlanTagLinks.tsx:170
-    applyPatch: (row, patch, etag) => applyPatch(row, patch, etag),
     // PlanTagLinks.tsx:171
-    storePlanRow: (planVault, row, opts) => storePlanRow(qc, planVault, row, opts),
+    applyPatch: (row, patch, etag) => applyPatch(row, patch, etag),
     // PlanTagLinks.tsx:172
+    storePlanRow: (planVault, row, opts) => storePlanRow(qc, planVault, row, opts),
+    // PlanTagLinks.tsx:173
     setPlanRecord: cache.setRecordRead,
-    // PlanTagLinks.tsx:175
-    dropPlanFind: (planVault, attr, parentId, id) => dropPlanFind(qc, planVault, attr, parentId, id),
     // PlanTagLinks.tsx:176
+    dropPlanFind: (planVault, attr, parentId, id) => dropPlanFind(qc, planVault, attr, parentId, id),
+    // PlanTagLinks.tsx:177
     prependPlanFind: (planVault, attr, parentId, row) => prependPlanFind(qc, planVault, attr, parentId, row),
-    // PlanTagLinks.tsx:606
+    // PlanTagLinks.tsx:609
     putRecordInCaches: (planVault, row, opts) => putRecordInCaches(qc, planVault, row, opts),
-    // PlanTagLinks.tsx:839
+    // PlanTagLinks.tsx:843
     getRelations: cache.getRelations,
-    // PlanTagLinks.tsx:841
+    // PlanTagLinks.tsx:845
     setRelations: cache.setRelations,
-    // PlanTagLinks.tsx:402
+    // PlanTagLinks.tsx:403
     resolveType: (id) => resolveType(id),
-    // PlanTagLinks.tsx:585
+    // PlanTagLinks.tsx:588
     typeUriForVaultNamespace: (typeName, vaultNamespace) => typeUriForVaultNamespace(typeName, vaultNamespace),
-    // PlanTagLinks.tsx:593
+    // PlanTagLinks.tsx:596
     memberEntityUri: (idOrUri, preferredUri, vaultNamespace) => memberEntityUri(idOrUri, preferredUri, vaultNamespace),
-    // PlanTagLinks.tsx:1276
+    // PlanTagLinks.tsx:1284
     readRecord: (id, at) => readRecord(id, at),
-    // PlanTagLinks.tsx:168
+    // PlanTagLinks.tsx:169
     patchRecord: (id, patch, at, source, precondition) => patchRecord(id, patch, at, source, precondition),
-    // PlanTagLinks.tsx:585
+    // PlanTagLinks.tsx:588
     createRecord: (planVault, typeUri, facts, nameHint) => createRecord(planVault, typeUri, facts, nameHint),
-    // PlanTagLinks.tsx:321
+    // PlanTagLinks.tsx:322
     useCreateRecord: (planVault) => useCreateRecord(planVault),
-    // PlanTagLinks.tsx:827
+    // PlanTagLinks.tsx:831
     writePairRelation: (input) => writePairRelation(input),
-    // PlanTagLinks.tsx:956
+    // PlanTagLinks.tsx:964
     endRelation: (relation, planVault) => endRelation(relation, planVault),
-    // PlanTagLinks.tsx:1266: left out when the developer gave no dialog, so the line offers no create.
+    // PlanTagLinks.tsx:1274: left out when the developer gave no dialog, so the line offers no create.
     ...(Dialog ? { ConnectedCreateDialog: (props: PlanTagLinksCreateDialogProps) => createElement(Dialog, props) } : {}),
   };
 }

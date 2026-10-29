@@ -2,7 +2,8 @@
 // its README lists, one edit is one signed PATCH, a record that names another host gets no credential, and a context left out still
 // names itself. Every wait is for something the page or the fake vault shows, never for time.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { __startCardsInEditMode, CardModeProvider } from "@kaigilb/gilbplatformcode-card-mode";
@@ -212,6 +213,161 @@ describe("the credential gate", () => {
     expect(await bearerHeaderFor("https://evil.example.test/lws/r/x", "GET")).toEqual({});
     expect(await bearerHeaderFor("https://vedas.example.test/lws/r/x", "GET")).toEqual({});
     expect(Object.keys(await bearerHeaderFor(`${ORIGIN}/lws/r/x`, "GET")).sort()).toEqual(["authorization", "dpop"]);
+  });
+});
+
+describe("a linked record that holds no name and no unitTag is named by its main tag", () => {
+  /** A Value of the Function `fn1` that holds no name and no unitTag, in the platform's own vault, and one on the second system host. */
+  const nameless = (id: string, mainTag: string | undefined, uri?: string): ServedRecord => ({
+    id,
+    ...(uri ? { uri } : {}),
+    type: "t:Value",
+    facts: { measures: { "@id": entityUriOf("fn1") } },
+    version: 1,
+    ...(mainTag ? { mainTag } : {}),
+  });
+  const valueLine = () => document.querySelector('[data-group="plan-function-of-value"]')?.textContent ?? "";
+
+  /** The records one masters request asks about. */
+  const askedBy = (r: { body: string | null }) => (JSON.parse(r.body!) as { targetEntities: string[] }).targetEntities;
+
+  test("the Function of Value line shows the main tag of each nameless Value, and asks for the whole line in ONE signed POST to the vault's masters route", async () => {
+    const vault = smallVault([nameless("nv1", "Speed.Main"), nameless("nv3", "Speed.Third")]);
+    vi.stubGlobal("fetch", vault.fetch);
+    const session = newSession();
+    mountInProvider(session, <Screen Card={FunctionCard} vault={vault} id="fn1" />);
+    await waitFor(() => expect(valueLine()).toContain("Speed.Main"));
+    await waitFor(() => expect(valueLine()).toContain("Speed.Third"));
+    // The line's own read is the one request that names both records. (The record-name hook reads one record per call besides.)
+    const batches = vault.tagReads.filter((r) => askedBy(r).length === 2);
+    expect(batches).toHaveLength(1);
+    expect([...askedBy(batches[0]!)].sort()).toEqual([entityUriOf("nv1"), entityUriOf("nv3")]);
+    expect(JSON.parse(batches[0]!.body!)).toMatchObject({ vault: VAULT });
+    const url = `${ORIGIN}/base/tag/masters`;
+    for (const read of vault.tagReads) {
+      expect(read.url).toBe(url);
+      expect(read.headers.authorization).toBe("DPoP fake-access-token");
+      expect(read.headers.dpop).toBe(`proof(POST ${url})`);
+      expect(askedBy(read).length).toBeLessThanOrEqual(2);
+    }
+    expect(session.signed).toContainEqual({ method: "POST", url });
+    // A read made with POST is not a write: nothing was created or patched, and the write log does not hold it.
+    expect(vault.created).toEqual([]);
+    expect(vault.requests("PATCH", /./)).toHaveLength(0);
+    expect(vault.requests("POST", /./)).toHaveLength(0);
+  });
+
+  test("a Value the platform has no main tag for keeps its id tail", async () => {
+    const vault = smallVault([nameless("nv2", undefined)]);
+    vi.stubGlobal("fetch", vault.fetch);
+    mountInProvider(newSession(), <Screen Card={FunctionCard} vault={vault} id="fn1" />);
+    await waitFor(() => expect(vault.tagReads.length).toBeGreaterThan(0));
+    await waitFor(() => expect(valueLine()).toContain("nv2"));
+    expect(valueLine()).not.toContain("Speed.Main");
+  });
+
+  test("a Stakeholder chip shows @ and the main tag of the person it links", async () => {
+    const ann = entityUriOf("ann");
+    const vault = createFakeVault(
+      [
+        { id: "fn1", type: "t:Function", facts: { unitTag: "Content.Measure" }, version: 1 },
+        { id: "ann", type: "t:Person", facts: { label: "Ann" }, version: 1, mainTag: "ada" },
+      ],
+      { relations: { fn1: [{ relation: `${VAULT}/r/rel1`, role: "role:referenced-by", type: "t:StakeholderOf", members: [{ member: ann, role: "role:stakeholder" }] }] } },
+    );
+    vi.stubGlobal("fetch", vault.fetch);
+    mountInProvider(newSession(), <Screen Card={FunctionCard} vault={vault} id="fn1" />);
+    await waitFor(() => expect(screen.getByText("@ada")).toBeTruthy());
+    for (const r of vault.tagReads) expect(askedBy(r)).toEqual([ann]);
+    expect(vault.tagReads.length).toBeGreaterThan(0);
+  });
+
+  test("the masters request of each record goes to that record's own host, and only a record of the platform's family gets a credential", async () => {
+    const far = "https://vedas.example.test/base/e/nvfar";
+    const vault = smallVault([nameless("nv1", "Speed.Main"), nameless("nvfar", "Far.Main", far)]);
+    vi.stubGlobal("fetch", vault.fetch);
+    mountInProvider(newSession(), <Screen Card={FunctionCard} vault={vault} id="fn1" />);
+    await waitFor(() => expect(valueLine()).toContain("Far.Main"));
+    expect(valueLine()).toContain("Speed.Main");
+    const byHost = (host: string) => vault.tagReads.filter((r) => new URL(r.url).host === host);
+    expect(byHost("platform.example.test").length).toBeGreaterThan(0);
+    expect(byHost("vedas.example.test").length).toBeGreaterThan(0);
+    // Each request names the records of its own host and no other, at that host's own masters route.
+    for (const r of vault.tagReads) {
+      expect(askedBy(r).length).toBeGreaterThan(0);
+      for (const e of askedBy(r)) expect(new URL(e).host).toBe(new URL(r.url).host);
+      expect(new URL(r.url).pathname).toBe("/base/tag/masters");
+    }
+    for (const r of byHost("vedas.example.test")) {
+      expect(askedBy(r)).toEqual([far]);
+      expect(r.url).toBe("https://vedas.example.test/base/tag/masters");
+      expect(JSON.parse(r.body!)).toMatchObject({ vault: "https://vedas.example.test/base" });
+    }
+    for (const r of byHost("platform.example.test")) expect(askedBy(r)).toEqual([entityUriOf("nv1")]);
+    // The platform's family signs; a host outside it gets no credential (the same gate as every other read).
+    for (const r of byHost("platform.example.test")) expect(r.headers.authorization).toBe("DPoP fake-access-token");
+    for (const r of byHost("vedas.example.test")) {
+      expect(r.headers.authorization).toBeUndefined();
+      expect(r.headers.dpop).toBeUndefined();
+    }
+  });
+});
+
+describe("the three main-tag members, each on its own", () => {
+  const FAR = "https://vedas.example.test/base/e/far1";
+  function hostsOn(vault: FakeVault) {
+    vi.stubGlobal("fetch", vault.fetch);
+    mountInProvider(newSession(), null); // sets the origins and the session, as the provider does
+    const qc = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    const hosts = createPlanCardHosts({ qc, useShell: () => ({ vaults: [] }), useSelfSource: () => null, ontologyOrigin: ONTOLOGY });
+    return { hosts, wrapper };
+  }
+  const vault = () =>
+    createFakeVault([
+      { id: "nv1", type: "t:Value", facts: {}, version: 1, mainTag: "Speed.Main" },
+      { id: "far1", uri: FAR, type: "t:Value", facts: {}, version: 1, mainTag: "Far.Main" },
+    ]);
+  const rows = [{ entityUri: entityUriOf("nv1"), facts: {} }, { entityUri: FAR, facts: {} }, { entityUri: entityUriOf("named"), facts: { label: "Named" } }];
+
+  test.each([
+    ["PlanImpactsHost.useMainTagsForRows", (h: ReturnType<typeof createPlanCardHosts>) => h.planImpacts.useMainTagsForRows],
+    ["PlanTagLinksHost.useMainTagsForRows", (h: ReturnType<typeof createPlanCardHosts>) => h.planTagLinks.useMainTagsForRows],
+  ])("%s answers the main tag of each row that needs one, asking each record's own host, and asks nothing for a row that holds a name", async (_n, pick) => {
+    const v = vault();
+    const { hosts, wrapper } = hostsOn(v);
+    const { result } = renderHook(() => pick(hosts)(rows), { wrapper });
+    await waitFor(() => expect(result.current.get(FAR)).toBe("Far.Main"));
+    expect(result.current.get(entityUriOf("nv1"))).toBe("Speed.Main");
+    expect(result.current.has(entityUriOf("named"))).toBe(false);
+    expect(v.tagReads.map((r) => r.url).sort()).toEqual(["https://platform.example.test/base/tag/masters", "https://vedas.example.test/base/tag/masters"]);
+    for (const r of v.tagReads) for (const e of (JSON.parse(r.body!) as { targetEntities: string[] }).targetEntities) expect(new URL(e).host).toBe(new URL(r.url).host);
+    expect(v.tagReads.flatMap((r) => (JSON.parse(r.body!) as { targetEntities: string[] }).targetEntities).sort()).toEqual([FAR, entityUriOf("nv1")].sort());
+    expect(v.created).toEqual([]);
+  });
+
+  test("the fake vault answers a record's main tag at that record's own host only (so a request sent to another host finds no tag)", async () => {
+    const v = vault();
+    const ask = async (origin: string, e: string) =>
+      ((await (await v.fetch(`${origin}/base/tag/masters`, { method: "POST", body: JSON.stringify({ vault: `${origin}/base`, targetEntities: [e] }) })).json()) as { masterTags: { tagKnown: boolean; tagString: string | null }[] }).masterTags[0];
+    expect(await ask("https://vedas.example.test", FAR)).toMatchObject({ tagKnown: true, tagString: "Far.Main" });
+    expect(await ask("https://platform.example.test", FAR)).toMatchObject({ tagKnown: false, tagString: null });
+    expect(await ask("https://vedas.example.test", entityUriOf("nv1"))).toMatchObject({ tagKnown: false, tagString: null });
+    expect(v.requests("POST", /./)).toHaveLength(0);
+  });
+
+  test("StakeholderLinesHost.useMainTag answers { known, tag } of the record, and { known: false } of a record the platform has no tag for", async () => {
+    const v = vault();
+    const { hosts, wrapper } = hostsOn(v);
+    const { result } = renderHook(() => ({ a: hosts.stakeholderLines.useMainTag(entityUriOf("nv1")), b: hosts.stakeholderLines.useMainTag(entityUriOf("nothing")), c: hosts.stakeholderLines.useMainTag(null) }), { wrapper });
+    await waitFor(() => expect(result.current.a.data).toEqual({ tag: "Speed.Main", known: true }));
+    await waitFor(() => expect(result.current.b.data).toEqual({ tag: null, known: false }));
+    expect(result.current.c.data).toBeUndefined();
+    expect(v.tagReads).toHaveLength(2);
+    for (const r of v.tagReads) {
+      expect(r.url).toBe("https://platform.example.test/base/tag/masters");
+      expect((JSON.parse(r.body!) as { targetEntities: string[] }).targetEntities).toHaveLength(1);
+    }
   });
 });
 

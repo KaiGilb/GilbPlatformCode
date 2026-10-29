@@ -20,7 +20,7 @@ function vaultIdOfEntity(entity: string): string | null {
 /**
  * Whether any record in this vault already holds `tag`. The find is asked at the vault's host, which can hold more than one vault, so
  * only the ids whose vault is this one count. A failed find throws: it is not "free".
- * Copied from `src/lib/base/planLinks.ts:220-228` (`tagUsedInVault`), where it is the one call behind PlanTagLinks.tsx:98 and
+ * Copied from `src/lib/base/planLinks.ts:222-230` (`tagUsedInVault`), where it is the one call behind PlanTagLinks.tsx:99 and
  * PlanDescriptionParts.tsx:706.
  */
 export async function tagUsedInVault(vaultId: string, tag: string): Promise<boolean> {
@@ -73,7 +73,7 @@ export function useRecordRead(
   });
 }
 
-/** The relation document of one Authority relation. Copied from `PlanStakeholders.tsx:534-540`, the member `useRelationDoc` of the Stakeholder lines host. */
+/** The relation document of one Authority relation. Copied from `PlanStakeholders.tsx:537-543`, the member `useRelationDoc` of the Stakeholder lines host. */
 export function useAuthorityRelationDoc(relation: string | null, planVault: string) {
   return useQuery({
     queryKey: ["plan", "authority-relation", relation ?? ""],
@@ -84,7 +84,7 @@ export function useAuthorityRelationDoc(relation: string | null, planVault: stri
   });
 }
 
-/** The relation document of one Impact. Copied from `PlanImpacts.tsx:395-400`, the member `useRelationDoc` of the Impacts host. */
+/** The relation document of one Impact. Copied from `PlanImpacts.tsx:397-402`, the member `useRelationDoc` of the Impacts host. */
 export function useImpactRelationDoc(relation: string, planVault: string) {
   return useQuery({
     queryKey: ["plan-impact", relation],
