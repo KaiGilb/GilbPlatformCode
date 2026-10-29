@@ -28,7 +28,7 @@ function pointerOf(raw: unknown): string | null {
  *
  * @param landing the holder's landing vault
  */
-export function ownCardDeps(landing: ReachableVault, onCardRead?: (id: string, name: string | null) => void): FindOwnCardDeps {
+export function ownCardDeps(landing: ReachableVault, onCardRead?: (id: string, name: string | null, atId: string | null) => void): FindOwnCardDeps {
   return {
     selfCardIdForVault,
     vaultPathSegments: VAULT_PATH_SEGMENTS,
@@ -44,7 +44,7 @@ export function ownCardDeps(landing: ReachableVault, onCardRead?: (id: string, n
     readCard: async (id, uri) => {
       const rec = await readRecord(id, uri);
       // The card's name, from this same read, so the Stakeholders self row is named from the first draw.
-      if (rec) onCardRead?.(id, cardNameOf(rec.facts));
+      if (rec) onCardRead?.(id, cardNameOf(rec.facts), rec.entityUri ?? null);
       return rec ? { atId: rec.entityUri ?? null, type: rec.typeUri } : null;
     },
   };
@@ -74,6 +74,8 @@ function cardNameOf(facts: Readonly<Record<string, string>>): string | null {
 export type OwnCardFindingNamed = OwnCardFinding & {
   /** The own card's name (null: it shows none; absent: not read here, e.g. a finding set by a test). */
   cardName?: string | null;
+  /** The own card's served `@id` (what `a:statedBy` states, as the card says its own address); absent: not read here. */
+  cardAtId?: string | null;
 };
 
 /** The query key of the holder's own-card finding: one per landing vault, read once per session. */
@@ -90,12 +92,13 @@ export function ownCardFindingQuery(vault: ReachableVault | null) {
     queryKey: ownCardFindingKey(vault?.vaultId ?? ""),
     queryFn: async (): Promise<OwnCardFindingNamed> => {
       const names = new Map<string, string | null>();
-      const finding = await findOwnCard(ownCardDeps(vault!, (id, name) => names.set(id, name)), {
+      const atIds = new Map<string, string | null>();
+      const finding = await findOwnCard(ownCardDeps(vault!, (id, name, atId) => (names.set(id, name), atIds.set(id, atId))), {
         vaultRoot: vaultRootOf(vault!.vaultId) ?? "",
         entity: vault!.entity,
         apiHost: apiHostOf(),
       });
-      return { ...finding, cardName: finding.cardId ? (names.get(finding.cardId) ?? null) : null };
+      return { ...finding, cardName: finding.cardId ? (names.get(finding.cardId) ?? null) : null, cardAtId: finding.cardId ? (atIds.get(finding.cardId) ?? null) : null };
     },
     enabled: !!vault,
     staleTime: Infinity,

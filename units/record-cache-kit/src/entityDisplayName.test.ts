@@ -44,3 +44,34 @@ describe("the name the picker shows", () => {
     expect(displayFriendly("tail/")).toBe("tail/");
   });
 });
+
+describe("the record's main tag (the `mainTag` option)", () => {
+  it("names a record that holds no label or tag", () => {
+    expect(entityDisplayName({}, { mainTag: "alpha" })).toBe("alpha");
+    expect(entityDisplayName({ x: "y" }, { mainTag: "alpha" })).toBe("alpha");
+  });
+  it("a unitTag, a tag, a label and a name all win over it", () => {
+    expect(entityDisplayName({ unitTag: "PT-1" }, { mainTag: "x" })).toBe("PT-1");
+    expect(entityDisplayName({ tag: "T-2" }, { mainTag: "x" })).toBe("T-2");
+    expect(entityDisplayName({ label: "Walk" }, { mainTag: "x" })).toBe("Walk");
+    expect(entityDisplayName({ name: "Ann", label: "Walk" }, { mainTag: "x" })).toBe("Ann");
+  });
+  it("it wins over an identity id (an email), the type's name field and a bridge", () => {
+    expect(entityDisplayName({ anchorBoundEmail: "ann@example.test" }, { mainTag: "alpha" })).toBe("alpha");
+    expect(entityDisplayName({ heading: "H" }, { nameField: "heading", mainTag: "alpha" })).toBe("alpha");
+  });
+  // Kept as the app has it: the main tag is read before `title`, so a record holding only a title shows its main tag.
+  it("a record that holds only a title shows its main tag, not the title", () => {
+    expect(entityDisplayName({ title: "Ti" }, { mainTag: "alpha" })).toBe("alpha");
+    expect(entityDisplayName({ title: "Ti" })).toBe("Ti");
+  });
+  it("a blank, a missing or a null main tag is ignored; it is trimmed", () => {
+    expect(entityDisplayName({ anchorBoundEmail: "ann@example.test" }, { mainTag: "   " })).toBe("ann@example.test");
+    expect(entityDisplayName({ title: "Ti" }, { mainTag: null })).toBe("Ti");
+    expect(entityDisplayName({ title: "Ti" }, { mainTag: undefined })).toBe("Ti");
+    expect(entityDisplayName({}, { mainTag: "  alpha  " })).toBe("alpha");
+  });
+  it("it is read only when facts exist: no facts, the address tail", () => {
+    expect(entityDisplayName(null, { mainTag: "alpha", entityUri: "https://h.example.test/base/e/abc" })).toBe("abc");
+  });
+});

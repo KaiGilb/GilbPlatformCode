@@ -45,6 +45,36 @@ describe("ownCardFindingQuery", () => {
     expect(found).toMatchObject({ cardId: id, cardUri: `${SEAT}/e/${id}`, road: "derived", cardName: "Kai Gilb", otherOwnerCards: [], ignoredPointer: null });
   });
 
+  it("carries the card's served address as cardAtId (the card record's own @id), apart from its name", async () => {
+    const wire = installWire();
+    const id = await derivedIdOf();
+    const served = `https://platform.example.test/base/e/${id}`;
+    wire.set(id, person(id, { "@id": served, "a:name": undefined }));
+    const found = await run();
+    expect(found.cardId).toBe(id);
+    expect(found.cardAtId).toBe(served);
+    expect(found.cardName).toBeNull();
+  });
+
+  it("carries cardAtId on the pointer road too, naming the card the pointer led to", async () => {
+    const wire = installWire();
+    wire.set("seat-record", { "@id": SEAT_ENTITY, "@type": "t:Vault", "a:mnbProfile": { "@id": `${SEAT}/e/mnb-profile-abc` } });
+    wire.set("mnb-profile-abc", person("mnb-profile-abc"));
+    const found = await run();
+    expect(found).toMatchObject({ road: "pointer", cardId: "mnb-profile-abc", cardAtId: `${SEAT}/e/mnb-profile-abc`, cardName: "Kai Gilb" });
+  });
+
+  it("has a null cardAtId when no card was found or read", async () => {
+    const wire = installWire();
+    wire.set("seat-record", { "@id": SEAT_ENTITY, "@type": "t:Vault" });
+    const found = await run();
+    expect(found.cardId).toBeNull();
+    expect(found.cardAtId).toBeNull();
+    const id = await derivedIdOf();
+    wire.set(id, person(id, { "@id": `https://elsewhere.example.org/vault/e/${id}` }));
+    expect((await run()).cardAtId).toBeNull();
+  });
+
   it("follows the vault's profile pointer to a card whose id is the owner's, naming it from its given and family name", async () => {
     const wire = installWire();
     wire.set("seat-record", { "@id": SEAT_ENTITY, "@type": "t:Vault", "a:mnbProfile": { "@id": `${SEAT}/e/mnb-profile-abc` } });
@@ -145,6 +175,27 @@ describe("ownCardDeps", () => {
     expect(await deps.readProfilePointer()).toBeNull();
     wire.set("seat-record", 500);
     await expect(deps.readProfilePointer()).rejects.toThrow();
+  });
+
+  it("tells the caller the card's id, name and served address (three arguments), and tells it nothing for a card that is not there", async () => {
+    const wire = installWire();
+    const seen = vi.fn();
+    const deps = ownCardDeps(vault(), seen);
+    wire.set("c1", person("c1", { "@id": "https://platform.example.test/base/e/c1", "a:name": " Cee " }));
+    await deps.readCard("c1", `${SEAT}/e/c1`);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(seen.mock.calls[0]).toEqual(["c1", "Cee", "https://platform.example.test/base/e/c1"]);
+    await deps.readCard("gone", `${SEAT}/e/gone`);
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes null as the served address when the read record states none", async () => {
+    const wire = installWire();
+    const seen = vi.fn();
+    const deps = ownCardDeps(vault(), seen);
+    wire.set("c2", { "@type": "t:Person", "a:name": "Dee" });
+    await deps.readCard("c2", `${SEAT}/e/c2`);
+    expect(seen.mock.calls[0]).toEqual(["c2", "Dee", null]);
   });
 
   it("reads a card at the address it was asked for and answers where it sits and its type, naming it to the caller", async () => {

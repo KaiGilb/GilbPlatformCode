@@ -58,6 +58,15 @@ describe("heldVaultIds", () => {
     expect(canReadVault(vault("a", ["read"]))).toBe(true);
     expect(canReadVault(vault("a", ["write"]))).toBe(false);
   });
+  it("a vault row with or without the registered short name is accepted where the unit takes one (the two fields are optional)", () => {
+    const plain = vault("a", ["read"]);
+    const named: ReachableVault = { ...vault("b", ["read"]), shortName: "ann", shortNameKnown: true };
+    const noneRegistered: ReachableVault = { ...vault("c", ["write"]), shortName: null, shortNameKnown: true };
+    const unread: ReachableVault = { ...vault("d", ["read"]), shortName: null };
+    expect("shortName" in plain).toBe(false);
+    expect(heldVaultIds([plain, named, noneRegistered, unread])).toEqual(["a", "b", "d"]);
+    expect([plain, named, noneRegistered, unread].map(canReadVault)).toEqual([true, true, false, true]);
+  });
 });
 
 describe("keysSavedElsewhere", () => {

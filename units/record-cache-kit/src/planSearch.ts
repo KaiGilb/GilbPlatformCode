@@ -6,6 +6,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { readRecord, recordFromServed, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
 import { MAX_PARALLEL_DEREFERENCES, UNTYPED_FIND, findByAttribute, idFromEntityUri, listVaultRecordsPage, mapWithConcurrency, planReadLimit, searchEntities, typeLocalName, type VaultRecordRef } from "@kaigilb/gilbplatformcode-lws-vault-sets";
+import { fetchMainTagsForRows } from "@kaigilb/gilbplatformcode-main-tag";
 import { recordTag } from "@kaigilb/gilbplatformcode-plan-links-model";
 import { vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
 import { planSearchKey } from "./cacheKeys";
@@ -77,6 +78,24 @@ function hitOf(row: BaseRecord, fallbackUri: string, fallbackId: string): PlanSe
   const label = entityDisplayName(row.facts, { entityUri: uri, fallback: tag }).trim();
   if (!label) return null;
   return { uri, id, label, tag, typeName: typeLocalName(row.typeUri ?? ""), row };
+}
+
+/**
+ * One tag rule, the platform's: a hit whose record holds no name, label or `unitTag` is named by its MAIN tag. ONE batch call per vault per 50 such hits
+ * (never one per hit), through the client's cache; a record with a name or a `unitTag` costs nothing, and a batch that cannot be read leaves the hits as they were.
+ */
+async function withMainTags(qc: QueryClient | undefined, hits: PlanSearchHit[]): Promise<PlanSearchHit[]> {
+  if (!qc || hits.length === 0) return hits;
+  const tags = await fetchMainTagsForRows(qc, hits.map((h) => ({ entityUri: h.uri, facts: h.row.facts })));
+  if (tags.size === 0) return hits;
+  const out = hits.map((h) => {
+    const main = tags.get(h.uri);
+    if (!main) return h;
+    const tag = recordTag(h.row.facts, main);
+    return { ...h, tag, label: entityDisplayName(h.row.facts, { entityUri: h.uri, fallback: tag, mainTag: main }).trim() || h.label };
+  });
+  out.sort((a, b) => a.label.localeCompare(b.label) || a.uri.localeCompare(b.uri));
+  return out;
 }
 
 function listedRow(ref: VaultRecordRef): BaseRecord {
@@ -218,7 +237,7 @@ export async function searchPlanRecords(
       hits.push(hit);
     }
     hits.sort((a, b) => a.label.localeCompare(b.label) || a.uri.localeCompare(b.uri));
-    return { hits, complete: page.complete };
+    return { hits: await withMainTags(opts.qc, hits), complete: page.complete };
   }
   const tag = exactTagText(needle);
   const exactPromise =
@@ -230,7 +249,7 @@ export async function searchPlanRecords(
     searchVaults([vault], needle, names, { search: opts.search, read: opts.read }),
   ]);
   if (page.vaultsMissed) throw new Error("Could not search");
-  return { hits: mergeExactHit(page.hits, exact.row, names), complete: page.complete && !exact.failed };
+  return { hits: await withMainTags(opts.qc, mergeExactHit(page.hits, exact.row, names)), complete: page.complete && !exact.failed };
 }
 
 /** A possible tag: at least one character and no spaces. A space stays a prefix search only. */
