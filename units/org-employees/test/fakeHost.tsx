@@ -16,7 +16,6 @@ export function strictHost(over: Partial<OrgEmployeesHost> = {}): OrgEmployeesHo
   return {
     readResources: NOT_USED("readResources") as OrgEmployeesHost["readResources"],
     photoReadKeys: NOT_USED("photoReadKeys") as OrgEmployeesHost["photoReadKeys"],
-    resolveEmploymentLinkVocab: NOT_USED("resolveEmploymentLinkVocab") as OrgEmployeesHost["resolveEmploymentLinkVocab"],
     useSheetHistory,
     dropStaleSheetEntry,
     ...over,

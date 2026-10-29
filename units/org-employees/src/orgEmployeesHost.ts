@@ -1,5 +1,5 @@
 // What the Employees group needs from the app that is in no unit: the bounded read of many records, the photo-term read spellings,
-// the employer and employee spellings of the employment link, the sheet's history entry, and the face of a record. Each member is the
+// the sheet's history entry, and the face of a record. Each member is the
 // call the source made, with the same arguments, at the same place.
 
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
@@ -16,15 +16,6 @@ export interface ReadResource {
   gone: boolean;
   /** The entity's type as the store served it, when it said. */
   typeUri?: string;
-}
-
-/**
- * The write spellings of the employment link, `a:`-prefixed as the master serves them.
- * GilbApp: EmploymentLinkVocab, src/lib/mynet/org/employmentLink.ts:14-19 (copied; a type only).
- */
-export interface EmploymentLinkVocab {
-  employer: string;
-  employee: string;
 }
 
 /** The props the row passes to the host's face. GilbApp: RecordFace, src/components/records/RecordFace.tsx (only the props the row passes). */
@@ -50,12 +41,6 @@ export interface OrgEmployeesHost {
    * GilbApp: photoReadKeys(), src/lib/base/photoTerm.ts:37 (the default `photoKeys` of orgEmployees.ts:107).
    */
   photoReadKeys(): Promise<readonly string[]>;
-  /**
-   * The master's spellings of `a:employer` and `a:employee`; fails closed (rejects) when the master does not name them. Called twice per page,
-   * once for each spelling, as the source did.
-   * GilbApp: resolveEmploymentLinkVocab(), src/lib/mynet/employment/employmentLinkVocab.ts:23 (the defaults `employerAttr` and `employeeKey` of orgEmployees.ts:109-110).
-   */
-  resolveEmploymentLinkVocab(): Promise<EmploymentLinkVocab>;
   /**
    * OPTIONAL. The face of a record (its photo, else the `fallback`). Absent: the row draws no face and still shows the person's name and titles.
    * GilbApp: RecordFace, src/components/records/RecordFace.tsx:22 (drawn at OrgEmployeeRow.tsx:11).
