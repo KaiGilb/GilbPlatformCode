@@ -70,3 +70,11 @@
 .gcc-muted { max-width: 70ch; margin: 0; font-size: 13px; color: var(--gcc-muted, #656d76); }
 .gcc-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; }
 .gcc-list li { display: flex; flex-direction: column; gap: 8px; }
+.gcc-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--gcc-line, #d0d7de); }
+.gcc-tab {
+  min-height: 44px; padding: 0 16px; font: inherit; font-size: 14px; cursor: pointer; background: none;
+  color: var(--gcc-ink-soft, #5f6368); border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.gcc-tab[aria-selected="true"] { font-weight: 700; color: var(--gcc-ink, #1f2328); border-bottom-color: var(--gcc-focus, #0969da); }
+.gcc-tab:focus-visible { outline: 2px solid var(--gcc-focus, #0969da); outline-offset: -2px; }
+.gcc-panel { margin: 0; }

@@ -272,9 +272,9 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
     expect(screen.getAllByRole("tab").filter((t) => t.getAttribute("aria-selected") === "true")).toHaveLength(1);
   });
 
-  it("Windows says it is not available yet and links a request mail", async () => {
+  it("Windows says it is not available yet and links a request mail (the host passes the address: the unit names no host)", async () => {
     const user = userEvent.setup();
-    renderIt();
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
     await user.click(tab("windows"));
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { name: "Windows is not available yet" })).toBeInTheDocument();
