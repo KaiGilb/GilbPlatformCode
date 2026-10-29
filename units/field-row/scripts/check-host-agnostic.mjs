@@ -20,7 +20,7 @@ const UNIT = "units/field-row";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\./i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^react$/, /^react\/jsx-runtime$/, /^@kaigilb\/gilbplatformcode-card-mode$/, /^@kaigilb\/gilbplatformcode-open-popups$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^react$/, /^react\/jsx-runtime$/, /^@kaigilb\/gilbplatformcode-card-mode$/, /^@kaigilb\/gilbplatformcode-open-popups$/, /^@kaigilb\/gilbplatformcode-birthday-picker$/, /^@kaigilb\/gilbplatformcode-birthday-text$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);
