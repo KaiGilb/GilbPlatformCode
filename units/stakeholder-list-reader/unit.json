@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-list-reader",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-list-reader",
+  "version": "0.1.0",
+  "purpose": "Reads a holder's stakeholders, records and online people together, into one deduplicated list with names and photos, within a request budget.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/stakeholderList/read.ts",
+        "lines": [
+          1,
+          862
+        ],
+        "to": "src/read.ts"
+      },
+      {
+        "path": "src/stakeholderList/mergeRows.ts",
+        "lines": [
+          1,
+          285
+        ],
+        "to": "src/mergeRows.ts"
+      },
+      {
+        "path": "src/stakeholderList/reachCap.ts",
+        "lines": [
+          1,
+          61
+        ],
+        "to": "src/reachCap.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of `read.ts` (source lines 59-66) are three peers and two own files: `person-connections` (`CANONICAL_CONCURRENCY`, `isOldWebIdMember`, `membersToAsk`, `opaqueSelf`, `ConnectedPerson`, `ConnectionsReading`, `PrincipalCanonicaliser`, `ResolveOutcome`), `online-card-link` (`LinkReading`), `credential-surface` (`isCredentialSurfaceError`), `./reachCap` and `./mergeRows` (no `.ts`); the code after the imports is the source's lines 67-862;",
+    "the imports of `mergeRows.ts` (source lines 31-32) are one import from the peer `person-connections` (`ATOMIC_PLACEMENTS`, `placementKey`, `AtomicPlacement`, `ConnectedPerson`); the code after it is the source's lines 33-285;",
+    "`reachCap.ts` has no imports;",
+    "`src/stakeholderList/credentialError.ts` is not copied: its `isCredentialSurfaceError` is the peer `credential-surface`, measured equal on 66 inputs (the source's tests' and constructed ones; see the README);",
+    "comments only: cycle, round, ruling, ticket, agent, person and app names are removed or reworded and the technical meaning is kept (the header comment of each file is shorter); no code line changed (checked token by token, comments and imports excluded);",
+    "no string literal carries a tag, a name or a host, so none was changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "context": "StakeholderListDeps",
+      "member": "holder",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:168 (the host's stakeholderListDeps)",
+      "implementedBy": "the holder's principal"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "vaults",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:170 (the host's stakeholderListDeps)",
+      "implementedBy": "the held vaults, the holder's own first"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "holderVault",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:172 (the host's stakeholderListDeps)",
+      "implementedBy": "the vault the connections are read for"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "ownCardIds",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:174 (the host's stakeholderListDeps)",
+      "implementedBy": "the holder's own card ids"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "connections",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:176 (the host's stakeholderListDeps)",
+      "implementedBy": "the session's read of the holder's connections"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "listRecords",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:183 (the host's stakeholderListDeps)",
+      "implementedBy": "one page of a vault's stakeholder records"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "linkedRecordIds",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:188 (the host's stakeholderListDeps)",
+      "implementedBy": "which records of a vault carry a link (optional)"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "linkedRecordsOf",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:195 (the host's stakeholderListDeps)",
+      "implementedBy": "the held vaults' records linked to the placed people (optional)"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "requestsSoFar",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:202 (the host's stakeholderListDeps)",
+      "implementedBy": "the screen's request count (optional)"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "readLink",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:204 (the host's stakeholderListDeps)",
+      "implementedBy": "one record's link"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "resolve",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:206 (the host's stakeholderListDeps)",
+      "implementedBy": "the resolver for one record"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "canonical",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:212 (the host's stakeholderListDeps)",
+      "implementedBy": "the session's principal canonicaliser (optional)"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "readName",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:217 (the host's stakeholderListDeps)",
+      "implementedBy": "one person's name, photo and caption"
+    },
+    {
+      "context": "StakeholderListDeps",
+      "member": "selfName",
+      "replaces": "gilb-stakeholders src/stakeholderList/read.ts:223 (the host's stakeholderListDeps)",
+      "implementedBy": "the self row's name from the card the host already holds (optional)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

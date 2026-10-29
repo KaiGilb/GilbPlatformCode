@@ -1,0 +1,32 @@
+{
+  "name": "@kaigilb/gilbplatformcode-stakeholder-list-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads a holder's stakeholders, records and online people together, into one deduplicated list with names and photos, within a request budget.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-credential-surface": "file:../credential-surface",
+    "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
+    "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-credential-surface": "^0.1.0",
+    "@kaigilb/gilbplatformcode-online-card-link": "^0.1.0",
+    "@kaigilb/gilbplatformcode-person-connections": "^0.1.0"
+  }
+}
