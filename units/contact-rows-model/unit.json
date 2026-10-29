@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/contact-rows-model",
+  "package": "@kaigilb/gilbplatformcode-contact-rows-model",
+  "version": "0.1.0",
+  "purpose": "Reads, merges and patches the Email, Phone and Social rows of a person card.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      { "path": "src/lib/base/contactRows.ts", "lines": [1, 265], "to": "src/contactRows.ts" },
+      { "path": "src/lib/base/__fixtures__/emailRowsIt3.ts", "lines": [1, 127], "to": "src/__fixtures__/emailRowsIt3.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (cycle, iteration and ticket tags, person names, agent names and the other app's name removed from the comments); no code change.",
+    "`src/__fixtures__/emailRowsIt3.ts` is the source's test fixture (the first, email-only version, the oracle of the email case); it is not exported and is used only by `src/contactRows.test.ts`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
