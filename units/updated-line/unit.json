@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "unit": "units/updated-line",
+  "package": "@kaigilb/gilbplatformcode-updated-line",
+  "version": "0.1.0",
+  "purpose": "The one line a page shows while it revalidates and after, a note for a copy that could not be brought up to date, and a refresh button's feedback in plain words.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/ui/Updated.tsx",
+        "lines": [
+          1,
+          64
+        ],
+        "to": "src/Updated.tsx"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedVisibleWait"
+  ],
+  "namedChanges": [
+    "the header comment loses its cycle tag, and the comment of `whenText` loses its batch tag;",
+    "`whenText(ms, now?, locale?)`: a new third parameter. Without it the time follows the runtime locale and the day is written as en-GB, as before;",
+    "`UpdatedLine`, `StaleNote`: new optional props `labels`, `locale`, `className`. `RefreshNoteLine`: new optional props `className`, `errorClassName`. `plainWhy(error, noReason?)`: a new second parameter. `useRefreshNote(run, sigNow, options?)`: a new third parameter `{ labels }`, read at press time so `press` keeps its identity;",
+    "the sentences (\"Updating…\", \"Updated <when>\", the stale note, \"the platform did not answer\", \"Updated just now\", \"Nothing new\", the could-not-update sentence) and the four class strings move into `DEFAULT_LABELS` and `DEFAULT_CLASSES` with the same text, and the code reads them from there.",
+    "No default value, role, aria attribute or test id changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

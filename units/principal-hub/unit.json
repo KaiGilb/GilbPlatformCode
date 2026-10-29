@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/principal-hub",
+  "package": "@kaigilb/gilbplatformcode-principal-hub",
+  "version": "0.1.0",
+  "purpose": "One place that knows whose session a tab is in, and clears every registered in-memory cache of a person's content when the person changes.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/principalHub.ts",
+        "lines": [
+          1,
+          48
+        ],
+        "to": "src/principalHub.ts"
+      }
+    ]
+  },
+  "implements": [],
+  "namedChanges": [
+    "the first comment line loses its cycle tag, and the fourth no longer names the source app's test file; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
