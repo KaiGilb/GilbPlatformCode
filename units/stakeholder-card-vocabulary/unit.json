@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-card-vocabulary",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary",
+  "version": "0.1.0",
+  "purpose": "Reads and keeps the vocabulary the Stakeholder card needs from the ontology master: the field sets per kind and the reference rules, as query options a page can share.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/stakeholderCard.ts",
+        "lines": [
+          55,
+          212
+        ],
+        "to": "src/stakeholderCardVocabulary.ts"
+      },
+      {
+        "path": "src/lib/base/stakeholderCard.ts",
+        "lines": [
+          697,
+          720
+        ],
+        "to": "src/stakeholderCardVocabulary.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are five imports of the peers `term-origin`, `vocabulary-source`, `stakeholder-kinds`, `stakeholder-field-sets` and `holder-reference`.",
+    "`GILBVEDA_MASTER_ORIGIN` is `termOrigin()` at its three uses inside functions.",
+    "Three module-load constants that held the ontology origin become functions: `STAKEHOLDER_CARD_VOCABULARY_QUERY_KEY` is `stakeholderCardVocabularyQueryKey()`, `STAKEHOLDER_REFERENCE_READING_QUERY_KEY` is `stakeholderReferenceReadingQueryKey()`, and the non-exported `CARD_VOCABULARY_STORE_KEY` is `cardVocabularyStoreKey()`; the strings are kept.",
+    "`const DEVICE_COPY = import.meta.env?.MODE !== \"test\";` is removed; its two uses are `!(host?.persistVocabulary?.() ?? true)`, and `readStoredCardVocabulary` and `storeCardVocabulary` take a last optional `host`.",
+    "`stakeholderCardVocabularyQuery` takes `host: CardVocabularyHost` before `fetchImpl`; `masterKindReader(...)` is `host.masterKindReader(...)`, and the host is passed on to the two device-copy functions.",
+    "The interface `CardVocabularyHost` is added and exported.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the host app are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "test/memoryStorage.ts"
+  ],
+  "host": [
+    {
+      "member": "masterKindReader",
+      "replaces": "masterKindReader(fetchImpl ? masterFetch(fetchImpl) : undefined), GilbApp src/lib/base/stakeholderCard.ts:198 (src/lib/base/stakeholderKinds.ts:68)"
+    },
+    {
+      "member": "persistVocabulary",
+      "replaces": "import.meta.env?.MODE !== \"test\", GilbApp src/lib/base/stakeholderCard.ts:168 (optional; a host without it persists)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

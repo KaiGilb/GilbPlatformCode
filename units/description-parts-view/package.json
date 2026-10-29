@@ -23,7 +23,7 @@
     "@kaigilb/gilbplatformcode-description-help": "^0.1.0",
     "@kaigilb/gilbplatformcode-description-parts-model": "^0.1.0",
     "@kaigilb/gilbplatformcode-fact-faithful": "^0.1.0",
-    "@kaigilb/gilbplatformcode-field-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-field-row": "^0.2.0",
     "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-button-row": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
@@ -36,6 +36,8 @@
   "devDependencies": {
     "@dnd-kit/core": "6.3.1",
     "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-birthday-picker": "file:../birthday-picker",
+    "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
     "@kaigilb/gilbplatformcode-description-help": "file:../description-help",
     "@kaigilb/gilbplatformcode-description-parts-model": "file:../description-parts-model",

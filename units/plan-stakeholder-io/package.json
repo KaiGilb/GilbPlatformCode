@@ -18,6 +18,8 @@
   "devDependencies": {
     "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
     "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-birthday-picker": "file:../birthday-picker",
+    "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
     "@kaigilb/gilbplatformcode-credential-surface": "file:../credential-surface",
     "@kaigilb/gilbplatformcode-description-parts-model": "file:../description-parts-model",

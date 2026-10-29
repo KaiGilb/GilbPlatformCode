@@ -2,26 +2,23 @@
   "schema": 1,
   "unit": "units/card-group",
   "package": "@kaigilb/gilbplatformcode-card-group",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "One framed group of a record card: a titled frame with an optional icon that holds its items, is left out when empty in presentation, and registers with the card's mode so an add chooser can list it.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
-      { "path": "src/components/records/CardGroup.tsx", "lines": [1, 293], "to": "src/CardGroup.tsx" },
+      { "path": "src/components/records/CardGroup.tsx", "lines": [1, 317], "to": "src/CardGroup.tsx" },
       { "path": "src/components/records/cardIcons.tsx", "lines": null, "to": "src/cardIcons.tsx" }
     ]
   },
   "namedChanges": [
-    "the imports of `gilb-stakeholders-ui` (`BothKeptLine`, `TheirRows`) and of `./oneCard` are deleted;",
-    "`const one = useOneCardGroup(kind);` and `const view = useOneCard();` are deleted;",
-    "`const ownEmpty = empty;` and `const groupEmpty = empty && !one?.theirs;` became the single line `const groupEmpty = empty;`;",
-    "in the non-inline return, the `{one && view ? one.groups.map(... TheirRows ...) : null}` block and the `{one?.bothKept ? <BothKeptLine /> : null}` line are deleted, and `{one?.theirs && ownEmpty && mode.managed && mode.presentation ? null : children}` became `{children}`;",
-    "the `useCardMode` import is from `@kaigilb/gilbplatformcode-card-mode` (the peer) and not `./cardMode`."
+    "the imports are the peers': `BothKeptLine` and `TheirRows` from `@kaigilb/gilbplatformcode-one-card-rows`, `useOneCard` and `useOneCardGroup` from `@kaigilb/gilbplatformcode-one-card-context`, `useCardMode` from `@kaigilb/gilbplatformcode-card-mode` (in the source: `gilb-stakeholders-ui`, `./oneCard`, `./cardMode`);",
+    "comments made generic (cycle, step, tester and ruling tags, dates, person names and app names removed); no code change."
   ],
   "newFiles": [
     "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": true, "tag": "t:ScreenCard.group", "title": "Card group (framed group of a card)", "note": "Needs the card-mode provider; for a plain card surface take card. The person card's linked-person rows are not in it." }
+  "library": { "admitted": true, "tag": "t:ScreenCard.group", "title": "Card group (framed group of a card)", "note": "Needs the card-mode provider; for a plain card surface take card. With a one-card-context provider above it, it draws a linked person's rows beside the holder's; without one it draws as 0.1.0 did." }
 }

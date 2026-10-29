@@ -1,0 +1,43 @@
+{
+  "name": "@kaigilb/gilbplatformcode-one-card-rows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draws the rows of a merged person card: their rows shaded and marked, your rows plain, the legend and the foot.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-one-card-merge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-ui-kit": "^0.1.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-one-card-merge": "file:../one-card-merge",
+    "@kaigilb/gilbplatformcode-online-card": "file:../online-card",
+    "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
+    "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-stakeholder-ui-kit": "file:../stakeholder-ui-kit",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

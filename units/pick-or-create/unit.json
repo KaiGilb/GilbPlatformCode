@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/pick-or-create",
+  "package": "@kaigilb/gilbplatformcode-pick-or-create",
+  "version": "0.1.0",
+  "purpose": "Finds a holder's existing record of a person or makes one, with the tag and the duplicate guard, and says plainly what it wrote when a later step fails.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/pickOrCreate.ts",
+        "lines": [
+          74,
+          660
+        ],
+        "to": "src/pickOrCreate.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of `pickOrCreate.ts` (source lines 51-72) are imports of peers: `record-sync` (`expectStatus`, `isAbsoluteIri`, `locate`, `originHostMismatch`, `PlatformError`, `request`, `routeUrl`, `vaultSegment`, `walkRecordPages`, `PlatformClient`), `vocabulary-source` (`bareForm`, `checkedBound`, `MASTER_READ_CAP_MS`, `MASTER_REQUEST_TIMEOUT_MS`, `spellingOfTermDoc`, `VocabularyUnavailableError`, `PredicateSpelling`, `VocabularySource`), `stakeholder-field-sets` (`FieldRecord`, `RecordField`, `StakeholderFieldSets`), `tag-grammar` (`assertTagString`, `checkNewTagString`, `lookupTagString`, `readTagGrammar`, `readTagWriteRule`, `TagRefusedError`, `tagRefusalSentence`, `TagGrammar`, `TagWriteRule`), `tag-client` (`ensureMasterTag`, `NoTagRoutesError`, `readMasterTag`) and `holder-reference` (`checkReference`, `openWriteCall`, `PlacementUnknownError`, `readReferenceVocabulary`, `referenceFieldFor`, `rowPlacement`, `ReferenceReading`, `ReferenceReadingOptions`); the code after them is the source's lines 74-660;",
+    "the header comment is a new, shorter one, and comments that name a cycle, a ticket, an agent, a person, a ruling, a finding or a host are reworded (a person's name in one comment is \"Ann Lee\"); no code changed. No string literal carries a tag."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
