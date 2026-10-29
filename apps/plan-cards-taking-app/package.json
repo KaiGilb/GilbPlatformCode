@@ -108,6 +108,9 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@kaigilb/gilbplatformcode-credential-surface": "file:../../units/credential-surface",
+    "@kaigilb/gilbplatformcode-person-connections": "file:../../units/person-connections",
+    "@kaigilb/gilbplatformcode-stakeholder-list-reader": "file:../../units/stakeholder-list-reader",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.20.5",
