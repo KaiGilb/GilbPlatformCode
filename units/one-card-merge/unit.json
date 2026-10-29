@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/one-card-merge",
+  "package": "@kaigilb/gilbplatformcode-one-card-merge",
+  "version": "0.1.0",
+  "purpose": "Merges a person's published rows with the holder's own rows into one list of groups, each row marked theirs, yours or both.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      { "path": "src/onlineCard/mergeOneCard.ts", "lines": [1, 559], "to": "src/mergeOneCard.ts" }
+    ]
+  },
+  "namedChanges": [
+    "In `mergeOneCard.ts`: `bareForm` from `../terms.ts` is the peer `@kaigilb/gilbplatformcode-vocabulary-source`; the type `StakeholderField` from `../fieldSets.ts` is the peer `@kaigilb/gilbplatformcode-stakeholder-field-sets`; `cardName` and the type `OnlineCard` from `./publicCard.ts` and `rungChipWords` from `./rungs.ts` are one import from the peer `@kaigilb/gilbplatformcode-online-card`.",
+    "Comments made generic (cycle, ticket, tester and spec tags, person names, dates of rulings and app names removed from the file's comments); no code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
