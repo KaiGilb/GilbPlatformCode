@@ -156,9 +156,18 @@ Nothing but the props above. A developer writes no host object. The card units' 
 - 177 host members in all (was 174). The line numbers the hosts cite are those of GilbApp `9a602ea7`.
 - Peers `plan-card`, `plan-impacts`, `plan-stakeholder-io`, `plan-stakeholder-lines`, `plan-stakeholders-model` and `plan-tag-links` ^0.2.0; new peer `main-tag` ^0.1.0.
 
-## Not yet proven live
+## Proven live
 
-Everything above is proven against a fake `fetch`. Not yet proven against a live GilbPlatform: that `POST /base/tag/masters` accepts the DPoP pair alone (the check so far read only `GET /lws/r/<id>`), that `GET`, `PATCH` and `DELETE` on `/lws/r/<id>` accept the DPoP pair alone (a `GET` returned 200 in an earlier check; the others are the first thing the live check reads), that the server accepts the `ath` claim the sign-in unit adds, and what the signed `htu` is on the apex route. That is the live check of the taking app (P4).
+Checked on production on 2026-10-29 (served revision `527b612a8af8e27e1bcd730080a98bbe84588ca9`), in a test vault, with this unit's provider and the four cards' own code. One `t:Value` record was made, read, edited through the Value card, read back, drawn, and ended; two runs, 43 calls in the second, all answered 2xx:
+
+- `POST /lws/vault/<vault>/c` (`createRecord`) answered 201, and `GET /lws/r/<id>` (`readRecord`) 200 with a weak `ETag`.
+- The Value card's Endpoint edit sent one `PATCH /lws/r/<id>` with `If-Match` set to the version read and a DPoP proof carrying `ath`; it answered 200 with a new `ETag`. A fresh read showed the edit under the bare read key `endpoint`.
+- `POST /base/tag/masters` on the vault's own host answered 200 with the record's main tag.
+- The Value card drew inside this provider alone from the live record.
+- `DELETE /lws/r/<id>` answered 204. A later `GET` answers 200 with `entityLifecycleState: "ended"`: the platform keeps an ended record as a tombstone, so a read after an end is not 404. `readRecord` returns that tombstone as a record, not `null`.
+- The DPoP pair alone was accepted for every call, and each proof's `htu` was the vault host the call went to.
+
+The session in that check was a machine client's token held in this repository's `SessionCredential` (`signin`), not a person's one-time-code sign-in. Still not proven live: the one-time-code sign-in itself from a browser at an admitted local address, and the signed `htu` on the apex route. The Value card does not print the record's own name (`a:name`); this is how the card is drawn in GilbApp too.
 
 ## Do not
 
