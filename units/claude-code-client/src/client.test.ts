@@ -635,6 +635,30 @@ describe("sendClaudeCodeTurn", () => {
       expect((await done).content).toBe("ok");
     });
 
+    it("an answer the bridge ignores (the call was cancelled meanwhile) does not end the turn", async () => {
+      client.save("s3cret");
+      const r = rig({ toolAnswer: async () => json(200, { result: "{}" }) });
+      const base = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/tool-result`) {
+          r.results.push(JSON.parse(String(init.body)));
+          return json(200, { ignored: true, reason: "cancelled" });
+        }
+        return base(url, init);
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "A", name: "list_vaults", arguments: "{}" });
+      await tick();
+      r.live.emit("tool_request", { id: "B", name: "list_vaults", arguments: "{}" });
+      await tick();
+      expect(r.results.map((x) => x.id)).toEqual(["A", "B"]);
+      r.live.emit("message", { content: "still going", model: "m" });
+      r.live.end();
+      expect((await done).content).toBe("still going");
+    });
+
     it("tool_cancelled aborts that request's fetch and posts nothing for it; the others are answered", async () => {
       client.save("s3cret");
       let slowSignal: AbortSignal | null | undefined;

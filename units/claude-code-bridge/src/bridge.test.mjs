@@ -830,4 +830,43 @@ describe("an abandoned hand-off is stopped", () => {
     const r = await nested;
     expect(r.status).toBe(200);
   });
+
+  const postResult = (secret, turnId, id, extra = {}) =>
+    fetch(`${base}/v1/tool-result`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bridge-secret": secret },
+      body: JSON.stringify({ turnId, id, result: "{}", isError: false, ...extra }),
+    });
+
+  it("a result posted late for a cancelled call is ignored with 200, and the turn goes on", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const call = rpc(parent.mcpUrl, { id: 77, method: "tools/call", params: { name: "run_named_role", arguments: {} } });
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const reqId = parent.events.find((e) => e[0] === "tool_request")[1].id;
+    await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 77 } });
+    await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
+    await call;
+    const late = await postResult(body.secret, parent.turnId, reqId);
+    expect(late.status).toBe(200);
+    expect(await late.json()).toEqual({ ignored: true, reason: "cancelled" });
+    expect(parent.events.some((e) => e[0] === "error")).toBe(false);
+    // The turn still works: a next call is relayed and answered.
+    const next = rpc(parent.mcpUrl, { id: 78, method: "tools/call", params: { name: "list_vaults", arguments: {} } });
+    await until(() => parent.events.filter((e) => e[0] === "tool_request").length === 2, "the next tool request");
+    const nextId = parent.events.filter((e) => e[0] === "tool_request")[1][1].id;
+    const ok = await postResult(body.secret, parent.turnId, nextId, { result: "fine" });
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ ok: true });
+    expect((await (await next).json()).result.content[0].text).toBe("fine");
+    await parent.close();
+  });
+
+  it("a result for an id that never existed is still 404", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const r = await postResult(body.secret, parent.turnId, "deadbeefdeadbeef");
+    expect(r.status).toBe(404);
+    await parent.close();
+  });
 });
