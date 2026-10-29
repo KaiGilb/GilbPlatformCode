@@ -26,7 +26,7 @@ afterEach(() => {
   tearDown();
 });
 
-// ── Open path is a PAGE (Kai 2026-09-08: 36k is nothing; concatenating the vault is the defect)
+// ── Open path is a PAGE (36k is nothing; concatenating the vault is the defect)
 describe("listVaultFilesPage — first page only, SpeedGate N=20", () => {
   const VAULT = "https://ontology.platform.example.test/base";
   const filePage = (from: number, n: number, count = 1460) => ({

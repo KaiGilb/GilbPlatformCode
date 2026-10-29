@@ -1,7 +1,7 @@
-// The DISCLOSED result total — the client half of Base Cycle144.
+// The DISCLOSED result total — the client half of the Base disclosed total.
 //
-// Carrier: 3P.C.ResultTotal.DisclosedApproximationAndExactOnRequest.Base (Kai,
-// 2026-08-17). Base's read surfaces (`GET /base/search`, `GET /base/page`) used to
+// Carrier: 3P.C.ResultTotal.DisclosedApproximationAndExactOnRequest.Base (2026-08-17).
+// Base's read surfaces (`GET /base/search`, `GET /base/page`) used to
 // return a REQUIRED numeric `count` that was always an exact census. They now return
 //
 //     total: { kind: "exact" | "atLeast" | "approximate", value: number } | null
@@ -12,7 +12,7 @@
 // 🔴 WHY THIS MODULE EXISTS AND WHY IT IS THE ONLY ROUTE TO TEXT. The Constraint's
 // Scope DISQUALIFIES a surface that "emits an estimated total in a form
 // indistinguishable from an exact one". A UI that prints a BOUND as a bare numeral is
-// exactly that defect — Kai's ruling was to be *"hones about it… like 'More than
+// exactly that defect — the ruling was to be *"hones about it… like 'More than
 // 10K'"*. So there is deliberately NO function here that turns a non-exact total into
 // a bare number, and `formatResultTotal` is the only path from a total to a string.
 // ⛔ Do not add a `.value`-to-numeral shortcut.
@@ -48,9 +48,9 @@ const KINDS: readonly string[] = ["exact", "atLeast", "approximate"];
  * Reads the disclosed total off a Base response body.
  *
  * Handles BOTH wire generations, which is what lets this land ahead of the server:
- *  - post-Cycle144 — `total: {kind, value}` is authoritative, `total: null` means the
+ *  - current server — `total: {kind, value}` is authoritative, `total: null` means the
  *    read established none (mode `none`, or a cursored page) and is NOT an error;
- *  - pre-Cycle144 — no `total` key at all, but a numeric `count`. That number was
+ *  - older server — no `total` key at all, but a numeric `count`. That number was
  *    always a census (the old Find computed `count(*) OVER ()` unconditionally), so
  *    reading it as `exact` is correct rather than merely convenient.
  *
@@ -73,7 +73,7 @@ export function readResultTotal(body: TotalBearingWire | null | undefined): Resu
     // on this generation of server is only ever emitted UNDER an exact total anyway.
     return null;
   }
-  // Pre-Cycle144 server.
+  // Older server.
   return typeof body.count === "number" && Number.isFinite(body.count)
     ? { kind: "exact", value: body.count }
     : null;
@@ -160,7 +160,7 @@ export function maxResultTotal(
 }
 
 /**
- * The HUMAN phrasing of a disclosed total — Kai's own shapes.
+ * The HUMAN phrasing of a disclosed total — the agreed shapes.
  *
  * @returns "1,234" for a census, "more than 200" for a bound, "about 3000000" for an
  *   estimate, and `null` when there is no total (render nothing — ⛔ never a zero).

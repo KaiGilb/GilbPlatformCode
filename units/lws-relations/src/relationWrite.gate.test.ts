@@ -1,7 +1,7 @@
 // The two RELATION-WRITE DOORS — the CURIE that may not be written, and the CURIE that must
-// be preserved. Written 2026-08-02 for the Cycle062 VDS-4 gate remediation.
+// be preserved. Written 2026-08-02 for the typing-gate remediation.
 //
-// (h) VATester D2 item (h): `writePairRelation` THROWS on `t:Relation`. The guard shipped
+// (h) `writePairRelation` THROWS on `t:Relation`. The guard shipped
 //     with no test, so nothing stood between the codebase and the defect it was written for
 //     (Ann's unlabelled edges, 2026-08-02).
 //

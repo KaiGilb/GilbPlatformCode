@@ -1,4 +1,4 @@
-// Live link-plane catalog — Cycle140.
+// Live link-plane catalog.
 //
 // RuleBpontLinkPlaneDeclared: the live master is the SSoT for which predicates a person
 // may pick. ⛔ NEVER a hardcoded OFFERABLE_PREDICATES table as the catalog.
@@ -21,8 +21,8 @@ export interface LinkTerm {
   curie: string;
   label: string;
   /**
-   * Cycle214 S5c: false when the term carries NO `a:label` (then `label` above is the IRI tail). The contact header shows such a term by its
-   * own name, its CURIE, never a made-up word (design note C214-OneCard section 2). Absent on catalogs built before S5c (tests): read as labelled.
+   * False when the term carries NO `a:label` (then `label` above is the IRI tail). The contact header shows such a term by its
+   * own name, its CURIE, never a made-up word. Absent on catalogs built without it (tests): read as labelled.
    */
   labelled?: boolean;
   parentIri: string | null;

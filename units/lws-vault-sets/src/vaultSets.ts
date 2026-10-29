@@ -14,7 +14,7 @@ import { isNonRecordListEntry, isRelationEntityUri } from "./recordPlane";
 async function lwsReadAuth(method: string, url: string): Promise<Record<string, string>> {
   try {
     const bearer = await bearerHeaderFor(url, method);
-    // 🔴 Cycle152 — A CREDENTIAL WE CANNOT FORM IS NOT A CREDENTIAL, SO TAKE THE FALLBACK.
+    // 🔴 A CREDENTIAL WE CANNOT FORM IS NOT A CREDENTIAL, SO TAKE THE FALLBACK.
     //
     // Measured: a bridge answering 2xx WITHOUT `access_token` made `getToken()` RESOLVE
     // `undefined`. Because nothing threw, this function composed the literal header
@@ -25,7 +25,7 @@ async function lwsReadAuth(method: string, url: string): Promise<Record<string, 
     // and a re-sign-in that changed nothing, while a working DPoP path was available the
     // whole time. Falling back on a falsy token is what makes the documented fallback real.
     // s7 walk fix F-3: the header is formed by `bearer.ts` `bearerHeaderFor`, the one credential seam. It answers
-    // `{}` for a credential we cannot form (the Cycle152 case above) AND for a host outside this build's platform
+    // `{}` for a credential we cannot form (the case above) AND for a host outside this build's platform
     // family; the DPoP seam answers `{}` for the second too, so the fallback is correct for both.
     if (!bearer.authorization) return dpopReadAuth(method, url);
     return bearer;
@@ -35,7 +35,7 @@ async function lwsReadAuth(method: string, url: string): Promise<Record<string, 
 }
 
 /**
- * C214-SP1 — this app's authenticated fetch for the LWS vault reads, as a platform client's `fetch` (`gilb-stakeholders`
+ * This app's authenticated fetch for the LWS vault reads, as a platform client's `fetch` (`gilb-stakeholders`
  * `walkRecordPages` / `syncRecordPages`): the same credential as {@link listVaultRecordsPage} (Bearer first, DPoP as the fallback),
  * and one DPoP retry on a 401, as that page does. The answer is returned as it came; the caller decides what a status means.
  *
@@ -93,12 +93,12 @@ export interface VaultRecordRef {
   /** Who ended this node. Present only on the ended list. */
   endingActorKind?: "holder" | "agent";
   /**
-   * Cycle214 M3c — the record's whole document, exactly as `GET /lws/r/<id>` serves it to this caller. Present only when the page
-   * was asked with `includeBody` (`?include=body`, GilbPlatform VDT 119 S5a). The stakeholder list reads the link (`a:sameAs`) from
+   * The record's whole document, exactly as `GET /lws/r/<id>` serves it to this caller. Present only when the page
+   * was asked with `includeBody` (`?include=body`, GilbPlatform). The stakeholder list reads the link (`a:sameAs`) from
    * it, so a page of 20 records costs 1 request instead of 1 + 20.
    */
   body?: Record<string, unknown>;
-  /** Cycle214 M3f r5 — with `includeBody` only: the ETag `GET /lws/r/<id>` sends for this record (VDT 119 S5a). */
+  /** With `includeBody` only: the ETag `GET /lws/r/<id>` sends for this record. */
   etag?: string;
 }
 
@@ -143,7 +143,7 @@ export interface VaultRecordsPage {
    */
   served?: number;
   /**
-   * Cycle214 M3c — only on a page asked with `includeBody`: the offset the door names for the next page (`nextOffset`), or null
+   * Only on a page asked with `includeBody`: the offset the door names for the next page (`nextOffset`), or null
    * when it names none. ⚠ With bodies the door may end a page early at its byte budget, so this, ⛔ not `offset + pageSize`, is
    * where the next page starts.
    */
@@ -157,7 +157,7 @@ export interface VaultRecordsPage {
  *
  * `typeNames`:
  * - **empty / omitted** → type-agnostic list (all types used in the vault except File/Vault).
- *   ⛔ Not F-LIVE. Cycle165 C1: the grid/graph caller (`hydrateRecordsPage`) no longer
+ *   ⛔ Not F-LIVE. The grid/graph caller (`hydrateRecordsPage`) no longer
  *   passes `[]` — it F-CATs then F-LIVEs named types on `?type=`.
  * - **non-empty** bare BaseVeda CURIE-names (`NoteDocument`, `Person`, …) → faceted F-LIVE.
  *   An unknown name is simply absent from the answer, never an error.
@@ -173,7 +173,7 @@ export async function listVaultRecordsPage(
     includePresentationState?: boolean;
     lifecycle?: FileLifecycle;
     /**
-     * Cycle214 GAPP214.26 — keep a relation-addressed row whose type this says was ASKED FOR.
+     * Keep a relation-addressed row whose type this says was ASKED FOR.
      * The register filter below drops a row the app's relation test recognises
      * (`isRelationEntityUri`, recordPlane.ts), which is right for a list nobody narrowed. A person
      * who chose a relation kind (a role is a stakeholder) asked for exactly those rows. Measured on
@@ -190,11 +190,11 @@ export async function listVaultRecordsPage(
      */
     admitRelationRow?: (typeUri: string) => boolean;
     /**
-     * Cycle214 M3c — ask for each record's whole document on the page (`?include=body`), as `GET /lws/r/<id>` serves it. Used by the
+     * Ask for each record's whole document on the page (`?include=body`), as `GET /lws/r/<id>` serves it. Used by the
      * stakeholder list, which needs every record's link and would otherwise read each record on the page once more.
      */
     includeBody?: boolean;
-    /** Cycle214 M3c — the most rows the page may carry (`?limit=`). The door honours it ONLY with `includeBody`, and caps it at 100 (200 when `filter` is also sent). */
+    /** The most rows the page may carry (`?limit=`). The door honours it ONLY with `includeBody`, and caps it at 100 (200 when `filter` is also sent). */
     limit?: number;
     /**
      * GilbPlatform `?filter=<attribute>=<value>` (BASE-DEVELOPER-GUIDE, "Filtered newest page"): only the records of the ONE
@@ -217,7 +217,7 @@ export async function listVaultRecordsPage(
   }
   const qs = params.toString();
   const url = qs ? `${LWS_VAULT_RECORDS_URL(vaultId)}?${qs}` : LWS_VAULT_RECORDS_URL(vaultId);
-  // C214-SP1 r2 (Agent.Scaling N2): the one sign-in-then-retry read (Bearer, then DPoP once on a 401), ⛔ not a copy of it.
+  // The one sign-in-then-retry read (Bearer, then DPoP once on a 401), ⛔ not a copy of it.
   const res = await lwsReadFetch(url);
   if (!res.ok) await throwForStatus(res);
   const body = (await res.json()) as RecordsWire;
@@ -259,7 +259,7 @@ export async function listVaultRecordsPage(
       ...(opts.includeBody && typeof r.etag === "string" ? { etag: r.etag } : {}),
     }));
   // Prefer filtered length for this page when server still counts non-records.
-  // Single-sourced in `recordPlane.narrowTotal` (Cycle060) — `seen` is rows the SERVER SENT, so a
+  // Single-sourced in `recordPlane.narrowTotal` — `seen` is rows the SERVER SENT, so a
   // row this client failed to keep is deducted whatever the reason. See that function's own note
   // on the page-vs-whole-result limitation this shares.
   const total = narrowTotal(
@@ -426,7 +426,7 @@ export async function listVaultHeldTypes(vaultId: string): Promise<VaultHeldType
 }
 
 /** The lifecycle population to list. `live` is the default everywhere; `ended` is the
- * trashcan (P2.2 — Kai's original 2026-07-19 request). WIRE-ONLY grammar. */
+ * trashcan (P2.2). WIRE-ONLY grammar. */
 export type FileLifecycle = "live" | "ended" | "all";
 
 /** One file the vault says exists — metadata only; the bytes are `GET /files/<id>`. */
@@ -483,8 +483,8 @@ interface FilesWire {
  */
 /**
  * SpeedGate page size ([[3P.V.Interaction.PageLatency.Base]] N, default 20).
- * Kai 2026-09-08: 36k files is nothing if open is a page; concatenating pages
- * until the vault is in the browser is the defect Cycle161 shipped as a "fix".
+ * 36k files is nothing if open is a page; concatenating pages
+ * until the vault is in the browser is the defect an earlier release shipped as a "fix".
  */
 export const OPEN_PAGE_SIZE = 20;
 
@@ -540,7 +540,7 @@ export async function listVaultFilesPage(
   }
   const qs = params.toString();
   const url = `${LWS_VAULT_FILES_URL(vaultId)}${qs ? `?${qs}` : ""}`;
-  // C214-SP1 r2 (Agent.Scaling N2): the one sign-in-then-retry read (Bearer, then DPoP once on a 401), ⛔ not a copy of it.
+  // The one sign-in-then-retry read (Bearer, then DPoP once on a 401), ⛔ not a copy of it.
   const res = await lwsReadFetch(url);
   if (!res.ok) await throwForStatus(res);
   const body = (await res.json()) as FilesWire;

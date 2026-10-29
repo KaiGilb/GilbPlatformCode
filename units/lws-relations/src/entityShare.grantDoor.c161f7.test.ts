@@ -1,11 +1,11 @@
 /**
- * Cycle161 F7 — THE PER-ITEM GRANT IS ASKED OF THE VAULT THAT HOLDS THE ITEM, ⛔ a fixed apex.
+ * THE PER-ITEM GRANT IS ASKED OF THE VAULT THAT HOLDS THE ITEM, ⛔ a fixed apex.
  *
  * ── The defect, measured at the wire 2026-09-05 ───────────────────────────────────────
  * Ann clicked "Share for read" once. Base answered 403 with, verbatim:
  *
  *   Principal https://paraf.platform.example.test/base does not own the target vault
- *   https://id.platform.example.test/base — grant-direct requires vault ownership (Cycle052 VDS-4; …)
+ *   https://id.platform.example.test/base — grant-direct requires vault ownership
  *
  * The `<vault>` in that sentence is `defaultVaultId(ownerHost)` — the deployment's HOME vault — not
  * the vault the entity in the same request NAMES (`https://childchild.platform.example.test/base/e/…`).

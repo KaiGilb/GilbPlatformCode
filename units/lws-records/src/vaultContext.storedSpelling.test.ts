@@ -1,9 +1,8 @@
 /**
- * 🔴 Cycle161 `S35` — THE INSTRUMENT THAT DECIDES A STORED SPELLING, TESTED AS AN INSTRUMENT.
+ * 🔴 THE INSTRUMENT THAT DECIDES A STORED SPELLING, TESTED AS AN INSTRUMENT.
  *
  * ── THE ABSENCE THIS FILE CLOSES, QUOTED ──────────────────────────────────────────────────────
- * [[Cycle161-QA-Base-ReachableRefusalsAgainstServedApps-71fa3bc-8ba4797-IndependentQA-2026-09-03-PARTIAL]]
- * §3.6: *"`grep` over BaseApp `src/**\/*.test.*` for `resolveMasterBindings`, `positiveControl`,
+ * The independent QA of this arm, §3.6: *"`grep` over BaseApp `src/**\/*.test.*` for `resolveMasterBindings`, `positiveControl`,
  * `masterBinding`: **zero files**. Every shipped `storedKey` test calls
  * `framedEntityToWriteFacts(doc, ctx)` with the `master` argument **defaulted to an empty Map**,
  * so the control path has never executed in the suite."* That is why a dead arm shipped twice.

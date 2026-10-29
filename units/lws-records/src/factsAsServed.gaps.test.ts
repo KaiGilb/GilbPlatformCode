@@ -1,4 +1,4 @@
-// Cycle214 GAPP214.42 F2/B1 re-gate (VATester, independent QA of 5058f46) — gap tests.
+// Re-gate — gap tests.
 //
 // My mutation round at 5058f46 left four arms of the vault-context read with no test red:
 //   Z2  a failed fetch (network error, CORS refusal) or a 200 whose body is not JSON counted as an

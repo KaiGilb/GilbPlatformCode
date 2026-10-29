@@ -1,8 +1,8 @@
 // @vitest-environment node
-// Cycle214 1e, s7 walk fix F-2, the root: `listVaultRecordsPage` drops the rows that are not records (field claims,
+// S7 walk fix F-2, the root: `listVaultRecordsPage` drops the rows that are not records (field claims,
 // relations, control-plane rows: `isNonRecordListEntry`) AFTER the door sent them, so a page of 20 field claims
 // came back as 0 records, and the reader that pages by `offset` took "0 records" for "the end" (the grid said "No
-// records yet" over a vault holding 5 people: Agent.Tester's walk F-2, reproduced in REAL Chrome by the s8 browser
+// records yet" over a vault holding 5 people: reproduced in REAL Chrome by the s8 browser
 // check on its own rig, which the first F-2 fix, tested against a fake door that kept every row, did not reach).
 // The page now says how many rows the door SENT (`served`), and the reader advances by that.
 // REAL: vaultSets.listVaultRecordsPage + recordPlane's register filter. MOCK: the network (a stubbed fetch).

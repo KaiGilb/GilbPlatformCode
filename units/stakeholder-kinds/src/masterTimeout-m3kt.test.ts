@@ -210,7 +210,7 @@ describe("display, a set is kept: a hanging master never wipes it", () => {
   });
 });
 
-// ── Kai-Zen ruling A1 (round 2): a bound is never switched off ──────────────────────────────────────────────────────────────
+// ── A bound is never switched off ──────────────────────────────────────────────────────────────
 //
 // "A bound of 0, negative, NaN or non-finite is rejected at construction (throw a clear error) or replaced by the default —
 // choose, document, test; never 'no bound'." Chosen: refused, with a RangeError, when the source, the reader or the write call

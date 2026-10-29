@@ -3,14 +3,14 @@
 // (`src/routes/relation.ts`). AfterWrite `syncRelationMembers` fills `relation_members`,
 // which `readRelations` (GET /base/e/:id/relations) returns as `/base/r/<id>` edges.
 //
-// Cycle165 HT3a (2026-09-01): POST `/lws/vault/<VAULT>/c` minted a
+// As of 2026-09-01, POST `/lws/vault/<VAULT>/c` minted a
 // `/base/e/<id>` CapableOf entity (Base `lwsCreate` → `baseEntityUri`). That is a node,
 // not a line. ⛔ W-MINT is mint an entity. ⛔ W-LINK is a `{ "@id" }` fact on a record.
 // ⛔ Do not invent a Lookup row. PUT `/base/r/:id` requires an id in the path — that is
 // the upsert contract, ⛔ not a computed field-fill of content. No `/base/r/` mint
 // Location exists on Base (only PUT `/:id` and POST `/:id/end`).
 //
-// CREATE body `type` is the CURIE `t:<Type>` ingest accepts (Cycle165 HT1). FIND `?type=`
+// CREATE body `type` is the CURIE `t:<Type>` ingest accepts. FIND `?type=`
 // stays bare. Pair after CREATE: `readRelations` of the source (the graph's find).
 //
 // Multi-vault (2026-07-28): MUST name the viewed vault. Defaulting to baseOrigin/kaizen made
@@ -191,7 +191,7 @@ export async function writePairRelation(
         `generic link.`,
     );
   }
-  // Cycle140 — refuse-board + live user-plane gate. A typed washed / easy-to-use /
+  // Refuse-board + live user-plane gate. A typed washed / easy-to-use /
   // speaks / wrecked (or any CURIE not on the live a:linkPlane=user set) must not
   // create a join. Cold catalog does not widen the door: only a live hit writes.
   // A caller that names `roles` is not a link-plane join: the type is checked on the
@@ -255,7 +255,7 @@ async function putKnownRelation(
   typeCurie: string,
   facts: Record<string, unknown>,
 ): Promise<{ id: string; changed: boolean; uri?: string | null }> {
-  // 🔴 C145 — ALWAYS A TAIL in the path. A full URI in the PATH composed
+  // 🔴 ALWAYS A TAIL in the path. A full URI in the PATH composed
   // `…/base/r/https://…/base/r/<id>` — a write to nowhere. Tailing here is what lets a
   // caller pass the relation's OWN URI, which is the only way an existing relation is
   // updated at the vault that actually holds it.
@@ -305,7 +305,7 @@ async function putKnownRelation(
     throw new Error(`relation write failed: ${res.status} ${detail}`.trim());
   }
   const json = (await res.json().catch(() => ({}))) as { changed?: boolean; entity?: unknown };
-  // C210 — the relation's OWN URI as the vault issued it (the write answer's `entity`),
+  // The relation's OWN URI as the vault issued it (the write answer's `entity`),
   // so a caller never has to re-list a folder to find the link it just made.
   const uri = typeof json.entity === "string" && json.entity !== "" ? json.entity : null;
   return { id, changed: !!json.changed || res.status === 201, uri };
@@ -314,7 +314,7 @@ async function putKnownRelation(
 /**
  * CREATE — PUT `/base/r/:id` (same door as UPDATE). Path id is a client id (`asCreate`) or a
  * fresh mint. Pair: `readRelations` of the source. For `t:PartOf`, folder-public inheritance.
- * One function for both, so the C210 block is not copied.
+ * One function for both, so the folder-public block is not copied.
  * ⛔ Not POST `/c`. ⛔ F-LIVE of CapableOf as records is the entity plane, not this edge.
  */
 async function createPairRelation(
@@ -333,7 +333,7 @@ async function createPairRelation(
   // The rows are returned so a create-surface heal can use this read and not ask again.
   const relations = await readRelations(uriTail(input.sourceId), input.sourceEntityUri ?? vault);
   if (typeCurie !== FOLDER_LINK_CURIE) return { ...result, relations };
-  // 🔴 C210 — the ONE door every folder link passes through, so an item linked INTO a public folder
+  // 🔴 The ONE door every folder link passes through, so an item linked INTO a public folder
   // becomes public here, whichever of the call sites linked it (2026-09-26). Measured M1:
   // two members linked after the folder went public were never granted. ⛔ Never thrown — the link
   // itself landed; what was not made public is RETURNED for the caller to say out loud.
@@ -408,7 +408,7 @@ export function hostOfUri(uri: string | null | undefined): string | null {
  * a status code is a RESPONSE, never evidence of the state change you wanted.
  *
  * ── The door that performs the act ────────────────────────────────────────────────────────
- * Base ships `POST /base/r/:id/end` for exactly this (Cycle062 VDS-3, the typing gate BVGATE_01
+ * Base ships `POST /base/r/:id/end` for exactly this (the typing gate BVGATE_01
  * ruling 2026-08-02 §5). It differs from the PUT in the two ways that matter here:
  *
  *   1. It RESOLVES its subject instead of constructing it — `resolveEntityUriById` widens by
@@ -456,7 +456,7 @@ export async function endRelation(
 ): Promise<EndRelationResult> {
   const id = uriTail(relationIdOrUri);
   if (!id) throw new Error("Missing relation id");
-  // C144 — address the ENDING at the relation's own origin. The caller passes the full URI on
+  // Address the ENDING at the relation's own origin. The caller passes the full URI on
   // every graph path, and `vaultNamespace` names the vault when it does not: either is an address
   // the vault itself gave us. This is what makes guard (1) below near-unreachable rather than
   // load-bearing — the route can no longer resolve a twin under another host, because it is
@@ -478,10 +478,10 @@ export async function endRelation(
     throw new NotSignedInError();
   }
   if (res.status === 404) {
-    // 🔴 C145 — `verified: true` HERE WAS A CLAIM NOBODY CHECKED, and the door fix in this
+    // 🔴 `verified: true` HERE WAS A CLAIM NOBODY CHECKED, and the door fix in this
     // same lane made it reachable. A 404 on `/end` cannot tell three things apart:
     //   • there is genuinely no such relation ("nothing to end" — the old reading);
-    //   • the request was addressed at a vault that does not hold it (since C144, Base resolves
+    //   • the request was addressed at a vault that does not hold it (Base now resolves
     //     an id at the host the request NAMED and at no other — so a cross-vault connection
     //     404s at the viewed vault even though it exists);
     //   • C2b non-disclosure hid it.
@@ -501,7 +501,7 @@ export async function endRelation(
 
   // ── Guard (1): the act's own reported subject must be where we SENT the act ────────────
   //
-  // 🔴 C145  — `wantHost` was `hostOfUri(vaultNamespace)`, and that is not the
+  // 🔴 `wantHost` was `hostOfUri(vaultNamespace)`, and that is not the
   // address this request used. Once the act is addressed by the relation's OWN URI (which it
   // now is, so a cross-vault End reaches the vault that holds it), the two diverge by construction:
   // the POST goes to ben, ben ends it and truthfully answers with its own URI, and the
@@ -531,7 +531,7 @@ export async function endRelation(
   // ── Guard (2): read the store back — the status code is not the outcome ────────────────
   let verified: boolean | null = null;
   try {
-    // 🔴 C145 — THE DOOR, and here it made the guard answer YES unconditionally. This read-back
+    // 🔴 THE DOOR, and here it made the guard answer YES unconditionally. This read-back
     // exists precisely because "the status code is not the outcome"; asked at the apex it 404s
     // for EVERY vault-hosted relation, `after` is `null`, and the guard concludes `verified =
     // true` without ever having looked at the vault. A guard that cannot fail is not a guard.

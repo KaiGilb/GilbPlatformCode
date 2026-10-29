@@ -1,4 +1,4 @@
-// Cycle145 — THE END-RELATION READ-BACK GUARD WAS ASKING THE APEX, SO IT COULD NOT FAIL.
+// THE END-RELATION READ-BACK GUARD WAS ASKING THE APEX, SO IT COULD NOT FAIL.
 //
 // `endRelation` deliberately does not trust the status code (DEF-6, 2026-08-16: the vault
 // answered `201 changed:true` for a connection it never touched). Its guard (2) re-reads the
@@ -6,7 +6,7 @@
 //
 //     readRelationDoc(id)          // ← no `at`
 //
-// and `vaultOriginOf(null)` is `BASE_ORIGIN` — the apex. Since C144, Base resolves an id at the
+// and `vaultOriginOf(null)` is `BASE_ORIGIN` — the apex. Base now resolves an id at the
 // host the request NAMED and at no other (`src/read/entity-uri.ts`, Ann's 2026-07-19 ruling
 // 3P.C.EveryEntityInNamedVault.Base), so that read 404s for EVERY vault-hosted relation. `after`
 // is `null`, `null` reads as "gone", and the guard reports `verified: true` — always, without
@@ -18,7 +18,7 @@
 // corrected it raises `RelationSurvivedEndError`, which is what a person needs to be told.
 //
 // ⚠ WHY A NEW FILE RATHER THAN AN ARM ON `relationEnd.def6.test.ts`. That harness models the
-// PRE-C144 server: its `resolveById` widens across hosts by id tail, so an apex read-back finds
+// OLDER server: its `resolveById` widens across hosts by id tail, so an apex read-back finds
 // the relation there and the missing `at` is invisible. Base no longer does that, and the
 // drift is precisely what let this ship. This fixture models the CURRENT server — one host,
 // one URI, no widening — and is deliberately kept beside the older one rather than editing it.
@@ -33,7 +33,7 @@ vi.mock("@kaigilb/gilbplatformcode-lws-records", async (orig) => ({ ...(await or
 import { endRelation, RelationSurvivedEndError } from "./relationWrite";
 import { setUp, tearDown } from "../test/support";
 
-/** The vault that HOLDS the connection. Nothing answers anywhere else — the C144 disposition. */
+/** The vault that HOLDS the connection. Nothing answers anywhere else — the per-vault disposition. */
 const VAULT = "https://admin.platform.example.test/base";
 const VAULT_ORIGIN = "https://admin.platform.example.test";
 const REL_ID = "readbackdoor00000001";
@@ -132,7 +132,7 @@ describe("C145 — endRelation's read-back guard asks the vault that holds the c
   });
 
   it("🔴 the relation's OWN URI outranks the named vault — they are not the same address", async () => {
-    // ⚠ VATester F5: with `VAULT` and `REL_URI` on one origin, "own URI wins" and "the named vault
+    // ⚠ With `VAULT` and `REL_URI` on one origin, "own URI wins" and "the named vault
     // wins" are indistinguishable and `includes("://")` is dead code the file cannot see. Name
     // a DIFFERENT vault on the act: the relation still resolves at its own host, because its URI
     // is an address and the vault argument is only the fallback for an id that has none.
@@ -151,7 +151,7 @@ describe("C145 — endRelation's read-back guard asks the vault that holds the c
 
   it("🔴 a 404 on the END is NOT a verified end — it may just be the wrong vault", async () => {
     // ⚠ The 404 branch used to return `verified: true` on the reading "the route 404s only
-    // after the write predicate passed, so this is an honest nothing-to-end". Since C144 that
+    // after the write predicate passed, so this is an honest nothing-to-end". Now that
     // reading is unsound: an id resolves ONLY at the host the request named, so a connection
     // held elsewhere 404s here while existing perfectly well. `verified` must therefore be
     // `null` — the confirming read did not run — and `changed` false is what says nothing

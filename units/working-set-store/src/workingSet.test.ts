@@ -11,8 +11,8 @@ import {
   type WorkingSetRef,
 } from "./workingSet";
 
-// The transient, NON-AUTHORITATIVE working-set id-index (4Sol.S.Arch.WorkingSetReplicaCache,
-// VDS-2 Slice 2A shape). Under jsdom `indexedDB` is absent, so these exercise the in-memory
+// The transient, NON-AUTHORITATIVE working-set id-index (4Sol.S.Arch.WorkingSetReplicaCache).
+// Under jsdom `indexedDB` is absent, so these exercise the in-memory
 // fallback path — but every assertion is over the public API, so the behaviour is identical
 // whichever backend is live. The vault stays the single source of truth: this index only holds
 // opaque id pointers + type/updatedAt used to draw a placeholder row before hydrate.

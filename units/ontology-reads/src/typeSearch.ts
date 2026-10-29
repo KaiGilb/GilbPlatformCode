@@ -144,7 +144,7 @@ interface WireTerm {
  * ⭐ THE DEFAULT BINDING — the server-side term search (`GET /base/terms`, Base b24aa37).
  *
  * ── WHAT THIS REPLACES, AND WHY IT HAD TO ────────────────────────────────────────────
- * The previous binding downloaded `/base/vocab` and searched it in the browser. Kai reported
+ * The previous binding downloaded `/base/vocab` and searched it in the browser. A user reported
  * on 2026-08-08 that typing `pod` answered "No type or function matches" while the ontology
  * viewer showed a screen full of Vault terms. Measured cause — TWO independent filters, either
  * of which alone would have hidden almost everything:
@@ -156,12 +156,12 @@ interface WireTerm {
  *      old client fence offered only entities and functions.
  *
  * 35 → 1 → 0. This binding removes both: the route serves every adjudication state except
- * Deprecated (Kai: *"all types, functions, values, all of it, minus Deprecated"*), and the
+ * Deprecated (requirement: *"all types, functions, values, all of it, minus Deprecated"*), and the
  * plane fence is gone with the client-side classification that produced it.
  *
  * ── AND IT IS WHAT MAKES THE SURFACE SURVIVE THE CORPUS ──────────────────────────────
  * The whole-document fetch was capped at the document: measured 1,479,098 bytes for 826 types
- * and 21.8 MB / 2,557 ms on a corpus grown to 51k. Kai's stated horizon is ~15k then hundreds
+ * and 21.8 MB / 2,557 ms on a corpus grown to 51k. The stated horizon is ~15k then hundreds
  * of thousands. The response here is bounded by `pageSize` no matter how large the ontology
  * grows, because the ranking happens in Postgres against its BM25 index.
  *
@@ -241,7 +241,7 @@ function typeNameOf(h: WireTerm): string {
   return String(h.term ?? "").split("/").pop() ?? "";
 }
 
-/** How many hits to ask for. Kai, 2026-08-08: *"even 20 is a bit too much, the ideal search
+/** How many hits to ask for. 2026-08-08: *"even 20 is a bit too much, the ideal search
  *  result is 1-3 hits the user is actually looking for"* — so this is a ceiling on what a
  *  person is asked to read, not a page size to be paged through. There is no paging. */
 /** Ceiling the live search asks for — the “keep typing” note is about THIS number. */

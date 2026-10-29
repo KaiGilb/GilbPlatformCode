@@ -12,7 +12,7 @@
 //   2. master tag    unitTag, then tag, then the record's MAIN tag from the platform (`mainTag` option)
 //   3. identity human ids (BaseID) — email first, then subject, principal/alias/vault registration
 //   4. type nameField / bridges title · processName · name
-//   5. a file's own name  fileName (read-only; C210)
+//   5. a file's own name  fileName (read-only)
 //   6. entity URI id-tail (last resort when facts are thin but @id is known)
 //
 // Facts maps use bare LWS @vocab slugs (`label`, not `a:label`).
@@ -46,7 +46,7 @@ export const IDENTITY_DISPLAY_SLUGS = [
 export const BRIDGE_SLUGS = ["title", "processName", "name"] as const;
 
 /**
- * C210 (Kai's live test 2026-09-27) — a FILE's own name (`a:fileName`, Suggested on the master), a display
+ * A FILE's own name (`a:fileName`, Suggested on the master), a display
  * fallback. A file uploaded without a label showed its opaque id in the Nodes grid and "Untitled" in
  * the pane, because no slug above names a file. READ-ONLY on purpose: ⛔ not a BRIDGE slug —
  * `withCanonicalLabel` copies bridges into `a:label` on write, and a file name is not a label.
@@ -115,7 +115,7 @@ export function entityDisplayName(
   if (!facts && !opts?.entityUri) return fallback;
 
   if (facts) {
-    // 🔴 GAPP214.30b (D1): a record's own `a:name` comes BEFORE its `a:label`. A party record written
+    // 🔴 A record's own `a:name` comes BEFORE its `a:label`. A party record written
     // by GilbApp's create path holds its name under the legacy `a:label`; a rename writes `a:name`
     // (and retracts that label), so a label-first read kept showing the old name in the list. Keyed
     // on the FACT, ⛔ not on a list of kinds: a term document holds `a:label` and no `a:name`, so

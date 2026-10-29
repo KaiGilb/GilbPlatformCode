@@ -1,5 +1,5 @@
 /**
- * C210 N7 — the ONE door every folder link passes through (`writePairRelation`) runs the
+ * The ONE door every folder link passes through (`writePairRelation`) runs the
  * "folder is public → make the new link and member public" hook, whichever call site linked it
  * (add-to-folder, folder members, upload into a folder, connected create, graph, relation edit).
  *

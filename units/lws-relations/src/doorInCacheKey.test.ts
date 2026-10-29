@@ -1,4 +1,4 @@
-// Cycle145 — THE DOOR IS PART OF THE QUESTION, SO IT IS PART OF THE CACHE KEY.
+// THE DOOR IS PART OF THE QUESTION, SO IT IS PART OF THE CACHE KEY.
 //
 // This file guards carried item ①. It exists because the mutant tally said it had to:
 // reverting the door out of `relationsKey` / `useRecord`'s key left every acceptance arm
@@ -16,7 +16,7 @@
 // when the address finally arrives.
 //
 // That is not hypothetical. Measured on the reload trace for Ann's `Ann`
-// (`RecordGraph.vaqa145.test.tsx` VAQA-2, before the fix): 2 asks at the apex, 0 at the vault,
+// (`RecordGraph.vaqa145.test.tsx`, before the fix): 2 asks at the apex, 0 at the vault,
 // byte-identical over 25 s, no self-heal past `staleTime`.
 //
 // ⚠ THE HONEST SCOPE OF THIS FILE. The hop-walk gate (`useGraphNodeSet` → `seedReady`) is
@@ -26,7 +26,7 @@
 // the cache itself: any future path that learns an address late re-opens it silently. So the
 // guard below measures the PROPERTY — "a changed door is re-asked" — rather than waiting for
 // a second surface to rediscover it the way five previous symptoms in this family did.
-// ⛔ It is NOT cited as evidence that Ann's reload symptom is fixed. VAQA-2 is that evidence.
+// ⛔ It is NOT cited as evidence that Ann's reload symptom is fixed. That trace is that evidence.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { relationsKey } from "./relations";

@@ -1,4 +1,4 @@
-// Full relation document read — Cycle140 edge pane.
+// Full relation document read — edge pane.
 // GET /base/r/:id is DPoP-mandatory (same gate as GET /base/e/:id). A plain Bearer
 // resolves to anonymous → C2b 404 non-disclosure. Never treat that 404 as "no relation".
 
@@ -16,7 +16,7 @@ export interface RelationDoc {
   /** Vault-side extras keyed as stored (a:status, a:location, a:occurredAt, …). */
   extras: Record<string, unknown>;
   /**
-   * C214 PR #363 r2 — every role of the relation OTHER than `role:source`/`role:target`, keyed as read (`role:<name>`), each value an
+   * Every role of the relation OTHER than `role:source`/`role:target`, keyed as read (`role:<name>`), each value an
    * absolute `{ "@id" }` (or an array of them). A rewrite of the relation carries these over (`relationHeldFacts.ts`). Absent = none.
    */
   otherRoles?: Record<string, unknown>;
@@ -40,7 +40,7 @@ function vaultBaseFromDocId(docId: unknown): string | null {
 /**
  * The absolute URI a role value names.
  *
- * 🔴 C145 — EXPANDS THE `base:` CURIE. `GET /base/r/:id` returns member refs COMPACTED against
+ * 🔴 EXPANDS THE `base:` CURIE. `GET /base/r/:id` returns member refs COMPACTED against
  * the vault's own `@context` (`{"@id": "base:e/ann-…"}`) — correct JSON-LD, and this client
  * was reading the raw string as if it were a URI. Measured consequence, with the shipped
  * `memberEntityUri`:
@@ -141,7 +141,7 @@ async function getRelationJson(url: string): Promise<{ status: number; json: Rec
 /**
  * Read a relation's full document, **at the vault that holds it**.
  *
- * 🔴 C145 — THE DOOR. This function used to call `BASE_RELATION_URL(id)` with no second
+ * 🔴 THE DOOR. This function used to call `BASE_RELATION_URL(id)` with no second
  * argument, so `vaultOriginOf(null)` re-addressed every relation at `baseOrigin` — the apex.
  * Base resolves an id at the host the request NAMED and at no other
  * (`resolveEntityUriById`, the owner's 2026-07-19 ruling 3P.C.EveryEntityInNamedVault.Base), so a
@@ -158,7 +158,7 @@ async function getRelationJson(url: string): Promise<{ status: number; json: Rec
  * @param relationIdOrUri the relation's own fully-qualified URI (preferred — it IS the
  *   address), or a bare opaque tail.
  * @param at the vault to ask when only a tail is held — e.g. the vault the shell is reading.
- *   `null`/omitted with a bare tail falls back to {@link baseOrigin}, the pre-C144 reach,
+ *   `null`/omitted with a bare tail falls back to {@link baseOrigin}, the earlier reach,
  *   which is correct only for a single-host dev rig.
  */
 export async function readRelationDoc(

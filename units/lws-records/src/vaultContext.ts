@@ -1,5 +1,5 @@
 /**
- * 🔴 Cycle161 `S31` — THE VAULT'S OWN `@context`, READ RATHER THAN RE-DECLARED.
+ * 🔴 THE VAULT'S OWN `@context`, READ RATHER THAN RE-DECLARED.
  *
  * ── WHY THIS FILE EXISTS ──────────────────────────────────────────────────────────────────────
  * Base's `@context` does not only PREFIX. It also **RENAMES**. Measured on the live master
@@ -63,7 +63,7 @@ export interface VaultContextTerm {
   /**
    * True when the term declares `"@type": "@id"` ⇒ its served value is a REFERENCE, compacted to a
    * bare string CURIE (`"base:e/…"`) rather than `{"@id": …}`. Readers expand it; additive, so
-   * existing callers are unaffected (Cycle211, BVedanta: `fvParent` refs read as unexpanded strings).
+   * existing callers are unaffected (`fvParent` refs read as unexpanded strings).
    */
   readonly idValued?: boolean;
 }
@@ -104,7 +104,7 @@ export function parseVaultContext(doc: unknown): VaultContextTerms {
 }
 
 /**
- * 🔴 GAPP214.42 F2/B1 — ONE read of a context document gives its terms AND its prefixes.
+ * 🔴 ONE read of a context document gives its terms AND its prefixes.
  *
  * `answered` is false when the document could not be read (an error status, no answer within
  * {@link VAULT_CONTEXT_READ_MS}, a body that is not JSON). A caller that needs a term's type to
@@ -186,7 +186,7 @@ export async function loadVaultContext(ref: unknown): Promise<VaultContextTerms>
 }
 
 /**
- * GAPP214.42 (N1) — the PREFIXES a `@context` declares (`"base": "https://<host>/base/"`), the
+ * The PREFIXES a `@context` declares (`"base": "https://<host>/base/"`), the
  * plain-string entries {@link parseVaultContext} skips.
  *
  * @param doc a parsed context document, or a bare context object
@@ -213,12 +213,12 @@ export function resetVaultContextCache(): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// 🔴 Cycle161 `S35` — THE STORED SPELLING COMES FROM THE VAULT'S OWN DATOM LOG.
+// 🔴 THE STORED SPELLING COMES FROM THE VAULT'S OWN DATOM LOG.
 //
 // ── WHAT `S33` SHIPPED, AND WHY IT NEVER FIRED ────────────────────────────────────────────────
 // `S33` asked the ontology master `GET <master>/base/a/<slug>` and read `404` as *"the master
 // binds no `a:<slug>`"*. A positive control taken from the vault's own `@context` was supposed to
-// prove the route could say `bound` as well as `unbound`. [[Cycle161-QA-Base-ReachableRefusalsAgainstServedApps-71fa3bc-8ba4797-IndependentQA-2026-09-03-PARTIAL]]
+// prove the route could say `bound` as well as `unbound`.
 // §3 drove the shipped code against the live vault and measured the arm's population effect:
 //
 //     368 bound · 32 unknown · ZERO unbound, over 418 wire keys — the arm fired on NONE of them.
@@ -270,7 +270,7 @@ export function resetVaultContextCache(): void {
 // carries the one `a:c_geometry` row the earlier manufacture already put in production (2026-08-21)
 // ALONGSIDE its bare `c_geometry`. The app cannot faithfully reproduce a two-spelling fact from a
 // single merged wire key, so it does ⛔ not choose: it keeps today's behaviour on that entity and
-// touches the standing row not at all (Kai's §14 ruling — ⛔ no data repair). Named as a residual
+// touches the standing row not at all (⛔ no data repair). Named as a residual
 // rather than resolved by preference.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -298,7 +298,7 @@ export type StoredSpelling =
  * checks is a claim, not a control** — the same defect class `BaseRecord.opaqueFacts` above
  * records being caught THREE times before it was replaced by a type.
  *
- * ── 🔴 Cycle161 `D` — WHY THIS IS AN OMISSION AND ⛔ NOT A RETRACTION ─────────────────────────
+ * ── 🔴 WHY THIS IS AN OMISSION AND ⛔ NOT A RETRACTION ─────────────────────────
  * {@link storedSpellingFor} carries an assembled key VERBATIM, which the `S31` comment above
  * calls *"fail-closed at the term-admission guard"*. Fail-closed was the right direction and the
  * wrong resting place: the guard is now ARMED on `base`, so a full-state PUT of ANY ontology / FV
@@ -530,14 +530,14 @@ export async function resolveStoredSpellings(
 export function vaultContextUrl(at: string | null | undefined): string {
   // The vault's own door, as every other call to the vault reaches it ({@link vaultOriginOf}): on a
   // local rig a `https://<name>.rig.example.test:<port>` vault is served over http, so `new URL(at).origin`
-  // failed TLS there and the context was never read (VATester .42 rig posture, 16 failed reads).
+  // failed TLS there and the context was never read.
   return `${vaultOriginOf(at)}/base/context.jsonld`;
 }
 
 /**
  * The ASSEMBLED buckets of one document that are SAFE TO OMIT from a write body.
  *
- * ── 🔴 Cycle161 `D` r4 — THE ONLY TWO SAFE ANSWERS ARE *OMIT* AND *SAY NOTHING* ───────────────
+ * ── 🔴 THE ONLY TWO SAFE ANSWERS ARE *OMIT* AND *SAY NOTHING* ───────────────
  * `r3` had a third arm: when the vault's log held a live row under the bucket's `@id`, it wrote
  * the bucket's value under that `@id`. Independent QA showed that is a **FABRICATION**, and a
  * landing one — all seven `@id`s are ADMITTED, so it would not even be refused. The presence
@@ -549,7 +549,7 @@ export function vaultContextUrl(at: string | null | undefined): string {
  *
  * ⚠ **AND THAT ALSO ENDS THE CHOOSING.** `r3` picked a winner when two spellings were live; the
  * loser was retracted. That contradicted the standing ruling this file already records for
- * `osm-r-406091` (Kai's §14 — the app does ⛔ not choose between two live spellings). It no
+ * `osm-r-406091` (the app does ⛔ not choose between two live spellings). It no
  * longer chooses, because it no longer writes.
  *
  * ── SO THE POLICY IS, IN FULL ─────────────────────────────────────────────────────────────────

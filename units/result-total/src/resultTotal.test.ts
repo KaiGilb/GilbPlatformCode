@@ -1,4 +1,4 @@
-// The DISCLOSED total reader — Base Cycle144 client half.
+// The DISCLOSED total reader — Base client half.
 //
 // Carrier: 3P.C.ResultTotal.DisclosedApproximationAndExactOnRequest.Base.
 // 🔴 THE PROPERTY UNDER TEST IS THE NO-LIE INVARIANT: there is no input to this

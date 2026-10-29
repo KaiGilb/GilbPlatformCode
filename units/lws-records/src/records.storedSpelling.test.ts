@@ -1,9 +1,9 @@
 /**
- * 🔴 Cycle161 `S35` — THE RECORDS PLANE DOES NOT MANUFACTURE A STORED SPELLING, AND THE ARM
+ * 🔴 THE RECORDS PLANE DOES NOT MANUFACTURE A STORED SPELLING, AND THE ARM
  * THAT STOPS IT FIRES AGAINST WHAT PRODUCTION ACTUALLY SERVES.
  *
  * ── WHY THIS FILE WAS REWRITTEN, AND WHAT ITS PREDECESSOR MISSED ──────────────────────────────
- * `S33` shipped an arm that never fired. [[Cycle161-QA-Base-ReachableRefusalsAgainstServedApps-71fa3bc-8ba4797-IndependentQA-2026-09-03-PARTIAL]]
+ * `S33` shipped an arm that never fired. The independent QA
  * §3 drove the shipped code against the live vault and measured **368 bound · 32 unknown · ZERO
  * unbound over 418 wire keys** — the arm fired on none of them, because the positive control was
  * the first un-renamed `a:` term of the served `@context`, which on every vault is `type → a:type`,
@@ -70,7 +70,7 @@ const SERVED = {
   name: "Oslo",
   notationKind: "osm",
   shows: "SELECT 1",
-  // 🔴 Cycle161 `D` — AN ASSEMBLED `@set` BUCKET, because production serves these on this very
+  // 🔴 AN ASSEMBLED `@set` BUCKET, because production serves these on this very
   // route: Base frames `GET /lws/r/:id` with the SAME `frameEntity` as the ontology plane, and
   // `readRecord` copies every served key into `facts` + `servedKeys`. A fixture without one
   // cannot see the defect, which is exactly why it went unseen until QA measured it.
@@ -183,7 +183,7 @@ describe("records plane — the stored spelling comes from the vault's own `@con
 
   it("readRecord records the served slugs, which is the provenance the write needs", async () => {
     const { rec } = await roundTrip();
-    // ⚠ `functions` IS here on purpose (Cycle161 `D` widened the fixture). The READ is faithful
+    // ⚠ `functions` IS here on purpose. The READ is faithful
     // — it records every slug the vault served, assembled buckets included, because that is the
     // provenance. The omission is a WRITE-side decision and belongs to the write test below;
     // thinning the read instead would lose the fact that the vault sent it at all.
@@ -227,7 +227,7 @@ describe("records plane — the stored spelling comes from the vault's own `@con
     // `geo.platform.example.test/base/e/osm-r-406091` really carries the one `a:c_geometry` row the earlier
     // manufacture put in production (2026-08-21) BESIDE its bare `c_geometry`. The app cannot
     // reproduce a two-spelling fact from one merged wire key, so it keeps today's behaviour
-    // there rather than guessing — and touches the standing row not at all (Kai's §14 ruling).
+    // there rather than guessing — and touches the standing row not at all (no data repair).
     historyDatoms = [
       { attribute: "c_geometry", op: 1, tx_to: null },
       { attribute: manufactured("c_geometry"), op: 1, tx_to: null },

@@ -1,9 +1,9 @@
 // @vitest-environment node
-// Agent.Scaling Delta10 B1 (GilbApp, Cycle214 1e) — a credential went to whatever host a URI named.
+// A credential went to whatever host a URI named.
 // `vaultOriginOf` returned the origin of ANY http(s) URI, so the members find (DPoP, since 9dea5f1) and
 // `readRecord` (plain Bearer, before that) sent the user's token to `evil.example`, `platform.example.test.evil.example`,
 // `evilplatform.example.test`, `hytta.platform.example.test@evil.example`, a foreign port, plain http and `169.254.169.254`.
-// Kai-Zen decision (2026-10-15; Kai may change it): credentials go ONLY to the platform's own hosts — the
+// Decision (2026-10-15): credentials go ONLY to the platform's own hosts — the
 // apex BASE_ORIGIN and its subdomains, over https on the default port. Every other host is asked at the apex.
 // REAL: config.ts (vaultOriginOf, the one platform-host rule) at `build:prod`'s values, entityRefChildren.ts,
 // attributeFind.ts, dpop.ts (real ES256 proof, real htuFor), records.ts readRecord, entityRefFacts.ts.
@@ -44,7 +44,7 @@ function onPlatform(url: string): boolean {
 interface Sent { url: string; auth: string | null; htu: string | null }
 const sent: Sent[] = [];
 
-/** Agent.Scaling's ten parent URIs (Delta10 probe H), with the host each must be asked at. */
+/** The ten parent URIs (Delta10 probe H), with the host each must be asked at. */
 const TEN: [what: string, uri: string, askedAt: string][] = [
   ["control: a vault host", "https://hytta.platform.example.test/base/e/06gkparent", "https://hytta.platform.example.test"],
   ["control: geo", "https://geo.platform.example.test/base/e/osm-r-1", "https://geo.platform.example.test"],

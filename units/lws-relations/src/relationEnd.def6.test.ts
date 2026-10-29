@@ -1,6 +1,6 @@
 // 🔴 DEF-6 REGRESSION GATE — `End relation` reported success while the relation survived.
 //
-// Found by independent QA (Cycle140 §i.3) writing to a real vault and reading back ON THE WIRE,
+// Found by independent QA writing to a real vault and reading back ON THE WIRE,
 // then confirmed first-hand in the PRODUCTION STORE `base` on M1, 2026-08-16:
 //
 //   https://admin.platform.example.test/base/r/156ebd6f810b0858b8d43a013d   t:PartOf
@@ -49,7 +49,7 @@ import { setUp, tearDown } from "../test/support";
  *
  * ⚠ Without this the gate loads the catalog over `fetch`, gets nothing, falls back to
  * `emptyStale()` and refuses EVERY off-fast-path CURIE — the under-seeding trap QA traced in
- * Cycle140 §c, where two `connectedCreate.test.ts` failures looked like a production defect
+ * §c, where two `connectedCreate.test.ts` failures looked like a production defect
  * and were a test-environment artefact. `t:PartOf` is on the real live user plane (measured
  * 2026-08-16: `part-of` is one of its five roots, and a childless one).
  */

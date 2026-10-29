@@ -1,4 +1,4 @@
-// C209 — VATester GPLAT209.2 F2: a vault holder who is not a deployment owner, and every Control holder,
+// A vault holder who is not a deployment owner, and every Control holder,
 // could make an item PUBLIC (the per-item share admits them) and could ⛔ not make it private: the
 // W-FIELD PATCH needs a DATA write-grant and refuses them 403. W-FIELD stays the act; ONLY on that 403
 // is the grant taken back through GilbPlatform `POST /base/authz/revoke-direct`, at the item's OWN vault.

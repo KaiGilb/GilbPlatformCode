@@ -12,14 +12,14 @@ export interface FacetBucket {
 /** The Find result — the DISCLOSED total + the ranked entity-URI page (+ optional facets). */
 export interface SearchResult {
   /**
-   * 🔴 Cycle144 — the DISCLOSED total: the figure AND what it is
+   * 🔴 The DISCLOSED total: the figure AND what it is
    * ([3P.C.ResultTotal.DisclosedApproximationAndExactOnRequest.Base]). `null` when the
    * server established none. ⛔ NEVER read `.value` without `.kind`; use
    * `exactCount()` for a census and `formatResultTotal()` for anything a human reads.
    */
   total: ResultTotal | null;
   /**
-   * 🔴 Cycle161 — the OPAQUE keyset continuation, or `null` when this page IS the whole
+   * 🔴 The OPAQUE keyset continuation, or `null` when this page IS the whole
    * answer. Feed it back as `?cursor=` to get the next page.
    *
    * ⚠ `undefined` and `null` mean DIFFERENT things and the difference is load-bearing:
@@ -30,7 +30,7 @@ export interface SearchResult {
    */
   next?: string | null;
   /**
-   * ⚠ EXACT-ONLY and OPTIONAL since Cycle144 — present IFF the total is a census.
+   * ⚠ EXACT-ONLY and OPTIONAL — present IFF the total is a census.
    * ⛔ `undefined` is PRESERVED here on purpose: the old parse collapsed it to `0`,
    * which is indistinguishable from "no matches" and made `narrowTotal`'s correct
    * missing-total branch dead code on this route.
@@ -65,7 +65,7 @@ export function idFromEntityUri(uri: string): string {
 }
 
 /**
- * Cycle165 BAPP165.R6 — F-TEXT named types. Bare local names (`NoteDocument`), ⛔ not `t:`.
+ * F-TEXT named types. Bare local names (`NoteDocument`), ⛔ not `t:`.
  * Empty / blank is a miss.
  */
 export function bareTypeNames(types: readonly string[] | null | undefined): string[] {
@@ -77,7 +77,7 @@ export function bareTypeNames(types: readonly string[] | null | undefined): stri
  * conjunct on the wire, still vault-scoped and still authorization-filtered row-by-row by the
  * server.
  *
- * 🔴 IT IS A NAMED VALUE, ⛔ an empty array, and that distinction is the whole of Cycle165 R6.
+ * 🔴 IT IS A NAMED VALUE, ⛔ an empty array, and that distinction is the whole point.
  * R6 ruled that "empty types is a miss, ⛔ not an untyped BM25 fetch" — the concern being that a
  * page of rows nobody scoped should never be what an empty array silently DECAYS into. Passing
  * `UNTYPED_FIND` cannot happen by accident: an empty list, a filtered-to-nothing list and an
@@ -102,7 +102,7 @@ export const UNTYPED_FIND = "untyped-find" as const;
  * SearchUnavailableError, which now means what it says. Bodies are NOT returned — hydrate
  * the ids via `GET /lws/r/<id>` (readRecord).
  *
- * Cycle165 BAPP165.R6 — `types` is required. Empty types is a miss (no fetch). Each bare
+ * `types` is required. Empty types is a miss (no fetch). Each bare
  * name is sent as `type=<TYPE_BARE>`. ⛔ Untyped BM25 is not the identity of a row.
  */
 export async function searchEntities(
@@ -111,15 +111,15 @@ export async function searchEntities(
   facet?: string,
   /** Optional vault namespace URI — scopes the Find to the vault the SPA is browsing. */
   vaultId?: string | null,
-  /** 🔴 Cycle127 · BAPP127.1-M — `"prefix"` asks the vault to match from the START of a word
-   * (`?match=prefix`, Base Cycle128 A′ → `paradedb.phrase_prefix` with an UNCAPPED expansion).
+  /** 🔴 `"prefix"` asks the vault to match from the START of a word
+   * (`?match=prefix` → `paradedb.phrase_prefix` with an UNCAPPED expansion).
    * ⚠ Omitted keeps the shipped whole-token BM25 for every existing caller — the route's own
    * default is `text`, so no current surface changes shape. */
   match?: "text" | "prefix",
-  /** 🔴 Cycle161 — the opaque `next` from the previous page. Omitted ⇒ the FIRST page,
-   * byte-identical to every pre-Cycle161 call. */
+  /** 🔴 The opaque `next` from the previous page. Omitted ⇒ the FIRST page,
+   * byte-identical to every earlier call. */
   cursor?: string | null,
-  /** Cycle211 — `anonymous: true` asks with NO token (a public vault, nobody signed in). The
+  /** `anonymous: true` asks with NO token (a public vault, nobody signed in). The
    * vault's public-read grant is then the only authority; everything else is this same client. */
   opts?: { anonymous?: boolean },
 ): Promise<SearchResult> {
@@ -127,7 +127,7 @@ export async function searchEntities(
   const typeNames = bareTypeNames(types);
   if (typeNames.length === 0) {
     // F-TEXT miss: ⛔ not an untyped BM25 fetch. Empty is complete.
-    // 🔴 Cycle165 R6 STANDS, UNCHANGED. Naming no type here is still a MISS and still issues no
+    // 🔴 THE RULE STANDS, UNCHANGED. Naming no type here is still a MISS and still issues no
     // request. A caller that genuinely wants the vault searched without a type conjunct must say
     // so by passing `UNTYPED_FIND` — a named value a reader and a reviewer can both see at the
     // call site. ⛔ Do not "fix" this branch by falling through to the untyped fetch.
@@ -174,7 +174,7 @@ async function issueFind(
   if (facet) params.set("facet", facet);
   if (vaultId) params.set("vault", vaultId);
   if (match === "prefix") params.set("match", "prefix");
-  // 🔴 Cycle161 — the continuation. ⛔ Only ever a token THIS ROUTE issued (Base refuses a
+  // 🔴 The continuation. ⛔ Only ever a token THIS ROUTE issued (Base refuses a
   // hand-made one with a 400 rather than serving page 1), so it is passed through opaquely
   // and never constructed here.
   if (cursor) params.set("cursor", cursor);
@@ -202,7 +202,7 @@ async function issueFind(
   if (res.status === 403) throw new SearchUnavailableError("403");
   if (!res.ok) throw new SearchUnavailableError(String(res.status));
   const body = (await res.json()) as { total?: unknown; count?: unknown; ids?: string[]; facets?: FacetBucket[]; next?: unknown };
-  // 🔴 Cycle144 — read `total`, and PRESERVE an absent `count`. `?? 0` here was the
+  // 🔴 Read `total`, and PRESERVE an absent `count`. `?? 0` here was the
   // single highest-leverage defect in this repo: it turned "the server declined to
   // establish a census" into "zero matches", and every surface downstream inherited it
   // — including the Standards tab, which printed "the vault found nothing matching X"

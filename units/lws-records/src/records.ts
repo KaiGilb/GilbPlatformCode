@@ -33,7 +33,7 @@ export interface BaseRecord {
   /** The typed facts, keyed by BaseVeda attribute slug (bare, e.g. `title`). */
   facts: Record<string, string>;
   /**
-   * 🔴 Cycle161 `S33` — the slugs in {@link facts} that came off THE VAULT'S OWN served document.
+   * 🔴 The slugs in {@link facts} that came off THE VAULT'S OWN served document.
    *
    * A write may only carry a bare key VERBATIM when the vault demonstrably stores something under
    * it; for a slug this app AUTHORS, this app's `a:` convention stands. That distinction is
@@ -50,7 +50,7 @@ export interface BaseRecord {
    */
   servedKeys?: readonly string[];
   /**
-   * 🔴 Cycle159 — the slugs in {@link facts} whose string is a STAND-IN, not the value.
+   * 🔴 The slugs in {@link facts} whose string is a STAND-IN, not the value.
    *
    * `factToString` must hand the typed editor a string, and for a value it cannot express as
    * one (a language map, a structured scale, a condition record) the string it hands over is
@@ -97,7 +97,7 @@ export interface BaseRecord {
   /** The strong ETag (`"sha256:<hash>"`) — the If-Match token for the next write. */
   etag: string | null;
   /**
-   * 🔴 GAPP214.42 (N1) — the facts AS THE VAULT SERVED THEM at {@link readRecord}, before
+   * 🔴 The facts AS THE VAULT SERVED THEM at {@link readRecord}, before
    * `factToString` flattened them for the editor: a link stays `{"@id": …}`, a list stays a list.
    * A full-state write (the retype PUT, a share) sends these back for every fact the person did not
    * edit ({@link factsAsServed}); built from {@link facts} instead, a link was stored as text.
@@ -118,7 +118,7 @@ export interface ServedDocument {
   readonly context: unknown;
   /** The ETag the document was served with. */
   readonly etag: string | null;
-  /** GAPP214.42 A1 (BVedanta) — slugs the document served as `a:<slug>`, ⛔ not under the term's own
+  /** Slugs the document served as `a:<slug>`, ⛔ not under the term's own
    *  name. The context types a term by its own name only, so such a value is what was stored (text)
    *  and goes back as served ({@link factsAsServed}). Absent ⇒ none. */
   readonly prefixedKeys?: readonly string[];
@@ -135,7 +135,7 @@ export class RecordConflictError extends Error {
 
 /** 403 — the principal may not write this record (default-DENY at the D0 gate).
  *
- * 🔴 C152 — `reason` exists because the fixed sentence below is the CLIENT's guess at the
+ * 🔴 `reason` exists because the fixed sentence below is the CLIENT's guess at the
  * cause, and Base very often sends a better one ("You do not own parent vault …", "this
  * account's entitlement is off"). The refusal of an act of the owner's own authority must
  * say WHY, and the client does not know why — it only knows what the server said. The
@@ -161,7 +161,7 @@ export class RecordForbiddenError extends Error {
  * A fact value as the VAULT stores it — the datom value shapes the write door actually
  * accepts, not a client narrowing of them.
  *
- * Cycle107 · BAPP107.1 — WHY THIS WIDENED FROM `string`. Two of the vault's own step facts
+ * WHY THIS WIDENED FROM `string`. Two of the vault's own step facts
  * are NOT strings, and a `Record<string, string>` alias has no way to express them (read at
  * `~/Developer/Base` @ `284f3592449b13f4ee052b352b6b5a23bd6261c2` = its `origin/main`;
  * ⛔ read off source, not exercised against a vault in this increment):
@@ -226,7 +226,7 @@ async function throwForStatus(res: Response): Promise<never> {
     throw new NotSignedInError();
   }
   // ⚠ Read the body BEFORE the 403 branch — a Response body reads once, and the 403 is exactly
-  // the case whose sentence used to be dropped on the floor (C152). 412/428 keep their own
+  // the case whose sentence used to be dropped on the floor. 412/428 keep their own
   // fixed copy: a lost If-Match race has one meaning and the client can state it precisely.
   const detail = await res.text().catch(() => "");
   if (res.status === 403) throw new RecordForbiddenError(serverReasonOrNull(detail));
@@ -274,7 +274,7 @@ function factToString(value: unknown): string {
 }
 
 /**
- * 🔴 Cycle159 — did {@link factToString} CARRY this value, or STAND IN for it?
+ * 🔴 Did {@link factToString} CARRY this value, or STAND IN for it?
  *
  * ⚠ `factToString` is deliberately NOT changed. It is correct at its own job and three other
  * surfaces depend on its exact output (`StandardsSection.tsx:1244` says so in terms). The
@@ -354,13 +354,13 @@ function typeUriFromFrame(rawType: unknown): string {
  * strings are OMITTED (an unset attribute is absent, not an empty datom). Non-string
  * values pass through UNCHANGED — an `{"@id": …}` edge stays an object and an ordinal
  * stays a number, because that is what the vault matches and sorts on (see
- * {@link RecordFactValue}); C107-2 asserts both survive to the transmitted body with
+ * {@link RecordFactValue}); a test asserts both survive to the transmitted body with
  * `typeof` object and number. ⚠ The `!== ""` guard is a STRICT comparison, so the number 0
  * and the boolean false are kept; only the empty string and null/undefined are dropped. */
 async function toWireFacts(
   facts: RecordCreateFacts,
   source?: WriteSource,
-  /** GAPP214.42 (N1) — slugs whose `""` the vault SERVED (from {@link factsAsServed}): carried, ⛔ not
+  /** Slugs whose `""` the vault SERVED (from {@link factsAsServed}): carried, ⛔ not
    *  dropped as unset, or a full replace would retract a stored empty value nobody edited. */
   keepEmpty?: ReadonlySet<string>,
 ): Promise<Record<string, RecordFactValue>> {
@@ -369,7 +369,7 @@ async function toWireFacts(
   for (const [slug, value] of Object.entries(facts)) {
     if (value == null) continue;
     if (value === "" && !keepEmpty?.has(slug)) continue;
-    // 🔴 C161 `D` — `null` means the VAULT declared this key one it ASSEMBLES at read time. It
+    // 🔴 `null` means the VAULT declared this key one it ASSEMBLES at read time. It
     // names no stored fact, so it is OMITTED rather than carried into a REFUSED-BA200 that
     // would take the WHOLE full-state write down with it.
     const key = spell(slug);
@@ -379,7 +379,7 @@ async function toWireFacts(
 }
 
 /**
- * 🔴 Cycle161 `S33` — WHERE A SLUG CAME FROM, WHICH IS WHAT DECIDES ITS STORED SPELLING.
+ * 🔴 WHERE A SLUG CAME FROM, WHICH IS WHAT DECIDES ITS STORED SPELLING.
  *
  * `readRecord` strips ONE `a:` and hands the editor bare slugs, and every write below used to
  * re-mint `a:` + slug UNCONDITIONALLY ({@link attrKey}). Proved at a real door on an
@@ -425,7 +425,7 @@ export function writeSource(
 /**
  * Resolves one slug→stored-key function for a write. ⛔ No `source` ⇒ the pre-`S33` mint.
  *
- * 🔴 Cycle161 `D` — RETURNS `null` FOR A KEY THAT NAMES NO STORED FACT, meaning **omit it**.
+ * 🔴 RETURNS `null` FOR A KEY THAT NAMES NO STORED FACT, meaning **omit it**.
  *
  * ⚠ THIS ARM EXISTS BECAUSE A COMMENT OF MINE WAS CAUGHT CONTRADICTING ITS OWN CODE.
  * `namesNoStoredFact` shipped first on the ONTOLOGY plane only, under a docblock claiming an
@@ -455,12 +455,12 @@ export async function storedSpellings(
   // or datom log yields an empty map / `unknown`, under which every arm falls back to `a:` + slug.
   // A save must ⛔ never fail because the app could not reach a description of the vault.
   const ctx = await loadVaultContext(vaultContextUrl(source.at));
-  // 🔴 C161 `S35` — the vault's own datom log, ⛔ not the master's `/base/a/<slug>` route. See the
+  // 🔴 The vault's own datom log, ⛔ not the master's `/base/a/<slug>` route. See the
   // block comment in `vaultContext.ts`: that route is structurally blind to `base-internal` terms,
   // so it can neither report a BARE binding nor an internal `a:` one, and the arm it gated fired
   // on 0 of 418 wire keys in production.
   const spellings = await resolveStoredSpellings(source.at, asked);
-  // 🔴 C161 `D` r3 — the omission is gated on the VAULT'S OWN LOG, ⛔ not on the `@context` alone.
+  // 🔴 The omission is gated on the VAULT'S OWN LOG, ⛔ not on the `@context` alone.
   // Asking only the `@context` would drop a REAL `a:constraints` row (an ADMITTED spelling) on a
   // vault that happens to hold one — a silent retraction. {@link omittableAssembledKeys} answers
   // from presence in both directions: unreadable log ⇒ EMPTY ⇒ omit nothing.
@@ -483,8 +483,8 @@ function slugFromName(name: string | undefined): string | undefined {
 }
 
 /**
- * POST /lws/vault/:vaultId/c — server-mints a NEW record of `type` INTO THE NAMED (viewed) vault
- * (Cycle053 VDS-4 FIX-1). `vaultNamespace` is the vault's `vault_id` NAMESPACE (`ReachableVault.vaultId`),
+ * POST /lws/vault/:vaultId/c — server-mints a NEW record of `type` INTO THE NAMED (viewed) vault.
+ * `vaultNamespace` is the vault's `vault_id` NAMESPACE (`ReachableVault.vaultId`),
  * put in the request PATH; Base resolves it through the ONE write resolver and lands the create
  * in that vault iff the principal holds a whole-vault write grant on it — otherwise 403 (fail-closed,
  * NEVER the writer's own sign-in vault). Authorizes with the sender-constrained DPoP credential.
@@ -495,7 +495,7 @@ export async function createRecord(
   typeUriValue: string,
   facts: RecordCreateFacts,
   nameHint?: string,
-  /** C161 `S33` — where these slugs came from; omit for app-authored facts. {@link WriteSource} */
+  /** Where these slugs came from; omit for app-authored facts. {@link WriteSource} */
   source?: WriteSource,
 ): Promise<{ id: string; etag: string | null }> {
   const url = LWS_VAULT_CONTAINER_URL(vaultNamespace);
@@ -537,7 +537,7 @@ export async function createRecord(
  *   required so a site that discards the URI is a compile error, not a silent 404.
  */
 /**
- * Cycle214 M3f r6 (Kai-Zen ruling on Agent.Tester s117 F-1): every read is its own request. Round 5 joined reads of one record asked
+ * Every read is its own request. Round 5 joined reads of one record asked
  * within 250 ms of each other; a write made through another transport of the page (process steps, relations, notes, files) did not
  * end the join, so a read after such a write could answer the record as it was before it. The join is removed; the card open stays
  * at or below main without it (the Stakeholders pages name the record's own vault, `snapshotKeyParts`).
@@ -557,8 +557,8 @@ async function readRecordOnce(id: string, reqUrl: string): Promise<BaseRecord | 
 }
 
 /**
- * A record as {@link readRecord} gives it, from a document the vault served for it and its ETag (M3f r5: also a row of a listing read
- * with `?include=body`, which carries the very document and ETag `GET /lws/r/<id>` serves — GilbPlatform VDT 119 S5a).
+ * A record as {@link readRecord} gives it, from a document the vault served for it and its ETag (also a row of a listing read
+ * with `?include=body`, which carries the very document and ETag `GET /lws/r/<id>` serves — GilbPlatform).
  *
  * @param id the record's id
  * @param doc the served document
@@ -566,7 +566,7 @@ async function readRecordOnce(id: string, reqUrl: string): Promise<BaseRecord | 
  */
 export function recordFromServed(id: string, doc: Record<string, unknown>, etag: string | null): BaseRecord {
   const facts: Record<string, string> = {};
-  // 🔴 Cycle159 — recorded HERE, at the only place that still holds the served value. One
+  // 🔴 Recorded HERE, at the only place that still holds the served value. One
   // step later the object is gone and `""` is all there is, which is precisely how an
   // unreadable fact became an editable-looking empty field and then a retraction.
   const opaqueFacts: string[] = [];
@@ -578,7 +578,7 @@ export function recordFromServed(id: string, doc: Record<string, unknown>, etag:
     const slug = key.startsWith("a:") ? key.slice(2) : key;
     facts[slug] = factToString(value);
     served[slug] = value;
-    // GAPP214.42 A1 — which spelling the kept value was served under ({@link ServedDocument.prefixedKeys}).
+    // Which spelling the kept value was served under ({@link ServedDocument.prefixedKeys}).
     if (key.startsWith("a:")) prefixed.add(slug);
     else prefixed.delete(slug);
     if (!isFactStringFaithful(value)) opaqueFacts.push(slug);
@@ -591,7 +591,7 @@ export function recordFromServed(id: string, doc: Record<string, unknown>, etag:
     ...(typeWasSubstituted(doc["@type"]) ? { typeSubstituted: true as const } : {}),
     facts,
     opaqueFacts,
-    // 🔴 C161 `S33` — every slug here came off a document THE VAULT SERVED, which is the one
+    // 🔴 Every slug here came off a document THE VAULT SERVED, which is the one
     // fact a write needs to invert its stored spelling honestly rather than re-mint `a:` + it.
     // Recorded HERE because one step later the provenance is gone. Free: no extra request.
     servedKeys: Object.keys(facts),
@@ -614,7 +614,7 @@ export class ServedShortFormError extends Error {
 }
 
 /**
- * GAPP214.42 F2 — a fact served as a bare address may be a link (a term the vault types
+ * A fact served as a bare address may be a link (a term the vault types
  * `"@type": "@id"`) or text, and the vault's own context, which says which, could not be read.
  * Sent as text, a link would be stored as text, so nothing is written.
  */
@@ -638,7 +638,7 @@ const ABSOLUTE_IRI = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/;
 const SHORT_FORM = /^([A-Za-z][A-Za-z0-9_.-]*):(.*)$/s;
 
 /**
- * 🔴 GAPP214.42 (N1) — the facts a FULL-STATE write sends for a record: every fact the person did
+ * 🔴 The facts a FULL-STATE write sends for a record: every fact the person did
  * not edit EXACTLY as the vault served it, and the person's own edits as typed.
  *
  * Why: a full replace (`PUT /lws/r/:id`, the share act) retracts every fact it omits and stores what
@@ -661,7 +661,7 @@ const SHORT_FORM = /^([A-Za-z][A-Za-z0-9_.-]*):(.*)$/s;
  * document itself declares inline ({@link ServedShortFormError} otherwise: nothing is sent). A term
  * typed `"@type": "@id"` (served as a bare string) goes back as `{"@id"}`.
  *
- * 🔴 GAPP214.42 F2/B1 — the term types come from the VAULT'S OWN context (`vaultContextUrl(at)`),
+ * 🔴 The term types come from the VAULT'S OWN context (`vaultContextUrl(at)`),
  * ⛔ not from the document's `@context`: on `GET /lws/r` that is `https://www.w3.org/ns/lws/v1`
  * (404), so the id-valued arm never ran and every such write asked www.w3.org. The vault's context
  * is read once ({@link readVaultContext}: time limit, kept), and only when a kept fact is a bare
@@ -669,7 +669,7 @@ const SHORT_FORM = /^([A-Za-z][A-Za-z0-9_.-]*):(.*)$/s;
  * vault host's. Not read ⇒ such a fact may be a link we cannot tell ⇒
  * {@link ServedLinkUnreadableError}: nothing is sent.
  *
- * 🔴 GAPP214.42 A1 (BVedanta) — a term's type applies only to a value served under the term's OWN
+ * 🔴 A term's type applies only to a value served under the term's OWN
  * name. The read serves a link as `fvParent`; a value stored as TEXT under `a:fvParent` is served as
  * `a:fvParent` (the context's `"@type": "@id"` does not match it). That value goes back as served:
  * turning it into a link would change a value the person did not edit
@@ -808,7 +808,7 @@ export type MergePatchValue =
 /**
  * PATCH /lws/r/:id — JSON Merge Patch (RFC 7386). A `null` member deletes that attribute;
  * any other value replaces it. No `If-Match` by default (a targeted single-attribute edit).
- * GAPP214.30b (D1 W2): a save that RETRACTS a fact by identity passes `ifMatch`, the version it
+ * A save that RETRACTS a fact by identity passes `ifMatch`, the version it
  * read, so the write is conditional (GilbPlatform .25d, PR #455). GilbPlatform `main` honours
  * `If-Match` on PATCH (measured at `e6a09255`, `src/lws/crud.ts`: the precondition is compared
  * inside the write's transaction, a mismatch answers 412, and the response's `etag` is exposed
@@ -822,14 +822,14 @@ export async function patchRecord(
   id: string,
   patch: Record<string, MergePatchValue>,
   at: string | null,
-  /** C161 `S33` — where these slugs came from; omit for app-authored facts. {@link WriteSource} */
+  /** Where these slugs came from; omit for app-authored facts. {@link WriteSource} */
   source?: WriteSource,
   precondition?: { ifMatch?: string | null },
 ): Promise<{ etag: string | null }> {
   const spell = await storedSpellings(Object.keys(patch), source);
   const wire: Record<string, MergePatchValue> = {};
   for (const [slug, value] of Object.entries(patch)) {
-    // 🔴 C161 `D` — same omission as the full-replace path. ⚠ Measured before relying on it:
+    // 🔴 Same omission as the full-replace path. ⚠ Measured before relying on it:
     // NO caller passes an assembled bucket as a patch slug (0 non-test occurrences of all seven
     // as an object key), so this arm is a floor, ⛔ not a live behaviour change to the patch API.
     const key = spell(slug);

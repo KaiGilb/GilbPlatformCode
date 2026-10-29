@@ -23,8 +23,7 @@ export type AttributeFindPage = {
  * 🔴 `origin` is the host ASKED, and the route has no crossing: it answers only from the store of the
  * process at that host (Rule_Code_gilb-store-topology rule 3). The apex (`baseOrigin()`, `https://platform.example.test`
  * in production) reaches the `:8787` process and its `base` DB; a vault minted since 2026-08-20 lives in
- * `base_pods`, so a find about it asked at the apex answers "none" with no error (Agent.Scaling Delta8
- * B1). A caller reading ONE vault passes `vaultOriginOf(vaultId)`. The DPoP proof is minted for the URL
+ * `base_pods`, so a find about it asked at the apex answers "none" with no error. A caller reading ONE vault passes `vaultOriginOf(vaultId)`. The DPoP proof is minted for the URL
  * fetched, so it is signed for that host. Omitted = the apex (the shipped behaviour of other callers).
  */
 export async function findByAttribute(

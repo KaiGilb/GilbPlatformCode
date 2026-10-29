@@ -69,7 +69,7 @@ describe("searchEntities (GET /base/search)", () => {
   it("a body with neither total nor count establishes NO total — ⛔ not zero", async () => {
     fetchMock.mockResolvedValue(resp(200, { body: {} }));
     const out = await searchEntities("x", ["Note"]);
-    // 🔴 Cycle144. The old assertion was `{ count: 0, ids: [] }`, produced by
+    // 🔴 The old assertion was `{ count: 0, ids: [] }`, produced by
     // `body.count ?? 0`. That coalescing is the defect this landing removes: "the vault
     // established no total" and "the vault counted zero matches" are different facts, and
     // collapsing them printed "0 matches" — and, on the Standards tab, "the vault found

@@ -1,7 +1,7 @@
 /**
- * Cycle182 G4 — THE REGISTRY MAY CACHE A TERM'S LABEL; IT MAY NEVER DISAGREE WITH IT.
+ * THE REGISTRY MAY CACHE A TERM'S LABEL; IT MAY NEVER DISAGREE WITH IT.
  *
- * BVedanta ruling, 2026-09-16, on the G4 question referred to it as sole minter
+ * Ruling, 2026-09-16, on the G4 question referred to it as sole minter
  * ([[Rule_Code_gilbveda-ontology-master#RuleBvmasterSoleMinter]]):
  *   · the persisted type is `t:Person` and it is CORRECT — nothing in the backend writes `t:Contact`
  *     (positive control: the same sweep DID find `t:ContactPrivateNote`, so it can see the shape)
@@ -10,7 +10,7 @@
  *   · `t:Person`'s own `a:label` is "Person"
  *   ⇒ displaying "Contact" over `t:Person` is one word across two meanings: RuleBpontHomonym.
  *
- * ⚠ The cost is measured, not hypothetical. Kai read "Contact" on a correctly-typed record and
+ * ⚠ The cost is measured, not hypothetical. A user read "Contact" on a correctly-typed record and
  * filed an ontology defect at severity-highest against data that was right.
  *
  * ⛔ These tests assert the DERIVED shape — a spec's display label may not be another live term's
@@ -53,7 +53,7 @@ describe("Cycle182 G4 — the registry's label never contradicts the ontology", 
   it("a legacy record stored as t:Contact still RESOLVES — the read alias is untouched", () => {
     // ⛔ Dropping `aliasTypeNames` would make every pre-2026-07-15 row unresolvable. The alias is
     // the READ path and this pins that the label repair did not take it away.
-    // ⚠ BVedanta flags, and this increment does NOT close, that such a row renders identically to
+    // ⚠ Flags, and this increment does NOT close, that such a row renders identically to
     // a correct `t:Person` one — which hides how much of that debt exists. Owed, named, not fixed.
     expect(resolveType(typeUri("Contact"))?.typeName).toBe("Person");
   });

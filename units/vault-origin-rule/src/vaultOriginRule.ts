@@ -2,7 +2,7 @@ import { baseOrigin, localRigHosts, systemVaultHosts } from "@kaigilb/gilbplatfo
 import { vaultSegmentOf } from "./photoSegments";
 
 /**
- * 🔴 THE VAULT IS ON THE WIRE — CARRY IT (Cycle144).
+ * 🔴 THE VAULT IS ON THE WIRE — CARRY IT.
  *
  * Base serves MANY vaults from one process and routes each request to a vault BY THE HOST THE
  * REQUEST NAMES. An entity's canonical URI already carries that host
@@ -14,8 +14,8 @@ import { vaultSegmentOf } from "./photoSegments";
  * away, keep the trailing opaque id, and re-address it at {@link BASE_ORIGIN}. That asks the
  * WRONG DOOR. It only ever appeared to work because the server compensated by scanning every
  * vault for the id tail, which answered requests about vaults they had not named
- * (3P.C.EveryEntityInNamedVault.Base, Kai 2026-07-19 — DISQUALIFYING, not a trade-off) and which
- * mis-resolved on a tail collision (Cycle116 CHECK F-4: a granted caller got 403 deleting
+ * (3P.C.EveryEntityInNamedVault.Base, 2026-07-19 — DISQUALIFYING, not a trade-off) and which
+ * mis-resolved on a tail collision (a granted caller got 403 deleting
  * their OWN entity). That compensation is gone. A dereference now reaches the entity only if
  * the request names the entity's own host.
  *
@@ -40,7 +40,7 @@ export function vaultOriginOf(entityUri: string | null | undefined): string {
   try {
     const u = new URL(entityUri);
     if (u.protocol !== "https:" && u.protocol !== "http:") return baseOrigin();
-    // ⚠ SAME HOST -> BASE_ORIGIN VERBATIM, so the SCHEME is never flipped (Cycle145).
+    // ⚠ SAME HOST -> BASE_ORIGIN VERBATIM, so the SCHEME is never flipped.
     // Base mints vault and entity URIs as `https://…` even on a dev rig served over plain
     // a local rig origin. Returning `u.origin` there would re-address every collection
     // read at the rig's `https://` form — a port that is not listening for TLS — and dev would
@@ -66,8 +66,7 @@ export function vaultOriginOf(entityUri: string | null | undefined): string {
  *
  * ⚠ The URL is RESOLVED against BASE_ORIGIN first, as the browser's fetch would resolve it against the
  * page: a protocol-relative (`//evil.example/…`), backslashed or space-led URL that `new URL(url)` alone
- * cannot read was once passed on raw, and the browser sent it, credential and all, to the host it named
- * (Agent.Tester Delta10 F2-1).
+ * cannot read was once passed on raw, and the browser sent it, credential and all, to the host it named.
  *
  * @param url a URL from data; a non-http(s) scheme is returned as given (it reaches no vault)
  */
@@ -83,8 +82,7 @@ export function atVaultOrigin(url: string): string {
 }
 
 /**
- * 🔴 THE ONE PLATFORM-HOST RULE — which hosts may receive this app's credentials (Cycle214 1e,
- * Agent.Scaling Delta10 B1; Kai-Zen decision 2026-10-15, Kai may change it).
+ * 🔴 THE ONE PLATFORM-HOST RULE — which hosts may receive this app's credentials (decision 2026-10-15).
  *
  * Every vault call carries the user's token (a DPoP proof or a Bearer), and its host comes from
  * {@link vaultOriginOf} (a config.ts builder) or {@link atVaultOrigin} (a whole URL from data: the ontology
@@ -100,7 +98,7 @@ export function atVaultOrigin(url: string): string {
  * {@link systemOriginOf}, {@link credentialAllowedAt}).
  * The host is read from the parsed URL, so a userinfo part (`<user>@`) never decides it.
  *
- * LOCAL RIG ONLY (Cycle214 GAPP214.42, VKT-LocalRigVaultHostScheme-GilbApp). On a dev rig each
+ * LOCAL RIG ONLY. On a dev rig each
  * vault mints as `https://<name>.<rig host>:<port>` while the rig serves plain http on that port,
  * so the URI's scheme fails TLS and no vault call could succeed from a browser. When BASE_ORIGIN
  * is `http://<rig host>:<port>` (a host named by `setLocalRigHosts`) and the vault host is a subdomain of it on that SAME port,
@@ -109,7 +107,7 @@ export function atVaultOrigin(url: string): string {
  * the server rebuilds. A production build (`https://` BASE_ORIGIN) never takes this branch.
  *
  * ⚠ A custom domain (a vault outside BASE_ORIGIN's host family) is not a platform host here.
- * Adding one is Kai's decision; until then it is asked at the apex.
+ * Adding one is a platform decision; until then it is asked at the apex.
  *
  * @param u the parsed URI whose host is in question
  * @param base the parsed BASE_ORIGIN
@@ -133,7 +131,7 @@ function systemOriginOf(u: URL): string | null {
 }
 
 /**
- * Which platform STORE answers at an origin {@link vaultOriginOf} gave (Cycle214 M3c r5, Agent.Scaling M3c delta F1). A
+ * Which platform STORE answers at an origin {@link vaultOriginOf} gave. A
  * cross-vault read such as `find-by-attribute` scans the holder's whole reach in the store of the process at the host asked,
  * whatever the host; so it is asked once per store, not once per vault host. Production runs two processes with two databases
  * (Reference_Code_operating-environment-project-base-host-topology, measured 2026-09-08): the IDENTITY node serves the apex
@@ -193,13 +191,13 @@ function isSubdomainOf(host: string, parent: string): boolean {
 }
 
 /**
- * 🔴 THE DOOR FOR A DEREFERENCE — the entity's own URI when held, ELSE THE VAULT'S (Cycle147).
+ * 🔴 THE DOOR FOR A DEREFERENCE — the entity's own URI when held, ELSE THE VAULT'S.
  *
  * {@link vaultOriginOf} recovers the authority from a URI. This says WHICH URI to hand it, and
  * it exists because getting that precedence wrong is a silent 404, not an error.
  *
  * ⛔ The premise this replaces — written in three places on the dereference path and false in
- * all three — was *"no entity URI is held here, so keep the pre-C144 reach (`BASE_ORIGIN`)"*.
+ * all three — was *"no entity URI is held here, so keep the earlier reach (`BASE_ORIGIN`)"*.
  * `BASE_ORIGIN` is not a weaker reach; on production it is **the apex**, which Base routes to
  * exactly ONE vault. So `null` did not mean "ask more broadly", it meant "ask the one vault that
  * certainly does not hold this record". Measured on M1 PRODUCTION 2026-08-21 with one real
@@ -212,7 +210,7 @@ function isSubdomainOf(host: string, parent: string): boolean {
  *
  * ⇒ every record NOT already in the viewed vault's list cache — a search hit, a ⌘K jump, a
  * `?rec=` deep link, a folder member, a relation partner — opened blank in every vault except
- * the one the apex names. Kai, 2026-08-21: *"if I click any of the Oslo page goes blank"*.
+ * the one the apex names. A user, 2026-08-21: *"if I click any of the Oslo page goes blank"*.
  *
  * ⚠ **A `podId` IS a URI whose authority is the vault's host** (`https://<host>/base`), so
  * the vault namespace is a truthful door and needs no second primitive — the same reuse
@@ -238,7 +236,7 @@ export function recordDoor(
  * header in; a 1800 s /lws Bearer + the signed-in principal + vault + reachable vaults out. */
 export const sessionTokenUrl = () => `${baseOrigin()}/base/auth/session/token`;
 
-/** The session->DPoP-token bridge endpoint (Cycle053 VDS-2). Same cookie + CSRF gate as the
+/** The session->DPoP-token bridge endpoint. Same cookie + CSRF gate as the
  * Bearer bridge, PLUS the SPA's public DPoP JWK in the JSON body; a 1800 s `cnf.jkt`-bound
  * DPoP access token out. It is the credential the multi-vault nav authorizes its cross-vault
  * reads with — one sign-in yields a sender-constrained token that reaches the DPoP-mandatory
@@ -247,9 +245,8 @@ export const sessionDpopTokenUrl = () => `${baseOrigin()}/base/auth/session/dpop
 
 /** The DPoP-MANDATORY single-RELATION read (`GET /base/r/<id>`). Same compute-on-read handler
  * as `/base/e/<id>` (a relation is just an entity — Base `routes/read.ts`), so it likewise binds
- * `authenticatedPrincipal` (DPoP scheme only). VDS-2 reads it to surface the relation's own
- * `@type` — the adjudicated predicate verb the edge label renders (BVedanta typing gate,
- * Cycle054 VDS-2). The `<id>` is the relation's opaque id tail (already names its vault). */
+ * `authenticatedPrincipal` (DPoP scheme only). The relation pane reads it to surface the relation's own
+ * `@type` — the adjudicated predicate verb the edge label renders (typing gate). The `<id>` is the relation's opaque id tail (already names its vault). */
 export const BASE_RELATION_URL = (id: string, at?: string | null) =>
   `${vaultOriginOf(at)}${vaultSegmentOf(at)}/r/${id}`;
 
@@ -261,8 +258,8 @@ export const BASE_RELATION_URL = (id: string, at?: string | null) =>
 export const LWS_RESOURCE_URL = (id: string, at?: string | null) =>
   `${vaultOriginOf(at)}/lws/r/${id}`;
 
-/** The RELATIONS reverse-lookup surface (Base Cycle010 VDS-2) — `GET /base/e/<id>/relations`.
- * The record-detail read pane (Cycle004 VDS-1) reads it to show which relations a record
+/** The RELATIONS reverse-lookup surface — `GET /base/e/<id>/relations`.
+ * The record-detail read pane reads it to show which relations a record
  * participates in. It resolves on the SAME `/base` Bearer FLOOR the record read uses (Base
  * `routes/read.ts` readReverse) and is first-party-CORS allow-listed (Base `server/cors.ts`
  * isRelaxedBasePath), so the plain O.7 bridge Bearer reaches it cross-origin. The `<id>` is
@@ -281,16 +278,15 @@ const vaultSeg = (vaultId: string) => encodeURIComponent(vaultId);
 export const LWS_VAULT_RECORDS_URL = (vaultId: string) => `${vaultOriginOf(vaultId)}/lws/vault/${vaultSeg(vaultId)}/records`;
 
 /**
- * Cycle169 S10 — F-HELD, the ROW-LESS, PER-VIEWER TYPE CENSUS of the named vault:
- * `GET /lws/vault/<vaultId>/types` ([[Template_Code_base-value-io-find#F-HELD]]; S1 ruling
- * [[Cycle169-Adjudication-NamedTypesVsVaultHeldTypes-Base-2026-09-02]] K2). The `<CENSUS_DOOR>`
+ * F-HELD, the ROW-LESS, PER-VIEWER TYPE CENSUS of the named vault:
+ * `GET /lws/vault/<vaultId>/types` ([[Template_Code_base-value-io-find#F-HELD]]). The `<CENSUS_DOOR>`
  * the Lookup row names. Same vault-origin reach as the records door. ⚠ A Base that predates the
  * door answers 404 here — that 404 IS the capability probe (`listVaultHeldTypes` → null →
  * the shipped F-CAT sweep), never a HEAD and never a body-shape probe.
  */
 export const LWS_VAULT_TYPES_URL = (vaultId: string) => `${vaultOriginOf(vaultId)}/lws/vault/${vaultSeg(vaultId)}/types`;
 
-/** The vault-targeted CREATE surface — `POST /lws/vault/<vaultId>/c` (Base Cycle053 VDS-3). The vault
+/** The vault-targeted CREATE surface — `POST /lws/vault/<vaultId>/c`. The vault
  * NAMESPACE is an explicit PATH SEGMENT resolved by Base's ONE write resolver
  * (`resolveVaultTarget(…, "write")`), so a create lands in the NAMED (viewed) vault iff the
  * principal holds a whole-vault write grant on it — fail-closed (403 no-grant / 400 no-vault),
@@ -304,7 +300,7 @@ export const LWS_VAULT_TYPES_URL = (vaultId: string) => `${vaultOriginOf(vaultId
 export const LWS_VAULT_CONTAINER_URL = (vaultId: string) => `${vaultOriginOf(vaultId)}/lws/vault/${vaultSeg(vaultId)}/c`;
 
 /** The vault-targeted FILE-SET surface — `GET /lws/vault/<vaultId>/files`. Moved off
- * `/base/files` by VDS-7; it is on the same `/lws/*` Bearer floor + first-party CORS, so
+ * `/base/files`; it is on the same `/lws/*` Bearer floor + first-party CORS, so
  * no credential seam changed when it moved.
  * Origin is `vaultOriginOf(vaultId)`: the vaultId's authority IS the vault's host, so this
  * collection is asked of the node that holds it. The encoded path segment stays —

@@ -1,4 +1,4 @@
-// Cycle214 GAPP214.42 — a scratch vault's own host on the LOCAL rig is reachable from a browser.
+// A scratch vault's own host on the LOCAL rig is reachable from a browser.
 // VKT-LocalRigVaultHostScheme-GilbApp (winner DevLoopbackHttpVaultOrigin). Measured on the rig
 // (2026-10-06): a vault mints as `https://<name>.localhost:8787/vault`; the rig serves plain http,
 // so the URI's own scheme fails TLS, while `http://<name>.localhost:8787` answers every vault call.
@@ -46,7 +46,7 @@ describe("vaultOriginOf on the local rig: a loopback vault host on BASE_ORIGIN's
     expect(c.vaultOriginOf("https://localhost:8787/base")).toBe(DEV_ORIGIN);
   });
 
-  // Delta10 B1 (Cycle214 1e): a host outside BASE_ORIGIN's own family is asked at BASE_ORIGIN, never at
+  // A host outside BASE_ORIGIN's own family is asked at BASE_ORIGIN, never at
   // its own origin (credentials go only to the platform's hosts). These controls pinned "keeps its own".
   it("CONTROL: a loopback host on ANOTHER port is not the rig's server: asked at BASE_ORIGIN (Delta10 B1)", async () => {
     const c = await configWithOrigin(DEV_ORIGIN);

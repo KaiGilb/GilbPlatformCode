@@ -57,7 +57,7 @@ export function fetchTypePictureSrc(typeName: string): Promise<string | null> {
  * Public bytes URL (`<the entity's own vault origin>/files/<id>`) for a stored FILE entity IRI, or null.
  *
  * The ONE derivation of a file's bytes address from its entity IRI — used by both type-picture
- * readers below AND (Cycle213, VAScaling GAPP213.3-4 V5) by the concept picture spot and the tree
+ * readers below AND by the concept picture spot and the tree
  * record's picture, so no two places can disagree about where a picture's bytes live. Rejects
  * anything that is not a `/base/e/<id>` entity IRI — in particular the `/base/t/<Type>.png` SERVE
  * route, which is not a stored object (see the module header). The origin comes from

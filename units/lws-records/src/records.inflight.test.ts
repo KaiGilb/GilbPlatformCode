@@ -1,6 +1,6 @@
 // @vitest-environment node
-// Ported from records.inflight.m3f.test.ts (both tests). Cycle214 M3f r5 → r6. Round 5 joined reads of one record asked at the same
-// moment; the Kai-Zen ruling on Agent.Tester s117 F-1 removed the join (a write made through another transport did not end it). Every
+// Ported from records.inflight.m3f.test.ts (both tests). Round 5 joined reads of one record asked at the same
+// moment; a later review removed the join (a write made through another transport did not end it). Every
 // read is its own request, and a read after any write answers the record as it is after that write.
 // Not ported: records.inflight.s117.agenttester.test.ts (both tests call deleteRecord, and one deleteStepRecord of processHooks).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

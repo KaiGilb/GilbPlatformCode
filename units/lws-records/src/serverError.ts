@@ -1,7 +1,7 @@
 // The ONE reader for a Base failure body — turns a refused response into the sentence the
 // server actually sent, never into the machine name it happened to be filed under.
 //
-// 🔴 WHY THIS FILE EXISTS. Kai was refused four times on production and shown one word each
+// 🔴 WHY THIS FILE EXISTS. A user was refused four times on production and shown one word each
 // time: `BadRequest`. The server was not at fault. Base's error handler emits BOTH fields —
 //
 //     {"error":"BadRequest","message":"parentVault is not a known vault entity: https://…/base"}

@@ -1,5 +1,5 @@
 /**
- * Cycle161 `D-F3d` — THE GRANT-SHAPE AGREEMENT WITH BASE, captured as BYTES.
+ * THE GRANT-SHAPE AGREEMENT WITH BASE, captured as BYTES.
  *
  * 🔴 WHAT THIS FILE IS FOR, AND WHY IT IS NOT THE SAME TEST AS `entityShare.wField.test.ts`.
  * That file asks a CLIENT question — "is the revoke a W-FIELD on one predicate, and not a
@@ -8,8 +8,7 @@
  * *do the exact bytes this client PUTS ON THE WIRE land in the shape Base's grantee decider
  * matches?* An agreement cannot be settled by either side alone, so this file's job is to
  * pin the BYTES — and the other half of the proof is that those same bytes were REPLAYED
- * through Base's shipped `PATCH /lws/r/:id` on a rig built at Base `e8dfada`, recorded in
- * `Cycle161-FIX-D-F3d-ClientGrantShape-And-D-F9c-ShareBox-BaseApp-…`.
+ * through Base's shipped `PATCH /lws/r/:id` on a rig built at Base `e8dfada`.
  *
  * ⚠ `patchRecord` is REAL here — only `readRecord`, the vault re-list, the token and `fetch`
  * are stood in for ([[Rule_Code_base-testing#RuleBasetestMockedModuleNoInstrument]]). A test
@@ -89,7 +88,7 @@ async function revokeAndCapture(before: string[], target: string): Promise<unkno
   vi.mocked(records.readRecord)
     .mockResolvedValueOnce(recWith(before.join(", ")))
     .mockResolvedValueOnce(frameAfter(remaining));
-  // 🔴 C161 `F7` — the DOOR. `revokeEntityShare` takes the entity's own address as its 4th
+  // 🔴 The DOOR. `revokeEntityShare` takes the entity's own address as its 4th
   // argument; passing the framed URI is what makes the read reach the vault that holds the item.
   await revokeEntityShare(REC_ID, target, VAULT, FRAMED);
   expect(sentBodies, "exactly one W-FIELD PATCH per changed predicate").toHaveLength(1);

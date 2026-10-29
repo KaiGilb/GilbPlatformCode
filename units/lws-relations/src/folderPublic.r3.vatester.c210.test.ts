@@ -1,6 +1,5 @@
 /**
- * C210 GPLAT210.5 round 3 — VATester: the add-later hook reads the member at the member's OWN door
- * (BVedanta N6, fixed in edf8743).
+ * The add-later hook reads the member at the member's OWN door.
  *
  * Gap: the fix builds the door as `memberEntityUri ?? (memberId is a URI ? memberId : null) ?? vault`.
  * The middle arm (a caller that passes the member's full URI as `memberId` and no `memberEntityUri`)
