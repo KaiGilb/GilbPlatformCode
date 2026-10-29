@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-card-group",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "One framed group of a record card: a titled frame with an icon that holds its items, hidden in presentation when empty, registered with the card's mode so an add chooser can list it, with the pick-then-focus behaviour.",
@@ -17,10 +17,23 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
+    "@kaigilb/gilbplatformcode-one-card-context": "^0.1.0",
+    "@kaigilb/gilbplatformcode-one-card-rows": "^0.1.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-one-card-context": "file:../one-card-context",
+    "@kaigilb/gilbplatformcode-one-card-merge": "file:../one-card-merge",
+    "@kaigilb/gilbplatformcode-one-card-rows": "file:../one-card-rows",
+    "@kaigilb/gilbplatformcode-online-card": "file:../online-card",
+    "@kaigilb/gilbplatformcode-online-card-link": "file:../online-card-link",
+    "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-stakeholder-ui-kit": "file:../stakeholder-ui-kit",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
