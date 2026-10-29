@@ -9,8 +9,32 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { BirthdayPicker } from "@kaigilb/gilbplatformcode-birthday-picker";
+import { birthdayText } from "@kaigilb/gilbplatformcode-birthday-text";
 import { useCardMode } from "@kaigilb/gilbplatformcode-card-mode";
 import { insideOpenLayer, modalIsOpen } from "@kaigilb/gilbplatformcode-open-popups";
+import { useFieldPickers, type FieldPickers } from "./fieldPickers";
+
+/** A row whose value is PICKED from a list, never typed. */
+export type FieldPicker = "contact-language" | "time-zone" | "birthday";
+
+/**
+ * The picker a row can use: the one asked for, or null when the host supplied none for it (the row then edits as a text box, as it does
+ * for `picker` null). The birthday picker is a peer unit and is always there.
+ */
+function pickerOf(picker: FieldPicker | null, pickers: FieldPickers): FieldPicker | null {
+  if (picker === "contact-language") return pickers.ContactLanguagePicker ? picker : null;
+  if (picker === "time-zone") return pickers.TimeZonePicker ? picker : null;
+  return picker;
+}
+
+/** How a picked row's stored value reads (display only, never stored). A display member the host did not supply: as stored. */
+function pickedDisplay(picker: FieldPicker | null, value: string, pickers: FieldPickers): string {
+  if (picker === "contact-language") return pickers.contactLanguageDisplay ? pickers.contactLanguageDisplay(value) : value;
+  if (picker === "time-zone") return pickers.timeZoneDisplay ? pickers.timeZoneDisplay(value) : value;
+  if (picker === "birthday") return birthdayText(value) ?? value;
+  return value;
+}
 
 export function FieldRow({
   label,
@@ -18,6 +42,7 @@ export function FieldRow({
   onCommitValue,
   readOnly = false,
   options = null,
+  picker: pickerAsked = null,
   multiline = false,
   hideLabel = false,
   prominent = false,
@@ -33,7 +58,9 @@ export function FieldRow({
   readOnly?: boolean;
   /** The term's closed value set, or null for free text. */
   options?: readonly string[] | null;
-  /** A textarea. Enter inserts a newline; blur still commits. Ignored for a choice. */
+  /** Edit by picking from this list instead of typing; null for the text box. */
+  picker?: FieldPicker | null;
+  /** A textarea. Enter inserts a newline; blur still commits. Ignored for a choice or a picker. */
   multiline?: boolean;
   /** The group title already names the field. Do not print the sub-label again. */
   hideLabel?: boolean;
@@ -68,6 +95,8 @@ export function FieldRow({
   }, [value, editing]);
 
   const mode = useCardMode();
+  const pickers = useFieldPickers();
+  const picker = pickerOf(pickerAsked, pickers);
   const present = mode.managed && mode.presentation;
   const startEdit = () => {
     if (readOnly) return;
@@ -153,7 +182,42 @@ export function FieldRow({
       <div className="relative flex items-start gap-2 py-1.5">
         <div className="min-w-0 flex-1">
           {hideLabel ? null : <p className="font-[var(--serif)] text-[13px] italic text-[var(--ink-soft)]">{label}</p>}
-          {editing ? (
+          {editing && picker === "birthday" ? (
+            <BirthdayPicker
+              label={label}
+              value={value}
+              onPick={(v) => {
+                setOpen(false);
+                if (v !== value.trim()) onCommitValue(v);
+              }}
+              onCancel={cancel}
+              // Clearing the value is how this row is emptied (it has no remove control).
+              onClear={() => {
+                setOpen(false);
+                if (value.trim()) onCommitValue("");
+              }}
+            />
+          ) : editing && picker ? (
+            (() => {
+              const Picker = (picker === "contact-language" ? pickers.ContactLanguagePicker : pickers.TimeZonePicker)!;
+              return (
+                <Picker
+                  label={label}
+                  value={value}
+                  onPick={(v) => {
+                    setOpen(false);
+                    if (v !== value.trim()) onCommitValue(v);
+                  }}
+                  onCancel={cancel}
+                  // Clearing the value is how this row is emptied (it has no remove control).
+                  onClear={() => {
+                    setOpen(false);
+                    if (value.trim()) onCommitValue("");
+                  }}
+                />
+              );
+            })()
+          ) : editing ? (
             choices ? (
               <select
                 ref={inputRef as React.RefObject<HTMLSelectElement>}
@@ -238,7 +302,7 @@ export function FieldRow({
               {...(!value && !readOnly ? { "data-card-add": "" } : {})}
             >
               {value ? (
-                value
+                pickedDisplay(picker, value, pickers)
               ) : <span className="text-[var(--ink-ghost)]">{readOnly ? "—" : `Add ${label.toLowerCase()}`}</span>}
             </button>
           )}
