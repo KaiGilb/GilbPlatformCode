@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-claude-code-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The page side of the person's own Claude Code as an app's agent: pairs with the local bridge, runs a chat turn, and relays the tool calls to the host's platform as the signed-in person.",

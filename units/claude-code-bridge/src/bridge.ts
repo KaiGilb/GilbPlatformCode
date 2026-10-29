@@ -47,7 +47,7 @@ type ErrLike = { code?: string; message?: string; status?: number };
 interface ToolSpec { name: string; description?: string; inputSchema?: unknown }
 /** The answer to one relayed tool call. */
 interface ToolResult { text: string; isError: boolean }
-interface PendingCall { resolve: (r: ToolResult) => void; reject: (e: unknown) => void }
+interface PendingCall { resolve: (r: ToolResult) => void; reject: (e: unknown) => void; name: string; rpcId: unknown }
 /** One issued pairing secret, kept by the hash of the secret. */
 interface Pairing { origin: string | null; principalHash: string | null; issued: number; lastUsed: number; saved: number }
 /** A row of the pairings file, before it is checked. */
@@ -65,10 +65,12 @@ interface Turn {
   send: (event: string, data: unknown) => void;
   parent: Turn | null;
   handoff: Turn | null;
+  /** The last ids of calls that were cancelled, so a late result for one is told "ignored", not "no such call". */
+  cancelled: Set<string>;
   root: { calls: number };
 }
 /** A JSON-RPC message from the local claude process. */
-interface McpMsg { id?: unknown; method?: string; params?: { protocolVersion?: string; name?: unknown; arguments?: unknown } }
+interface McpMsg { id?: unknown; method?: string; params?: { protocolVersion?: string; name?: unknown; arguments?: unknown; requestId?: unknown } }
 /** One line of claude's stream-json output (only the fields read here). */
 interface ClaudeEvent {
   type?: string;
@@ -150,6 +152,10 @@ const envDenied = (k: string) => {
 export function childEnv(env: NodeJS.ProcessEnv = process.env) {
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(env)) if (!envDenied(k)) out[k] = v;
+  // The Claude CLI gives up on one MCP tool call after its own default wait, far shorter than a hand-off may run here.
+  // Make it wait as long as the bridge does (a larger value the person set themselves is kept).
+  const own = Number(out.MCP_TOOL_TIMEOUT);
+  if (!(Number.isFinite(own) && own > MCP_TOOL_TIMEOUT_MS)) out.MCP_TOOL_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
   return out;
 }
 
@@ -257,6 +263,12 @@ const MAX_TURNS_AT_ONCE = 4;
 export const TURN_MAX_TOOL_CALLS = 240;
 // A hand-off may run this long before the bridge stops it (its parent turn gets an error for that tool call).
 export const HOP_MAX_MS = 15 * 60 * 1000;
+// How long the Claude CLI is told to wait for one tool call (MCP_TOOL_TIMEOUT): the longest hand-off plus a minute.
+export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000;
+// The tools whose call is a hand-off: the page runs a nested turn for each.
+// How many cancelled call ids a turn remembers.
+const MAX_CANCELLED_KEPT = 256;
+const HAND_OFF_TOOLS = new Set(["run_named_role", "ask_agent_concept"]);
 // A pairing lives 30 days after it was last used (sliding) and at most this many are kept.
 export const PAIRING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_PAIRINGS = 20;
@@ -464,7 +476,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (method === "tools/call") {
       const name = params?.name;
       if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
-      return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {})).then(
+      return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {}), id).then(
         (r) => ok({ content: [{ type: "text", text: r.text }], isError: r.isError }),
         (e: unknown) => ok({ content: [{ type: "text", text: String((e as ErrLike)?.message ?? e) }], isError: true }),
       );
@@ -472,7 +484,27 @@ export function createBridge(opts: BridgeOptions = {}) {
     return bad(-32601, `Method not found: ${method}`);
   }
 
-  function relayToolCall(turn: Turn, name: string, args: unknown): Promise<ToolResult> {
+  /**
+   * The CLI abandoned (or its process ended with) a pending call. Settle it; if it was the call that a hand-off runs for,
+   * stop the nested claude and free the turn for the next hand-off; and tell the page so it stops working on it.
+   */
+  function cancelCall(turn: Turn, id: string) {
+    const p = turn.pending.get(id);
+    if (!p) return;
+    turn.pending.delete(id);
+    turn.cancelled.add(id);
+    if (turn.cancelled.size > MAX_CANCELLED_KEPT) turn.cancelled.delete(turn.cancelled.values().next().value as string);
+    p.resolve({ text: "This call was cancelled.", isError: true });
+    const nested = turn.handoff;
+    if (nested && HAND_OFF_TOOLS.has(p.name)) {
+      turn.handoff = null;
+      nested.closed = true;
+      nested.child?.kill("SIGTERM");
+    }
+    turn.send("tool_cancelled", { type: "tool_cancelled", id });
+  }
+
+  function relayToolCall(turn: Turn, name: string, args: unknown, rpcId?: unknown): Promise<ToolResult> {
     return new Promise((resolve, reject) => {
       if (turn.closed) return reject(new Error("The app page left; the turn was cancelled."));
       // One budget for the turn and its hand-offs: past it nothing more is relayed, and the model is told so.
@@ -494,6 +526,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           clearTimeout(timer);
           reject(e);
         },
+        name,
+        rpcId,
       });
       turn.send("tool_request", { id, name, arguments: args });
     });
@@ -518,7 +552,13 @@ export function createBridge(opts: BridgeOptions = {}) {
     const msgs: McpMsg[] = batch ? body as unknown as McpMsg[] : [body as McpMsg];
     const replies = [];
     for (const m of msgs) {
-      if (m && m.id === undefined) continue; // a notification
+      if (m && m.id === undefined) {
+        // A notification. The one that matters: the CLI gave up on a call it made.
+        if (m.method === "notifications/cancelled" && m.params?.requestId !== undefined) {
+          for (const [pid, p] of [...turn.pending]) if (String(p.rpcId) === String(m.params.requestId)) cancelCall(turn, pid);
+        }
+        continue;
+      }
       replies.push(await mcpReply(turn, m));
     }
     if (replies.length === 0) {
@@ -609,6 +649,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       child.on("error", (e) => resolve({ error: `Could not start Claude Code: ${e.message}`, sessionId: mode.sessionId, model }));
       child.on("close", () => {
         turn.child = null;
+        // This claude is gone: nothing waits for the calls it still had open.
+        for (const pid of [...turn.pending.keys()]) cancelCall(turn, pid);
         // Fail closed: an answer is shown only after an init event that proved the subscription. The one exception is a
         // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
         if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit)) refused = true;
@@ -670,6 +712,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       send: () => {},
       parent,
       handoff: null,
+      cancelled: new Set(),
       root: parent ? parent.root : { calls: 0 },
     };
     if (parent) parent.handoff = turn;
@@ -821,6 +864,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         }
         const turn = turns.get(String(body.turnId));
         const p = turn?.pending.get(String(body.id));
+        if (turn && !p && turn.cancelled.has(String(body.id))) return json(res, 200, { ignored: true, reason: "cancelled" });
         if (!turn || !p) return json(res, 404, { error: "No such tool call is waiting." });
         turn.pending.delete(String(body.id));
         p.resolve({ text: typeof body.result === "string" ? body.result : JSON.stringify(body.result ?? null), isError: body.isError === true });

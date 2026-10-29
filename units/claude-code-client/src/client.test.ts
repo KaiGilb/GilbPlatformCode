@@ -487,6 +487,239 @@ describe("sendClaudeCodeTurn", () => {
     });
   });
 
+  describe("tool requests of one turn are handled side by side", () => {
+    const CTX = { system: "S", tools: [{ name: "list_vaults", description: "d", inputSchema: { type: "object", properties: {} } }] };
+    const HOP = { id: "0123456789abcdef01234567", via: "run_named_role", role: "R", task: "t", system: "s", tools: [], answer: { role: "R" } };
+    const enc = new TextEncoder();
+
+    /** A bridge turn stream the test feeds by hand. */
+    function liveStream() {
+      let ctl!: ReadableStreamDefaultController<Uint8Array>;
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          ctl = c;
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return {
+        res: () => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+        emit: (event: string, data: unknown) => ctl.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)),
+        end: () => ctl.close(),
+        cancelled: () => cancelled,
+      };
+    }
+    const tick = async (n = 20) => {
+      for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    /** A deferred: a platform answer the test releases when it wants. */
+    function gate() {
+      let release!: () => void;
+      const p = new Promise<void>((r) => (release = r));
+      return { p, release };
+    }
+
+    /**
+     * Rig: the person's turn stream is `live`; `/tool` answers per tool name through `toolAnswer`; the bridge's /v1/tool-result
+     * answers are recorded in `results` in the order they were posted. Nested turns (hand-offs) get `nested()`.
+     */
+    function rig(opts: { toolAnswer: (name: string, init: RequestInit) => Promise<Response>; nested?: () => Response }) {
+      const live = liveStream();
+      const results: { id: string; turnId: string; result: string; isError: boolean }[] = [];
+      const platformCalls: { name: string; hop?: unknown; signal?: AbortSignal | null }[] = [];
+      let turns = 0;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+        if (url === AI_CLAUDE_CODE_CONTEXT_URL) return json(200, CTX);
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/turn`) {
+          turns += 1;
+          return turns === 1 ? live.res() : (opts.nested?.() ?? json(500, {}));
+        }
+        if (url === AI_CLAUDE_CODE_TOOL_URL) {
+          platformCalls.push({ name: String(body.name), hop: body.hop, signal: init.signal });
+          return opts.toolAnswer(String(body.name), init);
+        }
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/tool-result`) {
+          results.push(body as { id: string; turnId: string; result: string; isError: boolean });
+          return json(200, { ok: true });
+        }
+        throw new Error(`unexpected ${url}`);
+      });
+      return { live, results, platformCalls };
+    }
+
+    it("a plain tool is answered while a hand-off is still running; the hand-off is answered after it finishes", async () => {
+      client.save("s3cret");
+      const nested = liveStream();
+      const r = rig({
+        toolAnswer: async (name) => {
+          if (name === "run_named_role") return json(200, { hop: HOP });
+          return json(200, { result: JSON.stringify({ ran: name }) });
+        },
+        nested: () => nested.res(),
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "A", name: "run_named_role", arguments: "{}" });
+      r.live.emit("tool_request", { id: "B", name: "list_vaults", arguments: "{}" });
+      await tick();
+      // B is answered although A (the hand-off's nested turn) has not finished.
+      expect(r.results.map((x) => x.id)).toEqual(["B"]);
+      expect(r.results[0]).toMatchObject({ turnId: "t1", isError: false });
+      // The hand-off's nested turn ends only when released.
+      nested.emit("start", { turnId: "t2" });
+      nested.emit("message", { content: "hop answer", model: "m" });
+      nested.end();
+      await tick();
+      expect(r.results.map((x) => x.id)).toEqual(["B", "A"]);
+      expect(JSON.parse(r.results[1]!.result)).toMatchObject({ content: "hop answer" });
+      r.live.emit("message", { content: "all done", model: "m" });
+      r.live.end();
+      expect((await done).content).toBe("all done");
+    });
+
+    it("the seventh concurrent request waits until one of the six finishes", async () => {
+      client.save("s3cret");
+      const gates = new Map<string, ReturnType<typeof gate>>();
+      let started = 0;
+      const r = rig({
+        toolAnswer: async (name) => {
+          started += 1;
+          const g = gate();
+          gates.set(name, g);
+          await g.p;
+          return json(200, { result: "{}" });
+        },
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      for (let i = 1; i <= 7; i++) r.live.emit("tool_request", { id: `c${i}`, name: `tool${i}`, arguments: "{}" });
+      await tick();
+      expect(started).toBe(6);
+      gates.get("tool3")!.release();
+      await tick();
+      expect(started).toBe(7);
+      expect(r.results.map((x) => x.id)).toEqual(["c3"]);
+      for (const g of gates.values()) g.release();
+      await tick();
+      expect(r.results).toHaveLength(7);
+      r.live.emit("message", { content: "ok", model: "m" });
+      r.live.end();
+      await done;
+    });
+
+    it("a handler that fails still answers its own id with an error and does not break the others", async () => {
+      client.save("s3cret");
+      const r = rig({
+        toolAnswer: async (name) => {
+          if (name === "bad") throw new TypeError("platform exploded");
+          return json(200, { result: JSON.stringify({ ran: name }) });
+        },
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "bad1", name: "bad", arguments: "{}" });
+      r.live.emit("tool_request", { id: "good1", name: "good", arguments: "{}" });
+      await tick();
+      const byId = Object.fromEntries(r.results.map((x) => [x.id, x]));
+      expect(byId.bad1).toMatchObject({ isError: true });
+      expect(String(byId.bad1!.result)).toContain("platform exploded");
+      expect(byId.good1).toMatchObject({ isError: false });
+      r.live.emit("message", { content: "ok", model: "m" });
+      r.live.end();
+      expect((await done).content).toBe("ok");
+    });
+
+    it("an answer the bridge ignores (the call was cancelled meanwhile) does not end the turn", async () => {
+      client.save("s3cret");
+      const r = rig({ toolAnswer: async () => json(200, { result: "{}" }) });
+      const base = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/tool-result`) {
+          r.results.push(JSON.parse(String(init.body)));
+          return json(200, { ignored: true, reason: "cancelled" });
+        }
+        return base(url, init);
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "A", name: "list_vaults", arguments: "{}" });
+      await tick();
+      r.live.emit("tool_request", { id: "B", name: "list_vaults", arguments: "{}" });
+      await tick();
+      expect(r.results.map((x) => x.id)).toEqual(["A", "B"]);
+      r.live.emit("message", { content: "still going", model: "m" });
+      r.live.end();
+      expect((await done).content).toBe("still going");
+    });
+
+    it("tool_cancelled aborts that request's fetch and posts nothing for it; the others are answered", async () => {
+      client.save("s3cret");
+      let slowSignal: AbortSignal | null | undefined;
+      const r = rig({
+        toolAnswer: async (name, init) => {
+          if (name === "slow") {
+            slowSignal = init.signal;
+            return new Promise<Response>((_res, rej) => init.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError"))));
+          }
+          return json(200, { result: "{}" });
+        },
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "S", name: "slow", arguments: "{}" });
+      r.live.emit("tool_request", { id: "F", name: "fast", arguments: "{}" });
+      await tick();
+      expect(slowSignal?.aborted).toBe(false);
+      r.live.emit("tool_cancelled", { type: "tool_cancelled", id: "S" });
+      await tick();
+      expect(slowSignal?.aborted).toBe(true);
+      r.live.emit("message", { content: "ok", model: "m" });
+      r.live.end();
+      await done;
+      expect(r.results.map((x) => x.id)).toEqual(["F"]);
+    });
+
+    it("tool_cancelled for a running hand-off stops its nested turn, closes the hop on GilbPlatform, and posts no result", async () => {
+      client.save("s3cret");
+      const nested = liveStream();
+      let nestedSignal: AbortSignal | null | undefined;
+      const r = rig({
+        toolAnswer: async (name) => (name === "run_named_role" ? json(200, { hop: HOP }) : json(200, { result: "{}" })),
+        nested: () => nested.res(),
+      });
+      const base = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/turn` && init.body && String(init.body).includes("parentTurnId")) nestedSignal = init.signal;
+        return base(url, init);
+      });
+      const done = client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+      await tick();
+      r.live.emit("start", { turnId: "t1" });
+      r.live.emit("tool_request", { id: "A", name: "run_named_role", arguments: "{}" });
+      await tick();
+      nested.emit("start", { turnId: "t2" });
+      await tick();
+      expect(nestedSignal?.aborted).toBe(false);
+      r.live.emit("tool_cancelled", { type: "tool_cancelled", id: "A" });
+      await tick();
+      expect(nestedSignal?.aborted).toBe(true);
+      expect(r.platformCalls.some((c) => (c.hop as { done?: boolean } | undefined)?.done === true)).toBe(true);
+      expect(r.results).toHaveLength(0);
+      r.live.emit("message", { content: "ok", model: "m" });
+      r.live.end();
+      await done;
+      expect(r.results).toHaveLength(0);
+    });
+  });
+
   it("not connected → an error and no request at all", async () => {
     await expect(client.sendTurn([{ role: "user", content: "x" }], { thread: "J" })).rejects.toBeInstanceOf(
       ClaudeCodeBridgeError,

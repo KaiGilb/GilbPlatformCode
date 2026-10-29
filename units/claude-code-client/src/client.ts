@@ -149,6 +149,8 @@ export interface ClaudeCodeClient {
   sendTurn(messages: ClaudeCodeTurn[], opts: SendClaudeCodeOpts): Promise<ClaudeCodeReply>;
 }
 
+/** Most tool requests of one turn handled at once; the rest wait their turn. A running hand-off counts as one. */
+const MAX_CONCURRENT_TOOLS = 6;
 const DISCONNECTED = "Claude Code was disconnected, so the turn was stopped.";
 
 /** What the page says to the model that asked for a hand-off that could not finish. */
@@ -166,9 +168,13 @@ interface SseEvent {
   data: unknown;
 }
 
-async function* readBridgeSse(res: Response): AsyncGenerator<SseEvent> {
+async function* readBridgeSse(res: Response, stop?: AbortSignal): AsyncGenerator<SseEvent> {
   const reader = res.body?.getReader();
   if (!reader) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+  // `stop` ends the read from outside (a tool answer failed while the loop waits for the next event): cancelling the reader ends the loop quietly.
+  const onStop = () => void reader.cancel().catch(() => undefined);
+  if (stop?.aborted) onStop();
+  else stop?.addEventListener("abort", onStop, { once: true });
   const decoder = new TextDecoder();
   let buf = "";
   try {
@@ -198,6 +204,7 @@ async function* readBridgeSse(res: Response): AsyncGenerator<SseEvent> {
       if (done) break;
     }
   } finally {
+    stop?.removeEventListener("abort", onStop);
     // The caller stopped reading (an error mid-turn): close the stream so the bridge sees the page leave and ends the turn.
     reader.cancel().catch(() => undefined);
   }
@@ -295,9 +302,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     }
   }
 
-  async function postPlatform(url: string, payload: unknown): Promise<Response> {
+  async function postPlatform(url: string, payload: unknown, sig?: AbortSignal): Promise<Response> {
     const send = async () =>
       fetch(url, {
+        ...(sig ? { signal: sig } : {}),
         method: "POST",
         headers: {
           ...(await config.getAuthHeaders("POST", url)),
@@ -350,12 +358,13 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
      */
     async function streamBridgeTurn(
       body: Record<string, unknown>,
-      onTool: (name: string, args: string, bridgeTurnId: string) => Promise<{ result: string; isError: boolean }>,
+      onTool: (name: string, args: string, bridgeTurnId: string, sig: AbortSignal) => Promise<{ result: string; isError: boolean }>,
       announceStart: boolean,
       onStatus?: (data: { apiKeySource: string | null; model: string }) => void,
+      turnSignal: AbortSignal = signal,
     ): Promise<BridgeTurnOut> {
       const res = await bridgeFetch("/v1/turn", {
-        signal,
+        signal: turnSignal,
         method: "POST",
         headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
         body: JSON.stringify(body),
@@ -368,8 +377,74 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       let turnId = "";
       let out: BridgeTurnOut | null = null;
       let streamError: string | null = null;
+
+      // Tool requests are handled side by side, so one long call (a hand-off) never holds up the others. At most
+      // MAX_CONCURRENT_TOOLS run at once; the rest wait in order. Each is keyed by its request id, as the bridge sent it.
+      const stop = new AbortController(); // a failure in a handler, or leaving the turn, ends the read of the stream
+      const onTurnLeft = () => stop.abort();
+      if (turnSignal.aborted) stop.abort();
+      else turnSignal.addEventListener("abort", onTurnLeft, { once: true });
+      const open = new Map<string, AbortController>();
+      const waiting: (() => void)[] = [];
+      const handlers: Promise<void>[] = [];
+      let running = 0;
+      let fatal: unknown = null;
+      const failTurn = (e: unknown) => {
+        if (fatal === null) fatal = e;
+        stop.abort();
+      };
+      const abortAll = () => {
+        for (const c of open.values()) c.abort();
+      };
+      const pump = () => {
+        while (running < MAX_CONCURRENT_TOOLS && waiting.length > 0) waiting.shift()!();
+      };
+      const handle = (id: string, name: string, args: string, forTurn: string) => {
+        const ctl = new AbortController();
+        open.set(id, ctl);
+        const onLeave = () => ctl.abort();
+        if (turnSignal.aborted) ctl.abort();
+        else turnSignal.addEventListener("abort", onLeave, { once: true });
+        handlers.push(
+          new Promise<void>((started) => {
+            waiting.push(started);
+            pump();
+          }).then(async () => {
+            if (ctl.signal.aborted) {
+              open.delete(id);
+              turnSignal.removeEventListener("abort", onLeave);
+              return;
+            }
+            running += 1;
+            try {
+              const answer = await onTool(name, args, forTurn, ctl.signal);
+              // Cancelled (the bridge's call was abandoned) or the turn is over: nothing to answer.
+              if (ctl.signal.aborted) return;
+              const back = await bridgeFetch("/v1/tool-result", {
+                signal: ctl.signal,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
+                body: JSON.stringify({ turnId: forTurn, id, result: answer.result, isError: answer.isError }),
+              });
+              // The bridge did not take the answer (restarted, disconnected, or the turn is gone): it would wait for it
+              // for 15 minutes. Stop here instead; leaving the stream (see readBridgeSse) ends the turn on the bridge.
+              if (back.status === 401) throw bridgeForgotUs();
+              if (!back.ok) throw new ClaudeCodeBridgeError(back.status, "The bridge did not take the tool's answer, so the turn was stopped. Try again.");
+            } catch (err) {
+              if (!ctl.signal.aborted) failTurn(err);
+            } finally {
+              running -= 1;
+              open.delete(id);
+              turnSignal.removeEventListener("abort", onLeave);
+              pump();
+            }
+          }),
+        );
+      };
+
+      let readErr: unknown = null;
       try {
-        for await (const ev of readBridgeSse(res)) {
+        for await (const ev of readBridgeSse(res, stop.signal)) {
           const data = (ev.data ?? {}) as Record<string, unknown>;
           if (ev.event === "start") {
             turnId = typeof data.turnId === "string" ? data.turnId : "";
@@ -377,20 +452,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           } else if (ev.event === "status") {
             onStatus?.({ apiKeySource: typeof data.apiKeySource === "string" ? data.apiKeySource : null, model: typeof data.model === "string" ? data.model : "" });
           } else if (ev.event === "tool_request") {
-            const id = String(data.id ?? "");
-            const name = String(data.name ?? "tool");
-            const args = typeof data.arguments === "string" ? data.arguments : "{}";
-            const answer = await onTool(name, args, turnId);
-            const back = await bridgeFetch("/v1/tool-result", {
-              signal,
-              method: "POST",
-              headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
-              body: JSON.stringify({ turnId, id, result: answer.result, isError: answer.isError }),
-            });
-            // The bridge did not take the answer (restarted, disconnected, or the turn is gone): it would wait for it
-            // for 15 minutes. Stop here instead; leaving the stream (see readBridgeSse) ends the turn on the bridge.
-            if (back.status === 401) throw bridgeForgotUs();
-            if (!back.ok) throw new ClaudeCodeBridgeError(back.status, "The bridge did not take the tool's answer, so the turn was stopped. Try again.");
+            handle(String(data.id ?? ""), String(data.name ?? "tool"), typeof data.arguments === "string" ? data.arguments : "{}", turnId);
+          } else if (ev.event === "tool_cancelled") {
+            // The bridge's call for this id was abandoned (its Claude Code gave up on it): stop working on it, answer nothing.
+            open.get(String(data.id ?? ""))?.abort();
           } else if (ev.event === "message") {
             const content = typeof data.content === "string" ? data.content.trim() : "";
             if (content) {
@@ -405,10 +470,17 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           }
         }
       } catch (err) {
-        // Disconnect aborted the read: say so, not "the bridge returned something unexpected".
-        if (signal.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
-        throw err;
+        readErr = err;
       }
+      // The turn is over. A turn that failed or was left stops its handlers and drops their answers; one that ended with
+      // its answer waits for the handlers still running, so an answer the bridge cannot take is still reported.
+      if (readErr || fatal !== null || streamError) abortAll();
+      await Promise.allSettled(handlers);
+      turnSignal.removeEventListener("abort", onTurnLeft);
+      if (fatal !== null) throw fatal;
+      // Disconnect (or a cancelled hand-off) ended the read: say so, not "the bridge returned something unexpected".
+      if (turnSignal.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
+      if (readErr) throw readErr;
       if (streamError) throw new ClaudeCodeBridgeError(502, streamError);
       if (!out) throw new ClaudeCodeBridgeError(502, "Claude Code returned no answer.");
       return out;
@@ -437,11 +509,12 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       args: string,
       hopId: string | undefined,
       bridgeTurnId: string,
+      sig: AbortSignal,
     ): Promise<{ result: string; isError: boolean }> => {
       let result: string;
       let isError = false;
       try {
-        const tr = await postPlatform(toolUrl, { ...turnFields, name, arguments: args, ...(hopId ? { hop: { id: hopId } } : {}) });
+        const tr = await postPlatform(toolUrl, { ...turnFields, name, arguments: args, ...(hopId ? { hop: { id: hopId } } : {}) }, sig);
         const body = await readJson(tr);
         if (!tr.ok) {
           isError = true;
@@ -450,7 +523,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           const b = body && typeof body === "object" ? (body as { result?: unknown; hop?: unknown }) : {};
           if (b.hop && typeof b.hop === "object" && !hopId) {
             // A hand-off: GilbPlatform prepared it; the model runs here, on the person's own Claude Code.
-            const done = await runHop(b.hop as ClaudeCodeHop, bridgeTurnId);
+            const done = await runHop(b.hop as ClaudeCodeHop, bridgeTurnId, sig);
             result = done.result;
             isError = done.isError;
           } else {
@@ -468,7 +541,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     };
 
     /** Runs a hand-off as a nested turn and answers the tool call that asked for it. */
-    const runHop = async (hop: ClaudeCodeHop, parentTurnId: string): Promise<{ result: string; isError: boolean }> => {
+    const runHop = async (hop: ClaudeCodeHop, parentTurnId: string, sig: AbortSignal): Promise<{ result: string; isError: boolean }> => {
       if (typeof hop.id !== "string" || typeof hop.system !== "string" || typeof hop.task !== "string" || !Array.isArray(hop.tools)) {
         return { result: JSON.stringify({ error: "The hand-off returned an unexpected answer.", next: HAND_OFF_FAILED_NEXT }), isError: true };
       }
@@ -488,9 +561,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       try {
         const done = await streamBridgeTurn(
           { prompt: hop.task, system: hop.system, tools: hop.tools, parentTurnId },
-          (name, args) => callTool(name, args, hop.id, ""),
+          (name, args, _turn, toolSig) => callTool(name, args, hop.id, "", toolSig),
           false,
           (d) => opts.onBridgeStatus?.({ nested: true, ...d }),
+          sig,
         );
         await closeHop();
         return { result: JSON.stringify({ ...hop.answer, content: done.content }), isError: false };
@@ -526,7 +600,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
       },
-      (name, args, bridgeTurnId) => callTool(name, args, undefined, bridgeTurnId),
+      (name, args, bridgeTurnId, toolSig) => callTool(name, args, undefined, bridgeTurnId, toolSig),
       true,
       (d) => opts.onBridgeStatus?.({ nested: false, ...d }),
     );
