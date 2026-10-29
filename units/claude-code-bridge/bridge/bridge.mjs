@@ -197,6 +197,8 @@ export const HOP_MAX_MS = 15 * 60 * 1000;
 // How long the Claude CLI is told to wait for one tool call (MCP_TOOL_TIMEOUT): the longest hand-off plus a minute.
 export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000;
 // The tools whose call is a hand-off: the page runs a nested turn for each.
+// How many cancelled call ids a turn remembers.
+const MAX_CANCELLED_KEPT = 256;
 const HAND_OFF_TOOLS = new Set(["run_named_role", "ask_agent_concept"]);
 // A pairing lives 30 days after it was last used (sliding) and at most this many are kept.
 export const PAIRING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -415,6 +417,9 @@ export function createBridge(opts = {}) {
         if (!p)
             return;
         turn.pending.delete(id);
+        turn.cancelled.add(id);
+        if (turn.cancelled.size > MAX_CANCELLED_KEPT)
+            turn.cancelled.delete(turn.cancelled.values().next().value);
         p.resolve({ text: "This call was cancelled.", isError: true });
         const nested = turn.handoff;
         if (nested && HAND_OFF_TOOLS.has(p.name)) {
@@ -649,6 +654,7 @@ export function createBridge(opts = {}) {
             send: () => { },
             parent,
             handoff: null,
+            cancelled: new Set(),
             root: parent ? parent.root : { calls: 0 },
         };
         if (parent)
@@ -817,6 +823,8 @@ export function createBridge(opts = {}) {
                 }
                 const turn = turns.get(String(body.turnId));
                 const p = turn?.pending.get(String(body.id));
+                if (turn && !p && turn.cancelled.has(String(body.id)))
+                    return json(res, 200, { ignored: true, reason: "cancelled" });
                 if (!turn || !p)
                     return json(res, 404, { error: "No such tool call is waiting." });
                 turn.pending.delete(String(body.id));
