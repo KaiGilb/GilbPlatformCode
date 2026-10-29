@@ -4,11 +4,14 @@ import {
   MasterTimeoutError,
   VocabularyUnavailableError,
   bareForm,
+  cardinalityOf,
+  encodingOf,
   nameOfIri,
   refsUnder,
   spellingFromBinding,
   spellingOfTermDoc,
   textUnder,
+  typeAttributeOf,
   valuesUnder,
   type TermFetch,
 } from "./terms";
@@ -136,5 +139,42 @@ describe("valuesUnder, textUnder, refsUnder, nameOfIri", () => {
     expect(nameOfIri("https://h.example.test/base/t/A%20B")).toBe("A B");
     expect(nameOfIri("https://h.example.test/base/t/%E0%A4%A")).toBe("%E0%A4%A");
     expect(nameOfIri("bare")).toBe("bare");
+  });
+});
+
+describe("the three self-description readers", () => {
+  const cases: [string, (doc: Record<string, unknown>) => string | null, string, string][] = [
+    ["encodingOf", encodingOf, "a:encoding", "encoding"],
+    ["typeAttributeOf", typeAttributeOf, "a:typeAttribute", "typeAttribute"],
+    ["cardinalityOf", cardinalityOf, "a:cardinality", "cardinality"],
+  ];
+  for (const [name, read, prefixed, bare] of cases) {
+    it(`${name} reads the prefixed key`, () => {
+      expect(read({ [prefixed]: "x:one" })).toBe("x:one");
+    });
+    it(`${name} reads the bare key when the prefixed one is absent`, () => {
+      expect(read({ [bare]: "x:two" })).toBe("x:two");
+    });
+    it(`${name} prefers the prefixed key to the bare key`, () => {
+      expect(read({ [prefixed]: "first", [bare]: "second" })).toBe("first");
+    });
+    it(`${name} trims the value, and falls through a blank prefixed value to the bare key`, () => {
+      expect(read({ [prefixed]: "  padded  " })).toBe("padded");
+      expect(read({ [prefixed]: "   ", [bare]: "second" })).toBe("second");
+    });
+    it(`${name} is null when the term publishes none, or a value that is not a string`, () => {
+      expect(read({})).toBeNull();
+      expect(read({ [prefixed]: 5, [bare]: ["list"] })).toBeNull();
+      expect(read({ [prefixed]: "", [bare]: "  " })).toBeNull();
+    });
+    it(`${name} does not read the other two keys`, () => {
+      const others = cases.filter((c) => c[0] !== name).flatMap((c) => [c[2], c[3]]);
+      const doc = Object.fromEntries(others.map((k) => [k, "other"]));
+      expect(read(doc)).toBeNull();
+    });
+  }
+  it("a served term document gives all three at once", () => {
+    const doc = { "a:encoding": "reference:@id", "a:typeAttribute": "t:Person", "a:cardinality": "multi" };
+    expect([encodingOf(doc), typeAttributeOf(doc), cardinalityOf(doc)]).toEqual(["reference:@id", "t:Person", "multi"]);
   });
 });

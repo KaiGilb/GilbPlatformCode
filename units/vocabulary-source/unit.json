@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "units/vocabulary-source",
   "package": "@kaigilb/gilbplatformcode-vocabulary-source",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Reading the GilbVeda master's term documents, each request and each whole reading bounded in time, so a master that does not answer is \"not known yet\" and never \"nothing\".",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
-    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
     "files": [
       {
         "path": "src/terms.ts",
@@ -21,6 +21,14 @@
         "lines": [
           58,
           142
+        ],
+        "to": "src/terms.ts"
+      },
+      {
+        "path": "src/terms.ts",
+        "lines": [
+          144,
+          158
         ],
         "to": "src/terms.ts"
       },

@@ -13,15 +13,20 @@ Plain functions and types, no React, no credential. The master's documents are p
 - `VocabularyUnavailableError`, `MasterTimeoutError` (its `ms` is the bound that ran out), `CarrierSelectorMissingError` (its `url`): the three ways a read is "not known yet".
 - `withDeadline(work, { ms?, parents?, timeoutError, abortError })`, `boundSource(source, signal, stopped)`, `checkedBound(name, ms, fallback)`, `MAX_BOUND_MS` (2,147,483,647): ending a piece of work, or every read of a source, by a deadline or a parent signal; a bound is checked and never switched off.
 - `spellingOfTermDoc(doc, fallbackTerm)`, `spellingFromBinding(term, token, deprecated)`, `bareForm(segment)`: a predicate's read keys and its one write key, from its own term document.
+- `encodingOf(doc)`, `typeAttributeOf(doc)`, `cardinalityOf(doc)` (since 0.2.0): the term's declared value encoding (`inline-literal:text`, `reference:@id`, ...), the string a writer stamps as a record's type for the type the term defines (`t:<Type>`), and its declared cardinality (`single`, `multi`). Each is the first non-blank string under `a:encoding` / `a:typeAttribute` / `a:cardinality` or the bare key, trimmed, or `null`.
 - `valuesUnder(doc, readKeys)`, `refsUnder(doc, readKeys)`, `textUnder(facts, readKeys)`, `nameOfIri(iri)`: the values, references (CURIEs expanded by the document's own `@context`), first text and bare name read out of a document.
 - Types: `TermDoc`, `TermFetch`, `PredicateSpelling`, `VocabularySource`, `ChildEntry`, `ChildrenPage`, `CarrierList`, `MasterSourceOptions`, `DeadlineOptions`.
 
 ## What this is not
 
 - Not the stakeholder kinds or their cache: the kind set, its words and the shared reader are `stakeholder-kinds`, which takes this unit as a peer.
-- Not the whole of `gilb-stakeholders`' `terms.ts`, `deadline.ts` and `source.ts`: only the symbols the Plan-card readers reach. Not here: `encodingOf`, `typeAttributeOf`, `cardinalityOf` (terms.ts), the field-set and tag readers that use them, and the write side of the package.
+- Not the whole of `gilb-stakeholders`' `terms.ts`, `deadline.ts` and `source.ts`: only the symbols the Plan-card readers reach. Not here: the field-set and tag readers that use `encodingOf`, `typeAttributeOf` and `cardinalityOf` (the field-set reader is `stakeholder-field-sets`), and the write side of the package.
 - Not a writer: nothing here sends anything but a `GET`.
 - Not a place for a host: the master's origin is an argument (`vedaOrigin`), never a default. The Plan card passes the term origin it already keeps (`termOrigin()` of `term-origin`); this unit does not import it, because the origin is an argument and not a setting.
+
+### Changes in 0.2.0
+
+Taken from `gilb-stakeholders` at commit `0a261488be7c98d1ac5d79887c966a445b8928bd` (the unit was cut at `27fe0cef35857c070354c0439c6e4e4ebcc62815`), because `stakeholder-field-sets` reads a term's encoding, type attribute and cardinality. New code, copied by script from `src/terms.ts`: lines 144-158 (`encodingOf`, `typeAttributeOf`, `cardinalityOf`; they use `firstString` and `SELF_DESCRIPTION`, which the unit already holds). Every range the unit already held (terms.ts 11-44, 58-142, 162-232; deadline.ts 15-148; source.ts 6-360) is token for token the same at `0a261488` (comments and imports excluded), so the pin moves to `0a261488` for the whole unit. Nothing of 0.1.0 changed. No new named change. Tests: nothing in the source's `test/` calls the three symbols on their own, so `terms.test.ts` gains 19 pins (each reader: the prefixed key, the bare key, the prefixed key first, trimming and a blank value, `null`, and the other two keys not read; and the three together), and `vocabularySource.test.ts` lists the three new exports. The peer range of `stakeholder-kinds` on this unit is `^0.2.0`.
 
 ## How to take it
 
@@ -87,13 +92,13 @@ Dynamic imports in the files taken: none. The tracer does not follow `import()`,
 
 ## Where it came from
 
-`KaiGilb/gilb-stakeholders` (private repo), commit `27fe0cef35857c070354c0439c6e4e4ebcc62815`, copied by script, symbol by symbol (the reached ones only, found with a symbol tracer from the Plan card's host code in GilbApp at `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, which pins this package at that commit):
+`KaiGilb/gilb-stakeholders` (private repo), commit `0a261488be7c98d1ac5d79887c966a445b8928bd` (0.1.0 was cut at `27fe0cef35857c070354c0439c6e4e4ebcc62815`; see "Changes in 0.2.0"), copied by script, symbol by symbol (the reached ones only, found with a symbol tracer from the Plan card's host code in GilbApp at `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, which pins this package at `27fe0cef`; the three added in 0.2.0 are reached from the field-set reader):
 
-- `src/terms.ts` to `src/terms.ts`: lines 11-44, 58-142, 162-232 (`TermDoc`, `VocabularyUnavailableError`, `MasterTimeoutError`, `TermFetch`, `splitBinding`, `bareForm`, `PredicateSpelling`, `SELF_DESCRIPTION`, `firstString`, `spellingFromBinding`, `spellingOfTermDoc`, `valuesUnder`, `prefixesOf`, `refOf`, `refsUnder`, `textUnder`, `nameOfIri`);
+- `src/terms.ts` to `src/terms.ts`: lines 11-44, 58-142, 144-158, 162-232 (`TermDoc`, `VocabularyUnavailableError`, `MasterTimeoutError`, `TermFetch`, `splitBinding`, `bareForm`, `PredicateSpelling`, `SELF_DESCRIPTION`, `firstString`, `spellingFromBinding`, `spellingOfTermDoc`, `encodingOf`, `typeAttributeOf`, `cardinalityOf` (144-158, 0.2.0), `valuesUnder`, `prefixesOf`, `refOf`, `refsUnder`, `textUnder`, `nameOfIri`);
 - `src/deadline.ts` to `src/deadline.ts`: lines 15-148 (`MAX_BOUND_MS`, `checkedBound`, `DeadlineOptions`, `withDeadline`, `boundSource`);
 - `src/source.ts` to `src/source.ts`: lines 6-360 (`ChildEntry`, `ChildrenPage`, `CarrierList`, `CarrierSelectorMissingError`, `VocabularySource`, `MASTER_REQUEST_TIMEOUT_MS`, `MASTER_READ_CAP_MS`, `MasterSourceOptions`, `NAMED_READ_MAX`, `NAMED_TYPE`, `checkBack`, `masterSource`).
 
-Not taken: `encodingOf`, `typeAttributeOf` and `cardinalityOf` (`terms.ts` 144-158, not reached), and the file header comments (replaced by the short header comments of this unit).
+Not taken: the file header comments (replaced by the short header comments of this unit).
 
 **Merged units compared and taken or not (each reached symbol, comments stripped, whitespace collapsed; measured with a diff script, not by eye).**
 
@@ -106,6 +111,6 @@ Named changes, and only these:
 1. the imports of the source's own files (`./terms.ts`, `./deadline.ts`, `./source.ts`) are the unit's own files without `.ts` (the host-agnostic check allows `./name` only); no import of another package is needed;
 2. the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed.
 
-`src/index.ts` is new. Tests (`src/*.test.ts`; shared set-up in `test/support.ts`, not shipped; the hosts are `example.test` hosts, and no test reaches a real host): ported from `gilb-stakeholders` `test/` at the same commit, by test block (a block that calls a symbol not in this unit is left out): `masterTimeout-m3kt.test.ts` 12 of 34, `fieldSetReadSpeed-22d.test.ts` 4 of 18, `qa-c214-m3kt-s92.test.ts` 3 of 31 (its wire block talks to a server on the loopback address of the test machine), `qa-c214-22c-r2.test.ts` 1 of 3. New: `terms.test.ts` (22), `deadline.test.ts` (24), `source.test.ts` (28), `vocabularySource.test.ts` (1: the export list). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
+`src/index.ts` is new. Tests (`src/*.test.ts`; shared set-up in `test/support.ts`, not shipped; the hosts are `example.test` hosts, and no test reaches a real host): ported from `gilb-stakeholders` `test/` at the same commit, by test block (a block that calls a symbol not in this unit is left out): `masterTimeout-m3kt.test.ts` 12 of 34, `fieldSetReadSpeed-22d.test.ts` 4 of 18, `qa-c214-m3kt-s92.test.ts` 3 of 31 (its wire block talks to a server on the loopback address of the test machine), `qa-c214-22c-r2.test.ts` 1 of 3. New: `terms.test.ts` (41), `deadline.test.ts` (24), `source.test.ts` (28), `vocabularySource.test.ts` (1: the export list). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
 
 Left out, with reasons: `carrierSelector-22c`, `qa-c214-22c`, `qa-c214-22d`, `qa-c214-22d-r2`, `lists` (they run `resolveFieldSets`, `createStakeholderVocabulary` or `readList`, which are not taken); `qa-c214-m3kt-s93` (it needs the 987 KB recorded live answer of the master, `fixtures/m3kt-s92/live-memo.json.gz`, and its blocks run the type-tree reader and the reference check, which are not taken); the other blocks of the four ported files (they run the kind reader, `resolveFieldSets`, `createRecord` or the reference writer; the kind-reader blocks are in `stakeholder-kinds`).
