@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-set-fields",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-set-fields",
+  "version": "0.1.0",
+  "purpose": "Draws and edits the Relations and Contact-preferences fields of a stakeholder card from the ontology's field set.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      { "path": "src/components/records/StakeholderSetFields.tsx", "lines": [37, 426], "to": "src/StakeholderSetFields.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers': `card-group` (`CardGroup`, `CardIcon`, `CardIconName`), `card-mode` (`useCardMode`), `card-references` (the link-target functions, `relationCopyOf`, `useAddCardReference`, `useRemoveCardReference`), `entity-ref-value`, `lws-records` (the type `RecordFacts`), `remove-control`, `stakeholder-card-model` (`storedValuesOf`, `termName`, `CardField`), `stakeholder-card-vocabulary` (`referenceReadingQuery`) and `stakeholder-field-sets` (types); `@tanstack/react-query` stays a third-party import; plus `./setFieldsHost`.",
+    "In `SetField`, before the first hook of the source: `const host = useStakeholderSetFieldsHost();` and `if (!host.changeRecordFactItems) recordId = null;`. `useRemoveCardReference()` is `useRemoveCardReference(host as CardReferencesHost)`.",
+    "ADDED BEHAVIOUR (production always has the writer): a host without `changeRecordFactItems` gets the fields read-only. Before: `recordId` is what the caller passes and the remove controls are drawn. After: `recordId` is `null` when the host has no writer, so no remove control is drawn and `remove` returns. With the writer nothing changes.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the other app are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/setFieldsHost.tsx"
+  ],
+  "host": [
+    {
+      "member": "changeRecordFactItems",
+      "replaces": "changeRecordFactItems(recordId, recordEntityUri, factKey, change, notChanged), GilbApp src/lib/base/recordFactItems.ts:55, called through useRemoveCardReference (src/lib/base/useAddCardReference.ts:60), used at src/components/records/StakeholderSetFields.tsx:138",
+      "optional": true
+    }
+  ],
+  "library": { "admitted": false }
+}
