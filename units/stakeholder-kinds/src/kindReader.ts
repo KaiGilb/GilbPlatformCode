@@ -18,7 +18,7 @@ import {
   type TermFetch,
   type VocabularySource,
 } from "@kaigilb/gilbplatformcode-vocabulary-source";
-import { STAKEHOLDER_ROLE_TERM, expandDownIsA, readShortcutSpelling, settleShortcuts, type CreateShortcut, type ShortcutState, type StakeholderKindType } from "./kinds";
+import { STAKEHOLDER_ROLE_TERM, expandDownIsA, readShortcutSpelling, settleShortcuts, type CreateShortcut, type ShortcutState, type StakeholderKindType, type StakeholderKinds } from "./kinds";
 import { resolvePredicate, type StakeholderPredicates } from "./predicates";
 import type { VocabularyStore } from "./vocabularyStore";
 
@@ -147,6 +147,28 @@ async function readWords(
     else failed.add(term);
   });
   return { words, failed };
+}
+
+/**
+ * The set as the field-set path's `StakeholderKinds` (one kind read in the package; the card, the Records grid
+ * and the create dialog read the kinds through the cached reader too, ⛔ never a second walk). A copy: changing it leaves the set
+ * in hand alone. Prefer `resolveFieldSets(source, { kindSet })`, which reads the predicates for you.
+ *
+ * @param set the cached kind set
+ * @param predicates the six predicates' spellings (`resolvePredicates`)
+ * @returns the kinds, with the set's words on every type
+ */
+export function stakeholderKindsOf(set: StakeholderKindSet, predicates: StakeholderPredicates): StakeholderKinds {
+  return {
+    role: set.role,
+    members: [...set.members],
+    types: set.types.map((k) => ({ ...k, parents: [...k.parents], members: [...k.members] })),
+    complete: set.complete,
+    incompleteAt: [...set.incompleteAt],
+    predicates,
+    createShortcuts: set.createShortcuts.map((c) => ({ ...c })),
+    shortcuts: set.shortcuts,
+  };
 }
 
 /** The words a set holds, by term (its types' and its shortcuts'). */

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-vocabulary-source",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Reading the GilbVeda master's term documents, each request and each whole reading bounded in time, so a master that does not answer is \"not known yet\" and never \"nothing\".",

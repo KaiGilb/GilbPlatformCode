@@ -1,8 +1,9 @@
 // The stakeholder kinds: which types a stakeholder record may have. Read, never listed: the role concept's `a:playableBy` names the
 // types whose instances may play it, and every type under those, by is-a, may too.
 
-import { nameOfIri, spellingOfTermDoc, type VocabularySource } from "@kaigilb/gilbplatformcode-vocabulary-source";
+import { VocabularyUnavailableError, nameOfIri, refsUnder, spellingOfTermDoc, textUnder, type VocabularySource } from "@kaigilb/gilbplatformcode-vocabulary-source";
 import type { StakeholderPredicates } from "./predicates";
+import { resolvePredicates } from "./predicates";
 
 /** The role concept whose players are stakeholders: its address on the master. */
 export const STAKEHOLDER_ROLE_TERM = "t/Stakeholder";
@@ -61,6 +62,66 @@ export interface StakeholderKinds {
    */
   createShortcuts: CreateShortcut[];
   shortcuts: ShortcutState;
+}
+
+export interface ResolveKindsOptions {
+  /** Override the role concept's address (a path under `/base/`). */
+  roleTerm?: string;
+  /** Spellings already resolved in this pass. */
+  predicates?: StakeholderPredicates;
+  /** Some spellings already resolved in this pass; the rest are read here. Ignored when
+   *  `predicates` is given. */
+  knownPredicates?: Partial<StakeholderPredicates>;
+}
+
+/**
+ * Read the role's players from the master and expand them down is-a.
+ *
+ * Reads that do not wait on each other are made at the same time (for the page's latency
+ * bands): the role's term with the predicate terms, and each level of the is-a
+ * walk down as one round of children reads. The answer, and the order of `types`, are those of
+ * a walk made one read at a time.
+ */
+export async function resolveStakeholderKinds(
+  source: VocabularySource,
+  opts: ResolveKindsOptions = {},
+): Promise<StakeholderKinds> {
+  const role = source.termIri(opts.roleTerm ?? STAKEHOLDER_ROLE_TERM);
+  // The role's term through the named read where the source has one: one indexed read on the
+  // master, where the per-term route costs about 100 ms of the master's time.
+  const [predicates, roleDoc, shortcutKeys] = await Promise.all([
+    opts.predicates ?? resolvePredicates(source, opts.knownPredicates),
+    source.terms ? source.terms([role])[0]! : source.term(role),
+    // The shortcut term is read in this same round, so it adds no round of its own.
+    readShortcutSpelling(source),
+  ]);
+  const members = refsUnder(roleDoc, predicates.playableBy.readKeys);
+  if (members.length === 0) {
+    // Loud on purpose. An empty kind set would render an empty Stakeholders list, which looks
+    // exactly like a person who has recorded no one.
+    throw new VocabularyUnavailableError(
+      `${role} declares no players under ${predicates.playableBy.readKeys.join(" / ")}; ` +
+        `the stakeholder kinds cannot be read`,
+    );
+  }
+
+  // The shortcuts' own terms are read WHILE the children are walked (one round, not one more): a shortcut that turns out not to be
+  // a player is dropped afterwards. Never rejects (see `readShortcuts`).
+  const shortcutsRead = readShortcuts(source, roleDoc, shortcutKeys, predicates);
+  const { types, incompleteAt } = await expandDownIsA(source, members);
+
+  const { createShortcuts, shortcuts } = settleShortcuts(await shortcutsRead, new Set(types.map((k) => k.term)));
+
+  return {
+    role,
+    members,
+    types,
+    complete: incompleteAt.length === 0,
+    incompleteAt,
+    predicates,
+    createShortcuts,
+    shortcuts,
+  };
 }
 
 /**
@@ -149,6 +210,33 @@ export async function readShortcutSpelling(source: VocabularySource): Promise<st
 export interface ShortcutsRead {
   state: "unreadable" | "none-declared" | "named";
   named: CreateShortcut[];
+}
+
+/**
+ * The role's create shortcuts, as named, each with the label its own term carries. A shortcut whose own term does
+ * not answer keeps its place without a label. Never rejects.
+ */
+async function readShortcuts(
+  source: VocabularySource,
+  roleDoc: Record<string, unknown>,
+  readKeys: string[] | null,
+  predicates: StakeholderPredicates,
+): Promise<ShortcutsRead> {
+  if (readKeys === null) return { state: "unreadable", named: [] };
+  const named = refsUnder(roleDoc, readKeys);
+  if (named.length === 0) return { state: "none-declared", named: [] };
+  const withLabels = await Promise.all(
+    named.map(async (iri): Promise<CreateShortcut> => {
+      let label: string | null = null;
+      try {
+        label = textUnder(await source.term(iri), predicates.label.readKeys);
+      } catch {
+        label = null;
+      }
+      return { term: iri, name: nameOfIri(iri), label };
+    }),
+  );
+  return { state: "named", named: withLabels };
 }
 
 /** Keep only the shortcuts that are players of the role; nothing is offered that cannot be created. */

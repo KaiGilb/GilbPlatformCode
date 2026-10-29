@@ -2,17 +2,25 @@
   "schema": 1,
   "unit": "units/stakeholder-kinds",
   "package": "@kaigilb/gilbplatformcode-stakeholder-kinds",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Which stakeholder kinds exist and their words, read from the GilbVeda master in as few requests as it allows, kept across sessions, and shared by every reader in a page.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
-    "commit": "27fe0cef35857c070354c0439c6e4e4ebcc62815",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
     "files": [
       {
         "path": "src/predicates.ts",
         "lines": [
           19,
           42
+        ],
+        "to": "src/predicates.ts"
+      },
+      {
+        "path": "src/predicates.ts",
+        "lines": [
+          44,
+          58
         ],
         "to": "src/predicates.ts"
       },
@@ -27,8 +35,24 @@
       {
         "path": "src/kinds.ts",
         "lines": [
+          80,
+          138
+        ],
+        "to": "src/kinds.ts"
+      },
+      {
+        "path": "src/kinds.ts",
+        "lines": [
           140,
           226
+        ],
+        "to": "src/kinds.ts"
+      },
+      {
+        "path": "src/kinds.ts",
+        "lines": [
+          228,
+          253
         ],
         "to": "src/kinds.ts"
       },
@@ -61,6 +85,14 @@
         "lines": [
           102,
           194
+        ],
+        "to": "src/kindReader.ts"
+      },
+      {
+        "path": "src/kindReader.ts",
+        "lines": [
+          196,
+          216
         ],
         "to": "src/kindReader.ts"
       },
@@ -115,9 +147,9 @@
     ]
   },
   "namedChanges": [
-    "the imports of the source's own files lose `.ts` (`./kinds`, `./predicates`, `./vocabularyStore`; `./vocabulary.ts` is `./vocabularyStore`), and the imports of `./terms.ts`, `./source.ts` and `./deadline.ts` are one import of the peer `vocabulary-source`; the imports of symbols that are not taken (`resolvePredicates`, `VocabularyUnavailableError` and `textUnder` in `kinds.ts`; `StakeholderKinds` in `kindReader.ts`) are dropped;",
+    "the imports of the source's own files lose `.ts` (`./kinds`, `./predicates`, `./vocabularyStore`; `./vocabulary.ts` is `./vocabularyStore`), and the imports of `./terms.ts`, `./source.ts` and `./deadline.ts` are one import of the peer `vocabulary-source`; since 0.2.0 no import of a symbol is dropped (`resolvePredicates`, `VocabularyUnavailableError` and `textUnder` in `kinds.ts` and `StakeholderKinds` in `kindReader.ts` are taken), and the import of `resolvePredicates` in `kinds.ts` is its own line beside the 0.1.0 `import type { StakeholderPredicates }` line;",
     "`forgetStakeholderKindReaders` (`kindReader.ts` line 740) loses the line `treesByOrigin.clear();`, because the type-tree readers are not taken;",
-    "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed."
+    "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded (in 0.2.0: `Cycle214 GAPP214.22d`, `GAPP214.22d rig`, `Cycle214 s8` and `Agent.Scaling M3k F1` are dropped from the comments of `resolveStakeholderKinds`, `readShortcuts` and `stakeholderKindsOf`); no code changed."
   ],
   "newFiles": [
     "src/index.ts"

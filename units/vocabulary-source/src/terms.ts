@@ -124,6 +124,22 @@ export function spellingOfTermDoc(doc: TermDoc, fallbackTerm: string): Predicate
   return spellingFromBinding(term, token, deprecated);
 }
 
+/** The term's declared value encoding (`inline-literal:text`, `reference:@id`, …), or null. */
+export function encodingOf(doc: TermDoc): string | null {
+  return firstString(doc, SELF_DESCRIPTION.encoding);
+}
+
+/** The string a writer stamps as a record's type, for the type this term defines
+ *  (`a:typeAttribute`, e.g. `t:<Type>`), or null when the term publishes none. */
+export function typeAttributeOf(doc: TermDoc): string | null {
+  return firstString(doc, SELF_DESCRIPTION.typeAttribute);
+}
+
+/** The term's declared cardinality (`single`, `multi`), as served, or null. */
+export function cardinalityOf(doc: TermDoc): string | null {
+  return firstString(doc, SELF_DESCRIPTION.cardinality);
+}
+
 /** Every value stored under any key of the read set, arrays flattened. */
 export function valuesUnder(doc: TermDoc, readKeys: readonly string[]): unknown[] {
   const out: unknown[] = [];
