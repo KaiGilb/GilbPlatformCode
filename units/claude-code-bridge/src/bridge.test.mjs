@@ -135,7 +135,8 @@ describe("billing: the subscription, never an API key", () => {
     ];
     const keep = { PATH: "/bin", HOME: "/h", HTTPS_PROXY: "http://p", CLAUDE_CONFIG_DIR: "/c", AWS_PROFILE: "x", XAI_API_KEY: "k" };
     const out = childEnv({ ...Object.fromEntries(bad.map((k) => [k, "x"])), ...keep });
-    expect(Object.keys(out).sort()).toEqual(Object.keys(keep).sort());
+    // MCP_TOOL_TIMEOUT is the one variable the bridge itself adds.
+    expect(Object.keys(out).sort()).toEqual([...Object.keys(keep), "MCP_TOOL_TIMEOUT"].sort());
   });
 
   it("the child of a turn and of a hand-off gets none of the prefixed variables", async () => {
