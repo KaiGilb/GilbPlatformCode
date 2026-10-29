@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "unit": "units/reachable-vaults",
+  "package": "@kaigilb/gilbplatformcode-reachable-vaults",
+  "version": "0.1.0",
+  "purpose": "Reads the vaults the signed-in person can reach, with their names, parents and landing flag, and decorates the session's vault set with them.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/vaultSets.ts",
+        "lines": [
+          62,
+          83
+        ],
+        "to": "src/reachableVaults.ts"
+      },
+      {
+        "path": "src/lib/base/vaultSets.ts",
+        "lines": [
+          111,
+          120
+        ],
+        "to": "src/reachableVaults.ts"
+      },
+      {
+        "path": "src/lib/base/vaultSets.ts",
+        "lines": [
+          122,
+          209
+        ],
+        "to": "src/reachableVaults.ts"
+      },
+      {
+        "path": "src/lib/base/hooks.ts",
+        "lines": [
+          54,
+          58
+        ],
+        "to": "src/reachableVaults.ts"
+      },
+      {
+        "path": "src/lib/base/hooks.ts",
+        "lines": [
+          60,
+          152
+        ],
+        "to": "src/reachableVaults.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [
+          430,
+          430
+        ],
+        "to": "src/reachableVaults.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`LWS_VAULTS_URL`, a constant built from the base origin when the module loaded, is the function `lwsVaultsUrl()`, built from the base-origin setting at each call (the setting unit's rule); `listReachableVaults` calls it at both places the source used the constant.",
+    "The imports: `NotSignedInError`, `bearerHeaderFor`, `dpopReadAuth`, `invalidateDpop` from `@kaigilb/gilbplatformcode-lws-session-bridge`; `serverErrorText` from `lws-records`; `narrowVaultModes` from `vault-modes`; the type `ReachableVault` from `plan-record-hooks`. In the source these are `./token`, `./bearer`, `./dpop`, `./serverError` and `./types`.",
+    "`lwsReadAuth` passes the method to `bearerHeaderFor(url, method)`, as `lws-vault-sets` does (the bridge's signature took the URL alone in the app).",
+    "The `useMemo` of `useVaults` is the function `decorateSessionVaults(set, richList, enrichFailed)`: its body is the memo's body (`hooks.ts` lines 100-131) with `enrich.isError` as the parameter `enrichFailed`; the hook calls it with `session?.vaults ?? []`, `enrich.data ?? []` and `enrich.isError`, and the same dependency list.",
+    "`useVaults` takes `ReachableVaultsSession | undefined` (`{ principal?, vaults? }`) in place of the app's `BaseSession`; the hook reads `principal` and `vaults` only.",
+    "Comments: cycle, ticket and person tags are removed; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
