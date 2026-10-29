@@ -41,7 +41,7 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 install-links=true
 ```
 
-The package ships TypeScript source (`src/`); your bundler compiles it. Third-party peers: `@tanstack/react-query` (`^5.101.2`) and `react` (`^19.0.0`). The unit has a heavy install (41 units): `plan-record-hooks` brings its own, and `stakeholder-list-state` is a singleton peer (see Module state). The settings of `base-origin` and `term-origin` must be set once at start-up, and `lws-session-bridge` needs its host (`setLwsAuth`): the doors read them at the call, and throw a sentence that names the missing one.
+The package ships TypeScript source (`src/`); your bundler compiles it. Third-party peers: `@tanstack/react-query` (`^5.101.2`) and `react` (`^19.0.0`). The unit has a heavy install (42 units with itself): `plan-record-hooks` brings its own, and `stakeholder-list-state` is a singleton peer (see Module state). The settings of `base-origin` and `term-origin` must be set once at start-up, and `lws-session-bridge` needs its host (`setLwsAuth`): the doors read them at the call, and throw a sentence that names the missing one.
 
 ## Examples
 
@@ -99,7 +99,7 @@ Two installed copies would each keep their own canonicalisers and shares, and a 
 - "`stakeholderListDeps` starts reading." It is pure construction: nothing is requested until the reader reads.
 - "`CredentialRefusedError` is any failure of the names door." Only a 401. Another status is "unavailable".
 - "A 404 from the resolver means the record ended." It means so only for a record kept as read, that this reader's pages never listed, that this session saw joined to a person before, and that is on the holder's own vault (the platform answers the same 404 for "no link", "not a card" and "record not on the caller's own vault"). A page that lists the record takes it back.
-- "`recordsInView`-style counts are reset by a link write." The kept finds and reads are forgotten by a link write (`forgetLinkedFinds`); what the session knows was deleted or ended is kept.
+- "A link write forgets everything the doors kept." It forgets the kept finds and reads (`forgetLinkedFinds`); what the session knows was deleted or ended is kept. Only sign-out (`forgetLinkedRecords`) forgets that too.
 - "The anchor ask is kept after it answers." `keptResolve` shares it only while it is in flight.
 - "`masterTypeAddress` is fixed at load." It reads the ontology origin at each call.
 - "The photo address needs a second request." It comes with the name in the same `public-card` read.
