@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as unit from "./index";
 
 describe("the unit's export list", () => {
-  it("is exactly the symbols the Plan card and the field-set reader reach, and the reset of the shared readers", () => {
+  it("is exactly the symbols the Plan card, the field-set reader and the reference check reach, and the reset of the shared readers", () => {
     expect(Object.keys(unit).sort()).toEqual(
       [
         "CREATE_SHORTCUT_TERM",
@@ -12,17 +12,20 @@ describe("the unit's export list", () => {
         "PREDICATE_TERMS",
         "STAKEHOLDER_ROLE_TERM",
         "createStakeholderKindReader",
+        "createTypeTreeReader",
         "expandDownIsA",
         "forgetStakeholderKindReaders",
         "kindDescendants",
         "kindLabelOf",
         "readShortcutSpelling",
+        "readTypeTree",
         "resolvePredicate",
         "resolvePredicates",
         "resolveStakeholderKinds",
         "settleShortcuts",
         "stakeholderKindReader",
         "stakeholderKindsOf",
+        "typeTreeReader",
       ].sort(),
     );
   });

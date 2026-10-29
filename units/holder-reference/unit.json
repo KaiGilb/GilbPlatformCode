@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "unit": "units/holder-reference",
+  "package": "@kaigilb/gilbplatformcode-holder-reference",
+  "version": "0.1.0",
+  "purpose": "Adds a reference from a card field to another record with a version-checked write and the ontology's rules for which references are allowed.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/holderReference.ts",
+        "lines": [
+          129,
+          1424
+        ],
+        "to": "src/holderReference.ts"
+      },
+      {
+        "path": "src/rowVault.ts",
+        "lines": [
+          29,
+          56
+        ],
+        "to": "src/rowVault.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports of `holderReference.ts` (source lines 87-127) are four imports of peers: `record-sync` (`expectStatus`, `isAbsoluteIri`, `locate`, `originHostMismatch`, `PlatformError`, `request`, `routeUrl`, `RecordListError`, `walkRecordPages`, `PlatformClient`, `RecordRow`, `RecordWalk`), `vocabulary-source` (the names of `terms.ts`, `source.ts` and `deadline.ts` the file imports, and `TermFetch`), `stakeholder-field-sets` (`StakeholderFieldSets`) and `stakeholder-kinds` (the names of `kinds.ts`, `predicates.ts`, `kindReader.ts` and `vocabulary.ts` the file imports); the import of `rowVault` is `./rowVault` (no `.ts`); the code after the imports is the source's lines 129-1424;",
+    "`rowVault.ts` has no imports; its code is the source's lines 29-56;",
+    "the header comment of each file is a new, shorter one, and comments that name a cycle, a ticket, an agent, a person, a ruling, a finding or a host are reworded (and `veda.gilb.com` in two comments is `ontology.example.test`); no code changed;",
+    "one string literal carries a tag and is kept as it is: the message of `PlacementUnknownError` in `rowVault.ts` (source line 50) says \"before GilbPlatform GAPP214.25c\"."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

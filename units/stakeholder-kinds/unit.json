@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-kinds",
   "package": "@kaigilb/gilbplatformcode-stakeholder-kinds",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "purpose": "Which stakeholder kinds exist and their words, read from the GilbVeda master in as few requests as it allows, kept across sessions, and shared by every reader in a page.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -108,7 +108,7 @@
         "path": "src/kindReader.ts",
         "lines": [
           287,
-          295
+          297
         ],
         "to": "src/kindReader.ts"
       },
@@ -116,15 +116,7 @@
         "path": "src/kindReader.ts",
         "lines": [
           299,
-          586
-        ],
-        "to": "src/kindReader.ts"
-      },
-      {
-        "path": "src/kindReader.ts",
-        "lines": [
-          638,
-          638
+          639
         ],
         "to": "src/kindReader.ts"
       },
@@ -132,14 +124,6 @@
         "path": "src/kindReader.ts",
         "lines": [
           641,
-          711
-        ],
-        "to": "src/kindReader.ts"
-      },
-      {
-        "path": "src/kindReader.ts",
-        "lines": [
-          737,
           741
         ],
         "to": "src/kindReader.ts"
@@ -148,7 +132,6 @@
   },
   "namedChanges": [
     "the imports of the source's own files lose `.ts` (`./kinds`, `./predicates`, `./vocabularyStore`; `./vocabulary.ts` is `./vocabularyStore`), and the imports of `./terms.ts`, `./source.ts` and `./deadline.ts` are one import of the peer `vocabulary-source`; since 0.2.0 no import of a symbol is dropped (`resolvePredicates`, `VocabularyUnavailableError` and `textUnder` in `kinds.ts` and `StakeholderKinds` in `kindReader.ts` are taken), and the import of `resolvePredicates` in `kinds.ts` is its own line beside the 0.1.0 `import type { StakeholderPredicates }` line;",
-    "`forgetStakeholderKindReaders` (`kindReader.ts` line 740) loses the line `treesByOrigin.clear();`, because the type-tree readers are not taken;",
     "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded (in 0.2.0: `Cycle214 GAPP214.22d`, `GAPP214.22d rig`, `Cycle214 s8` and `Agent.Scaling M3k F1` are dropped from the comments of `resolveStakeholderKinds`, `readShortcuts` and `stakeholderKindsOf`); no code changed."
   ],
   "newFiles": [

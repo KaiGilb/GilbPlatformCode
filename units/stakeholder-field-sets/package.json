@@ -23,7 +23,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.2.0",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.3.0",
     "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.0"
   }
 }
