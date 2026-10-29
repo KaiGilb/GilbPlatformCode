@@ -23,7 +23,7 @@
     "@kaigilb/gilbplatformcode-field-row": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-kinds": "^0.1.0",
-    "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.2.0",
     "@kaigilb/gilbplatformcode-record-picker": "^0.1.0",
     "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",
     "@kaigilb/gilbplatformcode-remove-control": "^0.1.0",
