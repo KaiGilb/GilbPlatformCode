@@ -12,7 +12,6 @@ import {
   MIN_BUSY_WAIT_MS,
   ONLINE_CARD_READ_PATH,
   ONLINE_CARD_REQUEST_TIMEOUT_MS,
-  ONLINE_CARD_WORDS,
   WORDS,
   cardName,
   contactPointsOf,
@@ -55,7 +54,7 @@ describe("the exports", () => {
     expect(Object.keys(unit).sort()).toEqual(
       [
         "DEFAULT_BUSY_WAIT_MS", "FIND_BY_NAME_PATH", "LINK_SLUG", "LinkRefusedError", "MAX_BUSY_WAIT_MS", "MAX_CANDIDATES", "MIN_BUSY_WAIT_MS",
-        "ONLINE_CARD_READ_PATH", "ONLINE_CARD_REQUEST_TIMEOUT_MS", "ONLINE_CARD_WORDS", "WORDS", "cardName", "contactPointsOf", "createOnlineCardController",
+        "ONLINE_CARD_READ_PATH", "ONLINE_CARD_REQUEST_TIMEOUT_MS", "WORDS", "cardName", "contactPointsOf", "createOnlineCardController",
         "findOnlineCardCandidates", "findOnlineCardResult", "isConnected", "linkWrite", "parseOnlineCard", "readOnlineCard", "rungChipWords", "rungWords",
         "unlinkWrite",
       ].sort(),
@@ -71,7 +70,7 @@ describe("the exports", () => {
     expect(ONLINE_CARD_READ_PATH).toBe("/base/connect/public-card");
     expect(LINK_SLUG).toBe("sameAs");
   });
-  it("the words, and ONLINE_CARD_WORDS is the same object as WORDS", () => {
+  it("the words", () => {
     expect(WORDS).toEqual({
       online: "Their online card",
       local: "My card of them",
@@ -81,7 +80,6 @@ describe("the exports", () => {
       findTitle: "Find their online card",
       noGrant: "Connecting grants nobody anything, and they are not told.",
     });
-    expect(ONLINE_CARD_WORDS).toBe(WORDS);
   });
 });
 
