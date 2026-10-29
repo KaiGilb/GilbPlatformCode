@@ -124,6 +124,7 @@
     "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "file:../stakeholder-list-state",
     "@kaigilb/gilbplatformcode-tag-client": "file:../tag-client",
+    "@kaigilb/gilbplatformcode-tag-grammar": "file:../tag-grammar",
     "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-type-chooser": "file:../type-chooser",
     "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
