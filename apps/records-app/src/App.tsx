@@ -4,9 +4,8 @@ import { SignInCard } from "@kaigilb/gilbplatformcode-signin";
 import { NotSignedInError } from "@kaigilb/gilbplatformcode-signin/session";
 import { pickContactActions } from "@kaigilb/gilbplatformcode-contact-actions";
 import type { ColorSchemePreference } from "@kaigilb/gilbplatformcode-color-scheme";
-import { credential, findMyVault, signInApp, signInAuth } from "./platform";
-import { addEntry, listEntries, loadProfile, photoObjectUrl, saveProfile, searchEntries, setProfilePhoto, type Entry, type OwnCard } from "./data";
-import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
+import { credential, findMyVault, signInApp, signInAuth, type AppVault } from "./platform";
+import { supersedeOnly, addEntry, listEntries, loadProfile, photoObjectUrl, saveProfile, searchEntries, setProfilePhoto, type Entry, type OwnCard, type SaveResult } from "./data";
 import { loadPreference, nextPreference, setPreference, systemQuery } from "./theme";
 import { signOut } from "./signOut";
 
@@ -66,7 +65,7 @@ function ThemeToggle() {
 
 function Signed({ onSignOut }: { onSignOut: () => void }) {
   const [view, setView] = useState<View>({ kind: "list" });
-  const vault = useQuery({ queryKey: ["vault"], queryFn: findMyVault });
+  const vault = useQuery({ queryKey: ["vault"], queryFn: () => findMyVault() });
   const vaultId = vault.data?.vaultId;
   return (
     <>
@@ -90,6 +89,8 @@ function Signed({ onSignOut }: { onSignOut: () => void }) {
     </>
   );
 }
+
+const SUPERSEDE_NOTICE = "This run changes existing records only. Adding records and pictures is off.";
 
 export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: Entry) => void }) {
   const qc = useQueryClient();
@@ -123,6 +124,7 @@ export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: E
 
   return (
     <>
+      {supersedeOnly() ? <p className="muted">{SUPERSEDE_NOTICE}</p> : (
       <form className="card" onSubmit={add} aria-label="Add a record">
         <label htmlFor="rec-name">Name</label>
         <input id="rec-name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -131,6 +133,7 @@ export function RecordList({ vaultId, onOpen }: { vaultId: string; onOpen: (t: E
         {error && <p className="error" role="alert">{error}</p>}
         <p><button className="primary" type="submit" disabled={pending}>Add record</button></p>
       </form>
+      )}
       <label htmlFor="rec-search">Search records</label>
       <input id="rec-search" type="search" placeholder="Search name or description" value={query} onChange={(e) => setQuery(e.target.value)} />
       {entries.isLoading && <p className="muted">Loading records…</p>}
@@ -178,7 +181,7 @@ export function Avatar({ vaultId, location, small }: { vaultId: string; location
   return src ? <img className={cls} src={src} alt="Profile picture" /> : <div className={cls} role="img" aria-label="No picture" />;
 }
 
-export function ProfileView({ vault }: { vault: ReachableVault }) {
+export function ProfileView({ vault }: { vault: AppVault }) {
   const qc = useQueryClient();
   const profile = useQuery({ queryKey: ["profile", vault.vaultId], queryFn: () => loadProfile(vault) });
   if (profile.isLoading) return <p className="muted">Loading profile…</p>;
@@ -195,6 +198,13 @@ export function ProfileView({ vault }: { vault: ReachableVault }) {
         card={state.kind === "card" ? state.card : null}
         onSaved={() => qc.invalidateQueries({ queryKey: ["profile", vault.vaultId] })}
       />
+      <section className="card" aria-label="Connection">
+        <h2>Connection</h2>
+        <p>Vaults reached: {vault.reachCount ?? "unknown"}</p>
+        <p>Vault: {vault.vaultId} ({(vault.modes ?? []).join(", ") || "no modes"})</p>
+        <p>Own card road: {state.kind === "card" ? state.card.road : "none"}</p>
+        <p>Own card id: {state.kind === "card" ? state.card.id : "none"}</p>
+      </section>
     </>
   );
 }
@@ -206,17 +216,24 @@ function ProfileForm({ vaultId, card, onSaved }: { vaultId: string; card: OwnCar
   const actions = pickContactActions({ phones: [f.phone], emails: [f.email], socials: [] });
   const off = card === null;
 
-  async function run(fn: () => Promise<void>, done: string) {
+  async function run(fn: () => Promise<SaveResult | void>, done: string) {
     setErr(null); setMsg(null);
-    try { await fn(); await onSaved(); setMsg(done); } catch (e) { setErr((e as Error).message); }
+    try {
+      const r = await fn();
+      await onSaved();
+      if (r && !r.confirmed) setErr(`The vault did not confirm the change: ${r.failed.join(", ")}`);
+      else setMsg(done);
+    } catch (e) { setErr((e as Error).message); }
   }
 
   return (
     <form className="card" aria-label="Profile" onSubmit={(e) => { e.preventDefault(); if (card) void run(() => saveProfile(card, f), "Profile saved."); }}>
       {off && <p className="error" role="alert">No profile card was found in your vault.</p>}
       <Avatar vaultId={vaultId} location={card?.photo ?? ""} />
+      {supersedeOnly() ? <p className="muted">{SUPERSEDE_NOTICE}</p> : (<>
       <label htmlFor="pic">Profile picture</label>
       <input id="pic" type="file" accept="image/*" disabled={off} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void run(() => setProfilePhoto(vaultId, card, file), "Picture saved."); }} />
+      </>)}
       <label htmlFor="p-name">Name</label>
       <input id="p-name" disabled={off} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
       <label htmlFor="p-email">Email{card && card.moreEmails > 0 ? ` (first of ${card.moreEmails + 1}; the others are kept)` : ""}</label>

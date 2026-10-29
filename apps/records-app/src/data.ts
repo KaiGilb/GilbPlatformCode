@@ -16,6 +16,16 @@ import { VEDA_ORIGIN } from "./platform";
 export const RECORD_TYPE = "t:Thing"; // PENDING Agent.Concept: purpose-fit type; t:Thing must not ship.
 export const RECORD_LIST_TYPE = RECORD_TYPE.replace(/^t:/, "");
 
+/** VITE_SUPERSEDE_ONLY=1: this run only changes existing records (nothing is added, no picture is stored). */
+export const supersedeOnly = (): boolean => import.meta.env.VITE_SUPERSEDE_ONLY === "1";
+
+export class SupersedeOnlyError extends Error {
+  constructor(what: string) {
+    super(`This run changes existing records only; ${what} is off.`);
+    this.name = "SupersedeOnlyError";
+  }
+}
+
 export interface Entry {
   id: string;
   entityUri: string;
@@ -57,6 +67,7 @@ export async function listEntries(vaultId: string): Promise<Entry[]> {
 }
 
 export async function addEntry(vaultId: string, name: string, description: string): Promise<{ id: string }> {
+  if (supersedeOnly()) throw new SupersedeOnlyError("adding records");
   const bad = validateEntry(name);
   if (bad) throw new Error(bad);
   const facts: Record<string, string> = { name: name.trim() };
@@ -137,8 +148,17 @@ function needAddress(card: OwnCard): void {
   if (!card.entityUri) throw new Error("The profile card was read with no address, so it cannot be changed safely.");
 }
 
-/** Change only the facts that differ on the own card. A cleared first value with no others removes the fact. */
-export async function saveProfile(card: OwnCard, next: { name: string; email: string; phone: string }): Promise<void> {
+export interface SaveResult {
+  /** True only when the read-back shows every edited value under the server's READ key (the bare slug). */
+  confirmed: boolean;
+  failed: string[];
+}
+
+/**
+ * Change only the facts that differ on the own card, then READ THE CARD AGAIN: a write can be accepted and
+ * stored under a key the read does not return (RuleRigdevLwsReadWriteKeyShape), so "saved" needs the read-back.
+ */
+export async function saveProfile(card: OwnCard, next: { name: string; email: string; phone: string }): Promise<SaveResult> {
   const patch: Record<string, string | readonly unknown[] | null> = {};
   if (next.name.trim() !== card.name) patch.name = next.name.trim() || null;
   for (const k of ["email", "phone"] as const) {
@@ -148,9 +168,17 @@ export async function saveProfile(card: OwnCard, next: { name: string; email: st
     if (v === "" && more === 0) patch[k] = null;
     else patch[k] = (more === 0 ? v : withFirst(k === "email" ? card.rawEmail : card.rawPhone, v)) as string | readonly unknown[];
   }
-  if (Object.keys(patch).length === 0) return;
+  if (Object.keys(patch).length === 0) return { confirmed: true, failed: [] };
   needAddress(card);
   await patchRecord(card.id, patch, card.entityUri, card.source[0], { ifMatch: card.etag });
+  const back = await readRecord(card.id, card.entityUri);
+  const served = back?.served?.facts ?? back?.facts ?? {};
+  const failed = Object.entries(patch).filter(([slug, want]) => {
+    const got = asList(served[slug]);
+    if (want === null) return got.length > 0;
+    return Array.isArray(want) ? !(want as unknown[]).every((w) => got.includes(w)) : !got.includes(want);
+  }).map(([slug]) => slug);
+  return { confirmed: back !== null && failed.length === 0, failed: back === null ? Object.keys(patch) : failed };
 }
 
 // ---- the picture -----------------------------------------------------------------------------
@@ -160,6 +188,7 @@ export async function saveProfile(card: OwnCard, next: { name: string; email: st
  * GilbApp 9a602ea7 src/lib/base/files.ts:189,198,223-239; photo ref `/files/<id>` of the face: vaultProfilePhoto.ts:891.
  */
 export async function uploadPhoto(vaultId: string, file: File): Promise<string> {
+  if (supersedeOnly()) throw new SupersedeOnlyError("storing pictures");
   const params = new URLSearchParams({ name: file.name });
   appendFaceQuery(params, null);
   const url = `${LWS_VAULT_FILES_URL(vaultId)}?${params}`;
@@ -174,6 +203,7 @@ export async function uploadPhoto(vaultId: string, file: File): Promise<string> 
 
 /** Upload, then point the own card at the file: patch `profilePhoto` (vaultProfilePhoto.ts:504). Without a card nothing is uploaded. */
 export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<void> {
+  if (supersedeOnly()) throw new SupersedeOnlyError("storing pictures");
   if (!card) throw new Error("No profile card was found in your vault.");
   needAddress(card);
   const location = await uploadPhoto(vaultId, file);

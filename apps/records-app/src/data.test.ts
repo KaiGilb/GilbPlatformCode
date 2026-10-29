@@ -17,7 +17,7 @@ const { pickVault } = await import("./platform");
 const HOST = "https://alice.platform.example.test";
 const VAULT = `${HOST}/vault`;
 const ENTITY = `${VAULT}/e/seat-record`;
-const vault = pickVault([{ vaultId: VAULT, entity: ENTITY, modes: ["read", "write"], isLandingVault: true }])!;
+const vault = pickVault([{ vaultId: VAULT, "@id": ENTITY, modes: ["read", "write"], isLandingVault: true }])!;
 
 type Doc = Record<string, unknown>;
 let records: Map<string, Doc>;
@@ -216,4 +216,47 @@ test("a card with no entityUri is never patched with a null address, and no pict
   await expect(data.setProfilePhoto(VAULT, card, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("no address");
   expect(patchRecord).not.toHaveBeenCalled();
   expect(upload).not.toHaveBeenCalled();
+});
+
+// ---- 4.4 read-back: "saved" only when the vault shows the new value under the READ key (bare slug) ----
+
+async function ownCard(served: Doc) {
+  const derived = await selfCardIdForVault(VAULT);
+  records.set(derived, person(derived, served));
+  const state = await data.loadProfile(vault);
+  if (state.kind !== "card") throw new Error("expected a card");
+  return { derived, card: state.card };
+}
+
+test("4.4: a read-back that carries the new value under the bare slug is confirmed", async () => {
+  const { derived, card } = await ownCard({ "a:email": "old@x.test" });
+  patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:email": undefined, email: "new@x.test" }); return { etag: null }; });
+  expect(await data.saveProfile(card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
+});
+
+test("4.4: a read-back still holding the old value is not confirmed and names the field", async () => {
+  const { card } = await ownCard({ email: "old@x.test" });
+  patchRecord.mockImplementationOnce(async () => ({ etag: null })); // the vault accepted and changed nothing
+  expect(await data.saveProfile(card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
+});
+
+test("4.4: for a multi-valued term the edited value must be in the list", async () => {
+  const { derived, card } = await ownCard({ email: ["a@x.test", "b@x.test"] });
+  patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, email: ["c@x.test", "b@x.test"] }); return { etag: null }; });
+  expect((await data.saveProfile(card, { name: "Alice", email: "c@x.test", phone: "" })).confirmed).toBe(true);
+  const again = await ownCard({ email: ["a@x.test", "b@x.test"] });
+  patchRecord.mockImplementationOnce(async () => ({ etag: null }));
+  expect(await data.saveProfile(again.card, { name: "Alice", email: "c@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
+});
+
+test("4.4: a removed field is confirmed only when the read-back no longer has it", async () => {
+  const { derived, card } = await ownCard({ phone: "123" });
+  patchRecord.mockImplementationOnce(async () => { const d = { ...records.get(derived)! }; delete d.phone; records.set(derived, d); return { etag: null }; });
+  expect((await data.saveProfile(card, { name: "Alice", email: "", phone: "" })).confirmed).toBe(true);
+});
+
+test("4.4: nothing to change sends nothing and is confirmed", async () => {
+  const { card } = await ownCard({ email: "a@x.test" });
+  expect(await data.saveProfile(card, { name: "Alice", email: "a@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
+  expect(patchRecord).not.toHaveBeenCalled();
 });

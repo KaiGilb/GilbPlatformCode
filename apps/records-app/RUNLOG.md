@@ -88,3 +88,32 @@ Tests first, run against 60ff8bc's code (the only change before the red run: `Av
 - Photo-orphan cleanup (an uploaded file whose card patch failed stays in the vault).
 - Refetch-after-save message (the profile does not say it re-read the card).
 - Still open from batch 2: vault `entity` on /lws/vaults rows; no-card behaviour; the owner-path POST /files fallback; fieldMeta labels; given/family name.
+
+## Batch 4 (directed by Kai-Zen)
+Start 2026-10-29 01:06:43 UTC. End 2026-10-29 01:20 UTC. About 30 tool calls. Red first: 18 failed of 64 at the first run (platform, supersede, read-back, Connection); then green 65. I started no server and called nothing in production.
+
+### Read
+Rule_Code_dev-rig-discipline (rules 1, 8, 9, 10, 11, 13, 14, 15, 16) and Proc_v_i_c_LocalAppOnLiveVaults (entry conditions).
+
+### What changed because of the rules
+- RuleRigdevNoCrossSiteCookieBridge: the SessionCredential used `dpopMintUrl` (the cookie bridge). From localhost that is cross-site and answers 401 silently. Now the bridge is used only when `import.meta.env.DEV` is false; the dev server signs in cookieless. Consequence, stated for Kai: a page reload ENDS the session on the live check, by design (RuleRigdevCookielessMintForLocal). I did not persist the key.
+- Bug found while reading GilbApp: the /lws/vaults row's vault entity is `@id` (vaultSets.ts:197-201: `entity: node["@id"]`), not `entity`. Batch 2 read `row.entity`, so the pointer road would never have been read live. Fixed (the pin test and the Connection test cover it). This answers the batch-2 open question about the entity on rows.
+- `import.meta.env.VITE_*` must be written literally for Vite to replace it in a build; the cast form I used would have read nothing in `vite build`. Fixed in platform.ts and data.ts.
+- queryFn passed the query context as the `pin` argument (a type error caught by tsc); fixed with an arrow.
+
+### 4.1-4.6
+- 4.1 vite.config.ts `server: { port: 5251, strictPort: true }`; test src/config.test.ts (red when the config is reverted).
+- 4.2 `pickVault(rows, pin)`, `findMyVault(pin = VITE_VAULT_URL)`, `VaultNotReachableError`. Row fields (GilbApp 9a602ea7 vaultSets.ts:127-141,191-206): `@id` entity, `vaultId`, `modes`, `isLandingVault`. Match is on vaultId or the root of `@id`, as URLs with trailing slash ignored. No fallback.
+- 4.3 `SupersedeOnlyError`; guards at the top of addEntry, uploadPhoto, setProfilePhoto (before any fetch); the form and picker are not rendered; one notice line. Listing, opening, searching and the profile save work.
+- 4.4 `saveProfile` returns `{confirmed, failed}` after a `readRecord` read-back; "Saved" only when every edited value is under the bare slug (lists: contains it; removed: absent). Photo write has no read-back (it is off in the live run); noted, not done.
+- 4.5 Connection section (region "Connection"): vaults reached, vault id and modes, own card road and id. Zero rows: "Signed in, but this credential reaches no vault: identity not proven." Expiry: no unit has an expiry error (signin/session has NotSignedInError and OriginNotAllowedError only; the bridge's NotSignedInError carries the 401 and drops the body). So `/lws/vaults` is read by the app: a 401 body naming expiry gives `CredentialExpiredError`, any other 401 gives the bridge's NotSignedInError. Other calls (record reads and writes) still map every 401 to NotSignedInError inside lws-records; expiry cannot be told there. Known gap.
+- 4.6 scripts/live-check.sh; `bash -n` exit 0; not run. VITE_PLATFORM_ORIGIN=https://gilb.com is GilbApp's production value (config.ts:12).
+
+### 4.7 Sign-in code path (GilbApp 9a602ea7, read-only)
+- Production's sign-in card uses the same route: `EMAIL_REQUEST_CODE_URL = ${BASE_ORIGIN}/base/auth/email/request-code` (src/lib/base/config.ts:284), called by `requestSignInCode` (src/lib/base/emailSignIn.ts:44-56) with `{ email, return_to? }`; the same body as the signin unit (units/signin/src/http.ts:30-32).
+- GilbApp's own comment on it says "Code is emailed, never in the body" (config.ts:283). That contradicts RuleRigdevOtcFromMailboxNotLog ("writes the code to the server log only"). I cannot tell which is true without calling production; I did not.
+- One difference: GilbApp posts to BASE_ORIGIN (the apex https://gilb.com); our card posts to VITE_ID_ORIGIN (https://id.gilb.com), the host Dev.Guide.SignIn names. The run script sets ID_ORIGIN to id.gilb.com. If no mail arrives, the apex route is the one GilbApp uses; Kai-Zen may point Kai at https://gilb.com/onboard/start. No code changed.
+
+### Stuck
+- A stray `cat > file` in one command waited on stdin and hung that call (about 2 min); stopped it with TaskStop. The script file was then written with the Write tool.
+- Other sessions' vitest processes (DATABASE_URL=...plancard...) are running on this machine; I left them alone.
