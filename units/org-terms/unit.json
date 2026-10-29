@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "unit": "units/org-terms",
+  "package": "@kaigilb/gilbplatformcode-org-terms",
+  "version": "0.1.0",
+  "purpose": "Resolves the ontology spellings an organization card reads: its served terms and the employment link.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      { "path": "src/lib/base/orgCard/orgTerms.ts", "lines": null, "to": "src/orgTerms.ts" },
+      { "path": "src/lib/mynet/employment/employmentLinkVocab.ts", "lines": null, "to": "src/employmentLinkVocab.ts" },
+      { "path": "src/lib/mynet/org/employmentLink.ts", "lines": [14, 19], "to": "src/employmentLinkVocabType.ts" }
+    ]
+  },
+  "namedChanges": [
+    "the imports: `attributeSpelling` from `../termSlots` and from `../../base/termSlots` is `attributeSpelling` from `@kaigilb/gilbplatformcode-term-slots`; the type `EmploymentLinkVocab` from `../org/employmentLink` is imported from `./employmentLinkVocabType`, a new file that holds only the interface (source `employmentLink.ts` lines 14-19; the rest of that file, the pure `employmentLinkFacts`, is not taken);",
+    "comments only otherwise: cycle, agent and date tags, record ids and file names of the app are removed or reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
