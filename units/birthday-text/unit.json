@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/birthday-text",
+  "package": "@kaigilb/gilbplatformcode-birthday-text",
+  "version": "0.1.0",
+  "purpose": "Reads, checks and prints a birthday given as day and month, with an optional year.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      { "path": "src/birthday.ts", "lines": [1, 147], "to": "src/birthday.ts" }
+    ]
+  },
+  "namedChanges": [
+    "Comments made generic (a cycle tag, an agent name and a person's name removed from the file's comments); no code change."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
