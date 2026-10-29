@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-session-cache",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An in-memory cache that a page opens from at once and revalidates behind, keyed by person and workspace, bounded by entries and bytes, and emptied when the person changes.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "dependencies": {
+    "@kaigilb/gilbplatformcode-principal-hub": "file:../principal-hub"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

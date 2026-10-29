@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "unit": "units/device-store",
+  "package": "@kaigilb/gilbplatformcode-device-store",
+  "version": "0.1.0",
+  "purpose": "The copy of what an app has read, kept in the browser per person and workspace as a starting point and never an answer, bounded by size, and gone when the person goes.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/persist.ts",
+        "lines": [
+          1,
+          242
+        ],
+        "to": "src/persist.ts"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedPhoneFirst"
+  ],
+  "namedChanges": [
+    "the first comment line loses its cycle tag, the app's name and a person's name, and the seventh no longer names the source app's bridge file; no code changed;",
+    "the type-only import of `ListedRecord`, `RecordDoc`, `ReachableVault` and `StoreEvent` reads from `./types` instead of the app's `shared/vault`; `src/types.ts` declares them structurally (no runtime code);",
+    "`indexedDbKv(factory, name, schema)`: `name` was `name = \"social-cache\"` and is now a required `string` with no default. Nothing else changed in the function."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/types.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
