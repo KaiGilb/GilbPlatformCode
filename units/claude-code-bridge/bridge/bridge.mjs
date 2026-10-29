@@ -87,6 +87,10 @@ export function childEnv(env = process.env) {
     const own = Number(out.MCP_TOOL_TIMEOUT);
     if (!(Number.isFinite(own) && own > MCP_TOOL_TIMEOUT_MS))
         out.MCP_TOOL_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
+    // Belt and braces: the CLI's idle limit (reset by progress) gets the same value.
+    const ownIdle = Number(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT);
+    if (!(Number.isFinite(ownIdle) && ownIdle > MCP_TOOL_TIMEOUT_MS))
+        out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
     return out;
 }
 // Single-file use (downloaded from the app): allowed-origins.json is not next to this file, so these built-in
@@ -195,6 +199,8 @@ export const TURN_MAX_TOOL_CALLS = 240;
 // A hand-off may run this long before the bridge stops it (its parent turn gets an error for that tool call).
 export const HOP_MAX_MS = 15 * 60 * 1000;
 // How long the Claude CLI is told to wait for one tool call (MCP_TOOL_TIMEOUT): the longest hand-off plus a minute.
+/** A pending tool call tells the CLI "still working" this often (MCP notifications/progress), so its idle cut never fires. */
+export const PROGRESS_EVERY_MS = 15 * 1000;
 export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000;
 // The tools whose call is a hand-off: the page runs a nested turn for each.
 // How many cancelled call ids a turn remembers.
@@ -219,6 +225,7 @@ const PERSIST_EVERY_MS = 60 * 1000; // "last used" is written to disk at most th
  * @param {() => number} [opts.now]     Clock in ms (tests).
  * @param {number} [opts.maxToolCalls]  Tool calls one person turn and its hand-offs may relay (default TURN_MAX_TOOL_CALLS).
  * @param {number} [opts.hopMaxMs]      How long one hand-off may run (default HOP_MAX_MS).
+ * @param {number} [opts.progressEveryMs] How often a pending tool call gets a progress notification (default PROGRESS_EVERY_MS).
  */
 export function createBridge(opts = {}) {
     const claudeBin = opts.claudeBin ?? "claude";
@@ -229,6 +236,7 @@ export function createBridge(opts = {}) {
     const maxPairFailures = opts.maxPairFailures ?? 5;
     const maxToolCalls = opts.maxToolCalls ?? TURN_MAX_TOOL_CALLS;
     const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
+    const progressEveryMs = opts.progressEveryMs ?? PROGRESS_EVERY_MS;
     let port = opts.port ?? DEFAULT_PORT;
     let pairingCode = newPairingCode();
     let pairFailures = 0;
@@ -478,6 +486,29 @@ export function createBridge(opts = {}) {
         }
         const batch = Array.isArray(body);
         const msgs = batch ? body : [body];
+        // A tool call that carries a progressToken, from a client that accepts SSE, is answered as a stream: progress
+        // notifications while it is pending, then the result. Everything else is answered as before.
+        const only = msgs[0];
+        const ptoken = !batch ? only?.params?._meta?.progressToken : undefined;
+        if (!batch && only?.method === "tools/call" && only.id !== undefined && ptoken !== undefined && ptoken !== null &&
+            String(req.headers.accept ?? "").includes("text/event-stream")) {
+            res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
+            const write = (m) => { if (!res.writableEnded)
+                res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`); };
+            let n = 0;
+            const timer = setInterval(() => {
+                n += 1;
+                write({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: ptoken, progress: n, message: "still working" } });
+            }, progressEveryMs);
+            res.on("close", () => clearInterval(timer));
+            try {
+                write(await mcpReply(turn, only));
+            }
+            finally {
+                clearInterval(timer);
+            }
+            return res.end();
+        }
         const replies = [];
         for (const m of msgs) {
             if (m && m.id === undefined) {
