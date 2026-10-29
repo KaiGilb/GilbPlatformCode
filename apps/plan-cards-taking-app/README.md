@@ -39,9 +39,11 @@ The props the app passes to the provider: `origin`, `ontologyOrigin`, `systemVau
 
 That a developer can take the four Plan cards and the ready-made host from this repository and have them draw, read and save with zero host objects written: `npm test` draws each of the four cards from a seeded record's address against a fake vault, read-only by default, lists the groups each card's README lists, sends one edit as one PATCH signed with a DPoP proof and the version the record was read at, and shows a nameless linked record by its main tag (`POST /base/tag/masters`, signed). `npm run build` compiles the app. The tests use copies of the host unit's fakes (`test/fakeVault.ts`, `test/fakeSession.ts`, each with a header naming its source).
 
-## Not yet proven live
+## Proven live, and not yet
 
-Everything above is proven against a fake `fetch`. Not yet proven against a live GilbPlatform (copied from the host README): that `GET`, `PATCH` and `DELETE` on `/lws/r/<id>` accept the DPoP pair alone (a `GET` returned 200 in an earlier check; the others are the first thing the live check reads), that the server accepts the `ath` claim the sign-in unit adds, and what the signed `htu` is on the apex route. Also not yet proven live: that `POST /base/tag/masters` accepts the DPoP pair alone. In addition, a session adopted from the one-time-code sign-in carries no vault list (`vaults: []`), so the session-backed parts of the host (the vault rows of the shell, `ownCard`) see none; the cards read and save by the record's own address.
+The units this app takes were checked on production on 2026-10-29 (served revision `527b612a8af8e27e1bcd730080a98bbe84588ca9`): create, read, an edit through the Value card (one `PATCH` with `If-Match` and a DPoP proof carrying `ath`), read-back, the main tag, the draw, and the end, all answered 2xx. The details are in the host unit's README, "Proven live". An ended record still answers 200, as a tombstone with `entityLifecycleState: "ended"`.
+
+Not yet proven live: this app's own one-time-code sign-in from a browser, which needs a person to read the emailed code (`npm run dev:live`, then sign in at `http://localhost:5197`). A session adopted from the one-time-code sign-in carries no vault list (`vaults: []`), so the session-backed parts of the host (the vault rows of the shell, `ownCard`) see none; the cards read and save by the record's own address.
 
 ## Rules for a live check
 
