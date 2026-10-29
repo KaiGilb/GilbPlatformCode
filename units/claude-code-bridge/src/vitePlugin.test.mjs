@@ -100,8 +100,9 @@ describe("injecting the default origins", () => {
           JSON.parse(
             execFileSync(
               process.execPath,
-              ["--input-type=module", "-e", "const m = await import(process.argv[1]); console.log(JSON.stringify([m.DEFAULT_ALLOWED_ORIGINS, m.loadAllowedOrigins(JSON.parse(process.argv[2]))]));", copy, JSON.stringify(extra)],
-              { cwd: os.tmpdir(), encoding: "utf8", env: { ...process.env, GILB_BRIDGE_ALLOW_ORIGINS: "" } },
+              ["--input-type=module", "-e", "const m = await import(process.env.BRIDGE_COPY); console.log(JSON.stringify([m.DEFAULT_ALLOWED_ORIGINS, m.loadAllowedOrigins(JSON.parse(process.env.BRIDGE_EXTRA))]));"],
+              // Path via env, not argv[1]: with argv[1] equal to the module's own path (Linux tmpdir) the bridge would run main() on import.
+              { cwd: os.tmpdir(), encoding: "utf8", env: { ...process.env, GILB_BRIDGE_ALLOW_ORIGINS: "", BRIDGE_COPY: copy, BRIDGE_EXTRA: JSON.stringify(extra) } },
             ).trim(),
           );
         expect(run([])).toEqual([origins, origins]);

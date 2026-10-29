@@ -419,8 +419,10 @@ describe("single file", () => {
     fs.copyFileSync(path.join(HERE, "../bridge/bridge.mjs"), copy);
     const out = execFileSync(
       process.execPath,
-      ["--input-type=module", "-e", "const m = await import(process.argv[1]); console.log(JSON.stringify(m.loadAllowedOrigins()));", copy],
-      { cwd: os.tmpdir(), encoding: "utf8" },
+      ["--input-type=module", "-e", "const m = await import(process.env.BRIDGE_COPY); console.log(JSON.stringify(m.loadAllowedOrigins()));"],
+      // The copy's path goes in an env var, not argv[1]: where tmpdir is not behind a symlink (Linux), argv[1] === the module's
+      // own path makes the bridge run its main() on import.
+      { cwd: os.tmpdir(), encoding: "utf8", env: { ...process.env, BRIDGE_COPY: copy } },
     );
     expect(JSON.parse(out.trim().split("\n").pop())).toEqual(DEFAULT_ALLOWED_ORIGINS);
     fs.rmSync(dir, { recursive: true, force: true });
