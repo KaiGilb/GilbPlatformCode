@@ -2,49 +2,34 @@
   "schema": 1,
   "unit": "units/stakeholder-list-state",
   "package": "@kaigilb/gilbplatformcode-stakeholder-list-state",
-  "version": "0.1.0",
-  "purpose": "The session's memory of the Stakeholders list: the ids of the records deleted in this session, and the link of each record a page was read with, each with its listeners, kept once for the page's life.",
+  "version": "0.2.0",
+  "purpose": "The session's memory of the Stakeholders list: the kept answers of its reads, the ids of the records deleted or ended in this session, and the links of the records a page and the screen carry, each with its listeners, kept once for the page's life.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       {
         "path": "src/lib/base/stakeholderList/linkedAnswers.ts",
         "lines": [
-          72,
-          90
-        ],
-        "to": "src/linkedAnswers.ts"
-      },
-      {
-        "path": "src/lib/base/stakeholderList/linkedAnswers.ts",
-        "lines": [
-          130,
-          159
+          1,
+          246
         ],
         "to": "src/linkedAnswers.ts"
       },
       {
         "path": "src/lib/base/stakeholderList/pageLinks.ts",
         "lines": [
-          13,
-          53
-        ],
-        "to": "src/pageLinks.ts"
-      },
-      {
-        "path": "src/lib/base/stakeholderList/pageLinks.ts",
-        "lines": [
-          136,
-          151
+          1,
+          183
         ],
         "to": "src/pageLinks.ts"
       }
     ]
   },
   "namedChanges": [
-    "in `linkedAnswers.ts` the import of `idFromUri` from `../vaultSets` is `lws-vault-sets`, and the type import `LinkedFound` from `./listDoors` is not taken; in `pageLinks.ts` the import from the package `gilb-stakeholders` (`readLink`, `LinkReading`) is `online-card-link` and `../vaultSets` is `lws-vault-sets`",
-    "the comment on `deletedIds` is rewritten shorter with the same facts, and tags and names are removed from the other comments; no code changed"
+    "in `linkedAnswers.ts` the import of `idFromUri` from `../vaultSets` is `lws-vault-sets`; the import of the type `LinkedFound` from `./listDoors` is replaced by the import of the type `ListedRecord` from `stakeholder-list-reader`, and the declaration `export type LinkedFound = { vaultId: string; record: ListedRecord }` (listDoors.ts line 323) is moved here, so that this unit does not depend on the doors unit, which depends on it; the doors unit imports `LinkedFound` from here",
+    "in `pageLinks.ts` the import from the package `gilb-stakeholders` (`readLink`, `LinkReading`) is `online-card-link` and `../vaultSets` is `lws-vault-sets`",
+    "comments: tags, names and internal cycle, round and ticket labels are removed or reworded with the same facts; no code changed"
   ],
   "newFiles": [
     "src/index.ts"
