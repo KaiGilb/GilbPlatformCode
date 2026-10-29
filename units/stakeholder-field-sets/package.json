@@ -1,0 +1,29 @@
+{
+  "name": "@kaigilb/gilbplatformcode-stakeholder-field-sets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Says which fields each kind of stakeholder offers, read from the ontology master, and which slot holds a party's name.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.2.0",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.0"
+  }
+}

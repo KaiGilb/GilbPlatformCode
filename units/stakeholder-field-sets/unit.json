@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-field-sets",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-field-sets",
+  "version": "0.1.0",
+  "purpose": "Says which fields each kind of stakeholder offers, read from the ontology master, and which slot holds a party's name.",
+  "source": {
+    "repo": "KaiGilb/gilb-stakeholders",
+    "commit": "0a261488be7c98d1ac5d79887c966a445b8928bd",
+    "files": [
+      {
+        "path": "src/fieldSets.ts",
+        "lines": [
+          33,
+          390
+        ],
+        "to": "src/fieldSets.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports (source lines 18-31) are one import of the peer `vocabulary-source` (`cardinalityOf`, `encodingOf`, `refsUnder`, `spellingOfTermDoc`, `textUnder`, `typeAttributeOf`, `PredicateSpelling`, `TermDoc`, `VocabularySource`) and one of the peer `stakeholder-kinds` (`resolvePredicate`, `resolvePredicates`, `resolveStakeholderKinds`, `stakeholderKindsOf`, `StakeholderKindSet`, `StakeholderKinds`, `StakeholderPredicates`); the code after them is the source's lines 33-390;",
+    "the header comment is a new, shorter one, and comments that name a cycle, a ticket, an agent or a ruling are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
