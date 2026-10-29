@@ -1,4 +1,4 @@
-// Cycle214 GAPP214.48 A7 — a relation write carries role:source, role:target, and the type.
+// A relation write carries role:source, role:target, and the type.
 // It carries no name, label, or other fact of the selected record.
 //
 // Collaborators are mocked; `writePairRelation` is real (same harness as relationWrite.wMint.test.ts).

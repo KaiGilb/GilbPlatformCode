@@ -28,7 +28,7 @@ export function typeUri(typeName: string): string {
  * Prefer the host-free CURIE `t:<Type>` (Base's canonical stored form after
  * IngestNotationNormalizer). Absolute URIs under the platform origin or the vault host
  * are treated as **foreign** when OWNER_HOST is kaizen — they stay absolute and the grid
- * list historically missed them (Cycle056: Hytta note2 still in DB, empty grid).
+ * list historically missed them (a note still in the DB showed an empty grid).
  *
  * `vaultNamespace` is retained for call-site stability / future host-scoped create.
  */
@@ -42,7 +42,7 @@ export function typeUriForVaultNamespace(typeName: string, _vaultNamespace: stri
  * Normalizes ANY spelling of a BaseVeda Type the vault may hand back into the ONE absolute
  * form this app resolves by (`recordTypeByUri()` is keyed on `typeUri(name)`).
  *
- * WHY THIS EXISTS (2026-07-20, found landing VDT 72 + P2 on main). Base's Cycle012 VDS-3
+ * WHY THIS EXISTS (2026-07-20, found on landing). Base's
  * IngestNotationNormalizer rewrites an own-host type URI to the host-free CURIE at the
  * write door, so `entity_state.type_uri` now STORES `t:Task`. `GET /lws/records` returns
  * that column verbatim — correctly. But `listVaultRecords` passed it through verbatim too,
@@ -59,7 +59,7 @@ export function typeUriForVaultNamespace(typeName: string, _vaultNamespace: stri
  *   `https://<vaultHost>/base/t/Task` (own-host absolute — pre-normalizer rows)
  *   `https://<ontology host>/base/t/Task` (the canonical BaseVeda term namespace)
  *
- * ⚠ CORRECTED 2026-08-24 (Cycle152). This block previously read "A FOREIGN-host absolute
+ * ⚠ CORRECTED 2026-08-24. This block previously read "A FOREIGN-host absolute
  * URI is returned VERBATIM", and had said so since before `5e0a0c9` (2026-07-27) changed
  * the code beneath it. That was FALSE of the implementation for ~4 weeks: the match below
  * is on the PATH `/base/t/<Name>`, not on the host, so EVERY Base-family term IRI — any
@@ -102,7 +102,7 @@ export function attrKey(slug: string): string {
 }
 
 /**
- * 🔴 Cycle159 — the ONE test for "is this served key a slug THIS APP can name?".
+ * 🔴 The ONE test for "is this served key a slug THIS APP can name?".
  *
  * It is `attrKey`'s counterpart: `attrKey` mints the wire key `a:<slug>`, and this says which
  * served keys that minting round-trips. `readRecord` strips ONE `a:`, so a vault fact written
@@ -156,7 +156,7 @@ export interface RecordTypeSpec {
   /** The typed fields, in editor order. Empty, and only then, for an entry with `fieldsFrom`. */
   fields: readonly FieldSpec[];
   /**
-   * GAPP214.30b (VAScaling A2) — an EXPLICIT marker, ⛔ never an empty list read as a signal: this
+   * An EXPLICIT marker, ⛔ never an empty list read as a signal: this
    * type's fields, and where its name is held, are the shared package's answers, read from the
    * master (`stakeholderCard.ts`). An entry with it holds no `fields`, no `nameField` and no
    * `discField` of its own (D3, VAVDT's ruling on the row's search).
@@ -195,14 +195,14 @@ export const RECORD_TYPES: readonly RecordTypeSpec[] = [
     // explicit that "Contact" itself is a RELATION (is-a connected-to), not an entity, so the
     // record anchors to the entity it actually is: a Person.
     aliasTypeNames: ["Contact"],
-    // 🔴 Cycle182 G4 — BVedanta RULING, 2026-09-16. This read `label: "Contact"` while
+    // 🔴 RULING, 2026-09-16. This read `label: "Contact"` while
     // `typeName` read `Person`, so a record correctly stored as `t:Person` was DISPLAYED as
     // "Contact". `t:Person`'s own `a:label` on the live master is **"Person"**; "Contact" is the
     // live `a:label` of `t:Contact`, a RELATION (`a:nodeKind: "relation"`, `a:predicateAttribute:
-    // "a:hasContact"`). One word over two meanings is RuleBpontHomonym, and BVedanta's ruling is
+    // "a:hasContact"`). One word over two meanings is RuleBpontHomonym, and the ruling is
     // that a local registry MAY cache a term's label but may NEVER disagree with it.
     //
-    // ⚠ The cost was measured, and Kai is the witness: reading "Contact" on a correctly-typed
+    // ⚠ The cost was measured, and a user is the witness: reading "Contact" on a correctly-typed
     // record, he concluded the node "was not created as a person" and filed an ontology defect at
     // severity-highest against data that was right (FINDING-2026-09-16-KaiTestRound1-GilbApp, G4).
     // ⇒ this was never an ontology error. The store was right; the screen was wrong.
@@ -214,19 +214,19 @@ export const RECORD_TYPES: readonly RecordTypeSpec[] = [
     // enumeration + migration and is its own increment.
     label: "Person",
     newLabel: "New person",
-    // 🔴 Cycle214 GAPP214.30 / .30b — NO FIELD LIST, NO NAME FIELD AND NO DISCRIMINATOR HERE. The
+    // 🔴 NO FIELD LIST, NO NAME FIELD AND NO DISCRIMINATOR HERE. The
     // master lists this type as a stakeholder kind (`a:playableBy` of `t/Stakeholder`), and a
     // stakeholder kind's card shows the shared package's field set for it, resolved once per session
     // (`stakeholderCard.ts`), ⛔ never a list in this app
     // (4Sol.S.Arch.Stakeholders.CrossApp.SharedHeadlessPackage.GilbApp, Implementation 2;
     // 3P.C.Stakeholders.SameInEveryApp.GilbApp). Where a person's name is read and written is
-    // `partyName.ts` (BVedanta's D1 ruling); the list's row has no sub-line for this kind.
+    // `partyName.ts`; the list's row has no sub-line for this kind.
     fieldsFrom: "stakeholder-package",
     fields: [],
   },
   {
     id: "task",
-    typeName: "Task", // Intent (BVedanta table marks Task "reused, Gilb #149") — unchanged
+    typeName: "Task", // Intent — unchanged
     label: "Task",
     newLabel: "New task",
     nameField: "label",
@@ -239,7 +239,7 @@ export const RECORD_TYPES: readonly RecordTypeSpec[] = [
       { slug: "due", label: "Due", kind: "date" }, // Intent (reused, Gilb #554) — unchanged
     ],
   },
-  // Virtual folder — VIEW membership only (Cycle056). Flat registry unchanged; membership
+  // Virtual folder — VIEW membership only. Flat registry unchanged; membership
   // is reified via relations (role:member). t:VirtualFolder Suggested in BaseVeda (A1 2026-07-27).
   // Does NOT contain/hide entities.
   {
@@ -331,7 +331,7 @@ export const RECORD_TYPES: readonly RecordTypeSpec[] = [
 
 /** Local ids retired by a rename, kept RESOLVABLE only.
  *
- * 🔴 Cycle182 G4 — `contact` → `person`, per BVedanta's ruling that the code's own identifiers
+ * 🔴 `contact` → `person`, per the ruling that the code's own identifiers
  * carried the same Person/Contact conflation as the display label. ⛔ It is NOT a second name for
  * a live spec: `resolveType` accepts a local id from a route param, a saved filter and a
  * `TypeIcon` prop, so a stored `"contact"` must keep resolving or a person's saved view breaks on

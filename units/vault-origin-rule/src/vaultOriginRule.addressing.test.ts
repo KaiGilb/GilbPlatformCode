@@ -26,7 +26,7 @@ const VEDA_VAULT = "https://veda.platform.example.test/base";
 
 describe("vaultOriginOf — REUSED for a vaultId, not re-implemented", () => {
   it("extracts the vault's own origin from its vaultId namespace", async () => {
-    // Delta10 B1 (Cycle214 1e): only BASE_ORIGIN's own host family is answered, so at production's apex.
+    // Only BASE_ORIGIN's own host family is answered, so at production's apex.
     const { vaultOriginOf } = await configWithOrigin(PROD_ORIGIN);
     // A vaultId is `https://<host>/base`, so the same helper the dereference family already
     // uses on an entity URI answers correctly for a vault namespace. No second primitive.

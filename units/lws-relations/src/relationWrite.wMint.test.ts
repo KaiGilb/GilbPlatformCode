@@ -1,5 +1,5 @@
 /**
- * Cycle165 BAPP165.HT3a — relation CREATE is PUT `/base/r/:id` (recorded Base door).
+ * Relation CREATE is PUT `/base/r/:id` (recorded Base door).
  *
  * N1 filled W-MINT POST `/c` (entity). HT3a measured that as the no-line cause:
  * `lwsCreate` → `baseEntityUri` → `/base/e/<id>`. Graph edges are `/base/r/<id>`
@@ -291,7 +291,7 @@ describe("HT1 CREATE body type is a notation ingest accepts", () => {
 });
 
 /**
- * Cycle165 BAPP165.HT3a — Ann 2026-09-01 a club vault: Ann → Writing Planguage
+ * Ann 2026-09-01 a club vault: Ann → Writing Planguage
  * capable-of appeared as a node with no connecting line, then vanished.
  *
  * Named cause (re-measured at origin/main c1d3cc2): mintRelation POSTs `/lws/vault/<VAULT>/c`

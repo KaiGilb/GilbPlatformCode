@@ -34,7 +34,7 @@
  * additive writes discharged it: `a:typeAttribute = "t:ConnectedTo"` on `t/ConnectedTo`, and
  * `a:providesFunction → t/Connect` on `t/Relation` (attached at the category per
  * RuleBpontAttachHigh, so the whole relation plane inherits one Function rather than nine
- * copies). See [[BVGATE-2026-08-02-Cycle062-VDS4-ConnectedCreateMoment-bab2af4-FAIL]] §F1.
+ * copies).
  *
  * What remains TRUE, and is the reason the swap stands: `t:ConnectedTo` is the adjudicated
  * generic, the UI mints no term (the picker is a closed `<select>` over this array), and no

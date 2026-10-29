@@ -91,7 +91,7 @@ Named changes, and only these:
 
 1. the imports: `atVaultOrigin` comes from the peer `vault-origin-rule` and `dpopWriteAuth` from the peer `lws-session-bridge` (the source imports them from the app's `./config` and `./dpop`);
 2. `TermFetch` is declared in the file as the structural `(url: string, init?: RequestInit) => Promise<Response>`. The source imports the type from `gilb-stakeholders`, where it is declared in `src/terms.ts` (line 44) as exactly that one-line type;
-3. comments: the ticket tag `(Agent.Tester Delta10 F3-1)` is removed, and the example host in the warning is written as an `example.test` host; no code changed.
+3. comments: a ticket tag is removed, and the example host in the warning is written as an `example.test` host; no code changed.
 
 `src/index.ts` is new. Tests (`src/*.test.ts`; a fake inner fetch and a fake session set with `setLwsAuth`, as `lws-session-bridge`'s own tests do, the platform origin set with `setBaseOrigin`, the hosts are `example.test` hosts; no network): ported from `GilbApp` `src/lib/base/credentialHost.d10.test.ts` (the block about the credentialed fetch handed to `gilb-stakeholders`, 6 of its tests, which call `platformFetch` alone; rewritten with `example.test` hosts, a fake inner fetch and a fake session, since the app's runs a real signer); new, in `platformFetch.test.ts` (27 in all, of which the 6 are the ported ones: the method and the proof asked for, the headers, the moved URL, what is left alone, a URL the bridge will not sign for, the session not set, the default inner fetch, the export list). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
 

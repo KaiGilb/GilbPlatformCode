@@ -2,7 +2,7 @@
 // rendered as an UNDEFINED one. Pre-authored before the implementation.
 //
 // ── WHAT WAS MEASURED, AND WHY THIS EXISTS ──────────────────────────────────────────
-// In Kai's own session on vault `c148` (2026-08-20), `/base/t/NoteDocument` returned 404
+// In a user's own session on vault `c148` (2026-08-20), `/base/t/NoteDocument` returned 404
 // FIVE times, while `/base/a/label`, `/base/a/title` and `/base/a/body` returned 200.
 // Probing five types settled that it is systematic, not a missing term:
 //
@@ -21,14 +21,14 @@
 // ⛔ THE SERVER IS NOT THE THING TO CHANGE. Serving the term under the apex IRI would mint
 // a SECOND canonical IRI for one concept and create exactly the catch-all vocabulary
 // `3P.C.EveryEntityInNamedVault` forbids (vocab.ts states this in terms). The client must ask
-// the term's OWN canonical host — which is Kai's ruling: "like
+// the term's OWN canonical host — which is the stated requirement: "like
 // https://veda.platform.example.test/base/t/ControlMode if that is what is needed."
 //
 // ── THE SECOND DEFECT, WHICH IS THE WORSE ONE ───────────────────────────────────────
 // `readTermDoes` returned `string | null`, collapsing "404 — could not reach it" and
 // "reached it, it has no a:does" onto the SAME `null`. The UI then rendered
 // "No definition on this term." — an ASSERTION THAT THE TERM HAS NO DEFINITION, when the
-// truth was that the request never reached it. Kai saw this on screen: `authored-by`
+// truth was that the request never reached it. A user saw this on screen: `authored-by`
 // (a `/base/a/` predicate) rendered its full definition beside `t:Person` claiming none,
 // while `t:Person` is fully defined at veda. A missing answer presented as a factual
 // negative is the same failure class as an empty `@graph` served with 200. The three-state

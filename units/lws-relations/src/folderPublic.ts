@@ -1,9 +1,9 @@
-// C210 — a PUBLIC virtual folder reaches its contents.
+// A PUBLIC virtual folder reaches its contents.
 //
 // The owner, 2026-09-26: "making a virtual folder public makes all its children public."
 // Spec: [[3P.F.Share.FolderPublicReachesContents.GilbPlatform]] SC1–SC4.
 //
-// Measured on M1 the same day (Cycle210 the plan GPLAT210.1, read-only `psql -d base_pods`): the folder
+// Measured on M1 the same day: the folder
 // was public, 3 of its 5 members were, and 0 of its 5 part-of LINKS were. Two named causes:
 //   (a) the old cascade granted the folder and its members, never the links — and GilbPlatform checks
 //       every id on its own grants, a link included, so an anonymous reader could follow none;
@@ -45,7 +45,7 @@ function isEndedLink(extras: Record<string, unknown>): boolean {
 }
 
 /**
- * 🔴 The typing gate (2026-09-26, Cycle210) — WHO IS A MEMBER, read from what each link MEANS.
+ * 🔴 The typing gate (2026-09-26) — WHO IS A MEMBER, read from what each link MEANS.
  *
  * A member is ONLY the SOURCE end of a `t:PartOf` link whose TARGET is this folder. The folder view's
  * `listFolderMemberships` returns every co-member of every relation the folder is in, whatever the
@@ -71,7 +71,7 @@ export async function listFolderPartMembers(
     // The folder must be the WHOLE (the target). A folder that is itself part of something is
     // the SOURCE of that link, and its parent is not its member.
     if (rel.role !== "role:target") continue;
-    // 🔴 C210 — the listing now names each READABLE relation's type beside its
+    // 🔴 The listing now names each READABLE relation's type beside its
     // members, so the predicate and the source are read from ONE answer. Only a relation the
     // listing did not type (an older platform) is dereferenced.
     if (rel.type !== undefined && rel.members !== undefined) {

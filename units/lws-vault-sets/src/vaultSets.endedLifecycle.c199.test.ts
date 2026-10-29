@@ -1,5 +1,5 @@
 /**
- * Cycle199 S6 — VATester. listVaultRecordsPage must put lifecycle=ended on the wire.
+ * listVaultRecordsPage must put lifecycle=ended on the wire.
  *
  * Spec: VKT-NodeDeletedSetMechanism-GilbApp (ended set is a query, vault-confined).
  * Transport stubbed; listVaultRecordsPage is REAL (RuleBasetestMockedModuleNoInstrument).

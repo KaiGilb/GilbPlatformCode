@@ -16,12 +16,12 @@ describe("record type registry (BaseVeda anchoring surface)", () => {
     }
   });
 
-  // Cycle214 GAPP214.30: an entry with NO field list holds a type whose fields are read from the
+  // An entry with NO field list holds a type whose fields are read from the
   // master (a stakeholder kind, through gilb-stakeholders); the card names it by the set's own
   // name field. Every entry that does hold a list still names its nameField (and discField) in it.
   it("each type has a nameField that exists in its fields", () => {
     for (const t of RECORD_TYPES) {
-      // GAPP214.30b (VAScaling A2; VAVDT's D3 ruling): only an entry MARKED `fieldsFrom` is exempt,
+      // Only an entry MARKED `fieldsFrom` is exempt,
       // and such an entry holds no fields, no nameField and no discField of its own.
       if (t.fieldsFrom === "stakeholder-package") {
         expect(t.fields).toEqual([]);

@@ -1,6 +1,6 @@
-// Cycle161 — the client half of the search continuation.
+// The client half of the search continuation.
 //
-// Kai, 2026-09-05: a headline reading "more than 205 matches for 'planguage'" above 41 rows —
+// 2026-09-05: a headline reading "more than 205 matches for 'planguage'" above 41 rows —
 // "why is it showing 41 items, are there more to show". Measured at the door the same day:
 // `GET https://ontology.platform.example.test/base/search?q=planguage` returned `total {kind:"atLeast",
 // value:200}` with `ids: 20`, and `&limit=` / `&offset=` / `&page=` each 400'd. Base now takes

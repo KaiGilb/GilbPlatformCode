@@ -66,12 +66,12 @@ export interface FixtureMaster {
   requested: string[];
   /** The init each request was sent with, in request order (its cache mode, for one). */
   inits: (RequestInit | undefined)[];
-  /** True (the default): the master has GilbPlatform GAPP214.22b's carrier selector and narrows
+  /** True (the default): the master has GilbPlatform's carrier selector and narrows
    *  `?status=all&carries=<name>`. False: a master without it (GilbPlatform `46eaea58`, production
-   *  until GAPP214.45), which ignores the key and serves the whole listing, paged by `limit`. */
+   *  until the selector ships), which ignores the key and serves the whole listing, paged by `limit`. */
   selector: boolean;
   /** True (the default): the master serves the opt-in listing's named read,
-   *  `?status=all&type=<Name>&type=<Name>…` (GilbPlatform Cycle154 D8, at `46eaea58` and
+   *  `?status=all&type=<Name>&type=<Name>…` (GilbPlatform, at `46eaea58` and
    *  `eda13db1`). False: a master that ignores `type` and serves the whole listing. */
   namedRead: boolean;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -98,14 +98,14 @@ export function fixtureMaster(): FixtureMaster {
       if (!page) break;
       out.push(...page["@graph"]);
       // A relative next is read against the rig, as the package's own `locate` reads it, so a
-      // fixture fault cannot pass as a package refusal (VAScaling GAPP214.22c B3).
+      // fixture fault cannot pass as a package refusal.
       const nextUrl: URL | null = page.next ? new URL(page.next, `${RIG}/`) : null;
       at = nextUrl ? `${RIG}${nextUrl.pathname}${nextUrl.search}` : null;
     }
     return out;
   };
 
-  // The carrier read, as GilbPlatform GAPP214.22b serves it (src/routes/vocab.ts at eda13db1):
+  // The carrier read, as GilbPlatform serves it (src/routes/vocab.ts at eda13db1):
   // the named predicate's term is found by a `|` segment of its a:predicateAttribute; its
   // spellings are every segment, each a:deprecatedNotation and the a:-form's full IRI; a node is
   // kept when it carries a fact under one of them; the face repeats `carries` and
@@ -261,7 +261,7 @@ export function fixtureMaster(): FixtureMaster {
     "a:subTypeOf": ref(t("Type")),
   });
 
-  // Children, as served at 06:40:23Z and re-read by VATester at 06:47Z: Person has Passenger,
+  // Children, as served at 06:40:23Z and re-read at 06:47Z: Person has Passenger,
   // Software System has AI Agent and Data Store, the other members have none. So 10 kinds.
   for (const n of SERVED_PLAYERS) m.children(n, []);
   m.children("Person", [{ name: "Passenger", label: "Passenger" }]);

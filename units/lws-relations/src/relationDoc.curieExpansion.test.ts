@@ -1,5 +1,5 @@
 
-// Cycle145 — THE COMPACTED MEMBER REF (carried item ③), on the surface the door fix reaches.
+// THE COMPACTED MEMBER REF (carried item ③), on the surface the door fix reaches.
 //
 // 🔴 THIS ARM EXISTS BECAUSE THE DOOR FIX CREATED ITS REACHABILITY. While `GET /base/r/:id`
 // 404'd at the apex, `doc` was always `null`, `sourceUri`/`targetUri` were always `null`, and

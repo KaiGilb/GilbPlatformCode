@@ -1,9 +1,9 @@
 // @vitest-environment node
-// Cycle214 1e, s7 walk fix F-3 (the behaviour half) — Agent.Tester's card walk, finding F-3: a DEV build
+// The behaviour half of the card-walk finding: a DEV build
 // (BASE_ORIGIN `http://localhost:8787`) asked BASE_ORIGIN for every host outside its own family, the system
 // vaults included (GilbVeda, GilbGeo, the life tree vault, GilbID, the Kai-Zen vault). The rig holds none
 // of them, so the card lost its place pickers, type pictures and term reads, and MyNet its catalogue search.
-// Kai-Zen decision (2026-10-15; Kai may change it): a system host is asked at its OWN origin in every
+// Decision (2026-10-15): a system host is asked at its OWN origin in every
 // build, and it receives a credential only when it is in the build's own platform family.
 //   DEV  (`VITE_BASE_ORIGIN` unset, localhost): the system host is reached, with NO Authorization and NO DPoP.
 //   PROD (`build:prod`'s values, https://platform.example.test): the same host is reached, WITH the credential.

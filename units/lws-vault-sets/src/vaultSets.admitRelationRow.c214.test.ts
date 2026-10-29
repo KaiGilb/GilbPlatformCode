@@ -1,7 +1,7 @@
 /**
- * Cycle214 GAPP214.26 — the records client keeps a relation-addressed row whose type was ASKED FOR.
+ * The records client keeps a relation-addressed row whose type was ASKED FOR.
  *
- * Specified by the ValPlan row GAPP214.26: "A role record of each kind must be listed." The
+ * Specified by the ValPlan row: "A role record of each kind must be listed." The
  * register filter in `listVaultRecordsPage` drops a row the app's relation test recognises, and
  * that stays the rule for a list nobody narrowed. `admitRelationRow` is the one way past it, and
  * only `hydrateRecordsPage` sets it, with a choice of types.

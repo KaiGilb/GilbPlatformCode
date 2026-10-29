@@ -4,8 +4,8 @@ import { masterSource } from "./source";
 import { fixtureMaster, RIG } from "../test/support";
 
 
-// VAScaling GAPP214.22c round 2, R2: the fixture's relative-next line (`wholeListing`) was reached by
-// no test input, so a fault there (mutant MB3d) survived. A fixture self-test, at GAPP214.22d.
+// R2: the fixture's relative-next line (`wholeListing`) was reached by
+// no test input, so a fault there (mutant MB3d) survived. A fixture self-test.
 describe("fixture self-test: a relative next in the listing the selector narrows", () => {
   it("the selector still finds a carrier on the page a relative next points to", async () => {
     const m = fixtureMaster();

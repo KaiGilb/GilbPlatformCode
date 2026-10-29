@@ -1,9 +1,9 @@
 /**
- * Cycle165 BAPP165.R9 — C13 W-FIELD on grant predicates.
+ * W-FIELD on grant predicates.
  *
  * Spec: [[Lookup_Code_base-value-io-write#W-FIELD]] · [[Lookup_Code_base-value-io-find#F-LIVE]]
  * · [[Lookup_Code_base-value-io-find#F-OPEN]] · [[Rule_Code_base-value-io#RuleBasevioPair]]
- * · winner CensusNamedLookupAllSites item 5 (C13 = W-FIELD, ⛔ not B-REV).
+ * · winner CensusNamedLookupAllSites item 5.
  *
  * One predicate written. ⛔ Not whole-record replace from a rendered read.
  * Pair F-LIVE / grant re-read after.
@@ -154,7 +154,7 @@ describe("C13 W-FIELD on grant predicates — not whole-record replace, not B-RE
     expect(Object.keys(patch)).toEqual(["directReader"]);
     expect(patch).not.toHaveProperty("title");
     expect(patch).not.toHaveProperty("directWriter");
-    // 🔴 C161 `D-F3d` serve blocker — the shape Base's `directGranteeMatches` actually matches:
+    // 🔴 Serve blocker — the shape Base's `directGranteeMatches` actually matches:
     // ONE grantee is a BARE STRING, ⛔ never `{"@id": …}` and ⛔ never a one-member array.
     // This line asserted `{ "@id": ALICE }` until 2026-09-06; that expectation PINNED the
     // defect that made a per-person revoke remove EVERY reader once Base `e8dfada` let a

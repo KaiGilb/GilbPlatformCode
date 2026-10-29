@@ -1,5 +1,5 @@
 /**
- * C210 GPLAT210.5 — VATester gap tests for the folder-public cascade (independent QA, not the builder's).
+ * Gap tests for the folder-public cascade (independent QA, not the builder's).
  * Spec: [[3P.F.Share.FolderPublicReachesContents.GilbPlatform]] SC1.
  *
  * Gap: every builder arm calls `inheritFolderPublic` with bare ids. One shipped caller does not:

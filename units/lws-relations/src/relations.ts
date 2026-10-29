@@ -1,4 +1,4 @@
-// The relations reverse-lookup client — Cycle004 VDS-1 (RecordDetailReadPane).
+// The relations reverse-lookup client (RecordDetailReadPane).
 //
 // §30 app↔vault separation: BaseApp owns NO relation storage. This is a PURE READ over the
 // user's own vault through the O.7 bridge Bearer, on the SAME `/base` Bearer floor + first-party
@@ -28,7 +28,7 @@ import type { RecordRelation } from "@kaigilb/gilbplatformcode-relation-role";
 /**
  * 🔴 THE CACHE KEY FOR A REVERSE LOOKUP — the id AND THE DOOR IT WAS ASKED AT.
  *
- * ── Why the door is IN the key (Cycle145, the third site) ────────────────────────────────
+ * ── Why the door is IN the key ────────────────────────────────
  * `readRelations(id, at)` asks `vaultOriginOf(at)`, and Base resolves an id **at the host the
  * request NAMED and at no other** (`resolveEntityUriById`, the owner's 2026-07-19 ruling
  * 3P.C.EveryEntityInNamedVault.Base). So `readRelations(id, null)` and `readRelations(id,
@@ -37,7 +37,7 @@ import type { RecordRelation } from "@kaigilb/gilbplatformcode-relation-role";
  *
  * Keyed on the id alone, those two answers shared one cache entry, and nothing downstream
  * can tell them apart because both are a well-formed `RecordRelation[]`. Measured on the
- * reload trace for a person's record (`RecordGraph.vaqa145.test.tsx` VAQA-2, before the fix):
+ * reload trace for a person's record (`RecordGraph.vaqa145.test.tsx`, before the fix):
  * the door-blind read fired ~40 ms before the register could supply an address, cached the
  * apex `[]`, and — the observer being mounted and the key unchanged — `queryFn` NEVER re-ran.
  * 2 asks at the apex, 0 at the vault, byte-identical over 25 s. It does not self-heal.

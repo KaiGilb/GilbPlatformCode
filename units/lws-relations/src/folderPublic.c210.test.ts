@@ -1,11 +1,11 @@
 /**
- * C210 N7 — a PUBLIC folder reaches its contents: links, members, inner folders, and items added later.
+ * A PUBLIC folder reaches its contents: links, members, inner folders, and items added later.
  *
  * Spec: [[3P.F.Share.FolderPublicReachesContents.GilbPlatform]] SC1–SC4.
  * Measured M1 2026-09-26: folder public, 3 of 5 members public, 0 of 5 links public; the two
  * non-public members were linked 14–16 min after the folder went public.
  *
- * 🔴 BVedanta BVGATE_03 FAIL F1/F2 (2026-09-26) — the first version of this file MOCKED the folder
+ * 🔴 BVGATE_03 FAIL F1/F2 (2026-09-26) — the first version of this file MOCKED the folder
  * listing, so it could not see that the listing it used returns every co-member of every relation
  * the folder is in. Here the membership reader (`listFolderPartMembers`), the relation listing
  * (`readRelations`) and the relation-document parser (`readRelationDoc`) are REAL; only the network

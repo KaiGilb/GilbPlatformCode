@@ -5,10 +5,10 @@
  * user through the GilbPlatform sign-in flow and retries.
  *
  * ⚠ THE MESSAGE IS USER-FACING COPY, not a log line — it is rendered under the avatar and
- * elsewhere. Two faults were measured in the previous wording (Kai, 2026-09-17) and both are
+ * elsewhere. Two faults were measured in the previous wording (2026-09-17) and both are
  * fixed here:
  *   1. 🔴 It said "the Base flow". `Base` is a RETIRED PRODUCT NAME (renamed to Gilb /
- *      GilbPlatform / GilbApp). Kai, verbatim: "it says Base, Base is no more". A dead product
+ *      GilbPlatform / GilbApp). A user, verbatim: "it says Base, Base is no more". A dead product
  *      name in front of a person is a real defect, not cosmetic.
  *   2. It said "Not signed in" to someone who had just signed in seconds earlier, which reads
  *      as the app being wrong about them. What actually happened is that the SESSION could not
@@ -28,7 +28,7 @@ export class NotSignedInError extends Error {
  * different things and only one of them is a person's to read. */
 export class OriginNotAllowedError extends Error {
   constructor(detail: string) {
-    // ⚠ Cycle204 GPLAT204.5 — `Base` -> `GilbPlatform`. This sentence renders in the SAME red
+    // ⚠ `Base` -> `GilbPlatform`. This sentence renders in the SAME red
     // panel as AdminGate.tsx's "the GilbPlatform server", three lines apart: one box, two
     // products, and the person cannot tell whether they are one thing. `FIRST_PARTY_ORIGINS`
     // is an env-var NAME and stays verbatim (ValPlan §7c leave-list) — product naming and

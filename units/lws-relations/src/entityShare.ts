@@ -1,6 +1,6 @@
 // Entity-level share — POST /base/authz/grant-direct | grant-write-direct.
 // Owner-gated at Base. Recipient authorizes via a:directReader / a:directWriter.
-// Cycle056: reachable-vaults includes host vaults of entity grants (Base D3).
+// Reachable-vaults includes host vaults of entity grants (Base D3).
 //
 // ── Multi-vault / apex FIX (2026-07-27) ─────────────────────────────────────────────
 // Entity URI MUST be the real vault-stamped URI (`https://home.example.test/base/e/<id>`),
@@ -30,7 +30,7 @@ import { publicGrantee } from "./publicAccess";
 
 export type ShareMode = "read" | "write";
 
-// ── C209 — "the share list changed" signal ─────────────────────────────────────────────────────
+// ── "the share list changed" signal ─────────────────────────────────────────────────────
 // The Share panel and the Access panel are siblings; before this a share (or a Make public) left the
 // Access panel's "Shared with" list stale until a reload, so a public switch would have looked like
 // it did nothing. One tiny in-module signal, keyed by record id — ⛔ no global store, no event bus.
@@ -48,7 +48,7 @@ function emitEntityShareChanged(recordId: string): void {
 }
 
 /**
- * 🔴 Cycle161 `F7` — THE GRANT IS ASKED OF THE VAULT THAT HOLDS THE ITEM, ⛔ a fixed apex.
+ * 🔴 THE GRANT IS ASKED OF THE VAULT THAT HOLDS THE ITEM, ⛔ a fixed apex.
  *
  * These two were module-level constants — `${baseOrigin}/base/authz/grant-direct` and its
  * write twin — and on production `baseOrigin` is the APEX, which the tunnel routes to ONE
@@ -65,7 +65,7 @@ function emitEntityShareChanged(recordId: string): void {
  * verbatim:
  *
  *   Principal https://pelleparafintest.example.test/base does not own the target vault
- *   https://id.example.test/base — grant-direct requires vault ownership (Cycle052 VDS-4; …)
+ *   https://id.example.test/base — grant-direct requires vault ownership
  *
  * ⚠ Read the `<vault>`: it is `defaultVaultId(ownerHost)` — the deployment's HOME vault — ⛔ NOT the
  * vault the `entity` in the very same request names (`https://a-vault.example.test/base/e/…`).
@@ -117,7 +117,7 @@ export function entityUriForShare(
 /**
  * Bare editor facts → wire facts for full-state ingest (skip blanks).
  *
- * 🔴 Cycle161 `S33` — THIS IS A THIRD SHIPPED WRITE PATH and it re-minted like the other two.
+ * 🔴 THIS IS A THIRD SHIPPED WRITE PATH and it re-minted like the other two.
  * `grantDirect` re-asserts a record's WHOLE fact set alongside the grant, off a fresh
  * {@link readRecord}, so a vault fact served as `c_geometry` left here as `a:c_geometry` — the
  * same manufacture the records and ontology planes made, on a path neither enumeration covered.
@@ -131,7 +131,7 @@ export function entityUriForShare(
 async function toWireFacts(
   facts: Record<string, RecordFactValue>,
   source?: WriteSource,
-  /** GAPP214.42 (N1) — slugs whose served `""` is carried, ⛔ not dropped as unset. */
+  /** Slugs whose served `""` is carried, ⛔ not dropped as unset. */
   keepEmpty?: ReadonlySet<string>,
 ): Promise<Record<string, RecordFactValue>> {
   const spell = await storedSpellings(Object.keys(facts), source);
@@ -139,7 +139,7 @@ async function toWireFacts(
   for (const [slug, value] of Object.entries(facts)) {
     if (value == null) continue;
     if (value === "" && !keepEmpty?.has(slug)) continue;
-    // 🔴 C161 `D` — `null` ⇒ the VAULT declared this a bucket it ASSEMBLES at read time and its own
+    // 🔴 `null` ⇒ the VAULT declared this a bucket it ASSEMBLES at read time and its own
     // log holds nothing under it; it names no stored fact, so it is OMITTED. ⚠ Load-bearing on
     // THIS path in particular: `grantDirect` re-asserts a record's WHOLE fact set alongside the
     // grant, so one refused key would take the GRANT down with it.
@@ -170,9 +170,9 @@ export async function shareEntity(
   mode: ShareMode,
   vaultNamespace: string | null | undefined,
   /**
-   * 🔴 C161 — THE DOOR, and it is REQUIRED. Use `recordDoor(entityUri, vaultId)`.
+   * 🔴 THE DOOR, and it is REQUIRED. Use `recordDoor(entityUri, vaultId)`.
    *
-   * This parameter existed from C144 as `entityUriHint?`, and being OPTIONAL is precisely why
+   * This parameter existed from the start as `entityUriHint?`, and being OPTIONAL is precisely why
    * it was dead: `git grep entityUriHint` at `6c6e9dd` returned exactly two lines — its own
    * declaration and its own use — so ⛔ ZERO callers ever supplied it, and every per-item share
    * in the shipped app read the subject at `vaultOriginOf(null)` = `baseOrigin` = the apex.
@@ -186,7 +186,7 @@ export async function shareEntity(
    * ⛔ Do NOT restore a server-side cross-host scan — that would overturn the owner's constraint.
    */
   door: string | null,
-  /** C210 — a caller that has JUST read this record passes it, so it is not read twice. */
+  /** A caller that has JUST read this record passes it, so it is not read twice. */
   opts?: { rec?: BaseRecord | null },
 ): Promise<{ granted: boolean; mode: ShareMode }> {
   const rec = opts?.rec ?? (await readRecord(recordId, door));
@@ -259,7 +259,7 @@ function namedVaultOf(
 
 /** W-FIELD value for a grant predicate: retract, one edge, or remaining edges.
  *
- * 🔴 Cycle161 `D-F3d` SERVE BLOCKER — THE SHAPE HERE IS AN AGREEMENT WITH BASE, ⛔ NOT A
+ * 🔴 SERVE BLOCKER — THE SHAPE HERE IS AN AGREEMENT WITH BASE, ⛔ NOT A
  * PREFERENCE. Until Base `e8dfada` this function emitted `{"@id": p}` (and an ARRAY of those
  * for 2+), and Base's grantee decider matches that shape NOWHERE. It was harmless only
  * because it was UNREACHABLE: at Base `28f8995c` `a:directReader` was single-valued, so a
@@ -304,12 +304,12 @@ export async function revokeEntityShare(
   recordId: string,
   principal: string,
   vaultNamespace: string | null | undefined,
-  /** 🔴 C161 — required door. This read was HARD-CODED `null` (`R(e,null)` in the shipped
+  /** 🔴 Required door. This read was HARD-CODED `null` (`R(e,null)` in the shipped
    *  bundle), so revoke — right 3 of the owner's rights checklist — was already broken by the
    *  same omission as the share, and would have failed with the identical
    *  "Record not found or not readable." the first time it was walked. */
   door: string | null,
-  /** C210 — `rec`: the record the caller just read (not read again).
+  /** `rec`: the record the caller just read (not read again).
    *  `skipListRefresh`: a BULK caller (a folder tree) skips the per-item vault-list read that pairs
    *  a single revoke; the verifying re-read of THIS record still runs. */
   opts?: { rec?: BaseRecord | null; skipListRefresh?: boolean },
@@ -335,10 +335,10 @@ export async function revokeEntityShare(
   // One key per PATCH. Writers first so a write-share (both attrs) is two
   // W-FIELD acts, ⛔ not a two-key merge-patch and ⛔ not a full PUT.
   //
-  // 🔴 C209  — W-FIELD needs a DATA write-grant on the item. A vault holder
+  // 🔴 W-FIELD needs a DATA write-grant on the item. A vault holder
   // who is not a deployment owner, and every Control holder, can PLACE a share (the per-item share
   // route admits them) but that PATCH refuses them 403 — so what they made public they could not make private.
-  // W-FIELD stays the act (the Cycle165 ruling this file cites); ONLY on that refusal is the grant
+  // W-FIELD stays the act (the ruling this file cites); ONLY on that refusal is the grant
   // taken back through `revoke-direct`, which GilbPlatform gates exactly as it gates the share.
   // ⚠ The Lookup row for this act names W-FIELD alone — the fallback is flagged for the standard's
   // owner rather than written into it from here.
@@ -375,7 +375,7 @@ export function revokeDirectUrl(entityUri: string | null | undefined): string {
 }
 
 /**
- * C210 — PUBLIC read on ONE folder LINK: a `t:PartOf` relation entity, addressed by its OWN
+ * PUBLIC read on ONE folder LINK: a `t:PartOf` relation entity, addressed by its OWN
  * vault-issued URI (as the vault served it in `/relations` — never recomposed from a tail).
  *
  * Why a link needs its own grant: GilbPlatform checks every id on its own grants, a relation included
@@ -383,7 +383,7 @@ export function revokeDirectUrl(entityUri: string | null | undefined): string {
  * one). `facts: {}` is deliberate — since GilbPlatform `6fddfb8` a grant on a relation writes the
  * relation's STORED type and facts for every authority, so the body can neither drop nor repoint
  * the link's ends. Against a platform older than that, this body would erase the link: the app
- * must not ship ahead of the platform (Cycle210 promotion order).
+ * must not ship ahead of the platform.
  */
 export async function grantPublicOnRelation(relationUri: string): Promise<void> {
   await postAuthzAct(grantDirectUrl(relationUri, "read"), {
@@ -394,12 +394,12 @@ export async function grantPublicOnRelation(relationUri: string): Promise<void> 
   });
 }
 
-/** C210 — take PUBLIC off ONE folder link (the stored-facts revoke; see {@link grantPublicOnRelation}). */
+/** Take PUBLIC off ONE folder link (the stored-facts revoke; see {@link grantPublicOnRelation}). */
 export async function revokePublicOnRelation(relationUri: string): Promise<void> {
   await revokeDirect(relationUri, publicGrantee());
 }
 
-/** C209 — take ONE principal off ONE item's direct read + write grants, holder-or-Control gated. */
+/** Take ONE principal off ONE item's direct read + write grants, holder-or-Control gated. */
 async function revokeDirect(entity: string, principal: string): Promise<void> {
   await postAuthzAct(revokeDirectUrl(entity), { entity, principal }, "refused this change");
 }
@@ -443,9 +443,9 @@ async function grantDirect(
   vaultNamespace?: string | null,
 ): Promise<void> {
   const entity = entityUriForShare(rec, vaultNamespace);
-  // 🔴 C161 `F7` — the door comes from the ENTITY this very request names. See {@link grantDirectUrl}.
+  // 🔴 The door comes from the ENTITY this very request names. See {@link grantDirectUrl}.
   const url = grantDirectUrl(entity, mode);
-  // 🔴 GAPP214.42 (N1, QA's "Share this item" sibling) — the grant act writes these facts as
+  // 🔴 The grant act writes these facts as
   // the item's whole state for a holder, so they go back AS SERVED (`factsAsServed`): from
   // `rec.facts` a link was stored as text and a fact with no string form was dropped. A record with
   // served document read at its current ETag (a fixture, a cache row saved since) sends its facts as before.

@@ -97,7 +97,7 @@ export function isInternalControlType(typeUri: string | null | undefined): boole
  * exactly that; `recordHooks` re-checks after hydration).
  */
 /**
- * Cycle214 step 1e it6 fix F20 (Agent.Scaling 6ccd72d) — the types whose records are PARTS of a person
+ * The types whose records are PARTS of a person
  * card (MyNet's address composite and its field claims), not records of their own. Each address adds up
  * to five of them, and a grid delete of a composite orphans its fields. They are kept out of the
  * register's row list ({@link isNonRecordListEntry}), as the UI-preferences rows are; the card that owns

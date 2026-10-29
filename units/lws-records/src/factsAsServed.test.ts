@@ -1,4 +1,4 @@
-// Cycle214 GAPP214.42 N1 (VATester QA N1, BVedanta typing F1) — a FULL-STATE write sends every fact
+// A FULL-STATE write sends every fact
 // the person did not edit EXACTLY AS THE VAULT SERVED IT.
 //
 // A full replace (`PUT /lws/r/:id`, the share act for a holder) retracts every fact it omits and
@@ -117,7 +117,7 @@ describe("factsAsServed — what a full-state write sends", () => {
   });
 });
 
-// ── GAPP214.42 F2 (BVedanta) / B1 (VAScaling): term types come from the VAULT'S OWN context ──────
+// ── Term types come from the VAULT'S OWN context ──────
 // `GET /lws/r` names `https://www.w3.org/ns/lws/v1` as the record's `@context` (404). At 6f2764a
 // `factsAsServed` read THAT, so the id-valued arm never ran there: `fvParent`, `fvOf`, `solution`
 // (served as bare strings) went back as text, and every such write asked www.w3.org twice, with no
@@ -224,7 +224,7 @@ describe("readRecord keeps the served document", () => {
   });
 });
 
-// ── GAPP214.42 A1 (BVedanta): a term's type applies only to a value served under its OWN name ─────
+// ── A term's type applies only to a value served under its OWN name ─────
 // The read serves a link as `fvParent`. A value stored as TEXT under `a:fvParent` is served as
 // `a:fvParent`. At 5058f46 `readRecord` dropped the `a:`, so the link type was applied to it and a
 // retype or share the person did not make turned their text into a link; with a second, unrelated

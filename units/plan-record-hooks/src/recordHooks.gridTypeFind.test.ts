@@ -445,7 +445,7 @@ describe("All-types hydrate does not Promise.all a 120-chunk Function-catalog st
 
 /**
  * 2026-09-01: Writing Planguage was a labelled node; after
- * create-and-link “Jairam to play football”, BOTH capable-of ends became dashed
+ * create-and-link “a person to play football”, BOTH capable-of ends became dashed
  * “member not readable here” pendants (relation-id tails, not Function ids).
  *
  * Named cause 1 (re-measured at origin/main e93d77be9e5c90158f0e8c97d7233d0be1748442):

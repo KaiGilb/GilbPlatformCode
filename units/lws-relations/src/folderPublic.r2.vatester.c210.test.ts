@@ -1,5 +1,5 @@
 /**
- * C210 GPLAT210.5 RE-GATE — VATester round-2 gap test for the TYPED listing path (VAScaling S3b).
+ * Round-2 gap test for the TYPED listing path.
  * Spec: [[3P.F.Share.FolderPublicReachesContents.GilbPlatform]] SC1 (what the folder's act makes public).
  *
  * Gap: `listFolderPartMembers` now takes a typed `/relations` row's members as they come and keeps a

@@ -1,5 +1,5 @@
 /**
- * 🔴 Cycle161 — THE VAULT'S SERVED `@context`, PINNED AS BYTES.
+ * 🔴 THE VAULT'S SERVED `@context`, PINNED AS BYTES.
  *
  * `GET https://ontology.platform.example.test/base/context.jsonld` → HTTP 200, 2026-09-03, verbatim. Also
  * byte-derivable from Base's own `src/jsonld/context.ts` `buildContext`.
