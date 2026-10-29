@@ -23,7 +23,9 @@ npm ci
 npm run dev
 ```
 
-The dev server port is not set by the app: Vite's default applies, and the port is chosen by whoever runs it (the dispatcher allocates one per `Rule_Code_dev-ports` when Kai runs it). Scripts: `dev`, `build` (`tsc -b && vite build`), `test` (`vitest run`), `typecheck`, `check:host-agnostic`.
+`npm run dev` serves the app at `http://localhost:5266`, its allocation in the dev-port map (Rule_Code_dev-ports); the port is set in `vite.config.ts` with `strictPort`, so a busy port fails instead of moving. Scripts: `dev`, `dev:live`, `build`, `test`, `typecheck`, `check:host-agnostic`.
+
+`npm run dev:live` is for the live sign-in check against production, and is the only way to start it. Production admits only two local addresses, and 5266 is not one of them, so this script serves the app at `http://localhost:5197` (GilbApp's local address) through `vite.live.config.ts`. It first checks that 5197 is free on both IPv4 and IPv6 and stops with a message if it is not (stop GilbApp's dev server first). A page reload ends the session there, by design: the key lives in memory only.
 
 ## The three screens
 
@@ -47,4 +49,4 @@ A live check uses a non-production test vault the owner names. Writes go only th
 
 ## Tests
 
-`npm test` (vitest, jsdom): `src/App.test.tsx` (settings, sign-in, the four cards, edits, main tag), `src/cardFor.test.tsx` (which component draws which type, by identity: the four cards draw the same lines for the same record, so a wrong choice would not show on the page) and `src/hostAgnostic.test.ts` (the host-agnostic check passes on `src/` and fails on each planted fault). No wall-clock waits; each test starts with fresh `localStorage`, `sessionStorage` and a fresh provider (and so a fresh `QueryClient`). `npm run check:host-agnostic` runs the check alone: `src/` names no host and imports only its own modules and the packages listed in `scripts/check-host-agnostic.mjs`.
+`npm test` (vitest, jsdom): `src/App.test.tsx` (settings, sign-in, the four cards, edits, main tag), `src/cardFor.test.tsx` (which component draws which type, by identity: the four cards draw the same lines for the same record, so a wrong choice would not show on the page), `src/hostAgnostic.test.ts` (the host-agnostic check passes on `src/` and fails on each planted fault) and `test/ports.test.ts` (the two port pins, the scripts, and the start script's check and start). No wall-clock waits; each test starts with fresh `localStorage`, `sessionStorage` and a fresh provider (and so a fresh `QueryClient`). `npm run check:host-agnostic` runs the check alone: `src/` names no host and imports only its own modules and the packages listed in `scripts/check-host-agnostic.mjs`.

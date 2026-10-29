@@ -1,8 +1,10 @@
-// The port is not set here: Vite's default applies, and the runner chooses the port (see README).
+// Port 5266 is this app's allocation in the dev-port map (Rule_Code_dev-ports, RuleDevportPinConfig). The live sign-in check uses vite.live.config.ts instead.
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   esbuild: { jsx: "automatic" },
   build: { outDir: "dist" },
+  server: { port: 5266, strictPort: true },
+  preview: { port: 5266, strictPort: true },
   test: { environment: "jsdom", globals: false, setupFiles: ["./test/setup.ts"] },
 });
