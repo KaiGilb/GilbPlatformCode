@@ -1,0 +1,338 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-card-hosts-gilbplatform",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
+  "version": "0.1.0",
+  "purpose": "The ready-made GilbPlatform host for the Stakeholder entry card: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card needs, so it draws, reads and adds with no host object written.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          449,
+          449
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          456,
+          462
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2609,
+          2630
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          2836,
+          2845
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/mynet/place/usePlaceClaims.ts",
+        "lines": [
+          50,
+          52
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/mynet/geo/baseGeo.ts",
+        "lines": [
+          61,
+          64
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/mynet/geo/baseGeo.ts",
+        "lines": [
+          82,
+          84
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/base/adderCard.ts",
+        "lines": [
+          29,
+          41
+        ],
+        "to": "src/adderCard.ts"
+      },
+      {
+        "path": "src/lib/base/adderCard.ts",
+        "lines": [
+          57,
+          66
+        ],
+        "to": "src/adderCard.ts"
+      },
+      {
+        "path": "src/lib/base/adderCard.ts",
+        "lines": [
+          68,
+          88
+        ],
+        "to": "src/adderCard.ts"
+      },
+      {
+        "path": "src/lib/base/adderCard.ts",
+        "lines": [
+          98,
+          110
+        ],
+        "to": "src/adderCard.ts"
+      },
+      {
+        "path": "src/lib/base/photoTerm.ts",
+        "lines": [
+          19,
+          22
+        ],
+        "to": "src/photoTerm.ts"
+      },
+      {
+        "path": "src/lib/base/photoTerm.ts",
+        "lines": [
+          74,
+          76
+        ],
+        "to": "src/photoTerm.ts"
+      },
+      {
+        "path": "src/main.tsx",
+        "lines": [
+          72,
+          76
+        ],
+        "to": "src/provider.tsx"
+      },
+      {
+        "path": "src/lib/contact/useContactLabels.ts",
+        "lines": [
+          256,
+          258
+        ],
+        "to": "src/defaults.ts"
+      },
+      {
+        "path": "src/lib/base/hooks.ts",
+        "lines": [
+          108,
+          129
+        ],
+        "to": "src/shell.ts"
+      },
+      {
+        "path": "src/lib/base/requestMeter.ts",
+        "lines": [
+          39,
+          39
+        ],
+        "to": "src/hosts/stakeholderListDoorsHost.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "src/inline.ts holds the inline copies, each token-equal to the declaration it cites: `HELD_RECORD_FRESH_MS` (recordHooks.ts 449), `heldRecordOf` (456-462), `useRecordsBeingDeleted` (2609-2630), `createdInVaultKey` and `rememberCreatedIn` (2836-2845), `placeClaimsKey` and `PLACE_CLAIMS_STALE_MS` (usePlaceClaims.ts 50-52). Their free names are the units' exports of the same names (`vaultOriginOf` of `vault-origin-rule`, `watchRecordDeletes` of `plan-record-hooks`, `deletedLinkedRecords`, `deletedLinkedRevision` and `onDeletedLinkedRecords` of `stakeholder-list-state`).",
+    "src/inline.ts `createIsGeoEntityId(geoOrigin)` is `isGeoEntityId` (baseGeo.ts 82-84) over the prefix `<geoOrigin without trailing slashes>/base/e/` (baseGeo.ts 61-64), the origin a provider prop where the app's was a constant built from the GilbGeo vault id.",
+    "src/adderCard.ts holds the find half of `adderCardOf` (adderCard.ts 98-110): `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf`, `making`, `readFinding` are the source's (token-equal); `findOrMake` (68-88) is replaced by `findOwnCard`, which answers the card of the finding and, where the source made a basic card, forgets the finding (as the source did at line 86) and refuses with `NO_OWN_CARD_SAYS`, a new sentence. The make half (`ensureVaultSelfCard`, `ensureSelfCardRecord`) is not taken.",
+    "src/photoTerm.ts is `photoTerm` and `photoReadKeysSync` (photoTerm.ts 19-22, 74-76) with `vedaOrigin` the provider's `origin` (the app's `BASE_ORIGIN`), one resolver per origin, and `store` the device's `localStorage` when there is one.",
+    "src/defaults.ts holds the values a member takes when the developer gives none: no photo, no held-note line, no place claims, and for `useContactLabels` the value of the source's hook in its disabled branch (useContactLabels.ts 256-258, read, not run).",
+    "src/shell.ts builds the shell the card reads (`useShell`, ShellContext.ts 412) from the credential's session and the `useVaults` of `reachable-vaults` (the vault set of hooks.ts 108-129); `contentScope` is `{ readVaultId, reach: null }`.",
+    "src/provider.tsx takes the query client's defaults from main.tsx 72-76.",
+    "every other member is a function a unit exports (`masterKindReader` and `useRelations` of `plan-stakeholder-io`), a prop of the provider, or `() => 0` (`requestsSent`, requestMeter.ts 39).",
+    "test/ holds the master and platform fixtures of `person-create` (`support.ts`, `fixtureReference.ts`, `fixtureTag.ts`, `fixturePlatform.ts`, `writableFields.ts`), copied unchanged; they are not shipped as source (`files` lists `test`, as the Plan-card provider's does)."
+  ],
+  "newFiles": [
+    "scripts/check-host-agnostic.mjs",
+    "src/adderCard.test.ts",
+    "src/adderCard.ts",
+    "src/both.test.tsx",
+    "src/card.test.tsx",
+    "src/defaults.ts",
+    "src/example.test.tsx",
+    "src/hostAgnostic.test.ts",
+    "src/hosts.test.tsx",
+    "src/hosts/cardVocabularyHost.ts",
+    "src/hosts/index.ts",
+    "src/hosts/oneCardHost.ts",
+    "src/hosts/onlineStakeholderCardHost.ts",
+    "src/hosts/personCreateHost.ts",
+    "src/hosts/stakeholderContactHeaderHost.ts",
+    "src/hosts/stakeholderListDoorsHost.ts",
+    "src/index.ts",
+    "src/inline.test.ts",
+    "src/inline.ts",
+    "src/photoTerm.test.ts",
+    "src/photoTerm.ts",
+    "src/provider.test.tsx",
+    "src/provider.tsx",
+    "src/settings.ts",
+    "src/shell.ts",
+    "test/example.tsx",
+    "test/fakeSession.ts",
+    "test/fixturePlatform.ts",
+    "test/fixtureReference.ts",
+    "test/fixtureTag.ts",
+    "test/harness.tsx",
+    "test/memoryStorage.ts",
+    "test/setup.ts",
+    "test/support.ts",
+    "test/world.ts",
+    "test/writableFields.ts"
+  ],
+  "host": [
+    {
+      "member": "OnlineStakeholderCardHost.useShell",
+      "replaces": "useShell(), GilbApp src/components/ShellContext.ts:412 (value built in components/AppShell.tsx:1662)",
+      "implementedBy": "this unit (src/shell.ts): the credential's session, reachable-vaults.useVaults, the content scope, the prop `onOpenRecord`"
+    },
+    {
+      "member": "OnlineStakeholderCardHost.refreshOnlineStakeholders",
+      "replaces": "refreshOnlineStakeholders(), src/components/records/onlineStakeholders.ts:302",
+      "implementedBy": "provider prop `refreshOnlineStakeholders`, default nothing"
+    },
+    {
+      "member": "OnlineStakeholderCardHost.photoReadKeysSync",
+      "replaces": "photoReadKeysSync(), src/lib/base/photoTerm.ts:74",
+      "implementedBy": "photo-term.createPhotoTermResolver (src/photoTerm.ts), `peek()?.readKeys ?? []`"
+    },
+    {
+      "member": "OnlineStakeholderCardHost.doors",
+      "replaces": "the host given to linkedRecordsOf",
+      "implementedBy": "createStakeholderListDoorsHost()"
+    },
+    {
+      "member": "OnlineStakeholderCardHost.person",
+      "replaces": "the host given to recordPerson and afterRecordPerson",
+      "implementedBy": "createPersonCreateHost()"
+    },
+    {
+      "member": "OnlineStakeholderCardHost.vocabulary",
+      "replaces": "the host given to stakeholderCardVocabularyQuery",
+      "implementedBy": "createCardVocabularyHost()"
+    },
+    {
+      "member": "StakeholderListDoorsHost.requestsSent",
+      "replaces": "src/lib/base/requestMeter.ts:39",
+      "implementedBy": "inline `() => 0`"
+    },
+    {
+      "member": "StakeholderListDoorsHost.heldRecordFreshMs",
+      "replaces": "src/lib/base/recordHooks.ts:449",
+      "implementedBy": "inline `15_000` (src/inline.ts HELD_RECORD_FRESH_MS)"
+    },
+    {
+      "member": "StakeholderListDoorsHost.heldRecordOf",
+      "replaces": "src/lib/base/recordHooks.ts:456",
+      "implementedBy": "inline copy, src/inline.ts (token-equal)"
+    },
+    {
+      "member": "StakeholderListDoorsHost.useRecordsBeingDeleted",
+      "replaces": "src/lib/base/recordHooks.ts:2609-2630",
+      "implementedBy": "inline copy, src/inline.ts (token-equal)"
+    },
+    {
+      "member": "PersonCreateHost.adderCardOf",
+      "replaces": "src/lib/base/adderCard.ts:98",
+      "implementedBy": "inline, the find half, src/adderCard.ts (a person with no own card is refused with NO_OWN_CARD_SAYS)"
+    },
+    {
+      "member": "PersonCreateHost.rememberCreatedIn",
+      "replaces": "src/lib/base/recordHooks.ts:2842",
+      "implementedBy": "inline copy, src/inline.ts (token-equal)"
+    },
+    {
+      "member": "CardVocabularyHost.masterKindReader",
+      "replaces": "src/lib/base/stakeholderKinds.ts:68",
+      "implementedBy": "plan-stakeholder-io.masterKindReader"
+    },
+    {
+      "member": "CardVocabularyHost.persistVocabulary",
+      "replaces": "src/lib/base/stakeholderCard.ts:168",
+      "implementedBy": "provider prop `persistVocabulary`, absent when not given"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.discoverVaultProfilePhoto",
+      "replaces": "src/lib/base/vaultProfilePhoto.ts:269",
+      "implementedBy": "provider prop `discoverVaultProfilePhoto`; default `{ photoRef: null }`"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.loadPhotoObjectUrl",
+      "replaces": "src/lib/base/vaultProfilePhoto.ts:437",
+      "implementedBy": "provider prop `loadPhotoObjectUrl`; default null"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.loadGranteeFace",
+      "replaces": "src/lib/base/granteeFace.ts:108",
+      "implementedBy": "provider prop `loadGranteeFace`; default null"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.useHolderOriginLine",
+      "replaces": "src/components/records/ContactCardSlots.tsx:156",
+      "implementedBy": "provider prop `useHolderOriginLine`; default `{ origin: null, loading: false }`"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.useContactLabels",
+      "replaces": "src/lib/contact/useContactLabels.ts:139",
+      "implementedBy": "provider prop `useContactLabels`; default the disabled-branch value (src/defaults.ts)"
+    },
+    {
+      "member": "StakeholderContactHeaderHost.useRelations",
+      "replaces": "src/lib/base/relationHooks.ts:14",
+      "implementedBy": "plan-stakeholder-io.useRelations"
+    },
+    {
+      "member": "OneCardHost.isGeoEntityId",
+      "replaces": "src/lib/mynet/geo/baseGeo.ts:82",
+      "implementedBy": "inline over the prop `geoOrigin`, src/inline.ts"
+    },
+    {
+      "member": "OneCardHost.listPlaceClaimsInVault",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:522",
+      "implementedBy": "provider prop; default `async () => []` (not called by the entry)"
+    },
+    {
+      "member": "OneCardHost.claimsAbout",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:632",
+      "implementedBy": "provider prop; default `() => []` (not called by the entry)"
+    },
+    {
+      "member": "OneCardHost.claimFieldText",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:263",
+      "implementedBy": "provider prop; default `() => \"\"` (not called by the entry)"
+    },
+    {
+      "member": "OneCardHost.loadPlaceNames",
+      "replaces": "src/lib/mynet/geo/usePlaceNames.ts:27",
+      "implementedBy": "provider prop; default `async () => []` (not called by the entry)"
+    },
+    {
+      "member": "OneCardHost.placeClaimsKey",
+      "replaces": "src/lib/mynet/place/usePlaceClaims.ts:50",
+      "implementedBy": "inline copy, src/inline.ts (token-equal)"
+    },
+    {
+      "member": "OneCardHost.placeClaimsStaleMs",
+      "replaces": "src/lib/mynet/place/usePlaceClaims.ts:52",
+      "implementedBy": "inline `60_000`, src/inline.ts"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
