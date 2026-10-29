@@ -1,0 +1,47 @@
+{
+  "name": "@kaigilb/gilbplatformcode-speed-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The speed units of a GilbPlatform app behind one entry: each unit under its own name, and one small glue that wires the person hub, the session cache, the background jobs, the prefetch registry and the device store to one app name, with a clean sign-out.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./complete-copy": "./src/completeCopy.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-background-jobs": "^0.1.0",
+    "@kaigilb/gilbplatformcode-device-store": "^0.1.0",
+    "@kaigilb/gilbplatformcode-prefetch-registry": "^0.1.0",
+    "@kaigilb/gilbplatformcode-principal-hub": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-sync": "^0.4.0",
+    "@kaigilb/gilbplatformcode-session-cache": "^0.1.0",
+    "@kaigilb/gilbplatformcode-updated-line": "^0.1.0",
+    "@kaigilb/gilbplatformcode-use-cached": "^0.1.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-background-jobs": "file:../background-jobs",
+    "@kaigilb/gilbplatformcode-device-store": "file:../device-store",
+    "@kaigilb/gilbplatformcode-prefetch-registry": "file:../prefetch-registry",
+    "@kaigilb/gilbplatformcode-principal-hub": "file:../principal-hub",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-session-cache": "file:../session-cache",
+    "@kaigilb/gilbplatformcode-updated-line": "file:../updated-line",
+    "@kaigilb/gilbplatformcode-use-cached": "file:../use-cached",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "fake-indexeddb": "6.2.6",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

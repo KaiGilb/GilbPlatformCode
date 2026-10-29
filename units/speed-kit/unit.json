@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/speed-kit",
+  "package": "@kaigilb/gilbplatformcode-speed-kit",
+  "version": "0.1.0",
+  "purpose": "The speed units of a GilbPlatform app behind one entry: each unit under its own name, and one small glue that wires the person hub, the session cache, the background jobs, the prefetch registry and the device store to one app name, with a clean sign-out.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": []
+  },
+  "implements": [
+    "RuleAppspeedPaintFromMemory",
+    "RuleAppspeedChangesOnly",
+    "RuleAppspeedInstantAction",
+    "RuleAppspeedPrefetch",
+    "RuleAppspeedVisibleWait",
+    "RuleAppspeedPhoneFirst"
+  ],
+  "namedChanges": [
+    "no line is copied: `createSpeedKit` is new code that does for the units what Social's `src/lib/persistBridge.ts` does (tell the hub, close the earlier copy, open the disk with a bounded wait, adopt, hydrate, hand over only for the same person, save only this person's persistable keys, wipe at sign-out);",
+    "the persistable set is the option `persistResources`; the database name and storage keys come from `appName`;",
+    "the last-workspace memory, the vault client's seeding, the read memo and the device keys stay in the app or are not taken;",
+    "the hub registers the device copy, so a bare `setPrincipal` also closes and wipes it;",
+    "the hub registers the cache the kit is given, since `createSessionCache` does not."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/speedKit.ts",
+    "src/completeCopy.ts"
+  ],
+  "host": [
+    { "member": "appName", "replaces": "the constants `social.persist.ws`, `social.jobIntents` and the database name `social-cache`" },
+    { "member": "jobs", "replaces": "the six job kinds and the sentences of Social's job store" },
+    { "member": "persistResources", "replaces": "Social's `PERSISTABLE` set in persistBridge.ts" },
+    { "member": "openKv", "replaces": "Social's `indexedDbKv()` call in `warmDisk`" }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
