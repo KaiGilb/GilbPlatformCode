@@ -1,0 +1,42 @@
+{
+  "name": "records-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../../units/base-origin",
+    "@kaigilb/gilbplatformcode-color-scheme": "file:../../units/color-scheme",
+    "@kaigilb/gilbplatformcode-contact-actions": "file:../../units/contact-actions",
+    "@kaigilb/gilbplatformcode-face-crop": "file:../../units/face-crop",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../../units/lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../../units/lws-session-bridge",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "file:../../units/lws-vault-sets",
+    "@kaigilb/gilbplatformcode-narrow-total": "file:../../units/narrow-total",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../../units/photo-ref",
+    "@kaigilb/gilbplatformcode-record-types": "file:../../units/record-types",
+    "@kaigilb/gilbplatformcode-result-total": "file:../../units/result-total",
+    "@kaigilb/gilbplatformcode-signin": "file:../../units/signin",
+    "@kaigilb/gilbplatformcode-text-filter": "file:../../units/text-filter",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../../units/vault-origin-rule",
+    "@tanstack/react-query": "^5.105.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
+  }
+}
