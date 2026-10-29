@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/one-card-context",
+  "package": "@kaigilb/gilbplatformcode-one-card-context",
+  "version": "0.1.0",
+  "purpose": "Holds the merged person card for the rows below it, so a card group can draw a person's rows beside the holder's.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      { "path": "src/components/records/oneCard.tsx", "lines": [21, 201], "to": "src/oneCard.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers': `mergeOneCard` and the types `OneCard`, `OneCardField`, `OneCardGroup`, `OneCardRow`, `OwnAddress` from `@kaigilb/gilbplatformcode-one-card-merge`; the type `OnlineCard` from `@kaigilb/gilbplatformcode-online-card` (in the source all of them came from `gilb-stakeholders`); `YourRow` from `@kaigilb/gilbplatformcode-one-card-rows` (source: `gilb-stakeholders-ui`); `useCardMode` from `@kaigilb/gilbplatformcode-card-mode` (source: `./cardMode`).",
+    "Comments made generic (cycle, step, tester and design-note tags, dates and person names removed); no code change. No string literal carries a tag."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
