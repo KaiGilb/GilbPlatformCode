@@ -13,6 +13,8 @@ set -euo pipefail
 
 export VITE_VAULT_URL="https://testappvaultaccess.gilb.com/vault"
 export VITE_ALLOW_CREATE=1
+# 1 only on Kai's word: lets the app change the signed-in person's own card in their own vault.
+export VITE_PROFILE_WRITE=0
 export VITE_ID_ORIGIN="https://id.gilb.com"
 export VITE_PLATFORM_ORIGIN="https://gilb.com"
 

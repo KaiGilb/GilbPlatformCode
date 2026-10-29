@@ -1,6 +1,6 @@
 // Host wiring for the units: origins, the one credential, the sign-in auth object, vault lookup.
 import { NotSignedInError } from "@kaigilb/gilbplatformcode-lws-session-bridge";
-import { vaultRootOf } from "@kaigilb/gilbplatformcode-plan-self-source";
+import { ownVaultIdOf, vaultRootOf } from "@kaigilb/gilbplatformcode-plan-self-source";
 import { setBaseOrigin, setSystemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
 import { lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
@@ -109,8 +109,25 @@ export function pickVault(rows: VaultRow[], pin?: string | null): AppVault | nul
   return row ? toVault(row, rows.length) : null;
 }
 
+/** The two vaults the app works in, named apart: records in the pinned one, the person's own card in their own (landing) vault. */
+export interface MyVaults {
+  recordsVault: AppVault | null;
+  profileVault: AppVault | null;
+}
+
+/**
+ * The person's OWN vault, chosen by plan-self-source's ownVaultIdOf (the session vault is not known here, so: the row flagged landing).
+ * Must be read-capable. No row qualifies: null. Never the pinned vault, never rows[0].
+ */
+export function pickProfileVault(rows: VaultRow[]): AppVault | null {
+  const id = ownVaultIdOf({ reach: null, vaults: rows.map((r) => ({ vaultId: r.vaultId, isLandingVault: r.isLandingVault === true })), sessionVaultEntity: null });
+  const hit = id ? rows.find((r) => r.vaultId === id) : undefined;
+  if (!hit || !(hit.modes ?? []).includes("read")) return null;
+  return toVault(hit, rows.length);
+}
+
 /** GET {id}/lws/vaults (Dev.Guide.GetStarted.FindVault). A 401 that names expiry is "expired", not "not signed in". */
-export async function findMyVault(pin: string | null | undefined = import.meta.env.VITE_VAULT_URL): Promise<AppVault | null> {
+export async function findMyVault(pin: string | null | undefined = import.meta.env.VITE_VAULT_URL): Promise<MyVaults> {
   const res = await lwsReadFetch(`${ID_ORIGIN}/lws/vaults`);
   if (res.status === 401) {
     const body = await res.text().catch(() => "");
@@ -119,5 +136,5 @@ export async function findMyVault(pin: string | null | undefined = import.meta.e
   if (!res.ok) throw new Error(`Could not list your vaults (HTTP ${res.status}).`);
   const rows = ((await res.json()) as { vaults?: VaultRow[] }).vaults ?? [];
   if (rows.length === 0) throw new Error("Signed in, but this credential reaches no vault: identity not proven.");
-  return pickVault(rows, pin || null);
+  return { recordsVault: pickVault(rows, pin || null), profileVault: pickProfileVault(rows) };
 }

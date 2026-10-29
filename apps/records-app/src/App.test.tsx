@@ -31,7 +31,7 @@ const { RecordCard, RecordList, ProfileView } = await import("./App");
 
 const wrap = (ui: ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>);
 const PIN = "https://a.gilb.com/vault";
-beforeEach(() => { vi.stubEnv("VITE_ALLOW_CREATE", "1"); vi.stubEnv("VITE_VAULT_URL", PIN); });
+beforeEach(() => { vi.stubEnv("VITE_ALLOW_CREATE", "1"); vi.stubEnv("VITE_PROFILE_WRITE", "1"); vi.stubEnv("VITE_VAULT_URL", PIN); });
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 test("records are listed and a click opens the record on a card", async () => {
@@ -65,21 +65,21 @@ test("the add form sends name and description", async () => {
 });
 
 test("the profile shows contact information, saves changes, and takes a picture", async () => {
-  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN, modes: ["read", "write"] } as never} />);
   const email = (await screen.findByLabelText("Email")) as HTMLInputElement;
   expect(email.value).toBe("ada@x.test");
   expect(screen.getByText("Call")).toBeTruthy();
   fireEvent.change(email, { target: { value: "new@x.test" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
-  await waitFor(() => expect(saveProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "p" }), { name: "Ada", email: "new@x.test", phone: "+1 555 0100" }));
+  await waitFor(() => expect(saveProfile).toHaveBeenCalledWith(expect.objectContaining({ vaultId: PIN }), expect.objectContaining({ id: "p" }), { name: "Ada", email: "new@x.test", phone: "+1 555 0100" }));
   const file = new File(["x"], "me.png", { type: "image/png" });
   fireEvent.change(screen.getByLabelText("Profile picture"), { target: { files: [file] } });
-  await waitFor(() => expect(setProfilePhoto).toHaveBeenCalledWith(PIN, expect.objectContaining({ id: "p" }), file));
+  await waitFor(() => expect(setProfilePhoto).toHaveBeenCalledWith(expect.objectContaining({ vaultId: PIN }), expect.objectContaining({ id: "p" }), file));
 });
 
 test("with no own card the message shows, the form is editable, and the only button creates the card", async () => {
   loadProfile.mockResolvedValueOnce({ kind: "none" } as never);
-  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN, modes: ["read", "write"] } as never} />);
   expect(await screen.findByText("No profile card was found in your vault.")).toBeTruthy();
   expect((screen.getByLabelText("Email") as HTMLInputElement).disabled).toBe(false);
   expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
@@ -88,12 +88,12 @@ test("with no own card the message shows, the form is editable, and the only but
 
 test("a second own card shows as a warning line", async () => {
   loadProfile.mockResolvedValueOnce({ kind: "card", card, otherOwnerCards: ["vsc-other"] } as never);
-  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN, modes: ["read", "write"] } as never} />);
   expect((await screen.findByRole("status")).textContent).toContain("vsc-other");
 });
 
 test("D6: the file input is reset after each pick, so the same picture can be picked again", async () => {
-  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN, modes: ["read", "write"] } as never} />);
   const input = (await screen.findByLabelText("Profile picture")) as HTMLInputElement;
   const setValue = vi.fn();
   Object.defineProperty(input, "value", { configurable: true, get: () => "", set: setValue });
@@ -102,7 +102,7 @@ test("D6: the file input is reset after each pick, so the same picture can be pi
 });
 
 test("4.4: 'Saved' is shown only when the vault confirmed; otherwise the not-confirmed line names the field", async () => {
-  wrap(<ProfileView vault={{ vaultId: PIN } as never} />);
+  wrap(<ProfileView vault={{ vaultId: PIN, modes: ["read", "write"] } as never} />);
   fireEvent.change(await screen.findByLabelText("Email"), { target: { value: "new@x.test" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   expect((await screen.findByRole("status")).textContent).toBe("Profile saved.");
@@ -116,7 +116,7 @@ test("4.5: the Connection section shows the reach count, the pinned vault and mo
   wrap(<ProfileView vault={{ vaultId: "https://t.gilb.com/vault", reachCount: 3, modes: ["read", "write"] } as never} />);
   const section = await screen.findByRole("region", { name: "Connection" });
   expect(section.textContent).toContain("Vaults reached: 3");
-  expect(section.textContent).toContain("https://t.gilb.com/vault");
+  expect(section.textContent).toContain("Profile vault: https://t.gilb.com/vault (read, write)");
   expect(section.textContent).toContain("read, write");
   expect(section.textContent).toContain("Own card road: derived");
   expect(section.textContent).toContain("Own card id: p");

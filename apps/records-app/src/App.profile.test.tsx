@@ -26,6 +26,7 @@ const type = (label: string, value: string) => fireEvent.change(screen.getByLabe
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_ALLOW_CREATE", "1");
+  vi.stubEnv("VITE_PROFILE_WRITE", "1");
   vi.stubEnv("VITE_VAULT_URL", PIN);
   h.loadProfile.mockResolvedValue(none);
 });
@@ -124,4 +125,52 @@ test("W1: with a card the button is Save profile and Create my profile card is n
   wrap(<ProfileView vault={vault} />);
   expect(await screen.findByRole("button", { name: "Save profile" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Create my profile card" })).toBeNull();
+});
+
+const LAND = "https://landing.gilb.com/vault";
+const landing = { vaultId: LAND, reachCount: 2, modes: ["read", "write"] } as never;
+const records = { vaultId: PIN, reachCount: 2, modes: ["read", "write"] } as never;
+
+test("B10 W2: the profile is read from the profile vault, not the records vault", async () => {
+  wrap(<ProfileView vault={landing} recordsVault={records} />);
+  await screen.findByRole("button", { name: "Create my profile card" });
+  expect(h.loadProfile.mock.calls[0]![0]).toMatchObject({ vaultId: LAND });
+  expect(h.loadProfile.mock.calls.every((c) => (c[0] as { vaultId: string }).vaultId === LAND)).toBe(true);
+});
+
+test("B10 W3: Create my profile card goes to the profile vault, never to the records vault, when the two differ", async () => {
+  h.createProfileCard.mockResolvedValue({ id: "p1", etag: null, adopted: false });
+  wrap(<ProfileView vault={landing} recordsVault={records} />);
+  await screen.findByRole("button", { name: "Create my profile card" });
+  type("Name", "Ada");
+  fireEvent.click(button("Create my profile card"));
+  await waitFor(() => expect(h.createProfileCard).toHaveBeenCalledTimes(1));
+  expect(h.createProfileCard.mock.calls[0]![0]).toMatchObject({ vaultId: LAND });
+  expect(h.createProfileCard.mock.calls.some((c) => (c[0] as { vaultId: string }).vaultId === PIN)).toBe(false);
+});
+
+test("B10 W3: the picture and Save go to the profile vault", async () => {
+  h.loadProfile.mockResolvedValue(cardState());
+  h.setProfilePhoto.mockResolvedValue({ confirmed: true, failed: [] });
+  h.saveProfile.mockResolvedValue({ confirmed: true, failed: [] });
+  wrap(<ProfileView vault={landing} recordsVault={records} />);
+  const pic = (await screen.findByLabelText("Profile picture")) as HTMLInputElement;
+  fireEvent.change(pic, { target: { files: [new File(["x"], "a.png", { type: "image/png" })] } });
+  await screen.findByText("Picture saved.");
+  expect(h.setProfilePhoto.mock.calls[0]![0]).toMatchObject({ vaultId: LAND });
+  type("Name", "Ada B");
+  fireEvent.click(button("Save profile"));
+  await screen.findByText("Profile saved.");
+  expect(h.saveProfile.mock.calls[0]![0]).toMatchObject({ vaultId: LAND });
+});
+
+test("B10 W2: the Connection panel names both vaults on separate lines", async () => {
+  h.loadProfile.mockResolvedValue(cardState());
+  wrap(<ProfileView vault={{ vaultId: LAND, reachCount: 2, modes: ["read"] } as never} recordsVault={records} />);
+  const section = await screen.findByRole("region", { name: "Connection" });
+  const lines = Array.from(section.querySelectorAll("p")).map((p) => p.textContent);
+  expect(lines).toContain(`Records vault: ${PIN} (read, write)`);
+  expect(lines).toContain(`Profile vault: ${LAND} (read)`);
+  expect(lines).toContain("Own card road: derived");
+  expect(lines).toContain("Own card id: p1");
 });

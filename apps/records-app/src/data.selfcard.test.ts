@@ -26,6 +26,7 @@ let reply: () => Promise<Response>;
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_ALLOW_CREATE", "1");
+  vi.stubEnv("VITE_PROFILE_WRITE", "1");
   vi.stubEnv("VITE_VAULT_URL", VAULT);
   setBaseOrigin("https://platform.example.test");
   setSystemVaultHosts(["id.platform.example.test"]);
@@ -56,7 +57,7 @@ afterEach(() => {
 });
 
 test("W1: ensureSelfCard POSTs to the vault's selfcard door with DPoP, json, no Slug, and t:Person with only the non-empty facts", async () => {
-  await data.ensureSelfCard(VAULT, typed);
+  await data.ensureSelfCard(vault, typed);
   expect(posts).toHaveLength(1);
   expect(posts[0].url).toBe(SELFCARD_URL);
   expect(posts[0].headers).toMatchObject({ authorization: "DPoP t", dpop: "p", "content-type": "application/json" });
@@ -66,27 +67,27 @@ test("W1: ensureSelfCard POSTs to the vault's selfcard door with DPoP, json, no 
 
 test("W1: 201 is created: the id comes from Location, adopted is false, the etag is kept", async () => {
   const derived = await selfCardIdForVault(VAULT);
-  expect(await data.ensureSelfCard(VAULT, typed)).toEqual({ id: derived, etag: '"1"', adopted: false });
+  expect(await data.ensureSelfCard(vault, typed)).toEqual({ id: derived, etag: '"1"', adopted: false });
 });
 
 test("W1: 200 is adopted (success), and with no Location the id is the body's @id", async () => {
   reply = async () => Response.json({ "@id": `${HOST}/lws/r/card-9` }, { status: 200, headers: { etag: '"7"' } });
-  expect(await data.ensureSelfCard(VAULT, typed)).toEqual({ id: "card-9", etag: '"7"', adopted: true });
+  expect(await data.ensureSelfCard(vault, typed)).toEqual({ id: "card-9", etag: '"7"', adopted: true });
 });
 
 test("W1: 409 is a refusal that carries the server's message, and no createRecord fallback happens", async () => {
   reply = async () => Response.json({ error: "SelfCardIdentityUnknown", message: "Several cards could be yours; none is marked." }, { status: 409 });
-  await expect(data.ensureSelfCard(VAULT, typed)).rejects.toThrow("Several cards could be yours; none is marked.");
-  await expect(data.ensureSelfCard(VAULT, typed)).rejects.toBeInstanceOf(data.SelfCardRefusedError);
+  await expect(data.ensureSelfCard(vault, typed)).rejects.toThrow("Several cards could be yours; none is marked.");
+  await expect(data.ensureSelfCard(vault, typed)).rejects.toBeInstanceOf(data.SelfCardRefusedError);
   expect(createRecord).not.toHaveBeenCalled();
   expect(posts.every((p) => p.url === SELFCARD_URL)).toBe(true);
 });
 
 test("W1: any other status throws with the HTTP status in the message", async () => {
   reply = async () => new Response("boom", { status: 500 });
-  await expect(data.ensureSelfCard(VAULT, typed)).rejects.toThrow("500");
+  await expect(data.ensureSelfCard(vault, typed)).rejects.toThrow("500");
   reply = async () => new Response("no", { status: 403 });
-  await expect(data.ensureSelfCard(VAULT, typed)).rejects.toThrow("403");
+  await expect(data.ensureSelfCard(vault, typed)).rejects.toThrow("403");
   expect(createRecord).not.toHaveBeenCalled();
 });
 

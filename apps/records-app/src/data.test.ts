@@ -28,6 +28,7 @@ const person = (id: string, over: Doc = {}): Doc => ({ "@id": `${VAULT}/e/${id}`
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("VITE_ALLOW_CREATE", "1");
+  vi.stubEnv("VITE_PROFILE_WRITE", "1");
   vi.stubEnv("VITE_VAULT_URL", VAULT);
   setBaseOrigin("https://platform.example.test");
   setSystemVaultHosts(["id.platform.example.test"]);
@@ -58,7 +59,7 @@ test("a card found by the vault's profile pointer is the one patched", async () 
   expect(state.kind).toBe("card");
   if (state.kind !== "card") return;
   expect(state.card).toMatchObject({ id: "mnb-profile-abc", road: "pointer", name: "Alice", email: "a@x.test", phone: "+1 555 0100" });
-  await data.saveProfile(state.card, { name: "Alice", email: "b@x.test", phone: "+1 555 0100" });
+  await data.saveProfile(vault, state.card, { name: "Alice", email: "b@x.test", phone: "+1 555 0100" });
   expect(patchRecord).toHaveBeenCalledTimes(1);
   expect(patchRecord.mock.calls[0].slice(0, 2)).toEqual(["mnb-profile-abc", { email: "b@x.test" }]);
 });
@@ -69,14 +70,14 @@ test("a card found as the derived self-card is patched", async () => {
   const state = await data.loadProfile(vault);
   if (state.kind !== "card") throw new Error("expected a card");
   expect(state.card).toMatchObject({ id: derived, road: "derived" });
-  await data.saveProfile(state.card, { name: "Alice B", email: "", phone: "" });
+  await data.saveProfile(vault, state.card, { name: "Alice B", email: "", phone: "" });
   expect(patchRecord.mock.calls[0].slice(0, 2)).toEqual([derived, { name: "Alice B" }]);
 });
 
 test("road none sends no create and no write, and the picture is refused before any upload", async () => {
   records.set("seat-record", { "@id": ENTITY, "@type": "t:Vault" });
   expect(await data.loadProfile(vault)).toEqual({ kind: "none" });
-  await expect(data.setProfilePhoto(VAULT, null, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("No profile card was found in your vault.");
+  await expect(data.setProfilePhoto(vault, null, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("No profile card was found in your vault.");
   expect(createRecord).not.toHaveBeenCalled();
   expect(patchRecord).not.toHaveBeenCalled();
   expect(reads.some((u) => u.includes("/files"))).toBe(false);
@@ -95,7 +96,7 @@ test("a contact t:Person in the same vault is never read as the card, never patc
   records.set(derived, person(derived));
   const state = await data.loadProfile(vault);
   if (state.kind !== "card") throw new Error("expected a card");
-  await data.saveProfile(state.card, { name: "Me", email: "", phone: "" });
+  await data.saveProfile(vault, state.card, { name: "Me", email: "", phone: "" });
   expect(patchRecord.mock.calls.every((c) => c[0] === derived)).toBe(true);
 });
 
@@ -117,7 +118,7 @@ test("saving keeps the other emails of a multi-valued card and removes a cleared
   const state = await data.loadProfile(vault);
   if (state.kind !== "card") throw new Error("expected a card");
   expect(state.card).toMatchObject({ email: "a@x.test", moreEmails: 1 });
-  await data.saveProfile(state.card, { name: "Alice", email: "c@x.test", phone: "" });
+  await data.saveProfile(vault, state.card, { name: "Alice", email: "c@x.test", phone: "" });
   expect(patchRecord.mock.calls[0][1]).toEqual({ email: ["c@x.test", "b@x.test"], phone: null });
 });
 
@@ -126,7 +127,7 @@ test("the patch is conditional on the version read", async () => {
   records.set(derived, person(derived));
   const state = await data.loadProfile(vault);
   if (state.kind !== "card") throw new Error("expected a card");
-  await data.saveProfile(state.card, { name: "Z", email: "", phone: "" });
+  await data.saveProfile(vault, state.card, { name: "Z", email: "", phone: "" });
   expect(patchRecord.mock.calls[0][4]).toEqual({ ifMatch: 'W/"v1"' });
 });
 
@@ -148,7 +149,7 @@ test("the picture is PUT as raw bytes with name and face=whole, then the own car
   });
   const file = new File(["x"], "me.png", { type: "image/png" });
   patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:profilePhoto": "/files/abc12345" }); return { etag: null }; });
-  expect(await data.setProfilePhoto(VAULT, state.card, file)).toEqual({ confirmed: true, failed: [] });
+  expect(await data.setProfilePhoto(vault, state.card, file)).toEqual({ confirmed: true, failed: [] });
   expect(calls).toHaveLength(1);
   expect(calls[0].url.startsWith(`${HOST}/lws/vault/`)).toBe(true);
   expect(calls[0].url).toContain("/files?");
@@ -173,13 +174,13 @@ async function uploadingCard() {
 test("W4: a picture whose read-back card does not hold the uploaded location is not confirmed", async () => {
   const { card } = await uploadingCard();
   patchRecord.mockImplementationOnce(async () => ({ etag: null })); // accepted, nothing stored under the read key
-  expect(await data.setProfilePhoto(VAULT, card, new File(["x"], "me.png", { type: "image/png" }))).toEqual({ confirmed: false, failed: ["profilePhoto"] });
+  expect(await data.setProfilePhoto(vault, card, new File(["x"], "me.png", { type: "image/png" }))).toEqual({ confirmed: false, failed: ["profilePhoto"] });
 });
 
 test("W4: a picture stored under a key the read does not return (a different location) is not confirmed", async () => {
   const { derived, card } = await uploadingCard();
   patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:profilePhoto": "/files/other" }); return { etag: null }; });
-  expect((await data.setProfilePhoto(VAULT, card, new File(["x"], "me.png", { type: "image/png" }))).confirmed).toBe(false);
+  expect((await data.setProfilePhoto(vault, card, new File(["x"], "me.png", { type: "image/png" }))).confirmed).toBe(false);
 });
 
 // ---- the entries ----
@@ -252,10 +253,10 @@ test("M13: pickVault takes the writable landing vault, else the first writable, 
 
 test("a card with no entityUri is never patched with a null address, and no picture is uploaded for it", async () => {
   const card = { id: "c", entityUri: "", etag: null, road: "derived" as const, source: [], name: "A", email: "", phone: "", photo: "", moreEmails: 0, morePhones: 0, rawEmail: undefined, rawPhone: undefined };
-  await expect(data.saveProfile(card, { name: "B", email: "", phone: "" })).rejects.toThrow("no address");
+  await expect(data.saveProfile(vault, card, { name: "B", email: "", phone: "" })).rejects.toThrow("no address");
   const upload = vi.fn();
   vi.stubGlobal("fetch", upload);
-  await expect(data.setProfilePhoto(VAULT, card, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("no address");
+  await expect(data.setProfilePhoto(vault, card, new File(["x"], "a.png", { type: "image/png" }))).rejects.toThrow("no address");
   expect(patchRecord).not.toHaveBeenCalled();
   expect(upload).not.toHaveBeenCalled();
 });
@@ -273,32 +274,32 @@ async function ownCard(served: Doc) {
 test("4.4: a read-back that carries the new value under the bare slug is confirmed", async () => {
   const { derived, card } = await ownCard({ "a:email": "old@x.test" });
   patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, "a:email": undefined, email: "new@x.test" }); return { etag: null }; });
-  expect(await data.saveProfile(card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
+  expect(await data.saveProfile(vault, card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
 });
 
 test("4.4: a read-back still holding the old value is not confirmed and names the field", async () => {
   const { card } = await ownCard({ email: "old@x.test" });
   patchRecord.mockImplementationOnce(async () => ({ etag: null })); // the vault accepted and changed nothing
-  expect(await data.saveProfile(card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
+  expect(await data.saveProfile(vault, card, { name: "Alice", email: "new@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
 });
 
 test("4.4: for a multi-valued term the edited value must be in the list", async () => {
   const { derived, card } = await ownCard({ email: ["a@x.test", "b@x.test"] });
   patchRecord.mockImplementationOnce(async () => { records.set(derived, { ...records.get(derived)!, email: ["c@x.test", "b@x.test"] }); return { etag: null }; });
-  expect((await data.saveProfile(card, { name: "Alice", email: "c@x.test", phone: "" })).confirmed).toBe(true);
+  expect((await data.saveProfile(vault, card, { name: "Alice", email: "c@x.test", phone: "" })).confirmed).toBe(true);
   const again = await ownCard({ email: ["a@x.test", "b@x.test"] });
   patchRecord.mockImplementationOnce(async () => ({ etag: null }));
-  expect(await data.saveProfile(again.card, { name: "Alice", email: "c@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
+  expect(await data.saveProfile(vault, again.card, { name: "Alice", email: "c@x.test", phone: "" })).toEqual({ confirmed: false, failed: ["email"] });
 });
 
 test("4.4: a removed field is confirmed only when the read-back no longer has it", async () => {
   const { derived, card } = await ownCard({ phone: "123" });
   patchRecord.mockImplementationOnce(async () => { const d = { ...records.get(derived)! }; delete d.phone; records.set(derived, d); return { etag: null }; });
-  expect((await data.saveProfile(card, { name: "Alice", email: "", phone: "" })).confirmed).toBe(true);
+  expect((await data.saveProfile(vault, card, { name: "Alice", email: "", phone: "" })).confirmed).toBe(true);
 });
 
 test("4.4: nothing to change sends nothing and is confirmed", async () => {
   const { card } = await ownCard({ email: "a@x.test" });
-  expect(await data.saveProfile(card, { name: "Alice", email: "a@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
+  expect(await data.saveProfile(vault, card, { name: "Alice", email: "a@x.test", phone: "" })).toEqual({ confirmed: true, failed: [] });
   expect(patchRecord).not.toHaveBeenCalled();
 });

@@ -20,7 +20,7 @@ export const RECORD_TYPE = "t:CatalogEntry";
 export const RECORD_LIST_TYPE = RECORD_TYPE.replace(/^t:/, "");
 
 /**
- * Creates (a record, the own card, a picture) are allowed ONLY when VITE_ALLOW_CREATE=1 AND the vault is the pinned one
+ * Creates of RECORDS are allowed ONLY when VITE_ALLOW_CREATE=1 AND the vault is the pinned one
  * (VITE_VAULT_URL, compared as pickVault compares). Anything else is read and change-only.
  */
 export const createsAllowed = (vaultId: string): boolean =>
@@ -35,6 +35,25 @@ export class CreateNotAllowedError extends Error {
 
 const needCreate = (vaultId: string, what: string): void => {
   if (!createsAllowed(vaultId)) throw new CreateNotAllowedError(what);
+};
+
+/**
+ * Changes to the signed-in person's OWN card (a patch, the picture, the self-card door) are allowed ONLY when
+ * VITE_PROFILE_WRITE=1 AND the profile vault carries "write". Separate from the create gate; the pinned vault does not matter.
+ */
+export const profileWritesAllowed = (vault: { vaultId: string; modes?: readonly string[] }): boolean =>
+  import.meta.env.VITE_PROFILE_WRITE === "1" && (vault.modes ?? []).includes("write");
+
+export class ProfileWriteNotAllowedError extends Error {
+  constructor(what: string) {
+    super(`Changing your profile is off in this run; ${what} is refused.`);
+    this.name = "ProfileWriteNotAllowedError";
+  }
+}
+
+type ProfileVaultRef = { vaultId: string; modes?: readonly string[] };
+const needProfileWrite = (vault: ProfileVaultRef, what: string): void => {
+  if (!profileWritesAllowed(vault)) throw new ProfileWriteNotAllowedError(what);
 };
 
 export interface Entry {
@@ -173,7 +192,8 @@ export interface SaveResult {
  * Change only the facts that differ on the own card, then READ THE CARD AGAIN: a write can be accepted and
  * stored under a key the read does not return (RuleRigdevLwsReadWriteKeyShape), so "saved" needs the read-back.
  */
-export async function saveProfile(card: OwnCard, next: { name: string; email: string; phone: string }): Promise<SaveResult> {
+export async function saveProfile(vault: ProfileVaultRef, card: OwnCard, next: { name: string; email: string; phone: string }): Promise<SaveResult> {
+  needProfileWrite(vault, "saving the profile");
   const patch: Record<string, string | readonly unknown[] | null> = {};
   if (next.name.trim() !== card.name) patch.name = next.name.trim() || null;
   for (const k of ["email", "phone"] as const) {
@@ -225,8 +245,9 @@ const idFromResourceUrl = (url: string): string => {
  * Copied from GilbApp bf1d681c src/lib/base/records.ts:561-602; server GilbPlatform src/lws/routes.ts:772-807 (route at 783).
  * No Slug header: this door mints at a derived address. 409 is a refusal; any other status throws with the status.
  */
-export async function ensureSelfCard(vaultId: string, input: ProfileInput): Promise<{ id: string; etag: string | null; adopted: boolean }> {
-  needCreate(vaultId, "creating the profile card");
+export async function ensureSelfCard(vault: ProfileVaultRef, input: ProfileInput): Promise<{ id: string; etag: string | null; adopted: boolean }> {
+  needProfileWrite(vault, "creating the profile card");
+  const vaultId = vault.vaultId;
   const url = `${vaultOriginOf(vaultId)}/lws/vault/${encodeURIComponent(vaultId)}/selfcard`;
   const given: RecordCreateFacts = {};
   for (const k of ["name", "email", "phone"] as const) if (input[k].trim() !== "") given[k] = input[k].trim();
@@ -263,11 +284,11 @@ export function cardHolds(card: OwnCard, typed: ProfileInput): boolean {
  * (the card is read first for its etag). The caller refetches the own-card finding and checks {@link cardHolds}.
  */
 export async function createProfileCard(vault: ReachableVault, typed: ProfileInput): Promise<{ id: string; etag: string | null; adopted: boolean; save?: SaveResult }> {
-  const made = await ensureSelfCard(vault.vaultId, typed);
+  const made = await ensureSelfCard(vault, typed);
   if (!made.adopted) return made;
   const state = await loadProfile(vault);
   if (state.kind !== "card") return made;
-  return { ...made, save: await saveProfile(state.card, typed) };
+  return { ...made, save: await saveProfile(vault, state.card, typed) };
 }
 
 // ---- the picture -----------------------------------------------------------------------------
@@ -276,8 +297,9 @@ export async function createProfileCard(vault: ReachableVault, typed: ProfileInp
  * PUT {vault}/lws/vault/<vault>/files?name=&face=whole, raw bytes, DPoP write proof, ack { entity }.
  * GilbApp 9a602ea7 src/lib/base/files.ts:189,198,223-239; photo ref `/files/<id>` of the face: vaultProfilePhoto.ts:891.
  */
-export async function uploadPhoto(vaultId: string, file: File): Promise<string> {
-  needCreate(vaultId, "storing pictures");
+export async function uploadPhoto(vault: ProfileVaultRef, file: File): Promise<string> {
+  needProfileWrite(vault, "storing pictures");
+  const vaultId = vault.vaultId;
   const params = new URLSearchParams({ name: file.name });
   appendFaceQuery(params, null);
   const url = `${LWS_VAULT_FILES_URL(vaultId)}?${params}`;
@@ -294,11 +316,11 @@ export async function uploadPhoto(vaultId: string, file: File): Promise<string> 
  * Upload, then point the own card at the file (patch `profilePhoto`, vaultProfilePhoto.ts:504), then READ THE CARD AGAIN:
  * confirmed only when the card's photo fact equals the uploaded location under the read key. Without a card nothing is uploaded.
  */
-export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<SaveResult> {
-  needCreate(vaultId, "storing pictures");
+export async function setProfilePhoto(vault: ProfileVaultRef, card: OwnCard | null, file: File): Promise<SaveResult> {
+  needProfileWrite(vault, "storing pictures");
   if (!card) throw new Error("No profile card was found in your vault.");
   needAddress(card);
-  const location = await uploadPhoto(vaultId, file);
+  const location = await uploadPhoto(vault, file);
   const slug = (await photoTerm.get()).writeKeyBare;
   await patchRecord(card.id, { [slug]: location }, card.entityUri, card.source[0], { ifMatch: card.etag });
   const back = await readRecord(card.id, card.entityUri);
