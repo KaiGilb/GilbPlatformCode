@@ -1,0 +1,232 @@
+{
+ "entries": {
+  "https://ontology.example.test/base/e/relationship-kind-advisor": {
+   "@id": "https://ontology.example.test/base/e/relationship-kind-advisor",
+   "@type": "t:RelationshipKind",
+   "kindForVault": [
+    {
+     "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+    },
+    {
+     "@id": "base:e/nn9sm9vdwmtfh9mdnqwm4jzygw"
+    },
+    {
+     "@id": "base:e/zcwgssa4q19ttv3hmqffcqcmdc"
+    }
+   ],
+   "kindPredicate": {
+    "@id": "base:e/term-c214-advisor-of"
+   },
+   "label": "Advisor",
+   "labelOrder": 8,
+   "ontologyStatus": "Suggested",
+   "playableBy": {
+    "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+   }
+  },
+  "https://ontology.example.test/base/e/relationship-kind-colleague": {
+   "@id": "https://ontology.example.test/base/e/relationship-kind-colleague",
+   "@type": "t:RelationshipKind",
+   "kindForVault": {
+    "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+   },
+   "kindPredicate": {
+    "@id": "base:e/cv2k0wjt8sc3"
+   },
+   "label": "Colleague",
+   "labelOrder": 7,
+   "ontologyStatus": "Suggested",
+   "playableBy": {
+    "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+   }
+  },
+  "https://ontology.example.test/base/e/relationship-kind-competitor": {
+   "@id": "https://ontology.example.test/base/e/relationship-kind-competitor",
+   "@type": "t:RelationshipKind",
+   "label": "Competitor",
+   "labelOrder": 9,
+   "ontologyStatus": "Suggested",
+   "playableBy": {
+    "@id": "base:e/nn9sm9vdwmtfh9mdnqwm4jzygw"
+   }
+  },
+  "https://ontology.example.test/base/e/relationship-kind-customer": {
+   "@id": "https://ontology.example.test/base/e/relationship-kind-customer",
+   "@type": "t:RelationshipKind",
+   "kindForVault": [
+    {
+     "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+    },
+    {
+     "@id": "base:e/nn9sm9vdwmtfh9mdnqwm4jzygw"
+    },
+    {
+     "@id": "base:e/zcwgssa4q19ttv3hmqffcqcmdc"
+    }
+   ],
+   "kindPredicate": {
+    "@id": "base:e/term-c214-customer-of"
+   },
+   "label": "Customer",
+   "labelOrder": 1,
+   "ontologyStatus": "Suggested",
+   "playableBy": [
+    {
+     "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+    },
+    {
+     "@id": "base:e/nn9sm9vdwmtfh9mdnqwm4jzygw"
+    }
+   ]
+  },
+  "https://ontology.example.test/base/e/relationship-kind-friend": {
+   "@id": "https://ontology.example.test/base/e/relationship-kind-friend",
+   "@type": "t:RelationshipKind",
+   "kindForVault": {
+    "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+   },
+   "kindPredicate": {
+    "@id": "base:e/jec613sgp4e5"
+   },
+   "label": "Friend",
+   "labelOrder": 5,
+   "ontologyStatus": "Suggested",
+   "playableBy": {
+    "@id": "base:e/105h6t945zvg5h7bq38awfa27m"
+   }
+  }
+ },
+ "readAt": "2026-10-19, anonymous GETs of https://ontology.example.test/base (vocab?status=all&linkPlane=user, the RelationshipKind entries, the kindPredicate term entities)",
+ "terms": {
+  "https://ontology.example.test/base/e/cv2k0wjt8sc3": {
+   "@id": "https://ontology.example.test/base/e/cv2k0wjt8sc3",
+   "@type": "t:Type",
+   "label": "colleague-of",
+   "typeAttribute": "t:ColleagueOf",
+   "typeUri": "https://ontology.example.test/base/t/ColleagueOf"
+  },
+  "https://ontology.example.test/base/e/jec613sgp4e5": {
+   "@id": "https://ontology.example.test/base/e/jec613sgp4e5",
+   "@type": "t:Type",
+   "label": "friend-of",
+   "typeAttribute": "t:FriendOf",
+   "typeUri": "https://ontology.example.test/base/t/FriendOf"
+  },
+  "https://ontology.example.test/base/e/term-c214-advisor-of": {
+   "@id": "https://ontology.example.test/base/e/term-c214-advisor-of",
+   "@type": "t:Type",
+   "label": "advisor-of",
+   "typeAttribute": "t:AdvisorOf",
+   "typeUri": "https://ontology.example.test/base/t/AdvisorOf"
+  },
+  "https://ontology.example.test/base/e/term-c214-customer-of": {
+   "@id": "https://ontology.example.test/base/e/term-c214-customer-of",
+   "@type": "t:Type",
+   "label": "customer-of",
+   "typeAttribute": "t:CustomerOf",
+   "typeUri": "https://ontology.example.test/base/t/CustomerOf"
+  }
+ },
+ "vocab": {
+  "@graph": [
+   {
+    "@id": "https://ontology.example.test/base/t/AdvisorOf",
+    "a:directed": true,
+    "a:inverseLabel": "is advised by",
+    "a:label": "advisor-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": false,
+    "a:typeAttribute": "t:AdvisorOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/BusinessPartnerOf",
+    "a:directed": false,
+    "a:label": "business-partner-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": true,
+    "a:typeAttribute": "t:BusinessPartnerOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/ColleagueOf",
+    "a:label": "colleague-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": true,
+    "a:typeAttribute": "t:ColleagueOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/CustomerOf",
+    "a:directed": true,
+    "a:inverseLabel": "has customer",
+    "a:label": "customer-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": false,
+    "a:typeAttribute": "t:CustomerOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/FamilyOf",
+    "a:label": "family-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": true,
+    "a:typeAttribute": "t:FamilyOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/FriendOf",
+    "a:directed": false,
+    "a:label": "friend-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": true,
+    "a:typeAttribute": "t:FriendOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/ProspectOf",
+    "a:directed": true,
+    "a:inverseLabel": "has prospect",
+    "a:label": "prospect-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": false,
+    "a:typeAttribute": "t:ProspectOf"
+   },
+   {
+    "@id": "https://ontology.example.test/base/t/SupplierOf",
+    "a:directed": true,
+    "a:inverseLabel": "is supplied by",
+    "a:label": "supplier-of",
+    "a:linkPlane": "user",
+    "a:ontologyStatus": "Suggested",
+    "a:subTypeOf": {
+     "@id": "https://ontology.example.test/base/t/AssociatedWith"
+    },
+    "a:symmetric": false,
+    "a:typeAttribute": "t:SupplierOf"
+   }
+  ]
+ }
+}
