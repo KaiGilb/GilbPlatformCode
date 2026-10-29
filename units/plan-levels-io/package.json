@@ -62,7 +62,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
     "@kaigilb/gilbplatformcode-project-levels": "^0.1.0",

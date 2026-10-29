@@ -72,7 +72,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
     "@kaigilb/gilbplatformcode-ontology-reads": "^0.2.0",
     "@kaigilb/gilbplatformcode-pick-or-create": "^0.1.0",
