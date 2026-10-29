@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "unit": "units/prefetch-registry",
+  "package": "@kaigilb/gilbplatformcode-prefetch-registry",
+  "version": "0.1.0",
+  "purpose": "A registry of page warmers that start a page's cache loads before the person asks: each warmer is started once per workspace within the stale window and not while it runs, heavy ones are skipped on save-data or a slow link, and the picture count ahead follows the screen width.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/prefetch.ts",
+        "lines": [
+          19,
+          111
+        ],
+        "to": "src/prefetch.ts"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedPrefetch",
+    "RuleAppspeedPhoneFirst"
+  ],
+  "namedChanges": [
+    "only the generic part is taken: the types `WarmContext` and `Warmer`, `setWarmContext`, `registerWarm`, `network`, `heavyPrefetchOk`, `prefetchPictureCount`, `setPrefetchClock`, `prefetchPage`, `prefetchAll`, `onIdle`, and the \"started\" dedupe. The five warm functions, the five registrations and the imports of the source app's modules stay in the source app;",
+    "the module-level state becomes `createPrefetchRegistry(options)`, which returns the same functions over the same state; `onIdle` stays a plain export. Nothing runs at import (the source registered with the person hub when the module loaded: the factory does it when it is called);",
+    "`WarmContext` was `{ vault: VaultClient; ws; drafts?; principal? }` and is now `{ ws: string; vault: unknown }`, and the registry is generic over a context type that extends it; the warmers receive the host's own object;",
+    "`STALE_MS`, imported from the session cache, is the option `staleMs`, default 30 000 (the same number);",
+    "the picture counts (3 wide, 2 narrow) and the 640 px edge are the options `wideCount`, `narrowCount`, `narrowBelow`, with those values as defaults; `network` can be given through the option `network`;",
+    "the name it registers under with the person hub is the option `cacheName`, default \"prefetch\";",
+    "`getWarmContext()` is new: the source's warm functions read the module's `context` directly; a host's warm functions read it through this;",
+    "the header comment loses its cycle tags and the source app's page names."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

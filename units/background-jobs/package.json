@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-background-jobs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A store of background jobs that outlive the page that started them: one flight per key, one lane per workspace, never retried, failures kept as notices, and an unfinished-action record that survives a reload and is never run again.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "dependencies": {
+    "@kaigilb/gilbplatformcode-principal-hub": "file:../principal-hub"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

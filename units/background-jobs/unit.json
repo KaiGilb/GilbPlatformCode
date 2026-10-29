@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "unit": "units/background-jobs",
+  "package": "@kaigilb/gilbplatformcode-background-jobs",
+  "version": "0.1.0",
+  "purpose": "A store of background jobs that outlive the page that started them: one flight per key, one lane per workspace, never retried, failures kept as notices, and an unfinished-action record that survives a reload and is never run again.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e",
+    "files": [
+      {
+        "path": "src/lib/backgroundJobs.ts",
+        "lines": [
+          1,
+          237
+        ],
+        "to": "src/backgroundJobs.ts"
+      }
+    ]
+  },
+  "implements": [
+    "RuleAppspeedInstantAction"
+  ],
+  "namedChanges": [
+    "the module-level store becomes `createBackgroundJobs(options)`, which returns the same functions over the same state; nothing runs at import (the source registered with the person hub and read the storage when the module loaded: the factory does both when it is called);",
+    "the import of the person hub reads from the package \"@kaigilb/gilbplatformcode-principal-hub\" instead of \"./principalHub\";",
+    "`JobKind` was the union of six names and is now `string`; the kinds the intent reader accepts, which were a literal list, are the required option `kinds`;",
+    "the storage key `INTENTS` (the source app's own name) is the required option `storageKey`;",
+    "`failText` (the sentences of a failed job, including its special cases) and `unfinishedText` (the \"did not finish\" line) were functions in the module and are the required options `failText` and `unfinishedText`; the function `failText` is no longer exported;",
+    "the message of a job cancelled before it started and the message of a job whose run threw were literal sentences and are the required options `cancelledText` and `crashText`;",
+    "the kind whose success leaves no toast (one literal kind name in `runOne`) is the option `quietSuccessKinds`, default none;",
+    "`cancelJobs(workspace, draftId, kinds)`: `kinds` had a default of two kind names and is now required;",
+    "new options with the source's values as defaults: `keepFinished` (40), `storage` (sessionStorage, or none), `cacheNames` (\"backgroundJobs\", \"backgroundJobIntents\");",
+    "the placeholder entry that `exclusive` makes for a part of a job has kind \"\" instead of \"queue\" (it is never listed or shown);",
+    "the header comment loses its cycle tags and the source app's words. Job fields, the intent record's fields (`draftId` included) and every other behaviour are unchanged."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/testHost.ts"
+  ],
+  "host": [
+    {
+      "member": "storageKey",
+      "replaces": "the constant `social.jobIntents`"
+    },
+    {
+      "member": "kinds",
+      "replaces": "the six kind names, as a type and as the runtime list the intent reader checks"
+    },
+    {
+      "member": "failText",
+      "replaces": "the function `failText` and its sentences"
+    },
+    {
+      "member": "unfinishedText",
+      "replaces": "the function `unfinishedText` and its two sentences"
+    },
+    {
+      "member": "cancelledText",
+      "replaces": "the sentence of a cancelled job"
+    },
+    {
+      "member": "crashText",
+      "replaces": "the sentence of a job whose run threw"
+    },
+    {
+      "member": "quietSuccessKinds",
+      "replaces": "the literal check that the kind \"pick\" leaves no toast"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
