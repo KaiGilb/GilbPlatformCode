@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "unit": "units/one-card",
+  "package": "@kaigilb/gilbplatformcode-one-card",
+  "version": "0.1.0",
+  "purpose": "Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/components/records/OneCardBody.tsx",
+        "lines": null,
+        "to": "src/OneCardBody.tsx"
+      },
+      {
+        "path": "src/components/records/OneCardFind.tsx",
+        "lines": null,
+        "to": "src/OneCardFind.tsx"
+      },
+      {
+        "path": "src/components/records/ConnectedMarker.tsx",
+        "lines": null,
+        "to": "src/ConnectedMarker.tsx"
+      },
+      {
+        "path": "src/components/records/heldAddresses.ts",
+        "lines": null,
+        "to": "src/heldAddresses.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/connectedRecords.ts",
+        "lines": null,
+        "to": "src/connectedRecords.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/theirPlaces.ts",
+        "lines": null,
+        "to": "src/theirPlaces.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/useOnlineCardController.ts",
+        "lines": null,
+        "to": "src/useOnlineCardController.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/useOnlineCardState.ts",
+        "lines": null,
+        "to": "src/useOnlineCardState.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/usePersonCard.ts",
+        "lines": null,
+        "to": "src/usePersonCard.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/onlineCardLabels.ts",
+        "lines": null,
+        "to": "src/onlineCardLabels.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the peers': `bareForm` from `vocabulary-source`; `birthdayText` from `birthday-text`; `displayPlacements` and the type `PersonCard` from `person-connections`; the types `OneCardField`, `OneCardGroup`, `OneCardRow`, `OwnAddress` from `one-card-merge`; `createOnlineCardController`, the types `OnlineCardController`, `OnlineCardState` and `WORDS` from `online-card`; `readLink` and the type `LinkReading` from `online-card-link`; `OneCardFoot` from `one-card-rows`; `CardGroup` from `card-group`; `OneCardProvider`, `oneCardOf`, `placeOneCard`, `useOneCard` and the type `OneCardView` from `one-card-context`; `eventTargetInTopDialog` and `modalIsOpen` from `open-popups`; `claimPlaceIds` from `place-lines`; `refreshRecordInCaches` from `record-cache-kit`; `onlineCardDeps`, `bindAnchorShare`, `forgetAnchor`, `sharedAnchor`, `anchorShareOf`, `resolveRecordPersonCard` and the type `AnchorShare` from `stakeholder-list-doors`; `forgetLinkedFinds` from `stakeholder-list-state`; `attributeLabel` from `term-slots`; the files of the unit import each other by `./name` (in the source: `gilb-stakeholders`, `gilb-stakeholders-ui` and the app's own files);",
+    "`OneCardFind.tsx` and `ConnectedMarker.tsx`: `import { ONLINE_CARD_WORDS as W } from \"gilb-stakeholders\"` is `import { WORDS as W } from \"@kaigilb/gilbplatformcode-online-card\"` (the package exported the controller's `WORDS` under that name; both files use `W` as before);",
+    "the host (RuleGhsHostSeam): seven expressions that reach the MyNet place and geo libraries become members of `OneCardHost` (`src/oneCardHost.ts`, new): `isGeoEntityId`, `listPlaceClaimsInVault`, `claimsAbout`, `claimFieldText`, `loadPlaceNames`, `placeClaimsKey` and `placeClaimsStaleMs` (the constant `PLACE_CLAIMS_STALE_MS`); the context `OneCardHostContext` is read by `useOneCardHost()`, which throws \"The one card needs a OneCardHostContext.Provider above it.\" when there is none;",
+    "`OneCardBody.tsx`, before: `export function isTheirPlaceGroup(group: OneCardGroup, groupOf: ...): boolean` with `isGeoEntityId(r.value.trim())` in its body; after: `isTheirPlaceGroup(host: OneCardHost, group, groupOf)` with `host.isGeoEntityId(r.value.trim())`; in `OneCardBody` the first statement after the props is `const host = useOneCardHost();` and the call is `isTheirPlaceGroup(host, g, props.groupOf)`;",
+    "`heldAddresses.ts`, before: `ownAddressOf(claim, places)` with `claimFieldText(claim, \"streetLine\")`, `\"addressLine1\"`, `\"addressLine2\"`, `\"postalCode\"`; after: `ownAddressOf(host, claim, places)` with `host.claimFieldText(claim, ...)` for the same four terms. In `useHeldAddresses` the first statement is `const host = useOneCardHost();`; `placeClaimsKey(vaultId ?? \"\")` is `host.placeClaimsKey(vaultId ?? \"\")`, `listPlaceClaimsInVault(vaultId!)` is `host.listPlaceClaimsInVault(vaultId!)`, `PLACE_CLAIMS_STALE_MS` is `host.placeClaimsStaleMs`, `claimsAbout(q.data, subject!)` is `host.claimsAbout(q.data, subject!)`, `loadPlaceNames(ids)` is `host.loadPlaceNames(ids)` and `ownAddressOf(c, ...)` is `ownAddressOf(host, c, ...)`. The dependency lists of the hook's memos are as in the source (the host does not change);",
+    "the types `PlaceClaim` and `GeoPlace` (MyNet interfaces, `lib/mynet/place/placeClaim.ts:123` and `lib/mynet/geo/baseGeo.ts:280`) are declared in `src/oneCardHost.ts` as the structural subsets the unit reads: `PlaceClaim` is `PlaceLineClaim` of `place-lines` plus `uri`; `GeoPlace` is `id`, `label`, `type`, `memberOf`; `PlaceTextTerm` is the four terms;",
+    "`claimPlaceIds` is the one of `place-lines` (72 tokens each; the unit's parameter type is `PlaceLineClaim` and its lambda parameter is named `candidate` where the app's is `f`; measured equal on 5000 random claims);",
+    "comments made generic (cycle, step, tester, design-note and ruling tags, dates, person and app names and a spec reference removed; the example host address in `theirPlaces.ts` reworded); no code changed. No string literal carries a tag."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/oneCardHost.ts"
+  ],
+  "host": [
+    {
+      "context": "OneCardHostContext",
+      "member": "isGeoEntityId",
+      "replaces": "src/lib/mynet/geo/baseGeo.ts:82 (isGeoEntityId(value); called at OneCardBody.tsx:70, once for each value of theirs of a group, trimmed)",
+      "implementedBy": "the MyNet test that a value is the address of a place in the geo catalogue (its prefix is the geo origin)"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "listPlaceClaimsInVault",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:522 (listPlaceClaimsInVault(vaultId); called at heldAddresses.ts:70, as the query function of the shared address read)",
+      "implementedBy": "the MyNet read of every address claim a vault holds"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "claimsAbout",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:632 (claimsAbout(claims, subject); called at heldAddresses.ts:74)",
+      "implementedBy": "the MyNet filter of the claims that are about one record, compared by the record's opaque id"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "claimFieldText",
+      "replaces": "src/lib/mynet/place/placeClaim.ts:263 (claimFieldText(claim, term); called four times for each address at heldAddresses.ts:48-51)",
+      "implementedBy": "the MyNet read of one text line of an address (street, Address 1, Address 2, Postal Code)"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "loadPlaceNames",
+      "replaces": "src/lib/mynet/geo/usePlaceNames.ts:27 (loadPlaceNames(ids); called from the effect at heldAddresses.ts:81)",
+      "implementedBy": "the MyNet read of the geo catalogue rows of some place ids"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "placeClaimsKey",
+      "replaces": "src/lib/mynet/place/usePlaceClaims.ts:50 (placeClaimsKey(vaultId); called at heldAddresses.ts:69; the app's value is [\"mynet\", \"place-claims\", vaultId])",
+      "implementedBy": "the query key of the vault's one shared address read, the key the address group of the app already uses"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "placeClaimsStaleMs",
+      "replaces": "src/lib/mynet/place/usePlaceClaims.ts:52 (PLACE_CLAIMS_STALE_MS = 60_000; read at heldAddresses.ts:71)",
+      "implementedBy": "the number of milliseconds a held vault read is taken as fresh when the card opens (60000)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
