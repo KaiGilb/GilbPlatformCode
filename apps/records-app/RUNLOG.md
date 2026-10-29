@@ -31,3 +31,37 @@ Searched read-only with `GET https://jackfruit.gilb.com/base/terms?q=...` and re
 
 ## Not proven
 Anything against a live vault: sign-in, vault lookup, create, list, patch, upload, photo display. Tests mock the unit seams.
+
+## Batch 2 (directed by Kai-Zen)
+Start 2026-10-29 00:41:42 UTC. End 2026-10-29 00:45:16 UTC. About 30 tool calls.
+
+### Searches and reading
+- `kz-std get Kai-Zen.Return`: read (batch 1 skipped it). GilbPlatform.SignOff not read by me this batch (see handback).
+- Read in full: units/self-card, units/own-card, units/plan-self-source READMEs, and plan-self-source/src/ownCardFinding.ts. Chose `ownCardFindingQuery(vault).queryFn()` from plan-self-source: it is a plain async function (no hook), wires `ownCardDeps` + `findOwnCard` + the API host. I did not write the two reads myself. The vault object it needs (ReachableVault) is a HOST OBJECT: `pickVault` in src/platform.ts builds it from a /lws/vaults row (only vaultId, entity, name, isLandingVault, modes are real; cast). Whether /lws/vaults rows carry an `entity` (the vault entity the pointer lives on) is UNKNOWN: if not, the pointer road reads nothing and only the derived road works.
+- `node scripts/peers.mjs` for plan-self-source printed a 40-unit line (plan-record-hooks, for ONE type). Installed it as printed plus own-card, self-card, photo-term. About 3 min.
+- `setSystemHostLabels([...])` (own-card) must be called at start-up; it throws if not. I used id, veda, geo, kaizen, connect, maintain, www, skills, gilb (the source's eight plus maintain). Host wiring in `initPlatform`.
+- GilbApp 9a602ea7 read through `git show` / `git ls-tree` / `git grep` only.
+
+### 2.1e GilbApp terms (file:line at 9a602ea7)
+- email and phone: terms `a/email` and `a/phone`, multi-valued; MyNet sidecar keys email, emailPrivate, email2, phone, phone2 (src/lib/base/contactRows.ts:6-18, 45-46); read by term in src/components/records/RecordDetail.tsx:644,646. A single value may be served as a plain string (contactRows.ts:9). Written here as bare slugs `email`, `phone` (patchRecord mints a:<slug>, vaultProfilePhoto.ts:57-60). I keep the first value editable and send back the other rows (`withFirst`); the MyNet sidecar term a/fieldMeta (work/private labels) is NOT touched or written, so a label could drift when the first row is replaced. OPEN QUESTION for the live check.
+- name: the card's name is its one `name`, else given + family (src/lib/base/personName.ts:3-7, 18-20; ownCard.ts cardNameOf in plan-self-source). I write only `name`; a card that carries givenName/familyName is not kept in step with it (GilbApp does, personName.ts:7). OPEN QUESTION.
+- photo: `a:profilePhoto`, written as the bare slug from photo-term `writeKeyBare` (vaultProfilePhoto.ts:32-33, 57-60, 504); value `/files/<id>` of the lean face else the master (vaultProfilePhoto.ts:891).
+
+### 2.2 Photo route (file:line at 9a602ea7)
+- NOT POST: **PUT** `/lws/vault/<vault>/files` (src/lib/base/files.ts:225; URL files.ts:223 via LWS_VAULT_FILES_URL, which vault-origin-rule already holds, vaultOriginRule.ts:312). Batch 1 used POST and the vault notes; that was wrong.
+- Query: `name` (files.ts:189) and `face` (files.ts:198, appendFaceQuery of face-crop; `whole` when null).
+- Body: the raw Blob, never multipart (files.ts:23, 230). Headers: `dpopWriteAuth("PUT", url)` plus `content-type` = media type (files.ts:229). No keepalive (files.ts:231-236).
+- Response: 201 `{ entity, contentHash, byteSize, created, leanFace? }` (files.ts:130-138, 239). The card's photo ref: `/files/<face id>` (vaultProfilePhoto.ts:891); face-crop's `faceLocationFor(ack)` is that rule, so I use it. Card write: patchRecord on the card with the photo slug (vaultProfilePhoto.ts:504).
+- Units checked: photo-ref (used: photoBytesUrl for display), photo-term (used: read/write spelling; it fetches the term from the master at run time, seed if unreachable), face-crop (used: appendFaceQuery, faceLocationFor), photo-location, image-displayable, type-picture, raw-files-path (not needed).
+- Not copied: GilbApp falls back to an owner-path `POST /files` when the vault upload is refused 403 (files.ts:316-342 uploadFilePreferVault). I did not add the fallback. OPEN QUESTION for the live check.
+- Photo write patches the own card only; with road none there is no upload (test "road none sends no create…").
+
+### 2.3 / 2.4
+- One slot: `RECORD_TYPE` in src/data.ts (list slug derived from it, `RECORD_LIST_TYPE`). Renamed Thing to Entry throughout.
+- Kept contact-actions (Call/Email links under the contact fields, still used) and face-crop (appendFaceQuery and faceLocationFor are GilbApp's own rule for the photo ref and the face query). Dropped nothing.
+- listEntries throws naming the cap (50 pages, 5000 records); one test.
+
+### Stuck / open for the live check
+- Road none: the app shows the message and disables the form. What the platform does for a vault with no own card is not known to me; Kai-Zen is finding out.
+- Fixture for the pointer road: I wrote my own small fake of GET /lws/r/<id> in data.test.ts (plan-self-source keeps its own under test/, not shipped).
+- Unproven: everything against a live vault, as in batch 1.

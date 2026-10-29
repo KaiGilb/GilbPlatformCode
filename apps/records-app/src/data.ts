@@ -1,38 +1,30 @@
-// The records and the profile: what is stored, how it is listed, searched and written.
-// GilbVeda terms used (all found by search, see RUNLOG.md): t:Thing, t:Person, a:name, a:description,
-// a:email, a:phone, a:profilePhoto.
-import { createRecord, patchRecord, readRecord, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
-import { listVaultRecordsPage } from "@kaigilb/gilbplatformcode-lws-vault-sets";
+// The entries and the holder's own card: what is stored, how it is listed, searched and written.
+// GilbVeda terms: the entry type (RECORD_TYPE, pending), a:name, a:description; the own card carries
+// a:name, a:email, a:phone, a:profilePhoto (spelling from photo-term). Findings: RUNLOG.md.
+import { createRecord, patchRecord, readRecord, writeSource, type BaseRecord, type WriteSource } from "@kaigilb/gilbplatformcode-lws-records";
+import { listVaultRecordsPage, lwsReadFetch } from "@kaigilb/gilbplatformcode-lws-vault-sets";
 import { textHits } from "@kaigilb/gilbplatformcode-text-filter";
 import { appendFaceQuery, faceLocationFor, type UploadAck } from "@kaigilb/gilbplatformcode-face-crop";
-import { lwsReadFetch } from "@kaigilb/gilbplatformcode-lws-vault-sets";
 import { dpopWriteAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
-import { vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
+import { vaultOriginOf, LWS_VAULT_FILES_URL } from "@kaigilb/gilbplatformcode-vault-origin-rule";
+import { photoBytesUrl } from "@kaigilb/gilbplatformcode-photo-ref";
+import { createPhotoTermResolver, photoRefFromFacts } from "@kaigilb/gilbplatformcode-photo-term";
+import { ownCardFindingQuery } from "@kaigilb/gilbplatformcode-plan-self-source";
+import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
+import { VEDA_ORIGIN } from "./platform";
 
-export const THING_TYPE = "t:Thing";
-export const PERSON_TYPE = "t:Person";
+export const RECORD_TYPE = "t:Thing"; // PENDING Agent.Concept: purpose-fit type; t:Thing must not ship.
+export const RECORD_LIST_TYPE = RECORD_TYPE.replace(/^t:/, "");
 
-export interface Thing {
+export interface Entry {
   id: string;
   entityUri: string;
   name: string;
   description: string;
 }
 
-export interface Profile {
-  id: string;
-  entityUri: string;
-  etag: string | null;
-  name: string;
-  email: string;
-  phone: string;
-  photo: string;
-}
-
-export const EMPTY_PROFILE_FIELDS = { name: "", email: "", phone: "" };
-
-/** A listed row (with its body) to a Thing. The body is the framed document the vault served. */
-export function thingFromRow(row: { id: string; entityUri: string; label?: string | null; body?: Record<string, unknown> }): Thing {
+/** A listed row (with its body) to an Entry. The body is the framed document the vault served. */
+export function entryFromRow(row: { id: string; entityUri: string; label?: string | null; body?: Record<string, unknown> }): Entry {
   const b = row.body ?? {};
   const text = (k: string): string => {
     const v = b[k] ?? b[`a:${k}`];
@@ -42,105 +34,150 @@ export function thingFromRow(row: { id: string; entityUri: string; label?: strin
 }
 
 /** The search: every word of the query must appear in the name or the description. */
-export function searchThings(things: readonly Thing[], query: string): Thing[] {
-  return things.filter((t) => textHits(query, [t.name, t.description]));
+export function searchEntries(entries: readonly Entry[], query: string): Entry[] {
+  return entries.filter((t) => textHits(query, [t.name, t.description]));
 }
 
-/** What a new record must carry; the form refuses an empty name before anything is sent. */
-export function validateThing(name: string): string | null {
+export function validateEntry(name: string): string | null {
   return name.trim() === "" ? "Give the record a name." : null;
 }
 
-export async function listThings(vaultId: string): Promise<Thing[]> {
-  const all: Thing[] = [];
+export const MAX_LIST_PAGES = 50;
+
+export async function listEntries(vaultId: string): Promise<Entry[]> {
+  const all: Entry[] = [];
   let offset = 0;
-  for (let guard = 0; guard < 50; guard++) {
-    const page = await listVaultRecordsPage(vaultId, ["Thing"], offset, { includeBody: true, limit: 100 });
-    all.push(...page.records.map(thingFromRow));
-    if (page.complete) break;
-    offset = page.nextOffset ?? offset + (page.served ?? page.records.length);
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const p = await listVaultRecordsPage(vaultId, [RECORD_LIST_TYPE], offset, { includeBody: true, limit: 100 });
+    all.push(...p.records.map(entryFromRow));
+    if (p.complete) return all;
+    offset = p.nextOffset ?? offset + (p.served ?? p.records.length);
   }
-  return all;
+  throw new Error(`The list is longer than ${MAX_LIST_PAGES} pages (${MAX_LIST_PAGES * 100} records); the app stops there rather than show a part as the whole.`);
 }
 
-export async function addThing(vaultId: string, name: string, description: string): Promise<{ id: string }> {
-  const bad = validateThing(name);
+export async function addEntry(vaultId: string, name: string, description: string): Promise<{ id: string }> {
+  const bad = validateEntry(name);
   if (bad) throw new Error(bad);
   const facts: Record<string, string> = { name: name.trim() };
   if (description.trim()) facts.description = description.trim();
-  return createRecord(vaultId, THING_TYPE, facts, name.trim());
+  return createRecord(vaultId, RECORD_TYPE, facts, name.trim());
 }
 
-export function profileFromRecord(rec: BaseRecord): Profile {
-  const f = rec.facts;
+// ---- the holder's own card -------------------------------------------------------------------
+
+export interface OwnCard {
+  id: string;
+  entityUri: string;
+  etag: string | null;
+  road: "pointer" | "derived";
+  source: WriteSource[];
+  name: string;
+  email: string;
+  phone: string;
+  /** How many more emails / phones the card holds beyond the first (kept untouched on save). */
+  moreEmails: number;
+  morePhones: number;
+  photo: string;
+  /** The values as served (a list stays a list), so a save keeps the rows it does not edit. */
+  rawEmail: unknown;
+  rawPhone: unknown;
+}
+
+export type ProfileState = { kind: "none" } | { kind: "card"; card: OwnCard; otherOwnerCards: string[] };
+
+const asList = (v: unknown): unknown[] => (v === undefined || v === null || v === "" ? [] : Array.isArray(v) ? v : [v]);
+const firstText = (v: unknown): string => {
+  const x = asList(v)[0];
+  return typeof x === "string" ? x : "";
+};
+
+const photoTerm = createPhotoTermResolver({ vedaOrigin: VEDA_ORIGIN });
+
+export async function cardFromRecord(rec: BaseRecord, road: "pointer" | "derived"): Promise<OwnCard> {
+  const served = rec.served?.facts ?? rec.facts;
+  const term = await photoTerm.get();
   return {
     id: rec.id,
     entityUri: rec.entityUri ?? "",
     etag: rec.etag ?? null,
-    name: f.name ?? "",
-    email: f.email ?? "",
-    phone: f.phone ?? "",
-    photo: f.profilePhoto ?? "",
+    road,
+    source: writeSource(rec),
+    name: rec.facts.name ?? firstText(served.name),
+    email: firstText(served.email),
+    phone: firstText(served.phone),
+    moreEmails: Math.max(0, asList(served.email).length - 1),
+    morePhones: Math.max(0, asList(served.phone).length - 1),
+    photo: photoRefFromFacts(served as Record<string, unknown>, term) ?? "",
+    rawEmail: served.email,
+    rawPhone: served.phone,
   };
 }
 
-/** The signed-in person's profile: the first t:Person record of their vault, or null when none yet. */
-export async function loadProfile(vaultId: string): Promise<Profile | null> {
-  const page = await listVaultRecordsPage(vaultId, ["Person"], 0, {});
-  const row = page.records[0];
-  if (!row) return null;
-  const rec = await readRecord(row.id, row.entityUri);
-  return rec ? profileFromRecord(rec) : null;
+/**
+ * The holder's own card by hard identity (own-card via plan-self-source's finding): the profile
+ * pointer or the derived self-card. Never a listing, never the first t:Person. No card: kind "none".
+ */
+export async function loadProfile(vault: ReachableVault): Promise<ProfileState> {
+  const finding = await ownCardFindingQuery(vault).queryFn();
+  if (!finding.cardId || (finding.road !== "pointer" && finding.road !== "derived")) return { kind: "none" };
+  const rec = await readRecord(finding.cardId, finding.cardUri);
+  if (!rec) return { kind: "none" };
+  return { kind: "card", card: await cardFromRecord(rec, finding.road), otherOwnerCards: finding.otherOwnerCards };
 }
 
-/** Create the profile, or change only the facts that differ (a cleared field is removed). */
-export async function saveProfile(vaultId: string, current: Profile | null, next: { name: string; email: string; phone: string }): Promise<void> {
-  if (!current) {
-    const facts: Record<string, string> = {};
-    for (const k of ["name", "email", "phone"] as const) if (next[k].trim()) facts[k] = next[k].trim();
-    await createRecord(vaultId, PERSON_TYPE, facts, next.name.trim() || "Profile");
-    return;
-  }
-  const patch: Record<string, string | null> = {};
-  for (const k of ["name", "email", "phone"] as const) {
+/** Rebuild a multi-valued contact term with its first value replaced and the rest kept. */
+function withFirst(raw: unknown, value: string): unknown {
+  const rest = asList(raw).slice(1);
+  return rest.length === 0 ? value : [value, ...rest];
+}
+
+/** Change only the facts that differ on the own card. A cleared first value with no others removes the fact. */
+export async function saveProfile(card: OwnCard, next: { name: string; email: string; phone: string }): Promise<void> {
+  const patch: Record<string, string | readonly unknown[] | null> = {};
+  if (next.name.trim() !== card.name) patch.name = next.name.trim() || null;
+  for (const k of ["email", "phone"] as const) {
     const v = next[k].trim();
-    if (v !== current[k]) patch[k] = v === "" ? null : v;
+    if (v === card[k]) continue;
+    const more = k === "email" ? card.moreEmails : card.morePhones;
+    if (v === "" && more === 0) patch[k] = null;
+    else patch[k] = (more === 0 ? v : withFirst(k === "email" ? card.rawEmail : card.rawPhone, v)) as string | readonly unknown[];
   }
   if (Object.keys(patch).length === 0) return;
-  await patchRecord(current.id, patch, current.entityUri || null, undefined, { ifMatch: current.etag });
+  await patchRecord(card.id, patch, card.entityUri || null, card.source[0], { ifMatch: card.etag });
 }
 
+// ---- the picture -----------------------------------------------------------------------------
+
 /**
- * Upload the picture and point the profile at it. HOST OBJECT written here (no unit uploads):
- * POST {vault host}/lws/vault/<vault>/files?face=whole with the raw bytes. The route and the `name`
- * query word are from the vault's Capability.Developer.FileUploadByApi text, NOT proven live.
+ * PUT {vault}/lws/vault/<vault>/files?name=&face=whole, raw bytes, DPoP write proof, ack { entity }.
+ * GilbApp 9a602ea7 src/lib/base/files.ts:189,198,223-239; photo ref `/files/<id>` of the face: vaultProfilePhoto.ts:891.
  */
 export async function uploadPhoto(vaultId: string, file: File): Promise<string> {
   const params = new URLSearchParams({ name: file.name });
   appendFaceQuery(params, null);
-  const url = `${vaultOriginOf(vaultId)}/lws/vault/${encodeURIComponent(vaultId)}/files?${params}`;
+  const url = `${LWS_VAULT_FILES_URL(vaultId)}?${params}`;
   const res = await fetch(url, {
-    method: "POST",
-    headers: { ...(await dpopWriteAuth("POST", url)), "content-type": file.type || "application/octet-stream" },
+    method: "PUT",
+    headers: { ...(await dpopWriteAuth("PUT", url)), "content-type": file.type || "application/octet-stream" },
     body: file,
   });
   if (!res.ok) throw new Error(`The picture was not stored (HTTP ${res.status}).`);
   return faceLocationFor((await res.json()) as UploadAck);
 }
 
-export async function setProfilePhoto(vaultId: string, profile: Profile | null, file: File): Promise<void> {
+/** Upload, then point the own card at the file: patch `profilePhoto` (vaultProfilePhoto.ts:504). Without a card nothing is uploaded. */
+export async function setProfilePhoto(vaultId: string, card: OwnCard | null, file: File): Promise<void> {
+  if (!card) throw new Error("No profile card was found in your vault.");
   const location = await uploadPhoto(vaultId, file);
-  if (!profile) {
-    await createRecord(vaultId, PERSON_TYPE, { profilePhoto: location }, "Profile");
-    return;
-  }
-  await patchRecord(profile.id, { profilePhoto: location }, profile.entityUri || null, undefined, { ifMatch: profile.etag });
+  const slug = (await photoTerm.get()).writeKeyBare;
+  await patchRecord(card.id, { [slug]: location }, card.entityUri || null, card.source[0], { ifMatch: card.etag });
 }
 
 /** The picture's bytes need the credential, so fetch them and show a blob address. */
 export async function photoObjectUrl(vaultId: string, location: string): Promise<string | null> {
-  if (!location) return null;
-  const url = location.startsWith("http") ? location : `${vaultOriginOf(vaultId)}${location}`;
+  const url = photoBytesUrl(location, vaultOriginOf(vaultId));
+  if (!url) return null;
   const res = await lwsReadFetch(url);
   if (!res.ok) return null;
   return URL.createObjectURL(await res.blob());
