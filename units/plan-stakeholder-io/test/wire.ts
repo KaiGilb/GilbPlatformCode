@@ -10,6 +10,10 @@ export type Doc = Record<string, unknown>;
 export interface Wire {
   reads: string[];
   relationReads: string[];
+  /** Every POST to the tag service (`/base/tag/masters`): the records asked for, one entry per call. */
+  tagReads: string[][];
+  /** The main tag the tag service answers for a record address; a record not set is left out of the answer. */
+  setMainTag(entityUri: string, tag: string | null, known?: boolean): void;
   master: ReturnType<typeof fixtureMaster>;
   setRecord(id: string, doc: Doc | number): void;
   setRelations(id: string, rows: unknown[] | number): void;
@@ -21,9 +25,12 @@ export function installWire(): Wire {
   const records = new Map<string, Doc | number>();
   const relations = new Map<string, unknown[] | number>();
   const holds = new Map<string, Promise<void>>();
+  const mainTags = new Map<string, { tag: string | null; known: boolean }>();
   const wire: Wire = {
     reads: [],
     relationReads: [],
+    tagReads: [],
+    setMainTag: (uri, tag, known = true) => void mainTags.set(uri, { tag, known }),
     master: fixtureMaster(),
     setRecord: (id, doc) => void records.set(id, doc),
     setRelations: (id, rows) => void relations.set(id, rows),
@@ -38,6 +45,13 @@ export function installWire(): Wire {
     if (url.startsWith(RIG)) {
       await holds.get("master");
       return wire.master.fetch(url, init);
+    }
+    if (url.endsWith("/base/tag/masters")) {
+      const asked = (JSON.parse(String(init?.body ?? "{}")) as { targetEntities: string[] }).targetEntities;
+      wire.tagReads.push(asked);
+      return Response.json({
+        masterTags: asked.filter((t) => mainTags.has(t)).map((t) => ({ targetEntity: t, tagString: mainTags.get(t)!.tag, tagKnown: mainTags.get(t)!.known })),
+      });
     }
     if (url.includes("/relations")) {
       wire.relationReads.push(url);
