@@ -24,7 +24,7 @@
     "@kaigilb/gilbplatformcode-online-card-link": "^0.1.0",
     "@kaigilb/gilbplatformcode-person-connections": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-record-hooks": "^0.2.0",
-    "@kaigilb/gilbplatformcode-record-sync": "^0.3.0",
+    "@kaigilb/gilbplatformcode-record-sync": "^0.4.0",
     "@kaigilb/gilbplatformcode-stakeholder-list-reader": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "^0.2.0",
     "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
