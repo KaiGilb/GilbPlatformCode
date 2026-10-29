@@ -79,6 +79,8 @@ export type FakeOptions = {
   substituted?: boolean;
   openInVault?: StakeholderLinesHost["useOpenRecordInVault"] extends () => infer R ? R : never;
   recordRead?: BaseRecord | null;
+  /** What the host's `useMainTag` answers, by record address; a record not here is pending (no `data`). */
+  mainTags?: Record<string, { known: boolean; tag: string | null }>;
   /** Override or add any member. */
   over?: Partial<StakeholderLinesHost>;
 };
@@ -107,6 +109,7 @@ export function makeFake(o: FakeOptions = {}) {
   const host: StakeholderLinesHost = {
     useRecords: () => ({ data: records }),
     useRecordRead: () => ({ data: o.recordRead }),
+    useMainTag: L("useMainTag", (uri: string | null | undefined) => ({ data: uri ? o.mainTags?.[uri] : undefined })),
     useRelations: (id, uri) => {
       useSyncExternalStore(
         (f) => {
