@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "unit": "units/org-employees",
+  "package": "@kaigilb/gilbplatformcode-org-employees",
+  "version": "0.1.0",
+  "purpose": "Lists an organization's employees inline and in a searchable sheet.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      { "path": "src/lib/base/orgCard/orgEmployees.ts", "lines": null, "to": "src/orgEmployees.ts" },
+      { "path": "src/lib/base/orgCard/orgEmployeeSearch.ts", "lines": null, "to": "src/orgEmployeeSearch.ts" },
+      { "path": "src/lib/base/orgCard/pagedFind.ts", "lines": null, "to": "src/pagedFind.ts" },
+      { "path": "src/lib/base/orgCard/orgCardOrder.ts", "lines": null, "to": "src/orgCardOrder.ts" },
+      { "path": "src/components/records/orgCard/OrgEmployeesSection.tsx", "lines": null, "to": "src/OrgEmployeesSection.tsx" },
+      { "path": "src/components/records/orgCard/OrgEmployeeRow.tsx", "lines": null, "to": "src/OrgEmployeeRow.tsx" },
+      { "path": "src/components/records/orgCard/OrgShortList.tsx", "lines": null, "to": "src/OrgShortList.tsx" },
+      { "path": "src/components/records/orgCard/OrgListSheet.tsx", "lines": null, "to": "src/OrgListSheet.tsx" },
+      { "path": "src/components/records/orgCard/useOrgEmployees.ts", "lines": null, "to": "src/useOrgEmployees.ts" },
+      { "path": "src/lib/mynet/heldnote/heldNote.ts", "lines": [116, 123], "to": "src/subjectSpellings.ts" },
+      { "path": "src/lib/mynet/heldnote/heldNote.ts", "lines": [130, 142], "to": "src/subjectSpellings.ts" },
+      { "path": "src/lib/base/orgCard/orgTerms.ts", "lines": [47, 58], "to": "src/servedValue.ts" }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the peers': `findByAttribute`, `AttributeFindResult`, `mapWithConcurrency`, `MAX_PARALLEL_DEREFERENCES`, `typeLocalName` from `lws-vault-sets`; `readRecord` from `lws-records`; `photoRefFromFacts` from `photo-term`; `vaultOriginOf` from `vault-origin-rule`; `partyNameOf`, `personKindNamesOf` from `stakeholder-card-model`; `cardMasterSource`, `readStakeholderCardVocabulary`, `readStoredCardVocabulary` from `stakeholder-card-vocabulary`; `masterKindReader` from `plan-stakeholder-io`; `attributeSpelling` from `term-slots`; `idFromResourceUri` from `resource-id`; `CardGroup` from `card-group`; `useDebouncedValue` from `record-picker`; `eventTargetInTopDialog`, `modalIsOpen` from `open-popups`; `subjectSpellings`, `inVault` and `refsOf`, `servedValue` are the unit's own pure copies (`src/subjectSpellings.ts`, `src/servedValue.ts`);",
+    "interface `OrgEmployeesHost` (with `ReadResource`, `EmploymentLinkVocab`, `RecordFaceProps`) and the context `OrgEmployeesHostContext` with `useOrgEmployeesHost()` are added; `readOrgEmployeesPage(...)` takes the host as its new first argument and the default `defaultDeps` is `defaultDepsOf(host)`, whose `readResources`, `photoReadKeys` and `resolveEmploymentLinkVocab` are `host.readResources(uris, vaultId)`, `host.photoReadKeys()` and `host.resolveEmploymentLinkVocab()` with the same arguments, at the same places;",
+    "`OrgEmployeeRow` reads `RecordFace` from the host and draws it only when the host gives one (absent: no face is drawn, the name and titles still show and the row still opens the person);",
+    "`OrgShortList` reads `useSheetHistory` and `dropStaleSheetEntry` from the host, called at the same places as the source called its own; `useOrgEmployees` passes the host to `readOrgEmployeesPage`;",
+    "comments made generic (cycle, step, tester and ruling tags, dates, person names and app names removed); no other code change."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/orgEmployeesHost.ts"
+  ],
+  "host": [
+    { "member": "readResources", "replaces": "readResources(uris, vaultId), GilbApp src/lib/mynet/place/lws.ts:164 (the default `readEmployments` of orgEmployees.ts:100)" },
+    { "member": "photoReadKeys", "replaces": "photoReadKeys(), GilbApp src/lib/base/photoTerm.ts:37 (the default `photoKeys` of orgEmployees.ts:107)" },
+    { "member": "resolveEmploymentLinkVocab", "replaces": "resolveEmploymentLinkVocab(), GilbApp src/lib/mynet/employment/employmentLinkVocab.ts:23 (the defaults `employerAttr` and `employeeKey` of orgEmployees.ts:109-110)" },
+    { "member": "RecordFace (optional)", "replaces": "RecordFace, GilbApp src/components/records/RecordFace.tsx:22 (drawn at OrgEmployeeRow.tsx:11)" },
+    { "member": "useSheetHistory (hook)", "replaces": "useSheetHistory(open, onClosed), GilbApp src/components/records/useSheetHistory.ts:41 (called at OrgShortList.tsx:51)" },
+    { "member": "dropStaleSheetEntry", "replaces": "dropStaleSheetEntry(), GilbApp src/components/records/useSheetHistory.ts:32 (called at OrgShortList.tsx:56)" }
+  ],
+  "library": { "admitted": false }
+}
