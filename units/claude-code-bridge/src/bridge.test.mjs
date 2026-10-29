@@ -136,7 +136,7 @@ describe("billing: the subscription, never an API key", () => {
     const keep = { PATH: "/bin", HOME: "/h", HTTPS_PROXY: "http://p", CLAUDE_CONFIG_DIR: "/c", AWS_PROFILE: "x", XAI_API_KEY: "k" };
     const out = childEnv({ ...Object.fromEntries(bad.map((k) => [k, "x"])), ...keep });
     // MCP_TOOL_TIMEOUT is the one variable the bridge itself adds.
-    expect(Object.keys(out).sort()).toEqual([...Object.keys(keep), "MCP_TOOL_TIMEOUT"].sort());
+    expect(Object.keys(out).sort()).toEqual([...Object.keys(keep), "MCP_TOOL_TIMEOUT", "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT"].sort());
   });
 
   it("the child of a turn and of a hand-off gets none of the prefixed variables", async () => {
@@ -870,5 +870,160 @@ describe("an abandoned hand-off is stopped", () => {
     const r = await postResult(body.secret, parent.turnId, "deadbeefdeadbeef");
     expect(r.status).toBe(404);
     await parent.close();
+  });
+});
+
+describe("a pending tool call is kept alive with progress notifications (HT2)", () => {
+  const TOOLS = [{ name: "list_vaults", description: "d", inputSchema: { type: "object", properties: {} } }];
+  const until = async (fn, what) => {
+    for (let i = 0; i < 100; i++) {
+      if (fn()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  async function openParent(secret) {
+    const events = [];
+    const res = await fetch(`${base}/v1/turn`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bridge-secret": secret },
+      body: JSON.stringify({ system: "s", tools: TOOLS, prompt: "WAITFOREVER" }),
+    });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    void (async () => {
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read().catch(() => ({ done: true }));
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const blk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const ev = /event: (.*)/.exec(blk)?.[1];
+          const data = /data: (.*)/.exec(blk)?.[1];
+          if (ev && data) events.push([ev, JSON.parse(data)]);
+        }
+      }
+    })();
+    await until(() => events.some((e) => e[0] === "start") && runs().some((r) => r.event === "run"), "the parent turn to start");
+    const turnId = events.find((e) => e[0] === "start")[1].turnId;
+    const run = runs().find((r) => r.event === "run");
+    const cfg = JSON.parse(run.argv[run.argv.indexOf("--mcp-config") + 1]);
+    return { events, turnId, mcpUrl: cfg.mcpServers.gilb.url, secret, close: () => reader.cancel().catch(() => undefined) };
+  }
+  const call = (url, msg, accept = "application/json, text/event-stream", meta = { progressToken: "tok-1" }) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept },
+      body: JSON.stringify({ jsonrpc: "2.0", ...msg, params: { ...msg.params, ...(meta ? { _meta: meta } : {}) } }),
+    });
+  const LIST = { id: 1, method: "tools/call", params: { name: "list_vaults", arguments: {} } };
+  const answer = (p, text = "fine") => {
+    const id = p.events.filter((e) => e[0] === "tool_request").at(-1)[1].id;
+    return fetch(`${base}/v1/tool-result`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bridge-secret": p.secret },
+      body: JSON.stringify({ turnId: p.turnId, id, result: text, isError: false }),
+    });
+  };
+  const sseEvents = (text) =>
+    text.split("\n\n").filter(Boolean).map((blk) => {
+      expect(blk).toMatch(/^(event: message\n)?data: /);
+      return JSON.parse(/data: (.*)/.exec(blk)[1]);
+    });
+
+  beforeEach(async () => {
+    await bridge.close();
+    await start({ bridgeOpts: { progressEveryMs: 40 } });
+  });
+
+  it("sends increasing progress notifications with the caller's token, then the result, as valid SSE", async () => {
+    const { body } = await pair();
+    const p = await openParent(body.secret);
+    const r = call(p.mcpUrl, LIST);
+    await until(() => p.events.some((e) => e[0] === "tool_request"), "the tool request");
+    await new Promise((res) => setTimeout(res, 250));
+    await answer(p);
+    const resp = await r;
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toMatch(/text\/event-stream/);
+    const msgs = sseEvents(await resp.text());
+    const prog = msgs.filter((m) => m.method === "notifications/progress");
+    expect(prog.length).toBeGreaterThanOrEqual(2);
+    expect(prog.every((m) => m.params.progressToken === "tok-1")).toBe(true);
+    const nums = prog.map((m) => m.params.progress);
+    expect(nums).toEqual([...nums].sort((a, b) => a - b));
+    expect(new Set(nums).size).toBe(nums.length);
+    expect(nums[0]).toBe(1);
+    const last = msgs.at(-1);
+    expect(last.id).toBe(1);
+    expect(last.result.content[0].text).toBe("fine");
+    await p.close();
+  });
+
+  it("without a progressToken the answer is plain JSON with no progress", async () => {
+    const { body } = await pair();
+    const p = await openParent(body.secret);
+    const r = call(p.mcpUrl, LIST, "application/json, text/event-stream", null);
+    await until(() => p.events.some((e) => e[0] === "tool_request"), "the tool request");
+    await new Promise((res) => setTimeout(res, 150));
+    await answer(p);
+    const resp = await r;
+    expect(resp.headers.get("content-type")).toMatch(/application\/json/);
+    expect((await resp.json()).result.content[0].text).toBe("fine");
+    await p.close();
+  });
+
+  it("without text/event-stream in Accept the answer is plain JSON with no progress", async () => {
+    const { body } = await pair();
+    const p = await openParent(body.secret);
+    const r = call(p.mcpUrl, LIST, "application/json");
+    await until(() => p.events.some((e) => e[0] === "tool_request"), "the tool request");
+    await new Promise((res) => setTimeout(res, 150));
+    await answer(p);
+    const resp = await r;
+    expect(resp.headers.get("content-type")).toMatch(/application\/json/);
+    expect((await resp.json()).result.content[0].text).toBe("fine");
+    await p.close();
+  });
+
+  it("a call that settles before the interval sends no progress", async () => {
+    await bridge.close();
+    await start({ bridgeOpts: { progressEveryMs: 5000 } });
+    const { body } = await pair();
+    const p = await openParent(body.secret);
+    const r = call(p.mcpUrl, LIST);
+    await until(() => p.events.some((e) => e[0] === "tool_request"), "the tool request");
+    await answer(p);
+    const msgs = sseEvents(await (await r).text());
+    expect(msgs.some((m) => m.method === "notifications/progress")).toBe(false);
+    expect(msgs.at(-1).result.content[0].text).toBe("fine");
+    await p.close();
+  });
+
+  it("notifications/cancelled stops the progress timer", async () => {
+    const { body } = await pair();
+    const p = await openParent(body.secret);
+    const r = call(p.mcpUrl, LIST);
+    await until(() => p.events.some((e) => e[0] === "tool_request"), "the tool request");
+    await new Promise((res) => setTimeout(res, 150));
+    await fetch(p.mcpUrl, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } }) });
+    const resp = await r;
+    const msgs = sseEvents(await resp.text());
+    // Nothing follows the settled result: the stream ended with it.
+    expect(msgs.at(-1).id).toBe(1);
+    expect(msgs.slice(0, -1).every((m) => m.method === "notifications/progress")).toBe(true);
+    await p.close();
+  });
+});
+
+describe("the Claude CLI idle limit (CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT)", () => {
+  it("childEnv sets it to the same value as MCP_TOOL_TIMEOUT, keeps a larger own value, raises a smaller one", () => {
+    const want = String(HOP_MAX_MS + 60000);
+    expect(childEnv({ PATH: "/bin" }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(want);
+    expect(childEnv({ CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(HOP_MAX_MS * 10) }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(String(HOP_MAX_MS * 10));
+    expect(childEnv({ CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "1000" }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(want);
   });
 });
