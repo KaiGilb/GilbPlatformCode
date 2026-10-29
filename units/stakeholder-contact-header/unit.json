@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-contact-header",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-contact-header",
+  "version": "0.1.0",
+  "purpose": "Draws a stakeholder's header with circle chips, kind chips and the vault photo.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/components/records/StakeholderContactHeader.tsx",
+        "lines": null,
+        "to": "src/StakeholderContactHeader.tsx"
+      },
+      {
+        "path": "src/components/records/useHeaderRelations.ts",
+        "lines": null,
+        "to": "src/useHeaderRelations.ts"
+      },
+      {
+        "path": "src/components/records/PersonPlacementChips.tsx",
+        "lines": null,
+        "to": "src/PersonPlacementChips.tsx"
+      },
+      {
+        "path": "src/components/mynet/ContactKindChips.tsx",
+        "lines": null,
+        "to": "src/ContactKindChips.tsx"
+      },
+      {
+        "path": "src/components/records/ContactCardSlots.tsx",
+        "lines": [
+          32,
+          33
+        ],
+        "to": "src/gilbappChipHelp.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers': `cardName` and the type `OnlineCardController` from `@kaigilb/gilbplatformcode-online-card`; the type `PersonCard`, `displayPlacements` from `@kaigilb/gilbplatformcode-person-connections`; `ContactHeader`, `contactInitials` and the types `ContactHeaderSlotImage`, `ContactHeaderRelation` from `@kaigilb/gilbplatformcode-contact-header`; `imageShapeOf` from `@kaigilb/gilbplatformcode-stakeholder-ui-kit`; `useOnlineCardState` from `@kaigilb/gilbplatformcode-one-card`; `placementChip`, `edgesToVault`, `headerRelations`, `chipText` and the types `CatalogueEntry`, `ChipTone`, `ContactChip`, `LabelAxis` from `@kaigilb/gilbplatformcode-contact-kind-model`; `USER_VOCAB_KEY`, `readHeaderVocab`, `VocabUnreadableError`, `readPredicateCurie` from `@kaigilb/gilbplatformcode-contact-kind-catalogue`; `vaultLabel` from `@kaigilb/gilbplatformcode-vault-list`; `typeLocalName` from `@kaigilb/gilbplatformcode-lws-vault-sets`; the type `ReachableVault` from `@kaigilb/gilbplatformcode-plan-record-hooks`; `RemoveControl` from `@kaigilb/gilbplatformcode-remove-control`; the other imports are the unit's own files (in the source: `gilb-stakeholders`, `gilb-stakeholders-ui`, `../../lib/...`, `../mynet/...`, `./ContactCardSlots`). The re-export `export { USER_VOCAB_KEY, VocabUnreadableError, readHeaderVocab } from` names the peer's module.",
+    "Six host members are added (the interface `StakeholderContactHeaderHost` and its context, read by `useStakeholderContactHeaderHost()`, which throws an error naming the missing provider): `discoverVaultProfilePhoto`, `loadPhotoObjectUrl`, `loadGranteeFace`, `useHolderOriginLine`, `useContactLabels`, `useRelations`. Each source call `f(` is `host.f(` at the same place and with the same arguments. `StakeholderContactHeader`, `useHolderFaceCache` (private), `useTheirFace` (private) and `useHeaderRelations` each begin with `const host = useStakeholderContactHeaderHost();` (before it, the source's first statement), a context read that adds no query and no call.",
+    "`HeaderRelationsState.labels` is typed `ContactLabelsState` (the members of the app's `ContactLabelsState` that the unit reads, declared in `stakeholderContactHeaderHost.ts`) instead of `ReturnType<typeof useContactLabels>`.",
+    "`annotationsFit` (GilbApp `src/lib/contact/contactAnnotation.ts:66`) is a private function of `useHeaderRelations.ts`: the same tokens, without `export`.",
+    "`GILBAPP_CHIP_HELP` (GilbApp `src/components/records/ContactCardSlots.tsx:33`) is moved into this unit (`src/gilbappChipHelp.ts`), the same line; the rest of that file is not in the unit.",
+    "`src/stakeholderContactHeaderHost.ts` declares the structural types the members need: `VaultProfilePhotoState` (`photoRef`, `personName`), `HeldKindVault`, `ContactLabelsArgs`, `ContactLabelsState`, `HolderOriginLineArgs` (`linkAnswer` is `ResolveOutcome[\"kind\"]` of `person-connections`).",
+    "Comments made generic (cycle, ticket, spec and design-note tags, person and agent names, and app names removed from the files' comments); no code change. The header comment of `StakeholderContactHeader.tsx` says layout `auto`, as the code does.",
+    "Nothing else changed: the four query keys and their options, the texts and the markup are the source's. No origin is held at load, so no setting unit is used."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/stakeholderContactHeaderHost.ts"
+  ],
+  "host": [
+    {
+      "member": "discoverVaultProfilePhoto",
+      "replaces": "discoverVaultProfilePhoto(vault.entity, vault.vaultId), GilbApp src/components/records/StakeholderContactHeader.tsx:89 (src/lib/base/vaultProfilePhoto.ts:269)"
+    },
+    {
+      "member": "loadPhotoObjectUrl",
+      "replaces": "loadPhotoObjectUrl(state.photoRef, vault.vaultId), GilbApp src/components/records/StakeholderContactHeader.tsx:90 (src/lib/base/vaultProfilePhoto.ts:437)"
+    },
+    {
+      "member": "loadGranteeFace",
+      "replaces": "loadGranteeFace(principal!, viewer), GilbApp src/components/records/StakeholderContactHeader.tsx:150 (src/lib/base/granteeFace.ts:108)"
+    },
+    {
+      "member": "useHolderOriginLine",
+      "replaces": "useHolderOriginLine(args), a hook, GilbApp src/components/records/StakeholderContactHeader.tsx:215 (src/components/records/ContactCardSlots.tsx:156)"
+    },
+    {
+      "member": "useContactLabels",
+      "replaces": "useContactLabels(args), a hook, GilbApp src/components/records/useHeaderRelations.ts:62 (src/lib/contact/useContactLabels.ts:139)"
+    },
+    {
+      "member": "useRelations",
+      "replaces": "useRelations(record.id, record.entityUri), a hook, GilbApp src/components/records/useHeaderRelations.ts:101 (src/lib/base/relationHooks.ts:14; staleTime 15_000)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
