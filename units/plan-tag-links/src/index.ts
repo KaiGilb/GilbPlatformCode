@@ -9,6 +9,7 @@ export {
 } from "./planTagLinks";
 export { PlanTagLinksHostContext } from "./planTagLinksHost";
 export type {
+  MainTagRow,
   PlanCreateFacts,
   PlanCreated,
   PlanFindRead,

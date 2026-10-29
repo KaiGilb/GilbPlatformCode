@@ -83,10 +83,14 @@ export interface AppOptions {
   readOnly?: boolean;
   /** The relations the record starts with, by record id. */
   relations?: Record<string, RecordRelation[]>;
+  /** The platform's MAIN tag of a record, by its entity address. Empty by default. */
+  mainTags?: Record<string, string>;
+  /** The records the Impacts and Tag-links lines find their linked records in (their `useRecords` pool). Empty by default. */
+  pool?: readonly GridRecord[];
 }
 
 export function makeApp(options: AppOptions = {}) {
-  const server: Server = createServer({ ifMatch: options.ifMatch ?? false });
+  const server: Server = createServer({ ifMatch: options.ifMatch ?? false, mainTags: options.mainTags ?? {} });
   const browser = makeBrowser(server);
   const log: string[] = [];
   const note = (name: string, ...args: unknown[]) => log.push(`${name} ${JSON.stringify(args)}`);
@@ -234,8 +238,23 @@ export function makeApp(options: AppOptions = {}) {
     HelpButton: ({ label }: { label: string }) => <button type="button">{label}</button>,
   } as unknown as DescriptionPartsHost;
 
+  // The main-tag members of the three lines: what the fake server holds for the rows' entity addresses (the host's batch read), and for one address.
+  const mainTagsForRows = (rows: readonly { entityUri?: string | null }[]): ReadonlyMap<string, string> => {
+    const out = new Map<string, string>();
+    for (const r of rows) {
+      const tag = r.entityUri ? server.mainTags.get(r.entityUri) : undefined;
+      if (r.entityUri && tag) out.set(r.entityUri, tag);
+    }
+    return out;
+  };
+  const mainTagOf = (uri: string | null | undefined) => {
+    const tag = uri ? server.mainTags.get(uri) : undefined;
+    return { data: tag ? { known: true, tag } : { known: false, tag: null } };
+  };
+
   const tagLinks = {
-    useRecords: () => ({ data: [] }),
+    useRecords: () => ({ data: options.pool ?? [] }),
+    useMainTagsForRows: (rows: readonly { entityUri?: string | null }[]) => mainTagsForRows(rows),
     useRelations: (id: string | null) => {
       useStore();
       return { isPending: false, isError: false, data: state.relations.get(id ?? "") ?? [] };
@@ -248,7 +267,8 @@ export function makeApp(options: AppOptions = {}) {
   } as unknown as PlanTagLinksHost;
 
   const impacts = {
-    useRecords: () => ({ data: [] }),
+    useRecords: () => ({ data: options.pool ?? [] }),
+    useMainTagsForRows: (rows: readonly { entityUri?: string | null }[]) => mainTagsForRows(rows),
     useRelations: (id: string | null) => {
       useStore();
       return { isPending: false, isError: false, data: state.relations.get(id ?? "") ?? [] };
@@ -261,6 +281,7 @@ export function makeApp(options: AppOptions = {}) {
   const stakeholders = {
     useRecords: () => ({ data: [] }),
     useRecordRead: () => ({ data: null }),
+    useMainTag: (uri: string | null | undefined) => mainTagOf(uri),
     useRelations: (id: string) => {
       useStore();
       return { data: state.relations.get(id) ?? [], isError: false };

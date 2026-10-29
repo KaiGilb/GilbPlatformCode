@@ -215,12 +215,3 @@ export interface AuthorityWrite {
   /** The relation type to write. Omitted: `t:AuthorityOf`. A Resource Owner passes {@link RESOURCE_OWNER_RELATION_TYPE}. */
   relationType?: string;
 }
-
-/** `@handle` when the loaded record already carries a:tagString. No tag-resolve request. */
-export function handleFromFacts(facts: Record<string, unknown> | null | undefined): string | null {
-  if (!facts) return null;
-  const raw = typeof facts.tagString === "string" ? facts.tagString : memberValue(facts, "tagString");
-  if (typeof raw !== "string") return null;
-  const tag = raw.trim().replace(/^@+/, "");
-  return tag ? `@${tag}` : null;
-}

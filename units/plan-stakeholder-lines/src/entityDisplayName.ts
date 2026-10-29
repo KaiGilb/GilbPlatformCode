@@ -33,6 +33,11 @@ export type EntityDisplayOpts = {
   fallback?: string;
   /** Entity @id when facts are thin (e.g. Principal with only markers). */
   entityUri?: string | null;
+  /**
+   * One tag rule, the platform's: the record's MAIN tag, read from the platform (`useMainTag(s)`). It is the tag fallback of the chrome read
+   * order: a record that holds a label or `unitTag` / `tag` keeps it, and a record that holds none of them shows its main tag before an identity id.
+   */
+  mainTag?: string | null;
 };
 
 function factTrim(
@@ -96,6 +101,9 @@ export function entityDisplayName(
       const v = factTrim(facts, slug);
       if (v) return v;
     }
+
+    const main = opts?.mainTag?.trim();
+    if (main) return main;
 
     for (const slug of IDENTITY_DISPLAY_SLUGS) {
       const v = factTrim(facts, slug);

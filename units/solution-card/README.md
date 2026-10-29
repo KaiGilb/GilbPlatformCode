@@ -168,6 +168,7 @@ const valueWriteHost: ValueWriteHost = {
 const stakeholderLinesHost: StakeholderLinesHost = {
   useRecords: () => ({ data: none }), //                              your list of a vault's records
   useRecordRead: () => ({ data: null }), //                           your read hook for one record
+  useMainTag: () => ({ data: { known: false, tag: null } }), //  your read of one record's main tag (main-tag's useMainTag)
   useRelations: () => ({ data: none, isError: false }), //            your relations of a record
   useStakeholderKinds: () => ({ data: undefined }),
   usePersonAuthorities: () => ({ people: none }),
@@ -194,6 +195,7 @@ const stakeholderLinesHost: StakeholderLinesHost = {
 // ---- PlanTagLinksHostContext (plan-tag-links): Part of, Sub-functions, Function of Value, Solutions and the other links.
 const planTagLinksHost: PlanTagLinksHost = {
   useRecords: () => ({ data: none }),
+  useMainTagsForRows: () => new Map(), //  your batch read of records' main tags (main-tag's useMainTagsForRows)
   useRelations: () => ({ isPending: false, isError: false, data: none }),
   usePlanFind: () => ({ data: undefined, isError: false }), //         your find of linked records
   invalidatePlanFind: nothing,
@@ -225,6 +227,7 @@ const planTagPickerHost: PlanTagPickerHost = {
 // ---- PlanImpactsHostContext (plan-impacts): the Impacts line.
 const planImpactsHost: PlanImpactsHost = {
   useRecords: () => ({ data: none }),
+  useMainTagsForRows: () => new Map(), //  your batch read of records' main tags (main-tag's useMainTagsForRows)
   useRelations: () => ({ isPending: false, isError: false, data: none }),
   useSelfSource: () => null, //                                       the signed-in person as a source
   useRelationDoc: () => ({ data: null }),
@@ -382,6 +385,11 @@ If the host has a type registry it calls `setTypeKey` once at start-up, and it c
 - Do not run two installed copies of this unit, of `plan-card` or of the units it draws. The engine keeps a counter in its module and the units keep their contexts and registries; two copies are two sets.
 - Do not copy the card's props type: use `SolutionCardProps`, which follows `plan-card`.
 
+## Changes in 0.2.0
+
+- The wiring example's hosts gain `useMainTag` (Stakeholder lines) and `useMainTagsForRows` (Impacts, Tag links); the card shows a nameless linked record by its main tag. A host written for 0.1.0 must add the three members (BREAKING for hosts); the stubs in the example show the form.
+- Peer `plan-card` ^0.2.0. No code of `src/` changed: the card is still the engine's element with the props it was given.
+
 ## Wrong readings
 
 - "The Solution card is a Solution-only component." It has no check of the type. It passes its props to the engine, and the record's type picks the lines: given a Function it draws the Function's lines (a test pins this). Hand it a Solution or a Solution Constraint. The same card moves from one to the other when the host retypes the record, because the card must not fix its lines.
@@ -393,7 +401,7 @@ If the host has a type registry it calls `setTypeKey` once at start-up, and it c
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`: `src/components/records/PlanFunctionForm.tsx`, via `units/plan-card` (all of the card's behaviour, the line lists of `planLinesFor` in `lib/base/planKinds.ts`, and the way the screen mounts it in `components/records/RecordDetail.tsx`). This unit adds only a named entry point, and it is the only new code of the four whole-card units:
+GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`: `src/components/records/PlanFunctionForm.tsx`, via `units/plan-card` (all of the card's behaviour, the line lists of `planLinesFor` in `lib/base/planKinds.ts`, and the way the screen mounts it in `components/records/RecordDetail.tsx`). This unit adds only a named entry point, and it is the only new code of the four whole-card units:
 
 - `src/SolutionCard.tsx` (new, 9 lines): `SolutionCard` and `SolutionCardProps` (`ComponentProps<typeof PlanFunctionForm>`).
 - `src/index.ts` (new): the card, its props type, and the re-exports from `plan-card` listed above.

@@ -36,6 +36,9 @@ export interface SessionVault {
   modes: ("read" | "write")[];
   represents: null;
   isLandingVault: false;
+  /** The vault's short name is decoration from the register, which this host does not read: never known. */
+  shortName: null;
+  shortNameKnown: false;
 }
 
 /** The shell as the cards read it: the vaults the session reaches and, when given, the action that opens a record in its vault. */

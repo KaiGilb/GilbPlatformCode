@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "units/plan-card",
   "package": "@kaigilb/gilbplatformcode-plan-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       { "path": "src/components/records/PlanFunctionForm.tsx", "lines": null, "to": "src/PlanFunctionForm.tsx" },
       { "path": "src/components/records/PersonAuthoritySearch.tsx", "lines": null, "to": "src/PersonAuthoritySearch.tsx" },
@@ -21,10 +21,10 @@
       { "path": "src/lib/base/entityDisplayName.ts", "lines": [35, 42], "to": "src/entityDisplayName.ts" },
       { "path": "src/lib/base/entityDisplayName.ts", "lines": [45, 45], "to": "src/entityDisplayName.ts" },
       { "path": "src/lib/base/entityDisplayName.ts", "lines": [53, 53], "to": "src/entityDisplayName.ts" },
-      { "path": "src/lib/base/entityDisplayName.ts", "lines": [155, 160], "to": "src/entityDisplayName.ts" },
-      { "path": "src/lib/base/entityDisplayName.ts", "lines": [162, 169], "to": "src/entityDisplayName.ts" },
-      { "path": "src/lib/base/entityDisplayName.ts", "lines": [177, 197], "to": "src/entityDisplayName.ts" },
-      { "path": "src/lib/base/entityDisplayName.ts", "lines": [204, 260], "to": "src/entityDisplayName.ts" }
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [155, 165], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [167, 174], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [192, 212], "to": "src/entityDisplayName.ts" },
+      { "path": "src/lib/base/entityDisplayName.ts", "lines": [219, 278], "to": "src/entityDisplayName.ts" }
     ]
   },
   "namedChanges": [

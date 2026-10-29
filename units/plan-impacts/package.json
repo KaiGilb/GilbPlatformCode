@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-impacts",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.",

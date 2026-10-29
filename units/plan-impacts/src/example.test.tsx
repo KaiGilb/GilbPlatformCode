@@ -52,6 +52,7 @@ const host: PlanImpactsHost = {
   useRecords: () => ({ data: [speed] }),
   useRelations: () => ({ isPending: false, isError: false, data: relations }),
   useSelfSource: () => null,
+  useMainTagsForRows: () => new Map<string, string>(),
   useRelationDoc: () => ({ data: { extras } }),
   resolveType: (kind) => ({ id: kind }),
   invalidatePlanSearch: (vault) => void client.invalidateQueries({ queryKey: ["plan-search", vault] }),

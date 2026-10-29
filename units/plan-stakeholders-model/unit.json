@@ -2,14 +2,13 @@
   "schema": 1,
   "unit": "units/plan-stakeholders-model",
   "package": "@kaigilb/gilbplatformcode-plan-stakeholders-model",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Reads the stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record from its relations and its text, and holds the rules that a Function Constraint or Solution Constraint names a person as its Authority.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       { "path": "src/lib/base/planStakeholders.ts", "lines": [21, 226], "to": "src/planStakeholders.ts" },
-      { "path": "src/lib/base/planStakeholders.ts", "lines": [429, 436], "to": "src/planStakeholders.ts" },
       { "path": "src/lib/base/relationDoc.ts", "lines": [11, 24], "to": "src/relationDoc.ts" },
       { "path": "src/lib/base/planConstraint.ts", "lines": null, "to": "src/planConstraint.ts" },
       { "path": "src/lib/base/stakeholderKinds.ts", "lines": [41, 57], "to": "src/kinds.ts" }

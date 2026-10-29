@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-resource-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.",
@@ -17,7 +17,7 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-plan-card": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card": "^0.2.0",
     "react": "^19.0.0"
   },
   "devDependencies": {

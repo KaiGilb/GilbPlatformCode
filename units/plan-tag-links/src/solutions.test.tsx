@@ -92,6 +92,66 @@ describe.each(CASES)("$name", (c) => {
     };
   };
 
+  describe("named by the main tag", () => {
+    const namelessPool = (...ids: string[]) => ids.map((id) => ({ ...gridRow(id, "x"), facts: {} }));
+
+    it("labels the remove control of a linked record that has no name or unitTag with the main tag the host answers", () => {
+      const h = makeHost();
+      linked(h, "f1");
+      h.state.pool = namelessPool("f1");
+      h.state.mains.set(uri("f1"), "Alpha");
+      setup({}, h);
+      expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+    });
+
+    it("keeps a unitTag over a main tag the host holds for the record", () => {
+      const h = makeHost();
+      linked(h, "f1");
+      h.state.pool = [gridRow("f1", "Door.One")];
+      h.state.mains.set(uri("f1"), "Alpha");
+      setup({}, h);
+      expect(screen.getByLabelText("Remove Door.One")).toBeTruthy();
+      expect(screen.queryByLabelText("Remove Alpha")).toBeNull();
+    });
+
+    it("asks the host once per render with the pool's records that the links point at and no others", () => {
+      const h = makeHost();
+      linked(h, "f1");
+      h.state.pool = [...namelessPool("f1"), gridRow("other", "Door.Other")];
+      const t = setup({}, h);
+      const calls = h.fn.useMainTagsForRows.mock.calls;
+      expect(calls.at(-1)![0].map((r) => r.entityUri)).toEqual([uri("f1")]);
+      const before = calls.length;
+      t.view.rerender(<C {...t.p} />);
+      expect(h.fn.useMainTagsForRows.mock.calls.length).toBeGreaterThan(before);
+    });
+
+    it("matches a link to a pool record by id as well as by address, and names it by the main tag under the record's own address", () => {
+      const h = makeHost();
+      h.state.relations = { isPending: false, isError: false, data: [solutionRelation("rel-f1", c.mine, "f1")] };
+      h.state.pool = namelessPool("f1");
+      h.state.mains.set(uri("f1"), "Alpha");
+      setup({}, h);
+      expect(h.fn.useMainTagsForRows.mock.calls.at(-1)![0].map((r) => r.entityUri)).toEqual([uri("f1")]);
+      expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+    });
+
+    it("still calls the hook when there are no links, so that the hooks stay in order when the first link arrives", () => {
+      const h = makeHost();
+      const t = setup({}, h);
+      expect(h.fn.useMainTagsForRows).toHaveBeenCalled();
+      expect(h.fn.useMainTagsForRows.mock.calls.at(-1)![0]).toEqual([]);
+      linked(h, "f1");
+      h.state.pool = namelessPool("f1");
+      h.state.mains.set(uri("f1"), "Alpha");
+      t.view.rerender(<C {...t.p} />);
+      expect(screen.getByLabelText("Remove Alpha")).toBeTruthy();
+      linked(h);
+      t.view.rerender(<C {...t.p} />);
+      expect(screen.queryByLabelText("Remove Alpha")).toBeNull();
+    });
+  });
+
   describe("what it shows", () => {
     it("reads the record's relations from the host, by id and address", () => {
       const h = makeHost();

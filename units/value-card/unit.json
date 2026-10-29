@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "units/value-card",
   "package": "@kaigilb/gilbplatformcode-value-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "The whole Value card: one component that draws the Plan card of a record of type Value, with its picture, Scale, Endpoint, Qualifiers, Levels and Meter lines and the lines of a Plan record, every read and write supplied by the host.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
       { "path": "src/components/records/PlanFunctionForm.tsx", "lines": null, "to": null }
     ]

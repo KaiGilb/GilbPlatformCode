@@ -149,10 +149,10 @@ Contexts of the units the card draws, above the card. Each is the provider of th
 - `RefLabelContext` of `entity-ref-value` and `PickerQueryContext` of `record-picker`: the label of a linked record and the pickers' query hook (the source control, the stakeholder and link pickers and the person search use them).
 - `ValueLinesHostContext` of `value-line-kit`: the five Value lines (`value-scale-line`, `value-qualifiers-line`, `value-endpoint-line`, `value-levels-line`, `value-meters-line`) and the Illustration (`value-illustration`).
 - `ValueWriteHostContext` of `value-card-write`: the write layer behind the Value's levels, qualifiers, meters and Scale. The card calls its four hooks for EVERY type of card, so this is needed by a Function too.
-- `StakeholderLinesHostContext` of `plan-stakeholder-lines`: the Stakeholder, Authority and Resource Owner lines.
-- `PlanTagLinksHostContext` of `plan-tag-links`: Part of, Sub-functions, Function of Value, Value of Function, Solutions, Solution of Function and Part of System.
+- `StakeholderLinesHostContext` of `plan-stakeholder-lines`: the Stakeholder, Authority and Resource Owner lines. New in 0.2.0, a member: `useMainTag(entityUri)`, the main tag of a stakeholder chip's record. Replaces `useMainTag(uri)` (`PlanStakeholders.tsx:144`).
+- `PlanTagLinksHostContext` of `plan-tag-links`: Part of, Sub-functions, Function of Value, Value of Function, Solutions, Solution of Function and Part of System. New in 0.2.0, a member: `useMainTagsForRows(rows)`, the main tags of the linked records the line draws. Replaces `useMainTagsForRows(...)` (`PlanTagLinks.tsx:492`, `:869`).
 - `PlanTagPickerHostContext` of `plan-tag-picker`: the picker `plan-tag-links` and `plan-impacts` use.
-- `PlanImpactsHostContext` of `plan-impacts`: the Impacts line.
+- `PlanImpactsHostContext` of `plan-impacts`: the Impacts line. New in 0.2.0, a member: `useMainTagsForRows(rows)`, the main tags of the linked Values and Resources. Replaces `useMainTagsForRows(...)` (`PlanImpacts.tsx:517`).
 - `DescriptionPartsHostContext` of `description-parts-view`: the Description (Ambition Level) parts.
 - `ProjectLevelsHostContext` of `project-levels`: the Level choices.
 - `TermDefinitionContext` of `type-term-popover`: the definition shown by the Type line's popovers and the Type picker.
@@ -160,7 +160,7 @@ Contexts of the units the card draws, above the card. Each is the provider of th
 - `ModalPortalContext` of `open-popups`: only when the app draws its create dialog in a portal of its own.
 - If the host has a type registry it calls `setTypeKey` of `type-key` once at start-up, and it calls `setTermOrigin` of `term-origin` once.
 
-The `PlanCardHostContext` provider with an object of these members. File and line are those of GilbApp, commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, `src/components/records/PlanFunctionForm.tsx` (`PFF`) or `PersonAuthoritySearch.tsx` (`PA`) unless another file is named.
+The `PlanCardHostContext` provider with an object of these members. File and line are those of GilbApp, commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, `src/components/records/PlanFunctionForm.tsx` (`PFF`) or `PersonAuthoritySearch.tsx` (`PA`) unless another file is named.
 
 Reads (hooks; called on every render, in the order the source called them, never conditionally):
 
@@ -214,6 +214,13 @@ The dialog:
 
 - `renderCreateStakeholder(props)`: draws the dialog that makes a person; the card calls it as a function while the dialog is open (if yours uses hooks, return an element of a component of your own). `props` are `open`, `stakeholders`, `source` (null), `initialTypeId` (`"person"`), `drawnVaultIds` (`[vaultId, planVault]`), `onClose` and `onCreated(id)`. Replaces `<ConnectedCreateDialog open stakeholders source={null} initialTypeId="person" drawnVaultIds onClose onCreated />` (PFF:1459-1470).
 
+## Changes in 0.2.0
+
+- Three members the card does not call itself are new in the hosts of the lines it draws, and a host must supply them (BREAKING for hosts written for 0.1.0): `useMainTag` (Stakeholder lines), `useMainTagsForRows` (Impacts, Tag links). A linked record that holds no name and no `unitTag` is shown by its main tag; a stakeholder chip's `@handle` is the main tag.
+- The private `entityDisplayName.ts` is re-copied from 9a602ea7: `EntityDisplayOpts.mainTag` and its two lines. Dead in this unit: the card passes no `mainTag`.
+- Peers `plan-impacts`, `plan-tag-links`, `plan-stakeholder-lines` and `plan-stakeholders-model` ^0.2.0.
+- Re-synced from KaiGilb/GilbApp @ `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`; the ranges of `entityDisplayName.ts` moved from 155-160, 162-169, 177-197, 204-260 to 155-165, 167-174, 192-212, 219-278.
+
 ## Do not
 
 - Do not leave the card's `record` as it was when the card has saved: the card relies on `record` changing when the host's `storePlanRow` runs (and when the host retypes the record), to draw the saved version, the new type and its lines.
@@ -236,7 +243,7 @@ The dialog:
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`:
+GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`:
 
 - `src/components/records/PlanFunctionForm.tsx` lines 1-2193 (the whole file) to `src/PlanFunctionForm.tsx`; the exports are the source's (`draftFrom`, `pickLive`, `PlanFunctionForm`, `PlanForm`). The code is copied by script and changed only as listed. Named changes:
   1. Imports (lines 5-136): each component and function of a merged unit is imported from that unit: `PlanButtonRow` from `plan-button-row`; `FieldRow` from `field-row`; `modalIsOpen` and `insideOpenLayer` from `open-popups` (`insideOpenLayer` is `components/records/planLeave.ts` and is the same code: only its import of `modalIsOpen` differs); `CardGroup` and `CardIconName` from `card-group`; `useCardMode` from `card-mode`; `PlanImpacts` from `plan-impacts`; the seven link lines from `plan-tag-links`; `PlanDescriptionParts` from `description-parts-view`; `PlanTypeLevelVersion` from `plan-type-level-version`; `PlanAuthority` and `PlanStakeholders` from `plan-stakeholder-lines`; `PlanSource` from `plan-source`; the five Value bodies and `PlanValuePictureBody` from `value-scale-line`, `value-qualifiers-line`, `value-endpoint-line`, `value-levels-line`, `value-meters-line` and `value-illustration`, and `ValueLineProps` from `value-line-kit`; `isTypeName`, `linkAddress`, `readPartOfFact`, `solutionOfFunctions` and `solutionsTargeting` from `plan-links-model`; the `planCard.ts` names from `plan-card-facts`; the `planConstraint.ts` names and the pure parts of `planStakeholders.ts` from `plan-stakeholders-model`; `PlanTypeField`, `TYPE_TRIGGER_ATTR` and `PlanTypeReplaceAsk` from `plan-type-field`; the `planKinds.ts` names from `plan-kinds`; the `planValue.ts` names and `ValueCardData` from `value-card-model`; `MoveStopped` and the four Value hooks from `value-card-write`; `isPartType` from `description-parts-model`; `impactsOnSolution` from `plan-impacts-model`; `typeLocalName` from `type-curie`; the `planLevels.ts` names (`useProjectLevels` and the rest) from `project-levels`; `OrgRecordHit` from `record-picker`; `RecordRelation` from `relation-role`; `BaseRecord` and `GridRecord` from `base-record`. Every function and constant of these that is a plain function was compared with the source's, comments aside, and is the same code, except `typeLocalName`, which `type-curie` writes with a local for the match so that an unchecked index is not used (the same result); `isTypeName` is `type-key`'s, re-exported by `plan-links-model`, and compares the same two keys. The private copies below were compared the same way.
@@ -251,7 +258,7 @@ GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839e
 - `src/lib/base/planFind.ts` lines 15-37 to `src/planFind.ts` (private): `PLAN_FIND_CAP`, `PLAN_FIND_CAP_PART_OF`, `planFindCapFor`, `PlanFind`, `planFindRows`. Code verbatim; a tag in one comment taken out.
 - `src/lib/base/planVault.ts` lines 6-10 (`planVaultOf`) and `src/lib/base/picture.ts` lines 72-76 (`vaultIdOfEntity`) to `src/planVault.ts` (private). Code verbatim.
 - `src/lib/base/records.ts` lines 427-433 and 447-452 (`WriteSource`, `writeSource`) and 942-948 (`MergePatchValue`) to `src/writeSource.ts` (private, the types exported). Code verbatim.
-- `src/lib/base/entityDisplayName.ts` lines 22, 28, 35-42, 45, 53, 155-160, 162-169, 177-197 and 204-260 (`CANONICAL_DISPLAY_SLUG`, `MASTER_TAG_SLUGS`, `IDENTITY_DISPLAY_SLUGS`, `BRIDGE_SLUGS`, `FILE_NAME_SLUG`, `EntityDisplayOpts`, `factTrim`, `displayFriendly`, `entityDisplayName`) to `src/entityDisplayName.ts` (private). The code is the source's but for one replacement: `PARTY_NAME_FLOOR.name` (in `src/lib/base/partyName.ts`) is its literal value `"name"`. This is not the `entity-name` unit, which reads `label` first; the name the card gives a person it has just made reads the record's own `name` first, as the app's does. (The same copy as the one in `plan-stakeholder-lines`.)
+- `src/lib/base/entityDisplayName.ts` lines 22, 28, 35-42, 45, 53, 155-165, 167-174, 192-212 and 219-278 (`CANONICAL_DISPLAY_SLUG`, `MASTER_TAG_SLUGS`, `IDENTITY_DISPLAY_SLUGS`, `BRIDGE_SLUGS`, `FILE_NAME_SLUG`, `EntityDisplayOpts`, `factTrim`, `displayFriendly`, `entityDisplayName`) to `src/entityDisplayName.ts` (private). The code is the source's but for one replacement: `PARTY_NAME_FLOOR.name` (in `src/lib/base/partyName.ts`) is its literal value `"name"`. This is not the `entity-name` unit, which reads `label` first; the name the card gives a person it has just made reads the record's own `name` first, as the app's does. (The same copy as the one in `plan-stakeholder-lines`.) At 9a602ea7 `EntityDisplayOpts` gained `mainTag` and `entityDisplayName` the two lines that return it after the `unitTag` / `tag` loop; the card never passes `mainTag` (`PlanFunctionForm.tsx:831` does not), so that branch is dead in this unit and is kept for fidelity with the source. `needsMainTag`, which sits in the same source file, is not copied (it lives in `main-tag`).
 - `src/components/records/planLeave.ts` is not copied: `insideOpenLayer` of `open-popups` is the same code.
 - `src/host.ts`, `src/index.ts` are new.
 

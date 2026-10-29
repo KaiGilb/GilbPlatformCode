@@ -93,38 +93,85 @@ describe("what the line shows", () => {
     expect(screen.getByRole("button", { name: "Remove Acme" })).toBeTruthy();
   });
 
-  it("shows the @handle when the loaded record already carries one, and names the remove button by the record's name", () => {
+  const ANN_MAIN = { [uriOf("ann")]: { known: true, tag: "ada" } };
+
+  it("shows the @handle of the record's main tag, from the host's useMainTag, and not the record's tagString fact; the remove button carries the record's name", () => {
     draw(
-      { relations: [link(ST, relUri(1), uriOf("ann"))], recordRead: null, records: [person("ann", "Ann", { facts: { label: "Ann", tagString: "@@annie" } })] },
+      {
+        relations: [link(ST, relUri(1), uriOf("ann"))],
+        recordRead: null,
+        records: [person("ann", "Ann", { facts: { label: "Ann", tagString: "@@ada-fact" } })],
+        mainTags: { [uriOf("ann")]: { known: true, tag: "ada" } },
+      },
       { editing: true },
     );
-    expect(screen.getByText("@annie")).toBeTruthy();
+    expect(screen.getByText("@ada")).toBeTruthy();
+    expect(screen.queryByText("@ada-fact")).toBeNull();
+    expect(screen.queryByText("@@ada-fact")).toBeNull();
     expect(screen.getByRole("button", { name: "Remove Ann" })).toBeTruthy();
   });
 
-  it("falls back to the read the host holds for the handle when the list has no such record", () => {
+  it("draws no @handle while the main tag is pending, unknown, or states no tag, even when the record holds a tagString", () => {
+    const records = [person("ann", "Ann", { facts: { label: "Ann", tagString: "ann-fact" } })];
+    const relations = [link(ST, relUri(1), uriOf("ann"))];
+    for (const mainTags of [{}, { [uriOf("ann")]: { known: false, tag: null } }, { [uriOf("ann")]: { known: false, tag: "stale" } }, { [uriOf("ann")]: { known: true, tag: null } }] as FakeOptions["mainTags"][]) {
+      draw({ relations, records, mainTags }, { editing: true });
+      expect(screen.getByRole("button", { name: "Remove Ann" })).toBeTruthy();
+      expect(screen.queryByText(/^@/)).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("names the chip from the read the host holds when the list has no such record, and draws the main tag beside it", () => {
     draw(
-      { relations: [link(ST, relUri(1), uriOf("zed"))], records: [], recordRead: { ...person("zed", "Zed"), facts: { name: "Zed Z", tagString: "zed" } } },
+      {
+        relations: [link(ST, relUri(1), uriOf("zed"))],
+        records: [],
+        recordRead: { ...person("zed", "Zed"), facts: { name: "Zed Z", tagString: "zed-fact" } },
+        mainTags: { [uriOf("zed")]: { known: true, tag: "zed" } },
+      },
       { editing: true },
     );
     expect(screen.getByText("@zed")).toBeTruthy();
+    expect(screen.queryByText("@zed-fact")).toBeNull();
     expect(screen.getByRole("button", { name: "Remove Zed Z" })).toBeTruthy();
   });
 
-  it("takes the @handle from the served facts of the loaded record when its flat facts have none, and the list before the host's read", () => {
+  it("does not read a @handle from the served facts either, and names the chip from the list before the host's read", () => {
     const served = { facts: { tagString: "serv" }, context: null, etag: null };
     const a = draw({ relations: [link(ST, relUri(1), uriOf("ann"))], records: [person("ann", "Ann", { served })] }, { editing: true });
-    expect(screen.getByText("@serv")).toBeTruthy();
+    expect(screen.queryByText("@serv")).toBeNull();
     a.view.unmount();
     const fromRead = { ...person("ann", "Read Ann"), served };
     draw({ relations: [link(ST, relUri(1), uriOf("ann"))], records: [], recordRead: fromRead }, { editing: true });
-    expect(screen.getByText("@serv")).toBeTruthy();
+    expect(screen.queryByText("@serv")).toBeNull();
     cleanup();
     draw(
       { relations: [link(ST, relUri(1), uriOf("ann"))], records: [person("ann", "List Ann")], recordRead: person("ann", "Read Ann") },
       { editing: true },
     );
     expect(screen.getByRole("button", { name: "Remove List Ann" })).toBeTruthy();
+  });
+
+  it("calls the host's useMainTag once per chip, for every chip and not gated, with the chip's own address (one request per chip, not one batch)", () => {
+    const { fake } = draw({
+      relations: [link(ST, relUri(1), uriOf("ann")), link(ST, relUri(2), uriOf("bob"))],
+      mainTags: { ...ANN_MAIN, [uriOf("bob")]: { known: true, tag: "bo" } },
+    });
+    expect(screen.getByText("@ada")).toBeTruthy();
+    expect(screen.getByText("@bo")).toBeTruthy();
+    const asked = fake.calls("useMainTag").map((c) => c.args);
+    const per = (uri: string) => asked.filter((a) => a[0] === uri).length;
+    expect(asked.every((a) => a.length === 1)).toBe(true);
+    expect(per(uriOf("ann"))).toBeGreaterThan(0);
+    expect(per(uriOf("ann"))).toBe(per(uriOf("bob")));
+    expect(new Set(asked.map((a) => a[0]))).toEqual(new Set([uriOf("ann"), uriOf("bob")]));
+  });
+
+  it("asks the main tag even of a chip whose record has a name (quirk 2: not gated by needsMainTag)", () => {
+    const { fake } = draw({ relations: [link(ST, relUri(1), uriOf("ann"))], records: [person("ann", "Ann", { facts: { name: "Ann", label: "Ann", unitTag: "PT-1" } })] });
+    expect(fake.calls("useMainTag").length).toBeGreaterThan(0);
+    expect(fake.calls("useMainTag").every((c) => c.args[0] === uriOf("ann"))).toBe(true);
   });
 
   it("marks a Resource Owner only on a t:Resource record that is not a substituted type", () => {

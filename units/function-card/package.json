@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-function-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The whole Function card: one component that draws the Plan card of a record of type Function or Function Constraint, with the lines of that type in order, every read and write supplied by the host.",
@@ -17,7 +17,7 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-plan-card": "^0.1.0",
+    "@kaigilb/gilbplatformcode-plan-card": "^0.2.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
