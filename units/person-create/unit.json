@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "unit": "units/person-create",
+  "package": "@kaigilb/gilbplatformcode-person-create",
+  "version": "0.1.0",
+  "purpose": "Makes a person record in a named vault, finds candidate people first, and refreshes the lists afterwards.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/recordPerson.ts",
+        "lines": null,
+        "to": "src/recordPerson.ts"
+      },
+      {
+        "path": "src/lib/base/stakeholderCreate.ts",
+        "lines": null,
+        "to": "src/stakeholderCreate.ts"
+      },
+      {
+        "path": "src/lib/base/types.ts",
+        "lines": [
+          213,
+          217
+        ],
+        "to": "src/canWriteVault.ts"
+      },
+      {
+        "path": "src/lib/base/boundAwait.ts",
+        "lines": [
+          9,
+          12
+        ],
+        "to": "src/plainBoundStep.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers `pick-or-create`, `tag-client`, `record-sync`, `vocabulary-source`, `stakeholder-field-sets`, `vault-origin-rule`, `record-cache-kit`, `plan-record-hooks`, `lws-records`, `term-origin`, `stakeholder-card-vocabulary`, `platform-fetch`, `plan-self-source`, `self-card`, `lws-relations` and `ontology-reads`, and the third-party `@tanstack/react-query`; `./canWriteVault` and `./plainBoundStep` are the unit's own.",
+    "The interface `PersonCreateHost` is added and exported; `recordPerson(deps, input)` is `recordPerson(host, deps, input)` and `adderCardOf(` is `host.adderCardOf(`; `afterRecordPerson(qc, made)` is `afterRecordPerson(host, qc, made)` and `rememberCreatedIn(` is `host.rememberCreatedIn(`, with the same arguments.",
+    "`export const PICKER_READING_QUERY_KEY = [\"gilb-stakeholders\", \"picker-reading\", GILBVEDA_MASTER_ORIGIN] as const;` is `export function pickerReadingQueryKey() { return [\"gilb-stakeholders\", \"picker-reading\", termOrigin()] as const; }`; its use is `queryKey: pickerReadingQueryKey()` and the two overload types `typeof PICKER_READING_QUERY_KEY` are `ReturnType<typeof pickerReadingQueryKey>`.",
+    "`canWriteVault` (types.ts lines 213-217) and `plainBoundStep` (boundAwait.ts lines 9-12) are copied into their own files: no merged unit holds them.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the host app are reworded; no code changed. No string literal carries a tag."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "member": "adderCardOf",
+      "replaces": "adderCardOf(input.vaults, deps.queryClient ?? fallbackQueryClient, { email: deps.email }), GilbApp src/lib/base/recordPerson.ts:296 (src/lib/base/adderCard.ts:98)"
+    },
+    {
+      "member": "rememberCreatedIn",
+      "replaces": "rememberCreatedIn(qc, recordId, made.vaultId), GilbApp src/lib/base/recordPerson.ts:325 (src/lib/base/recordHooks.ts:2842, re-exported by recordVault.ts)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "unit": "units/contact-kind-catalogue",
+  "package": "@kaigilb/gilbplatformcode-contact-kind-catalogue",
+  "version": "0.1.0",
+  "purpose": "Reads the master catalogue of contact kinds and the holder's own additions, with caches.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/contact/contactKindCatalogue.ts",
+        "lines": null,
+        "to": "src/contactKindCatalogue.ts"
+      },
+      {
+        "path": "src/lib/contact/ownKinds.ts",
+        "lines": null,
+        "to": "src/ownKinds.ts"
+      },
+      {
+        "path": "src/lib/contact/userVocab.ts",
+        "lines": null,
+        "to": "src/userVocab.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the five peers `contact-kind-model`, `lws-relations`, `lws-vault-sets`, `term-origin` and `term-slots`.",
+    "`const MASTER_BASE = `${GILBVEDA_MASTER_ORIGIN}/base`;` (built when the module loaded) is `function masterBase(): string { return `${termOrigin()}/base`; }`; its uses are `masterBase()`.",
+    "`${GILBVEDA_MASTER_ORIGIN}/base/t/RelationshipKind` in `ownKindType` is `${termOrigin()}/base/t/RelationshipKind`.",
+    "The interface `OwnKindsHost` is added and exported; `readOwnKinds`, `readOwnEntryName` and `addOwnKind` take `host: OwnKindsHost` as their first argument, and `getResource(` and `createResource(` are `host.getResource(` and `host.createResource(` with the same arguments.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling, a measuring rig or the host app are reworded; no code changed. One string literal carries an app step tag: `USER_VOCAB_KEY` (`\"s5c-user-link-plane\"`), kept as it is."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "member": "createResource",
+      "replaces": "createResource(args.vaultId, { type, facts }), GilbApp src/lib/contact/ownKinds.ts:140 (src/lib/mynet/place/lws.ts:44)"
+    },
+    {
+      "member": "getResource",
+      "replaces": "getResource(id, vaultId, entityUri) and getResource(tail, vaultId, id), GilbApp src/lib/contact/ownKinds.ts:77 and :91 (src/lib/mynet/place/lws.ts:57)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

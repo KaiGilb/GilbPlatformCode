@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "unit": "units/org-mark",
+  "package": "@kaigilb/gilbplatformcode-org-mark",
+  "version": "0.1.0",
+  "purpose": "Draws an organization's logo from a bounded file fetch.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/orgCard/orgLogo.ts",
+        "lines": null,
+        "to": "src/orgLogo.ts"
+      },
+      {
+        "path": "src/components/records/orgCard/OrgMark.tsx",
+        "lines": null,
+        "to": "src/OrgMark.tsx"
+      },
+      {
+        "path": "src/lib/base/files.ts",
+        "lines": [
+          411,
+          412
+        ],
+        "to": "src/fileTooLarge.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are peers or siblings: `type FileFetchOutcome` from `file-words`, `./fileTooLarge`, `./fileIdFromPhotoRef` and the type `OrgMarkHost` from `./orgMarkHost` replace `../files` and `gilb-photo`; `OrgMark.tsx` imports `loadOrgLogoBlob` from `./orgLogo` and `useOrgMarkHost` from `./orgMarkHost`.",
+    "`loadOrgLogoBlob(logo, door, deps = {})` is `loadOrgLogoBlob(host: OrgMarkHost, logo, door, deps = {})`, and the default download `downloadFileOutcome(fid, where, opts)` is `host.downloadFileOutcome(fid, where, opts)`.",
+    "In `OrgMark`, `const host = useOrgMarkHost();` is added as the first line and `loadOrgLogoBlob(logo, vaultId)` is `loadOrgLogoBlob(host, logo, vaultId)`; the effect's dependency list stays `[logo, vaultId]`.",
+    "`OrgMarkHost`, `OrgMarkHostContext` and `useOrgMarkHost` are added; a missing provider throws an error naming `OrgMarkHostContext.Provider`.",
+    "`fileIdFromPhotoRef` is copied from the private package `gilb-photo` (`src/photoRef.ts` lines 17-27 and 33-58, last changed by commit 8b5c74d8570e78f0686258164b9f4f4f8b6a595a) because `photo-ref` is not equal to it: on a malformed percent-encoding `gilb-photo` throws and `photo-ref` answers null (33 of 1,460 measured references).",
+    "Comments that name a cycle, an agent, a ticket or a ruling are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/orgMarkHost.ts",
+    "src/fileIdFromPhotoRef.ts"
+  ],
+  "host": [
+    {
+      "member": "downloadFileOutcome",
+      "replaces": "downloadFileOutcome(id, at, opts), GilbApp src/lib/base/files.ts:414, called at src/lib/base/orgCard/orgLogo.ts:48"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

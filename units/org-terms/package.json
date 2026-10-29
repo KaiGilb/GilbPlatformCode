@@ -1,0 +1,28 @@
+{
+  "name": "@kaigilb/gilbplatformcode-org-terms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Resolves the ontology spellings an organization card reads: its served terms and the employment link.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-term-slots": "^0.1.0"
+  }
+}
