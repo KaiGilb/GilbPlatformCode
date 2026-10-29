@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "unit": "units/card-references",
+  "package": "@kaigilb/gilbplatformcode-card-references",
+  "version": "0.1.0",
+  "purpose": "Adds or removes a reference from a card field to another record, and finds the records a field may point to.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/linkTargets.ts",
+        "lines": null,
+        "to": "src/linkTargets.ts"
+      },
+      {
+        "path": "src/lib/base/stakeholderCard.ts",
+        "lines": [
+          659,
+          695
+        ],
+        "to": "src/cardReferences.ts"
+      },
+      {
+        "path": "src/lib/base/useAddCardReference.ts",
+        "lines": null,
+        "to": "src/useAddCardReference.ts"
+      },
+      {
+        "path": "src/lib/base/relationCopy.ts",
+        "lines": null,
+        "to": "src/relationCopy.ts"
+      },
+      {
+        "path": "src/components/records/cardIcons.tsx",
+        "lines": [
+          7,
+          25
+        ],
+        "to": "src/cardIconName.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentEdges.ts",
+        "lines": [
+          25,
+          32
+        ],
+        "to": "src/edgeItems.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentEdges.ts",
+        "lines": [
+          42,
+          49
+        ],
+        "to": "src/edgeItems.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are peers: `holder-reference`, `pick-or-create`, `platform-fetch`, `record-cache-kit`, `stakeholder-card-model`, `stakeholder-card-vocabulary`, `stakeholder-field-sets`, `term-origin`, `type-curie`, `vault-origin-rule` and `vocabulary-source`, plus `./cardReferences`, `./edgeItems` and `./cardIconName`; `@tanstack/react-query` stays a third-party import.",
+    "`GILBVEDA_MASTER_ORIGIN` in `channelChoices` is `termOrigin()`, read when the function runs.",
+    "`removeCardReference(input)` is `removeCardReference(host: CardReferencesHost, input)`, and in it `changeRecordFactItems(` is `host.changeRecordFactItems(`.",
+    "`useRemoveCardReference()` is `useRemoveCardReference(host: CardReferencesHost)`, and `mutationFn: removeCardReference` is `mutationFn: (input: Parameters<typeof removeCardReference>[1]) => removeCardReference(host, input)`.",
+    "The interface `CardReferencesHost` is added and exported.",
+    "The type `CardIconName` is copied from `cardIcons.tsx` lines 7-25 (the same union as `card-group`'s) so the unit installs no component for a type; `edgeIdOf` and `withoutEdges` are copied from `employmentEdges.ts`.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the host app are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "member": "changeRecordFactItems",
+      "replaces": "changeRecordFactItems(recordId, recordEntityUri, factKey, change, notChanged), GilbApp src/lib/base/recordFactItems.ts:55, called at src/lib/base/useAddCardReference.ts:60"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
