@@ -1,4 +1,4 @@
-import { useCallback, useId, useState, type ButtonHTMLAttributes, type ComponentType, type ReactElement } from "react";
+import { useCallback, useId, useState, type ButtonHTMLAttributes, type ComponentType, type ReactElement, type ReactNode } from "react";
 import { ClaudeCodeBridgeError, type ClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import type { BridgeCommands } from "@kaigilb/gilbplatformcode-claude-code-client";
 
@@ -37,7 +37,10 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
   const [pairCode, setPairCode] = useState("");
   const [pairing, setPairing] = useState(false);
   const [ownError, setOwnError] = useState<string | null>(null);
+  const [copiedAuth, setCopiedAuth] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const codeId = useId();
+  const uid = useId();
 
   const setError = useCallback(
     (msg: string | null) => {
@@ -76,88 +79,134 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, Butt
     done();
   };
 
+  const cmdBox = ({ text, testId, copyLabel, copiedFlag, onCopied, copyTestId }: {
+    text: string;
+    testId?: string;
+    copyLabel?: string;
+    copiedFlag: boolean;
+    onCopied: () => void;
+    copyTestId?: string;
+  }) => (
+    <div className="gcc-cmd">
+      <code className="gcc-cmd__code" data-testid={testId}>
+        {text}
+      </code>
+      <Button type="button" variant="ghost" onClick={() => copy(text, onCopied)} data-testid={copyTestId} aria-label={copyLabel}>
+        {copiedFlag ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
+
+  const section = (id: string, title: string, children: ReactNode) => (
+    <div className="gcc-section" role="group" aria-labelledby={`${uid}-${id}`}>
+      <h3 className="gcc-section__title" id={`${uid}-${id}`}>
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+
+  const codeEntry =
+    stage === "steps" ? (
+      <Button type="button" onClick={() => void enterCode()}>
+        I've started it — enter code
+      </Button>
+    ) : (
+      <div data-testid="claude-code-connect">
+        {bridgeUp === false ? (
+          <p className="gcc-text" data-testid="claude-code-bridge-hint">
+            Not reachable on this computer yet. Check the Terminal window is still open, then try again. The command is:{" "}
+            <code className="gcc-mono gcc-break">{commands.start}</code>
+          </p>
+        ) : null}
+        <form
+          className="gcc-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (bridgeUp === false) void enterCode();
+            else void pair();
+          }}
+        >
+          {bridgeUp === false ? (
+            <Button type="submit">Try again</Button>
+          ) : (
+            <>
+              <label className="gcc-sr-only" htmlFor={codeId}>
+                Code from the bridge terminal
+              </label>
+              <input
+                id={codeId}
+                className="gcc-input"
+                value={pairCode}
+                onChange={(e) => setPairCode(e.target.value)}
+                placeholder="Code from the terminal"
+                autoComplete="off"
+                spellCheck={false}
+                disabled={bridgeUp === null || pairing}
+              />
+              <Button type="submit" disabled={bridgeUp === null || pairing || !pairCode.trim()}>
+                Pair
+              </Button>
+            </>
+          )}
+        </form>
+      </div>
+    );
+
+  const sectionThree = section(
+    "code",
+    "3 · Enter your pairing code",
+    <>
+      <p className="gcc-text">Get your code (Always on): paste this in Terminal.</p>
+      {cmdBox({ text: commands.code, testId: "claude-code-code-command", copyLabel: "Copy code command", copiedFlag: copiedCode, onCopied: () => setCopiedCode(true) })}
+      <p className="gcc-note" data-testid="claude-code-node-note">
+        Type it exactly, starting with node. Without node your Mac answers "Permission denied".
+      </p>
+      {codeEntry}
+    </>,
+  );
+
   return (
     <div className="gcc-connect">
       {stage === "steps" ? (
         <div className="gcc-steps" data-testid="claude-code-steps">
-          <p>Run Claude Code from your own computer. It is billed to your Claude subscription, and your turns stay on your machine.</p>
-          <p>
-            Before you start: Claude Code installed and signed in with your Claude subscription (<code className="gcc-mono">claude auth login</code>), and
-            Node 18 or newer.
-          </p>
-          <p>Paste this one command in Terminal:</p>
-          <div className="gcc-cmd">
-            <code className="gcc-cmd__code" data-testid="claude-code-command">
-              {commands.start}
-            </code>
-            <Button type="button" variant="ghost" onClick={() => copy(commands.start, () => setCopied(true))}>
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p>Keep that window open. It shows a pairing code.</p>
-          <p className="gcc-steps__heading">Always on (starts when you log in)</p>
-          <p>On a Mac you can instead keep it running with no Terminal window. Paste this once:</p>
-          <div className="gcc-cmd">
-            <code className="gcc-cmd__code" data-testid="claude-code-install-command">
-              {commands.install}
-            </code>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => copy(commands.install, () => setCopiedAlways(true))}
-              data-testid="claude-code-install-copy"
-              aria-label="Copy always-on command"
-            >
-              {copiedAlways ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p>
-            Then get your code with <code className="gcc-mono">{commands.code}</code>.
-          </p>
-          <Button type="button" onClick={() => void enterCode()}>
-            I've started it — enter code
-          </Button>
+          {section(
+            "before",
+            "1 · Before you start",
+            <>
+              <p className="gcc-text">You need Claude Code installed and signed in with your Claude subscription, and Node 18 or newer.</p>
+              <p className="gcc-text">Sign in once in Terminal:</p>
+              {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
+              <p className="gcc-text">It is billed to your Claude subscription, and your turns stay on your computer.</p>
+            </>,
+          )}
+          {section(
+            "start",
+            "2 · Start the bridge on your computer",
+            <div className="gcc-choices">
+              <div className="gcc-choice">
+                <p className="gcc-choice__title">Always on (Mac, recommended)</p>
+                <p className="gcc-text">Paste this once in Terminal. It starts by itself each time you log in.</p>
+                {cmdBox({
+                  text: commands.install,
+                  testId: "claude-code-install-command",
+                  copyTestId: "claude-code-install-copy",
+                  copyLabel: "Copy always-on command",
+                  copiedFlag: copiedAlways,
+                  onCopied: () => setCopiedAlways(true),
+                })}
+              </div>
+              <div className="gcc-choice">
+                <p className="gcc-choice__title">Just this time</p>
+                <p className="gcc-text">Paste this in Terminal and keep that window open. It shows your pairing code.</p>
+                {cmdBox({ text: commands.start, testId: "claude-code-command", copiedFlag: copied, onCopied: () => setCopied(true) })}
+              </div>
+            </div>,
+          )}
+          {sectionThree}
         </div>
       ) : (
-        <div data-testid="claude-code-connect">
-          {bridgeUp === false ? (
-            <p className="gcc-steps" data-testid="claude-code-bridge-hint">
-              Not reachable on this computer yet. Check the Terminal window is still open, then try again. The command is:{" "}
-              <code className="gcc-mono gcc-break">{commands.start}</code>
-            </p>
-          ) : null}
-          <form
-            className="gcc-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (bridgeUp === false) void enterCode();
-              else void pair();
-            }}
-          >
-            {bridgeUp === false ? (
-              <Button type="submit">Try again</Button>
-            ) : (
-              <>
-                <label className="gcc-sr-only" htmlFor={codeId}>
-                  Code from the bridge terminal
-                </label>
-                <input
-                  id={codeId}
-                  className="gcc-input"
-                  value={pairCode}
-                  onChange={(e) => setPairCode(e.target.value)}
-                  placeholder="Code from the terminal"
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={bridgeUp === null || pairing}
-                />
-                <Button type="submit" disabled={bridgeUp === null || pairing || !pairCode.trim()}>
-                  Pair
-                </Button>
-              </>
-            )}
-          </form>
-        </div>
+        <div className="gcc-steps">{sectionThree}</div>
       )}
       {!onError && ownError ? (
         <p className="gcc-error" role="alert" data-testid="claude-code-error">
