@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-list-doors",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-list-doors",
+  "version": "0.1.0",
+  "purpose": "Wires the stakeholder list reader to the platform: each holder's records, the person's linked records, and deleted and ended records left out.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/stakeholderList/listDoors.ts",
+        "lines": [
+          1,
+          544
+        ],
+        "to": "src/listDoors.ts"
+      },
+      {
+        "path": "src/components/stakeholders/useStakeholderListReader.ts",
+        "lines": [
+          1,
+          228
+        ],
+        "to": "src/useStakeholderListReader.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/personCard.ts",
+        "lines": [
+          1,
+          137
+        ],
+        "to": "src/personCard.ts"
+      },
+      {
+        "path": "src/lib/base/onlineCard/onlineCardWiring.ts",
+        "lines": [
+          1,
+          55
+        ],
+        "to": "src/onlineCardWiring.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "imports: every import of an app file or of `gilb-stakeholders` is an import of a unit (`online-card`, `person-connections`, `online-card-link`, `record-sync`, `stakeholder-list-reader`, `lws-vault-sets`, `lws-records`, `lws-session-bridge`, `vault-origin-rule`, `base-origin`, `term-origin`, `plan-record-hooks`, `stakeholder-list-state`) or of the unit's own files (`./doorsHost`, `./listDoors`, `./personCard`); `../attributeFind`, `../records`, `../vaultSets`, `../config`, `../dpop`, `../workingSetLoadVaults` and `../types` are not host members, since a unit holds each symbol (compared by token stream, comments excluded: see the README)",
+    "`listDoors.ts` `masterTypeAddress`: `${GILBVEDA_MASTER_ORIGIN}/base/t/${name}` is `${termOrigin()}/base/t/${name}` (the ontology origin is a setting, read at the call)",
+    "`listDoors.ts` `stakeholderListDeps(a: StakeholderListDoorsArgs)` is `stakeholderListDeps(host: StakeholderListDoorsHost, a: StakeholderListDoorsArgs)`; inside it `requestsSent()` is `host.requestsSent()` and `linkedRecordsOf(a.holder, ...)` is `linkedRecordsOf(host, a.holder, ...)`",
+    "`listDoors.ts` `linkedRecordsOf(holder, ...)` is `linkedRecordsOf(host: StakeholderListDoorsHost, holder, ...)`; inside it `HELD_RECORD_FRESH_MS` is `host.heldRecordFreshMs`",
+    "`listDoors.ts`: the declaration `export type LinkedFound = { vaultId: string; record: ListedRecord }` (source line 323) is not here: the type is declared in `stakeholder-list-state`, which `linkedAnswers.ts` of the source needed it for, and is imported from there",
+    "`personCard.ts` and `onlineCardWiring.ts`: `BASE_ORIGIN` is `baseOrigin()` (the platform origin is a setting, read at the call; both reads are inside functions)",
+    "`useStakeholderListReader.ts`: the first lines of the hook read the host, `const host = useContext(StakeholderListDoorsHostContext); if (!host) throw new Error(\"useStakeholderListReader needs a StakeholderListDoorsHostContext.Provider above it.\");`; then `useRecordsBeingDeleted()` is `host.useRecordsBeingDeleted()` (same place, same call), `requestsSent()` (two places) is `host.requestsSent()`, `stakeholderListDeps({ ... })` is `stakeholderListDeps(host, { ... })` and `heldRecordOf(qc, id, uri)` is `host.heldRecordOf(qc, id, uri)`",
+    "comments only: cycle, round, ruling, ticket, agent, person and app names are removed or reworded and the technical meaning is kept; no code line changed other than the above",
+    "no string literal carries a tag, a name or a host, so none was changed (the new error sentence above names the context)"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/doorsHost.ts",
+    "test/support.ts"
+  ],
+  "host": [
+    {
+      "context": "StakeholderListDoorsHost",
+      "member": "requestsSent",
+      "replaces": "src/lib/base/requestMeter.ts:39 (requestsSent(); called at listDoors.ts:272 and useStakeholderListReader.ts:116, :120)",
+      "implementedBy": "the app's request meter: the number of fetches the page has sent"
+    },
+    {
+      "context": "StakeholderListDoorsHost",
+      "member": "heldRecordFreshMs",
+      "replaces": "src/lib/base/recordHooks.ts:449 (HELD_RECORD_FRESH_MS = 15_000; read at listDoors.ts:435)",
+      "implementedBy": "the number of milliseconds the app's record cache takes a record as fresh (15000)"
+    },
+    {
+      "context": "StakeholderListDoorsHost",
+      "member": "heldRecordOf",
+      "replaces": "src/lib/base/recordHooks.ts:456 (heldRecordOf(qc, id, entityUri); called at useStakeholderListReader.ts:131)",
+      "implementedBy": "a read of the app's record cache, at the moment it is called"
+    },
+    {
+      "context": "StakeholderListDoorsHost",
+      "member": "useRecordsBeingDeleted",
+      "replaces": "src/lib/base/recordHooks.ts:2609 (useRecordsBeingDeleted(); called at useStakeholderListReader.ts:100)",
+      "implementedBy": "a hook over the delete watcher of plan-record-hooks and the session's deleted list of stakeholder-list-state"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
