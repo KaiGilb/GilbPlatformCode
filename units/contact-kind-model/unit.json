@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "unit": "units/contact-kind-model",
+  "package": "@kaigilb/gilbplatformcode-contact-kind-model",
+  "version": "0.1.0",
+  "purpose": "The pure model of a contact's kind: its chips, its start choices and the relations its header shows.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/contact/contactKindModel.ts",
+        "lines": null,
+        "to": "src/contactKindModel.ts"
+      },
+      {
+        "path": "src/lib/contact/kindRelation.ts",
+        "lines": [
+          86,
+          102
+        ],
+        "to": "src/contactKindModel.ts"
+      },
+      {
+        "path": "src/lib/contact/placementChips.ts",
+        "lines": null,
+        "to": "src/placementChips.ts"
+      },
+      {
+        "path": "src/lib/contact/stakeholderStart.ts",
+        "lines": null,
+        "to": "src/stakeholderStart.ts"
+      },
+      {
+        "path": "src/lib/contact/headerRelations.ts",
+        "lines": null,
+        "to": "src/headerRelations.ts"
+      },
+      {
+        "path": "src/lib/base/relationPredicates.ts",
+        "lines": [
+          256,
+          256
+        ],
+        "to": "src/headerRelations.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the peers `person-connections`, `contact-header`, `lws-relations`, `relation-role` and `stakeholder-card-vocabulary`.",
+    "`KindPredicate` and `KindEntry` (types only, `kindRelation.ts` lines 86-102) are moved into `contactKindModel.ts` to break a type cycle.",
+    "`DEFAULT_PARTY_TIE_CURIE` (a literal with no origin in it, `relationPredicates.ts` line 256, with its doc comment) is in `headerRelations.ts`, before the code that uses it.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or the host app are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

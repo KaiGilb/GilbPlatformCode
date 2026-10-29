@@ -1,0 +1,53 @@
+{
+  "name": "@kaigilb/gilbplatformcode-stakeholder-card-model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The pure rules of a Stakeholder card: which fields it shows for a kind, how a party's name is read and saved, and which term a field is.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-addressable-slug": "file:../addressable-slug",
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-holder-reference": "file:../holder-reference",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
+    "@kaigilb/gilbplatformcode-plan-stakeholders-model": "file:../plan-stakeholders-model",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-relation-role": "file:../relation-role",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary": "file:../stakeholder-card-vocabulary",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
+    "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-addressable-slug": "^0.1.0",
+    "@kaigilb/gilbplatformcode-holder-reference": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
+    "@kaigilb/gilbplatformcode-plan-stakeholders-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.3.0",
+    "@kaigilb/gilbplatformcode-type-curie": "^0.1.0"
+  }
+}

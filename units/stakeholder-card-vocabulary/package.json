@@ -1,0 +1,36 @@
+{
+  "name": "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads and keeps the vocabulary the Stakeholder card needs from the ontology master: the field sets per kind and the reference rules, as query options a page can share.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-holder-reference": "file:../holder-reference",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-holder-reference": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-field-sets": "^0.1.0",
+    "@kaigilb/gilbplatformcode-stakeholder-kinds": "^0.3.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.0"
+  }
+}
