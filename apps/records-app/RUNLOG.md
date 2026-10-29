@@ -117,3 +117,11 @@ Rule_Code_dev-rig-discipline (rules 1, 8, 9, 10, 11, 13, 14, 15, 16) and Proc_v_
 ### Stuck
 - A stray `cat > file` in one command waited on stdin and hung that call (about 2 min); stopped it with TaskStop. The script file was then written with the Write tool.
 - Other sessions' vitest processes (DATABASE_URL=...plancard...) are running on this machine; I left them alone.
+
+## Batch 5 (directed by Kai-Zen)
+Start 2026-10-29 01:13 UTC. End 01:15 UTC. About 6 tool calls.
+- The list filter takes bare type names (`params.append("type", t)`, lws-vault-sets vaultSets.ts:209; doc comment :158-162, e.g. `Person`), so the slug is `CatalogEntry`, derived from the one slot (`RECORD_TYPE.replace(/^t:/, "")`).
+- `curl https://veda.gilb.com/base/t/CatalogEntry` (read only) returns label "Catalogue Entry".
+- Red first: M6 literals changed to `t:CatalogEntry` / `CatalogEntry`, run against the old slot: 3 failed (the wire test, the addEntry test, the listEntries test). Then the slot changed: 65 of 65 green.
+- Type picture (RuleBvTypePicture): the app shows no type icon or picture anywhere (grep of App.tsx finds only the profile photo). Nothing changed.
+- `grep -rn "Thing" src` returns nothing. VITE_SUPERSEDE_ONLY and scripts/live-check.sh untouched.

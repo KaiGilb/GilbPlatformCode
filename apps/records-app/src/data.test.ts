@@ -176,7 +176,7 @@ test("search keeps an entry only when every word is in its name or description",
 
 test("addEntry creates the entry type with name and description in the named vault", async () => {
   await data.addEntry(VAULT, " Kettle ", " Red ");
-  expect(createRecord).toHaveBeenCalledWith(VAULT, "t:Thing", { name: "Kettle", description: "Red" }, "Kettle");
+  expect(createRecord).toHaveBeenCalledWith(VAULT, "t:CatalogEntry", { name: "Kettle", description: "Red" }, "Kettle");
 });
 
 test("addEntry refuses an empty name and sends nothing", async () => {
@@ -191,7 +191,7 @@ test("listEntries pages until complete, using nextOffset, and lists only the ent
   const all = await data.listEntries("v");
   expect(all.map((t) => t.name)).toEqual(["A", "B"]);
   expect(listVaultRecordsPage.mock.calls[1][2]).toBe(100);
-  expect(listVaultRecordsPage.mock.calls[0][1]).toEqual(["Thing"]);
+  expect(listVaultRecordsPage.mock.calls[0][1]).toEqual(["CatalogEntry"]);
 });
 
 test("listEntries throws, naming the cap, when the page guard trips", async () => {

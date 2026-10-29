@@ -23,11 +23,11 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); resetLwsAuth(); resetBaseOrigin(); resetSystemVaultHosts(); });
 
-test("M6: the create goes out with the type 't:Thing' and the list asks for type 'Thing'", async () => {
+test("M6: the create goes out with the type 't:CatalogEntry' and the list asks for type 'CatalogEntry'", async () => {
   await addEntry(VAULT, "Kettle", "Red");
   const create = calls.find((c) => c.method === "POST")!;
-  expect(JSON.parse(create.body!).type).toBe("t:Thing");
+  expect(JSON.parse(create.body!).type).toBe("t:CatalogEntry");
   await listEntries(VAULT);
   const list = calls.find((c) => c.url.includes("/records"))!;
-  expect(new URL(list.url).searchParams.getAll("type")).toEqual(["Thing"]);
+  expect(new URL(list.url).searchParams.getAll("type")).toEqual(["CatalogEntry"]);
 });

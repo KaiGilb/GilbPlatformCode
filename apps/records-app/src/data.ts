@@ -13,7 +13,8 @@ import { ownCardFindingQuery } from "@kaigilb/gilbplatformcode-plan-self-source"
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { VEDA_ORIGIN } from "./platform";
 
-export const RECORD_TYPE = "t:Thing"; // PENDING Agent.Concept: purpose-fit type; t:Thing must not ship.
+// Minted by Agent.Concept 2026-10-29: https://veda.gilb.com/base/t/CatalogEntry (Suggested; a:name and a:description list it in a:fieldOf).
+export const RECORD_TYPE = "t:CatalogEntry";
 export const RECORD_LIST_TYPE = RECORD_TYPE.replace(/^t:/, "");
 
 /** VITE_SUPERSEDE_ONLY=1: this run only changes existing records (nothing is added, no picture is stored). */
