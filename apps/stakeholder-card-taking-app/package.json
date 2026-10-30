@@ -78,6 +78,7 @@
     "@kaigilb/gilbplatformcode-record-types": "file:../../units/record-types",
     "@kaigilb/gilbplatformcode-relation-role": "file:../../units/relation-role",
     "@kaigilb/gilbplatformcode-remove-control": "file:../../units/remove-control",
+    "@kaigilb/gilbplatformcode-request-htu": "file:../../units/request-htu",
     "@kaigilb/gilbplatformcode-resource-id": "file:../../units/resource-id",
     "@kaigilb/gilbplatformcode-result-total": "file:../../units/result-total",
     "@kaigilb/gilbplatformcode-self-card": "file:../../units/self-card",

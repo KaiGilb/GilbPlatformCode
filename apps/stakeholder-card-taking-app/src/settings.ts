@@ -23,6 +23,8 @@ export interface AppSettings {
   ontologyApiOriginRaw: string;
   /** Optional: the public term corpus. */
   publicCorpusOrigin: string;
+  /** Optional: the host the platform origin forwards to (an apex forwarded to the identity host). Requests sent to the platform origin are signed for it. */
+  dpopProofOrigin: string;
   /** Optional: bare host names of a local development rig, comma-separated. */
   localRigHosts: string;
   /** Optional: the shortest query that reaches the ontology, in letters. */
@@ -41,6 +43,7 @@ export const EMPTY_SETTINGS: AppSettings = {
   ontologyApiOrigin: "",
   ontologyApiOriginRaw: "",
   publicCorpusOrigin: "",
+  dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
   vocabTypeBatchRevisions: "",
@@ -93,6 +96,10 @@ export function settingsProblems(s: AppSettings): string[] {
   if (c) out.push(c);
   if (list(s.systemVaultHosts).length === 0) out.push("At least one system vault host is needed.");
   if (list(s.systemHostLabels).length === 0) out.push("At least one system host label is needed.");
+  if (s.dpopProofOrigin.trim() !== "") {
+    const d = originProblem("The DPoP proof origin", s.dpopProofOrigin);
+    if (d) out.push(d);
+  }
   if (s.minOntologyQuery.trim() !== "" && !/^\d+$/.test(s.minOntologyQuery.trim())) out.push("The shortest ontology query must be a whole number.");
   return out;
 }
@@ -108,6 +115,7 @@ export function providerSettings(s: AppSettings): Pick<StakeholderCardGilbPlatfo
   if (s.minOntologyQuery.trim() !== "") optional.minOntologyQuery = Number(s.minOntologyQuery.trim());
   if (s.vocabTypeBatchRevisions.trim() !== "") optional.vocabTypeBatchRevisions = s.vocabTypeBatchRevisions.trim();
   if (s.publicCorpusOrigin.trim() !== "") optional.publicCorpusOrigin = s.publicCorpusOrigin.trim();
+  if (s.dpopProofOrigin.trim() !== "") optional.dpopProofOrigin = s.dpopProofOrigin.trim();
   return {
     origin: s.origin.trim(),
     ontologyOrigin: s.ontologyOrigin.trim(),

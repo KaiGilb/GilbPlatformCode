@@ -11,6 +11,7 @@ const FIELDS: { key: keyof AppSettings; label: string; hint: string; required: b
   { key: "ontologyApiOrigin", label: "Ontology search origin", hint: "optional", required: false },
   { key: "ontologyApiOriginRaw", label: "Ontology search origin, as text", hint: "optional", required: false },
   { key: "publicCorpusOrigin", label: "Public term corpus origin", hint: "optional", required: false },
+  { key: "dpopProofOrigin", label: "DPoP proof origin for the platform origin", hint: "optional: https://id.example.test (the host the platform origin forwards to)", required: false },
   { key: "localRigHosts", label: "Local rig hosts", hint: "optional (comma-separated)", required: false },
   { key: "minOntologyQuery", label: "Shortest ontology query", hint: "optional, a whole number", required: false },
   { key: "vocabTypeBatchRevisions", label: "Batched vocabulary revisions", hint: "optional", required: false },

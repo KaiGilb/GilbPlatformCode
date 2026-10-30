@@ -17,6 +17,7 @@ export const TEST_SETTINGS: AppSettings = {
   ontologyApiOrigin: "",
   ontologyApiOriginRaw: "",
   publicCorpusOrigin: "",
+  dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
   vocabTypeBatchRevisions: "",

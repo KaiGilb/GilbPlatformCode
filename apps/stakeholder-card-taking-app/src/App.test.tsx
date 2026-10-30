@@ -44,6 +44,27 @@ describe("settings", () => {
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
   });
 
+  test("the DPoP proof origin is typed, kept and loaded again; a malformed one is named, an empty one is not asked", async () => {
+    const user = userEvent.setup();
+    render(<App makeSession={() => (null as never)} />);
+    for (const [label, value] of [
+      ["Platform origin of the vault", TEST_SETTINGS.origin],
+      ["Sign-in origin (the platform's identity service)", TEST_SETTINGS.signInOrigin],
+      ["Ontology origin", TEST_SETTINGS.ontologyOrigin],
+      ["World catalogue origin", TEST_SETTINGS.geoOrigin],
+      ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
+      ["System host labels", TEST_SETTINGS.systemHostLabels],
+    ] as const) await user.type(screen.getByLabelText(label), value);
+    const proof = screen.getByLabelText("DPoP proof origin for the platform origin");
+    await user.type(proof, "not an origin");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(screen.getByRole("alert").textContent).toContain("The DPoP proof origin must look like https://host");
+    await user.clear(proof);
+    await user.type(proof, "https://id.example.test");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(loadSettings()).toEqual({ ...TEST_SETTINGS, dpopProofOrigin: "https://id.example.test" });
+  });
+
   test("kept settings skip the Settings screen on the next run, and the Settings button edits them later", async () => {
     keepSettings();
     const user = userEvent.setup();
