@@ -12,6 +12,9 @@ import { typeFacetKey } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { OnlineStakeholderCardHostContext, type OnlineStakeholderCardShell } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
 import { OneCardHostContext } from "@kaigilb/gilbplatformcode-one-card";
+import { OrgEmployeesHostContext } from "@kaigilb/gilbplatformcode-org-employees";
+import { OrgMarkHostContext } from "@kaigilb/gilbplatformcode-org-mark";
+import { PickerQueryContext } from "@kaigilb/gilbplatformcode-record-picker";
 import { STAKEHOLDER_CARD_QUERY_DEFAULTS } from "./index";
 import { __resetPhotoTermResolvers } from "./photoTerm";
 import { BASE, GEO, HOST, ONTOLOGY, P, P_ENTITY, SYSTEM_HOSTS, createWorld, type World } from "../test/world";
@@ -28,6 +31,9 @@ function useAll() {
     card: useContext(OnlineStakeholderCardHostContext),
     header: useContext(StakeholderContactHeaderHostContext),
     oneCard: useContext(OneCardHostContext),
+    orgEmployees: useContext(OrgEmployeesHostContext),
+    orgMark: useContext(OrgMarkHostContext),
+    pickerQuery: useContext(PickerQueryContext),
   };
 }
 type All = ReturnType<typeof useAll>;
@@ -159,6 +165,30 @@ describe("what it mounts", () => {
     expect(Object.keys(at.oneCard!).sort()).toEqual(["claimFieldText", "claimsAbout", "isGeoEntityId", "listPlaceClaimsInVault", "loadPlaceNames", "placeClaimsKey", "placeClaimsStaleMs"]);
   });
 
+  test("the three contexts of the standalone Org units are filled too: the Employees host, the mark's host and the pickers' query hook", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    mountInProvider(world, <Probe />);
+    const at = seen[seen.length - 1]!;
+    expect(Object.keys(at.orgEmployees!).sort()).toEqual(["dropStaleSheetEntry", "photoReadKeys", "readResources", "useSheetHistory"]);
+    expect(Object.keys(at.orgMark!)).toEqual(["downloadFileOutcome"]);
+    expect(typeof at.pickerQuery).toBe("function");
+  });
+
+  test("a RecordFace the developer gave is in the Employees host, fixed at mount; none given leaves it out", () => {
+    const Face = () => null;
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    const view = mountInProvider(world, <Probe />, { RecordFace: Face });
+    expect(seen[seen.length - 1]!.orgEmployees!.RecordFace).toBe(Face);
+    view.rerenderWith(<Probe />, { RecordFace: () => null });
+    expect(seen[seen.length - 1]!.orgEmployees!.RecordFace).toBe(Face);
+    const none: All[] = [];
+    const Probe2 = probe(none);
+    mountInProvider(world, <Probe2 />);
+    expect("RecordFace" in none[none.length - 1]!.orgEmployees!).toBe(false);
+  });
+
   test("it makes a query client with the app's defaults, and uses a given one as it is", () => {
     let own: QueryClient | null = null;
     function Take() {
@@ -200,7 +230,7 @@ describe("what it mounts", () => {
     view.rerenderWith(<Probe />, { discoverVaultProfilePhoto: b });
     expect(await header.discoverVaultProfilePhoto(null)).toEqual({ photoRef: "b" });
     view.rerenderWith(<Probe />, { discoverVaultProfilePhoto: undefined });
-    expect(await header.discoverVaultProfilePhoto(null)).toEqual({ photoRef: null });
+    expect(await header.discoverVaultProfilePhoto(null)).toMatchObject({ photoRef: null });
     expect(a).toHaveBeenCalledTimes(1);
   });
 

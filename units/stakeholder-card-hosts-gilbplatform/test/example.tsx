@@ -24,15 +24,16 @@ export function StakeholderScreen({ session, principal }: {
       onOpenRecord={(id) => void id} //                                      optional: open a record in your page; absent, the card stays in place after "+ Add your own"
       queryClient={myClient} //                                              optional: your own client (its defaults are yours); absent, the provider makes one
       persistVocabulary={() => true} //                                      optional: whether the card vocabulary is kept on this device
-      discoverVaultProfilePhoto={async () => ({ photoRef: null })} //        optional: finds the photo of a vault's profile; absent, initials
-      loadPhotoObjectUrl={async () => null} //                               optional: loads a photo as an object URL; absent, none
-      loadGranteeFace={async () => null} //                                  optional: loads the face of a person who shares one with the viewer; absent, none
+      discoverVaultProfilePhoto={async () => ({ photoRef: null })} //        optional: finds the photo of a vault's profile; absent, the unit's own
+      loadPhotoObjectUrl={async () => null} //                               optional: loads a photo as an object URL; absent, the unit's own
+      loadGranteeFace={async () => null} //                                  optional: loads the face of a person who shares one with the viewer; absent, the unit's own
       useHolderOriginLine={() => ({ origin: null, loading: false })} //      optional HOOK: the "Where / How we met" line; absent, none
       useContactLabels={() => ({ chips: null, offered: { circleLabel: [], relationshipKind: [] }, offersLoading: false, catalogueNote: null, actError: null, add: async () => false, entryPredicates: new Map() })} // optional HOOK: the kind chips; absent, none
       listPlaceClaimsInVault={async () => []} //                             optional: the four place members of the one card (the entry never calls them)
       claimsAbout={() => []}
       claimFieldText={() => ""}
       loadPlaceNames={async () => []}
+      RecordFace={() => null} //                                             optional: the face of a record in the Employees group (org-employees); absent, no face
       settings={{
         localRigHosts: [], //                                                optional: bare host names of a local development rig
         ontologyApiOrigin: "https://ontology.platform.example.test", //      optional: the origin that answers the public term search

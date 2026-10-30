@@ -1,25 +1,36 @@
-// The provider a developer mounts once: it sets the platform's settings and the session, then mounts the query client and the three host
-// contexts of the online stakeholder card (the card's own, the contact header's and the one card's). The card draws, reads and adds inside it.
+// The provider a developer mounts once: it sets the platform's settings and the session, then mounts the query client, the three host
+// contexts of the online stakeholder card (the card's own, the contact header's and the one card's) and the three of the standalone Org units
+// (the Employees group's, the mark's and the pickers' query hook). The card draws, reads and adds inside it.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { OnlineStakeholderCardHostContext, type OnlineStakeholderCardHost } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
 import { OneCardHostContext } from "@kaigilb/gilbplatformcode-one-card";
+import { OrgEmployeesHostContext, type OrgEmployeesHost, type RecordFaceProps } from "@kaigilb/gilbplatformcode-org-employees";
+import { OrgMarkHostContext } from "@kaigilb/gilbplatformcode-org-mark";
+import { PickerQueryContext } from "@kaigilb/gilbplatformcode-record-picker";
 import type { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import type { StakeholderContactHeaderHost } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
 import type { OneCardHost } from "@kaigilb/gilbplatformcode-one-card";
-import { createOneCardHost, createOnlineStakeholderCardHost, createStakeholderContactHeaderHost } from "./hosts";
+import {
+  createOneCardHost,
+  createOnlineStakeholderCardHost,
+  createOrgEmployeesHost,
+  createOrgMarkHost,
+  createPickerQuery,
+  createStakeholderContactHeaderHost,
+} from "./hosts";
 import {
   defaultClaimFieldText,
   defaultClaimsAbout,
-  defaultDiscoverVaultProfilePhoto,
   defaultListPlaceClaimsInVault,
   defaultLoadGranteeFace,
   defaultLoadPhotoObjectUrl,
   defaultLoadPlaceNames,
+  discoverWith,
 } from "./defaults";
-import { photoReadKeysSyncOf, photoTermResolverFor } from "./photoTerm";
+import { photoReadKeysOf, photoReadKeysSyncOf, photoTermResolverFor } from "./photoTerm";
 import { applyPlatformSetup, applySession, setupKey, type StakeholderCardSettings } from "./settings";
 import { createUseShell } from "./shell";
 
@@ -49,16 +60,18 @@ export interface StakeholderCardGilbPlatformProviderProps {
   queryClient?: QueryClient;
   /** Whether the card vocabulary is kept on this device. Absent: it is kept, as GilbApp does outside a test. Passed through to the card vocabulary host. */
   persistVocabulary?: () => boolean;
-  /** Finds the photo of a vault's profile (GilbApp code that is in no unit). Default: none found, so the holder's face shows initials. Read at each call. */
+  /** Finds the photo of a vault's profile. Default: `discoverVaultProfilePhoto` of `vault-profile-photo`, over the photo term's read keys. Read at each call. */
   discoverVaultProfilePhoto?: StakeholderContactHeaderHost["discoverVaultProfilePhoto"];
-  /** Loads a photo as an object URL. Default: null. Read at each call. */
+  /** Loads a photo as an object URL. Default: `loadPhotoObjectUrl` of `vault-profile-photo`. Read at each call. */
   loadPhotoObjectUrl?: StakeholderContactHeaderHost["loadPhotoObjectUrl"];
-  /** Loads the face of a person who shares one with the viewer. Default: null, so their photo is not drawn. Read at each call. */
+  /** Loads the face of a person who shares one with the viewer. Default: `loadGranteeFace` of `grantee-face` (the platform's rung-gated profile-photo route). Read at each call. */
   loadGranteeFace?: StakeholderContactHeaderHost["loadGranteeFace"];
   /** A HOOK: the held-note line ("Where / How we met") of a placed person. Default: none. Fixed at mount. */
   useHolderOriginLine?: StakeholderContactHeaderHost["useHolderOriginLine"];
   /** A HOOK: the kind chips of a contact. Default: none. Fixed at mount. */
   useContactLabels?: StakeholderContactHeaderHost["useContactLabels"];
+  /** The face of a record, for the Employees group's rows (`org-employees`, hosted for the standalone units). Default: none, so a row draws no face. Fixed at mount. */
+  RecordFace?: ComponentType<RecordFaceProps>;
   /** The four place members of the one card. The online stakeholder card never calls them; a default answers nothing. Read at each call. */
   listPlaceClaimsInVault?: OneCardHost["listPlaceClaimsInVault"];
   claimsAbout?: OneCardHost["claimsAbout"];
@@ -118,8 +131,9 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       photoReadKeysSync: photoReadKeysSyncOf(resolver),
       ...(at.persistVocabulary ? { persistVocabulary: () => latest.current.persistVocabulary?.() ?? true } : {}),
     });
+    const discoverPhoto = discoverWith(photoReadKeysOf(resolver));
     const header: StakeholderContactHeaderHost = createStakeholderContactHeaderHost({
-      discoverVaultProfilePhoto: (...a) => (latest.current.discoverVaultProfilePhoto ?? defaultDiscoverVaultProfilePhoto)(...a),
+      discoverVaultProfilePhoto: (...a) => (latest.current.discoverVaultProfilePhoto ?? discoverPhoto)(...a),
       loadPhotoObjectUrl: (...a) => (latest.current.loadPhotoObjectUrl ?? defaultLoadPhotoObjectUrl)(...a),
       loadGranteeFace: (...a) => (latest.current.loadGranteeFace ?? defaultLoadGranteeFace)(...a),
       ...(at.useHolderOriginLine ? { useHolderOriginLine: at.useHolderOriginLine } : {}),
@@ -132,7 +146,11 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       claimFieldText: (...a) => (latest.current.claimFieldText ?? defaultClaimFieldText)(...a),
       loadPlaceNames: (...a) => (latest.current.loadPlaceNames ?? defaultLoadPlaceNames)(...a),
     });
-    return { card, header, oneCard };
+    const orgEmployees: OrgEmployeesHost = createOrgEmployeesHost({
+      photoReadKeys: photoReadKeysOf(resolver),
+      ...(at.RecordFace ? { RecordFace: at.RecordFace } : {}),
+    });
+    return { card, header, oneCard, orgEmployees, orgMark: createOrgMarkHost(), pickerQuery: createPickerQuery() };
   }, [qc, session, props.origin, props.geoOrigin]);
 
   // 5. The query client and the three contexts.
@@ -140,7 +158,13 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
     <QueryClientProvider client={qc}>
       <OnlineStakeholderCardHostContext.Provider value={hosts.card}>
         <StakeholderContactHeaderHostContext.Provider value={hosts.header}>
-          <OneCardHostContext.Provider value={hosts.oneCard}>{children}</OneCardHostContext.Provider>
+          <OneCardHostContext.Provider value={hosts.oneCard}>
+            <OrgEmployeesHostContext.Provider value={hosts.orgEmployees}>
+              <OrgMarkHostContext.Provider value={hosts.orgMark}>
+                <PickerQueryContext.Provider value={hosts.pickerQuery}>{children}</PickerQueryContext.Provider>
+              </OrgMarkHostContext.Provider>
+            </OrgEmployeesHostContext.Provider>
+          </OneCardHostContext.Provider>
         </StakeholderContactHeaderHostContext.Provider>
       </OnlineStakeholderCardHostContext.Provider>
     </QueryClientProvider>
