@@ -6,7 +6,7 @@ import {
   type GilbSession,
   type SessionCredential,
 } from "@kaigilb/gilbplatformcode-signin/session";
-import { proofHtu } from "@kaigilb/gilbplatformcode-request-htu";
+import { proofHtu } from "./proofHtu";
 import { NotSignedInError, OriginNotAllowedError } from "./errors";
 import type { LwsAuthHost, LwsSession } from "./lwsAuth";
 

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-lws-session-bridge",
-  "version": "0.2.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The one seam through which GilbPlatform client code gets its credential headers, so the same client works with any signed-in session and never sends a credential to a host outside the platform.",
@@ -17,7 +17,6 @@
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
-    "@kaigilb/gilbplatformcode-request-htu": "file:../request-htu",
     "@kaigilb/gilbplatformcode-signin": "file:../signin",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
     "@types/node": "^22.0.0",
@@ -26,7 +25,6 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
-    "@kaigilb/gilbplatformcode-request-htu": "^0.1.0",
     "@kaigilb/gilbplatformcode-signin": "^0.2.0",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0"
   }
