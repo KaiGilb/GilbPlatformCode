@@ -1,0 +1,42 @@
+{
+  "name": "@kaigilb/gilbplatformcode-add-information",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offers '+ Add Information' on a record card and opens the sheet of groups to add.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-class-merge": "file:../class-merge",
+    "@kaigilb/gilbplatformcode-drawer": "file:../drawer",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-sheet-history": "file:../sheet-history",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-card-mode": "^0.1.0",
+    "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
+    "@kaigilb/gilbplatformcode-sheet-history": "^0.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
