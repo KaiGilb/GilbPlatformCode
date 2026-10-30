@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-record-hooks",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "The vault's records as a list a screen can scroll, and the three changes a person makes to one (create, retype, delete), each shown at once and written in the background, with the device's working-set replica kept in step.",

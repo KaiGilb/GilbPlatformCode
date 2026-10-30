@@ -6,6 +6,8 @@ export {
   LIST_SLICE_ROWS,
   RECORDS_SNAPSHOT_KEY_HEAD,
   RetypeChangedElsewhereError,
+  clearFreshlyCreated,
+  consumeFreshlyCreated,
   createWiring,
   isFreshlyCreated,
   isRecordDeleteKey,
