@@ -1,8 +1,7 @@
-// The app end to end over the host unit's fake platform (test/world.ts): settings, sign-in, the card, one add, no own card, the circles list.
+// The app end to end over the host unit's fake platform (test/world.ts): settings, sign-in, the card, one add, one add with no own card yet, the circles list.
 import { describe, expect, test } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { NO_OWN_CARD_SAYS } from "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform";
 import { App } from "./App";
 import { SETTINGS_KEY, loadSettings } from "./settings";
 import { TEST_SETTINGS, keepSettings, signedInApp } from "../test/helpers";
@@ -134,15 +133,22 @@ describe("the card", () => {
     expect(screen.getByRole("status").textContent).toBe(`The card opened the record ${id}. This app has no record view.`);
   });
 
-  test("with no own card the provider's sentence shows and no write is sent", async () => {
+  test("with no own card the provider makes the basic one first (a selfcard POST with DPoP), then sends the create", async () => {
     const { world } = await signedInApp({ ownCard: false });
     const user = userEvent.setup();
     await showCard(user);
     await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
     await user.click(screen.getByTestId("add-own"));
-    await waitFor(() => expect(screen.getByTestId("online-stakeholder-add-error").textContent).toBe(NO_OWN_CARD_SAYS));
-    expect(writes(world.calls)).toEqual([]);
-    expect(screen.queryByRole("status")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy(), { timeout: 8000 });
+    expect(screen.queryByTestId("online-stakeholder-add-error")).toBeNull();
+    const selfcard = world.requests("POST", /\/selfcard$/);
+    expect(selfcard.length).toBe(1);
+    expect(selfcard[0]!.url).toBe(`${HOST}/lws/vault/${encodeURIComponent(P)}/selfcard`);
+    expect(selfcard[0]!.headers.authorization).toBe("DPoP fake-access-token");
+    expect(selfcard[0]!.headers.dpop).toBe(`proof(POST ${selfcard[0]!.url})`);
+    const create = world.requests("POST", /\/lws\/vault\/[^/]+\/c$/)[0]!;
+    expect(world.calls.indexOf(selfcard[0]!)).toBeLessThan(world.calls.indexOf(create));
+    expect((JSON.parse(create.body!) as { facts: Record<string, unknown> }).facts["a:statedBy"]).toEqual({ "@id": world.ownCardUri });
   });
 });
 

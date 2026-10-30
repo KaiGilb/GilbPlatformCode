@@ -50,9 +50,18 @@ export interface WorldOptions {
   vaultsStatus?: number;
   /** The photo term the platform's origin serves at `/base/a/profilePhoto` (its `a:predicateAttribute`). Absent: it answers 404, so the seed stands. */
   photoTerm?: string;
+  /** Whether Ann's own card carries a profile photo (`/files/annface`, served by her vault) and the vault serves its bytes. Default: false. */
+  ownPhoto?: boolean;
+  /** Whether Ben's online card shares a photo: the card names the platform's profile-photo route and that route serves bytes. Default: false. */
+  benPhoto?: boolean;
+  /** Other files Ann's vault serves at `/files/<id>`: the id and the bytes. Default: none. */
+  files?: Record<string, string>;
   /** The vaults the session reaches. Default: Ann's own vault, read and write. */
   sessionVaults?: GilbSession["vaults"];
 }
+
+/** The bytes of the two photos the fake platform serves (a stand-in for an image). */
+export const PHOTO_BYTES = { ann: "ann-face-bytes", ben: "ben-face-bytes-longer" } as const;
 
 export const BEN_FIELDS = { "a:givenName": "Ben", "a:familyName": "Larsen", "a:email": "ben@example.test" };
 
@@ -76,7 +85,7 @@ export function masterWithNames(): FixtureMaster {
     { "@id": t("FamilyName"), "a:predicateAttribute": "a:familyName", "a:label": "Family name", "a:encoding": "inline-literal:text", "a:fieldOf": person },
   );
   m.listing(pages as never);
-  for (const slug of ["givenName", "familyName"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
+  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
   return m;
 }
 
@@ -90,15 +99,15 @@ export async function createWorld(options: WorldOptions = {}) {
 
   // Ann's own card in her vault, at its derived address, as the platform's ensure door mints it.
   let ownCardUri: string | null = null;
-  async function makeOwnCard(): Promise<string> {
+  async function makeOwnCard(facts: Record<string, unknown> = { "a:name": "Ann Ward" }): Promise<string> {
     const derived = await selfCardEntityUri(vaultRootOf(P)!);
     const probe = platform.seed(P, "t:Person", { "a:name": "probe" });
     platform.entities.delete(probe);
     const prefix = probe.slice(0, probe.lastIndexOf("/") + 1);
-    ownCardUri = platform.seed(P, "t:Person", { "a:name": "Ann Ward" }, { id: prefix + derived.slice(derived.lastIndexOf("/") + 1) });
+    ownCardUri = platform.seed(P, "t:Person", facts, { id: prefix + derived.slice(derived.lastIndexOf("/") + 1) });
     return ownCardUri;
   }
-  if (options.ownCard !== false) await makeOwnCard();
+  if (options.ownCard !== false) await makeOwnCard(options.ownPhoto ? { "a:name": "Ann Ward", "a:profilePhoto": "/files/annface" } : undefined);
 
   const session: GilbSession = {
     principal: ANN,
@@ -131,7 +140,29 @@ export async function createWorld(options: WorldOptions = {}) {
       const who = u.searchParams.get("principal") ?? "";
       if (who !== BEN) return json(404, { error: "not_a_person" });
       const fields = Object.entries(benFields).map(([field, value]) => ({ principal: BEN, field, value, rung: "public" }));
-      return json(200, { principal: BEN, fields, skills: [], photoUrl: null });
+      return json(200, { principal: BEN, fields, skills: [], photoUrl: options.benPhoto ? `/base/connect/profile-photo?principal=${encodeURIComponent(BEN)}` : null });
+    }
+    // The platform's rung-gated profile-photo route: the bytes of Ben's photo, or 404 when he shares none.
+    if (u.pathname === "/base/connect/profile-photo" && method === "GET") {
+      if (!options.benPhoto || u.searchParams.get("principal") !== BEN) return json(404, { error: "no_photo" });
+      return new Response(PHOTO_BYTES.ben, { status: 200, headers: { "content-type": "image/png" } });
+    }
+    // A file of Ann's vault: her profile photo, or one the test gave.
+    const file = /^\/files\/([^/]+)$/.exec(u.pathname);
+    if (u.origin === HOST && file && method === "GET") {
+      const bytes = file[1] === "annface" && options.ownPhoto ? PHOTO_BYTES.ann : options.files?.[file[1]!];
+      if (bytes === undefined) return json(404, { error: "NotFound" });
+      return new Response(bytes, { status: 200, headers: { "content-type": "image/png" } });
+    }
+    // The platform's idempotent door for a vault's own card: it makes the card at its derived address (201), or answers the card that is there (200).
+    const selfcard = /^\/lws\/vault\/([^/]+)\/selfcard$/.exec(u.pathname);
+    if (u.origin === HOST && selfcard && method === "POST") {
+      if (decodeURIComponent(selfcard[1]!) !== P) return json(403, { error: "Forbidden" });
+      const adopted = ownCardUri !== null;
+      const sent = JSON.parse(body ?? "{}") as { facts?: Record<string, unknown> };
+      const card = ownCardUri ?? (await makeOwnCard(sent.facts ?? {}));
+      const loc = card.replace("/base/e/", "/lws/r/");
+      return json(adopted ? 200 : 201, { "@id": loc }, { location: loc });
     }
     if (u.pathname === "/base/find-by-attribute" && method === "GET") {
       const attr = u.searchParams.get("attr") ?? "";
