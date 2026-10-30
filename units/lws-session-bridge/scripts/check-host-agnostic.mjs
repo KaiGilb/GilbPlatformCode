@@ -20,7 +20,7 @@ const UNIT = "units/lws-session-bridge";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^@kaigilb\/gilbplatformcode-signin\/session$/, /^@kaigilb\/gilbplatformcode-vault-origin-rule$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^@kaigilb\/gilbplatformcode-request-htu$/, /^@kaigilb\/gilbplatformcode-signin\/session$/, /^@kaigilb\/gilbplatformcode-vault-origin-rule$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);
