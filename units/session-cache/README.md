@@ -10,7 +10,7 @@ Plain TypeScript, no React, no network of its own. The host gives each read a ke
   - `key`: the same function as `cacheKey`.
   - `peek(key)`: the entry as a snapshot `{ data, updating, error, updatedAt }`, a stable object until the entry changes.
   - `swr(key, loader)`: `{ value, stale, promise }`. The value held at once (`undefined` on a miss); `stale` is true when a value is held but not fresh; the promise resolves with the revalidated value (with the held value if the revalidation fails).
-  - `refresh(key, loader?)`: ALWAYS loads (a write just happened), never joined to a load that started before it; the newest load wins. Without a loader it reuses the last one for that key, and rejects when there is none.
+  - `refresh(key, loader?)`: ALWAYS loads (a write just happened), never joined to a load that started before it; the newest load wins. It answers a promise of the loaded value (`Promise<T>`, `sessionCache.ts:135`), and rejects with the loader's error when the load fails (`:101`; the entry also holds the error). Without a loader it reuses the last one for that key, and rejects when there is none (`:138`).
   - `set(key, value)`: puts a value the page loaded its own way; fresh as of now; supersedes a load in flight.
   - `onCommit(fn | undefined)`: one listener, told `(key, value, at)` with each value that lands (a load answered, or `set`). A listener that throws does not break a load.
   - `hydrate(items)`: puts `{ key, value, at }` values read from disk in, before anything is asked: stale, dated as stored, and a key that already holds a value is left alone.
