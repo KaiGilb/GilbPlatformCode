@@ -187,6 +187,7 @@ Named, and only these (also in `unit.json`; the comment-stripped diff against th
    - `recordPerson({ reading ... }, { vault ... })` becomes `recordPerson(host.person, { reading ... }, { vault ... })`;
    - `afterRecordPerson(qc, made)` becomes `afterRecordPerson(host.person, qc, made)` (two calls).
 4. Comments are generic (cycle, ticket and agent tags and names removed).
+5. 0.1.1: `skillPredicate` is the skill field's write key (`fieldOfTerm(fields, "skill")?.writeKey ?? null`, as the record card passes it), not `null`: a skill of theirs draws by its name, not its address, in a group titled with the field's label.
 
 `deleteRecord`, `idFromEntityUri` and `idFromUri` are the peers' own and take no host. No origin is held at load in this file, so no setting unit changed.
 
