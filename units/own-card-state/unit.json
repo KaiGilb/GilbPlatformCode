@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "unit": "units/own-card-state",
+  "package": "@kaigilb/gilbplatformcode-own-card-state",
+  "version": "0.1.0",
+  "purpose": "Tells a record card whether the record is the signed-in person's own card, and draws the band that says so.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/base/ownCard.ts",
+        "lines": [
+          38,
+          119
+        ],
+        "to": "src/ownCardState.ts"
+      },
+      {
+        "path": "src/lib/base/ownCard.ts",
+        "lines": [
+          215,
+          271
+        ],
+        "to": "src/ownCardState.ts"
+      },
+      {
+        "path": "src/components/records/OwnCardBand.tsx",
+        "lines": [
+          1,
+          102
+        ],
+        "to": "src/OwnCardBand.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`MYNET_PROFILE_URL` (`ownCard.ts` line 36, `${MYNET_BASE}/profile`, built when the module loads) is not copied; the band's `href={MYNET_PROFILE_URL}` is `href={myNetProfileUrl()}`, a setting (`setMyNetProfileUrl`, `myNetProfileUrl`, `resetMyNetProfileUrl`) read when the band draws. It throws, naming the setter, when it is not set.",
+    "The imports are imports of units: `SELF_CARD_ID_PREFIX`, `VAULT_PATH_SEGMENTS`, `selfCardIdForVault` from `vault-origin-rule`; `OWN_CARD_SLUG_PREFIX`, `isHoldersOwnCard`, `ownCardCaseOf`, `ownCardIds`, `OwnCardCase`, `OwnCardFinding` from `own-card`; `isHeldVault` from `person-create`; `typeLocalName` from `lws-vault-sets`; `vaultRootOf` from `vault-profile-photo`; `ReachableVault` from `plan-record-hooks`; `ownCardFindingQuery` from `plan-self-source`.",
+    "The header comments are new and shorter, and the comments that name a cycle, a ruling, an agent or a ticket are reworded with the same facts. No code changed."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/myNetProfileUrl.ts"
+  ],
+  "host": [
+    {
+      "member": "setMyNetProfileUrl",
+      "replaces": "src/lib/base/ownCard.ts:36"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
