@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/plan-links-model",
   "package": "@kaigilb/gilbplatformcode-plan-links-model",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Reads and builds the links on a Function, Solution, Value or Resource card as plain functions: which record a link points at, the tag drawn for it, the loop checks on the Part of chain, and the Solution of relations read back.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -21,7 +21,7 @@
     "`./entityRefFacts` (`childrenPointingAt`, `entityRefFromFact`) is `@kaigilb/gilbplatformcode-entity-ref`; `./search` (`idFromEntityUri`) is `@kaigilb/gilbplatformcode-id-tail`; `./planCard` (`memberValue`) is `@kaigilb/gilbplatformcode-plan-card-facts`;",
     "`MASTER_TAG_SLUGS` of `./entityDisplayName` (line 28) is a non-exported `const MASTER_TAG_SLUGS = [\"unitTag\", \"tag\"] as const;` in the file, with the same value;",
     "`isTypeName` (lines 28-31) is deleted and imported from `@kaigilb/gilbplatformcode-type-key`, then re-exported (`export { isTypeName };`), so the export list is the source's;",
-    "`childrenPointingAt(record, typed)` (line 269) is `childrenPointingAt(record, typed, SKIP_SLUGS)`. The app's version skips eleven identity names inside; the `entity-ref` unit takes them as an argument. `const SKIP_SLUGS = new Set([...])` is copied from `src/lib/base/entityRefFacts.ts` lines 21-33 (same eleven names) as a non-exported constant."
+    "`childrenPointingAt(record, typed)` (line 269) is `childrenPointingAt(record, typed, SKIP_SLUGS)`. The app's version skips eleven identity names inside; the `entity-ref` unit takes them as an argument. `const SKIP_SLUGS = new Set([...])` is copied from `src/lib/base/entityRefFacts.ts` lines 21-33 (same eleven names) as a constant, exported since 0.2.1 (the `export` keyword is the only change)."
   ],
   "newFiles": [
     "src/index.ts"
