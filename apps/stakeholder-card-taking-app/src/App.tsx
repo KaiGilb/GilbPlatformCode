@@ -6,7 +6,7 @@ import type { Transport } from "@kaigilb/gilbplatformcode-signin";
 import { CardScreen } from "./CardScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import { SignInScreen } from "./SignInScreen";
-import { loadSettings, saveSettings, type AppSettings } from "./settings";
+import { loadSettings, saveSettings, settingsProblems, type AppSettings } from "./settings";
 
 export interface AppSeams {
   /** Makes the credential a sign-in fills. Default: a new `SessionCredential` (key and token in memory only). */
@@ -23,6 +23,9 @@ export function App({ makeSession = newCredential, transport }: AppSeams) {
   const [credential, setCredential] = useState<SessionCredential>(makeSession);
   const [signedIn, setSignedIn] = useState(false);
 
+  // Settings saved before a value was required (such as the sign-in origin) are not usable: the Settings screen asks again.
+  const unusable = settings !== null && settingsProblems(settings).length > 0;
+
   const signOut = () => {
     credential.invalidate(true);
     setCredential(makeSession());
@@ -33,23 +36,23 @@ export function App({ makeSession = newCredential, transport }: AppSeams) {
     <main>
       <header>
         <h1>Stakeholder card taking app</h1>
-        {settings && !editingSettings && <button type="button" onClick={() => setEditingSettings(true)}>Settings</button>}{" "}
+        {settings && !unusable && !editingSettings && <button type="button" onClick={() => setEditingSettings(true)}>Settings</button>}{" "}
         {signedIn && <button type="button" onClick={signOut}>Sign out</button>}
       </header>
-      {!settings || editingSettings ? (
+      {!settings || unusable || editingSettings ? (
         <SettingsScreen
           initial={settings}
-          onCancel={settings ? () => setEditingSettings(false) : undefined}
+          onCancel={settings && !unusable ? () => setEditingSettings(false) : undefined}
           onSave={(next) => {
             saveSettings(next);
-            // A session belongs to the origin it signed in at.
-            if (settings && settings.origin !== next.origin && signedIn) signOut();
+            // A session belongs to the origins it signed in at and reads at.
+            if (settings && (settings.origin !== next.origin || settings.signInOrigin !== next.signInOrigin) && signedIn) signOut();
             setSettings(next);
             setEditingSettings(false);
           }}
         />
       ) : !signedIn ? (
-        <SignInScreen origin={settings.origin.trim()} credential={credential} transport={transport} onSignedIn={() => setSignedIn(true)} />
+        <SignInScreen origin={settings.signInOrigin.trim()} credential={credential} transport={transport} onSignedIn={() => setSignedIn(true)} />
       ) : (
         <CardScreen settings={settings} session={credential} />
       )}

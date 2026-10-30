@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-online-stakeholder-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.",

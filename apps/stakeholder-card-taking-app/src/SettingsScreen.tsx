@@ -3,6 +3,7 @@ import { EMPTY_SETTINGS, settingsProblems, type AppSettings } from "./settings";
 
 const FIELDS: { key: keyof AppSettings; label: string; hint: string; required: boolean }[] = [
   { key: "origin", label: "Platform origin of the vault", hint: "https://your-vault.example.test", required: true },
+  { key: "signInOrigin", label: "Sign-in origin (the platform's identity service)", hint: "https://id.example.test", required: true },
   { key: "ontologyOrigin", label: "Ontology origin", hint: "https://ontology.example.test", required: true },
   { key: "geoOrigin", label: "World catalogue origin", hint: "https://geo.example.test", required: true },
   { key: "systemVaultHosts", label: "System vault hosts", hint: "ontology.example.test (comma-separated)", required: true },
@@ -10,6 +11,7 @@ const FIELDS: { key: keyof AppSettings; label: string; hint: string; required: b
   { key: "ontologyApiOrigin", label: "Ontology search origin", hint: "optional", required: false },
   { key: "ontologyApiOriginRaw", label: "Ontology search origin, as text", hint: "optional", required: false },
   { key: "publicCorpusOrigin", label: "Public term corpus origin", hint: "optional", required: false },
+  { key: "dpopProofOrigin", label: "DPoP proof origin for the platform origin", hint: "optional: https://id.example.test (the host the platform origin forwards to)", required: false },
   { key: "localRigHosts", label: "Local rig hosts", hint: "optional (comma-separated)", required: false },
   { key: "minOntologyQuery", label: "Shortest ontology query", hint: "optional, a whole number", required: false },
   { key: "vocabTypeBatchRevisions", label: "Batched vocabulary revisions", hint: "optional", required: false },
@@ -17,7 +19,7 @@ const FIELDS: { key: keyof AppSettings; label: string; hint: string; required: b
 
 export function SettingsScreen({ initial, onSave, onCancel }: { initial: AppSettings | null; onSave: (s: AppSettings) => void; onCancel?: () => void }) {
   const [draft, setDraft] = useState<AppSettings>(initial ?? EMPTY_SETTINGS);
-  const [problems, setProblems] = useState<string[]>([]);
+  const [problems, setProblems] = useState<string[]>(() => (initial ? settingsProblems(initial) : []));
   return (
     <form
       aria-label="Settings"

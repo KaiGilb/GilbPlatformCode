@@ -54,7 +54,7 @@ export function personFields(rows: readonly (readonly [string, string, string])[
 
 /** Every request the stubbed platform saw, as "METHOD url". */
 export let sent: string[] = [];
-export function stubPlatform(opts: { ben?: { given: string; family: string; email?: string | null; nickname?: string | null; birthday?: string | null } } = {}) {
+export function stubPlatform(opts: { skills?: string[]; ben?: { given: string; family: string; email?: string | null; nickname?: string | null; birthday?: string | null } } = {}) {
   sent = [];
   const ben = { given: "Ben", family: "Larsen", email: "ben@example.test", nickname: null, birthday: null, ...opts.ben };
   vi.stubGlobal("fetch", async (u: string, init?: RequestInit) => {
@@ -69,7 +69,7 @@ export function stubPlatform(opts: { ben?: { given: string; family: string; emai
         { principal: BEN, field: "a:familyName", value: ben.family, rung: "public" },
         ben.email != null ? { principal: BEN, field: "a:email", value: ben.email, rung: "public" } : null,
       ].filter(Boolean);
-      return new Response(JSON.stringify({ principal: BEN, fields, skills: [], photoUrl: null }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ principal: BEN, fields, skills: (opts.skills ?? []).map((skillUri) => ({ skillUri, rung: "public" })), photoUrl: null }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.includes("/base/find-by-attribute")) {
       if (FIND.fail) return new Response("{}", { status: 503 });

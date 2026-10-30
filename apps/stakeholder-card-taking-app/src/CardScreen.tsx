@@ -19,9 +19,11 @@ export type PlacementMode = (typeof PLACEMENT_MODES)[number];
 function CirclesList({ session, onPick }: { session: SessionCredential; onPick: (principal: string) => void }) {
   const qc = useQueryClient();
   const who = useQuery({ queryKey: ["taking-app", "session"], queryFn: () => session.getSession(), retry: false });
-  const { vaults } = useVaults(who.data);
+  const { vaults, isPending: vaultsPending, error: vaultsError } = useVaults(who.data);
   const holder = who.data?.principal ?? null;
   const ownVaultId = ownVaultIdOf({ reach: null, vaults, sessionVaultEntity: who.data?.vault?.entity ?? null });
+  const ownVault = vaults.find((v) => v.vaultId === ownVaultId);
+  const ownVaultName = ownVault?.name ?? ownVaultId;
   const circles = useQuery({
     queryKey: ["taking-app", "circles", holder, ownVaultId],
     queryFn: () => sessionConnections(qc, holder!, ownVaultId!),
@@ -32,8 +34,24 @@ function CirclesList({ session, onPick }: { session: SessionCredential; onPick: 
     <section aria-label="People in your circles">
       <h2>People in your circles</h2>
       {who.isError && <p role="alert">Your session could not be read.</p>}
+      {!who.isError && !ownVaultId && (who.isPending || vaultsPending) && <p>Reading your vaults.</p>}
+      {!who.isError && !ownVaultId && !who.isPending && !vaultsPending && vaultsError && (
+        <p role="alert">
+          Your vault list could not be read: {vaultsError.name}: {vaultsError.message}
+        </p>
+      )}
+      {!who.isError && !ownVaultId && !who.isPending && !vaultsPending && !vaultsError && vaults.length === 0 && (
+        <p role="alert">The platform answered with no vaults for you.</p>
+      )}
+      {!who.isError && !ownVaultId && !who.isPending && !vaultsPending && !vaultsError && vaults.length > 0 && (
+        <p role="alert">
+          None of your {vaults.length} vaults is marked as your own (landing) vault:{" "}
+          {vaults.map((v) => `${v.name ?? v.vaultId} (${v.modes.join(", ")})`).join(", ")}
+        </p>
+      )}
+      {ownVaultId && <p>Your own vault: {ownVaultName}.</p>}
       {circles.isError && <p role="alert">Your circles could not be read.</p>}
-      {circles.isPending && !circles.isError && !who.isError && <p>Reading your circles.</p>}
+      {ownVaultId && circles.isPending && !circles.isError && !who.isError && <p>Reading your circles.</p>}
       {circles.data && circles.data.people.length === 0 && <p>No one is in your circles.</p>}
       {circles.data && circles.data.people.length > 0 && (
         <ul>

@@ -9,6 +9,7 @@ import { BASE, GEO, ONTOLOGY, createWorld, type WorldOptions } from "./world";
 
 export const TEST_SETTINGS: AppSettings = {
   origin: BASE,
+  signInOrigin: "https://id.example.test",
   ontologyOrigin: ONTOLOGY,
   geoOrigin: GEO,
   systemVaultHosts: "ontology.platform.example.test",
@@ -16,6 +17,7 @@ export const TEST_SETTINGS: AppSettings = {
   ontologyApiOrigin: "",
   ontologyApiOriginRaw: "",
   publicCorpusOrigin: "",
+  dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
   vocabTypeBatchRevisions: "",
