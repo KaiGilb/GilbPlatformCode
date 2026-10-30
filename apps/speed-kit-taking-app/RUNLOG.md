@@ -63,4 +63,9 @@
 
 - Built and tested locally only: no sign-in, no production call, `dev:live` never started.
 - The server named in the brief (`GilbPlatform/src`) is an old checkout (Cycle196, 2026-09-19) with no `since=`, `include=body` or `nextCursor`; the wire facts are from `GilbPlatform-snapshot-2026-10-30` (3185a3b8).
-- The platform (sign-in) origin is not given by the brief; `dev-live.mjs` takes it from the vault host with its first label taken off, or from `--platform`.
+
+## Batch S2-D1b (live mode: two origins, port 5251)
+
+- S2-D1 sent sign-in and `/lws/vaults` to the apex derived from the vault host. Wrong: a key-bound call at the apex fails the DPoP htu (RuleRigdevDpopHtuReceivedHost). Now two origins as in records-app (proven live 2026-10-29): `--id` (default `https://id.gilb.com`) for sign-in and `/lws/vaults`, `--platform` (default `https://gilb.com`) for `setBaseOrigin` and the system hosts. For a vault not under gilb.com both flags are required. Nothing is derived.
+- Live port moved from 5197 (held by another session) to 5251.
+- A reach row is the pinned vault by its `vaultId`, else by the origin of its `@id`; the screen says which.

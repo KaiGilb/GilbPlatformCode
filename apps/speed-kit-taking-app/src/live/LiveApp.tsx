@@ -5,10 +5,11 @@ import { SignInCard, type SignInApp, type Transport } from "@kaigilb/gilbplatfor
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import { lwsAuthFromSession, resetLwsAuth, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { platformFetch, type TermFetch } from "@kaigilb/gilbplatformcode-platform-fetch";
-import { resetBaseOrigin, setBaseOrigin } from "@kaigilb/gilbplatformcode-base-origin";
+import { resetBaseOrigin, resetSystemVaultHosts, setBaseOrigin, setSystemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
+import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { hub, sync } from "@kaigilb/gilbplatformcode-speed-kit";
 import { TYPE } from "../catalog";
-import { pinnedVault, platformOrigin } from "../mode";
+import { idOrigin, pinnedVault, platformOrigin } from "../mode";
 import { session } from "../session";
 import { endSession, startSession } from "../speed";
 import { Entries } from "../screens/Entries";
@@ -16,7 +17,7 @@ import { LiveEntryPage } from "../screens/LiveEntry";
 import { Header } from "../screens/Header";
 import { SpeedPanel } from "../screens/SpeedPanel";
 import { makeAuth, PRODUCT_NAME } from "./auth";
-import { isExpired, readReach, type Reach } from "./reach";
+import { isExpired, matchPinned, readReach, type Matched, type Reach } from "./reach";
 
 export interface LiveSeams {
   /** Makes the credential a sign-in fills. Default: a new `SessionCredential` (key and token in memory only). */
@@ -26,9 +27,17 @@ export interface LiveSeams {
   /** The network under the authenticated fetch. Default: `fetch`. */
   inner?: TermFetch;
   vault?: string;
+  /** The identity origin: every sign-in call and `GET /lws/vaults`. */
+  id?: string;
+  /** The platform apex: `setBaseOrigin` and the system hosts. No request goes to it. */
   platform?: string;
 }
 
+// copied from records-app (platform.ts:24 and :36)
+const SYSTEM_LABELS = ["id", "veda", "geo", "kaizen", "connect", "maintain"];
+const SYSTEM_HOST_LABELS = [...SYSTEM_LABELS, "www", "skills", "gilb"];
+
+type Matched2 = Matched | "read anyway";
 type Phase =
   | { k: "signin" }
   | { k: "working" }
@@ -36,10 +45,10 @@ type Phase =
   | { k: "problem"; text: string }
   | { k: "expired" }
   | { k: "absent"; person: string; reach: Reach; tried: number | null }
-  | { k: "ready"; person: string; reach: Reach };
+  | { k: "ready"; person: string; reach: Reach; matched: Matched2 };
 type Page = { name: "entries" } | { name: "entry"; id: string };
 
-export function LiveApp({ makeSession = () => new SessionCredential(), transport, inner, vault = pinnedVault(), platform = platformOrigin() }: LiveSeams) {
+export function LiveApp({ makeSession = () => new SessionCredential(), transport, inner, vault = pinnedVault(), id = idOrigin(), platform = platformOrigin() }: LiveSeams) {
   const [credential, setCredential] = useState<SessionCredential>(makeSession);
   const [phase, setPhase] = useState<Phase>({ k: "signin" });
   const [page, setPage] = useState<Page>({ name: "entries" });
@@ -58,24 +67,29 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
     setPhase({ k: "signin" });
     setPage({ name: "entries" });
     resetLwsAuth();
+    resetSystemVaultHosts();
     resetBaseOrigin();
     void endSession();
   };
 
   const afterSignIn = async () => {
     setPhase({ k: "working" });
+    // records-app initPlatform() (platform.ts:32-37): the apex is the platform, the system hosts are its subdomains, the credential signs every request.
     setBaseOrigin(platform);
+    setSystemVaultHosts(SYSTEM_LABELS.map((h) => `${h}.${new URL(platform).hostname}`));
     setLwsAuth(lwsAuthFromSession(credential));
+    setSystemHostLabels(SYSTEM_HOST_LABELS);
     const principal = credential.session?.principal; // the server's answer to verify-code, not the typed email
     if (!principal) { setPhase({ k: "noProof" }); return; }
     await startSession(principal, vault, { origin: vaultOrigin, fetch: authed }); // hub person = the principal; nothing is read from the vault yet
     let reach: Reach;
-    try { reach = await readReach(authed, platform); } catch (e) {
+    try { reach = await readReach(authed, id); } catch (e) {
       setPhase(isExpired(e) ? { k: "expired" } : { k: "problem", text: `Could not read which vaults you reach (${e instanceof Error ? e.message : "unknown error"}).` });
       return;
     }
     if (reach.vaults.length === 0) { setPhase({ k: "noProof" }); return; } // an empty reach while signed in proves nothing
-    setPhase(reach.vaults.some((v) => v.vaultId === vault) ? { k: "ready", person: principal, reach } : { k: "absent", person: principal, reach, tried: null });
+    const matched = matchPinned(reach, vault);
+    setPhase(matched ? { k: "ready", person: principal, reach, matched } : { k: "absent", person: principal, reach, tried: null });
   };
 
   // ONE read of the pinned vault, reporting its status.
@@ -87,8 +101,8 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
     } catch (e) { setPhase(isExpired(e) ? { k: "expired" } : { k: "problem", text: `The read did not go through (${e instanceof Error ? e.message : "unknown error"}).` }); }
   };
 
-  const app = useMemo<SignInApp>(() => ({ id: "speedkittakinglive", productName: PRODUCT_NAME, title: "Sign in", origin: platform, returnTo: () => window.location.href }), [platform]);
-  const auth = useMemo(() => makeAuth(credential, platform, transport), [credential, platform, transport]);
+  const app = useMemo<SignInApp>(() => ({ id: "speedkittakinglive", productName: PRODUCT_NAME, title: "Sign in", origin: id, returnTo: () => window.location.href }), [id]);
+  const auth = useMemo(() => makeAuth(credential, id, transport), [credential, id, transport]);
 
   let body;
   if (phase.k === "signin" || phase.k === "noProof" || phase.k === "problem" || phase.k === "expired") {
@@ -114,7 +128,7 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
             <p data-testid="reach-incomplete">The list may be short: {phase.reach.incompletePeers} store(s) did not answer (complete: false), so the vault may still be readable.</p>
             <button data-testid="try-anyway" onClick={() => void tryAnyway(phase)}>Try reading it anyway</button>
             {phase.tried !== null && <p data-testid="tried">The vault answered {phase.tried}.</p>}
-            {phase.tried === 200 && <button data-testid="load-anyway" onClick={() => setPhase({ k: "ready", person: phase.person, reach: phase.reach })}>Load the list</button>}
+            {phase.tried === 200 && <button data-testid="load-anyway" onClick={() => setPhase({ k: "ready", person: phase.person, reach: phase.reach, matched: "read anyway" })}>Load the list</button>}
           </>
         )}
         <button data-testid="signout" onClick={signOut}>Sign out</button>
@@ -125,7 +139,7 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
     body = client === null ? <p>Signing in...</p> : (
       <>
         <Header ws={vault} label={phase.person} client={client} onNav={() => setPage({ name: "entries" })} onSignOut={signOut} />
-        <aside data-testid="reach">Reach: {phase.reach.vaults.length} vault(s); complete: {String(phase.reach.complete)}; incompletePeers: {phase.reach.incompletePeers}</aside>
+        <aside data-testid="reach">Reach: {phase.reach.vaults.length} vault(s); complete: {String(phase.reach.complete)}; incompletePeers: {phase.reach.incompletePeers}; the pinned vault matched by: {phase.matched}</aside>
         {page.name === "entries"
           ? <Entries ws={vault} client={client} onOpen={(id) => setPage({ name: "entry", id })} expired={isExpired} onSignInAgain={signOut} />
           : <LiveEntryPage ws={vault} client={client} id={page.id} onBack={() => setPage({ name: "entries" })} />}

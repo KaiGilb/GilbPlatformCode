@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { dumpDevice } from "./helpers";
 import { bootLive, fakeCredential, fakeNet, liveApp, signInLive } from "./liveHelpers";
-import { EMAIL, OTHER_VAULT, PLATFORM, PRINCIPAL, VAULT, VAULT_ORIGIN, reachBody, vaultNode } from "./liveFixtures";
+import { EMAIL, ID_ORIGIN, OTHER_VAULT, PLATFORM, PRINCIPAL, VAULT, VAULT_ORIGIN, reachBody, vaultNode } from "./liveFixtures";
 
 describe("live mode", () => {
   test("L2 person: after a sign-in that returns a principal, the hub person is that principal, not the typed email", async () => {
@@ -85,7 +85,7 @@ describe("live mode", () => {
     expect(k.hub.currentPrincipal()).toBeNull();
   });
 
-  test("L7 hosts: every request goes to the pinned vault's origin or the sign-in origin, and nowhere else", async () => {
+  test("L7 hosts: every request goes to the identity origin or the pinned vault's origin, and nowhere else", async () => {
     const k = await bootLive();
     const net = fakeNet();
     const { user } = await liveApp(k, net);
@@ -94,13 +94,50 @@ describe("live mode", () => {
     await user.click(screen.getByTestId("nav-entry-e1"));
     const all = [...net.urls, ...net.signInUrls];
     expect(all.length).toBeGreaterThan(4);
-    for (const u of all) expect([VAULT_ORIGIN, PLATFORM], u).toContain(new URL(u).origin);
-    for (const u of net.records()) expect(new URL(u).origin, u).toBe(VAULT_ORIGIN); // the list is read at the vault, not the platform apex
-    for (const u of net.urls.filter((x) => x.endsWith("/lws/vaults"))) expect(new URL(u).origin).toBe(PLATFORM);
+    for (const u of all) expect([ID_ORIGIN, VAULT_ORIGIN], u).toContain(new URL(u).origin);
+    for (const u of net.records()) expect(new URL(u).origin, u).toBe(VAULT_ORIGIN); // the list is read at the vault, not the identity host
+    for (const u of net.urls.filter((x) => x.endsWith("/lws/vaults"))) expect(new URL(u).origin).toBe(ID_ORIGIN);
     expect(net.signInUrls.length).toBeGreaterThan(0);
-    for (const u of net.signInUrls) expect(new URL(u).origin).toBe(PLATFORM);
+    for (const u of net.signInUrls) expect(new URL(u).origin).toBe(ID_ORIGIN);
     for (const u of net.records()) expect(net.headers[u]!.get("authorization")).toMatch(/^DPoP /); // signed, and only there
-    // every request is a read
     expect(net.records().every((u) => u.includes(encodeURIComponent(VAULT)))).toBe(true);
+  });
+
+  test("L9 apex: no request, sign-in or data, ever goes to the platform apex itself (a key-bound call there answers 401)", async () => {
+    const k = await bootLive();
+    const net = fakeNet();
+    const { user } = await liveApp(k, net);
+    await signInLive(user);
+    await screen.findByTestId("entry-e1");
+    await user.click(screen.getByTestId("nav-entry-e1"));
+    await user.click(screen.getByTestId("back"));
+    await user.click(screen.getByTestId("refresh"));
+    const all = [...net.urls, ...net.signInUrls];
+    expect(all.length).toBeGreaterThan(4);
+    expect(all.filter((u) => new URL(u).origin === PLATFORM)).toEqual([]);
+  });
+
+  test("L10 match: a reach row is the pinned vault by its vaultId, or by the origin of its @id; neither is shown as absent", async () => {
+    const node = (vaultId: string, entity: string) => ({ ...vaultNode(vaultId, "x"), "@id": entity });
+    const cases: [string, ReturnType<typeof node>, string | null][] = [
+      ["vaultId", node(VAULT, "https://elsewhere.platform.example.test/base/e/pod"), "the pinned vault matched by: vaultId"],
+      ["@id origin", node("https://namespace-token.platform.example.test/vault", `${VAULT_ORIGIN}/base/e/pod`), "the pinned vault matched by: @id origin"],
+      ["none", node(OTHER_VAULT, "https://zoe.platform.example.test/base/e/pod"), null],
+    ];
+    for (const [name, row, shown] of cases) {
+      const k = await bootLive();
+      const net = fakeNet({ reach: reachBody([row]) });
+      const { user, unmount } = await liveApp(k, net);
+      await signInLive(user);
+      if (shown) {
+        await screen.findByTestId("entry-e1");
+        expect(screen.getByTestId("reach").textContent, name).toContain(shown);
+      } else {
+        await screen.findByTestId("vault-absent");
+        expect(screen.queryByTestId("entry-e1")).toBeNull();
+        expect(net.records()).toEqual([]);
+      }
+      unmount();
+    }
   });
 });

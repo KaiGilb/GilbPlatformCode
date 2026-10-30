@@ -1,6 +1,7 @@
 // Fixtures for the live-mode tests. Every answer carries the SHAPE of the real server's answer (RuleRigdevLwsReadWriteKeyShape); the file:line is
 // in GilbPlatform at 3185a3b8 (src/...). The values are made up (example.test hosts, no person).
-export const PLATFORM = "https://platform.example.test";
+export const PLATFORM = "https://platform.example.test"; // the apex: no request may go here
+export const ID_ORIGIN = "https://id.platform.example.test";
 export const VAULT = "https://ann.platform.example.test/vault";
 export const OTHER_VAULT = "https://zoe.platform.example.test/vault";
 export const VAULT_ORIGIN = "https://ann.platform.example.test";
@@ -22,7 +23,7 @@ export const vaultNode = (vaultId: string, name: string) => ({
 /** `GET /lws/vaults` document: src/lws/vaults.ts:250-277 (`ReachableVaultsDocument`: total, vaults, complete, incompletePeers). */
 export const reachBody = (vaults: ReturnType<typeof vaultNode>[], complete = true, incompletePeers = 0) => ({
   "@context": "https://platform.example.test/lws/context",
-  "@id": `${PLATFORM}/lws/vaults`,
+  "@id": `${ID_ORIGIN}/lws/vaults`,
   total: vaults.length,
   vaults,
   complete,

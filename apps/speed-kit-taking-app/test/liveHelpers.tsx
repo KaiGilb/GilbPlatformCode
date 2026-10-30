@@ -3,12 +3,13 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import type { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
-import { EMAIL, OTHER_VAULT, PLATFORM, PRINCIPAL, VAULT, reachBody, recordsBody, vaultNode } from "./liveFixtures";
+import { EMAIL, ID_ORIGIN, OTHER_VAULT, PLATFORM, PRINCIPAL, VAULT, reachBody, recordsBody, vaultNode } from "./liveFixtures";
 
 export async function bootLive() {
   vi.resetModules();
   vi.stubEnv("VITE_PLATFORM", "live");
   vi.stubEnv("VITE_PINNED_VAULT", VAULT);
+  vi.stubEnv("VITE_ID_ORIGIN", ID_ORIGIN);
   vi.stubEnv("VITE_PLATFORM_ORIGIN", PLATFORM);
   const { LiveApp } = await import("../src/live/LiveApp");
   const { speed } = await import("../src/speed");

@@ -1,6 +1,6 @@
 {
   "name": "speed-kit-taking-app",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.",
@@ -18,6 +18,7 @@
     "@kaigilb/gilbplatformcode-base-origin": "file:../../units/base-origin",
     "@kaigilb/gilbplatformcode-device-store": "file:../../units/device-store",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../../units/lws-session-bridge",
+    "@kaigilb/gilbplatformcode-own-card": "file:../../units/own-card",
     "@kaigilb/gilbplatformcode-platform-fetch": "file:../../units/platform-fetch",
     "@kaigilb/gilbplatformcode-prefetch-registry": "file:../../units/prefetch-registry",
     "@kaigilb/gilbplatformcode-principal-hub": "file:../../units/principal-hub",
