@@ -1,5 +1,5 @@
 // Runs the built app in real Chromium and WebKit (playwright-core, browsers already on the machine, nothing downloaded) at desktop and phone size.
-// REAL browser, MOCK vault: the vault is the app's in-page stand-in. Writes browser-b/results-<ts>.json and browser-b/SPEED-TABLE-<ts>.md.
+// REAL browser, MOCK vault: the vault is the app's in-page stand-in. Writes proof-out/results-<ts>.json and proof-out/SPEED-TABLE-<ts>.md.
 import { spawn, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, devices, webkit } from "playwright-core";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = process.env.PROOF_OUT ?? "/Users/kaigilb/Developer/.grok-runs/speedkit-s2/browser-b";
+const OUT = process.env.PROOF_OUT ?? join(APP, "proof-out"); // next to the app, ignored by git; PROOF_OUT overrides
 const LOG = join(homedir(), "Library/Logs/speed-kit-taking-app-proof.log");
 const PORT = 5261;
 const BASE = `http://localhost:${PORT}/`;

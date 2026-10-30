@@ -33,7 +33,7 @@ npm run typecheck && npm test && npm run build
 npm run proof:browser   # builds, serves `vite preview` on 5261, runs real Chromium and WebKit; about 4 minutes
 ```
 
-It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/ms-playwright/` (chromium 1228, webkit 2311; nothing is downloaded) at desktop (1280x800) and phone (`devices["iPhone 13"]`; in Chromium the phone also gets 400 ms / 1.6 Mbit down / 0.75 Mbit up) and writes a JSON file and a table to `/Users/kaigilb/Developer/.grok-runs/speedkit-s2/browser-b/`; the server log is `~/Library/Logs/speed-kit-taking-app-proof.log`. It is not part of `npm test` (CI has no browsers).
+It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/ms-playwright/` (chromium 1228, webkit 2311; nothing is downloaded) at desktop (1280x800) and phone (`devices["iPhone 13"]`; in Chromium the phone also gets 400 ms / 1.6 Mbit down / 0.75 Mbit up) and writes a JSON file and a table to `proof-out/` in the app folder (ignored by git; `PROOF_OUT` names another folder); the server log is `~/Library/Logs/speed-kit-taking-app-proof.log`. It is not part of `npm test` (CI has no browsers).
 
 It proves, in a REAL browser engine with its real IndexedDB, real reloads and a real mouse: the first visit, the return from an entry, the reload painted from the device before any records answer, no trace of Ann after sign-out or after a tab closed without sign-out, and that pointing at the nav sends the request.
 It does NOT prove: anything against the real platform (the vault is the in-page stand-in, so the result is "REAL browser, MOCK vault"), a real phone, or the network cost of the vault (the throttling slows only the page load, since the stand-in answers inside the page).
