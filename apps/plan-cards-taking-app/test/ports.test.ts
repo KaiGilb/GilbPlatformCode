@@ -59,6 +59,17 @@ describe("config pins", () => {
   });
 });
 
+describe("dev pre-bundling", () => {
+  it("makes the base config pre-bundle the units with the automatic JSX runtime", () => {
+    expect(baseConfig.optimizeDeps?.esbuildOptions?.jsx).toBe("automatic");
+  });
+
+  it("keeps the automatic JSX runtime for pre-bundling in the live config", () => {
+    const live = liveConfig as typeof baseConfig;
+    expect(live.optimizeDeps?.esbuildOptions?.jsx).toBe("automatic");
+  });
+});
+
 describe("package.json scripts", () => {
   it("keeps dev bare, adds dev:live, and uses no --port flag", () => {
     const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
