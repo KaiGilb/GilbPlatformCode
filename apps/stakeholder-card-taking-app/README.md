@@ -23,7 +23,7 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` serves the app at `http://localhost:5267`, its allocation in the dev-port map (Rule_Code_dev-ports); the port is set in `vite.config.ts` with `strictPort`, so a busy port fails instead of moving. Scripts: `dev`, `dev:live`, `build`, `test`, `typecheck`, `check:host-agnostic`.
+`npm run dev` serves the app at `http://localhost:5267`, its allocation in the dev-port map (Rule_Code_dev-ports); the port is set in `vite.config.ts` with `strictPort`, so a busy port fails instead of moving. The config also pre-bundles the units with the automatic JSX runtime (`optimizeDeps.esbuildOptions.jsx`), because the units are installed as source and import no React, so without it the page goes blank with "React is not defined" under `vite` while `vite build` and the tests still pass. Scripts: `dev`, `dev:live`, `build`, `test`, `typecheck`, `check:host-agnostic`.
 
 `npm run dev:live` is for the live sign-in check against production, and is the only way to start it. Production admits only two local addresses, and 5267 is not one of them, so this script serves the app at `http://localhost:5197` (GilbApp's local address) through `vite.live.config.ts`. It first checks that 5197 is free on both IPv4 and IPv6 and stops with a message if it is not (stop GilbApp's dev server first). A page reload ends the session there, by design: the key lives in memory only.
 
