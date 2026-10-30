@@ -1,6 +1,6 @@
-// New tests: what the ported blocks left unpinned in ownCard.ts (found by mutation checks).
+// New tests: what the ported blocks left unpinned in ownCard.ts (found by mutation checks; the last three blocks are 0.1.1).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cardIdOf, findOwnCard, ownCardIds, siblingVaultRoot, cardBelongsToVault, type FindOwnCardDeps } from "./ownCard";
+import { cardIdOf, findOwnCard, ownCardIds, siblingVaultRoot, cardBelongsToVault, isHoldersOwnCard, isPersonCardType, ownCardCaseOf, type FindOwnCardDeps, type OwnCardFinding } from "./ownCard";
 import { resetSystemHostLabels, setSystemHostLabels } from "./systemHostLabels";
 
 beforeEach(() => setSystemHostLabels(["id"]));
@@ -80,5 +80,56 @@ describe("findOwnCard", () => {
     expect(f.otherOwnerCards).toEqual([`${ROOT}/e/${await derive(ROOT)}`]);
     expect(f.otherOwnerCardsKnown).toBe(true);
     expect(f.ignoredPointer).toBeNull();
+  });
+});
+
+describe("isPersonCardType (0.1.1)", () => {
+  it("a list is walked past a non-string entry to the Person after it", () => {
+    expect(isPersonCardType([3, null, "t:Person"])).toBe(true);
+  });
+  it("a spelling with spaces round it still counts", () => {
+    expect(isPersonCardType("  t:Person ")).toBe(true);
+    expect(isPersonCardType(" Person\n")).toBe(true);
+  });
+  it("a hash-form address counts", () => {
+    expect(isPersonCardType("https://x.example.test/ns#Person")).toBe(true);
+    expect(isPersonCardType("https://x.example.test/ns#Organization")).toBe(false);
+  });
+  it("an empty list is not a Person", () => {
+    expect(isPersonCardType([])).toBe(false);
+  });
+});
+
+describe("isHoldersOwnCard (0.1.1)", () => {
+  const found = (cardId: string | null): OwnCardFinding => ({ cardId, cardUri: cardId ? `https://x.example.test/base/e/${cardId}` : null, road: cardId ? "pointer" : "none", otherOwnerCards: [], otherOwnerCardsKnown: true, ignoredPointer: null });
+  it("an empty id is never his, whatever the finding holds", () => {
+    expect(isHoldersOwnCard("", [], found(""))).toBe(false);
+    expect(isHoldersOwnCard("", [""], found(""))).toBe(false);
+    expect(isHoldersOwnCard("", [], undefined)).toBe(false);
+  });
+  it("a derived id is his before the finding is in, and when it failed", () => {
+    expect(isHoldersOwnCard("vsc-1", ["vsc-1"], undefined)).toBe(true);
+    expect(isHoldersOwnCard("vsc-1", ["vsc-1"], null)).toBe(true);
+  });
+  it("another id waits on the finding: undefined while it is not in, false when it failed or names another card", () => {
+    expect(isHoldersOwnCard("a", ["vsc-1"], undefined)).toBeUndefined();
+    expect(isHoldersOwnCard("a", ["vsc-1"], null)).toBe(false);
+    expect(isHoldersOwnCard("a", ["vsc-1"], found("b"))).toBe(false);
+    expect(isHoldersOwnCard("a", ["vsc-1"], found(null))).toBe(false);
+    expect(isHoldersOwnCard("a", ["vsc-1"], found("a"))).toBe(true);
+  });
+});
+
+describe("ownCardCaseOf (0.1.1)", () => {
+  const at = "https://x.example.test/base/e/";
+  const f = (cardId: string | null, cardUri: string | null, other: string[] = []): OwnCardFinding => ({ cardId, cardUri, road: "pointer", otherOwnerCards: other, otherOwnerCardsKnown: true, ignoredPointer: null });
+  it("a finding with an id but no address is unknown, and so is one with an address but no id", () => {
+    expect(ownCardCaseOf("a", f("a", null))).toEqual({ kind: "unknown" });
+    expect(ownCardCaseOf("b", f("a", null))).toEqual({ kind: "unknown" });
+    expect(ownCardCaseOf("a", f(null, `${at}a`))).toEqual({ kind: "unknown" });
+    expect(ownCardCaseOf("b", f("", `${at}a`))).toEqual({ kind: "unknown" });
+  });
+  it("the open card is left out of its own list of other cards, whichever way its address is written", () => {
+    expect(ownCardCaseOf("a", f("a", `${at}a`, [`${at}a`, `${at}b`, `${at}a/`, "base:e/a"]))).toEqual({ kind: "mynet", alsoCards: [`${at}b`] });
   });
 });

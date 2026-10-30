@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-own-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Finding the record that is the holder's own card in a vault, by hard identity: the id derived for that vault, or the record the vault's profile pointer names.",
