@@ -6,7 +6,7 @@ One place that knows whose session a tab is in, and clears every registered in-m
 
 Plain functions, no React, no network, no import. A module that keeps a person's content in memory registers a clear function with the hub. When the person changes (another person signs in, a sign-out, or the first person after nobody), the hub calls every clear function at once, before the next person's first render. An async load that started for the old person asks the hub whether the person is still the same when its answer arrives, and drops the answer if not.
 
-- `setPrincipal(next)`: says whose tab this is (`null` is nobody). A different person clears every cache first. The same person again changes nothing. Call it before anything of the new person is read or shown.
+- `setPrincipal(next)`: says whose tab this is (`null` is nobody). A different person clears every cache first. The same person again changes nothing. Call it before anything of the new person is read or shown. A screen still mounted when it is called alone keeps the old person's client but makes its cache key again for the new person, so it can load the old person's data under the new person's key: take such screens away with a `registerCache` clearer (see speed-kit's README, "A bare `setPrincipal` and a screen still mounted").
 - `currentPrincipal()`: the person now, or `null`.
 - `registerCache(name, clear)`: registers a cache. `clear(next)` is told who comes next (`null` is nobody), so a cache kept on the device can keep what is the same person's and clear the rest. Registering the same name again replaces the clear function.
 - `registeredCaches()`: the registered names.
