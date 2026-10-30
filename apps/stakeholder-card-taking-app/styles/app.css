@@ -1,0 +1,62 @@
+/* The taking app's style sheet: Tailwind v4, set up as GilbApp sets it up (GilbApp/package.json:39,51 "@tailwindcss/vite" and
+   "tailwindcss" ^4.3.2; GilbApp has no tailwind.config file, no plugin and no theme.extend; its entry is src/index.css:1).
+   The units draw with Tailwind utility classes over the host's CSS variables and ship no sheet of their own (see the
+   "Styles" lines of units/stakeholder-contact-header, units/online-stakeholder-card, etc.), so the host runs Tailwind with each
+   installed unit's sources in its scan and defines the variables the units read.
+   This file sits outside src/ and is linked from index.html, because scripts/check-host-agnostic.mjs forbids `@import` in a CSS
+   file under src/. */
+@import "tailwindcss";
+
+/* The installed units' sources. With install-links=true they are real copies in node_modules, which Tailwind does not scan on its own. */
+@source "../node_modules/@kaigilb/*/src/**/*.{ts,tsx}";
+@source not "../node_modules/@kaigilb/*/src/**/*.test.{ts,tsx}";
+
+/* The variables the units read, copied from GilbApp/src/styles/tokens.css (light theme only; the taking app has no theme switch).
+   Only those the installed closure names (a grep of `var(--` in the installed units' src folders); derived ones keep GilbApp's formulas. */
+:root {
+  --accent: #a85c3b;       /* tokens.css:18 */
+  --paper: #f4f1ea;        /* tokens.css:21 */
+  --ink: #2a2622;          /* tokens.css:22 */
+  --tint-hi: #ffffff;      /* tokens.css:25 */
+  --on-accent: #fbfaf6;    /* tokens.css:26 */
+  --ok: #3e7d5a;          /* tokens.css:29 */
+  --warn: #9a6a1e;         /* tokens.css:30 */
+  --bad: #a5432c;          /* tokens.css:31 */
+  --surface: color-mix(in srgb, var(--paper) 78%, var(--tint-hi));          /* tokens.css:34 */
+  --lines: var(--ink);                                                       /* tokens.css:35 */
+  --surface-sunken: color-mix(in srgb, var(--paper) 96%, var(--ink));       /* tokens.css:37 */
+  --ink-soft: color-mix(in srgb, var(--ink) 82%, var(--paper));             /* tokens.css:46 */
+  --ink-faint: color-mix(in srgb, var(--ink) 70%, var(--paper));            /* tokens.css:47 */
+  --ink-ghost: color-mix(in srgb, var(--ink) 39%, var(--paper));            /* tokens.css:48 */
+  --line: color-mix(in srgb, var(--lines) 9%, transparent);                 /* tokens.css:49 */
+  --accent-ink: color-mix(in srgb, var(--accent) 80%, var(--ink));          /* tokens.css:51 */
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);        /* tokens.css:52 */
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif; /* tokens.css:57 */
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* tokens.css:58 */
+  --r-sm: 7px;             /* tokens.css:62 */
+}
+
+/* GilbApp's base layer, GilbApp/src/index.css:8-37 (box sizing, the page margin and height, the body colour and type, the focus ring). */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14.5px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -15,7 +15,8 @@ A client that reads and writes vault records has to sign each request, drop the 
 - `dpopBoundMs()`: 10 000, the number of milliseconds a caller waits for the session before a write.
 - `NotSignedInError`, `OriginNotAllowedError`: the two errors a request that cannot be signed throws. Copied from the app with their sentences, because the app's code tests `instanceof` against them.
 - `LwsAuthHost`, `LwsSession`, `LwsSessionVault`, `LwsVaultInfo`: the types.
-- `lwsAuthFromSession(session)`: the default host, over the `signin` unit's `SessionCredential`. Every header it answers is the sender-constrained pair `{ authorization: "DPoP <token>", dpop: "<proof>" }`.
+- `lwsAuthFromSession(session, options?)`: the default host, over the `signin` unit's `SessionCredential`. Every header it answers is the sender-constrained pair `{ authorization: "DPoP <token>", dpop: "<proof>" }`.
+- `options.proofOriginFor = { fetchOrigin, proofOrigin }` (optional, since 0.1.1): a request sent to `fetchOrigin` (exact origin match) is signed for `proofOrigin` plus the request's path, query dropped (`src/proofHtu.ts`); the `fetch` still goes to the original URL. Why: a front door at `fetchOrigin` (an apex) forwards the request to the identity host, and the server compares the proof's `htu` with the host it received, so a proof for the apex is refused (401 "DPoP proof htu does not match the request URI"). The rule (RuleRigdevDpopHtuReceivedHost): rewrite the proof's origin only for requests sent to the forwarding origin. ⛔ Never set `fetchOrigin` to a vault host: a request sent to a vault host is signed for that vault host, and rewriting it is itself a 401. Every other URL is signed for itself; without the option nothing changes.
 
 The names and signatures are exactly the ones the app's client modules import from its `token`, `bearer` and `dpop` modules (the call sites, by file and line at the commit below):
 
@@ -34,6 +35,8 @@ The names and signatures are exactly the ones the app's client modules import fr
 The session fields read at the call sites: `principal` at `relationWrite.ts:304` and `entityShare.ts:624`; the whole `{ principal, vault, vaults }` at `hooks.ts:46` (the shell's session query; `useVaults` reads `vaults` and `principal`).
 
 The unit holds one piece of module state, the host set with `setLwsAuth`. An app must have ONE copy of it: two installed copies are two seams, and a client module that imports one is signed by the host set on the other. It reads the settings of `base-origin` through `vault-origin-rule` when a function is called. Its peers: `vault-origin-rule` (with `base-origin`) and `signin`.
+
+`src/proofHtu.ts` is a named copy of `proofHtu` from `units/request-htu/src/requestHtu.ts` at main d65985d, verbatim (token-equal with comments stripped); it is not exported from the unit.
 
 ## What this is not
 

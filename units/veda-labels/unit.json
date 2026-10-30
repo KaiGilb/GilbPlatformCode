@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "unit": "units/veda-labels",
+  "package": "@kaigilb/gilbplatformcode-veda-labels",
+  "version": "0.1.0",
+  "purpose": "Reads the display labels of ontology terms and attributes, once per page, and offers them to a screen.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/vedaLabels.ts", "lines": [9, 33], "to": "src/vedaLabels.ts" },
+      { "path": "src/lib/base/vedaLabels.ts", "lines": [35, 40], "to": "src/vedaLabels.ts" },
+      { "path": "src/lib/base/vedaLabels.ts", "lines": [42, 94], "to": "src/vedaLabels.ts" },
+      { "path": "src/lib/base/useVedaTypeLabel.ts", "lines": [20, 60], "to": "src/useVedaTypeLabel.ts" }
+    ]
+  },
+  "namedChanges": [
+    "the three imports of `vedaLabels.ts` (`./config`, `./bearer`, `./termSlots`) are imports of `base-origin` (`baseOrigin`), `lws-session-bridge` (`bearerHeaderFor`) and `term-slots` (`termDocLabel`); the constant `BASE_ORIGIN` is read as `baseOrigin()` in the two request addresses (lines 34 and 41), so it is read when the call is made and throws, naming `setBaseOrigin`, when no origin is set",
+    "comments that name a cycle, an agent, a rule file or a host app's screen are reworded in both files, and the header comment of `vedaLabels.ts` is shorter; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

@@ -99,10 +99,13 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
     applyPlatformSetup(setup);
     appliedSetup.current = key;
   }
-  const appliedSession = useRef<SessionCredential | null>(null);
-  if (appliedSession.current !== session) {
-    applySession(session);
-    appliedSession.current = session;
+  // The session is set again when the session, the origin or the proof origin changes: the seam holds the proof origin.
+  const proofOrigin = props.settings?.dpopProofOrigin;
+  const appliedSession = useRef<{ session: SessionCredential; origin: string; proofOrigin: string | undefined } | null>(null);
+  const was = appliedSession.current;
+  if (!was || was.session !== session || was.origin !== props.origin || was.proofOrigin !== proofOrigin) {
+    applySession(session, { origin: props.origin, dpopProofOrigin: proofOrigin });
+    appliedSession.current = { session, origin: props.origin, proofOrigin };
   }
 
   // 2. The query client: given, or one of our own with the app's defaults.

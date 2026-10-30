@@ -57,9 +57,9 @@ describe("what cardBelongsToVault reads from it", () => {
 });
 
 describe("the unit's export list", () => {
-  it("is exactly the symbols the Plan card's own-card check reaches, and the setting", () => {
+  it("is exactly the own-card symbols (the finding, the ownership decision, the case) and the setting", () => {
     expect(Object.keys(unit).sort()).toEqual(
-      ["OWN_CARD_SLUG_PREFIX", "cardBelongsToVault", "cardIdOf", "findOwnCard", "isSeatOwnerCard", "ownCardIds", "resetSystemHostLabels", "setSystemHostLabels", "siblingVaultRoot", "systemHostLabels"].sort(),
+      ["OWN_CARD_SLUG_PREFIX", "cardBelongsToVault", "cardIdOf", "findOwnCard", "isHoldersOwnCard", "isPersonCardType", "isSeatOwnerCard", "ownCardCaseOf", "ownCardIds", "resetSystemHostLabels", "setSystemHostLabels", "siblingVaultRoot", "systemHostLabels"].sort(),
     );
   });
   it("OWN_CARD_SLUG_PREFIX is mnb-profile", () => {

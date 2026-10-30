@@ -14,6 +14,7 @@ A table of the ten record types a vault grid can show (`note`, `person`, `task`,
 - `typeUri(name)`, `typeNamespace()`, `baseHost()`: the absolute address of a type name, its namespace, and the host it is built on.
 - `typeUriForVaultNamespace(name, vaultNamespace)`: the type for a create into a vault: the host-free form `t:<Name>` (the namespace argument is kept for call sites and unused).
 - `normalizeTypeUri(raw)`: any spelling (`t:Task`, `Task`, an address under any host with `/base/t/<Name>`) to the one absolute address; a foreign ontology address is returned as it is; nothing gives `""`.
+- `ALLOWED_EXTRA_ATTR_SLUGS`: the nine seed slugs for extra metadata (`url`, `phone`, `email`, `due`, `personalNote`, `jobTitle`, `postalAddress`, `account`, `org`). Added in 0.1.1; it is a seed list, not a ceiling on what a record may hold.
 - `attrKey(slug)`: `a:<slug>`. `isAppAddressableSlug(slug)`: whether a served key is a slug the app can name.
 - The types `FieldKind`, `FieldSpec` and `RecordTypeSpec`.
 
@@ -77,13 +78,16 @@ resolveType("https://u.example.test/base/t/NoteDocument")?.id; // "note"
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, file `src/lib/base/recordTypes.ts`, copied by script to `src/recordTypes.ts`: lines 66-79 (`baseHost`), 81-85 (`typeNamespace`), 87-90 (`typeUri`), 92-106 (`typeUriForVaultNamespace`), 108-163 (`normalizeTypeUri`), 165-169 (`attrKey`), 171-190 (`isAppAddressableSlug`), 192-193 (`FieldKind`), 213-225 (`FieldSpec`), 227-415 (`RecordTypeSpec` and `RECORD_TYPES`), 417-444 (`RETIRED_TYPE_IDS`, `RECORD_TYPE_BY_ID`, `RECORD_TYPE_BY_URI`), 456-465 (`resolveType`). Not taken because nothing reaches them: `ALLOWED_EXTRA_ATTR_SLUGS` (lines 195-211) and `RECORD_TYPE_NAMES` (lines 446-454).
+GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, file `src/lib/base/recordTypes.ts`, copied by script to `src/recordTypes.ts`: lines 66-79 (`baseHost`), 81-85 (`typeNamespace`), 87-90 (`typeUri`), 92-106 (`typeUriForVaultNamespace`), 108-163 (`normalizeTypeUri`), 165-169 (`attrKey`), 171-190 (`isAppAddressableSlug`), 192-193 (`FieldKind`), 195-211 (`ALLOWED_EXTRA_ATTR_SLUGS`, added in 0.1.1), 213-225 (`FieldSpec`), 227-415 (`RecordTypeSpec` and `RECORD_TYPES`), 417-444 (`RETIRED_TYPE_IDS`, `RECORD_TYPE_BY_ID`, `RECORD_TYPE_BY_URI`), 456-465 (`resolveType`). Not taken because nothing reaches it: `RECORD_TYPE_NAMES` (lines 446-454).
+
+0.1.1 adds `ALLOWED_EXTRA_ATTR_SLUGS` only. Its lines were read from GilbApp commit `a703b3ed78e612e2cab77e94876ce9bce109d5a3` (the commit above is the one the rest was cut from; the lines before and after the block are at the same numbers in both). It is purely additive: no existing export or behaviour changes, so the version is a patch.
 
 Named changes, and only these:
 
 1. the one import, `import { BASE_ORIGIN } from "./config"`, is now `import { baseOrigin } from "@kaigilb/gilbplatformcode-base-origin"`, and `BASE_ORIGIN` is read as `baseOrigin()`;
 2. in `baseHost`, the `try`/`catch` with the fallback host is removed, so it is `return new URL(baseOrigin()).host;`: `baseOrigin()` is a validated origin, so the `catch` could not run, and an unset origin throws naming `setBaseOrigin`;
 3. the constant `RECORD_TYPE_BY_URI` (built at load from `typeUri`) is now the function `recordTypeByUri()`, which builds the same table from the same expression and rebuilds it when `typeNamespace()` changes; `resolveType` calls it;
-4. comments that name a host or `BASE_ORIGIN` are reworded, no code changed.
+4. comments that name a host or `BASE_ORIGIN` are reworded, no code changed;
+5. (0.1.1) in the doc comment of `ALLOWED_EXTRA_ATTR_SLUGS` the ticket tag `(VDS-10)` is dropped; the code is as in the app.
 
-`src/index.ts` is new. Tests: `recordTypes.registry.test.ts` is `recordTypes.test.ts` (4 tests) and `recordTypes.personLabel.test.ts` is the file of the same name (5 tests), both ported whole; the platform origin is set in a `beforeEach`, `RECORD_TYPE_BY_URI` is read as `recordTypeByUri()`, and an ontology host in a comment is changed to an `example.test` host. No test of the app is left out that calls these symbols alone; the many component and hook tests that import `recordTypes` use it as a fixture and are not ported. `recordTypes.test.ts` is new and pins every export. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
+`src/index.ts` is new. Tests: `recordTypes.registry.test.ts` is `recordTypes.test.ts` (4 tests) and `recordTypes.personLabel.test.ts` is the file of the same name (5 tests), both ported whole; the platform origin is set in a `beforeEach`, `RECORD_TYPE_BY_URI` is read as `recordTypeByUri()`, and an ontology host in a comment is changed to an `example.test` host. No test of the app is left out that calls these symbols alone; the many component and hook tests that import `recordTypes` use it as a fixture and are not ported. `recordTypes.test.ts` is new and pins every export (0.1.1: three more tests for `ALLOWED_EXTRA_ATTR_SLUGS`). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.

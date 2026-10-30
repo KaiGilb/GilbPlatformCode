@@ -23,6 +23,7 @@ describe("settings", () => {
     expect(screen.getByRole("form", { name: "Settings" })).toBeTruthy();
     for (const [label, value] of [
       ["Platform origin of the vault", TEST_SETTINGS.origin],
+      ["Sign-in origin (the platform's identity service)", TEST_SETTINGS.signInOrigin],
       ["Ontology origin", TEST_SETTINGS.ontologyOrigin],
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
@@ -41,6 +42,27 @@ describe("settings", () => {
     expect(screen.getByRole("alert").textContent).toContain("The platform origin must look like https://host");
     expect(screen.getByRole("alert").textContent).toContain("The world catalogue origin is needed.");
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
+  });
+
+  test("the DPoP proof origin is typed, kept and loaded again; a malformed one is named, an empty one is not asked", async () => {
+    const user = userEvent.setup();
+    render(<App makeSession={() => (null as never)} />);
+    for (const [label, value] of [
+      ["Platform origin of the vault", TEST_SETTINGS.origin],
+      ["Sign-in origin (the platform's identity service)", TEST_SETTINGS.signInOrigin],
+      ["Ontology origin", TEST_SETTINGS.ontologyOrigin],
+      ["World catalogue origin", TEST_SETTINGS.geoOrigin],
+      ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
+      ["System host labels", TEST_SETTINGS.systemHostLabels],
+    ] as const) await user.type(screen.getByLabelText(label), value);
+    const proof = screen.getByLabelText("DPoP proof origin for the platform origin");
+    await user.type(proof, "not an origin");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(screen.getByRole("alert").textContent).toContain("The DPoP proof origin must look like https://host");
+    await user.clear(proof);
+    await user.type(proof, "https://id.example.test");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(loadSettings()).toEqual({ ...TEST_SETTINGS, dpopProofOrigin: "https://id.example.test" });
   });
 
   test("kept settings skip the Settings screen on the next run, and the Settings button edits them later", async () => {
@@ -71,7 +93,7 @@ describe("sign-in", () => {
   test("the code step leads to the card screen, and Sign out returns to the sign-in", async () => {
     const s = await signedInApp();
     expect(s.signInWithCode).toHaveBeenCalledTimes(1);
-    expect(s.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([TEST_SETTINGS.origin, "ann@example.test", "123456"]);
+    expect(s.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([TEST_SETTINGS.signInOrigin, "ann@example.test", "123456"]);
     expect(s.sent.length).toBeGreaterThan(0);
     await s.user.click(screen.getByRole("button", { name: "Sign out" }));
     expect(s.invalidate).toHaveBeenCalledWith(true);

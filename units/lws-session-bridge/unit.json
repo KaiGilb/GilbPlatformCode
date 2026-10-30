@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-session-bridge",
   "package": "@kaigilb/gilbplatformcode-lws-session-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The one seam through which GilbPlatform client code gets its credential headers, so the same client works with any signed-in session and never sends a credential to a host outside the platform.",
   "source": {
     "repo": "KaiGilb/GilbApp",

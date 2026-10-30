@@ -56,6 +56,11 @@ describe("the props the app passes", () => {
     expect(seen.provider.at(-1)!.settings).toEqual({ ontologyApiOrigin: "https://search.example.test", minOntologyQuery: 4, localRigHosts: ["rig.example.test"] });
   });
 
+  test("the DPoP proof origin reaches the provider's settings; empty means absent", async () => {
+    await signedInApp({}, { ...TEST_SETTINGS, dpopProofOrigin: " https://id.example.test " });
+    expect(seen.provider.at(-1)!.settings).toEqual({ dpopProofOrigin: "https://id.example.test" });
+  });
+
   test("with no optional setting the provider gets no settings prop", async () => {
     await signedInApp();
     expect("settings" in seen.provider.at(-1)!).toBe(false);
