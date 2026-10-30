@@ -84,6 +84,7 @@ Dynamic imports in the files taken: none.
 
 - "The registry limits how many requests run at once." It does not; see Width.
 - "A warmer runs on every hover." It runs once per workspace and client within `staleMs`, and not while it is running.
+- "A hover warms again once the host's cache entry is gone." It does not. The registry remembers only that the warmer started (`prefetch.ts:97`), not what the cache holds: for the same workspace and client, a warmer is not started again within `staleMs` of its last start, so a hover soon after the idle warm of sign-in sends nothing, even with an empty cache. The taking app measured this in a real browser (the hover warmed only after 31 s).
 - "A heavy warmer that was skipped is retried later on its own." It is not; the next `prefetchPage` call, after the connection allows it, starts it.
 - "`wideCount` is the number of requests." It is a number the host's picture warmer asks for through `prefetchPictureCount()`; the registry does not fetch pictures.
 
