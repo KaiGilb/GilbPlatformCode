@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/record-detail-reads",
+  "package": "@kaigilb/gilbplatformcode-record-detail-reads",
+  "version": "0.1.0",
+  "purpose": "Reads one record for a record card, from the page's cache when the list already has it and from its own vault otherwise, and knows which vault holds it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/recordHooks.ts", "lines": [2696, 2961], "to": "src/recordDetailReads.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The imports of `readRecord` and `BaseRecord` (`./records`), `recordsKey`, `flattenRecordPages`, `isTempId` and `RecordsPage` (the same file, now `record-cache-kit`) and `vaultOriginOf` (`./config`) are imports of the units `lws-records`, `record-cache-kit` and `vault-origin-rule`.",
+    "The comments that name a cycle, a ticket, an agent, a person, a ruling or a host are reworded with the same facts; no code changed. The comment-stripped file, imports excluded, equals the source's lines 2696-2961 (0 diff).",
+    "Not taken, because the units on main already hold them: `freshlyCreatedIds` and its window (`plan-record-hooks`, which since 0.2.1 also exports `consumeFreshlyCreated` and `clearFreshlyCreated`), `recordsKey`, `RECORD_QUERY_HEAD`, `flattenRecordPages`, `RecordsPage`, `isTempId` and `setRecordReads` (`record-cache-kit`). Not taken, because the held card does not read it: `useSelectRecordFromCache`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

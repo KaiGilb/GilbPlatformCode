@@ -14,6 +14,8 @@ describe("plan-record-hooks exports", () => {
       "RetypeChangedElsewhereError",
       "VAULT_FILES_KEY_ROOT",
       "canReadVault",
+      "clearFreshlyCreated",
+      "consumeFreshlyCreated",
       "createWiring",
       "heldVaultIds",
       "isFreshlyCreated",

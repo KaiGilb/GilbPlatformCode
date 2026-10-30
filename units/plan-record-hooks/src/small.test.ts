@@ -1,5 +1,5 @@
 // @vitest-environment node
-// New tests for the small pieces: the type key, the held vaults, the saved-elsewhere rule, the fresh-create window, the delete key.
+// New tests for the small pieces: the type key, the held vaults, the saved-elsewhere rule, the fresh-create window (mark, peek, consume, clear), the delete key.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
@@ -8,6 +8,8 @@ import {
   RECORD_DELETE_KEY,
   RECORDS_SNAPSHOT_KEY_HEAD,
   canReadVault,
+  clearFreshlyCreated,
+  consumeFreshlyCreated,
   createWiring,
   heldVaultIds,
   isFreshlyCreated,
@@ -108,6 +110,42 @@ describe("the fresh-create window", () => {
     markFreshlyCreated("new-1");
     expect(isFreshlyCreated("old-1")).toBe(false);
     expect(isFreshlyCreated("new-1")).toBe(true);
+  });
+});
+
+describe("consumeFreshlyCreated and clearFreshlyCreated (0.2.1)", () => {
+  it("consume answers true inside the window, as many times as asked, and does not spend it", () => {
+    markFreshlyCreated("cc-1");
+    expect(consumeFreshlyCreated("cc-1")).toBe(true);
+    expect(consumeFreshlyCreated("cc-1")).toBe(true);
+    expect(isFreshlyCreated("cc-1")).toBe(true);
+  });
+  it("consume answers false for an id never marked", () => {
+    expect(consumeFreshlyCreated("cc-never")).toBe(false);
+  });
+  it("consume answers false after the window, and drops the stale entry", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-03-01T00:00:00Z"));
+    markFreshlyCreated("cc-2");
+    vi.advanceTimersByTime(60_001);
+    expect(consumeFreshlyCreated("cc-2")).toBe(false);
+    vi.setSystemTime(new Date("2030-03-01T00:00:30Z"));
+    expect(isFreshlyCreated("cc-2")).toBe(false);
+  });
+  it("clear ends the window of that id at once and leaves the others", () => {
+    markFreshlyCreated("cc-3");
+    markFreshlyCreated("cc-4");
+    clearFreshlyCreated("cc-3");
+    expect(consumeFreshlyCreated("cc-3")).toBe(false);
+    expect(isFreshlyCreated("cc-3")).toBe(false);
+    expect(consumeFreshlyCreated("cc-4")).toBe(true);
+  });
+  it("clear of an id never marked does nothing, and a later mark starts a new window", () => {
+    expect(() => clearFreshlyCreated("cc-none")).not.toThrow();
+    markFreshlyCreated("cc-5");
+    clearFreshlyCreated("cc-5");
+    markFreshlyCreated("cc-5");
+    expect(consumeFreshlyCreated("cc-5")).toBe(true);
   });
 });
 

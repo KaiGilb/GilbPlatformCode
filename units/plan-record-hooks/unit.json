@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/plan-record-hooks",
   "package": "@kaigilb/gilbplatformcode-plan-record-hooks",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "The vault's records as a list a screen can scroll, and the three changes a person makes to one (create, retype, delete), each shown at once and written in the background, with the device's working-set replica kept in step.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -165,6 +165,22 @@
         "lines": [
           506,
           515
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          517,
+          522
+        ],
+        "to": "src/recordHooks.ts"
+      },
+      {
+        "path": "src/lib/base/recordHooks.ts",
+        "lines": [
+          524,
+          528
         ],
         "to": "src/recordHooks.ts"
       },
@@ -494,7 +510,8 @@
     "in `recordHooks.ts` the imports are replaced by imports of `base-record`, `lws-records`, `lws-vault-sets`, `record-cache-kit`, `record-types`, `record-sync` (for `gilb-stakeholders`' `headRecordState`, `RECORD_PAGE_LIMIT`, `RecordSyncState`), `stakeholder-list-state`, `vault-origin-rule`, `vault-type-census`, `working-set-store`, `@tanstack/react-query`, `react` and this unit's `./savedElsewhere` and `./workingSetFacets`; the other files import their peers and this unit's own files",
     "in `recordHooks.ts` source line 880 `async function hydrateRecordsPage(` is `export async function hydrateRecordsPage(`: a test seam standing in for the app's `__hydrateRecordsPageForTest` (line 1288, planned as not reached); the split proof lists this one `export` word; the package index does not export it",
     "the long comments are rewritten shorter with the same facts, and tags, names and hosts are removed from the others; no code changed",
-    "0.2.0: `knownVaultShortName` (source `types.ts` lines 201-211, new in the source) is not copied: no unit reaches it (RuleGhsCutSymbolLevel); `ReachableVault` takes its two optional fields `shortName` and `shortNameKnown` (source lines 187-198, the line that credits a pull request is left out of the comment)"
+    "0.2.0: `knownVaultShortName` (source `types.ts` lines 201-211, new in the source) is not copied: no unit reaches it (RuleGhsCutSymbolLevel); `ReachableVault` takes its two optional fields `shortName` and `shortNameKnown` (source lines 187-198, the line that credits a pull request is left out of the comment)",
+    "0.2.1 (additive): `consumeFreshlyCreated` and `clearFreshlyCreated` (source lines 517-522 and 524-528, in no unit before) are copied beside `freshlyCreatedIds` and exported, so a unit that reads or ends the fresh-create window imports them and keeps no state of its own; the two doc comments are shortened with the same facts; no code changed. Nothing else changed."
   ],
   "newFiles": [
     "src/index.ts"
