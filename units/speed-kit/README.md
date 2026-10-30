@@ -57,6 +57,8 @@ Measured on `apps/speed-kit-taking-app` (REAL Chromium and WebKit, MOCK vault, 6
 
 Package: `@kaigilb/gilbplatformcode-speed-kit`
 
+A new app first needs its own `package.json`: run `npm init -y` in the app folder. Otherwise npm installs into the nearest parent folder's `package.json`.
+
 Put this line in your app's own `.npmrc`:
 
 ```
@@ -68,6 +70,8 @@ Then install the units in order (the line `node scripts/peers.mjs speed-kit` pri
 ```sh
 npm install react@^19.0.0 <path-to-the-library>/units/device-store <path-to-the-library>/units/principal-hub <path-to-the-library>/units/background-jobs <path-to-the-library>/units/prefetch-registry <path-to-the-library>/units/record-sync <path-to-the-library>/units/session-cache <path-to-the-library>/units/updated-line <path-to-the-library>/units/use-cached <path-to-the-library>/units/speed-kit
 ```
+
+An app that renders also needs `npm install react-dom@^19.0.0`. To build and test it needs `vite`, `vitest`, `jsdom`, `@testing-library/react` and `fake-indexeddb`; `apps/speed-kit-taking-app/package.json` has the versions.
 
 The eight units are peers of this package and `principal-hub` holds module state: install ONE copy of each. The package ships TypeScript source (`src/`); your bundler compiles it. `examples/consumer` is a fresh app that is exactly the example below; it was compiled with `tsc --noEmit` after that install (a copy of it in a scratch folder, since `node_modules` does not belong in the unit).
 
@@ -259,7 +263,7 @@ With it, the screens unmount in the same change and no load starts for the new p
 - "`end()` only clears memory." It also wipes the device copy, and a start right after an `end()` waits for that wipe.
 - "`start` for the same person again wipes the copy." It does not: it closes the earlier run (which writes no more) and reads again.
 - "A cache from `createSessionCache` is emptied by the hub." Only the unit's own `sessionCache` registers itself; `createSpeedKit` registers whichever cache it is given.
-- "A hover always warms." A warmer is not started again for the same workspace and client within `staleMs` (30 s by default) of its last start, even when the cache entry is gone (`prefetch.ts:97` of `prefetch-registry`). A hover soon after the idle warm of sign-in sends nothing.
+- "A hover always warms." A warmer is not started again for the same workspace and client within `staleMs` (30 s by default) of its last start, even when the cache entry is gone (`runWarmer` in `prefetch.ts` of `prefetch-registry`). A hover soon after the idle warm of sign-in sends nothing.
 - "`start` is slow on a slow disk." It waits at most `waitMs` and answers `{ hydrated: false }`; a disk that answers later is still read, and handed over only if the same person is still signed in.
 
 ## Where it came from
