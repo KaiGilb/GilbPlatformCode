@@ -69,3 +69,10 @@
 - S2-D1 sent sign-in and `/lws/vaults` to the apex derived from the vault host. Wrong: a key-bound call at the apex fails the DPoP htu (RuleRigdevDpopHtuReceivedHost). Now two origins as in records-app (proven live 2026-10-29): `--id` (default `https://id.gilb.com`) for sign-in and `/lws/vaults`, `--platform` (default `https://gilb.com`) for `setBaseOrigin` and the system hosts. For a vault not under gilb.com both flags are required. Nothing is derived.
 - Live port moved from 5197 (held by another session) to 5251.
 - A reach row is the pinned vault by its `vaultId`, else by the origin of its `@id`; the screen says which.
+
+## Batch S2-D2 (live writes)
+
+- Local only. No sign-in, no production call, `dev:live` never started.
+- Server (GilbPlatform 3185a3b8): `Idempotency-Key` on `POST /lws/vault/<v>/c` is honoured (src/lws/routes.ts:849-870, replay at :274-297, key read in src/lws/idempotency.ts:30-52). A single-record end exists: `DELETE /lws/r/<id>` (src/lws/routes.ts:1015-1075), `If-Match` optional.
+- records-app's `createRecord` sends no `Idempotency-Key`, so the create is written here (`src/live/writes.ts`) with the unit's route and body shape.
+- The write keys `a:name` and `a:description` are written as the brief says, not spelled through the vault's context; the read-back catches a vault that stores them differently.

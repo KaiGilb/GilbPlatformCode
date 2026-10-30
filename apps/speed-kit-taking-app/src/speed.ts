@@ -13,8 +13,8 @@ export const speed = createSpeedKit<Ctx>({
   appName: isLive() ? "speedkittaking-live" : "speedkittaking",
   persistResources: ["entries"],
   jobs: {
-    kinds: ["rename"],
-    failText: (_kind, message) => `Not renamed: ${message}`,
+    kinds: ["rename", "seed", "end"],
+    failText: (kind, message) => `${kind === "seed" ? "Not added" : kind === "end" ? "Not ended" : "Not renamed"}: ${message}`,
     unfinishedText: (label) => `This did not finish: ${label}. Open the entry to check.`,
     cancelledText: "Cancelled: the entry was edited again.",
     crashText: "Something went wrong, so nothing more was recorded. Look at the entry before you try again.",

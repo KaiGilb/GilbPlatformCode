@@ -71,8 +71,8 @@ export function fakeNet(opts: NetOptions = {}) {
 }
 
 /** Render the live app and walk the sign-in card: an email, then six digits. */
-export async function liveApp(boot: Awaited<ReturnType<typeof bootLive>>, net = fakeNet(), creds = fakeCredential()) {
-  const view = render(<boot.LiveApp makeSession={() => creds.credential} transport={net.transport} inner={net.inner} />);
+export async function liveApp(boot: Awaited<ReturnType<typeof bootLive>>, net: Pick<ReturnType<typeof fakeNet>, "transport" | "inner"> = fakeNet(), creds = fakeCredential(), props: { allowWrite?: boolean } = {}) {
+  const view = render(<boot.LiveApp makeSession={() => creds.credential} transport={net.transport} inner={net.inner} {...props} />);
   const user = userEvent.setup();
   return { ...view, user, net, ...creds };
 }

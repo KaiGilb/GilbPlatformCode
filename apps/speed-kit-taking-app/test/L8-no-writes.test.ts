@@ -1,5 +1,6 @@
 // @vitest-environment node
-// A static check: no source file that live mode loads sends PATCH, POST, PUT or DELETE. (The sign-in unit's own calls are in node_modules and are not scanned.)
+// A static check: no source file that live mode loads sends PATCH, POST, PUT or DELETE, except src/live/writes.ts, behind its gate.
+// (The sign-in unit's own calls are in node_modules and are not scanned.)
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -29,14 +30,25 @@ describe("L8 no write code path in live mode", () => {
 
   test("L8 the live graph is what we think it is: it reaches the list and the entry page, and not the stand-in or the rename page", () => {
     const names = files.map((f) => path.relative(src, f));
-    expect(names).toEqual(expect.arrayContaining(["live/LiveApp.tsx", "entries.ts", "screens/Entries.tsx", "screens/LiveEntry.tsx", "speed.ts"]));
+    expect(names).toEqual(expect.arrayContaining(["live/LiveApp.tsx", "entries.ts", "screens/Entries.tsx", "screens/LiveEntry.tsx", "speed.ts", "live/writes.ts", "live/writeJobs.ts"]));
     expect(names).not.toContain("fakePlatform.ts");
     expect(names).not.toContain("screens/Entry.tsx");
     expect(names).not.toContain("standin.ts");
   });
 
-  test("L8 no live-mode source file sends PATCH, POST, PUT or DELETE", () => {
-    for (const f of files) expect(fs.readFileSync(f, "utf8"), path.relative(src, f)).not.toMatch(WRITE);
+  test("L8 no live-mode source file sends PATCH, POST, PUT or DELETE, except live/writes.ts", () => {
+    for (const f of files) {
+      const name = path.relative(src, f);
+      if (name === "live/writes.ts") continue;
+      expect(fs.readFileSync(f, "utf8"), name).not.toMatch(WRITE);
+    }
+  });
+
+  test("W1 live/writes.ts is the one place: it holds every write verb, and it sends only through its gate", () => {
+    const text = fs.readFileSync(path.join(src, "live/writes.ts"), "utf8");
+    for (const verb of ["PATCH", "POST", "DELETE"]) expect(text).toContain(`"${verb}"`);
+    expect(text.match(/o\.fetch\(/g)).toHaveLength(1); // the only network call, inside `send`
+    expect(text).toMatch(/async function send\([\s\S]*?gate\(method, url\);\s*return o\.fetch\(/);
   });
 
   test("L8 the check itself sees a write (it is not blind): the stand-in's rename page has one", () => {

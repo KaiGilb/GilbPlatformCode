@@ -9,11 +9,14 @@ import { resetBaseOrigin, resetSystemVaultHosts, setBaseOrigin, setSystemVaultHo
 import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { hub, sync } from "@kaigilb/gilbplatformcode-speed-kit";
 import { TYPE } from "../catalog";
-import { idOrigin, pinnedVault, platformOrigin } from "../mode";
+import { allowWrite as allowWriteFromEnv, idOrigin, pinnedVault, platformOrigin } from "../mode";
 import { session } from "../session";
 import { endSession, startSession } from "../speed";
 import { Entries } from "../screens/Entries";
 import { LiveEntryPage } from "../screens/LiveEntry";
+import { LiveTools } from "../screens/LiveTools";
+import { Messages } from "../Messages";
+import { createWriter } from "./writes";
 import { Header } from "../screens/Header";
 import { SpeedPanel } from "../screens/SpeedPanel";
 import { makeAuth, PRODUCT_NAME } from "./auth";
@@ -31,6 +34,8 @@ export interface LiveSeams {
   id?: string;
   /** The platform apex: `setBaseOrigin` and the system hosts. No request goes to it. */
   platform?: string;
+  /** Writes on (the `--allow-write` run). Default: the build's `VITE_ALLOW_WRITE`. */
+  allowWrite?: boolean;
 }
 
 // copied from records-app (platform.ts:24 and :36)
@@ -48,7 +53,7 @@ type Phase =
   | { k: "ready"; person: string; reach: Reach; matched: Matched2 };
 type Page = { name: "entries" } | { name: "entry"; id: string };
 
-export function LiveApp({ makeSession = () => new SessionCredential(), transport, inner, vault = pinnedVault(), id = idOrigin(), platform = platformOrigin() }: LiveSeams) {
+export function LiveApp({ makeSession = () => new SessionCredential(), transport, inner, vault = pinnedVault(), id = idOrigin(), platform = platformOrigin(), allowWrite = allowWriteFromEnv() }: LiveSeams) {
   const [credential, setCredential] = useState<SessionCredential>(makeSession);
   const [phase, setPhase] = useState<Phase>({ k: "signin" });
   const [page, setPage] = useState<Page>({ name: "entries" });
@@ -136,13 +141,17 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
     );
   } else {
     const client = session.client;
+    // Writes need the flag, a signed-in person, and the reach proof (this branch is only reached after it); the writer's gate also pins the vault's origin.
+    const deps = allowWrite && client && phase.matched !== "read anyway" ? { writer: createWriter({ fetch: authed, vault, allow: true }), client, principal: phase.person, vault } : null;
     body = client === null ? <p>Signing in...</p> : (
       <>
         <Header ws={vault} label={phase.person} client={client} onNav={() => setPage({ name: "entries" })} onSignOut={signOut} />
         <aside data-testid="reach">Reach: {phase.reach.vaults.length} vault(s); complete: {String(phase.reach.complete)}; incompletePeers: {phase.reach.incompletePeers}; the pinned vault matched by: {phase.matched}</aside>
+        {deps && <Messages ws={vault} />}
+        {deps && page.name === "entries" && <LiveTools deps={deps} />}
         {page.name === "entries"
           ? <Entries ws={vault} client={client} onOpen={(id) => setPage({ name: "entry", id })} expired={isExpired} onSignInAgain={signOut} />
-          : <LiveEntryPage ws={vault} client={client} id={page.id} onBack={() => setPage({ name: "entries" })} />}
+          : <LiveEntryPage ws={vault} client={client} id={page.id} onBack={() => setPage({ name: "entries" })} deps={deps} />}
       </>
     );
   }

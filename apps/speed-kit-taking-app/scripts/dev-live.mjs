@@ -1,5 +1,5 @@
 // Starts the app for the live check on localhost:5251 (see vite.live.config.ts): a real sign-in and a read-only list of ONE vault.
-// Usage: node scripts/dev-live.mjs --vault https://<host>/vault [--id https://<identity host> --platform https://<platform apex>]
+// Usage: node scripts/dev-live.mjs --vault https://<host>/vault [--allow-write] [--id https://<identity host> --platform https://<platform apex>]
 // (for a vault under gilb.com the two default to https://id.gilb.com and https://gilb.com; for any other host both are required)
 import net from "node:net";
 import { spawn } from "node:child_process";
@@ -61,6 +61,7 @@ export function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--vault") out.vault = argv[++i];
+    else if (argv[i] === "--allow-write") out.allowWrite = true;
     else if (argv[i] === "--id") out.id = argv[++i];
     else if (argv[i] === "--platform") out.platform = argv[++i];
     else return { problem: `unknown argument ${JSON.stringify(argv[i])}` };
@@ -82,14 +83,14 @@ export async function main({ argv = process.argv.slice(2), port = 5251, spawnFn 
   }
   log(`Open http://localhost:${port}   (reads ${v.vault}; signs in at ${o.id}, platform apex ${o.platform})`);
   log("Production admits this origin; the app's own port 5261 is refused there (5251 is records-app's proven live origin).");
-  log("The code arrives by email. Writes are not part of this build: it only reads.");
+  log("The code arrives by email. " + (args.allowWrite ? `WRITES ARE ON, only in ${v.vault}: rename (If-Match), add test entries, end the entries this app made.` : "Without --allow-write this only reads."));
   log("On this local check a reload signs you out; sign in again with a new code.");
   const vite = fileURLToPath(new URL("../node_modules/.bin/vite", import.meta.url));
   const cwd = fileURLToPath(new URL("..", import.meta.url));
   mkdirSync(dirname(logFile), { recursive: true });
   const fd = openSync(logFile, "a");
   writeSync(fd, `\n--- ${new Date().toISOString()} dev:live ${v.vault}\n`);
-  const env = { ...process.env, VITE_PLATFORM: "live", VITE_PINNED_VAULT: v.vault, VITE_ID_ORIGIN: o.id, VITE_PLATFORM_ORIGIN: o.platform };
+  const env = { ...process.env, VITE_PLATFORM: "live", VITE_PINNED_VAULT: v.vault, VITE_ID_ORIGIN: o.id, VITE_PLATFORM_ORIGIN: o.platform, ...(args.allowWrite ? { VITE_ALLOW_WRITE: "1" } : { VITE_ALLOW_WRITE: "" }) };
   const child = spawnFn(vite, ["--config", "vite.live.config.ts"], { cwd, env, stdio: ["ignore", fd, fd] });
   const forward = (signal) => () => child.kill(signal);
   const onInt = forward("SIGINT");

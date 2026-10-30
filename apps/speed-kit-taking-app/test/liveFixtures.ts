@@ -61,3 +61,27 @@ export const recordsBody = (rows: number, extra: Record<string, unknown> = {}) =
 
 /** The sign-in answer: src/routes/email-auth.ts:473 `{ token, principal, needsVaultName }`. */
 export const verifyBody = { token: "access-token-value", principal: PRINCIPAL, needsVaultName: false };
+
+export const OTHER_PRINCIPAL = "https://id.platform.example.test/base/p/bob";
+
+/** One listed row with its body: src/lws/records.ts:134-176 (entity, typeUri, updatedAt, label, vault, vaultAmbiguous, body, etag). The READ keys are bare (`name`). */
+export const recordRow = (id: string, name: string, description: string, etag: string, ended = false) => ({
+  entity: `${VAULT_ORIGIN}/base/e/${id}`,
+  typeUri: "t:CatalogEntry",
+  updatedAt: new Date(Date.UTC(2026, 9, 1)).toISOString(),
+  label: name,
+  vault: VAULT,
+  vaultAmbiguous: false,
+  body: { name, description },
+  etag,
+  ...(ended ? { endedBy: "holder" } : {}),
+});
+
+/** `GET /lws/r/<id>`: the framed document, read keys bare (`name`, `description`), the version in the ETag header. */
+export const recordDoc = (id: string, name: string, description: string) => ({
+  "@context": "https://platform.example.test/lws/context",
+  "@id": `${VAULT_ORIGIN}/base/e/${id}`,
+  "@type": "t:CatalogEntry",
+  name,
+  description,
+});

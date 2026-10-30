@@ -76,6 +76,17 @@ describe("L1 dev-live.mjs", () => {
     expect(said).toContain("On this local check a reload signs you out; sign in again with a new code.");
   });
 
+  it("L1 --allow-write sets VITE_ALLOW_WRITE=1 and says so; without it the variable is empty and the run says it only reads", async () => {
+    const envOf = (r: Awaited<ReturnType<typeof started>>) => (r.spawnFn.mock.calls[0] as unknown as [string, string[], { env: Record<string, string> }])[2].env;
+    const said = (r: Awaited<ReturnType<typeof started>>) => r.o.log.mock.calls.map((c) => String(c[0])).join("\n");
+    const on = await started(["--vault", "https://testvault.gilb.com/vault", "--allow-write"]);
+    expect(envOf(on).VITE_ALLOW_WRITE).toBe("1");
+    expect(said(on)).toContain("WRITES ARE ON, only in https://testvault.gilb.com/vault");
+    const off = await started(["--vault", "https://testvault.gilb.com/vault"]);
+    expect(envOf(off).VITE_ALLOW_WRITE).toBe("");
+    expect(said(off)).toContain("Without --allow-write this only reads.");
+  });
+
   it("L1 for a vault not under gilb.com it refuses unless BOTH --id and --platform are given, and guesses nothing", async () => {
     const vault = ["--vault", "https://ann.example.test/vault"];
     for (const extra of [[], ["--id", "https://id.example.test"], ["--platform", "https://example.test"]]) {

@@ -1,5 +1,7 @@
 // Chosen at build time: `VITE_PLATFORM=live` is the live mode, anything else is the stand-in.
 export const isLive = (): boolean => import.meta.env.VITE_PLATFORM === "live";
+/** Live mode with writes (`dev-live.mjs --allow-write` sets `VITE_ALLOW_WRITE=1`). Without it live mode only reads. */
+export const allowWrite = (): boolean => isLive() && import.meta.env.VITE_ALLOW_WRITE === "1";
 /** Live mode: the one vault this build reads, `https://<host>/vault`, the identity origin, and the platform apex. */
 export const pinnedVault = (): string => String(import.meta.env.VITE_PINNED_VAULT ?? "");
 /** Live mode: the identity host. Sign-in and `GET /lws/vaults` go here (RuleRigdevDpopHtuReceivedHost: never to the apex). */

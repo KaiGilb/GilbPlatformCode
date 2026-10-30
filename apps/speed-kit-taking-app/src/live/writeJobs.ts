@@ -1,0 +1,102 @@
+// The three live writes as background jobs (RuleAppspeedInstantAction): rename one entry, add test entries, end this app's test entries.
+// Each says "done" only after a read-back shows the new state. No request is made here directly: every one goes through the writer's gate.
+import { cache } from "@kaigilb/gilbplatformcode-speed-kit";
+import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
+import { entriesKey, loadEntries, type Entry } from "../entries";
+import { speed } from "../speed";
+import { addMade, readMade, removeMade } from "./made";
+import { setProgress } from "./progress";
+import { MAX_IN_FLIGHT, NAME_PREFIX, WriteFailed, type Writer } from "./writes";
+
+export interface JobDeps { writer: Writer; client: PlatformClient; principal: string; vault: string }
+
+const refreshList = (d: JobDeps): Promise<Entry[]> => cache.sessionCache.refresh(entriesKey(d.vault), loadEntries(d.client, d.vault));
+
+/** Runs `worker` over `items` with at most `limit` in flight. After the first failure nothing new is started; those in flight finish. */
+export async function runPool<T>(items: readonly T[], limit: number, worker: (item: T) => Promise<void>): Promise<string | null> {
+  let next = 0;
+  let failure: string | null = null;
+  const lane = async () => {
+    while (failure === null && next < items.length) {
+      const item = items[next++]!;
+      try { await worker(item); } catch (e) { failure ??= e instanceof Error ? e.message : String(e); }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  return failure;
+}
+
+/** 1. Rename one entry. `recheck` reads THAT record fresh and refuses if its name is no longer the one shown; `run` patches with that read's ETag. */
+export function enqueueRename(d: JobDeps, id: string, shown: string, newName: string) {
+  let etag: string | null = null;
+  return speed.jobs.enqueue({
+    key: speed.jobs.jobKey(d.vault, "rename", id), kind: "rename", draftId: id, workspace: d.vault, label: "Rename an entry",
+    recheck: async () => {
+      const fresh = await d.writer.read(id);
+      if (fresh === null) return "the entry is gone. Look again.";
+      if (fresh.name !== shown) return "the name changed since you started editing. Look again.";
+      etag = fresh.etag;
+      return etag ? null : "the platform sent no version (ETag) for this entry, so nothing was changed.";
+    },
+    run: async () => {
+      try { await d.writer.rename(id, newName, etag!); } catch (e) {
+        if (e instanceof WriteFailed && e.status === 412) return { ok: false, message: "Someone changed it; look again" }; // no retry
+        return { ok: false, message: e instanceof Error ? e.message : String(e) };
+      }
+      const back = await d.writer.read(id); // read-back before "renamed"
+      if (back?.name !== newName) return { ok: false, message: `the platform accepted the change but reads the name back as ${JSON.stringify(back?.name ?? null)}` };
+      await refreshList(d);
+      return { ok: true, message: "Renamed." };
+    },
+  });
+}
+
+/** 2. Add `count` test entries, at most 4 in flight, each create with its own stable `Idempotency-Key`. */
+export function enqueueSeed(d: JobDeps, count: number, runId: string) {
+  return speed.jobs.enqueue({
+    key: speed.jobs.jobKey(d.vault, "seed", runId), kind: "seed", draftId: runId, workspace: d.vault, label: `Add ${count} test entries`,
+    run: async () => {
+      const made: string[] = [];
+      setProgress({ runId, k: 0, n: count });
+      const failure = await runPool(Array.from({ length: count }, (_, i) => i + 1), MAX_IN_FLIGHT, async (n) => {
+        const id = await d.writer.create(`speedkit-proof.${runId}.${n}`, `${NAME_PREFIX}${runId} ${n}`); // the same key on a re-run
+        made.push(id);
+        addMade(d.principal, d.vault, id); // kept at once, so End knows it even if the run stops later
+        setProgress({ runId, k: made.length, n: count });
+      });
+      if (failure !== null) return { ok: false, message: `${made.length} made of ${count}; stopped: ${failure}`, data: { ids: made } };
+      const list = await refreshList(d);
+      const seen = list.filter((e) => e.name.startsWith(`${NAME_PREFIX}${runId} `)).length;
+      if (seen !== count) return { ok: false, message: `${made.length} made, but the list shows ${seen} with run id ${runId}`, data: { ids: made } };
+      return { ok: true, message: `Added ${made.length} of ${count}; the list shows ${seen} with run id ${runId}.`, data: { ids: made } };
+    },
+  });
+}
+
+/** 3. End ONLY the records this app made (the list in localStorage) whose name, read fresh, still starts with the prefix. Each is read back as ended. */
+export function enqueueEnd(d: JobDeps) {
+  return speed.jobs.enqueue({
+    key: speed.jobs.jobKey(d.vault, "end", "mine"), kind: "end", draftId: "mine", workspace: d.vault, label: "End my test entries",
+    run: async () => {
+      const mine = readMade(d.principal, d.vault);
+      if (mine.length === 0) return { ok: true, message: "This app has made no test entries to end.", data: { ids: [] } };
+      const ended: string[] = [];
+      const gone: string[] = [];
+      let skipped = 0;
+      const failure = await runPool(mine, MAX_IN_FLIGHT, async (id) => {
+        const fresh = await d.writer.read(id);
+        if (fresh === null) { gone.push(id); return; } // not live any more
+        if (!fresh.name.startsWith(NAME_PREFIX)) { skipped += 1; return; } // renamed away from the prefix: not ours to end
+        await d.writer.end(id, fresh.etag);
+        if ((await d.writer.read(id)) !== null) throw new Error(`${id} still reads as live after the end`);
+        ended.push(id);
+      });
+      removeMade(d.principal, d.vault, [...ended, ...gone]);
+      if (failure !== null) { await refreshList(d).catch(() => undefined); return { ok: false, message: `${ended.length} ended; stopped: ${failure}`, data: { ids: ended } }; }
+      const listed = ended.length ? await d.writer.endedAmong(ended) : new Set<string>();
+      await refreshList(d);
+      if (listed.size !== ended.length) return { ok: false, message: `${ended.length} ended, but only ${listed.size} appear in the ended list`, data: { ids: ended } };
+      return { ok: true, message: `Ended ${ended.length} test entries${skipped ? ` (${skipped} left alone: renamed away from the prefix)` : ""}${gone.length ? ` (${gone.length} were already gone)` : ""}.`, data: { ids: ended } };
+    },
+  });
+}

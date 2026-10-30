@@ -81,3 +81,11 @@ npm run dev:live -- --vault https://<host>/vault     # for a vault not under gil
 What you do and see: open the URL; type your email; the code arrives by email; type it. A page reload ends the session (the key and token live in memory only), so sign in again with a new code. The person on screen is the principal the server returns after sign-in, not the email you typed. The page shows the vaults you reach (with `complete` and `incompletePeers`). If the pinned vault is not among them it says so and loads nothing; when `complete` is false it also offers "Try reading it anyway", which makes one read and reports the status. A 401 shows "Your sign-in has run out; sign in again." The speed panel works as in stand-in mode.
 
 Tests `test/L1` to `test/L8` fake only the network, with answer shapes taken from the server source.
+
+### Live writes (`--allow-write`)
+
+`npm run dev:live -- --vault https://<host>/vault --allow-write` turns on three writes, all in the pinned vault and nowhere else. Without the flag live mode only reads, and none of the buttons exists. Every write passes one gate in `src/live/writes.ts` (the flag is on, and the URL's origin is the pinned vault's origin), and each is a background job that says "done" only after a read-back.
+
+- Rename (the Entry page): a fresh read of that record, then `PATCH /lws/r/<id>` with `If-Match` and the write key `a:name`, then a read-back. A 412 shows "Someone changed it; look again" and is not retried.
+- Add test entries (10, 50, 200 or 500): `POST /lws/vault/<vault>/c`, each with its own `Idempotency-Key` (`speedkit-proof.<runId>.<n>`), at most 4 in flight, named `speedkit-proof <runId> <n>`. The ids are kept in localStorage under `speedkittaking-live.made.<principal>.<vault>`.
+- End my test entries: `DELETE /lws/r/<id>` with `If-Match`, only for ids on that list whose name, read fresh, still starts with `speedkit-proof `. Each is read back, and the ended list is checked.
