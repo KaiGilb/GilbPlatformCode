@@ -67,3 +67,17 @@ The speed table of the second run (REAL browser, MOCK vault; vault latency 600 m
 | webkit | phone | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
 | webkit | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
 | webkit | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
+
+## Live mode (read only)
+
+A second mode of the same app: a real sign-in to GilbPlatform and a real `completeCopy` read of `t:CatalogEntry` in ONE named test vault. It reads and never writes (rename comes in the next batch). It is chosen at build time (`VITE_PLATFORM=live`); the stand-in mode above is unchanged. Live and stand-in use different device databases (`speedkittaking-live-cache` and `speedkittaking-cache`), so their copies never meet.
+
+```sh
+npm run dev:live -- --vault https://<host>/vault     # optional: --platform https://<platform host>
+```
+
+`scripts/dev-live.mjs` refuses without `--vault`, refuses a value that is not `https://<host>/vault`, refuses when port 5197 is taken, sets every `VITE_` variable itself, prints the URL, and logs to `~/Library/Logs/speed-kit-taking-app-live.log`. Production admits a local app only at `http://localhost:5197` or `http://localhost:5251`, so live mode runs at 5197.
+
+What you do and see: open the URL; type your email; the code arrives by email; type it. A page reload ends the session (the key and token live in memory only), so sign in again with a new code. The person on screen is the principal the server returns after sign-in, not the email you typed. The page shows the vaults you reach (with `complete` and `incompletePeers`). If the pinned vault is not among them it says so and loads nothing; when `complete` is false it also offers "Try reading it anyway", which makes one read and reports the status. A 401 shows "Your sign-in has run out; sign in again." The speed panel works as in stand-in mode.
+
+Tests `test/L1` to `test/L8` fake only the network, with answer shapes taken from the server source.

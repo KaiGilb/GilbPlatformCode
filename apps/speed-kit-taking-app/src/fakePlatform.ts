@@ -5,7 +5,8 @@
 import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
 import { proof } from "./proof";
 
-export const TYPE = "t:CatalogEntry";
+import { TYPE } from "./catalog";
+export { TYPE };
 export const PEOPLE = {
   ann: { label: "Ann", vault: "https://ann.example.test/vault", origin: "https://ann.example.test", count: 30 },
   ben: { label: "Ben", vault: "https://ben.example.test/vault", origin: "https://ben.example.test", count: 5 },

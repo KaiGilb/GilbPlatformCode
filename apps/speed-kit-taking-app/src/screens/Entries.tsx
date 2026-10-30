@@ -6,9 +6,11 @@ import { entriesKey, loadEntries } from "../entries";
 import { setPaint, type PaintSource } from "../proof";
 import { provenance } from "../session";
 
-export function Entries({ ws, client, onOpen }: { ws: string; client: PlatformClient; onOpen: (id: string) => void }) {
+export function Entries({ ws, client, onOpen, expired, onSignInAgain }: { ws: string; client: PlatformClient; onOpen: (id: string) => void; expired?: (error: unknown) => boolean; onSignInAgain?: () => void }) {
   const key = entriesKey(ws);
-  const { data, updating, updatedAt, refresh } = cached.useCached(key, loadEntries(client, ws));
+  const { data, updating, updatedAt, error, refresh } = cached.useCached(key, loadEntries(client, ws));
+
+  const lapsed = error !== undefined && expired?.(error) === true; // live mode: the sign-in ran out
 
   // The meter: taken at the mount (first render), read in the first effect that sees rows. `from` is what the FIRST render already held.
   const [mount] = useState(() => ({ t0: performance.now(), from: (data?.length ? (provenance.get(key) === "device" ? "device" : "memory") : null) as PaintSource | null }));
@@ -25,7 +27,10 @@ export function Entries({ ws, client, onOpen }: { ws: string; client: PlatformCl
       <h2>Entries</h2>
       <updated.UpdatedLine updating={updating} updatedAt={updatedAt} className="line" />{" "}
       <button data-testid="refresh" onClick={() => void refresh()}>Refresh</button>
-      {data === undefined ? <p>Loading...</p> : (
+      {lapsed && (
+        <p role="alert" data-testid="expired">Your sign-in has run out; sign in again. <button data-testid="sign-in-again" onClick={onSignInAgain}>Sign in again</button></p>
+      )}
+      {data === undefined ? (lapsed ? null : <p>Loading...</p>) : (
         <ul>
           {data.map((e) => (
             <li key={e.id} data-testid={`entry-${e.id}`}>

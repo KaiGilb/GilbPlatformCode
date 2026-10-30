@@ -58,3 +58,9 @@
 
 - T2 flake: `findByTestId("entry-e1")` resolves when the row is in the DOM; the meter is set in an effect and the panel re-renders through `useSyncExternalStore` a step later. Shown by delaying `setPaint` by 20 ms (the meter, not the test, changed): T2 then fails with the dispatcher's line, `expected '' to be 'device'`. Not reproduced natively in 10 cold rounds here. T2 and T1:12 now wait for the reading; the row count and `answered() === 0` stay synchronous at the first row.
 - `scripts/flake-check.sh N` runs N cold rounds.
+
+## Batch S2-D1 (live mode, read only)
+
+- Built and tested locally only: no sign-in, no production call, `dev:live` never started.
+- The server named in the brief (`GilbPlatform/src`) is an old checkout (Cycle196, 2026-09-19) with no `since=`, `include=body` or `nextCursor`; the wire facts are from `GilbPlatform-snapshot-2026-10-30` (3185a3b8).
+- The platform (sign-in) origin is not given by the brief; `dev-live.mjs` takes it from the vault host with its first label taken off, or from `--platform`.
