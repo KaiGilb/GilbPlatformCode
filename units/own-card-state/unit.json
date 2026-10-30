@@ -36,7 +36,7 @@
   },
   "namedChanges": [
     "`MYNET_PROFILE_URL` (`ownCard.ts` line 36, `${MYNET_BASE}/profile`, built when the module loads) is not copied; the band's `href={MYNET_PROFILE_URL}` is `href={myNetProfileUrl()}`, a setting (`setMyNetProfileUrl`, `myNetProfileUrl`, `resetMyNetProfileUrl`) read when the band draws. It throws, naming the setter, when it is not set.",
-    "The imports are imports of units: `SELF_CARD_ID_PREFIX`, `VAULT_PATH_SEGMENTS`, `selfCardIdForVault` from `vault-origin-rule`; `OWN_CARD_SLUG_PREFIX`, `isHoldersOwnCard`, `ownCardCaseOf`, `ownCardIds`, `OwnCardCase`, `OwnCardFinding` from `own-card`; `isHeldVault` from `person-create`; `typeLocalName` from `lws-vault-sets`; `vaultRootOf` from `vault-profile-photo`; `ReachableVault` from `plan-record-hooks`; `ownCardFindingQuery` from `plan-self-source`.",
+    "The imports are imports of units: `SELF_CARD_ID_PREFIX`, `VAULT_PATH_SEGMENTS`, `selfCardIdForVault` from `vault-origin-rule`; `OWN_CARD_SLUG_PREFIX`, `isHoldersOwnCard`, `ownCardCaseOf`, `ownCardIds`, `OwnCardCase`, `OwnCardFinding` from `own-card`; `isHeldVault` from `person-create`; `typeLocalName` from `lws-vault-sets`; `ReachableVault` from `plan-record-hooks`; `ownCardFindingQuery` and `vaultRootOf` from `plan-self-source`.",
     "The header comments are new and shorter, and the comments that name a cycle, a ruling, an agent or a ticket are reworded with the same facts. No code changed."
   ],
   "newFiles": [

@@ -14,9 +14,8 @@ import {
 } from "@kaigilb/gilbplatformcode-own-card";
 import { isHeldVault } from "@kaigilb/gilbplatformcode-person-create";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
-import { ownCardFindingQuery } from "@kaigilb/gilbplatformcode-plan-self-source";
+import { ownCardFindingQuery, vaultRootOf } from "@kaigilb/gilbplatformcode-plan-self-source";
 import { typeLocalName } from "@kaigilb/gilbplatformcode-lws-vault-sets";
-import { vaultRootOf } from "@kaigilb/gilbplatformcode-vault-profile-photo";
 
 /**
  * True when a record could be the holder's own card at all: its id is owner-shaped (`vsc-…` or `mnb-profile…`). The pointer

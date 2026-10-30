@@ -65,7 +65,6 @@
     "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
     "@kaigilb/gilbplatformcode-type-key": "file:../type-key",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
-    "@kaigilb/gilbplatformcode-vault-profile-photo": "file:../vault-profile-photo",
     "@kaigilb/gilbplatformcode-vault-type-census": "file:../vault-type-census",
     "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
     "@kaigilb/gilbplatformcode-working-set-store": "file:../working-set-store",
@@ -88,7 +87,6 @@
     "@kaigilb/gilbplatformcode-plan-record-hooks": "^0.2.1",
     "@kaigilb/gilbplatformcode-plan-self-source": "^0.2.0",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0",
-    "@kaigilb/gilbplatformcode-vault-profile-photo": "^0.1.0",
     "@tanstack/react-query": "^5.101.2",
     "react": "^19.0.0"
   }

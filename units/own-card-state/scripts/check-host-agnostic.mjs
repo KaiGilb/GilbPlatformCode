@@ -20,7 +20,7 @@ const UNIT = "units/own-card-state";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^@kaigilb\/gilbplatformcode-own-card$/, /^@kaigilb\/gilbplatformcode-person-create$/, /^@kaigilb\/gilbplatformcode-plan-record-hooks$/, /^@kaigilb\/gilbplatformcode-plan-self-source$/, /^@kaigilb\/gilbplatformcode-lws-vault-sets$/, /^@kaigilb\/gilbplatformcode-vault-origin-rule$/, /^@kaigilb\/gilbplatformcode-vault-profile-photo$/, /^@tanstack\/react-query$/, /^react$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^@kaigilb\/gilbplatformcode-own-card$/, /^@kaigilb\/gilbplatformcode-person-create$/, /^@kaigilb\/gilbplatformcode-plan-record-hooks$/, /^@kaigilb\/gilbplatformcode-plan-self-source$/, /^@kaigilb\/gilbplatformcode-lws-vault-sets$/, /^@kaigilb\/gilbplatformcode-vault-origin-rule$/, /^@tanstack\/react-query$/, /^react$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);
