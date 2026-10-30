@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/person-name",
+  "package": "@kaigilb/gilbplatformcode-person-name",
+  "version": "0.1.0",
+  "purpose": "Orders and splits a person's name fields, as the person card lays them out.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/personName.ts", "lines": [14, 21], "to": "src/personName.ts" },
+      { "path": "src/lib/base/personName.ts", "lines": [28, 81], "to": "src/personName.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The file's header comment and two doc comments that name a cycle, an iteration or a ticket are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
