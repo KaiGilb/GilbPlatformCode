@@ -96,6 +96,35 @@ describe("what it sets, and when", () => {
     ]);
   });
 
+  describe("dpopProofOrigin", () => {
+    const PROOF = "https://id.example.test";
+    test("a read sent to the origin is signed for the proof origin (no query); a read sent to a vault subdomain is signed for that subdomain", async () => {
+      mountInProvider(world, null, { settings: { dpopProofOrigin: PROOF } });
+      await dpopReadAuth("GET", `${BASE}/lws/vaults?a=1`);
+      await dpopReadAuth("GET", `${HOST}/base/connect/audience-rung/members?vaultId=x`);
+      expect(world.signed).toEqual([
+        { method: "GET", url: `${PROOF}/lws/vaults` },
+        { method: "GET", url: `${HOST}/base/connect/audience-rung/members?vaultId=x` },
+      ]);
+    });
+    test("absent, a read sent to the origin is signed for the origin", async () => {
+      mountInProvider(world, null);
+      await dpopReadAuth("GET", `${BASE}/lws/vaults`);
+      expect(world.signed).toEqual([{ method: "GET", url: `${BASE}/lws/vaults` }]);
+    });
+    test("a new proof origin on a re-render takes effect with the same session", async () => {
+      const view = mountInProvider(world, null);
+      view.rerenderWith(null, { settings: { dpopProofOrigin: PROOF } });
+      await dpopReadAuth("GET", `${BASE}/lws/vaults`);
+      expect(world.signed).toEqual([{ method: "GET", url: `${PROOF}/lws/vaults` }]);
+    });
+    test("an address that is not an address is refused at mount", () => {
+      const q = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(() => mountInProvider(world, null, { settings: { dpopProofOrigin: "no origin" } })).toThrow(TypeError);
+      q.mockRestore();
+    });
+  });
+
   describe("the order: the first setter that refuses is the one that speaks", () => {
     const quiet = () => vi.spyOn(console, "error").mockImplementation(() => {});
     test("the origin before the ontology origin", () => {
