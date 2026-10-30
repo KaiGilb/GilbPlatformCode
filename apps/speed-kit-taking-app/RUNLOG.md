@@ -53,3 +53,8 @@
 
 - `liveEntriesKey` removed (0.2.1). Tried to make a test red without it: a bare `hub.setPrincipal` inside `act`, and outside it (React act environment off); in both the screens unmount with the App reset before any load starts for the new person (no extra records request). With the guard AND the App reset removed, T9 goes red (`expected 6 to be 3`: a load starts), so the App reset is what protects. The guard was not tested because it is not needed in any ordering I could build.
 - Dev mode (`npm run dev`): the sign-in screen draws, then after `signin-ann` the page errors `React is not defined` and no row appears (updated-line's JSX is pre-bundled with classic JSX). Fix in `vite.config.ts`: `optimizeDeps: { esbuildOptions: { jsx: "automatic" } }`. Proof: `npm run proof:browser -- --dev` passes with it and fails without it.
+
+## Batch S2-C2 (app)
+
+- T2 flake: `findByTestId("entry-e1")` resolves when the row is in the DOM; the meter is set in an effect and the panel re-renders through `useSyncExternalStore` a step later. Shown by delaying `setPaint` by 20 ms (the meter, not the test, changed): T2 then fails with the dispatcher's line, `expected '' to be 'device'`. Not reproduced natively in 10 cold rounds here. T2 and T1:12 now wait for the reading; the row count and `answered() === 0` stay synchronous at the first row.
+- `scripts/flake-check.sh N` runs N cold rounds.

@@ -20,8 +20,9 @@ describe("T2 device", () => {
     await screen.findByTestId("entry-e1"); // rows are on screen...
     expect(screen.getAllByTestId(/^entry-e\d+$/)).toHaveLength(30);
     expect(second.platform.answered()).toBe(0); // ...and the stand-in has answered no records request
-    expect(panel().dataset.source).toBe("device");
-    expect(second.proof.lastPaint?.source).toBe("device");
+    // the meter is read in an effect and the panel follows it a step later: wait for the reading (the two checks above are the ones at the first row)
+    await waitFor(() => expect(panel().dataset.source).toBe("device"));
+    await waitFor(() => expect(second.proof.lastPaint?.source).toBe("device"));
     expect(screen.getByTestId("updated-line").textContent).toBe("Updating…"); // behind the rows, it is asking
     release();
     await waitFor(() => expect(screen.getByTestId("updated-line").textContent).toMatch(/^Updated \d\d:\d\d$/));

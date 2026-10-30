@@ -1,6 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { ANN, boot, click, panel } from "./helpers";
+import { ANN, boot, click, panel, waitFor } from "./helpers";
 
 describe("T1 memory", () => {
   test("T1 memory: back to Entries paints the rows on the first render, from memory", async () => {
@@ -9,7 +9,7 @@ describe("T1 memory", () => {
     click("signin-ann");
     await screen.findByTestId("entry-e1");
     expect(screen.getAllByTestId(/^entry-e\d+$/)).toHaveLength(30);
-    expect(panel().dataset.source).toBe("network"); // the first visit had nothing to paint from
+    await waitFor(() => expect(panel().dataset.source).toBe("network")); // the first visit had nothing to paint from (the panel follows the rows by a step)
 
     click("nav-entry-e1"); // an Entry page
     expect(screen.queryByTestId("entry-e1")).toBeNull();
