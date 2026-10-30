@@ -125,6 +125,24 @@ export function isAppAddressableSlug(slug: string): boolean {
 /** The editable kinds a typed field can take — drives the inline editor control. */
 export type FieldKind = "text" | "textarea" | "email" | "url" | "select" | "date";
 
+/**
+ * Seed / legacy extra metadata slugs. Prefer live BaseVeda attribute search
+ * (`searchAttributes` / `probeAttribute` in vocabCatalog) for add-field UX — this list is
+ * no longer the UI ceiling; it only helps re-surface empty legacy keys after reload.
+ * Keys must still be real BaseVeda attributes (`GET /base/a/<slug>`).
+ */
+export const ALLOWED_EXTRA_ATTR_SLUGS: readonly string[] = [
+  "url",
+  "phone",
+  "email",
+  "due",
+  "personalNote",
+  "jobTitle",
+  "postalAddress",
+  "account",
+  "org",
+] as const;
+
 /** One typed field of a record type — the BaseVeda attribute + its display metadata. */
 export interface FieldSpec {
   /** The BaseVeda attribute slug (anchored; written as `a:<slug>`). */

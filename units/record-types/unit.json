@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/record-types",
   "package": "@kaigilb/gilbplatformcode-record-types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The Plan record types, each with its fields and its BaseVeda type address, and the one way to resolve a type from its id or any spelling of its address.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -75,6 +75,14 @@
       {
         "path": "src/lib/base/recordTypes.ts",
         "lines": [
+          195,
+          211
+        ],
+        "to": "src/recordTypes.ts"
+      },
+      {
+        "path": "src/lib/base/recordTypes.ts",
+        "lines": [
           213,
           225
         ],
@@ -110,7 +118,8 @@
     "the one import, `import { BASE_ORIGIN } from \"./config\"`, is now `import { baseOrigin } from \"@kaigilb/gilbplatformcode-base-origin\"`, and `BASE_ORIGIN` is read as `baseOrigin()`",
     "in `baseHost`, the `try`/`catch` with the fallback host is removed, so it is `return new URL(baseOrigin()).host;`",
     "the constant `RECORD_TYPE_BY_URI` (built at load from `typeUri`) is now the function `recordTypeByUri()`, which builds the same table from the same expression and rebuilds it when `typeNamespace()` changes; `resolveType` calls it",
-    "comments that name a host or `BASE_ORIGIN` are reworded, no code changed"
+    "comments that name a host or `BASE_ORIGIN` are reworded, no code changed",
+    "0.1.1 adds `ALLOWED_EXTRA_ATTR_SLUGS` (lines 195-211), read from GilbApp commit a703b3ed78e612e2cab77e94876ce9bce109d5a3, where the file's lines up to and after the block fall at the same numbers as in the commit above; the only change is that the ticket tag `(VDS-10)` is dropped from its doc comment"
   ],
   "newFiles": [
     "src/index.ts"

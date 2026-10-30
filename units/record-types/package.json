@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The Plan record types, each with its fields and its BaseVeda type address, and the one way to resolve a type from its id or any spelling of its address.",
