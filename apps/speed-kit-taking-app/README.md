@@ -1,0 +1,69 @@
+A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.
+
+# speed-kit-taking-app
+
+Vite + React 19 + TypeScript. It takes the eight speed units and `speed-kit` exactly as `units/speed-kit/README.md` says (`.npmrc` with `install-links=true`, then the README's install line with `<path-to-the-library>` = `../..`). `RUNLOG.md` lists every place that README was wrong or silent.
+
+## Run
+
+```sh
+npm ci
+npm run dev        # http://localhost:5261 (port 5261 is this app's; strictPort)
+npm run typecheck && npm test && npm run build
+```
+
+`?latency=<ms>` on the URL sets the stand-in's delay per request (default 600).
+
+## What it shows
+
+- Sign in as Ann (30 entries) or Ben (5), the screens `Entries` and `Entry` (a Rename job), the header, and a speed panel.
+- The speed panel and `window.__speedProof` (for a browser run): `requests` (what the stand-in received, by route: `records`, `patch`, `other`), `log`, and `lastPaint = { page, ms, source }`: the milliseconds from the Entries page's mount (first render) to the first effect that saw rows, and where the first rows came from (`memory`, `device` or `network`).
+
+## Stand-in (this batch only)
+
+`src/fakePlatform.ts` is NOT the platform. It answers in memory, after a delay, `GET /lws/vault/<vault>/records` (the shape `completeCopy` reads; any other query parameter answers 400) and `PATCH /lws/vault/<vault>/records/<id>` (the route form is this stand-in's own; the real platform's write differs). `src/session.ts`'s client and `src/entries.ts`'s loader are the seams to the real platform.
+
+## Tests
+
+`test/T1` to `test/T8` (13 tests): the real units, with only the platform (the stand-in), IndexedDB (`fake-indexeddb`) and storage faked. `test/helpers.tsx` `boot()` loads the app on a fresh module registry, and `reload()` is a page reload (the device stays, the module state goes).
+
+## Browser proof
+
+```sh
+npm run proof:browser   # builds, serves `vite preview` on 5261, runs real Chromium and WebKit; about 4 minutes
+```
+
+It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/ms-playwright/` (chromium 1228, webkit 2311; nothing is downloaded) at desktop (1280x800) and phone (`devices["iPhone 13"]`; in Chromium the phone also gets 400 ms / 1.6 Mbit down / 0.75 Mbit up) and writes a JSON file and a table to `proof-out/` in the app folder (ignored by git; `PROOF_OUT` names another folder); the server log is `~/Library/Logs/speed-kit-taking-app-proof.log`. It is not part of `npm test` (CI has no browsers).
+
+It proves, in a REAL browser engine with its real IndexedDB, real reloads and a real mouse: the first visit, the return from an entry, the reload painted from the device before any records answer, no trace of Ann after sign-out or after a tab closed without sign-out, and that pointing at the nav sends the request.
+It does NOT prove: anything against the real platform (the vault is the in-page stand-in, so the result is "REAL browser, MOCK vault"), a real phone, or the network cost of the vault (the throttling slows only the page load, since the stand-in answers inside the page).
+B5 first looks at a hover right after sign-in (the idle warm of sign-in has already started the warmer, so within 30 s the hover sends nothing; recorded in the table), then waits 31 s and checks that the hover sends the request.
+
+The speed table of the second run (REAL browser, MOCK vault; vault latency 600 ms; Ann has 500 entries, 3 walk pages):
+
+| engine | profile | scenario | firstRowMs | source | wall ms | records req at row | records answered at row | records req total | rows | pass | failed | notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| chromium | desktop | B1 cold first visit | 3020.4 | network | 3027.6 | 5 | 5 | 5 | 500 | pass |  |  |
+| chromium | desktop | B2 back from an entry | 1.8 | memory | 1.9 |  |  |  | 500 | pass |  |  |
+| chromium | desktop | B3 reload, from the device | 8.4 | device | 10.5 | 0 | 0 |  | 500 | pass |  |  |
+| chromium | desktop | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
+| chromium | desktop | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| chromium | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
+| chromium | phone | B1 cold first visit | 3019.4 | network | 3026.8 | 5 | 5 | 5 | 500 | pass |  |  |
+| chromium | phone | B2 back from an entry | 1.6 | memory | 1.8 |  |  |  | 500 | pass |  |  |
+| chromium | phone | B3 reload, from the device | 9.9 | device | 9.7 | 0 | 0 |  | 500 | pass |  |  |
+| chromium | phone | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
+| chromium | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| chromium | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
+| webkit | desktop | B1 cold first visit | 3014 | network | 3019 | 5 | 5 | 5 | 500 | pass |  |  |
+| webkit | desktop | B2 back from an entry | 2 | memory | 2 |  |  |  | 500 | pass |  |  |
+| webkit | desktop | B3 reload, from the device | 10 | device | 5 | 0 | 0 |  | 500 | pass |  |  |
+| webkit | desktop | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
+| webkit | desktop | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| webkit | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
+| webkit | phone | B1 cold first visit | 3013 | network | 3018 | 5 | 5 | 5 | 500 | pass |  |  |
+| webkit | phone | B2 back from an entry | 2 | memory | 3 |  |  |  | 500 | pass |  |  |
+| webkit | phone | B3 reload, from the device | 10 | device | 5 | 0 | 0 |  | 500 | pass |  |  |
+| webkit | phone | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
+| webkit | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| webkit | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |

@@ -17,6 +17,23 @@ Plain functions and types, no React, no credential. The platform serves the list
 - The platform client this talks through: `PlatformClient` (`{ origin, fetch }`), `PlatformFetch`, `PlatformError` (`status` 0 means not reached), `PlatformAnswer`, `request(platform, method, url, body?, headers?, cache?, bound?)`, `RequestBound` (`signal`, `timeoutMs`), `routeUrl(platform, path)`, `vaultSegment(vaultId)`, `locate(platform, iri)` (the IRI's own path and query, on the platform's origin; a `PlatformError` of status 0 when the IRI is not an address), `retryAfterMs(headers, now?)` (what a `Retry-After` header asks for, in milliseconds, or `null`), `isAbsoluteIri(value)` (a shape check for an absolute http(s) IRI), `originHostMismatch(platform, vaultId)` (why the client's origin cannot write in that vault, or `null`; the origin's host and port must be the vault's), and `expectStatus(answer, method, ok)`: the answer itself when its status is one of `ok`, else a `PlatformError` that says what was asked and what came back (`<METHOD> <url> answered <status>: <first 300 characters of the body>`).
 - Types: `RecordSyncState`, `RecordSync`, `RecordRow`, `RecordWalk`.
 
+## What the platform must answer for `completeCopy`
+
+All requests are `GET /lws/vault/<vaultId>/records` (the vault id percent-encoded; `listBase` in `completeCopy.ts`). `<type>` is the type name with a leading `t:` taken off, so `t:CatalogEntry` is sent as `type=CatalogEntry` (the start of `completeCopy`). In order:
+
+1. `?type=<type>&since=head` (`sinceHead`). The answer must carry a `nextCursor` string that is not empty; a 400 here means the platform does not know `since=`.
+2. The walk, newest first (`walkType`, `bodyPage`): `?type=<type>&include=body&limit=<n>`, `n` being `pageLimit` (1 to 200, default 200). Each next page adds `&after=<the last nextCursor>`. `&filter=` is added only when you pass a `filter`. `&offset=<n>` is sent instead of `after` only when the platform answered `after` with a 400 or served the first page again.
+3. The pass (`changesSince`, `sinceMerge`): `?type=<type>&since=<the kept head>&include=body&limit=200`, asked again with the new `nextCursor` until the answer says `complete: true`, at most 20 times.
+
+What it reads from a 200 answer (JSON; `rowOf`, `rowsOf`, `bodyPage`, `changesSince`):
+
+- `records`, a list of rows (if `records` is not a list, the first list in the answer). From each row: `entity` (a string; a row without one is dropped), `typeUri`, `label`, `updatedAt` (the pass orders its rows by `updatedAt`), `body` (an object) and `etag`.
+- `complete`. The walk ends on anything but `false`. The pass ends only on `true`.
+- `nextCursor`: the `after` of the next walk page, and the new position in the pass.
+- `nextOffset`: used only when the walk is by offset.
+
+A 400 on the pass whose body has `"error": "since_cursor_invalid"` restarts the pass once from `since=start`, and what that returns replaces the rows the walk read (`changesSince`, `sinceMerge`). Any other answer that is not 200 throws `RecordListError`.
+
 ## What this is not
 
 - Not the whole of `gilb-stakeholders`' `recordPages.ts` and `platform.ts`: only the symbols the Plan-card record hooks and the Stakeholder card reach. Not here: `syncRecordPages` (the sync that starts again by itself) and its `syncOnce`.

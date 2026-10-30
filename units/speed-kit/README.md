@@ -13,7 +13,7 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 | `hub` | `principal-hub` | whose tab this is; clears every registered cache on a change of person; drops late answers |
 | `cache` | `session-cache` | the in-memory cache a page opens from at once and revalidates behind |
 | `cached` | `use-cached` | the React hook over it (`cached.useCached`) |
-| `updated` | `updated-line` | the "Updating... / Updated 14:05" line, the stale note, the refresh note |
+| `updated` | `updated-line` | the "Updating… / Updated 14:05" line, the stale note, the refresh note |
 | `jobs` | `background-jobs` | jobs that outlive the page, one flight per key, one lane per workspace, never retried |
 | `prefetch` | `prefetch-registry` | warmers registered per page, run on idle and on intent |
 | `device` | `device-store` | the copy kept in the browser per person and workspace, a starting point and never an answer |
@@ -28,6 +28,13 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 - Not a place for new behaviour: a change to how a unit works is made in that unit.
 - Not a measurement: it makes no number faster by itself. Rule 1 below (measure before and after) is not covered by any unit.
 
+## Speed you can expect
+
+Measured on `apps/speed-kit-taking-app` (REAL Chromium and WebKit, MOCK vault, 600 ms per request, 500 entries, 2026-10-30; `npm run proof:browser` there repeats it):
+
+- A cold first visit waits for the whole `completeCopy`: `since=head`, then one walk page per 200 rows, then one `since=` pass. At 500 rows that was 5 requests one after the other, and the first row came after about 3.0 s.
+- After that, a page painted from memory in about 2 ms and from the device after a reload in about 10 ms.
+
 ## The rules and the unit that implements each
 
 `Rule_Code_gilb-app-speed` (https://appbuilder.gilb.com/base/e/06grax057dsf33639fbrqz320c), 11 rules. "Not covered" means no unit does it: the app does.
@@ -41,7 +48,7 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 | 5 `RuleAppspeedInstantAction` | `background-jobs` | One job per key, FIFO per workspace, snapshot and `recheck` before the write, success toast, a failure kept until dismissed with its cause, an intent record so a reload says "did not finish" and never reruns, a warning before the tab closes. Not covered: `Idempotency-Key` on a create and the server's lock (the app's request and the server's). |
 | 6 `RuleAppspeedFreshBeforeWrite` | `session-cache` (partly) | `refresh` is never joined to a load that started before it, and the newest wins. Using `refresh` and not `swr` for a read a write depends on, and never keeping an "already done?" guard in memory, is the app's. |
 | 7 `RuleAppspeedPrefetch` | `prefetch-registry` | One registry, warmers per page, deduplicated per workspace and client within the stale window, heavy ones skipped on save-data or 2g, fewer pictures on a narrow screen, `onIdle`. Not covered: the hook with the intent handlers (a few lines, in the example below), a bound on a warmer whose width follows data, and that a warmer only reads. |
-| 8 `RuleAppspeedVisibleWait` | `updated-line` (partly) | "Updating...", "Updated HH:MM", the stale note, the refresh note, a polite status region. Not covered: "at least N" for a partial read, the picture before the rest, a status that comes from a live signal. |
+| 8 `RuleAppspeedVisibleWait` | `updated-line` (partly) | "Updating…", "Updated HH:MM", the stale note, the refresh note, a polite status region. Not covered: "at least N" for a partial read, the picture before the rest, a status that comes from a live signal. |
 | 9 `RuleAppspeedPhoneFirst` | `device-store` (partly), `prefetch-registry` | Per person and workspace, loaded before the network, bounded by size, a missing or broken copy is a normal load, a disk failure turns the disk off. Save-data and 2g in the registry. Not covered: smallest-screen layout, chunking a big merge, measuring on a phone with a slowed network. The rule itself says it is a target, not a result. |
 | 10 `RuleAppspeedEveryStateHasAPlace` | not covered | The app's own table test of every record state and its one place. |
 | 11 `RuleAppspeedFallbackPerCaller` | not covered | A fallback switched on per caller: the app's code. |
@@ -49,6 +56,8 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 ## How to take it
 
 Package: `@kaigilb/gilbplatformcode-speed-kit`
+
+A new app first needs its own `package.json`: run `npm init -y` in the app folder. Otherwise npm installs into the nearest parent folder's `package.json`.
 
 Put this line in your app's own `.npmrc`:
 
@@ -62,7 +71,15 @@ Then install the units in order (the line `node scripts/peers.mjs speed-kit` pri
 npm install react@^19.0.0 <path-to-the-library>/units/device-store <path-to-the-library>/units/principal-hub <path-to-the-library>/units/background-jobs <path-to-the-library>/units/prefetch-registry <path-to-the-library>/units/record-sync <path-to-the-library>/units/session-cache <path-to-the-library>/units/updated-line <path-to-the-library>/units/use-cached <path-to-the-library>/units/speed-kit
 ```
 
+An app that renders also needs `npm install react-dom@^19.0.0`. To build and test it needs `vite`, `vitest`, `jsdom`, `@testing-library/react` and `fake-indexeddb`; `apps/speed-kit-taking-app/package.json` has the versions.
+
 The eight units are peers of this package and `principal-hub` holds module state: install ONE copy of each. The package ships TypeScript source (`src/`); your bundler compiles it. `examples/consumer` is a fresh app that is exactly the example below; it was compiled with `tsc --noEmit` after that install (a copy of it in a scratch folder, since `node_modules` does not belong in the unit).
+
+Dev mode. `vite` (not the build) pre-bundles the units with esbuild's own options, which compile JSX the classic way, so a screen that uses `updated-line` fails after sign-in with `React is not defined` (measured on the taking app, Vite 5.4.21, 2026-10-30). Add this to your app's `vite.config.ts`:
+
+```ts
+optimizeDeps: { esbuildOptions: { jsx: "automatic" } },
+```
 
 ## The glue: `createSpeedKit<Ctx>(options)`
 
@@ -73,7 +90,9 @@ The eight units are peers of this package and `principal-hub` holds module state
 - `persistResources`: the resources (last part of a cache key) whose values are plain data and are kept on the device. Default none. `persistResource(name)` adds one later.
 - `cache`: the session cache. Default: the unit's own `sessionCache`. `openKv`: how the disk is opened (default IndexedDB; tests pass a fake).
 - Returns `{ appName, cache, jobs, prefetch, start, hydrateWorkspace, end, persistResource, currentPersist }`; `jobs` is `createBackgroundJobs(...)` and `prefetch` is `createPrefetchRegistry<Ctx>(...)`, unchanged.
-- `start(person, { workspace?, waitMs?, persist?, onHydrated? })`: sign-in or change of person. Tells the hub and the job store, waits for an earlier wipe, opens the disk (waiting at most `waitMs`, 400 by default, then it is "no cache"), drops other people's records, reads this person's vault list and `workspace`, puts the cache entries in the session cache (stale), hands the rest (`stores`, `vaults`) to `onHydrated`, and starts saving the `persistResources` the cache commits. Answers `{ disk, hydrated }`. Never rejects for a slow, missing or failing disk.
+- `start(person, { workspace?, waitMs?, persist?, onHydrated? })`: sign-in or change of person. Tells the hub and the job store, waits for an earlier wipe, opens the disk (waiting at most `waitMs`, 400 by default, then it is "no cache"), drops other people's records, reads this person's vault list and `workspace`, puts the cache entries in the session cache (stale), hands what it read to `onHydrated`, and starts saving the `persistResources` the cache commits. Answers `{ disk, hydrated }`. Never rejects for a slow, missing or failing disk.
+- `onHydrated(h)` gets the whole `Hydrated` of device-store, not only the rest. `h.entries` is `{ key, value, at }[]`: the cache entries, already put in the cache (a host reads them only to know which keys came from the device). `h.stores` is `{ key, snap }[]`: the per-type stores with the position they are current to (`snap.cursor`), for the host's client to seed. `h.vaults` is the vault list, or `undefined`. It is not called when the person changed in the meantime.
+- `persist` is device-store's `PersistOptions`: `maxBytes` (the size bound), `now`, `flushMs` (how long a write waits, 400), `schedule` (how a flush is scheduled). It controls how the copy on the device is written. A test makes the disk save now with `await speed.currentPersist()?.flush()`.
 - `hydrateWorkspace(ws)`: the same for a workspace the person switched to.
 - `end()`: sign-out. Nobody is signed in, every registered cache is cleared, saving stops, and the copy on the device is wiped, whoever it belonged to (also when no copy was running: a page that loads signed out).
 - `currentPersist()`: the running `Persist` (for `saveStore` and `saveVaults`), or null.
@@ -214,15 +233,37 @@ Dynamic imports in the files taken: none.
 
 ## Do not
 
-- Do not call `hub.setPrincipal` for a sign-in when you also use `start`: `start` does it, and then reads the person's copy. Calling `setPrincipal` alone is safe (the copy of another person is closed and wiped), but nothing is read from the disk.
+- Do not call `hub.setPrincipal` for a sign-in when you also use `start`: `start` does it, and then reads the person's copy. Calling `setPrincipal` alone closes and wipes the copy of another person, but nothing is read from the disk, and a screen that is still mounted is not safe (see "A bare `setPrincipal` and a screen still mounted").
 - Do not put a value that is not plain data (a Map, a class) under a `persistResources` resource: `device-store` keeps plain data only.
 - Do not answer a page from `onHydrated`'s stores as they stand: catch up with `since=` first.
+
+## A bare `setPrincipal` and a screen still mounted
+
+A screen that is still mounted when the person changes (a bare `hub.setPrincipal(other)`, with no `signOut`) makes its cache key again, and `cacheKey` now reads the new person. It still holds the old person's client and workspace. So it loads the old person's vault into the new person's cache key, and the old person's rows show under the new person. The taking app saw exactly this in its test T9.
+
+The remedy is a hub clearer that takes the screens back to sign-in. From `apps/speed-kit-taking-app/src/App.tsx`:
+
+```ts
+useEffect(() => {
+  hub.registerCache("speedkittaking.app", () => setPerson(null));
+  return () => hub.registerCache("speedkittaking.app", () => undefined);
+}, []);
+```
+
+With it, the screens unmount in the same change and no load starts for the new person (T9 checks that no records request is sent).
+
+## Testing your app
+
+- On Node 25 (seen on 25.9.0) jsdom's `localStorage` is not usable (`localStorage.clear is not a function`). Stub `localStorage` and `sessionStorage` with an in-memory `Storage` in your test set-up.
+- A reload in a test is `vi.resetModules()` plus a fresh dynamic `import()` of your app. The hub, the cache, the job store and the kit start empty, as on a new page; the fake IndexedDB stays, as the device does.
+- `apps/speed-kit-taking-app/test/helpers.tsx` (`boot()` and `reload()`) is a worked example.
 
 ## Wrong readings
 
 - "`end()` only clears memory." It also wipes the device copy, and a start right after an `end()` waits for that wipe.
 - "`start` for the same person again wipes the copy." It does not: it closes the earlier run (which writes no more) and reads again.
 - "A cache from `createSessionCache` is emptied by the hub." Only the unit's own `sessionCache` registers itself; `createSpeedKit` registers whichever cache it is given.
+- "A hover always warms." A warmer is not started again for the same workspace and client within `staleMs` (30 s by default) of its last start, even when the cache entry is gone (`runWarmer` in `prefetch.ts` of `prefetch-registry`). A hover soon after the idle warm of sign-in sends nothing.
 - "`start` is slow on a slow disk." It waits at most `waitMs` and answers `{ hydrated: false }`; a disk that answers later is still read, and handed over only if the same person is still signed in.
 
 ## Where it came from
@@ -232,3 +273,5 @@ Dynamic imports in the files taken: none.
 Named changes from Social's bridge, and only these: the persistable set is the option `persistResources` (Social's `PERSISTABLE` set), the database name and storage keys come from `appName`, the last-workspace memory and the vault client's seeding stay in the app (the example shows them), the read memo (`readMemo`) and the device keys (`deviceBinding`) are not here, and the hub registers the device copy so a bare `setPrincipal` also closes and wipes it.
 
 Tests (`src/*.test.ts`, jsdom, `fake-indexeddb` 6.2.6): `twoPeople.test.ts` (Ann and Ben across the hub, the session cache, the job store, the warm context and the device store: a change of person, a sign-out, a reload between, a late answer), `speedKit.test.ts` (the glue), `exports.test.ts` (every export of the entry and of each namespace), `readme.test.ts` (the example in this file is the file), `hostAgnostic.test.ts` (the same host-agnostic check as the other units). The fixture is `test/testKit.ts`.
+
+Taken by: `apps/speed-kit-taking-app` takes this package. It was built from this README alone on 2026-10-30, and its `RUNLOG.md` lists what the README lacked.
