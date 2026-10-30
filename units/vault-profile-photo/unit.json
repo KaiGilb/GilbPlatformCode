@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "unit": "units/vault-profile-photo",
+  "package": "@kaigilb/gilbplatformcode-vault-profile-photo",
+  "version": "0.1.0",
+  "purpose": "Finds a vault's profile photo and loads it, and makes the vault's own card when it has none.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          35,
+          45
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          47,
+          48
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          86,
+          88
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          106,
+          118
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          131,
+          204
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          238,
+          260
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          262,
+          408
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          410,
+          431
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          433,
+          496
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/vaultProfilePhoto.ts",
+        "lines": [
+          607,
+          632
+        ],
+        "to": "src/vaultProfilePhoto.ts"
+      },
+      {
+        "path": "src/lib/base/selfCardMade.ts",
+        "lines": [
+          9,
+          100
+        ],
+        "to": "src/selfCardMade.ts"
+      },
+      {
+        "path": "src/lib/base/records.ts",
+        "lines": [
+          555,
+          624
+        ],
+        "to": "src/selfCardRecord.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "host first argument: `discoverVaultProfilePhoto`, `writeCachedPhotoRef` and `clearCachedPhotoRef` take `host: VaultProfilePhotoHost`; `photoReadKeys()` (GilbApp `src/lib/base/photoTerm.ts:37`) is `host.photoReadKeys()`; `knownVaultPicture.note(vaultId, has)` (`src/lib/knownFact.ts`) is `host.noteVaultPicture?.(vaultId, has)`, optional, absent means nothing is noted; the calls of the two helpers pass `host`.",
+    "a module-load origin becomes a function over the setting: `BASE_ORIGIN` is `baseOrigin()` of `@kaigilb/gilbplatformcode-base-origin` in `discoverVaultProfilePhoto` (the published-card URL) and in `loadPhotoObjectUrl` (`new URL(photoRef, baseOrigin())`).",
+    "The imports are the units': `readRecord` and, in `selfCardRecord.ts`, `toWireFacts`, `throwForCreateStatus`, `idFromResourceUrl`, `RecordCreateFacts`, `WriteSource` from `lws-records` (0.4.0); `downloadFile` from `file-download-outcome`; `dpopReadAuth`, `dpopWriteAuth` from `lws-session-bridge`; `typeUriForVaultNamespace` from `record-types`; `photoRefFromFacts` from `photo-term`; `atVaultOrigin`, `selfCardIdForVault`, `vaultSegmentOf`, `vaultOriginOf` from `vault-origin-rule`; `baseOrigin` from `base-origin`; and this unit's own `./gilbPhotoRef`, `./selfCardRecord`, `./selfCardMade`, `./vaultProfilePhotoHost` (in the source: `./config`, `./records`, `./files`, `./dpop`, `./recordTypes`, `gilb-photo`, `../knownFact`, `./photoTerm`, `./selfCardMade`).",
+    "`LWS_VAULT_SELFCARD_URL` (GilbApp `src/lib/base/config.ts:518`) is an inline named copy in `selfCardRecord.ts`: `${vaultOriginOf(vaultId)}/lws/vault/${encodeURIComponent(vaultId)}/selfcard`.",
+    "`entityIdTail` and `fileIdFromPhotoRef` are the private package `gilb-photo`'s, copied by script into `src/gilbPhotoRef.ts` (repository commit bf56ec7, `src/photoRef.ts` lines 17-31 and 33-77, last changed by commit 8b5c74d8570e78f0686258164b9f4f4f8b6a595a), not the `photo-ref` unit's: on a malformed percent-encoding they throw where `photo-ref` answers null or an empty string (a false friend, in the README).",
+    "Comments that name a host, a cycle, a ticket, an agent or a person are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed. The header comment of `selfCardMade.ts` is a new, shorter one."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/vaultProfilePhotoHost.ts",
+    "src/gilbPhotoRef.ts"
+  ],
+  "host": [
+    {
+      "member": "photoReadKeys",
+      "replaces": "photoReadKeys(), GilbApp src/lib/base/photoTerm.ts:37, called at src/lib/base/vaultProfilePhoto.ts:278"
+    },
+    {
+      "member": "noteVaultPicture",
+      "replaces": "knownVaultPicture.note(vaultId, has), optional, GilbApp src/lib/knownFact.ts:55, called at src/lib/base/vaultProfilePhoto.ts:171 and :195"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
