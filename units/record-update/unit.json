@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "unit": "units/record-update",
+  "package": "@kaigilb/gilbplatformcode-record-update",
+  "version": "0.1.0",
+  "purpose": "Saves a record card's edits as one PATCH against the version it read, and keeps every cache of that record in step.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/recordHooks.ts", "lines": [67, 94], "to": "src/recordUpdate.ts" },
+      { "path": "src/lib/base/recordHooks.ts", "lines": [96, 127], "to": "src/recordUpdate.ts" },
+      { "path": "src/lib/base/recordHooks.ts", "lines": [2089, 2357], "to": "src/recordUpdate.ts" },
+      { "path": "src/lib/base/savedElsewhere.ts", "lines": [17, 17], "to": "src/rebaseOnStored.ts" },
+      { "path": "src/lib/base/savedElsewhere.ts", "lines": [40, 74], "to": "src/rebaseOnStored.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are imports of the units `lws-records` (`patchRecord`, `readRecord`, `RecordConflictError`, `writeSource`, `BaseRecord`, `RecordFacts`), `record-cache-kit` (`setList`, `upsert`, `setRecordReads`, `flattenRecordPages`, `recordsKey`, `RECORD_QUERY_HEAD`, `RecordsPage`, `withCanonicalLabel`), `plan-kinds` (`isPlanRecordType`), `record-types` (`isAppAddressableSlug`, `resolveType`), `stakeholder-card-model` (`partySavePatch`, `PartySaveRule`), `tag-carrier` (`TAG_CARRIER_SLUGS_IN_PRECEDENCE`) and `working-set-store` (`rememberRecord`).",
+    "`TAG_CARRIER_SLUGS`, `TAG_QUALIFIER_SLUGS`, `CARRIER_PRESERVE_SLUGS` and `CARRIER_ONLY_SLUGS` (source lines 83-94, private there) are exported: the card and later units read the guarded set. Nothing else gains an `export` word; `sweepMayRetract` and `savedFacts` stay private.",
+    "`rebaseOnStored` (source `savedElsewhere.ts`, in no unit before) is here and exported, with its one-line helper `val` as a named private copy (the same line is private in `plan-record-hooks`, which does not export it).",
+    "The comments that name a cycle, a ticket, an agent, a person, a ruling or a host are reworded with the same facts; the doc comment of `UpdateRecordVars` says `merge PATCH` where the source's older text said `PUT` (the code, unchanged, sends a PATCH). No code changed. The comment-stripped file, imports excluded and the four added `export` words ignored, equals the source ranges (0 diff; 826 words), and `rebaseOnStored` with `val` equals the source (0 diff; 120 words).",
+    "Not taken: `useRetypeRecord` and the retype error (`plan-record-hooks`), `putRecordInCaches` and `refreshRecordInCaches` (`record-cache-kit`; the save does not call them), `keysSavedElsewhere` (`plan-record-hooks`; the save does not call it)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
