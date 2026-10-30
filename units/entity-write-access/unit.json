@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "unit": "units/entity-write-access",
+  "package": "@kaigilb/gilbplatformcode-entity-write-access",
+  "version": "0.1.0",
+  "purpose": "Remembers, for this page, which entities refused a write, and tells a screen whether it may write one.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/entityWriteAccess.ts", "lines": [83, 110], "to": "src/entityWriteAccess.ts" },
+      { "path": "src/lib/base/entityWriteAccess.ts", "lines": [112, 113], "to": "src/entityWriteAccess.ts" },
+      { "path": "src/lib/base/entityWriteAccess.ts", "lines": [266, 276], "to": "src/entityWriteAccess.ts" },
+      { "path": "src/lib/base/entityWriteAccess.ts", "lines": [278, 304], "to": "src/entityWriteAccess.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`ENTITY_READ_ONLY_REASON` (line 113) is re-exported from the unit `record-write`, which holds the same sentence; there is one definition.",
+    "`entityWriteAllowed` (lines 270-276) returns record-write's `entityWriteAllowed(vaultWriteAllowed, recordId, isEntityWriteDenied(recordId))` in place of its own two-line body; same answer for every input.",
+    "`useEntityCanWrite` (line 296) calls record-write's `recordWriteAllowed(vaultWriteAllowed, record, identityKeys, isEntityWriteDenied(record.id))`; the source's own `recordWriteAllowed` read the module's `denied` itself.",
+    "A new header comment; the doc comment of `entityWriteAllowed` names `useEntityCanWrite`. The source's lines 1-82 and 115-264 (the pure half) are not taken: they are the unit `record-write`."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

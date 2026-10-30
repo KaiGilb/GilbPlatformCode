@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/add-information",
+  "package": "@kaigilb/gilbplatformcode-add-information",
+  "version": "0.1.0",
+  "purpose": "Offers '+ Add Information' on a record card and opens the sheet of groups to add.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/components/records/AddInformation.tsx", "lines": null, "to": "src/AddInformation.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "The imports `./cardMode`, `./useSheetHistory` and `../ui/layers` are the packages of the units `card-mode`, `sheet-history` and `open-popups`.",
+    "The file's header comment and two inline comments that name a cycle, a decision, a person and a tester are reworded, and the host app's name in the header reads \"this app\". No code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

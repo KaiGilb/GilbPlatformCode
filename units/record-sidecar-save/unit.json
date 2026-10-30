@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/record-sidecar-save",
+  "package": "@kaigilb/gilbplatformcode-record-sidecar-save",
+  "version": "0.1.0",
+  "purpose": "Saves one record's changes one at a time against its served version.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/recordSidecarSave.ts", "lines": null, "to": "src/recordSidecarSave.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The import of `patchRecord`, `readRecord`, `RecordConflictError`, `BaseRecord` and `MergePatchValue` from `./records` is from `@kaigilb/gilbplatformcode-lws-records`.",
+    "The header comment and one inline comment that name a cycle, an agent and a ticket are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

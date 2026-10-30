@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/header-layout",
+  "package": "@kaigilb/gilbplatformcode-header-layout",
+  "version": "0.1.0",
+  "purpose": "Chooses the record card header's layout tier from its width.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/components/records/headerLayout.ts", "lines": null, "to": "src/headerLayout.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The file's header comment names a cycle, an agent and a round; it is reworded. No code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
