@@ -2,11 +2,11 @@
 import { useState } from "react";
 import { cache, cached, sync, updated } from "@kaigilb/gilbplatformcode-speed-kit";
 import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
-import { entriesKey, liveEntriesKey, loadEntries } from "../entries";
+import { entriesKey, loadEntries } from "../entries";
 import { speed } from "../speed";
 
 export function EntryPage({ ws, client, id, onBack }: { ws: string; client: PlatformClient; id: string; onBack: () => void }) {
-  const { data, refresh } = cached.useCached(liveEntriesKey(ws), loadEntries(client, ws));
+  const { data, refresh } = cached.useCached(entriesKey(ws), loadEntries(client, ws));
   const entry = data?.find((e) => e.id === id);
   const [value, setValue] = useState("");
   const [began, setBegan] = useState<string | null>(null); // the name when the edit began

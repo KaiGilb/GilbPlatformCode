@@ -9,11 +9,13 @@ describe("T9 bare change of person", () => {
     click("signin-ann");
     await screen.findByTestId("entry-e1");
     const watch = watchForText("Ann entry");
+    const sent = k.proof.requests.records;
 
     act(() => { k.hub.setPrincipal(BEN); });
     await sleep(30);
     watch.stop();
 
+    expect(k.proof.requests.records).toBe(sent); // no load started for Ann's vault under Ben's key
     expect(k.session.client).toBeNull(); // the app's own holder was cleared by its hub registration
     expect(k.cache.sessionCache.peek(`${ANN}|${ANN}|entries`).data).toBeUndefined();
     expect(document.body.textContent).not.toContain("Ann entry");

@@ -48,3 +48,8 @@
 - `playwright-core` 1.61.0 (chromium 1228, webkit 2311); both ran.
 - B5 as written fails: the idle warm at sign-in starts the "entries" warmer, and prefetch-registry does not start it again within staleMs (30 s), so a hover then sends nothing (also with the cache cleared). B5 now records that hover, waits 31 s, then checks the hover warms.
 - B1 waits on 5 sequential requests (since=head, 3 walk pages of 200, one since pass) at 600 ms each: first row at about 3.0 s.
+
+## Batch S2-C (app)
+
+- `liveEntriesKey` removed (0.2.1). Tried to make a test red without it: a bare `hub.setPrincipal` inside `act`, and outside it (React act environment off); in both the screens unmount with the App reset before any load starts for the new person (no extra records request). With the guard AND the App reset removed, T9 goes red (`expected 6 to be 3`: a load starts), so the App reset is what protects. The guard was not tested because it is not needed in any ordering I could build.
+- Dev mode (`npm run dev`): the sign-in screen draws, then after `signin-ann` the page errors `React is not defined` and no row appears (updated-line's JSX is pre-bundled with classic JSX). Fix in `vite.config.ts`: `optimizeDeps: { esbuildOptions: { jsx: "automatic" } }`. Proof: `npm run proof:browser -- --dev` passes with it and fails without it.

@@ -15,6 +15,7 @@ const BASE = `http://localhost:${PORT}/`;
 const QUERY = "?entries=500&latency=600";
 const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 const T = 60_000;
+const DEV = process.argv.includes("--dev"); // only the dev-mode check: `vite` (not the built app) must show the rows, with no console or page error
 mkdirSync(OUT, { recursive: true });
 mkdirSync(dirname(LOG), { recursive: true });
 
@@ -158,7 +159,7 @@ async function scenario(engine, profile, name, fn) {
   rows.push(row);
   try {
     const { values, checks } = await fn();
-    row.values = values; row.failed = checks.filter(([, ok]) => !ok).map(([n]) => n); row.pass = row.failed.length === 0;
+    row.values = values; row.failed = checks.filter(([, ok]) => !ok).map(([n, , why]) => (why ? `${n}: ${why}` : n)); row.pass = row.failed.length === 0;
   } catch (e) { row.error = String(e?.message ?? e).split("\n")[0]; row.failed = ["error"]; }
   console.log(`${row.pass ? "PASS" : "FAIL"} ${engine}/${profile}/${name} ${JSON.stringify(row.values)}${row.failed.length ? " failed: " + row.failed.join("; ") : ""}${row.error ? " error: " + row.error : ""}`);
   return row.pass;
@@ -185,9 +186,11 @@ async function main() {
   try {
     // the port must be free (strictPort would refuse anyway)
     if (await fetch(BASE).then((r) => r.status, () => 0)) throw new Error(`port ${PORT} is already answering: stop what holds it first`);
-    const build = spawnSync("npm", ["run", "build"], { cwd: APP, stdio: ["ignore", logFd, logFd] });
-    if (build.status !== 0) throw new Error(`npm run build failed (see ${LOG})`);
-    server = spawn("npx", ["vite", "preview"], { cwd: APP, stdio: ["ignore", logFd, logFd], detached: true });
+    if (!DEV) {
+      const build = spawnSync("npm", ["run", "build"], { cwd: APP, stdio: ["ignore", logFd, logFd] });
+      if (build.status !== 0) throw new Error(`npm run build failed (see ${LOG})`);
+    }
+    server = spawn("npx", DEV ? ["vite"] : ["vite", "preview"], { cwd: APP, stdio: ["ignore", logFd, logFd], detached: true });
     let exited = null;
     server.on("exit", (c) => { exited = c; });
     for (let i = 0; ; i++) {
@@ -196,7 +199,21 @@ async function main() {
       if (i > 100) throw new Error("vite preview did not answer 200 in 20 s");
       await sleep(200);
     }
-    for (const [engine, type] of [["chromium", chromium], ["webkit", webkit]]) {
+    if (DEV) {
+      const browser = await chromium.launch();
+      const page = await browser.newPage();
+      const errors = [];
+      page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text().split("\n")[0]}`); });
+      page.on("pageerror", (e) => errors.push(`pageerror: ${String(e.message).split("\n")[0]}`));
+      await scenario("chromium", "desktop", "D1 dev mode", async () => {
+        await page.goto(BASE + "?latency=50", { waitUntil: "load" });
+        await page.click(sel("signin-ann"));
+        let rowsShown = true;
+        await page.waitForSelector(sel("entry-e1"), { timeout: 10_000 }).catch(() => { rowsShown = false; });
+        return { values: { rows: rowsShown ? 30 : 0 }, checks: [["entry-e1 shown within 10 s", rowsShown], ["no console or page error", errors.length === 0, errors[0]]] };
+      });
+      await browser.close();
+    } else for (const [engine, type] of [["chromium", chromium], ["webkit", webkit]]) {
       const browser = await type.launch();
       const version = browser.version();
       console.log(`${engine} ${version}`);
