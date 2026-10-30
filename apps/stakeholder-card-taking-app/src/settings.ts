@@ -7,6 +7,8 @@ export const SETTINGS_KEY = "stakeholder-card-taking-app.settings";
 export interface AppSettings {
   /** The platform origin of the vault, `https://host`, no path. */
   origin: string;
+  /** The origin of the platform's identity service, where the person signs in (`https://host`, no path). Sign-in calls go only here; the card reads and writes at `origin`. */
+  signInOrigin: string;
   /** The origin that serves the ontology's terms. */
   ontologyOrigin: string;
   /** The origin of the shared world catalogue (the GilbGeo vault). */
@@ -31,6 +33,7 @@ export interface AppSettings {
 
 export const EMPTY_SETTINGS: AppSettings = {
   origin: "",
+  signInOrigin: "",
   ontologyOrigin: "",
   geoOrigin: "",
   systemVaultHosts: "",
@@ -82,6 +85,8 @@ export function settingsProblems(s: AppSettings): string[] {
   const out: string[] = [];
   const a = originProblem("The platform origin", s.origin);
   if (a) out.push(a);
+  const si = originProblem("The sign-in origin", s.signInOrigin);
+  if (si) out.push(si);
   const b = originProblem("The ontology origin", s.ontologyOrigin);
   if (b) out.push(b);
   const c = originProblem("The world catalogue origin", s.geoOrigin);

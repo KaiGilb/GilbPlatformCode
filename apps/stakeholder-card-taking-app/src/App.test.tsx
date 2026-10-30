@@ -23,6 +23,7 @@ describe("settings", () => {
     expect(screen.getByRole("form", { name: "Settings" })).toBeTruthy();
     for (const [label, value] of [
       ["Platform origin of the vault", TEST_SETTINGS.origin],
+      ["Sign-in origin (the platform's identity service)", TEST_SETTINGS.signInOrigin],
       ["Ontology origin", TEST_SETTINGS.ontologyOrigin],
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
@@ -71,7 +72,7 @@ describe("sign-in", () => {
   test("the code step leads to the card screen, and Sign out returns to the sign-in", async () => {
     const s = await signedInApp();
     expect(s.signInWithCode).toHaveBeenCalledTimes(1);
-    expect(s.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([TEST_SETTINGS.origin, "ann@example.test", "123456"]);
+    expect(s.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([TEST_SETTINGS.signInOrigin, "ann@example.test", "123456"]);
     expect(s.sent.length).toBeGreaterThan(0);
     await s.user.click(screen.getByRole("button", { name: "Sign out" }));
     expect(s.invalidate).toHaveBeenCalledWith(true);
