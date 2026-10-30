@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "unit": "units/record-fact-items",
+  "package": "@kaigilb/gilbplatformcode-record-fact-items",
+  "version": "0.1.0",
+  "purpose": "Changes the items of one fact of a record, with If-Match and a queue per record.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/recordFactItems.ts",
+        "lines": null,
+        "to": "src/recordFactItems.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are peers: `conditionFromEtag` from `holder-reference` (was `gilb-stakeholders`) and `patchRecord`, `readRecord`, `RecordConflictError` and the type `MergePatchValue` from `lws-records` (was `./records`).",
+    "Comments that name a cycle, an agent, a ticket or a ruling are reworded; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
