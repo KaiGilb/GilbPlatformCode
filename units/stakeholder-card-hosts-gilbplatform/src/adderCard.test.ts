@@ -6,7 +6,7 @@ import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { resetLwsAuth, lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { ownCardFindingKey } from "@kaigilb/gilbplatformcode-plan-self-source";
-import { NO_OWN_CARD_SAYS, NO_OWN_VAULT_SAYS, NoOwnVaultError, adderCardOf, landingVaultOf } from "./adderCard";
+import { NO_OWN_VAULT_SAYS, NoOwnVaultError, adderCardOf, landingVaultOf, nameFromEmail } from "./adderCard";
 import { BASE, P, P_ENTITY, createWorld, type World } from "../test/world";
 
 const vault = (over: Partial<ReachableVault> = {}): ReachableVault => ({
@@ -37,10 +37,24 @@ const newQc = () => new QueryClient({ defaultOptions: { queries: { retry: false 
 beforeEach(() => void 0);
 
 describe("the sentences", () => {
-  test("are the source's words for a missing vault and the new words for a missing card", () => {
+  test("the sentence for a missing vault is the source's (0.2.0: the sentence for a missing card is gone, as the card is made)", () => {
     expect(NO_OWN_VAULT_SAYS).toBe("Your own vault could not be found, so what you add would have no source. Nothing was saved.");
-    expect(NO_OWN_CARD_SAYS).toBe("You have no card of your own in your vault yet, so make your own card there first, then add this person.");
-    expect(NO_OWN_CARD_SAYS.split(/[.!?]\s/).length).toBe(1);
+  });
+});
+
+describe("nameFromEmail (adderCard.ts:43)", () => {
+  test("splits the part before the @ and before a +tag on . _ -, and capitalises each part", () => {
+    expect(nameFromEmail("petter.hansen@example.test")).toBe("Petter Hansen");
+    expect(nameFromEmail("kai@example.test")).toBe("Kai");
+    expect(nameFromEmail("ANN_marie-ward+work@example.test")).toBe("Ann Marie Ward");
+    expect(nameFromEmail("  ann.ward@example.test ")).toBe("Ann Ward");
+  });
+  test("an email that gives no name gives null", () => {
+    expect(nameFromEmail(null)).toBeNull();
+    expect(nameFromEmail(undefined)).toBeNull();
+    expect(nameFromEmail("")).toBeNull();
+    expect(nameFromEmail("@example.test")).toBeNull();
+    expect(nameFromEmail("..@example.test")).toBeNull();
   });
 });
 
@@ -83,10 +97,21 @@ describe("adderCardOf", () => {
     expect(await adderCardOf([vault()], other)).toBe("https://h.example.test/base/e/c");
   });
 
-  test("with no own card it rejects with the sentence, and writes nothing", async () => {
+  test("with no own card it makes a basic one in the landing vault (a selfcard POST with DPoP), reads it back and answers its address", async () => {
     const world = await setUp({ ownCard: false });
-    await expect(adderCardOf([vault()], newQc())).rejects.toThrow(NO_OWN_CARD_SAYS);
-    expect(world.calls.filter((c) => c.method !== "GET")).toEqual([]);
+    const card = await adderCardOf([vault()], newQc());
+    const posts = world.requests("POST", /\/selfcard$/);
+    expect(posts.length).toBe(1);
+    expect(posts[0]!.url).toBe(`${P.replace("/base/pann", "")}/lws/vault/${encodeURIComponent(P)}/selfcard`);
+    expect(posts[0]!.headers.authorization).toBe("DPoP fake-access-token");
+    expect(posts[0]!.headers.dpop).toBe(`proof(POST ${posts[0]!.url})`);
+    const body = JSON.parse(posts[0]!.body!) as { type: string; facts: Record<string, unknown> };
+    expect(body.type).toBe("t:Person");
+    expect(body.facts).toEqual({ "a:name": "Ann" }); // a basic card: the name and nothing else
+    expect(card).toBe(world.ownCardUri);
+    expect(world.requests("GET", new RegExp(`/lws/r/${card.split("/").pop()}$`)).length).toBeGreaterThan(0);
+    // The only write is the selfcard door: never the record-create door.
+    expect(world.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${new URL(c.url).pathname.replace(/vault\/[^/]+/, "vault/V")}`)).toEqual(["POST /lws/vault/V/selfcard"]);
   });
 
   test("a finding that cannot be read rejects with the source's sentence and the cause", async () => {
@@ -112,18 +137,59 @@ describe("adderCardOf", () => {
     expect(reads()).toBe(2);
   });
 
-  test("the email option is not read: a card that is not there is never made", async () => {
+  test("the email option names the basic card; without it the vault's label does", async () => {
     const world = await setUp({ ownCard: false });
-    await expect(adderCardOf([vault()], newQc(), { email: "ann@example.test" })).rejects.toThrow(NO_OWN_CARD_SAYS);
-    expect(world.calls.some((c) => /selfcard/.test(c.url))).toBe(false);
+    await adderCardOf([vault()], newQc(), { email: "ann.ward@example.test" });
+    expect((JSON.parse(world.requests("POST", /\/selfcard$/)[0]!.body!) as { facts: Record<string, unknown> }).facts["a:name"]).toBe("Ann Ward");
+    const other = await setUp({ ownCard: false });
+    await adderCardOf([vault({ name: null })], newQc(), { email: "@example.test" });
+    expect((JSON.parse(other.requests("POST", /\/selfcard$/)[0]!.body!) as { facts: Record<string, unknown> }).facts["a:name"]).toBe("pann");
   });
 
-  test("a failure is not kept: once she has made her card, the next ask finds it", async () => {
+  test("three adds at once make ONE card, and the next ask finds it without making another", async () => {
     const world = await setUp({ ownCard: false });
     const qc = newQc();
-    await expect(adderCardOf([vault()], qc)).rejects.toThrow(NO_OWN_CARD_SAYS);
-    const card = await world.makeOwnCard();
-    expect(await adderCardOf([vault()], qc)).toBe(card);
+    const three = await Promise.all([adderCardOf([vault()], qc), adderCardOf([vault()], qc), adderCardOf([vault()], qc)]);
+    expect(new Set(three).size).toBe(1);
+    expect(world.requests("POST", /\/selfcard$/).length).toBe(1);
+    expect(await adderCardOf([vault()], qc)).toBe(three[0]);
+    expect(world.requests("POST", /\/selfcard$/).length).toBe(1); // the finding was dropped after the make, so it is read again and now holds the card
+  });
+
+  test("a door that refuses: the sentence of the source with the cause, and the next ask tries again", async () => {
+    const world = await setUp({ ownCard: false });
+    let refuse = true;
+    vi.stubGlobal("fetch", async (u: string, init?: RequestInit) => {
+      if (refuse && /\/selfcard$/.test(String(u))) return new Response(JSON.stringify({ message: "The vault is busy." }), { status: 503 });
+      return world.fetch(u, init);
+    });
+    const qc = newQc();
+    const err = await adderCardOf([vault()], qc).catch((e: unknown) => e as Error);
+    expect((err as Error).message).toMatch(/^Your own card could not be made, so what you add would have no source\. Nothing was saved\. \(.+\)$/);
+    expect(world.ownCardUri).toBeNull();
+    refuse = false;
+    expect(await adderCardOf([vault()], qc)).toBe(world.ownCardUri);
+  });
+
+  test("a vault id that is no address cannot be addressed: the source's sentence, and nothing is sent", async () => {
+    const world = await setUp({ ownCard: false });
+    const qc = newQc();
+    qc.setQueryData(ownCardFindingKey("not an address"), { cardId: null, cardUri: null, cardAtId: null, road: "none" });
+    await expect(adderCardOf([vault({ vaultId: "not an address" })], qc)).rejects.toThrow("Your own vault could not be addressed, so what you add would have no source. Nothing was saved.");
+    expect(world.calls.filter((c) => c.method === "POST")).toEqual([]);
+  });
+
+  test("a card that is made but cannot be read back: the source's sentence", async () => {
+    const world = await setUp({ ownCard: false });
+    vi.stubGlobal("fetch", async (u: string, init?: RequestInit) => {
+      const res = await world.fetch(u, init);
+      if (/\/selfcard$/.test(String(u))) {
+        const loc = res.headers.get("location")!;
+        return new Response(JSON.stringify({ "@id": loc }), { status: 201, headers: { location: loc.replace(/[^/]+$/, "someotherid") } });
+      }
+      return res;
+    });
+    await expect(adderCardOf([vault()], newQc())).rejects.toThrow("Your own card was made but could not be read back, so what you add would have no source. Nothing was saved.");
   });
 
   test("two asks at once are one ask: the same promise", async () => {

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "The ready-made GilbPlatform host for the Stakeholder entry card: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card needs, so it draws, reads and adds with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -143,19 +143,77 @@
           39
         ],
         "to": "src/hosts/stakeholderListDoorsHost.ts"
+      },
+      {
+        "path": "src/lib/base/adderCard.ts",
+        "lines": [
+          43,
+          55
+        ],
+        "to": "src/adderCard.ts"
+      },
+      {
+        "path": "src/lib/base/photoTerm.ts",
+        "lines": [
+          32,
+          32
+        ],
+        "to": "src/photoTerm.ts"
+      },
+      {
+        "path": "src/lib/base/photoTerm.ts",
+        "lines": [
+          37,
+          41
+        ],
+        "to": "src/photoTerm.ts"
+      },
+      {
+        "path": "src/lib/base/photoTerm.ts",
+        "lines": [
+          48,
+          64
+        ],
+        "to": "src/photoTerm.ts"
+      },
+      {
+        "path": "src/lib/mynet/place/lws.ts",
+        "lines": [
+          57,
+          71
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/lib/mynet/place/lws.ts",
+        "lines": [
+          164,
+          170
+        ],
+        "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/records/orgCard/OrgRecordPicker.tsx",
+        "lines": [
+          144,
+          150
+        ],
+        "to": "src/inline.ts"
       }
     ]
   },
   "namedChanges": [
     "src/inline.ts holds the inline copies, each token-equal to the declaration it cites: `HELD_RECORD_FRESH_MS` (recordHooks.ts 449), `heldRecordOf` (456-462), `useRecordsBeingDeleted` (2609-2630), `createdInVaultKey` and `rememberCreatedIn` (2836-2845), `placeClaimsKey` and `PLACE_CLAIMS_STALE_MS` (usePlaceClaims.ts 50-52). Their free names are the units' exports of the same names (`vaultOriginOf` of `vault-origin-rule`, `watchRecordDeletes` of `plan-record-hooks`, `deletedLinkedRecords`, `deletedLinkedRevision` and `onDeletedLinkedRecords` of `stakeholder-list-state`).",
     "src/inline.ts `createIsGeoEntityId(geoOrigin)` is `isGeoEntityId` (baseGeo.ts 82-84) over the prefix `<geoOrigin without trailing slashes>/base/e/` (baseGeo.ts 61-64), the origin a provider prop where the app's was a constant built from the GilbGeo vault id.",
-    "src/adderCard.ts holds the find half of `adderCardOf` (adderCard.ts 98-110): `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf`, `making`, `readFinding` are the source's (token-equal); `findOrMake` (68-88) is replaced by `findOwnCard`, which answers the card of the finding and, where the source made a basic card, forgets the finding (as the source did at line 86) and refuses with `NO_OWN_CARD_SAYS`, a new sentence. The make half (`ensureVaultSelfCard`, `ensureSelfCardRecord`) is not taken.",
-    "src/photoTerm.ts is `photoTerm` and `photoReadKeysSync` (photoTerm.ts 19-22, 74-76) with `vedaOrigin` the provider's `origin` (the app's `BASE_ORIGIN`), one resolver per origin, and `store` the device's `localStorage` when there is one.",
-    "src/defaults.ts holds the values a member takes when the developer gives none: no photo, no held-note line, no place claims, and for `useContactLabels` the value of the source's hook in its disabled branch (useContactLabels.ts 256-258, read, not run).",
+    "src/adderCard.ts holds `adderCardOf` whole (adderCard.ts 98-110) with `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf`, `nameFromEmail`, `making`, `readFinding` and `findOrMake` (68-88): each is token-equal to the source's (measured with the census tool: 22, 38, 118, 53, 160 and 174 tokens). The make half is the units': `ensureVaultSelfCard` and `vaultRootOf` of `vault-profile-photo`, `readRecord` of `lws-records`, `vaultLabel` of `vault-list`. 0.2.0 removes `NO_OWN_CARD_SAYS` (0.1.0 refused with it where the source made the card).",
+    "src/photoTerm.ts is `photoTerm` and `photoReadKeysSync` (photoTerm.ts 19-22, 74-76) with `vedaOrigin` the provider's `origin` (the app's `BASE_ORIGIN`), one resolver per origin, and `store` the device's `localStorage` when there is one. 0.2.0 adds `photoReadKeysOf(resolver)`, the app's `photoReadKeys` (37-41) over that resolver: one ask shared for 60 s (`PHOTO_TERM_RETRY_MS`, 32), a failed resolve answering the last answer that worked, else none with the source's warning (`askPhotoReadKeys`, 48-64). Left out: `tellIfKeysChanged` (the app's subscription for its sync readers; this unit's sync read is `peek()`). One function per resolver, so the header, the Employees group and the card share one ask as the app's module did.",
+    "src/defaults.ts holds the values a member takes when the developer gives none: no held-note line, no place claims, and for `useContactLabels` the value of the source's hook in its disabled branch (useContactLabels.ts 256-258, read, not run). Since 0.2.0 the three photo members default to the units': `discoverVaultProfilePhoto` and `loadPhotoObjectUrl` of `vault-profile-photo` (the first over a host with the photo term's read keys; `noteVaultPicture` left absent) and `loadGranteeFace` of `grantee-face`.",
     "src/shell.ts builds the shell the card reads (`useShell`, ShellContext.ts 412) from the credential's session and the `useVaults` of `reachable-vaults` (the vault set of hooks.ts 108-129); `contentScope` is `{ readVaultId, reach: null }`.",
     "src/provider.tsx takes the query client's defaults from main.tsx 72-76.",
     "every other member is a function a unit exports (`masterKindReader` and `useRelations` of `plan-stakeholder-io`), a prop of the provider, or `() => 0` (`requestsSent`, requestMeter.ts 39).",
-    "test/ holds the master and platform fixtures of `person-create` (`support.ts`, `fixtureReference.ts`, `fixtureTag.ts`, `fixturePlatform.ts`, `writableFields.ts`), copied unchanged; they are not shipped as source (`files` lists `test`, as the Plan-card provider's does)."
+    "test/ holds the master and platform fixtures of `person-create` (`support.ts`, `fixtureReference.ts`, `fixtureTag.ts`, `fixturePlatform.ts`, `writableFields.ts`), copied unchanged; they are not shipped as source (`files` lists `test`, as the Plan-card provider's does).",
+    "0.2.0 hosts the standalone Org units. src/hosts/ gains `createCardReferencesHost` (`changeRecordFactItems` of `record-fact-items`), `createOrgMarkHost` (`downloadFileOutcome` of `file-download-outcome`), `createOrgEmployeesHost` (`readResources` inline, `useSheetHistory` and `dropStaleSheetEntry` of `sheet-history`, the photo keys, and `RecordFace` when given) and `createPickerQuery` (`usePickerQuery`, inline). The provider mounts `OrgEmployeesHostContext`, `OrgMarkHostContext` and `PickerQueryContext` (which `org-hierarchy` reads); the `card-references` host is a factory, as the unit takes it as an argument.",
+    "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150), `getResource` (lws.ts 57-71, with `resourceOf` inlined and the etag, which nothing here reads, left out; not token-equal) and `readResources` (lws.ts 164-170, token-equal, 90 tokens) over `mapWithConcurrency` and `MAX_PARALLEL_DEREFERENCES` of `lws-vault-sets`, `idFromResourceUri` of `resource-id` and `entityUriInVault` of `vault-namespace`."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
@@ -167,11 +225,15 @@
     "src/example.test.tsx",
     "src/hostAgnostic.test.ts",
     "src/hosts.test.tsx",
+    "src/hosts/cardReferencesHost.ts",
     "src/hosts/cardVocabularyHost.ts",
     "src/hosts/index.ts",
     "src/hosts/oneCardHost.ts",
     "src/hosts/onlineStakeholderCardHost.ts",
+    "src/hosts/orgEmployeesHost.ts",
+    "src/hosts/orgMarkHost.ts",
     "src/hosts/personCreateHost.ts",
+    "src/hosts/pickerQuery.ts",
     "src/hosts/stakeholderContactHeaderHost.ts",
     "src/hosts/stakeholderListDoorsHost.ts",
     "src/index.ts",
@@ -183,6 +245,7 @@
     "src/provider.tsx",
     "src/settings.ts",
     "src/shell.ts",
+    "src/standalone.test.tsx",
     "test/example.tsx",
     "test/fakeSession.ts",
     "test/fixturePlatform.ts",
@@ -249,7 +312,7 @@
     {
       "member": "PersonCreateHost.adderCardOf",
       "replaces": "src/lib/base/adderCard.ts:98",
-      "implementedBy": "inline, the find half, src/adderCard.ts (a person with no own card is refused with NO_OWN_CARD_SAYS)"
+      "implementedBy": "inline, src/adderCard.ts (token-equal; a person with no own card gets a basic one: `ensureVaultSelfCard` of `vault-profile-photo`)"
     },
     {
       "member": "PersonCreateHost.rememberCreatedIn",
@@ -269,17 +332,17 @@
     {
       "member": "StakeholderContactHeaderHost.discoverVaultProfilePhoto",
       "replaces": "src/lib/base/vaultProfilePhoto.ts:269",
-      "implementedBy": "provider prop `discoverVaultProfilePhoto`; default `{ photoRef: null }`"
+      "implementedBy": "provider prop `discoverVaultProfilePhoto`; default `discoverVaultProfilePhoto` of `vault-profile-photo` over a host whose `photoReadKeys` is the photo term's (src/photoTerm.ts)"
     },
     {
       "member": "StakeholderContactHeaderHost.loadPhotoObjectUrl",
       "replaces": "src/lib/base/vaultProfilePhoto.ts:437",
-      "implementedBy": "provider prop `loadPhotoObjectUrl`; default null"
+      "implementedBy": "provider prop `loadPhotoObjectUrl`; default `loadPhotoObjectUrl` of `vault-profile-photo`"
     },
     {
       "member": "StakeholderContactHeaderHost.loadGranteeFace",
       "replaces": "src/lib/base/granteeFace.ts:108",
-      "implementedBy": "provider prop `loadGranteeFace`; default null"
+      "implementedBy": "provider prop `loadGranteeFace`; default `loadGranteeFace` of `grantee-face`"
     },
     {
       "member": "StakeholderContactHeaderHost.useHolderOriginLine",
@@ -330,6 +393,46 @@
       "member": "OneCardHost.placeClaimsStaleMs",
       "replaces": "src/lib/mynet/place/usePlaceClaims.ts:52",
       "implementedBy": "inline `60_000`, src/inline.ts"
+    },
+    {
+      "member": "CardReferencesHost.changeRecordFactItems",
+      "replaces": "src/lib/base/recordFactItems.ts:55",
+      "implementedBy": "`changeRecordFactItems` of `record-fact-items`, via `createCardReferencesHost` (an argument of the unit's remove functions, not a context)"
+    },
+    {
+      "member": "OrgMarkHost.downloadFileOutcome",
+      "replaces": "src/lib/base/files.ts:414",
+      "implementedBy": "`downloadFileOutcome` of `file-download-outcome`, via `createOrgMarkHost`; the provider mounts `OrgMarkHostContext`"
+    },
+    {
+      "member": "OrgEmployeesHost.readResources",
+      "replaces": "src/lib/mynet/place/lws.ts:164",
+      "implementedBy": "inline, src/inline.ts (token-equal)"
+    },
+    {
+      "member": "OrgEmployeesHost.photoReadKeys",
+      "replaces": "src/lib/base/photoTerm.ts:37",
+      "implementedBy": "`photoReadKeysOf(resolver)`, src/photoTerm.ts"
+    },
+    {
+      "member": "OrgEmployeesHost.RecordFace",
+      "replaces": "src/components/records/RecordFace.tsx:22",
+      "implementedBy": "provider prop `RecordFace`, fixed at mount; optional (absent: no face is drawn)"
+    },
+    {
+      "member": "OrgEmployeesHost.useSheetHistory",
+      "replaces": "src/components/records/useSheetHistory.ts:41",
+      "implementedBy": "`useSheetHistory` of `sheet-history`"
+    },
+    {
+      "member": "OrgEmployeesHost.dropStaleSheetEntry",
+      "replaces": "src/components/records/useSheetHistory.ts:32",
+      "implementedBy": "`dropStaleSheetEntry` of `sheet-history`"
+    },
+    {
+      "member": "PickerQueryContext.usePickerQuery",
+      "replaces": "src/components/records/orgCard/OrgRecordPicker.tsx:144-150",
+      "implementedBy": "inline, src/inline.ts, via `createPickerQuery`; the provider mounts `PickerQueryContext`"
     }
   ],
   "library": {

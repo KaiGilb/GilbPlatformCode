@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(base-origin|lws-records|lws-session-bridge|one-card|online-stakeholder-card|own-card|person-create|photo-term|plan-record-hooks|plan-self-source|plan-stakeholder-io|reachable-vaults|signin|stakeholder-card-vocabulary|stakeholder-contact-header|stakeholder-list-doors|stakeholder-list-state|term-origin|type-key|vault-origin-rule)$/,
+  /^@kaigilb\/gilbplatformcode-(base-origin|card-references|file-download-outcome|grantee-face|lws-records|lws-session-bridge|lws-vault-sets|one-card|online-stakeholder-card|org-employees|org-mark|own-card|person-create|photo-term|plan-record-hooks|plan-self-source|plan-stakeholder-io|reachable-vaults|record-fact-items|record-picker|resource-id|sheet-history|signin|stakeholder-card-vocabulary|stakeholder-contact-header|stakeholder-list-doors|stakeholder-list-state|term-origin|type-key|vault-list|vault-namespace|vault-origin-rule|vault-profile-photo)$/,
   /^@kaigilb\/gilbplatformcode-signin\/session$/,
 ];
 

@@ -2,14 +2,18 @@
 
 import type { ContactLabelsState, StakeholderContactHeaderHost } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
 import type { OneCardHost } from "@kaigilb/gilbplatformcode-one-card";
+import { loadGranteeFace } from "@kaigilb/gilbplatformcode-grantee-face";
+import { discoverVaultProfilePhoto, loadPhotoObjectUrl, type VaultProfilePhotoHost } from "@kaigilb/gilbplatformcode-vault-profile-photo";
 
 /**
- * The photo members: without the developer's, the header draws initials and no photo. `discoverVaultProfilePhoto` finds no photo of the holder's
- * vault, `loadPhotoObjectUrl` loads none, `loadGranteeFace` shows none of theirs.
+ * The photo members, over the units that hold GilbApp's code: `discoverVaultProfilePhoto` and `loadPhotoObjectUrl` of `vault-profile-photo`,
+ * `loadGranteeFace` of `grantee-face`. The first takes a host; its one member is the photo term's read keys (`noteVaultPicture` is left absent:
+ * the app's note of which vaults have a picture is the developer's, and the card needs none).
  */
-export const defaultDiscoverVaultProfilePhoto: StakeholderContactHeaderHost["discoverVaultProfilePhoto"] = async () => ({ photoRef: null });
-export const defaultLoadPhotoObjectUrl: StakeholderContactHeaderHost["loadPhotoObjectUrl"] = async () => null;
-export const defaultLoadGranteeFace: StakeholderContactHeaderHost["loadGranteeFace"] = async () => null;
+export const discoverWith = (photoReadKeys: VaultProfilePhotoHost["photoReadKeys"]): StakeholderContactHeaderHost["discoverVaultProfilePhoto"] =>
+  (vaultEntityUri, vaultId) => discoverVaultProfilePhoto({ photoReadKeys }, vaultEntityUri, vaultId);
+export const defaultLoadPhotoObjectUrl: StakeholderContactHeaderHost["loadPhotoObjectUrl"] = (photoRef, door) => loadPhotoObjectUrl(photoRef, door);
+export const defaultLoadGranteeFace: StakeholderContactHeaderHost["loadGranteeFace"] = (principal, viewer) => loadGranteeFace(principal, viewer);
 
 /** The held-note line: without the developer's there is no "Where / How we met" line. */
 export const defaultUseHolderOriginLine: StakeholderContactHeaderHost["useHolderOriginLine"] = () => ({ origin: null, loading: false });

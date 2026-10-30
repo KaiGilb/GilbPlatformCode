@@ -4,9 +4,9 @@ import { describe, expect, test, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { OnlineStakeholderCard } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
+import { peekGranteeFace } from "@kaigilb/gilbplatformcode-grantee-face";
 import { identityFetch } from "@kaigilb/gilbplatformcode-stakeholder-list-doors";
-import { NO_OWN_CARD_SAYS } from "./index";
-import { ANN, BEN, FOREIGN, FOREIGN_HOST, HOST, P, STRANGER, createWorld, type World } from "../test/world";
+import { ANN, BASE, BEN, FOREIGN, FOREIGN_HOST, HOST, P, PHOTO_BYTES, STRANGER, createWorld, type World } from "../test/world";
 import { mountInProvider, newClient, type ProviderOverrides } from "../test/harness";
 
 async function draw(world: World, over: ProviderOverrides = {}, principal: string = BEN) {
@@ -124,13 +124,37 @@ describe("+ Add your own", () => {
     expect(screen.getByTestId("online-stakeholder-card")).toBeTruthy();
   });
 
-  test("without an own card it says so in one sentence and makes no write", async () => {
+  test("with NO own card of hers it makes her basic card first (a selfcard POST with DPoP), then creates the person stated by it", async () => {
     const world = await createWorld({ ownCard: false });
     const view = await draw(world);
     await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
     fireEvent.click(screen.getByTestId("add-own"));
-    await waitFor(() => expect(screen.getByTestId("online-stakeholder-add-error").textContent).toBe(NO_OWN_CARD_SAYS));
-    expect(writes(world)).toEqual([]);
+    await waitFor(() => expect(view.opened.length).toBe(1), { timeout: 8000 });
+    expect(screen.queryByTestId("online-stakeholder-add-error")).toBeNull();
+    const order = writes(world).map((c) => (/\/selfcard$/.test(c.url) ? "selfcard" : /\/c$/.test(c.url) ? "create" : "other"));
+    expect(order.slice(0, 2)).toEqual(["selfcard", "create"]);
+    const selfcard = world.requests("POST", /\/selfcard$/);
+    expect(selfcard.length).toBe(1);
+    expect(selfcard[0]!.url).toBe(`${HOST}/lws/vault/${encodeURIComponent(P)}/selfcard`);
+    expect(selfcard[0]!.headers.authorization).toBe("DPoP fake-access-token");
+    expect(selfcard[0]!.headers.dpop).toBe(`proof(POST ${selfcard[0]!.url})`);
+    expect(world.ownCardUri).not.toBeNull();
+    const create = world.requests("POST", /\/lws\/vault\/[^/]+\/c$/)[0]!;
+    expect(create.headers.authorization).toBe("DPoP fake-access-token");
+    expect(create.headers.dpop).toBe(`proof(POST ${create.url})`);
+    expect((JSON.parse(create.body!) as { facts: Record<string, unknown> }).facts["a:statedBy"]).toEqual({ "@id": world.ownCardUri });
+  });
+
+  test("when her card cannot be made, '+ Add your own' says so with the source's sentence and creates nothing", async () => {
+    const world = await createWorld({ ownCard: false });
+    const view = await draw(world, {}, BEN);
+    vi.stubGlobal("fetch", async (u: string, init?: RequestInit) =>
+      /\/selfcard$/.test(String(u)) ? new Response(JSON.stringify({ message: "The vault is busy." }), { status: 503 }) : world.fetch(u, init),
+    );
+    await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("add-own"));
+    await waitFor(() => expect(screen.getByTestId("online-stakeholder-add-error").textContent).toMatch(/^Your own card could not be made, so what you add would have no source\. Nothing was saved\. \(.+\)$/));
+    expect(world.requests("POST", /\/lws\/vault\/[^/]+\/c$/)).toEqual([]);
     expect(view.opened).toEqual([]);
   });
 
@@ -166,17 +190,16 @@ describe("the credential gate", () => {
 
   test("a vault of hers on a foreign host is asked at the platform, never at that host, and every request carries the session", async () => {
     const world = await createWorld({
-      ownCard: false,
       sessionVaults: [
         { vaultId: P, modes: ["read", "write"] },
         { vaultId: FOREIGN, modes: ["read"] },
       ],
     });
-    await draw(world);
+    const view = await draw(world);
     await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
     const before = world.calls.length;
     fireEvent.click(screen.getByTestId("add-own"));
-    await waitFor(() => expect(screen.getByTestId("online-stakeholder-add-error")).toBeTruthy());
+    await waitFor(() => expect(view.opened.length).toBe(1), { timeout: 8000 });
     expect(world.calls.filter((c) => c.url.startsWith(FOREIGN_HOST))).toEqual([]);
     const sent = world.calls.slice(before).filter((c) => /find-by-attribute/.test(c.url));
     expect(sent.length).toBe(2); // her own vault at its host, the other at the platform's apex
@@ -251,12 +274,50 @@ describe("the held-note and place members left to their defaults", () => {
     expect(spies.loadPlaceNames).not.toHaveBeenCalled();
   });
 
-  test("the photo members default to initials: nothing is asked for a picture", async () => {
+  test("with no photo anywhere the header shows initials and the real loaders fetch no picture", async () => {
     const world = await createWorld();
     await draw(world);
     await waitFor(() => expect(screen.getByTestId("contact-card-initials")).toBeTruthy());
+    await waitFor(() => expect(world.requests("GET", /public-card\?principal=/).length).toBeGreaterThan(1)); // the holder's discovery asked its last road and found none
     expect(document.querySelector('[data-testid="contact-card-link-photo"] img')).toBeNull();
-    expect(world.calls.filter((c) => /profile-photo|photo/i.test(c.url) && !/profilePhoto$/.test(c.url))).toEqual([]);
+    expect(screen.getByTestId("contact-header-holder-image").querySelector("img")).toBeNull();
+    expect(world.calls.filter((c) => /\/files\/|profile-photo/.test(c.url))).toEqual([]);
+  });
+
+  test("the header draws her photo and his through the real loaders, each fetched with the credential", async () => {
+    const blobs: Blob[] = [];
+    const created = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, writable: true, value: (b: Blob) => (blobs.push(b), `blob:face-${blobs.length}`) });
+    try {
+      const world = await createWorld({ ownPhoto: true, benPhoto: true });
+      await draw(world);
+      await waitFor(() => expect(screen.getByTestId("contact-header-holder-image").querySelector("img")).toBeTruthy(), { timeout: 8000 });
+      await waitFor(() => expect(document.querySelector('[data-testid="contact-card-link-photo"] img')).toBeTruthy(), { timeout: 8000 });
+      // Hers: the file of her vault, at her vault's own address, with DPoP, not a bare <img> request.
+      const hers = world.requests("GET", /\/files\/annface$/);
+      expect(hers.length).toBe(1);
+      expect(hers[0]!.url).toBe(`${HOST}/files/annface`);
+      expect(hers[0]!.headers.authorization).toBe("DPoP fake-access-token");
+      expect(hers[0]!.headers.dpop).toBe(`proof(GET ${hers[0]!.url})`);
+      // His: the platform's rung-gated route, with DPoP.
+      const his = world.requests("GET", /\/base\/connect\/profile-photo\?/);
+      expect(his.length).toBe(1);
+      expect(his[0]!.url).toBe(`${BASE}/base/connect/profile-photo?principal=${encodeURIComponent(BEN)}`);
+      expect(his[0]!.headers.authorization).toBe("DPoP fake-access-token");
+      // The two pictures are the two files' bytes, in two object URLs.
+      const sizes = blobs.map((b) => b.size).sort((x, y) => x - y);
+      expect(sizes).toEqual([PHOTO_BYTES.ann.length, PHOTO_BYTES.ben.length]);
+      const src = (sel: string) => document.querySelector<HTMLImageElement>(sel)!.getAttribute("src")!;
+      expect(src('[data-testid="contact-header-holder-image"] img')).toMatch(/^blob:face-\d$/);
+      expect(src('[data-testid="contact-card-link-photo"] img')).toMatch(/^blob:face-\d$/);
+      expect(src('[data-testid="contact-header-holder-image"] img')).not.toBe(src('[data-testid="contact-card-link-photo"] img'));
+      // Their face is kept for this viewer (Ann), asked once.
+      expect(peekGranteeFace(BEN, ANN)).toMatch(/^blob:face-\d$/);
+      expect(world.unserved.filter((u) => /\/files\/|profile-photo\?/.test(u))).toEqual([]);
+    } finally {
+      if (created) Object.defineProperty(URL, "createObjectURL", created);
+      else delete (URL as unknown as Record<string, unknown>).createObjectURL;
+    }
   });
 
   test("the photo hooks of the developer are called", async () => {

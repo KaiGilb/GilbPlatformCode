@@ -2,8 +2,13 @@
 // names replaced by the units' exports; each is cited `path:line` of GilbApp at the commit named in unit.json.
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { readRecord, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
+import { MAX_PARALLEL_DEREFERENCES, mapWithConcurrency } from "@kaigilb/gilbplatformcode-lws-vault-sets";
+import type { PickerQueryArgs, PickerQueryResult } from "@kaigilb/gilbplatformcode-record-picker";
+import { idFromResourceUri } from "@kaigilb/gilbplatformcode-resource-id";
+import { entityUriInVault } from "@kaigilb/gilbplatformcode-vault-namespace";
+import type { ReadResource } from "@kaigilb/gilbplatformcode-org-employees";
 import { watchRecordDeletes } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { deletedLinkedRecords, deletedLinkedRevision, onDeletedLinkedRecords } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
 import { vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
@@ -80,4 +85,34 @@ export function geoEntityPrefix(geoOrigin: string): string {
 export function createIsGeoEntityId(geoOrigin: string): (value: unknown) => boolean {
   const prefix = geoEntityPrefix(geoOrigin);
   return (value: unknown) => typeof value === "string" && value.startsWith(prefix);
+}
+
+/** The pickers' query hook. GilbApp: `usePickerQuery`, the five options of `components/records/orgCard/OrgRecordPicker.tsx:144-150`; `retry: false` is the source's. */
+export function usePickerQuery(a: PickerQueryArgs): PickerQueryResult {
+  return useQuery({
+    queryKey: a.key,
+    queryFn: a.run,
+    enabled: a.enabled,
+    staleTime: a.staleTime,
+    retry: false,
+  });
+}
+
+/** One entity's served document and whether the store answered 404. GilbApp: `getResource` and `resourceOf`, lib/mynet/place/lws.ts:57-75 (the etag is not read by `readResources`, so it is left out). */
+async function getResource(id: string, vaultId: string, entityUri?: string): Promise<{ doc: Record<string, unknown>; gone: boolean; typeUri?: string }> {
+  const rec = await readRecord(id, entityUri ?? entityUriInVault(vaultId, id));
+  if (!rec) return { doc: {}, gone: true };
+  return { doc: rec.served?.facts ?? rec.facts, gone: false, ...(rec.typeUri ? { typeUri: rec.typeUri } : {}) };
+}
+
+/**
+ * Read MANY records, at most six in flight, in input order; a record the store answered 404 for comes back `gone` with an empty `doc`; any other
+ * failed read rejects. GilbApp: `readResources`, lib/mynet/place/lws.ts:164-170 (the host member `readResources` of the Employees group).
+ */
+export async function readResources(uris: readonly string[], vaultId: string): Promise<ReadResource[]> {
+  return mapWithConcurrency(uris, MAX_PARALLEL_DEREFERENCES, async (uri) => {
+    const id = idFromResourceUri(uri);
+    const { doc, gone, typeUri } = await getResource(id, vaultId, uri);
+    return { id, uri, doc, gone, ...(typeUri ? { typeUri } : {}) };
+  });
 }

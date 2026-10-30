@@ -1,4 +1,4 @@
-// The six factories: each result is assignable to the interface of the unit that owns the host (checked by `tsc`), and each member is what the census says.
+// The ten factories: each result is assignable to the interface of the unit that owns the host (checked by `tsc`), and each member is what the census says.
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { deletedLinkedRecords, forgetDeletedLinkedRecord } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
@@ -11,17 +11,29 @@ import type { StakeholderListDoorsHost } from "@kaigilb/gilbplatformcode-stakeho
 import type { PersonCreateHost } from "@kaigilb/gilbplatformcode-person-create";
 import type { CardVocabularyHost } from "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary";
 import { masterKindReader, useRelations } from "@kaigilb/gilbplatformcode-plan-stakeholder-io";
+import type { CardReferencesHost } from "@kaigilb/gilbplatformcode-card-references";
+import type { OrgMarkHost } from "@kaigilb/gilbplatformcode-org-mark";
+import type { OrgEmployeesHost } from "@kaigilb/gilbplatformcode-org-employees";
+import type { UsePickerQuery } from "@kaigilb/gilbplatformcode-record-picker";
+import { changeRecordFactItems } from "@kaigilb/gilbplatformcode-record-fact-items";
+import { downloadFileOutcome } from "@kaigilb/gilbplatformcode-file-download-outcome";
+import { dropStaleSheetEntry, useSheetHistory } from "@kaigilb/gilbplatformcode-sheet-history";
 import * as unit from "./index";
 import {
+  createCardReferencesHost,
   createCardVocabularyHost,
   createOneCardHost,
   createOnlineStakeholderCardHost,
+  createOrgEmployeesHost,
+  createOrgMarkHost,
   createPersonCreateHost,
+  createPickerQuery,
   createStakeholderContactHeaderHost,
   createStakeholderListDoorsHost,
 } from "./index";
 import { adderCardOf } from "./adderCard";
-import { heldRecordOf, rememberCreatedIn, useRecordsBeingDeleted } from "./inline";
+import { heldRecordOf, readResources, rememberCreatedIn, useRecordsBeingDeleted, usePickerQuery } from "./inline";
+import { defaultLoadGranteeFace, defaultLoadPhotoObjectUrl } from "./defaults";
 
 // ---- Type level: each factory's result is exactly the interface of the unit that owns the context.
 expectTypeOf<ReturnType<typeof createOnlineStakeholderCardHost>>().toEqualTypeOf<OnlineStakeholderCardHost>();
@@ -30,18 +42,25 @@ expectTypeOf<ReturnType<typeof createOneCardHost>>().toEqualTypeOf<OneCardHost>(
 expectTypeOf<ReturnType<typeof createStakeholderListDoorsHost>>().toEqualTypeOf<StakeholderListDoorsHost>();
 expectTypeOf<ReturnType<typeof createPersonCreateHost>>().toEqualTypeOf<PersonCreateHost>();
 expectTypeOf<ReturnType<typeof createCardVocabularyHost>>().toEqualTypeOf<CardVocabularyHost>();
+expectTypeOf<ReturnType<typeof createCardReferencesHost>>().toEqualTypeOf<CardReferencesHost>();
+expectTypeOf<ReturnType<typeof createOrgMarkHost>>().toEqualTypeOf<OrgMarkHost>();
+expectTypeOf<ReturnType<typeof createOrgEmployeesHost>>().toEqualTypeOf<OrgEmployeesHost>();
+expectTypeOf<ReturnType<typeof createPickerQuery>>().toEqualTypeOf<UsePickerQuery>();
 
 describe("the export list", () => {
-  test("is the provider, the six factories, the defaults constant and the two sentences", () => {
+  test("is the provider, the ten factories, the defaults constant and the sentence", () => {
     expect(Object.keys(unit).sort()).toEqual([
-      "NO_OWN_CARD_SAYS",
       "NO_OWN_VAULT_SAYS",
       "STAKEHOLDER_CARD_QUERY_DEFAULTS",
       "StakeholderCardGilbPlatformProvider",
+      "createCardReferencesHost",
       "createCardVocabularyHost",
       "createOneCardHost",
       "createOnlineStakeholderCardHost",
+      "createOrgEmployeesHost",
+      "createOrgMarkHost",
       "createPersonCreateHost",
+      "createPickerQuery",
       "createStakeholderContactHeaderHost",
       "createStakeholderListDoorsHost",
     ]);
@@ -86,12 +105,19 @@ describe("the members of each host", () => {
     expect(createOnlineStakeholderCardHost({ useShell: useShell as never, refreshOnlineStakeholders: refresh, photoReadKeysSync: keys, persistVocabulary: persist }).vocabulary.persistVocabulary).toBe(persist);
   });
 
-  test("the header host: useRelations of plan-stakeholder-io, and the photo members answer no photo by default", async () => {
+  test("the header host: useRelations of plan-stakeholder-io, and the photo members are those of vault-profile-photo and grantee-face by default", () => {
     const header = createStakeholderContactHeaderHost();
     expect(header.useRelations).toBe(useRelations);
-    expect(await header.discoverVaultProfilePhoto("https://h.example.test/base/e/x")).toEqual({ photoRef: null });
-    expect(await header.loadPhotoObjectUrl("ref")).toBeNull();
-    expect(await header.loadGranteeFace("https://id.example.test/p/x", null)).toBeNull();
+    expect(header.loadPhotoObjectUrl).toBe(defaultLoadPhotoObjectUrl);
+    expect(header.loadGranteeFace).toBe(defaultLoadGranteeFace);
+    expect(typeof header.discoverVaultProfilePhoto).toBe("function");
+  });
+
+  test("the default discovery reads the photo term's keys through the given photoReadKeys, once per discovery", async () => {
+    const keys = vi.fn(async () => ["a:myPhoto"] as readonly string[]);
+    const header = createStakeholderContactHeaderHost({ photoReadKeys: keys });
+    expect(await header.discoverVaultProfilePhoto(null)).toEqual({ profileId: null, photoRef: null, personName: null });
+    expect(keys).toHaveBeenCalledTimes(1);
   });
 
   test("the header host: the held-note line has no origin, and the kind chips are none (the disabled branch of the source)", () => {
@@ -190,5 +216,35 @@ describe("useRecordsBeingDeleted, the inline copy", () => {
     const other = qc.getMutationCache().build(qc, { mutationKey: ["base", "something-else"], mutationFn: async (_v: { id: string }) => undefined });
     await other.execute({ id: "not-a-delete" });
     expect([...result.current]).toEqual(["zed"]);
+  });
+});
+
+describe("the hosts of the standalone units", () => {
+  test("card-references: the one-key writer of record-fact-items", () => {
+    expect(Object.keys(createCardReferencesHost())).toEqual(["changeRecordFactItems"]);
+    expect(createCardReferencesHost().changeRecordFactItems).toBe(changeRecordFactItems);
+  });
+
+  test("org-mark: the bounded file read of file-download-outcome", () => {
+    expect(Object.keys(createOrgMarkHost())).toEqual(["downloadFileOutcome"]);
+    expect(createOrgMarkHost().downloadFileOutcome).toBe(downloadFileOutcome);
+  });
+
+  test("org-employees: readResources inline, the two history members of sheet-history, the photo keys given, and no face unless one is given", async () => {
+    const keys = vi.fn(async () => ["a:p"] as readonly string[]);
+    const host = createOrgEmployeesHost({ photoReadKeys: keys });
+    expect(Object.keys(host).sort()).toEqual(["dropStaleSheetEntry", "photoReadKeys", "readResources", "useSheetHistory"]);
+    expect(host.readResources).toBe(readResources);
+    expect(host.useSheetHistory).toBe(useSheetHistory);
+    expect(host.dropStaleSheetEntry).toBe(dropStaleSheetEntry);
+    expect(host.photoReadKeys).toBe(keys);
+    const Face = () => null;
+    const withFace = createOrgEmployeesHost({ RecordFace: Face });
+    expect(withFace.RecordFace).toBe(Face);
+    expect(typeof withFace.photoReadKeys).toBe("function");
+  });
+
+  test("the pickers' query hook is the one that passes retry: false", () => {
+    expect(createPickerQuery()).toBe(usePickerQuery);
   });
 });
