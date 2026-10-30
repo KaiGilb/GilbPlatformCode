@@ -1,6 +1,6 @@
 {
   "name": "speed-kit-taking-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.",
@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proof:browser": "node scripts/browser-proof.mjs"
   },
   "dependencies": {
     "@kaigilb/gilbplatformcode-background-jobs": "file:../../units/background-jobs",
@@ -33,6 +34,7 @@
     "@types/react-dom": "^19.3.0",
     "fake-indexeddb": "6.2.6",
     "jsdom": "^25.0.1",
+    "playwright-core": "1.61.0",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "vitest": "^2.1.9"

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { hub } from "@kaigilb/gilbplatformcode-speed-kit";
 import { Messages } from "./Messages";
 import { Entries } from "./screens/Entries";
 import { EntryPage } from "./screens/Entry";
@@ -14,6 +15,11 @@ export function App() {
   const [person, setPerson] = useState<string | null>(null); // the signed-in person's vault, which is also the workspace
   const [page, setPage] = useState<Page>({ name: "entries" });
   const [busy, setBusy] = useState(false);
+  // A change of person that did not come through our own buttons (a bare hub.setPrincipal) sends the screens back to sign-in.
+  useEffect(() => {
+    hub.registerCache("speedkittaking.app", () => setPerson(null));
+    return () => hub.registerCache("speedkittaking.app", () => undefined);
+  }, []);
 
   const signInAs = async (vault: string) => {
     setBusy(true);

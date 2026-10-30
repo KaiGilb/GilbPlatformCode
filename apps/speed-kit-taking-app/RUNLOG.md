@@ -41,3 +41,10 @@
 - The source marker (`memory`/`device`/`network`) is the app's own: `provenance` (set by `onHydrated` and by a loader's success). `ms` is read in the first effect that sees rows, not at paint.
 - "The fake platform's own in-memory state registered with `hub.registerCache`": read as the app's per-person holders (`session.client`, `provenance`, `useJobs` views). The stand-in's server data is NOT registered: it is the server, and clearing it on sign-out would be wrong.
 - Not covered by a test: React `StrictMode` (only `main.tsx` uses it), the focus revalidation (`installFocus`), `switchWorkspace`, a persisted `WS_KEY`.
+
+## Batch S2-B (real browsers)
+
+- T9 (bare `hub.setPrincipal(Ben)`) was RED before a fix: the Entries page stayed mounted, `cacheKey` re-read the hub (Ben) while the page still held Ann's workspace and client, so it loaded Ann's vault under Ben's key and showed "Ann entry" rows under Ben. Fix: `liveEntriesKey(ws)` in `src/entries.ts` (key is null while `hub.currentPrincipal() !== ws`; used by Entries and Entry) and a hub registration in `App.tsx` that sends the screens back to sign-in. Note this ties person to workspace (stand-in coupling).
+- `playwright-core` 1.61.0 (chromium 1228, webkit 2311); both ran.
+- B5 as written fails: the idle warm at sign-in starts the "entries" warmer, and prefetch-registry does not start it again within staleMs (30 s), so a hover then sends nothing (also with the cache cleared). B5 now records that hover, waits 31 s, then checks the hover warms.
+- B1 waits on 5 sequential requests (since=head, 3 walk pages of 200, one since pass) at 600 ms each: first row at about 3.0 s.

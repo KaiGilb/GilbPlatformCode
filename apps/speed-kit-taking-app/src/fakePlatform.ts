@@ -19,7 +19,7 @@ const ACCEPTED = ["type", "since", "after", "include", "limit"] as const;
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-export function createFakePlatform(options: { latencyMs?: () => number } = {}) {
+export function createFakePlatform(options: { latencyMs?: () => number; annCount?: () => number } = {}) {
   const vaults = new Map<string, VaultState>();
   const holds = new Map<string, Promise<void>>();
   let answeredRecords = 0;
@@ -33,11 +33,12 @@ export function createFakePlatform(options: { latencyMs?: () => number } = {}) {
   const seed = (): void => {
     for (const p of Object.values(PEOPLE)) {
       const entries: Stored[] = [];
-      for (let n = 1; n <= p.count; n++) {
+      const count = p.label === "Ann" && options.annCount ? options.annCount() : p.count;
+      for (let n = 1; n <= count; n++) {
         // Entry 1 is the newest, so the list is served "Ann entry 1" first.
-        entries.push({ id: `e${n}`, name: `${p.label} entry ${n}`, description: `${p.label}'s description ${n}`, seq: p.count - n + 1, updatedAt: new Date(Date.UTC(2026, 9, 1, 0, 0, p.count - n)).toISOString() });
+        entries.push({ id: `e${n}`, name: `${p.label} entry ${n}`, description: `${p.label}'s description ${n}`, seq: count - n + 1, updatedAt: new Date(Date.UTC(2026, 9, 1, 0, 0, count - n)).toISOString() });
       }
-      vaults.set(p.vault, { entries, seq: p.count });
+      vaults.set(p.vault, { entries, seq: count });
     }
   };
   seed();
@@ -112,8 +113,8 @@ export function createFakePlatform(options: { latencyMs?: () => number } = {}) {
         const vaultId = m ? decodeURIComponent(m[1]!) : "";
         await holds.get(vaultId);
         await sleep(api.latencyMs());
-        if (route === "records") { const r = records(vaultId, u.searchParams); answeredRecords += 1; return r; }
-        if (route === "patch") return patch(vaultId, m![2]!, init?.body ? JSON.parse(String(init.body)) : null);
+        if (route === "records") { const r = records(vaultId, u.searchParams); answeredRecords += 1; proof.answered.records += 1; return r; }
+        if (route === "patch") { const r = patch(vaultId, m![2]!, init?.body ? JSON.parse(String(init.body)) : null); proof.answered.patch += 1; return r; }
         return json(404, { error: "no_such_route" });
       },
     };
@@ -143,4 +144,10 @@ function latencyFromUrl(): number {
   const n = raw === null ? NaN : Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : 600;
 }
-export const platform = createFakePlatform({ latencyMs: latencyFromUrl });
+/** `?entries=<n>`: Ann's count (default 30, at most 2000). */
+function annCountFromUrl(): number {
+  const raw = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("entries");
+  const n = raw === null ? NaN : Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? Math.min(2000, n) : PEOPLE.ann.count;
+}
+export const platform = createFakePlatform({ latencyMs: latencyFromUrl, annCount: annCountFromUrl });

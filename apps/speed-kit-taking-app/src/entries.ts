@@ -8,6 +8,8 @@ import { provenance } from "./session";
 export interface Entry { id: string; name: string; description: string }
 
 export const entriesKey = (ws: string): string => cache.cacheKey(ws, "entries");
+/** The key for a screen that is on show: null once the hub's person is no longer the one the screen was made for (a bare `hub.setPrincipal`), so a screen that has not unmounted yet loads nothing. */
+export const liveEntriesKey = (ws: string): string | null => (hub.currentPrincipal() === ws ? entriesKey(ws) : null);
 
 const idOf = (entity: string): string => entity.slice(entity.lastIndexOf("/") + 1);
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
