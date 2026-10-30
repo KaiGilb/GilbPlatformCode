@@ -203,4 +203,55 @@ describe("W live writes", () => {
     expect(t.vault.calls.slice(before).filter((c) => c.method === "DELETE")).toEqual([]);
     expect(t.vault.live()).toHaveLength(13); // 3 + 10: nothing of Ann's was ended by Bob
   });
+  test("W7 ended: an ended record is a 200 marked ended (not a 404); it counts as ended for End, a rename of it is refused with no PATCH, and a 404 also counts as ended", async () => {
+    const PREFIXED = "speedkit-proof zz";
+    // (a) the real shape: ended = 200 with the lifecycle mark and no name
+    let k = await bootLive();
+    let vault = fakeVault();
+    vault.add("p1", `${PREFIXED} 1`, "x"); vault.add("p2", `${PREFIXED} 2`, "x");
+    vault.rows.get("p2")!.ended = true; // already ended by someone
+    localStorage.setItem(madeKey, JSON.stringify(["p1", "p2"]));
+    let app = await liveApp(k, vault, undefined, { allowWrite: true });
+    await signInLive(app.user);
+    await screen.findByTestId("entry-k1");
+    const probe = await (vault.inner as unknown as (u: string, i?: RequestInit) => Promise<Response>)(`${VAULT_ORIGIN}/lws/r/p2`, { method: "GET" });
+    expect(probe.status).toBe(200); // not a 404
+    expect(await probe.json()).toMatchObject({ "a:entityLifecycleState": "ended", "a:endingActorKind": "holder" });
+    await app.user.click(screen.getByTestId("end-button"));
+    await waitFor(() => expect(screen.getByTestId("toast").textContent).toContain("Ended 1 test entries"), { timeout: 5000 });
+    expect(screen.getByTestId("toast").textContent).toContain("1 were already ended");
+    expect(vault.calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`${VAULT_ORIGIN}/lws/r/p1`]); // none sent for the one already ended
+    expect(JSON.parse(localStorage.getItem(madeKey)!)).toEqual([]);
+    app.unmount();
+    localStorage.clear();
+
+    // (b) a rename of a record that has been ended is refused, and nothing is written
+    k = await bootLive();
+    vault = fakeVault();
+    app = await liveApp(k, vault, undefined, { allowWrite: true });
+    await signInLive(app.user);
+    await screen.findByTestId("entry-k1");
+    await app.user.click(screen.getByTestId("nav-entry-k3"));
+    fireEvent.change(screen.getByTestId("rename-input"), { target: { value: "Too late" } });
+    vault.rows.get("k3")!.ended = true; // ended elsewhere after the page showed it
+    await app.user.click(screen.getByTestId("rename-button"));
+    await screen.findByTestId("notice");
+    expect(noticeText()).toContain("This entry has been ended");
+    expect(vault.writes()).toEqual([]);
+    expect(screen.queryByTestId("toast")).toBeNull();
+    app.unmount();
+    localStorage.clear();
+
+    // (c) a platform that answers 404 for an ended record: that counts as ended too
+    k = await bootLive();
+    vault = fakeVault({ endedAs: "404" });
+    vault.add("p1", `${PREFIXED} 1`, "x"); vault.add("p2", `${PREFIXED} 2`, "x");
+    localStorage.setItem(madeKey, JSON.stringify(["p1", "p2"]));
+    app = await liveApp(k, vault, undefined, { allowWrite: true });
+    await signInLive(app.user);
+    await screen.findByTestId("entry-k1");
+    await app.user.click(screen.getByTestId("end-button"));
+    await waitFor(() => expect(screen.getByTestId("toast").textContent).toContain("Ended 2 test entries"), { timeout: 5000 });
+    expect(JSON.parse(localStorage.getItem(madeKey)!)).toEqual([]);
+  });
 });

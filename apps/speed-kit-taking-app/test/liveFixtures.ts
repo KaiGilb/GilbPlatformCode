@@ -85,3 +85,13 @@ export const recordDoc = (id: string, name: string, description: string) => ({
   name,
   description,
 });
+
+/** `GET /lws/r/<id>` of an ENDED record: 200, the type-only document marked ended, the ending actor, NO name or description
+ *  (GilbPlatform src/lws/resource-frame.ts:14-38; measured live 2026-10-29: 207 of 207 ended records read like this). */
+export const recordEndedDoc = (id: string) => ({
+  "@context": "https://platform.example.test/lws/context",
+  "@id": `${VAULT_ORIGIN}/base/e/${id}`,
+  "@type": "t:CatalogEntry",
+  "a:entityLifecycleState": "ended",
+  "a:endingActorKind": "holder",
+});

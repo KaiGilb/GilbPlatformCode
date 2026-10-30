@@ -32,8 +32,9 @@ export function enqueueRename(d: JobDeps, id: string, shown: string, newName: st
   return speed.jobs.enqueue({
     key: speed.jobs.jobKey(d.vault, "rename", id), kind: "rename", draftId: id, workspace: d.vault, label: "Rename an entry",
     recheck: async () => {
-      const fresh = await d.writer.read(id);
-      if (fresh === null) return "the entry is gone. Look again.";
+      const r = await d.writer.read(id);
+      if (r.state !== "live") return "This entry has been ended."; // ended (served as such) or gone: nothing is written
+      const fresh = r.entity;
       if (fresh.name !== shown) return "the name changed since you started editing. Look again.";
       etag = fresh.etag;
       return etag ? null : "the platform sent no version (ETag) for this entry, so nothing was changed.";
@@ -44,7 +45,8 @@ export function enqueueRename(d: JobDeps, id: string, shown: string, newName: st
         return { ok: false, message: e instanceof Error ? e.message : String(e) };
       }
       const back = await d.writer.read(id); // read-back before "renamed"
-      if (back?.name !== newName) return { ok: false, message: `the platform accepted the change but reads the name back as ${JSON.stringify(back?.name ?? null)}` };
+      const backName = back.state === "live" ? back.entity.name : null;
+      if (backName !== newName) return { ok: false, message: `the platform accepted the change but reads the name back as ${JSON.stringify(backName)}` };
       await refreshList(d);
       return { ok: true, message: "Renamed." };
     },
@@ -84,19 +86,19 @@ export function enqueueEnd(d: JobDeps) {
       const gone: string[] = [];
       let skipped = 0;
       const failure = await runPool(mine, MAX_IN_FLIGHT, async (id) => {
-        const fresh = await d.writer.read(id);
-        if (fresh === null) { gone.push(id); return; } // not live any more
+        const r = await d.writer.read(id);
+        if (r.state !== "live") { gone.push(id); return; } // already ended (or gone): no request is sent
+        const fresh = r.entity;
         if (!fresh.name.startsWith(NAME_PREFIX)) { skipped += 1; return; } // renamed away from the prefix: not ours to end
         await d.writer.end(id, fresh.etag);
-        if ((await d.writer.read(id)) !== null) throw new Error(`${id} still reads as live after the end`);
+        const after = await d.writer.read(id); // read-back: an ended record is served as ended (or reads as gone); anything else is a failure
+        if (after.state === "live") throw new Error(`${id} still reads as live after the end (name ${JSON.stringify(after.entity.name)})`);
         ended.push(id);
       });
       removeMade(d.principal, d.vault, [...ended, ...gone]);
       if (failure !== null) { await refreshList(d).catch(() => undefined); return { ok: false, message: `${ended.length} ended; stopped: ${failure}`, data: { ids: ended } }; }
-      const listed = ended.length ? await d.writer.endedAmong(ended) : new Set<string>();
       await refreshList(d);
-      if (listed.size !== ended.length) return { ok: false, message: `${ended.length} ended, but only ${listed.size} appear in the ended list`, data: { ids: ended } };
-      return { ok: true, message: `Ended ${ended.length} test entries${skipped ? ` (${skipped} left alone: renamed away from the prefix)` : ""}${gone.length ? ` (${gone.length} were already gone)` : ""}.`, data: { ids: ended } };
+      return { ok: true, message: `Ended ${ended.length} test entries${skipped ? ` (${skipped} left alone: renamed away from the prefix)` : ""}${gone.length ? ` (${gone.length} were already ended)` : ""}.`, data: { ids: ended } };
     },
   });
 }

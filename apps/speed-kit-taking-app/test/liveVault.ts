@@ -2,10 +2,10 @@
 //   POST   /lws/vault/<v>/c   201 + Location + ETag + { "@id" }; an Idempotency-Key replays (Idempotent-Replayed: true), a different request with the key is 422
 //                             (GilbPlatform src/lws/routes.ts:849-870, :274-297 answerFromStored)
 //   PATCH  /lws/r/<id>        If-Match compared with the ETag, 412 on a mismatch (src/lws/routes.ts:966-1013); body keys are WRITE keys (a:name)
-//   DELETE /lws/r/<id>        204; the record is ended (reads 404, lists under lifecycle=ended) (src/lws/routes.ts:1015-1075)
+//   DELETE /lws/r/<id>        204; the record is ended: it then READS as 200 with a:entityLifecycleState "ended" and no body (src/lws/resource-frame.ts:36-38) (src/lws/routes.ts:1015-1075)
 //   GET    /lws/r/<id>        the document with READ keys (name) and an ETag
 //   GET    …/records          what completeCopy reads, and lifecycle=ended
-import { ID_ORIGIN, OTHER_VAULT, PLATFORM, VAULT, VAULT_ORIGIN, reachBody, recordDoc, recordRow, vaultNode } from "./liveFixtures";
+import { ID_ORIGIN, OTHER_VAULT, PLATFORM, VAULT, VAULT_ORIGIN, reachBody, recordDoc, recordEndedDoc, recordRow, vaultNode } from "./liveFixtures";
 
 interface Row { id: string; name: string; description: string; v: number; seq: number; ended: boolean }
 export interface VaultOptions {
@@ -16,6 +16,8 @@ export interface VaultOptions {
   ignorePatch?: boolean;
   /** After each GET /lws/r/<id> answers, move that record's version (someone else wrote). */
   versionMovesAfterRead?: boolean;
+  /** How an ended record reads: the real shape (200 with the lifecycle mark and no body, the default) or a 404. */
+  endedAs?: "200" | "404";
 }
 export interface Call { method: string; url: string; headers: Headers; body: string | undefined }
 
@@ -92,7 +94,12 @@ export function fakeVault(opts: VaultOptions = {}) {
     m = /^\/lws\/r\/([^/]+)$/.exec(u.pathname);
     if (m) {
       const r = rows.get(decodeURIComponent(m[1]!));
-      if (!r || r.ended) return json(404, { error: "NotFound" });
+      if (!r) return json(404, { error: "NotFound" });
+      if (r.ended && method === "GET") {
+        if (opts.endedAs === "404") return json(404, { error: "NotFound" });
+        return json(200, recordEndedDoc(r.id), { etag: etagOf(r) });
+      }
+      if (r.ended) return json(404, { error: "NotFound" });
       if (method === "GET") {
         const res = json(200, recordDoc(r.id, r.name, r.description), { etag: etagOf(r) });
         if (opts.versionMovesAfterRead) r.v += 1;

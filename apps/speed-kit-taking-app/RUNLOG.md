@@ -76,3 +76,8 @@
 - Server (GilbPlatform 3185a3b8): `Idempotency-Key` on `POST /lws/vault/<v>/c` is honoured (src/lws/routes.ts:849-870, replay at :274-297, key read in src/lws/idempotency.ts:30-52). A single-record end exists: `DELETE /lws/r/<id>` (src/lws/routes.ts:1015-1075), `If-Match` optional.
 - records-app's `createRecord` sends no `Idempotency-Key`, so the create is written here (`src/live/writes.ts`) with the unit's route and body shape.
 - The write keys `a:name` and `a:description` are written as the brief says, not spelled through the vault's context; the read-back catches a vault that stores them differently.
+
+## Batch S2-D2b (an ended record is a 200, not a 404)
+
+- Measured live 2026-10-29 (207 DELETEd records, all re-read as 200 with `a:entityLifecycleState: ended`) and in the server: GilbPlatform 3185a3b8 src/lws/resource-frame.ts:36-38 (`a:entityLifecycleState`, `a:endingActorKind`), src/lws/routes.ts:11-12 and :200. Only a husk or an unreadable record is a 404.
+- `read()` now answers live, ended or gone. End counts ended or gone as ended; a rename of an ended or gone record is refused. The ended-list read (`endedAmong`) is removed: the per-record read proves the same thing.

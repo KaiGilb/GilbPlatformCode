@@ -35,6 +35,8 @@ async function reasonOf(res: Response): Promise<string> {
 }
 
 export interface Entity { id: string; name: string; description: string; etag: string | null }
+/** What a read of one record finds: live, ended (served, but marked), or gone (404). */
+export type ReadResult = { state: "live"; entity: Entity } | { state: "ended" } | { state: "gone" };
 
 export function createWriter(o: { fetch: TermFetch; vault: string; allow: boolean }) {
   const origin = new URL(o.vault).origin;
@@ -57,13 +59,18 @@ export function createWriter(o: { fetch: TermFetch; vault: string; allow: boolea
   return {
     gate,
     send,
-    /** GET /lws/r/<id>: the record as served (read keys), with its ETag; null when it is not live. */
-    async read(id: string): Promise<Entity | null> {
+    /**
+     * GET /lws/r/<id>. A live record: its read keys and ETag. An ENDED record is NOT a 404: the server serves a 200 with no name or body and
+     * `a:entityLifecycleState: "ended"` (and `a:endingActorKind`), GilbPlatform src/lws/resource-frame.ts:36-38 and src/lws/routes.ts:11-12, :200.
+     * Only a husk, or a record the caller cannot read, is a 404 ("gone"). The key is read in both forms (`a:entityLifecycleState` is the served one).
+     */
+    async read(id: string): Promise<ReadResult> {
       const res = await send("GET", resource(id), { headers: { accept: "application/json" } });
-      if (res.status === 404) return null;
+      if (res.status === 404) return { state: "gone" };
       if (!res.ok) throw new WriteFailed(res.status, `read ${res.status}: ${await reasonOf(res)}`);
       const doc = (await res.json()) as Record<string, unknown>;
-      return { id, name: text(doc.name ?? doc["a:name"]), description: text(doc.description ?? doc["a:description"]), etag: res.headers.get("etag") };
+      if (text(doc["a:entityLifecycleState"] ?? doc.entityLifecycleState) === "ended") return { state: "ended" };
+      return { state: "live", entity: { id, name: text(doc.name ?? doc["a:name"]), description: text(doc.description ?? doc["a:description"]), etag: res.headers.get("etag") } };
     },
     /** PATCH /lws/r/<id>, JSON merge patch, `If-Match` = the ETag of the read. The write key is `a:name`. */
     async rename(id: string, name: string, etag: string): Promise<void> {
@@ -86,21 +93,6 @@ export function createWriter(o: { fetch: TermFetch; vault: string; allow: boolea
     async end(id: string, etag: string | null): Promise<void> {
       const res = await send("DELETE", resource(id), { headers: etag ? { "if-match": etag } : {} });
       if (!res.ok && res.status !== 204) throw new WriteFailed(res.status, `${res.status}: ${await reasonOf(res)}`);
-    },
-    /** Which of `ids` the vault lists as ended: GET …/records?type=…&lifecycle=ended&include=body, paged by `nextOffset`. */
-    async endedAmong(ids: readonly string[]): Promise<Set<string>> {
-      const want = new Set(ids);
-      const found = new Set<string>();
-      let offset = 0;
-      for (let page = 0; page < 20 && found.size < want.size; page++) {
-        const res = await send("GET", `${origin}/lws/vault/${segment}/records?type=${encodeURIComponent(TYPE.replace(/^t:/, ""))}&lifecycle=ended&include=body&limit=200${offset ? `&offset=${offset}` : ""}`);
-        if (!res.ok) throw new WriteFailed(res.status, `ended list ${res.status}: ${await reasonOf(res)}`);
-        const b = (await res.json()) as { records?: { entity?: string }[]; complete?: boolean; nextOffset?: number };
-        for (const r of b.records ?? []) { const id = idFromLocation(String(r.entity ?? "").replace(/^.*\/e\//, "/lws/r/")); if (want.has(id)) found.add(id); }
-        if (b.complete !== false || typeof b.nextOffset !== "number") break;
-        offset = b.nextOffset;
-      }
-      return found;
     },
   };
 }
