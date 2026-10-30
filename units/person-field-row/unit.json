@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/person-field-row",
+  "package": "@kaigilb/gilbplatformcode-person-field-row",
+  "version": "0.1.0",
+  "purpose": "Draws one field of a person's own card as an editable row, with a picker where one exists.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/components/records/PersonFieldRow.tsx", "lines": [28, 65], "to": "src/PersonFieldRow.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "the imports of `FieldRow` and its type `FieldPicker` (`../mynet/FieldRow`) and `termValueSet` (`../../lib/base/termSlots`) are imports of `field-row` and `term-slots`; the import of `useQuery` is unchanged, and the two imports of `FieldRow` and `FieldPicker` are one statement",
+    "the header comment (lines 1-22) is shorter: it drops the cycle, agent, ticket and walk references and the history of two corrections; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

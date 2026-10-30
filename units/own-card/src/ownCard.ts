@@ -139,6 +139,21 @@ export function cardBelongsToVault(cardAtId: string, seat: CardSeat): boolean {
 /** Which road found the card: the vault's `a:mnbProfile` pointer, the derived address, or none. ⛔ There is no listing road. */
 export type OwnCardRoad = "pointer" | "derived" | "none";
 
+/**
+ * True when a served `@type` is a Person (`t:Person`, `Person`, a full `…/t/Person` address, or a list holding one). ⚠ An absent
+ * type is NOT a Person: a record whose type is not proven is not the Person the pointer must name.
+ *
+ * @param type the served `@type` (a string, a list, or nothing)
+ */
+export function isPersonCardType(type: unknown): boolean {
+  for (const t of Array.isArray(type) ? type : [type]) {
+    if (typeof t !== "string") continue;
+    const s = t.trim();
+    if (s === "Person" || s.endsWith(":Person") || s.endsWith("/Person") || s.endsWith("#Person")) return true;
+  }
+  return false;
+}
+
 /** What a card read answers: its served `@id` and `@type`. */
 export interface OwnCardRead {
   /** The served `@id`, or null when the answer names none. */
@@ -267,4 +282,55 @@ export async function findOwnCard(deps: FindOwnCardDeps, vault: { vaultRoot: str
     }
   }
   return { cardId, cardUri, road, otherOwnerCards, otherOwnerCardsKnown, ignoredPointer };
+}
+
+/**
+ * 🔴 THE OWN-CARD CHECK. A record in the holder's seat is his own card only by hard
+ * identity:
+ * - its id is the seat's DERIVED self-card id (`vsc-…`, the platform's address for that vault's card): own, at once, no read; or
+ * - it is the record his vault's `a:mnbProfile` pointer names, where MyNet's pointer validation accepts it ({@link findOwnCard}'s
+ *   `cardId`, through {@link isSeatOwnerCard}).
+ * ⛔ No listing road, no name, no id prefix. A legacy `mnb-profile-…` card that neither names, and a record merely NAMED
+ * "MNB Profile …", are ordinary, editable records.
+ *
+ * ⚠ Call it only for a record in the holder's own seat (his landing vault); the seat test is the caller's.
+ *
+ * @param recordId the record's id
+ * @param derivedIds the seat's derived ids ({@link OwnCardIds.derivedIds})
+ * @param finding {@link findOwnCard}'s answer for the seat; `undefined` while it is not in, `null` when it failed
+ * @returns true or false, or `undefined` while the answer waits on the finding
+ */
+export function isHoldersOwnCard(
+  recordId: string,
+  derivedIds: readonly string[],
+  finding: OwnCardFinding | null | undefined,
+): boolean | undefined {
+  if (!recordId) return false;
+  if (derivedIds.includes(recordId)) return true;
+  if (finding === undefined) return undefined;
+  return !!finding && finding.cardId === recordId;
+}
+
+/** How an open owner card stands to the card MyNet shows. */
+export type OwnCardCase =
+  /** The open card is MyNet's card. `alsoCards`: the holder's other owner cards, if any were seen. */
+  | { kind: "mynet"; alsoCards: string[] }
+  /** MyNet shows a different card of the holder. */
+  | { kind: "other"; mynetCardId: string; mynetCardUri: string }
+  /** Not known: the finding is not in yet, failed, or found no card on its roads. */
+  | { kind: "unknown" };
+
+/**
+ * Says how the open owner card stands to the card MyNet shows. Pure.
+ *
+ * ⚠ Call it only for a record that IS an owner card in a vault the holder holds; this function does not test that.
+ *
+ * @param recordId the open record's id
+ * @param finding {@link findOwnCard}'s answer for the holder's landing vault, or null while it is not known
+ * @returns the case
+ */
+export function ownCardCaseOf(recordId: string, finding: OwnCardFinding | null): OwnCardCase {
+  if (!finding || !finding.cardId || !finding.cardUri) return { kind: "unknown" };
+  if (finding.cardId === recordId) return { kind: "mynet", alsoCards: finding.otherOwnerCards.filter((u) => cardIdOf(u) !== recordId) };
+  return { kind: "other", mynetCardId: finding.cardId, mynetCardUri: finding.cardUri };
 }

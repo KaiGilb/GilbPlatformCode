@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "unit": "units/other-linked-records",
+  "package": "@kaigilb/gilbplatformcode-other-linked-records",
+  "version": "0.1.0",
+  "purpose": "Lists the other records the list on screen links to this record.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/OtherLinkedRecords.tsx",
+        "lines": [
+          17,
+          54
+        ],
+        "to": "src/OtherLinkedRecords.tsx"
+      },
+      {
+        "path": "src/lib/format.ts",
+        "lines": [
+          29,
+          37
+        ],
+        "to": "src/formatShortDate.ts"
+      },
+      {
+        "path": "src/components/records/orgCard/OrgHierarchySections.tsx",
+        "lines": [
+          28,
+          28
+        ],
+        "to": "src/OtherLinkedRecords.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `onScreenLinks`, `screenLinkedRecordsOf`, `screenLinksRevision` from `stakeholder-list-state`; `vaultLabel` from `vault-list`; `CardGroup` from `card-group`",
+    "`const { vaults } = useShell();` is `const { vaults } = useOtherLinkedRecordsHost().useShell();`: the app shell is a member of the unit's host (`OtherLinkedRecordsHostContext`, a new file), a hook the app supplies, as in `online-stakeholder-card`",
+    "`formatShortDate` (lib/format.ts:29-37, pure, in no unit) is a named copy in `src/formatShortDate.ts`, not exported from the package; its header names the source file and commit; the code is token-equal",
+    "`FOCUS` (a class string exported by `OrgHierarchySections.tsx`:28) is a named copy `const FOCUS` in `src/OtherLinkedRecords.tsx`, not exported, with a header comment naming the source file and commit; token-equal",
+    "the header comment is shorter and drops the cycle, ruling, agent and ticket references; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/otherLinkedRecordsHost.ts"
+  ],
+  "host": [
+    {
+      "member": "useShell",
+      "replaces": "useShell(), a hook, GilbApp src/components/ShellContext.ts, called at src/components/records/OtherLinkedRecords.tsx:33 (vaults only)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
