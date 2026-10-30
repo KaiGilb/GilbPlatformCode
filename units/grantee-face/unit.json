@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "unit": "units/grantee-face",
+  "package": "@kaigilb/gilbplatformcode-grantee-face",
+  "version": "0.1.0",
+  "purpose": "Loads the profile photo another person shares with the viewer.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": [
+      {
+        "path": "src/lib/base/granteeFace.ts",
+        "lines": null,
+        "to": "src/granteeFace.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "a module-load origin becomes a function over the setting: `BASE_ORIGIN` in `photoUrlFor` is `baseOrigin()` of `@kaigilb/gilbplatformcode-base-origin`, read when the function runs; the only change in the code.",
+    "The two imports are the units': `baseOrigin` from `@kaigilb/gilbplatformcode-base-origin`, `dpopReadAuth` from `@kaigilb/gilbplatformcode-lws-session-bridge` (in the source: `./config`, `./dpop`).",
+    "The header comment is reworded (a host name, wikilinks and rule tags removed); no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

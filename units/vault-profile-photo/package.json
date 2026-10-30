@@ -1,0 +1,41 @@
+{
+  "name": "@kaigilb/gilbplatformcode-vault-profile-photo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Finds a vault's profile photo and loads it, and makes the vault's own card when it has none.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-file-download-outcome": "file:../file-download-outcome",
+    "@kaigilb/gilbplatformcode-file-words": "file:../file-words",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-term": "file:../photo-term",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
+    "@kaigilb/gilbplatformcode-file-download-outcome": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-photo-term": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-types": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0"
+  }
+}

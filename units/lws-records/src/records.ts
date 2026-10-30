@@ -238,7 +238,7 @@ async function throwForStatus(res: Response): Promise<never> {
  * credential (the create authorizes with it, not the Bearer), so the next create re-mints off
  * the live cookie. A 403 is Base's FAIL-CLOSED write refusal for a vault the principal cannot
  * write (`resolveVaultTarget(…, "write")`) — surfaced as RecordForbiddenError, never swallowed. */
-async function throwForCreateStatus(res: Response): Promise<never> {
+export async function throwForCreateStatus(res: Response): Promise<never> {
   if (res.status === 401) {
     invalidateDpop();
     throw new NotSignedInError();
@@ -254,7 +254,7 @@ async function throwForCreateStatus(res: Response): Promise<never> {
 }
 
 /** Reads the `<id>` out of a `…/lws/r/<id>` URL (the Location header / @id). */
-function idFromResourceUrl(url: string): string {
+export function idFromResourceUrl(url: string): string {
   const marker = "/lws/r/";
   const i = url.indexOf(marker);
   return i === -1 ? url : url.slice(i + marker.length);
@@ -357,7 +357,7 @@ function typeUriFromFrame(rawType: unknown): string {
  * {@link RecordFactValue}); a test asserts both survive to the transmitted body with
  * `typeof` object and number. ⚠ The `!== ""` guard is a STRICT comparison, so the number 0
  * and the boolean false are kept; only the empty string and null/undefined are dropped. */
-async function toWireFacts(
+export async function toWireFacts(
   facts: RecordCreateFacts,
   source?: WriteSource,
   /** Slugs whose `""` the vault SERVED (from {@link factsAsServed}): carried, ⛔ not

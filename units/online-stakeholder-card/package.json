@@ -103,7 +103,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-add-your-own": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-records": "^0.3.0",
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
     "@kaigilb/gilbplatformcode-one-card": "^0.1.0",
     "@kaigilb/gilbplatformcode-one-card-merge": "^0.1.0",
