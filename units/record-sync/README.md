@@ -19,20 +19,20 @@ Plain functions and types, no React, no credential. The platform serves the list
 
 ## What the platform must answer for `completeCopy`
 
-All requests are `GET /lws/vault/<vaultId>/records` (the vault id percent-encoded, `completeCopy.ts:141`). `<type>` is the type name with a leading `t:` taken off (`:316`), so `t:CatalogEntry` is sent as `type=CatalogEntry`. In order:
+All requests are `GET /lws/vault/<vaultId>/records` (the vault id percent-encoded; `listBase` in `completeCopy.ts`). `<type>` is the type name with a leading `t:` taken off, so `t:CatalogEntry` is sent as `type=CatalogEntry` (the start of `completeCopy`). In order:
 
-1. `?type=<type>&since=head` (`:145`). The answer must carry a `nextCursor` string that is not empty (`:149-150`); a 400 here means the platform does not know `since=` (`:147`).
-2. The walk, newest first: `?type=<type>&include=body&limit=<n>`, `n` being `pageLimit` (1 to 200, default 200; `:324`). Each next page adds `&after=<the last nextCursor>` (`:167`). `&filter=` is added only when you pass a `filter` (`:166`). `&offset=<n>` is sent instead of `after` only when the platform answered `after` with a 400 (`:169`) or served the first page again (`:207`).
-3. The pass: `?type=<type>&since=<the kept head>&include=body&limit=200` (`:245`), asked again with the new `nextCursor` until the answer says `complete: true` (`:264-269`), at most 20 times (`:43`, `:278`).
+1. `?type=<type>&since=head` (`sinceHead`). The answer must carry a `nextCursor` string that is not empty; a 400 here means the platform does not know `since=`.
+2. The walk, newest first (`walkType`, `bodyPage`): `?type=<type>&include=body&limit=<n>`, `n` being `pageLimit` (1 to 200, default 200). Each next page adds `&after=<the last nextCursor>`. `&filter=` is added only when you pass a `filter`. `&offset=<n>` is sent instead of `after` only when the platform answered `after` with a 400 or served the first page again.
+3. The pass (`changesSince`, `sinceMerge`): `?type=<type>&since=<the kept head>&include=body&limit=200`, asked again with the new `nextCursor` until the answer says `complete: true`, at most 20 times.
 
-What it reads from a 200 answer (JSON):
+What it reads from a 200 answer (JSON; `rowOf`, `rowsOf`, `bodyPage`, `changesSince`):
 
-- `records`, a list of rows (if `records` is not a list, the first list in the answer; `:63`). From each row: `entity` (a string; a row without one is dropped, `:49`), `typeUri`, `label`, `updatedAt` (`:51-55`; the pass orders its rows by `updatedAt`, `:281`), `body` (an object, `:50`) and `etag` (`:57`).
-- `complete`. The walk ends on anything but `false` (`:177`, `:213`). The pass ends only on `true` (`:265`).
-- `nextCursor`: the `after` of the next walk page (`:176`, `:214-216`) and the new position in the pass (`:261`).
-- `nextOffset`: used only when the walk is by offset (`:175`, `:219`).
+- `records`, a list of rows (if `records` is not a list, the first list in the answer). From each row: `entity` (a string; a row without one is dropped), `typeUri`, `label`, `updatedAt` (the pass orders its rows by `updatedAt`), `body` (an object) and `etag`.
+- `complete`. The walk ends on anything but `false`. The pass ends only on `true`.
+- `nextCursor`: the `after` of the next walk page, and the new position in the pass.
+- `nextOffset`: used only when the walk is by offset.
 
-A 400 on the pass whose body has `"error": "since_cursor_invalid"` (`:248`) restarts the pass once from `since=start`, and what that returns replaces the rows the walk read (`:249-254`, `:280`). Any other answer that is not 200 throws `RecordListError` (`:171`, `:256`).
+A 400 on the pass whose body has `"error": "since_cursor_invalid"` restarts the pass once from `since=start`, and what that returns replaces the rows the walk read (`changesSince`, `sinceMerge`). Any other answer that is not 200 throws `RecordListError`.
 
 ## What this is not
 
