@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "unit": "units/address-card-parts",
+  "package": "@kaigilb/gilbplatformcode-address-card-parts",
+  "version": "0.1.0",
+  "purpose": "The parts of one address on a card: a stored address as compact lines or an editor, its bound places by name, its text rows.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          155,
+          171
+        ],
+        "to": "src/addressLines.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          379,
+          494
+        ],
+        "to": "src/AddressTextRows.tsx"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          1022,
+          1592
+        ],
+        "to": "src/SavedAddress.tsx"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          1602,
+          1666
+        ],
+        "to": "src/CompactAddress.tsx"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          1669,
+          1702
+        ],
+        "to": "src/BoundPlaceLine.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`; the names of the bound places are `place-names` (`usePlaceNames`); the draft and its rules are `place-draft` and `place-clear`; the picker is `place-picker`; the flag is `flag-image`; the shared pieces are `button`, `card-mode`, `remove-control`, `role-label`, `place-line`, `place-lines`, `place-claims`.",
+    "A detail kept out of the address is said (F5). GilbApp left it out and said nothing. `SavedAddress` draws \"1 detail of this address is not shown (it belongs to someone else or could not be read)\" (\"N details ... are not shown (they belong to someone else or could not be read)\") when the claim's `hiddenFieldCount` is above 0, in every mode.",
+    "The bound places are told by state (F6). GilbApp showed the places it could name as if they were all of them, and \"N places bound, none reachable right now\" when it could name none. `BoundPlaceLine` shows the names read, then \"1 more place not read right now\" for each place that was not read and \"1 place no longer in the catalogue\" for each the catalogue answered 404 for (without names: \"2 places not read right now\"). Never a count of the bound addresses, never the readable subset as if whole.",
+    "Why an address cannot be changed is said by cause (F7). GilbApp said \"One of this address's places cannot be read right now\" when the kinds of place (the grains) failed to read, when a place failed and when a place was gone. Now four sentences: still reading; \"The kinds of place could not be read right now, so this address cannot be changed yet.\"; a place not read; a place no longer in the catalogue; and (unchanged) more places than the three boxes can show. A failed grain read is its own state (GilbApp set `null` for \"not yet\" and \"failed\").",
+    "A change that fails says a sentence (F15). GilbApp swallowed a thrown `onAmend` and drew nothing. Now: a thrown error whose `name` is `PlaceClaimRefusal` and which carries a `sentence` is shown as given; any other thrown error shows \"That change could not be saved right now.\" and the cause goes to `console.error`. An answer of `false` is not told here (the card says it, from the section's error). The next change clears an older message.",
+    "No address or id tail as text (F14). The parts draw names; the country's id is only in `data-country-id`. A test scans every state.",
+    "The text rows, the address lines, the compact view, the flag and the (-) are GilbApp's, unchanged. `LINE_SLOTS`, `termWords`, `textFieldLabel`, `compactLines`, `AddressTextRow`, `AddressLineRows`, `CompactAddress`, `BoundPlaceLine` and `SavedAddress` are exported (GilbApp kept all but `compactLines` inside the card's file). The module comments are reworded with the same facts."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
