@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-other-linked-records",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Lists the other records the list on screen links to this record.",

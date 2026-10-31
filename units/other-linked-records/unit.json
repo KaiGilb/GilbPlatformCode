@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/other-linked-records",
   "package": "@kaigilb/gilbplatformcode-other-linked-records",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Lists the other records the list on screen links to this record.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -35,6 +35,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1 (H14): `onOpen` takes a second, optional argument: the vault the screen's row names (`vaultId`, undefined when it names none), so the host can pass it on. `(id) => void` callers stay valid. Not in the source.",
     "the imports are the units': `onScreenLinks`, `screenLinkedRecordsOf`, `screenLinksRevision` from `stakeholder-list-state`; `vaultLabel` from `vault-list`; `CardGroup` from `card-group`",
     "`const { vaults } = useShell();` is `const { vaults } = useOtherLinkedRecordsHost().useShell();`: the app shell is a member of the unit's host (`OtherLinkedRecordsHostContext`, a new file), a hook the app supplies, as in `online-stakeholder-card`",
     "`formatShortDate` (lib/format.ts:29-37, pure, in no unit) is a named copy in `src/formatShortDate.ts`, not exported from the package; its header names the source file and commit; the code is token-equal",

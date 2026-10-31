@@ -10,7 +10,7 @@ A person can have several records of the holder's linked to them. The Stakeholde
 
 Nothing is read or fetched here. The records come from the holder's screen as the list last set it (`stakeholder-list-state`), and the group follows the list while the card is open. Nothing is drawn when there is no other record.
 
-- `OtherLinkedRecords({ holder, principal, selfId, onOpen })`: `holder` the signed-in holder, `principal` the person the open record is linked to, `selfId` the open record's id (left out of the list), `onOpen(id)` opens a record.
+- `OtherLinkedRecords({ holder, principal, selfId, onOpen })`: `holder` the signed-in holder, `principal` the person the open record is linked to, `selfId` the open record's id (left out of the list), `onOpen(id, vaultId?)` (since 0.1.1 `vaultId` is the vault the screen's row names, when it names one) opens a record.
 - `OTHER_CARDS_TITLE`: the group's title.
 - `OtherLinkedRecordsHost`, `OtherLinkedRecordsHostContext`, `useOtherLinkedRecordsHost()`, `OtherLinkedRecordsShell`: the one thing the app supplies (see "What the host must supply").
 - The type `OtherLinkedRecordsProps`.

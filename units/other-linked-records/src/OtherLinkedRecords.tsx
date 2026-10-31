@@ -26,8 +26,8 @@ export interface OtherLinkedRecordsProps {
   principal: string;
   /** The open record's id (not listed). */
   selfId: string;
-  /** Opens a record (the list row's own open). */
-  onOpen: (id: string) => void;
+  /** Opens a record (the list row's own open). Since 0.1.1 the second argument is the vault the screen's row names (undefined when it names none). */
+  onOpen: (id: string, vaultId?: string) => void;
 }
 
 export const OTHER_CARDS_TITLE = "Your other cards of this person";
@@ -46,7 +46,7 @@ export function OtherLinkedRecords({ holder, principal, selfId, onOpen }: OtherL
       {others.map((r) => {
         const meta = [vaultName(r.vaultId), formatShortDate(r.updatedAt)].filter(Boolean).join(" · ");
         return (
-          <button key={r.id} type="button" className={`flex min-h-12 w-full items-center gap-3 py-2 text-left ${FOCUS}`} data-testid="other-linked-record" onClick={() => onOpen(r.id)}>
+          <button key={r.id} type="button" className={`flex min-h-12 w-full items-center gap-3 py-2 text-left ${FOCUS}`} data-testid="other-linked-record" onClick={() => onOpen(r.id, r.vaultId)}>
             <span className="min-w-0 flex-1 truncate text-[15px] text-[var(--ink)]">{r.title}</span>
             {meta ? <span className="shrink-0 text-[12.5px] text-[var(--ink-soft)]">{meta}</span> : null}
           </button>
