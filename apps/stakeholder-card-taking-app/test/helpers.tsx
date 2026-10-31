@@ -59,9 +59,9 @@ export async function signIn(user: ReturnType<typeof userEvent.setup>) {
 }
 
 /** Render the app with saved settings over the world's fake `fetch`, sign in with an email and a code, and return the user. */
-export async function signedInApp(options: WorldOptions = {}, settings: AppSettings = TEST_SETTINGS) {
+export async function signedInApp(options: WorldOptions = {}, settings: AppSettings = TEST_SETTINGS, wrapFetch?: (next: typeof fetch) => typeof fetch) {
   const creds = await fakeCredential(options);
-  vi.stubGlobal("fetch", creds.held.fetch);
+  vi.stubGlobal("fetch", wrapFetch ? wrapFetch(creds.held.fetch as typeof fetch) : creds.held.fetch);
   keepSettings(settings);
   const t = okTransport();
   const view = render(<App makeSession={() => creds.credential} transport={t.transport} />);
