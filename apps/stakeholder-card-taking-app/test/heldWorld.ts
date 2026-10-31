@@ -1,4 +1,4 @@
-// COPIED UNCHANGED from units/stakeholder-card-hosts-gilbplatform/test/heldWorld.ts (a unit's test fake cannot be imported by path). If the unit's copy changes, copy it again.
+// COPIED UNCHANGED from units/stakeholder-record-card-host-gilbplatform/test/heldWorld.ts (a unit's test fake cannot be imported by path). If the unit's copy changes, copy it again.
 // What the held card needs of the platform beyond `test/world.ts`: the annotations route of the holder-only notes (read and written at the holder's vault
 // node), the master's contact catalogue (copied from `contact-labels`, with the master's host replaced by this world's), and a vault list whose rows
 // say what the vault represents (a Person), so a relationship kind with a predicate is offered. Every write the card makes is logged by `world.calls`;

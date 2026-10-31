@@ -28,6 +28,7 @@ describe("settings", () => {
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
       ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
     ] as const) await user.type(screen.getByLabelText(label), value);
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(loadSettings()).toEqual(TEST_SETTINGS);
@@ -54,6 +55,7 @@ describe("settings", () => {
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
       ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
     ] as const) await user.type(screen.getByLabelText(label), value);
     const proof = screen.getByLabelText("DPoP proof origin for the platform origin");
     await user.type(proof, "not an origin");
@@ -65,7 +67,7 @@ describe("settings", () => {
     expect(loadSettings()).toEqual({ ...TEST_SETTINGS, dpopProofOrigin: "https://id.example.test" });
   });
 
-  test("the MyNet profile address is typed, kept and loaded again; a malformed one is named, an empty one is not asked", async () => {
+  test("the MyNet profile address is required: an empty one is asked for, a malformed one is named, and a good one is kept and loaded again", async () => {
     const user = userEvent.setup();
     render(<App makeSession={() => (null as never)} />);
     for (const [label, value] of [
@@ -75,9 +77,14 @@ describe("settings", () => {
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
       ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
     ] as const) await user.type(screen.getByLabelText(label), value);
     const address = screen.getByLabelText("MyNet profile address");
     expect((address as HTMLInputElement).placeholder).toBe("https://mynet.example.test/profile");
+    await user.clear(address);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(screen.getByRole("alert").textContent).toContain("The MyNet profile address is needed.");
+    expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
     for (const bad of ["not an address", "javascript:alert(1)", "https://user:pw@mynet.example.test/profile"]) {
       await user.clear(address);
       await user.type(address, bad);

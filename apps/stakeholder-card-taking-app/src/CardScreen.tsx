@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { OnlineStakeholderCard } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderCardGilbPlatformProvider } from "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform";
-import { StakeholderRecordCard } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
+import { HeldStakeholderCard } from "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform";
 import { sessionConnections } from "@kaigilb/gilbplatformcode-stakeholder-list-doors";
 import { displayPlacements, placementLabel } from "@kaigilb/gilbplatformcode-person-connections";
 import { useVaults } from "@kaigilb/gilbplatformcode-reachable-vaults";
@@ -118,7 +118,7 @@ function Panel({ session, opened, onBack }: { session: SessionCredential; opened
           <button type="button" onClick={onBack}>
             Back to the online card
           </button>
-          <StakeholderRecordCard recordId={opened.id} {...(opened.door ? { vaultId: opened.door } : {})} />
+          <HeldStakeholderCard recordId={opened.id} {...(opened.door ? { vaultId: opened.door } : {})} />
         </section>
       ) : (
         shown && <OnlineStakeholderCard key={`${shown}|${mode}`} principal={shown} placementMode={mode} />

@@ -21,7 +21,7 @@ export const TEST_SETTINGS: AppSettings = {
   dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
-  mynetProfileUrl: "",
+  mynetProfileUrl: "https://mynet.example.test/profile",
   vocabTypeBatchRevisions: "",
 };
 

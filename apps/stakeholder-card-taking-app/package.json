@@ -128,6 +128,7 @@
     "@kaigilb/gilbplatformcode-stakeholder-list-reader": "file:../../units/stakeholder-list-reader",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "file:../../units/stakeholder-list-state",
     "@kaigilb/gilbplatformcode-stakeholder-record-card": "file:../../units/stakeholder-record-card",
+    "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform": "file:../../units/stakeholder-record-card-host-gilbplatform",
     "@kaigilb/gilbplatformcode-stakeholder-set-fields": "file:../../units/stakeholder-set-fields",
     "@kaigilb/gilbplatformcode-stakeholder-ui-kit": "file:../../units/stakeholder-ui-kit",
     "@kaigilb/gilbplatformcode-stated-by": "file:../../units/stated-by",
