@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "unit": "units/skill-picker-sheet",
+  "package": "@kaigilb/gilbplatformcode-skill-picker-sheet",
+  "version": "0.1.1",
+  "purpose": "Lets the holder pick a skill from the catalogue, with its depth, in a sheet.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/SkillPickerSheet.tsx",
+        "lines": null,
+        "to": "src/SkillPickerSheet.tsx"
+      },
+      {
+        "path": "src/components/mynet/SkillDepthNote.tsx",
+        "lines": null,
+        "to": "src/SkillDepthNote.tsx"
+      },
+      {
+        "path": "src/lib/mynet/skills/searchSkillsRemote.ts",
+        "lines": null,
+        "to": "src/searchSkillsRemote.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `Button` from `button`; `formatResultTotal`, `readResultTotal`, `exactCount`, `ResultTotal` from `result-total`; `termOrigin` from `term-origin`; `ThinSkill` and `skillReferentUri` from `contact-rows`; the three files import one another by their new names",
+    "`GILBVEDA_MASTER_ORIGIN` (a load-time constant) is `termOrigin()` at its three uses in `searchSkillsRemote.ts` (the request address, the `vault=` and the referent pattern); `VEDA_VAULT_ID` (a constant) is `vedaVaultId()` (a function), and the private `MASTER` and `CANONICAL_REFERENT` are built inside the call, after the blank-query return",
+    "the header comments are new and shorter, and the comments that name a cycle, a ruling, an agent, a date, a ticket or a MyNet commit are reworded with the same facts; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

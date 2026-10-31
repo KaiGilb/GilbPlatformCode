@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "unit": "units/phone-value",
+  "package": "@kaigilb/gilbplatformcode-phone-value",
+  "version": "0.1.0",
+  "purpose": "Draws a phone number with its country, and lets the holder type one.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PhoneValue.tsx",
+        "lines": null,
+        "to": "src/PhoneValue.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `joinPhone` from `home-dial` (the app's, not the `joinPhone` of `phone-text`) and `splitPhone` from `phone-text`",
+    "the header comments are new and shorter, and the comments that name a cycle, a ruling, an agent, a date, a ticket or a MyNet commit are reworded with the same facts; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
