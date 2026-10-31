@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/employments-state",
+  "package": "@kaigilb/gilbplatformcode-employments-state",
+  "version": "0.1.0",
+  "purpose": "The state of a person's employments: load, add, edit and remove one at a time, each write queued.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/employment/useEmployments.ts",
+        "lines": [
+          38,
+          417
+        ],
+        "to": "src/useEmployments.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `resource-id`, `employment-role`, `claim-handle`, `employment-store`, `employment-vocab`, `org-terms`, `employment-edges`.",
+    "Each row keeps `titlesStored` and `roleStored` (what was last read or written) and hands them to `updateEmploymentEntity`, so a null is written only for a value the person removed.",
+    "The optional `catalogueOrigin` is passed to `resolveEmployments` (the source read a module constant of its geo client).",
+    "A read that fails sets the fixed `EMPLOYMENT_READ_FAILED_TEXT`; the detail goes to `console.error` (the source showed `e.message`).",
+    "The file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

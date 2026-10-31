@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/employment-vocab",
+  "package": "@kaigilb/gilbplatformcode-employment-vocab",
+  "version": "0.1.0",
+  "purpose": "The ontology spellings an employment is read and written under, asked by term name.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/employment/employmentVocab.ts",
+        "lines": [
+          25,
+          99
+        ],
+        "to": "src/employmentVocab.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `attributeSpelling`, `typeSpelling` from `term-slots`, `registerCardPartTypes` from `lws-vault-sets`.",
+    "The file's header comment is new and shorter; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

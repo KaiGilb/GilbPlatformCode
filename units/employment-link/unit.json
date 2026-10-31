@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/employment-link",
+  "package": "@kaigilb/gilbplatformcode-employment-link",
+  "version": "0.1.0",
+  "purpose": "The two links of an employment to an organization record and to the person, written together or not at all.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/org/employmentLink.ts",
+        "lines": [
+          21,
+          37
+        ],
+        "to": "src/employmentLink.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The type `EmploymentLinkVocab` is imported from `org-terms` (it is at lines 14-19 of the source file and lives there).",
+    "The file's header comment is new and shorter; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

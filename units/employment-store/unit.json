@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "unit": "units/employment-store",
+  "package": "@kaigilb/gilbplatformcode-employment-store",
+  "version": "0.1.0",
+  "purpose": "Reads, creates and patches the employment entities of a person's record, one t:Employment per employment.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/employment/employmentStore.ts",
+        "lines": [
+          114,
+          127
+        ],
+        "to": "src/employmentStore.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentStore.ts",
+        "lines": [
+          129,
+          243
+        ],
+        "to": "src/employmentStore.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentStore.ts",
+        "lines": [
+          245,
+          357
+        ],
+        "to": "src/employmentStore.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentStore.ts",
+        "lines": [
+          375,
+          423
+        ],
+        "to": "src/employmentStore.ts"
+      },
+      {
+        "path": "src/lib/mynet/employment/employmentStore.ts",
+        "lines": [
+          453,
+          560
+        ],
+        "to": "src/employmentStore.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `vault-resources`, `resource-id`, `claim-handle`, `employment-role`, `employment-vocab`, `employment-link`, `org-terms`.",
+    "`GEO_ORIGIN` (a module constant of the source's geo client) is the optional argument `catalogueOrigin` of `resolveEmployments` and `employmentFromDoc`; with none a compact place reads as none (`fullAddressOnly`, new).",
+    "`updateEmploymentEntity`: a null only for a value the person removed. `a:jobTitle` is nulled only when `facts.titlesStored` held a non-blank title and the edit left none (the source nulled it whenever no title was left). The role is not in the shared wire; it is `roleChangeWire(facts.roleBefore, facts.role, attrs)` (the source cleared every attribute the form held empty). New optional fields `titlesStored` and `roleBefore` of `EmploymentFacts`.",
+    "`readEmploymentEntity` (lines 424-451) and `employmentEdgesToWire` (358-373) are not taken: only the source's tests called them.",
+    "The file's header comment is new and shorter."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
