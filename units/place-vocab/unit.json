@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "unit": "units/place-vocab",
+  "package": "@kaigilb/gilbplatformcode-place-vocab",
+  "version": "0.1.0",
+  "purpose": "Asks the ontology master how an address is spelled: the claim types, the attributes and the labels of the free-text lines.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/place/placeVocab.ts",
+        "lines": [
+          1,
+          132
+        ],
+        "to": "src/placeVocab.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the master is `term-slots`, the part-type registry is `lws-vault-sets`.",
+    "`PlaceVocabUnavailableError` carries `missing`, the terms that were not answered (new). Its message names term paths, which are technical ids: a view says a fixed sentence and keeps this for the log (F3).",
+    "The module header is reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
