@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-rows",
   "package": "@kaigilb/gilbplatformcode-contact-rows",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Edits a person's Email, Phone, Social and Skills rows, any number of each.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -32,7 +32,7 @@
           20,
           27
         ],
-        "to": "src/dialCode.ts"
+        "to": null
       },
       {
         "path": "src/lib/mynet/skills/thinSkills.ts",
@@ -66,7 +66,8 @@
     "`skillReferentUri` (named copy of the app's): the master's origin is read at the call from `term-origin` (the source read a constant); the pattern is built inside the function from `termOrigin()`, and the error words use `termOrigin()` and say \"the platform refuses it\".",
     "`joinPhone` (named copy, FALSE FRIEND of `phone-text`'s `joinPhone`): the app's returns a national number that already starts with \"+\" unchanged; `phone-text`'s does not. Measured: 49 of 140 inputs differ. `toMailtoHref`, `phoneForUri` and `resolvableSocialHref` of `contact-actions` are equal to the app's on 32,915 inputs and are imported.",
     "Comments that name a cycle, a ticket, an agent, a person, a ruling or the other app are reworded; no code changed.",
-    "0.1.1: `src/heldNotesState.ts` (a copy of the interface `HeldNotesState`, source `useHeldNotes.ts` lines 73-106) is removed; `ContactRows.tsx` and the entry point import the type from the unit `held-notes` (which now owns it; the stripped declarations compare 0). `HeldNotesState` is still exported from the entry point, re-exported from `held-notes`. No behaviour changes; the unit gains the peer `held-notes` ^0.1.0."
+    "0.1.1: `src/heldNotesState.ts` (a copy of the interface `HeldNotesState`, source `useHeldNotes.ts` lines 73-106) is removed; `ContactRows.tsx` and the entry point import the type from the unit `held-notes` (which now owns it; the stripped declarations compare 0). `HeldNotesState` is still exported from the entry point, re-exported from `held-notes`. No behaviour changes; the unit gains the peer `held-notes` ^0.1.0.",
+    "0.1.2: `joinPhone` is no longer a copy in this unit: `src/dialCode.ts` is one line that re-exports it from the unit `home-dial`, which holds the app's version (its stripped function compares 0 against the copy that is removed: 38 words). The module path `./dialCode` and the entry point's export `joinPhone` are unchanged. No behaviour change; the unit gains the peer `home-dial` ^0.1.0 (and, through it, `phone-text`)."
   ],
   "newFiles": [
     "src/index.ts",
