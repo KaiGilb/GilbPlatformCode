@@ -116,16 +116,20 @@ async function findByTypedSearch(
 ): Promise<{ hits: OrgRecordHit[]; complete: boolean }> {
   const found = await search(needle, [organizationTypeName()], undefined, vaultId, "prefix");
   const uris = [...new Set(found.ids)].filter((u) => inVault(u, vaultId));
+  // A hit the search named but the viewer could not read (a failed read, or a record not served) is not offered, and it is not
+  // nothing: the answer then says it is not complete, ⛔ never "no such organization".
+  const unread = Symbol("unread");
   const rows = await mapWithConcurrency(uris, MAX_PARALLEL_DEREFERENCES, async (uri) => {
     try {
       const rec = await read(idFromResourceUri(uri), uri);
-      if (!rec || typeLocalName(rec.typeUri ?? "") !== organizationTypeName()) return null;
+      if (!rec) return unread;
+      if (typeLocalName(rec.typeUri ?? "") !== organizationTypeName()) return null;
       const label = (partyNameOf(rec.facts, null) ?? "").trim();
       return label ? { uri, label } : null;
     } catch {
-      return null;
+      return unread;
     }
   });
-  const hits = rows.filter((r): r is OrgRecordHit => r !== null).sort((a, b) => a.label.localeCompare(b.label));
-  return { hits, complete: found.next === null };
+  const hits = rows.filter((r): r is OrgRecordHit => r !== null && r !== unread).sort((a, b) => a.label.localeCompare(b.label));
+  return { hits, complete: found.next === null && !rows.includes(unread) };
 }
