@@ -1,0 +1,43 @@
+{
+  "name": "@kaigilb/gilbplatformcode-vault-records-of-type",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lists every record of one type in a vault, page by page, and says when the listing stopped before the end.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "file:../lws-vault-sets",
+    "@kaigilb/gilbplatformcode-narrow-total": "file:../narrow-total",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-resource-id": "file:../resource-id",
+    "@kaigilb/gilbplatformcode-result-total": "file:../result-total",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-namespace": "file:../vault-namespace",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@kaigilb/gilbplatformcode-vault-resources": "file:../vault-resources",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
+    "@kaigilb/gilbplatformcode-resource-id": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vault-resources": "^0.1.0"
+  }
+}

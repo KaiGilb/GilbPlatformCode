@@ -1,0 +1,36 @@
+{
+  "name": "@kaigilb/gilbplatformcode-place-names",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads the names of catalogue places, one answer per place: named, missing, or not read.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-geo-catalogue": "file:../geo-catalogue",
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-geo-catalogue": "^0.1.0",
+    "react": "^19.0.0"
+  }
+}
