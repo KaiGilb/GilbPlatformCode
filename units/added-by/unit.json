@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "unit": "units/added-by",
+  "package": "@kaigilb/gilbplatformcode-added-by",
+  "version": "0.1.0",
+  "purpose": "Shows who added a record and lets the holder switch a note between private and shared.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/base/addedBy.ts",
+        "lines": [
+          1,
+          174
+        ],
+        "to": "src/addedBy.ts"
+      },
+      {
+        "path": "src/components/records/AddedByLine.tsx",
+        "lines": [
+          1,
+          75
+        ],
+        "to": "src/AddedByLine.tsx"
+      },
+      {
+        "path": "src/components/records/HeldVisibilitySwitch.tsx",
+        "lines": [
+          1,
+          50
+        ],
+        "to": "src/HeldVisibilitySwitch.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `bearerHeaderFor` from `lws-session-bridge`; `vaultOriginOf` from `vault-origin-rule`; `rememberAddedByCard` from `record-detail-reads`; `entityRefFromFact` from `entity-ref`; `vaultNamespaceOfEntityUri` from `plan-stakeholder-lines` 0.2.1; the files import one another by their new names",
+    "`const shell = useContext(ShellContext);` is `const shell = useAddedByHost().useShell();`: the app shell is a member of the unit's host (`AddedByHostContext`, a new file), a hook the app supplies, as in `other-linked-records`",
+    "the header comments of the three files are reworded (no cycle, ticket, ruling, date or wiki-rule names); no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/addedByHost.ts"
+  ],
+  "host": [
+    {
+      "member": "useShell",
+      "replaces": "useContext(ShellContext), a context read, GilbApp src/components/ShellContext.ts, in src/components/records/AddedByLine.tsx (openRecordFromList and openRecordInVault only)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
