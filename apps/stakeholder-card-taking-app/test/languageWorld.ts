@@ -1,8 +1,11 @@
 // The language catalogue and the geo catalogue's flag files, in front of a world's `fetch`. A language entry is read at its own address and a
 // country's flag at `<host>/files/flag-<id>` and `<host>/base/e/flag-<id>`; everything else goes on to the world. A country entity answers an
-// error that fails the test: the card must never ask for one.
-export const LANGUAGE_NO = "https://catalogue.example.test/base/e/lang-norwegian";
-export const LANGUAGE_EN = "https://catalogue.example.test/base/e/lang-english";
+// error that fails the test: the card must never ask for one. The language search of the held card's picker is answered too (a GET of the ontology origin's
+// search, `type=HumanLanguage`). The entries live on the ontology origin, as the catalogue's do: a held language claim accepts no other.
+import { ONTOLOGY } from "./world";
+
+export const LANGUAGE_NO = `${ONTOLOGY}/base/e/lang-norwegian`;
+export const LANGUAGE_EN = `${ONTOLOGY}/base/e/lang-english`;
 export const COUNTRY_NO = "https://geo.example.test/base/e/osm-r-2978650";
 export const COUNTRY_UK = "https://geo.example.test/base/e/osm-r-62149";
 export const COUNTRY_US = "https://geo.example.test/base/e/osm-r-148838";
@@ -26,6 +29,12 @@ export function languageWorld(next: typeof fetch): LanguageWorld {
   const f = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "GET" && url.startsWith(`${ONTOLOGY}/base/search?`) && new URL(url).searchParams.get("type") === "HumanLanguage") {
+      asked.push({ method, url });
+      const q = (new URL(url).searchParams.get("q") ?? "").toLowerCase();
+      const hits = Object.entries(ENTRIES).filter(([, e]) => e.label.toLowerCase().startsWith(q)).map(([entity, e]) => ({ entity, label: e.label, typeUri: null, does: null }));
+      return json(200, { hits, next: null });
+    }
     const entry = ENTRIES[url];
     if (entry) {
       asked.push({ method, url });

@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "unit": "units/held-languages-state",
+  "package": "@kaigilb/gilbplatformcode-held-languages-state",
+  "version": "0.1.0",
+  "purpose": "The state of a held card's languages: the rows, and add, flag, remove, mark and make private.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/languagesState.ts",
+        "lines": [
+          3,
+          73
+        ],
+        "to": "src/languagesState.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/useMarkIntent.ts",
+        "lines": [
+          3,
+          69
+        ],
+        "to": "src/useMarkIntent.ts"
+      },
+      {
+        "path": "src/lib/mynet/heldnote/useHeldLanguages.ts",
+        "lines": [
+          1,
+          343
+        ],
+        "to": "src/useHeldLanguages.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Only the imports (from the units `adder-card`, `flag-choice`, `held-language`, `held-notes`, `language-entry`, `language-order`, `stated-by`) and the header comments (the notes of where the file was copied from are dropped)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
