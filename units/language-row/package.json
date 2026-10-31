@@ -1,0 +1,40 @@
+{
+  "name": "@kaigilb/gilbplatformcode-language-row",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draws one language by its name with its country flag, never by its address.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-flag-choice": "file:../flag-choice",
+    "@kaigilb/gilbplatformcode-flag-image": "file:../flag-image",
+    "@kaigilb/gilbplatformcode-flag-source": "file:../flag-source",
+    "@kaigilb/gilbplatformcode-language-entry": "file:../language-entry",
+    "@kaigilb/gilbplatformcode-language-fetch-pool": "file:../language-fetch-pool",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-flag-choice": "^0.1.0",
+    "@kaigilb/gilbplatformcode-flag-image": "^0.1.0",
+    "@kaigilb/gilbplatformcode-language-entry": "^0.1.0",
+    "react": "^19.0.0"
+  }
+}
