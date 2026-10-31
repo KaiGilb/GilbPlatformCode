@@ -186,7 +186,7 @@ describe("what it mounts", () => {
     const Probe = probe(seen);
     mountInProvider(world, <Probe />);
     const at = seen[seen.length - 1]!;
-    expect(Object.keys(at.card!).sort()).toEqual(["doors", "person", "photoReadKeysSync", "refreshOnlineStakeholders", "useShell", "vocabulary"]);
+    expect(Object.keys(at.card!).sort()).toEqual(["doors", "person", "photoReadKeysSync", "refreshOnlineStakeholders", "rememberVaultOf", "useShell", "vocabulary"]);
     expect(Object.keys(at.card!.doors).sort()).toEqual(["heldRecordFreshMs", "heldRecordOf", "requestsSent", "useRecordsBeingDeleted"]);
     expect(Object.keys(at.card!.person).sort()).toEqual(["adderCardOf", "rememberCreatedIn"]);
     expect(Object.keys(at.card!.vocabulary)).toEqual(["masterKindReader"]);

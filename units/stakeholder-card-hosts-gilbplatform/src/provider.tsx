@@ -12,7 +12,7 @@ import { useHolderOriginLine as heldNoteLine } from "@kaigilb/gilbplatformcode-c
 import { useContactLabels as heldContactLabels } from "@kaigilb/gilbplatformcode-contact-labels";
 import { RefLabelContext } from "@kaigilb/gilbplatformcode-entity-ref-value";
 import { OtherLinkedRecordsHostContext } from "@kaigilb/gilbplatformcode-other-linked-records";
-import { createdInVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { knownVaultOf, rememberVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
 import { StakeholderSetFieldsHostProvider } from "@kaigilb/gilbplatformcode-stakeholder-set-fields";
 import { OnlineStakeholderCardHostContext, type OnlineStakeholderCardHost } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
@@ -158,8 +158,9 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
     const openRecordFromList = (id: string) => {
       const open = latest.current.onOpenRecord;
       if (!open) return;
-      // The door: the vault a create of this session wrote the record into, when it is known (the held card reads the record there).
-      const door = createdInVaultOf(qc, id);
+      // The door: the vault remembered for the record, when it is known (the held card reads the record there): the vault a create of this
+      // session wrote it into, or the vault the online card's find named for a record the holder already holds.
+      const door = knownVaultOf(qc, id);
       if (door) open(id, door);
       else open(id);
     };
@@ -171,6 +172,7 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       useShell,
       refreshOnlineStakeholders: () => latest.current.refreshOnlineStakeholders?.(),
       photoReadKeysSync: photoReadKeysSyncOf(resolver),
+      rememberVaultOf: (id, vault) => rememberVaultOf(qc, id, vault),
       ...(at.persistVocabulary ? { persistVocabulary: () => latest.current.persistVocabulary?.() ?? true } : {}),
     });
     const discoverPhoto = discoverWith(photoReadKeysOf(resolver));

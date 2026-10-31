@@ -16,7 +16,8 @@ import { changeRecordFactItems } from "@kaigilb/gilbplatformcode-record-fact-ite
 import { useHolderOriginLine } from "@kaigilb/gilbplatformcode-contact-card-slots";
 import { useContactLabels } from "@kaigilb/gilbplatformcode-contact-labels";
 import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
-import { rememberCreatedIn } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { knownVaultOf, rememberCreatedIn } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { OnlineStakeholderCardHostContext } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { QueryClient } from "@tanstack/react-query";
 import { StakeholderCardPlatformContext, useStakeholderCardPlatform } from "./platform";
 import { useRefLabel } from "./refLabel";
@@ -225,5 +226,23 @@ describe("what the host unit of the held card reads from the provider", () => {
     shells[shells.length - 1]!.openRecordFromList("r1");
     shells[shells.length - 1]!.openRecordFromList("r2");
     expect(opened).toEqual([["r1", P], ["r2"]]);
+  });
+
+  test("H13: the online card's host remembers the vault of an existing record, and the open that follows hands it to the page as the door", () => {
+    const opened: unknown[][] = [];
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const seen: { shell: { openRecordFromList(id: string): void }; card: { rememberVaultOf?(id: string, vault: string): void } }[] = [];
+    function Both() {
+      seen.push({ shell: useStakeholderCardPlatform().useShell(), card: useContext(OnlineStakeholderCardHostContext)! });
+      return null;
+    }
+    mountInProvider(world, <Both />, { queryClient: qc, onOpenRecord: (...a) => void opened.push(a) });
+    const at = () => seen[seen.length - 1]!;
+    expect(typeof at().card.rememberVaultOf).toBe("function");
+    at().card.rememberVaultOf!("old1", P);
+    at().shell.openRecordFromList("old1");
+    at().shell.openRecordFromList("old2");
+    expect(opened).toEqual([["old1", P], ["old2"]]);
+    expect(knownVaultOf(qc, "old1")).toBe(P);
   });
 });

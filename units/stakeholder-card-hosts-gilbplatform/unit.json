@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -163,6 +163,7 @@
     ]
   },
   "namedChanges": [
+    "0.4.3 (H13): the online card's host gets `rememberVaultOf` (writes the record-detail-reads store); the shell's `openRecordFromList` reads the door with `knownVaultOf` (same store as before, now also filled for an existing record). Peers: online-stakeholder-card ^0.1.5, record-detail-reads ^0.2.0. Not in the source.",
     "src/inline.ts holds the inline copies, each token-equal to the declaration it cites: `HELD_RECORD_FRESH_MS` (recordHooks.ts 449), `heldRecordOf` (456-462), `useRecordsBeingDeleted` (2609-2630), `placeClaimsKey` and `PLACE_CLAIMS_STALE_MS` (usePlaceClaims.ts 50-52). Their free names are the units' exports of the same names (`vaultOriginOf` of `vault-origin-rule`, `watchRecordDeletes` of `plan-record-hooks`, `deletedLinkedRecords`, `deletedLinkedRevision` and `onDeletedLinkedRecords` of `stakeholder-list-state`). 0.4.0: `createdInVaultKey`, `rememberCreatedIn` and `CREATED_IN_VAULT_HEAD` (2836-2845) are removed: `record-detail-reads` holds them, token-equal (9, 20 and 49 tokens).",
     "src/inline.ts `createIsGeoEntityId(geoOrigin)` is `isGeoEntityId` (baseGeo.ts 82-84) over the prefix `<geoOrigin without trailing slashes>/base/e/` (baseGeo.ts 61-64), the origin a provider prop where the app's was a constant built from the GilbGeo vault id.",
     "0.4.0: src/adderCard.ts is deleted. `adderCardOf`, `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf` and `nameFromEmail` are the ones of `adder-card`: the comment-stripped inline declarations were token-equal to the unit's (6, 23, 39, 119, 21, 53, 160 and 175 tokens, measured before the deletion). The export `NO_OWN_VAULT_SAYS` is kept, re-exported from `adder-card`.",
