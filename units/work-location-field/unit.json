@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "unit": "units/work-location-field",
+  "package": "@kaigilb/gilbplatformcode-work-location-field",
+  "version": "0.1.0",
+  "purpose": "The box where a role's work place is searched in the catalogue and chosen, showing each place by name.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/WorkLocationField.tsx",
+        "lines": [
+          1,
+          154
+        ],
+        "to": "src/WorkLocationField.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`, the second line of a row is `place-hit-details`.",
+    "A stored place whose name is not known is said (F9). GilbApp set the name to `\"\"` for a failed read, a 404 and a row with no label alike, and the box was empty over a stored place. Now: \"A place\" in the box, and a line that tells the three apart; a 404 (`getPlace` answered `null`) is told from a failed read (it threw), and an address outside the catalogue (`reason: \"not-geo\"`) from both.",
+    "A click keeps the name (surprise 8). On focus GilbApp set the search text to `label`, which is `\"\"` on a held role (the role is read with no label), so a click blanked the box over a stored place. Now the text is `label` or the name read from the catalogue.",
+    "The place's address is not written as text (name rule). GilbApp wrote `<p className=\"sr-only\">{placeId}</p>` for assistive tech. Removed; what is said instead is why the box shows no name, when it does not.",
+    "The search is `searchPlacesInCountryDetailed(q, \"city\", null, 8, signal)` (GilbApp: `searchPlaces`): the same hits in the same order, and it also says whether the answer is the whole answer (F11). Under the list, \"Showing the first matches. There are more than this search could check.\" when it is not.",
+    "The module header is reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
