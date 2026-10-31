@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "unit": "units/place-claims-card",
+  "package": "@kaigilb/gilbplatformcode-place-claims-card",
+  "version": "0.1.0",
+  "purpose": "The Address group of a card: the list of a person's addresses, the add form, and what is said when the addresses were not all read.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          89,
+          89
+        ],
+        "to": "src/PlaceClaimsCard.tsx"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          291,
+          369
+        ],
+        "to": "src/PlaceClaimsCard.tsx"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          496,
+          969
+        ],
+        "to": "src/PlaceClaimsCard.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the parts are `address-card-parts`, the picker `place-picker`, the draft `place-draft`, the clearing `place-clear`, the group `card-group`, the add button `add-your-own`, the card's mode `card-mode`, the one card's marks `one-card-context` (`useAddInPlace`, `useFoldedClaims`), `Button` `button`.",
+    "What the read came to is said (F1-F4). New props `readState` and `canAdd`. GilbApp's group knew nothing of a read: with no vault it drew nothing, while reading it drew nothing, after a failed read it drew an empty group that reads as \"no address\", and after a read that stopped early it drew the addresses read as if they were all. Now each state has its sentence (above), the group is never hidden while it is not `ready`, and a failed read with no sentence given draws the fixed one.",
+    "`LABEL_SUGGESTIONS` and `PlaceClaimsCardProps` are exported; `AddressReadState` is new. The module comments are reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
