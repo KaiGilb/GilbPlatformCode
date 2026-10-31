@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "unit": "units/contact-annotation",
+  "package": "@kaigilb/gilbplatformcode-contact-annotation",
+  "version": "0.1.0",
+  "purpose": "Keeps the holder's private My Note and Where / How we met about a person, saved as they type.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/contact/contactAnnotation.ts",
+        "lines": [
+          1,
+          239
+        ],
+        "to": "src/contactAnnotation.ts"
+      },
+      {
+        "path": "src/lib/contact/useAnnotationDraft.ts",
+        "lines": [
+          1,
+          459
+        ],
+        "to": "src/useAnnotationDraft.ts"
+      },
+      {
+        "path": "src/components/records/HolderNoteGroup.tsx",
+        "lines": [
+          1,
+          241
+        ],
+        "to": "src/HolderNoteGroup.tsx"
+      },
+      {
+        "path": "src/components/mynet/AnnotationSaveState.tsx",
+        "lines": [
+          1,
+          72
+        ],
+        "to": "src/AnnotationSaveState.tsx"
+      },
+      {
+        "path": "src/components/mynet/PrivateMarker.tsx",
+        "lines": [
+          1,
+          20
+        ],
+        "to": "src/PrivateMarker.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `dpopReadAuth`, `dpopWriteAuth`, `invalidateDpop`, `NotSignedInError` from `lws-session-bridge`; `vaultOriginOf` from `vault-origin-rule`; `CardGroup` from `card-group`; `useCardMode` from `card-mode`; the five files import one another by their new names",
+    "the header comments are new and shorter, and the comments that name a cycle, a ruling, an agent, a date, a ticket or a wiki rule are reworded with the same facts; the comment on how the GET and the PUT are addressed is new; no code changed",
+    "the state's type `AnnotationSaveState` of `useAnnotationDraft.ts` and the component `AnnotationSaveState` share a name in the source; `src/index.ts` exports the type as `AnnotationSaveStateName`"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
