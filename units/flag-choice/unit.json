@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/flag-choice",
+  "package": "@kaigilb/gilbplatformcode-flag-choice",
+  "version": "0.1.0",
+  "purpose": "Chooses which country's flag a language shows, and where the flag file is.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/countryFlags.ts",
+        "lines": [
+          57,
+          64
+        ],
+        "to": "src/flagChoice.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/countryFlags.ts",
+        "lines": [
+          292,
+          326
+        ],
+        "to": "src/flagChoice.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`ENTITY_ADDRESS` is exported; the reader unit `flag-source` imports it. The code is unchanged.",
+    "Comments that name a cycle, a ticket or a ruling are reworded with the same facts; the header is new. The comment-stripped declarations equal the source (0 diff lines each).",
+    "New: `viewerFlagCountry`, the rule of the viewer's language row (the claim's flag, else the one country, else none)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

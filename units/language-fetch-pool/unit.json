@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "unit": "units/language-fetch-pool",
+  "package": "@kaigilb/gilbplatformcode-language-fetch-pool",
+  "version": "0.1.0",
+  "purpose": "Reads language and flag data with at most eight requests at once and a time limit on each.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/fetchPool.ts",
+        "lines": null,
+        "to": "src/fetchPool.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The file header is new; comments that name a cycle, an agent or a ruling are reworded with the same facts. No code changed. The comment-stripped file equals the source (0 diff, 274 words)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

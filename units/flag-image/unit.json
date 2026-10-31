@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/flag-image",
+  "package": "@kaigilb/gilbplatformcode-flag-image",
+  "version": "0.1.0",
+  "purpose": "Draws a country's flag, or a neutral globe when there is none.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/FlagImage.tsx",
+        "lines": [
+          14,
+          67
+        ],
+        "to": "src/FlagImage.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are `countryNameFromCode` and `flagDataUrl` from the unit `flag-choice` and `readFlag` and `CountryFlag` from the unit `flag-source`.",
+    "The file header is new; comments that name a cycle, an agent or a ruling are reworded with the same facts. No code changed. The three declarations, comment-stripped, equal the source (0 diff lines)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

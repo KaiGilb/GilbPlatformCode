@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/language-row",
+  "package": "@kaigilb/gilbplatformcode-language-row",
+  "version": "0.1.0",
+  "purpose": "Draws one language by its name with its country flag, never by its address.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": []
+  },
+  "namedChanges": [
+    "New code; no line of the source is copied."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/LanguageRow.tsx"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

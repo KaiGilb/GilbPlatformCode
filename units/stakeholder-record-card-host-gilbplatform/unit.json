@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card-host-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
   "source": {
     "repo": "KaiGilb/GilbApp",
