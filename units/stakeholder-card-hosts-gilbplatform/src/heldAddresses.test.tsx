@@ -143,3 +143,33 @@ describe("nothing is written", () => {
     expect(fake.writes).toEqual([]);
   });
 });
+
+describe("a save reaches the one card's merge at once (no time advanced)", () => {
+  it("(M-K19) the one card's observer, held under the shared key's prefix, is out of date after a write's read-back: the address saved is in what the card reads, with the clock where it was", async () => {
+    const { renderHook, act, waitFor } = await import("@testing-library/react");
+    const { useQuery, QueryClientProvider } = await import("@tanstack/react-query");
+    const { usePlaceClaims } = await import("@kaigilb/gilbplatformcode-use-place-claims");
+    const { PRINCIPAL, input } = await import("../test/place/world");
+    const host = createOneCardHost({ geoOrigin: "https://geo.example.test", queryClient: qc });
+    const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    // The Address group's hook and the one card's own observer (as `useHeldAddresses` makes it: the host's key and member, the host's freshness), in one page.
+    const { result } = renderHook(
+      () => ({
+        group: usePlaceClaims(VAULT, RECORD, PRINCIPAL),
+        card: useQuery({ queryKey: host.placeClaimsKey(VAULT), queryFn: () => host.listPlaceClaimsInVault(VAULT), staleTime: host.placeClaimsStaleMs }),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.card.data).toEqual([]));
+    await waitFor(() => expect(result.current.group.status).toBe("ready"));
+    // the card's answer is fresh for 60 s and nothing advances the clock
+    let saved: string | null = null;
+    await act(async () => {
+      saved = await result.current.group.save(input({ label: "home", streetLine: "Storgata 1" }));
+    });
+    expect(saved).not.toBeNull();
+    await waitFor(() => expect(result.current.card.data?.length).toBe(1));
+    expect(host.claimsAbout(result.current.card.data!, RECORD)).toHaveLength(1);
+    expect(host.claimFieldText(result.current.card.data![0]!, "streetLine")).toBe("Storgata 1");
+  });
+});

@@ -321,7 +321,7 @@ Install this unit once. Two copies would each keep their own resolver and findin
 
 ## Tests (0.5.0)
 
-`npm test` (vitest, jsdom): 189 tests in 13 files. New in 0.5.0: `src/heldAddresses.test.tsx` 12 (the four place members over a fake platform in `test/place/`: the shared read serves the card when fresh, a list that rejects with the claims it read, names that reject on a failed place and leave out a gone one, only this record's addresses, the observer's own key, nothing written). The end-to-end proof, with the one card and a linked person, is `stakeholder-record-card-host-gilbplatform`'s `heldCard.address.test.tsx`.
+`npm test` (vitest, jsdom): 190 tests in 13 files. New in 0.5.0: `src/heldAddresses.test.tsx` 13 (a save reaches the observer at once, with the real hook of `use-place-claims`; the four place members over a fake platform in `test/place/`: the shared read serves the card when fresh, a list that rejects with the claims it read, names that reject on a failed place and leave out a gone one, only this record's addresses, the observer's own key, nothing written). The end-to-end proof, with the one card and a linked person, is `stakeholder-record-card-host-gilbplatform`'s `heldCard.address.test.tsx`.
 
 ## Where it came from
 
