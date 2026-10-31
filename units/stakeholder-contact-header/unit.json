@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-contact-header",
   "package": "@kaigilb/gilbplatformcode-stakeholder-contact-header",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "purpose": "Draws a stakeholder's header with circle chips, kind chips and the vault photo.",
   "source": {
     "repo": "KaiGilb/GilbApp",
