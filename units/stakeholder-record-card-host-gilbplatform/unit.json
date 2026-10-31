@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card-host-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -18,7 +18,8 @@
     "test/ holds the master and platform fixtures of the provider's tests (`world.ts`, `support.ts`, `fixture*.ts`, `writableFields.ts`, `fakeSession.ts`, `memoryStorage.ts`), copied unchanged, and `heldWorld.ts` with the contact catalogue, which the held card's tests need; they are not shipped as source.",
     "0.2.0: the host gives `renderLanguages` (`LanguageSection` of `language-section`, the slot's props as they are, no `renderCountrySearch`). New: `test/languagesWorld.ts`; `test/fixturePlatform.ts` gains a `DELETE /lws/r/<id>` route (a test fixture).",
     "0.3.0: the host gives `renderSkillsAndInterests` (`Fragment` of `SkillRows` of `skill-rows` and `InterestRows` of `interest-rows`, each with its half of the slot's props as they are). New: `src/heldCard.skills.test.tsx`, `test/skillsWorld.ts` (test fixtures); the lockfile is made again.",
-    "0.4.0: the host gives `renderEmployment` (a small component of the host that gives `EmploymentRows` of `employment-rows` the slot's props as they are, `find` = `findOrganizationRecords` of `org-hierarchy`, and `vaultName` = the shell's name for the holding vault when it lists one; no work-place slot). Peers gain `employment-rows` ^0.1.0 and `org-hierarchy` ^0.1.2; the host-agnostic script allows the two imports. New: `src/heldCard.employment.test.tsx`; `test/world.ts` also serves the terms of an employment entity (test fixture); the lockfile is made again."
+    "0.4.0: the host gives `renderEmployment` (a small component of the host that gives `EmploymentRows` of `employment-rows` the slot's props as they are, `find` = `findOrganizationRecords` of `org-hierarchy`, and `vaultName` = the shell's name for the holding vault when it lists one; no work-place slot). Peers gain `employment-rows` ^0.1.0 and `org-hierarchy` ^0.1.2; the host-agnostic script allows the two imports. New: `src/heldCard.employment.test.tsx`; `test/world.ts` also serves the terms of an employment entity (test fixture); the lockfile is made again.",
+    "0.5.0 (H15b): the host gives the work place: `renderWorkLocation` (`work-location-field`), `renderPlaceName` (`work-place-name`) and `catalogueOrigin` (the provider's `geoOrigin`); and the write guard `src/geoWriteGuard.ts` holds a section read-only whose vault, record or employment edge is the place catalogue. No change to `employment-card` or `employment-rows`."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
