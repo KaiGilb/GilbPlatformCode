@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "unit": "units/language-section",
+  "package": "@kaigilb/gilbplatformcode-language-section",
+  "version": "0.1.0",
+  "purpose": "The Languages group of a held person card: the languages by name and flag, add, flag, remove, mark the contact language, make private.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/LanguagesCard.tsx",
+        "lines": [
+          12,
+          265
+        ],
+        "to": "src/LanguagesCard.tsx"
+      },
+      {
+        "path": "src/components/mynet/LanguageEntryPicker.tsx",
+        "lines": [
+          3,
+          46
+        ],
+        "to": "src/LanguageEntryPicker.tsx"
+      },
+      {
+        "path": "src/components/records/LanguageSection.tsx",
+        "lines": [
+          1,
+          65
+        ],
+        "to": "src/LanguageSection.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`LanguagesCard` and `LanguageSection` take the optional prop `renderCountrySearch` and hand it to `FlagChooser` (STOP-3; absent: no country search).",
+    "`LanguagesCard` shows an entry that is being read as \"…\", one that could not be read or has no name of its own as \"A language\" (`labelOf` becomes `nameOf`, using `language-row`'s `languageNameOf`), in place of the entry's label, which falls back to the last part of its address; the flag chooser is given the same name.",
+    "The imports come from the units; the header comments drop the notes of where the files were copied from."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
