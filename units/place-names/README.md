@@ -54,7 +54,7 @@ None of its own (the rows are `geo-catalogue`'s).
 
 ## Do not
 
-- Do not show what a read returned as the whole answer when it threw `VaultListingCappedError`, or when a place is `failed`.
+- Do not show the places that read as the whole address when any place is `failed`.
 - Do not render "no addresses" or "no places" while a read has not answered, or after it failed.
 - Do not write the names it reads back into the vault: they are pointers' names, read each time.
 

@@ -50,7 +50,7 @@ The vocabulary promise (kept on success, cleared on failure; `__resetPlaceVocab(
 
 ## Do not
 
-- Do not show what a read returned as the whole answer when it threw `VaultListingCappedError`, or when a place is `failed`.
+- Do not read or write an address under a guessed spelling when the vocabulary is unavailable.
 - Do not render "no addresses" or "no places" while a read has not answered, or after it failed.
 - Do not write the names it reads back into the vault: they are pointers' names, read each time.
 
