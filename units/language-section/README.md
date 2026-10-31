@@ -16,7 +16,7 @@ Three components.
 
 **The country search is a slot.** `renderCountrySearch` is the host's search over all countries for the flag choice. Absent: no "Another country…" button and no search; the language's own countries and "No flag (globe)" stay.
 
-**The guarantee.** An absent `renderLanguages` slot runs no HC19b code and writes nothing. With the slot present, mount, render, idle and a `canEdit` change make zero writes. The record's autosave never carries a null or "" for a field the section did not own and the user did not touch. A held-claim PATCH carries a null only for the key the user cleared (No flag; Make shared). Clearing the marked contact language writes `""` to that one field, on the user's act.
+**The guarantee.** An absent `renderLanguages` slot runs no HC19b code and writes nothing. With the slot present, mount, render, idle and a `canEdit` change make zero writes. The record's autosave never carries a null or "" for a field the section did not own and the user did not touch. A held-claim PATCH carries a null only for the key the user cleared (No flag; Make shared). Clearing the marked contact language hands the record's save `""` for that one field, on the user's act; the record card sends it as `null` for that field only (no other key).
 
 ## What this is not
 
