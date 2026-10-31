@@ -15,7 +15,8 @@ export function RelatedChildren({
 }: {
   record: { id: string; entityUri?: string };
   vaultId: string;
-  onOpen?: (id: string) => void;
+  /** Opens a child. Since 0.1.1 the second argument is the child's own address (when it has one), so the host can name its vault. */
+  onOpen?: (id: string, entityUri?: string) => void;
 }) {
   const list = useRecords(vaultId);
   const reverseQ = useMemberOfChildren(record.entityUri ?? null);
@@ -56,7 +57,7 @@ export function RelatedChildren({
               {onOpen ? (
                 <button
                   type="button"
-                  onClick={() => onOpen(k.id)}
+                  onClick={() => onOpen(k.id, k.entityUri)}
                   className="text-left text-[14px] text-[var(--ink)] hover:text-[var(--accent)]"
                 >
                   {name}
