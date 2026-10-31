@@ -3,15 +3,17 @@
 import { expect, it } from "vitest";
 import * as unit from "./index";
 
-it("exports exactly these twelve functions (the types are erased)", () => {
+it("exports exactly these fourteen functions (the types are erased)", () => {
   expect(Object.keys(unit).sort()).toEqual([
     "addedByCardOf",
     "cacheRowsOf",
     "createdInVaultKey",
     "createdInVaultOf",
     "findKnownRecordInCache",
+    "knownVaultOf",
     "rememberAddedByCard",
     "rememberCreatedIn",
+    "rememberVaultOf",
     "useCachedRecord",
     "useKnownRecordDoor",
     "useKnownRecordInCache",
@@ -29,6 +31,8 @@ it("arities", () => {
   expect(unit.createdInVaultOf.length).toBe(2);
   expect(unit.createdInVaultKey.length).toBe(1);
   expect(unit.rememberCreatedIn.length).toBe(3);
+  expect(unit.rememberVaultOf.length).toBe(3);
+  expect(unit.knownVaultOf.length).toBe(2);
   expect(unit.rememberAddedByCard.length).toBe(3);
   expect(unit.addedByCardOf.length).toBe(2);
   expect(unit.cacheRowsOf.length).toBe(1);

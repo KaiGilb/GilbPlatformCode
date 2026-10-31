@@ -16,6 +16,8 @@ import {
   findKnownRecordInCache,
   rememberAddedByCard,
   rememberCreatedIn,
+  rememberVaultOf,
+  knownVaultOf,
   useCachedRecord,
   useKnownRecordDoor,
   useKnownRecordInCache,
@@ -486,3 +488,25 @@ describe("a read in flight does not block the caches (a held read, then released
   });
 });
 
+
+describe("rememberVaultOf and knownVaultOf (H13): one store with rememberCreatedIn, under a name that does not say created", () => {
+  it("what rememberVaultOf writes, knownVaultOf and createdInVaultOf read, and the door lookup uses", () => {
+    const qc = newQc();
+    expect(knownVaultOf(qc, "a")).toBeNull();
+    rememberVaultOf(qc, "a", "V");
+    expect(knownVaultOf(qc, "a")).toBe("V");
+    expect(createdInVaultOf(qc, "a")).toBe("V");
+    expect(findKnownRecordInCache(qc, "a").door).toBe("V");
+  });
+  it("what rememberCreatedIn writes, knownVaultOf reads", () => {
+    const qc = newQc();
+    rememberCreatedIn(qc, "b", "CV");
+    expect(knownVaultOf(qc, "b")).toBe("CV");
+  });
+  it("is held for the session, and a record never remembered is null", () => {
+    const qc = newQc();
+    rememberVaultOf(qc, "c", "V");
+    expect(qc.getQueryDefaults(createdInVaultKey("c")).gcTime).toBe(Infinity);
+    expect(knownVaultOf(qc, "other")).toBeNull();
+  });
+});

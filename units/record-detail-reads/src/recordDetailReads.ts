@@ -104,6 +104,13 @@ export function createdInVaultKey(recordId: string) {
 }
 /** Remember the vault a create wrote into, for the session. Read only when no list attributes the record. */
 export function rememberCreatedIn(qc: QueryClient, recordId: string, vaultId: string): void {
+  rememberVaultOf(qc, recordId, vaultId);
+}
+/**
+ * Remember the vault that holds a record, for the session: the vault a create wrote it into, or the vault a find named for an
+ * existing record. The same store as `rememberCreatedIn` (one key, `createdInVaultKey`), under a name that does not say "created".
+ */
+export function rememberVaultOf(qc: QueryClient, recordId: string, vaultId: string): void {
   qc.setQueryDefaults(CREATED_IN_VAULT_HEAD, { gcTime: Infinity, staleTime: Infinity });
   qc.setQueryData(createdInVaultKey(recordId), vaultId);
 }
@@ -127,6 +134,10 @@ export function addedByCardOf(qc: QueryClient, recordId: string | null): AddedBy
 
 /** The vault a create in this session wrote `recordId` into, or null. */
 export function createdInVaultOf(qc: QueryClient, recordId: string): string | null {
+  return knownVaultOf(qc, recordId);
+}
+/** The vault remembered for `recordId` (`rememberVaultOf` or `rememberCreatedIn`), or null. */
+export function knownVaultOf(qc: QueryClient, recordId: string): string | null {
   return qc.getQueryData<string>(createdInVaultKey(recordId)) ?? null;
 }
 
