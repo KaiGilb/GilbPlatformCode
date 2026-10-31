@@ -267,4 +267,18 @@ describe("W live writes", () => {
     await waitFor(() => expect(screen.getAllByTestId("toast").some((x) => (x.textContent ?? "").includes("Ended 50"))).toBe(true), { timeout: 5000 });
     expect(count()).toBe("0 made by this app");
   });
+
+  test("W9 partial: while the list is only a preview, Add and Rename are off (they need the whole list) and End stays on", async () => {
+    const k = await bootLive();
+    const vault = fakeVault({ stallRecordsAfter: 2 }); // head and page 1 answer, the rest never does
+    for (let i = 1; i <= 250; i++) vault.add(`b${i}`, `Bulk ${i}`, "x");
+    const app = await liveApp(k, vault, undefined, { allowWrite: true });
+    await signInLive(app.user);
+    await screen.findByTestId("entry-b250");
+    expect(screen.getByTestId("updated-line").textContent).toMatch(/^Updating… showing at least \d+ entries so far$/);
+    expect((screen.getByTestId("seed-button") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("end-button") as HTMLButtonElement).disabled).toBe(false);
+    await app.user.click(screen.getByTestId("nav-entry-b250"));
+    expect((screen.getByTestId("rename-button") as HTMLButtonElement).disabled).toBe(true);
+  });
 });

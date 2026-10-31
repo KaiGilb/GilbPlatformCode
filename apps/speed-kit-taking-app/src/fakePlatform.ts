@@ -23,6 +23,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export function createFakePlatform(options: { latencyMs?: () => number; annCount?: () => number } = {}) {
   const vaults = new Map<string, VaultState>();
   const holds = new Map<string, Promise<void>>();
+  // Records requests after the Nth for a vault wait (holdAfter) or fail (failAfter): a list whose first page answers and the rest does not.
+  const gates = new Map<string, { after: number; seen: number; wait?: Promise<void>; fail?: number }>();
   let answeredRecords = 0;
   const api = {
     latencyMs: options.latencyMs ?? (() => 600),
@@ -112,6 +114,11 @@ export function createFakePlatform(options: { latencyMs?: () => number; annCount
         proof.requests[route] += 1;
         proof.log.push({ route, method, url });
         const vaultId = m ? decodeURIComponent(m[1]!) : "";
+        const gate = route === "records" ? gates.get(vaultId) : undefined;
+        if (gate && ++gate.seen > gate.after) {
+          if (gate.fail) return json(gate.fail, { error: "stand_in_failure", message: "the stand-in cannot answer more of the list" });
+          await gate.wait;
+        }
         await holds.get(vaultId);
         await sleep(api.latencyMs());
         if (route === "records") { const r = records(vaultId, u.searchParams); answeredRecords += 1; proof.answered.records += 1; return r; }
@@ -129,6 +136,14 @@ export function createFakePlatform(options: { latencyMs?: () => number; annCount
       holds.set(vault, new Promise<void>((r) => { release = () => { holds.delete(vault); r(); }; }));
       return release;
     },
+    /** The first `n` records requests for that vault answer; the ones after wait until the returned function is called. */
+    holdAfter(vault: string, n: number): () => void {
+      let release!: () => void;
+      gates.set(vault, { after: n, seen: 0, wait: new Promise<void>((r) => { release = () => { gates.delete(vault); r(); }; }) });
+      return release;
+    },
+    /** The first `n` records requests for that vault answer; the ones after fail with `status`. */
+    failAfter(vault: string, n: number, status = 500): void { gates.set(vault, { after: n, seen: 0, fail: status }); },
     /** Another device renamed the entry (what a rename elsewhere looks like to this app). */
     renameBehindBack(vault: string, id: string, name: string): void {
       const state = vaults.get(vault)!;

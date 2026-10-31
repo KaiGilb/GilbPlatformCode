@@ -87,3 +87,10 @@
 - Live findings: sign-in and `/lws/vaults` go to the identity host (`id.gilb.com`), not the apex (a key-bound call at the apex fails the DPoP check); the platform apex is only `setBaseOrigin` and the system hosts. An ended record reads 200 with `a:entityLifecycleState: "ended"`, not 404 (207 of 207 measured live). 500 creates at 4 in flight took 26.5 s.
 - The "N made by this app" counter was read at mount only, so it showed 0 while 500 ids were in localStorage. It now follows the list through a small store (`src/live/made.ts`), W8.
 - F4 (one device miss) is open: `window.__speedProof.start` and the line under the panel say what `start` answered, in both modes (T11). `entries` there is the number of cache entries `onHydrated` received (one per resource, so 1 for the list), not rows.
+
+## Batch S2-F1 (the first page early)
+
+- The loader passes `onPage` to `completeCopy` and shows each walk page as `ctx.preview` (guarded by `stillHim()`; never stored, never marked device). The Entries page says "Updating… showing at least N entries so far" while `partial`, and on an error with a preview "Showing at least N entries; could not load the rest: <why>".
+- The speed label is decided when the first rows are SEEN (`src/source.ts`): preview, memory, device (also a late copy), network. A network commit clears a stale "device" mark. `lastPaint` gains `fullMs`.
+- While partial, live Add and Rename are off; End works from the made-list and stays on.
+- With 30 entries the first visit is now labelled `preview` too (head, page 1 as a preview, then the since pass), not `network`.
