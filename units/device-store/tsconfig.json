@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noImplicitOverride": true,
+    "erasableSyntaxOnly": true,
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "noEmit": true,
