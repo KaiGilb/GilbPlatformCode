@@ -49,8 +49,10 @@ function CardWith030Host(props: StakeholderRecordCardProps) {
   const platform = useStakeholderCardPlatform();
   const host = useMemo(() => {
     const h = createStakeholderRecordCardHost(platform);
-    const { renderEmployment: _gone, ...rest } = h;
+    // (since 0.6.0 the host also gives the Address slot; the 0.3.0 host had neither)
+    const { renderEmployment: _gone, renderAddress: _address, ...rest } = h;
     void _gone;
+    void _address;
     return { useShell: rest.useShell, photoReadKeys: rest.photoReadKeys, photoReadKeysSync: rest.photoReadKeysSync, vocabulary: rest.vocabulary, useRefLabel: rest.useRefLabel, renderLanguages: rest.renderLanguages, renderSkillsAndInterests: rest.renderSkillsAndInterests };
   }, [platform]);
   return (
@@ -64,6 +66,7 @@ function CardWithoutSlot(props: StakeholderRecordCardProps) {
   const host = useMemo(() => {
     const h = createStakeholderRecordCardHost(platform);
     delete h.renderEmployment;
+    delete h.renderAddress;
     return h;
   }, [platform]);
   return (

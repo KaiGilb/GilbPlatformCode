@@ -106,6 +106,15 @@ export function withWritableFields(m: FixtureMaster): FixtureMaster {
       },
     ],
     [
+      // The postal address: a text field of the person (its addresses are held apart, as claims; the term is the address section's gate).
+      {
+        "@id": t("PostalAddress"),
+        "a:predicateAttribute": "a:postalAddress",
+        "a:label": "Postal Address",
+        "a:encoding": "inline-literal:text",
+        "a:cardinality": "multi",
+        "a:fieldOf": [ref(t("Person"))],
+      },
       // A field that holds a record of its own, AS SERVED (GET /base/a/employment): the field term and the type term are one term here, so the
       // record type it names is itself.
       {

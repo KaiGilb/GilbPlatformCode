@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/address-rows",
+  "package": "@kaigilb/gilbplatformcode-address-rows",
+  "version": "0.1.0",
+  "purpose": "A person record's Address section: reads the addresses, shows them as a card group, and saves, changes and removes them in the holder's vault.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/AddressRows.tsx",
+        "lines": [
+          1,
+          75
+        ],
+        "to": "src/AddressRows.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: `place-claims-card`, `use-place-claims`, `place-draft` (`draftToInput`), `card-mode`.",
+    "`ownerHome` is not taken (GilbApp B3: the section was read-only with one line when the address was written as the vault owner's own). The held card has no owner-home address. `locked` and the owner-home line go with it; `editMode` and `addInPlace` drop `!ownerHome`.",
+    "What the read came to is handed to the card (F1-F4): `readState` and `canAdd`. New optional prop `vaultName`, for \"Not every address in <name> was read.\"",
+    "No add while the vault was never read (F3): `canAdd` is false while the status is `failed` and no read of this vault has answered. GilbApp had no failed state."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

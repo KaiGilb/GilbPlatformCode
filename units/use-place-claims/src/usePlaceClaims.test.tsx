@@ -414,3 +414,43 @@ describe("factsSurvived (the read-back test)", () => {
     expect(factsSurvived(c, input({ label: " home ", streetLine: " x " }))).toBe(true);
   });
 });
+
+describe("0.1.1: a write's read-back marks the queries under the shared key out of date", () => {
+  it("a save, a change and a remove each invalidate what is held under the vault's key (not the key itself, not another vault's), and the partial-create reload does too", async () => {
+    const held = [...placeClaimsKey(VAULT), "held-addresses"] as const;
+    const other = [...placeClaimsKey(`${VAULT}-other`), "held-addresses"] as const;
+    const { result } = hook();
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated === true;
+    const reset = () => {
+      qc.setQueryData(held, []);
+      qc.setQueryData(other, []);
+    };
+    reset();
+    let id: string | null = null;
+    await act(async () => {
+      id = await result.current.save(FULL);
+    });
+    expect(id).not.toBeNull();
+    expect(stale(held)).toBe(true);
+    expect(stale(other)).toBe(false);
+    expect(qc.getQueryState(placeClaimsKey(VAULT))?.isInvalidated).toBe(false);
+    reset();
+    await act(async () => {
+      expect(await result.current.amend(result.current.claims[0]!, { ...FULL, label: "cabin" })).toBe(true);
+    });
+    expect(stale(held)).toBe(true);
+    reset();
+    fake.knobs.failCreateAt = 2; // the composite is made and its first field is not
+    await act(async () => {
+      await result.current.save(input({ label: "work", streetLine: "Gate 1" }));
+    });
+    fake.knobs.failCreateAt = 0;
+    expect(stale(held)).toBe(true);
+    reset();
+    await act(async () => {
+      expect(await result.current.remove(result.current.claims[0]!)).toBe(true);
+    });
+    expect(stale(held)).toBe(true);
+  });
+});

@@ -28,7 +28,8 @@ The host this unit builds is `StakeholderRecordCardHost`. Each member, and what 
 | `renderLanguages` | `LanguageSection` of `language-section`, given the slot's props as they are: the Languages group of the held card, with **no** country search (`renderCountrySearch` is not given: a language's flag is chosen among its own countries, or "No flag") |
 | `renderSkillsAndInterests` | `SkillRows` of `skill-rows` then `InterestRows` of `interest-rows`, one after the other, each given its half of the slot's props as they are (`p.skills`, `p.interests`): the Skills group with the held note under each picked skill, and the Interests group |
 | `renderEmployment` | `EmploymentRows` of `employment-rows`, through the host's own small component: the slot's props as they are, `find` = `findOrganizationRecords` of `org-hierarchy` (the organization records of the holding vault), and `vaultName` = the name the shell lists for the holding vault (absent when it lists none; the section then says "this vault"). Since 0.5.0 the two work-place slots are given: `renderWorkLocation` = `WorkLocationField` of `work-location-field` (the Location box) and `renderPlaceName` = `WorkPlaceName` of `work-place-name` (the read-only name, with what it is and where), and `catalogueOrigin` = the provider's `geoOrigin` (so a place stored as a compact `base:e/<id>` reads as that place; absent when no origin is known). **Write guard:** when the vault, the record or any employment edge the section would write to is inside the place catalogue, the section is given `canEdit: false` and a line says why ("This section cannot be changed here: it is stored in the place catalogue, which is read only."); nothing is written to the catalogue |
-| `holdingVaultOf`, `renderRecordPicture`, `renderBandIcon`, `renderTypeDescription`, `renderAttachments`, `renderAddress` | absent: the card's defaults stand (see "Differences from GilbApp") |
+| `renderAddress` | `AddressRows` of `address-rows`, through the host's own small component: the slot's props as they are (the record's vault) and the shell's name for that vault |
+| `holdingVaultOf`, `renderRecordPicture`, `renderBandIcon`, `renderTypeDescription`, `renderAttachments` | absent: the card's defaults stand (see "Differences from GilbApp") |
 
 The card's peers have hosts of their own (`contact-rows`, `stakeholder-set-fields`, `other-linked-records`, `added-by`, `adder-card`, the header's `useContactLabels` and `useHolderOriginLine`, the one card's): the provider mounts them.
 
@@ -58,6 +59,13 @@ Only what the card writes, through the provider's session: an edit is one `PATCH
 | the master's terms, kinds and field sets, the contact catalogue | `term-slots`, `stakeholder-card-vocabulary`, `contact-kind-catalogue` | the ontology origin, anonymous |
 
 A request to a host outside the platform's family carries no credential.
+
+## Changes in 0.6.0
+
+- **The host gives the Address section** (`renderAddress`): `AddressRows` of `address-rows`, through the host's own small component. The slot's props go as they are (the vault is the one that holds the RECORD, the card's own, never the viewer's) and `vaultName` is the name the shell lists for that vault, for "Not every address in <name> was read." The Address group says what the read of the addresses came to (no vault, reading, failed, incomplete) and offers no "Add" while no read has answered; a new address is written only in the record's vault, and the place catalogue is never written.
+- **One `GeoWriteRefusedError`.** `src/geoWriteGuard.ts` no longer defines its own: it re-exports the one of `geo-origin` (0.1.1), so `instanceof` works across units. The input guard is unchanged (it still looks at every target of the Employment section before it is given the means to write). Its message is the same sentence.
+- On a card linked to a person's online card, the provider's real place members (`stakeholder-card-hosts-gilbplatform` 0.5.0) let the merge fold exactly the address of yours that is equal to theirs, and never from half a list or half an address.
+- Peers gain `address-rows`; `geo-origin` is now `^0.1.1`, `stakeholder-card-hosts-gilbplatform` `^0.5.0`. New: `src/heldCard.address.test.tsx`, `test/placeWorld.ts`; the fixture master gains the Postal Address field.
 
 ## Changes in 0.5.0
 
@@ -159,6 +167,8 @@ export function StakeholderScreens({ session, principal }: {
 ```
 
 ## Tests
+
+0.6.0: `npm test` (vitest, jsdom), 111 tests in 10 files (100 before): `heldCard.address.test.tsx` 8 new (two addresses in two countries drawn by name; open is reads only and asks only the platform's, the catalogue's and the ontology's hosts; a street change is one PATCH; a failed place and a list that was not the whole vault keep the merge unfolded; an equal address folds into ONE row and is drawn once), `geoWriteGuard.test.ts` 2 new (one error across units), `recordCardHost.test.tsx` 1 new (`renderAddress`, the record's vault), `heldCard.employment.test.tsx` changed (the 0.3.0 host also has no Address slot).
 
 0.5.0: `npm test` (vitest, jsdom), 100 tests in 9 files (58 before): `heldCard.workLocation.test.tsx` 14 new, `geoWriteGuard.test.ts` 21 new, `recordCardHost.test.tsx` 8 (2 new, 1 changed), `heldCard.employment.test.tsx` 15 (1 changed). Mutation checks of 0.5.0: 12 mutants of `recordCardHost.ts` and `geoWriteGuard.ts` (the origin not passed or the vault's, the guard removed or blind to edges, to the vault or to the record, a catalogue address in a query counted as the catalogue, the guard's note or its `canEdit` dropped, either slot not given, the Location box given the address as its label) and 1 of `employment-role` (a date edit naming the place), 13 killed.
 

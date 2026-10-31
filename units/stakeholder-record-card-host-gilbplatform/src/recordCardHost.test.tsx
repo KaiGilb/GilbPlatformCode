@@ -24,6 +24,15 @@ vi.mock("@kaigilb/gilbplatformcode-employment-rows", () => ({
   },
 }));
 
+// The probe: the props `AddressRows` is given. The section is proved end to end in `heldCard.address.test.tsx`.
+const seenAddress: Record<string, unknown>[] = [];
+vi.mock("@kaigilb/gilbplatformcode-address-rows", () => ({
+  AddressRows: (props: Record<string, unknown>) => {
+    seenAddress.push(props);
+    return null;
+  },
+}));
+
 let world: World;
 beforeEach(async () => {
   world = await createWorld();
@@ -44,7 +53,7 @@ describe("createStakeholderRecordCardHost", () => {
   test("the shell, both photo-key readers and the label hook are the provider's; the vocabulary host has the master's kind reader", () => {
     const platform = platformOf();
     const host = createStakeholderRecordCardHost(platform);
-    expect(Object.keys(host).sort()).toEqual(["photoReadKeys", "photoReadKeysSync", "renderEmployment", "renderLanguages", "renderSkillsAndInterests", "useRefLabel", "useShell", "vocabulary"]);
+    expect(Object.keys(host).sort()).toEqual(["photoReadKeys", "photoReadKeysSync", "renderAddress", "renderEmployment", "renderLanguages", "renderSkillsAndInterests", "useRefLabel", "useShell", "vocabulary"]);
     expect(host.useShell).toBe(platform.useShell);
     expect(host.photoReadKeys).toBe(platform.photoReadKeys);
     expect(host.photoReadKeysSync).toBe(platform.photoReadKeysSync);
@@ -60,7 +69,31 @@ describe("createStakeholderRecordCardHost", () => {
 
   test("the optional pieces of the card are not given", () => {
     const host = createStakeholderRecordCardHost(platformOf()) as unknown as Record<string, unknown>;
-    for (const k of ["holdingVaultOf", "renderRecordPicture", "renderBandIcon", "renderTypeDescription", "renderAttachments", "renderAddress"]) expect(k in host).toBe(false);
+    for (const k of ["holdingVaultOf", "renderRecordPicture", "renderBandIcon", "renderTypeDescription", "renderAttachments"]) expect(k in host).toBe(false);
+  });
+
+  test("0.6.0: renderAddress is the host's Address component, which gives AddressRows the slot's props as they are (the vault is the RECORD's, never the viewer's) and the vault's name when the shell lists it", async () => {
+    const host = createStakeholderRecordCardHost(platformOf());
+    const slotProps = { title: "Postal Address", legacyText: "Storgata 9", vaultId: P, recordEntityUri: `${P}/e/r1`, principal: "https://id.example.test/base/p/x", canEdit: true };
+    const el = host.renderAddress!(slotProps) as unknown as { type: unknown; props: Record<string, unknown> };
+    expect(typeof el.type).toBe("function");
+    expect(el.props).toEqual(slotProps);
+    seenAddress.length = 0;
+    mountInProvider(world, host.renderAddress!(slotProps), { viewedVaultId: "https://viewer.example.test/base/pviewer" });
+    await waitFor(() => expect(seenAddress[seenAddress.length - 1]?.vaultName).toBe("Ann"));
+    const given = seenAddress[seenAddress.length - 1]!;
+    expect(Object.keys(given).sort()).toEqual([...Object.keys(slotProps), "vaultName"].sort());
+    // M36: the vault is the one the slot named, whatever vault the viewer is looking at.
+    expect(given.vaultId).toBe(P);
+    expect(given.recordEntityUri).toBe(slotProps.recordEntityUri);
+    expect(given.canEdit).toBe(true);
+    // a vault the shell does not list: no name is given (the group then says "this vault")
+    cleanup();
+    seenAddress.length = 0;
+    mountInProvider(world, host.renderAddress!({ ...slotProps, vaultId: "https://elsewhere.example.test/base/pnone" }));
+    await waitFor(() => expect(seenAddress.length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(seenAddress.every((g) => !("vaultName" in g))).toBe(true);
   });
 
   test("0.2.0: renderLanguages draws the Languages section with the slot's props as they are, and gives it NO country search", () => {

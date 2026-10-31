@@ -1,7 +1,7 @@
 // New. The write guard of the Employment section (decision 2b): every address the section may write to is looked at before it is given the means to
 // write, and one inside the place catalogue is refused with no request. The function throws; the section turns the throw into "read-only, and says why".
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { resetGeoOrigin, setGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
+import { GeoWriteRefusedError as GeoOriginRefusal, resetGeoOrigin, setGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
 import { GeoWriteRefusedError, assertNoGeoWriteTarget, employmentWriteTargets, employmentWritesRefused } from "./geoWriteGuard";
 
 const GEO = "https://geo.example.test";
@@ -80,5 +80,25 @@ describe("employmentWriteTargets / employmentWritesRefused", () => {
   test("a normal section is not refused", () => {
     expect(employmentWritesRefused(props)).toBe(false);
     expect(employmentWritesRefused({ ...props, vaultId: null })).toBe(false);
+  });
+});
+
+describe("one error across units (0.6.0)", () => {
+  test("the guard throws geo-origin's GeoWriteRefusedError, so `instanceof` works for any unit that checks it", () => {
+    expect(GeoWriteRefusedError).toBe(GeoOriginRefusal);
+    let thrown: unknown;
+    try {
+      assertNoGeoWriteTarget([`${GEO}/base/e/x`]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(GeoOriginRefusal);
+    expect((thrown as GeoOriginRefusal).reason).toBe("catalogue");
+    expect((thrown as Error).message).toBe("The place catalogue is read only, so nothing can be written to it.");
+  });
+
+  test("a held-host employment write refused by the guard is that error, and the section is read-only", () => {
+    expect(employmentWritesRefused({ vaultId: GEO, recordEntityUri: `${VAULT}/e/r`, servedEdges: [] })).toBe(true);
+    expect(() => assertNoGeoWriteTarget(employmentWriteTargets({ vaultId: GEO, recordEntityUri: `${VAULT}/e/r`, servedEdges: [] }))).toThrow(GeoOriginRefusal);
   });
 });
