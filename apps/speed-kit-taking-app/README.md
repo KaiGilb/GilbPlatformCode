@@ -103,6 +103,24 @@ Without the flag live mode only reads and none of the buttons exists. With it, e
 
 ### Measured live
 
+**2026-10-31, first page early (app 0.5.0, GilbPlatformCode f0eb55f)**
+
+REAL browser (Chrome), production GilbPlatform, vault `testappvaultaccess`. Every visit cold: signed out (device copy wiped, 0 keys confirmed), page reloaded, Kai signed in himself.
+
+| Visit | Entries | First row | From | Full list |
+|---|---|---|---|---|
+| 1 | 3 | 719 ms | preview | 1225 ms |
+| 2 | 503 | 429 ms | preview | 1515 ms |
+| 3 | 503 | 457 ms | preview | 1663 ms |
+
+Before the first page early, the same cold first row at 503 entries was 1622 and 1744 ms (the table below).
+
+Writes in the same run: Add 500 in about 25 s, read back 500. End 500 done; a fresh network read shows only the 3 originals.
+
+Finding F5 (fixed in 0.5.1): End reported "Not ended: Something went wrong" after all 500 had ended, because only the list reload at the end failed. Since 0.5.1 a failed reload after a successful write keeps the success message and adds "The list could not be reloaded; press Refresh."
+
+**2026-10-30/31, S2-D2b run**
+
 REAL browser (Chrome), production GilbPlatform, vault `testappvaultaccess`, 503 entries, 2026-10-30/31, Kai signing in himself (S2-D2b run). Not a lab: one run.
 
 | Step | Result |
@@ -117,6 +135,17 @@ REAL browser (Chrome), production GilbPlatform, vault `testappvaultaccess`, 503 
 
 With the 3 original entries (S2-D1b, same vault): network 1015 ms, memory 1.0 ms, device 4.2 ms.
 
-Not proven: a real phone (all runs are on a desktop browser), and one device miss (finding F4): once, a reload a few seconds after a rename and a fresh sign-in painted the first row from the network (1622 ms) although the device held the copy. The cause is open; the page now shows what `start` answered (`start: disk yes|no, hydrated yes|no, N entries, M ms`, also `window.__speedProof.start`) so the next occurrence can be told apart.
+Not proven: a real phone (all runs are on a desktop browser). Finding F4 (one device miss, 2026-10-30) has not recurred in the 2026-10-31 runs; once, a reload a few seconds after a rename and a fresh sign-in painted the first row from the network (1622 ms) although the device held the copy. The cause is still open, and the page shows what `start` answered (`start: disk yes|no, hydrated yes|no, N entries, M ms`, also `window.__speedProof.start`) so the next occurrence can be told apart.
+
+### First real app: GilbApp (2026-10-31)
+
+GilbApp took device-store, speed-kit and their peers (vendored tarballs from GilbPlatformCode a48825bc) to keep a device copy of the vault list and the home vault's first Records screen. Live at https://gilb.com/app/ revision 7386443 (GilbApp PR #401).
+
+Reload, measured read-only in Chrome, 4 runs each:
+
+- Vault list: 3.20–3.88 s before, 1.95–2.27 s after.
+- First Records row: 2.41–4.87 s before, 1.90–2.29 s after.
+
+What bounds it now: the session answer (`/base/auth/session/token`, 1.76 s that day). The device copy paints only after the session names the person, so the last person's list is never shown to the next.
 
 Tests `test/L1` to `test/L10`, `test/W-live-writes` fake only the network, with answer shapes taken from the server source.
