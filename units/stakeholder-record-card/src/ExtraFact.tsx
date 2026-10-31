@@ -21,7 +21,8 @@ export function ExtraFact({
   asRef: boolean;
   editable: boolean;
   vaultId: string;
-  onOpen?: (id: string) => void;
+  /** Opens the record a reference value names; the second argument is the value (the record's full address). */
+  onOpen?: (id: string, uri?: string) => void;
   onChange: (v: string) => void;
   onBlur: () => void;
 }) {
@@ -31,7 +32,7 @@ export function ExtraFact({
   return (
     <label className="flex flex-col gap-1 py-2">
       <span className="font-[var(--serif)] text-[13px] italic text-[var(--ink-soft)]">{label}</span>
-      {asRef && <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpen} quiet={present} />}
+      {asRef && <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpen ? (id) => onOpen(id, value) : undefined} quiet={present} />}
       {!asRef && present && <span className="break-words text-[15px] text-[var(--ink)]" data-testid="extra-fact-value">{value}</span>}
       {!asRef && !present && (
         <input

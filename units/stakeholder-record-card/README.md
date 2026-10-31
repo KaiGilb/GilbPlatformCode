@@ -29,7 +29,7 @@ One context, `StakeholderRecordCardHostContext`. With no provider the card throw
 
 | Member | Kind | Replaces (GilbApp `RecordDetail.tsx`) | What it is |
 |---|---|---|---|
-| `useShell()` | hook, R, N | `useShell()` :197, :498 | `{ session, vaults, contentScope: { reach }, writeGuard, openRecordFromList }`. `session.vault.shortWebId` is matched against framed grants; `writeGuard` is `{ allowed, reason }`; `openRecordFromList(id)` opens a linked record. Called first. |
+| `useShell()` | hook, R, N | `useShell()` :197, :498 | `{ session, vaults, contentScope: { reach }, writeGuard, openRecordFromList }`. `session.vault.shortWebId` is matched against framed grants; `writeGuard` is `{ allowed, reason }`; `openRecordFromList(id)` opens a linked record; since 0.1.4 the card remembers the target's vault first (`rememberVaultOf`, when it is sure), and the id alone is passed as before. Called first. |
 | `photoReadKeys()` | R | `photoReadKeys()` :505 | the photo term's read keys (with `a:`), as a promise; "not known yet" is an empty list, never "no photo" |
 | `photoReadKeysSync()` | R | `photoReadKeysSync()` :502 | the same, known now |
 | `holdingVaultOf?(qc, id)` | R, optional | `holdingVaultOf(qc, id)` :679, :739 | the vault the holder's merged list attributes the record to. Absent: `createdInVaultOf` of `record-detail-reads`, then the card's `vaultId` |

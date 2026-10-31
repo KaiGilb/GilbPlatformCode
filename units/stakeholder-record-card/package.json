@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-record-card",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Draws and edits the card of a person the holder keeps a record of, with Edit, +, the groups in order, autosave, and the link to their online card.",
