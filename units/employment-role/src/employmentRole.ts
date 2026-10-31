@@ -1,15 +1,18 @@
 /**
- * Dates and place on one employment role.
+ * Dates and place on one employment role, as GilbApp's employment code keeps them.
  *
- * A missing end is not "current". Only `current: true` on the way in, or a
- * stored `ongoing: true` with no readable end on the way out, means current.
- * An end month and ongoing-true are never written together. The end wins.
+ * A missing end is not "current". `current` has THREE states: true (said current), false (said ended), null (never
+ * said). A role whose state was never given leaves `ongoing` untouched on the way out. An end month and ongoing-true
+ * are never written together: the end wins.
+ *
+ * `roleWire` is the whole role as the form holds it. `roleChangeWire` is the wire of an EDIT: only the attributes whose
+ * read value the edit changed, so a value the person did not touch, or that did not read, is neither written nor cleared.
  *
  * The attribute names are passed in. This file does not name them.
  */
 
-const MONTH = /^(\d{4})(?:-(0[1-9]|1[0-2]))?$/;
-
+/** A fact value of the wire (the part of GilbApp's `FactValue` a role uses). */
+type FactValue = string | boolean | { "@id": string };
 export interface RoleAttrs {
   startDate: string;
   endDate: string;
@@ -17,28 +20,23 @@ export interface RoleAttrs {
   workLocation: string;
 }
 
+/** What the holder said about one employment. Empty strings mean "cleared". */
 export interface EmploymentRoleFacts {
   start: string;
   end: string;
-  /** True only when the holder said the role is current. */
-  current: boolean;
-  /** Full http(s) address of a catalogue place, or "". */
+  /** true: said current. false: said ended. null: never said. */
+  current: boolean | null;
+  /** Full https IRI of a catalogue place, or "". */
   placeId: string;
 }
 
 export interface RoleWire {
-  set: Record<string, string | boolean | { "@id": string }>;
+  set: Record<string, FactValue>;
   clear: string[];
 }
 
-/**
- * A year `YYYY`, or a year-month `YYYY-MM`. Anything else, including a full
- * date `YYYY-MM-DD`, is `""`.
- *
- * The month must be `01`–`12`. `2019-3` is not a month. `2011` with no month
- * is kept. Non-strings are `""`. The result is the trimmed input, not a
- * rebuilt string.
- */
+const MONTH = /^(\d{4})(?:-(0[1-9]|1[0-2]))?$/;
+
 export function roleMonth(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
@@ -46,19 +44,9 @@ export function roleMonth(raw: unknown): string {
 }
 
 /**
- * A place reference as a full address.
- *
- * A string that already starts with `http://` or `https://` is returned
- * unchanged. It is not trimmed. A leading space fails the check.
- *
- * `{ "@id": string }` is read the same way.
- *
- * `base:e/<id>` is rewritten as `<catalogueOrigin>/base/e/<id>`. Trailing
- * slashes on the origin are removed first. One slash is then inserted.
- * Pass the origin only, not an origin that already ends in `/base`.
- *
- * Anything else, including a bare place name and `base:e/` with extra path,
- * is `""`. A short form is never returned. The write path refuses `""`.
+ * Expand a place reference to a full IRI.
+ * A compact `base:e/…` is rewritten with the catalogue origin this app is pointed at.
+ * Anything else is refused, so a short form is never written back.
  */
 export function fullPlaceIri(raw: unknown, catalogueOrigin: string): string {
   const value =
@@ -70,73 +58,88 @@ export function fullPlaceIri(raw: unknown, catalogueOrigin: string): string {
   if (!value) return "";
   if (value.startsWith("https://") || value.startsWith("http://")) return value;
   const compact = /^base:e\/([^/\s]+)$/.exec(value);
-  const id = compact?.[1];
-  if (!id) return "";
+  if (!compact) return "";
   const origin = catalogueOrigin.replace(/\/+$/, "");
-  return `${origin}/base/e/${id}`;
+  return `${origin}/base/e/${compact[1]}`;
 }
 
-/**
- * The patch for one role. Every attribute is either in `set` or named in `clear`.
- *
- * An end month that `roleMonth` accepts is written, and ongoing is cleared,
- * even when `current` is true. Ongoing true is written only when there is no
- * such end. Otherwise ongoing is false and the end is cleared.
- *
- * A start that is not a month is cleared, not written as the bad text.
- *
- * `placeId` is written only when, after trim, it is `http://` or `https://`
- * with no whitespace. A compact `base:e/…` is cleared. Expand it with
- * `fullPlaceIri` before you call this. This function does not expand.
- */
+/** The patch for one role. Every attribute is either set or named in `clear`. */
 export function roleWire(role: EmploymentRoleFacts, attrs: RoleAttrs): RoleWire {
   const start = roleMonth(role.start);
   const end = roleMonth(role.end);
-  const set: RoleWire["set"] = {};
+  const set: Record<string, FactValue> = {};
   const clear: string[] = [];
-  const put = (key: string, value: string | boolean | { "@id": string } | null) => {
+  const put = (key: string, value: FactValue | null) => {
     if (value === null) clear.push(key);
     else set[key] = value;
   };
 
   put(attrs.startDate, start || null);
+  // An end month means the role has ended. Never also write ongoing true.
   if (end) {
     put(attrs.endDate, end);
     put(attrs.ongoing, null);
-  } else if (role.current) {
+  } else if (role.current === true) {
     put(attrs.ongoing, true);
     put(attrs.endDate, null);
-  } else {
+  } else if (role.current === false) {
+    // Not current, and the end month was not given.
     put(attrs.ongoing, false);
+    put(attrs.endDate, null);
+  } else {
+    // Never said. Leave ongoing untouched. Clear the end month.
     put(attrs.endDate, null);
   }
 
+  // A compact id is not written. The read expands it first; the write sends only a full IRI.
   const storedPlace = /^https?:\/\/\S+$/.test(role.placeId.trim()) ? role.placeId.trim() : "";
   put(attrs.workLocation, storedPlace ? { "@id": storedPlace } : null);
   return { set, clear };
 }
 
-/**
- * Read one stored role.
- *
- * `current` is true only when `ongoing` is the boolean `true` and the end is
- * not a readable month. The string `"true"` is not current. A garbage end
- * (`"soon"`) is not an end, so ongoing true with that garbage still reads as
- * current. An ongoing true together with a real end reads as ended.
- *
- * `placeId` is `fullPlaceIri`. A name that does not expand is `""`.
- */
 export function readRole(
   raw: { start: unknown; end: unknown; ongoing: unknown; place: unknown },
   catalogueOrigin: string,
 ): EmploymentRoleFacts {
   const start = roleMonth(raw.start);
   const end = roleMonth(raw.end);
-  const current = raw.ongoing === true && end === "";
+  // Only an explicit true, and only when no end was stored. A contradiction reads as ended.
+  const current: boolean | null =
+    end !== "" || raw.ongoing === false ? false : raw.ongoing === true ? true : null;
   return {
     start,
     end,
     current,
     placeId: fullPlaceIri(raw.place, catalogueOrigin),
   };
+}
+
+const EMPTY_ROLE: EmploymentRoleFacts = { start: "", end: "", current: null, placeId: "" };
+
+/**
+ * The patch of one EDIT of a role: `before` is the role as it was last read (none: an employment with no role yet),
+ * `after` is the role as the form holds it now. An attribute is named only when what the person sees of it changed:
+ *   - `startDate` when the start month changed;
+ *   - `endDate` when the end month changed (a cleared month is a null; Present clearing a stored end is a null);
+ *   - `ongoing` when the end month or the current state changed, with `roleWire`'s rules (an end month clears it, true
+ *     and false are written, never-said leaves it alone);
+ *   - `workLocation` when the place changed.
+ * A stored value that did not read (a full date, a place that is not an address) reads as "" before and after, so an
+ * edit of another attribute does not clear it.
+ */
+export function roleChangeWire(before: EmploymentRoleFacts | undefined, after: EmploymentRoleFacts, attrs: RoleAttrs): RoleWire {
+  const b = before ?? EMPTY_ROLE;
+  const full = roleWire(after, attrs);
+  const startChanged = roleMonth(b.start) !== roleMonth(after.start);
+  const endChanged = roleMonth(b.end) !== roleMonth(after.end);
+  const currentChanged = b.current !== after.current;
+  const placeChanged = b.placeId.trim() !== after.placeId.trim();
+  const keep = new Set<string>();
+  if (startChanged) keep.add(attrs.startDate);
+  if (endChanged) keep.add(attrs.endDate);
+  if (endChanged || currentChanged) keep.add(attrs.ongoing);
+  if (placeChanged) keep.add(attrs.workLocation);
+  const set: Record<string, FactValue> = {};
+  for (const [key, value] of Object.entries(full.set)) if (keep.has(key)) set[key] = value;
+  return { set, clear: full.clear.filter((key) => keep.has(key)) };
 }

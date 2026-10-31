@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/employment-role",
+  "package": "@kaigilb/gilbplatformcode-employment-role",
+  "version": "0.2.0",
+  "purpose": "The dates and place on one employment, with three states of current (true, false, never said).",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/employment/employmentRole.ts",
+        "lines": [
+          14,
+          113
+        ],
+        "to": "src/employmentRole.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Re-version 0.2.0: the file is GilbApp's three-state `employmentRole.ts`; 0.1.0 had `current: boolean` and wrote `ongoing: false` for a role never said.",
+    "The import of `FactValue` is a local type of the same name (`string | boolean | { \"@id\": string }`), because the unit has no dependency; no code changed.",
+    "New: `roleChangeWire`, the wire of an edit (only what changed).",
+    "The file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/roleChangeWire.test.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

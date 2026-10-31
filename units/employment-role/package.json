@@ -1,9 +1,9 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-role",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "The dates and place on one employment. An end date is never written as still current.",
+  "description": "The dates and place on one employment, with three states of current (true, false, never said).",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -16,7 +16,8 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
     "vitest": "^2.1.9"
   }
 }
