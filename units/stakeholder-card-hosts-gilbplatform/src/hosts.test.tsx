@@ -31,8 +31,10 @@ import {
   createStakeholderContactHeaderHost,
   createStakeholderListDoorsHost,
 } from "./index";
-import { adderCardOf } from "./adderCard";
-import { heldRecordOf, readResources, rememberCreatedIn, useRecordsBeingDeleted, usePickerQuery } from "./inline";
+import { adderCardOf } from "@kaigilb/gilbplatformcode-adder-card";
+import { rememberCreatedIn } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { readResources } from "@kaigilb/gilbplatformcode-vault-resources";
+import { heldRecordOf, useRecordsBeingDeleted, usePickerQuery } from "./inline";
 import { defaultLoadGranteeFace, defaultLoadPhotoObjectUrl } from "./defaults";
 
 // ---- Type level: each factory's result is exactly the interface of the unit that owns the context.
@@ -48,21 +50,26 @@ expectTypeOf<ReturnType<typeof createOrgEmployeesHost>>().toEqualTypeOf<OrgEmplo
 expectTypeOf<ReturnType<typeof createPickerQuery>>().toEqualTypeOf<UsePickerQuery>();
 
 describe("the export list", () => {
-  test("is the provider, the ten factories, the defaults constant and the sentence", () => {
+  test("is the provider, the fifteen factories, the defaults constant and the sentence", () => {
     expect(Object.keys(unit).sort()).toEqual([
       "NO_OWN_VAULT_SAYS",
       "STAKEHOLDER_CARD_QUERY_DEFAULTS",
       "StakeholderCardGilbPlatformProvider",
+      "createAddedByHost",
+      "createAdderCardHost",
       "createCardReferencesHost",
       "createCardVocabularyHost",
+      "createContactRowsHost",
       "createOneCardHost",
       "createOnlineStakeholderCardHost",
       "createOrgEmployeesHost",
       "createOrgMarkHost",
+      "createOtherLinkedRecordsHost",
       "createPersonCreateHost",
       "createPickerQuery",
       "createStakeholderContactHeaderHost",
       "createStakeholderListDoorsHost",
+      "createStakeholderRecordCardHost",
     ]);
   });
 });

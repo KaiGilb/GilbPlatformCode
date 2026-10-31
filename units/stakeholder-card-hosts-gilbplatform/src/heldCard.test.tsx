@@ -1,0 +1,231 @@
+// The held card (`StakeholderRecordCard` of `stakeholder-record-card`) drawn inside the provider ALONE: no host object written. Each test names the server
+// each request went to: a record is read, patched and annotated at the node of the vault that holds it, a relation is written at that node with the vault in
+// its body, and the platform's apex is asked only for the session's vaults and the photo term.
+import { useContext, useState } from "react";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient } from "@tanstack/react-query";
+import { StakeholderRecordCard, StakeholderRecordCardHostContext } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
+import { useHolderOriginLine } from "@kaigilb/gilbplatformcode-contact-card-slots";
+import { useContactLabels } from "@kaigilb/gilbplatformcode-contact-labels";
+import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
+import { OnlineStakeholderCard } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
+import { rememberCreatedIn } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { BASE, BEN, HOST, P, createWorld, type World } from "../test/world";
+import { heldWorld, type HeldWorld } from "../test/heldWorld";
+import { StakeholderCardGilbPlatformProvider } from "./index";
+import { mountInProvider, providerProps } from "../test/harness";
+
+let world: World;
+let hw: HeldWorld;
+let id: string;
+beforeEach(async () => {
+  world = await createWorld();
+  hw = heldWorld(world);
+  const uri = world.platform.seed(P, "t:Person", { "a:name": "Ben Larsen", "a:givenName": "Ben", "a:familyName": "Larsen" });
+  id = uri.slice(uri.lastIndexOf("/") + 1);
+  vi.stubGlobal("fetch", hw.fetch);
+});
+
+const card = () => <StakeholderRecordCard recordId={id} vaultId={P} />;
+// The card is drawn when its record is read AND its top slots have their boxes: the header and the Name group come first.
+const ready = () =>
+  waitFor(
+    () => {
+      expect(screen.getByTestId("contact-note-editor")).toBeTruthy();
+      expect(screen.getByTestId("connection-origin-editor")).toBeTruthy();
+    },
+    { timeout: 6000 },
+  );
+const text = (testid: string) => screen.getByTestId(testid).textContent;
+const writes = () => world.calls.filter((c) => c.method !== "GET");
+const etagNow = async () => (await world.fetch(`${HOST}/lws/r/${id}`)).headers.get("etag");
+
+describe("the card is drawn", () => {
+  test("the header names the holder and the person, and the groups are the card's: the notes at the top, the Name group with the person's fields", async () => {
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await ready();
+    await waitFor(() => expect(text("contact-header-holder-name")).toContain("Ann Ward"));
+    expect(text("contact-card-name")).toBe("Ben Larsen");
+    expect(screen.getByTestId("contact-note-group")).toBeTruthy();
+    expect(screen.getByTestId("connection-origin-group")).toBeTruthy();
+    const fields = screen.getAllByTestId("field-present").map((e) => e.textContent);
+    expect(fields).toEqual(["Given nameBen", "Family nameLarsen"]);
+    expect(screen.getByTestId("card-edit")).toBeTruthy();
+    expect(screen.getByTestId("card-add-info-button")).toBeTruthy();
+  });
+
+  test("the record is read at the node of the vault that holds it, signed, and the platform's apex is asked for no record", async () => {
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await ready();
+    const reads = world.requests("GET", new RegExp(`/lws/r/${id}$`));
+    expect(reads.map((r) => r.url)).toEqual([`${HOST}/lws/r/${id}`]);
+    expect(world.signed.some((s) => s.method === "GET" && s.url === `${HOST}/lws/r/${id}`)).toBe(true);
+    expect(world.calls.filter((c) => c.url.startsWith(BASE) && /\/lws\/r\//.test(c.url))).toEqual([]);
+  });
+
+  test("a vault held read-only draws the card with no Edit and no + Relation, and the shell says why", async () => {
+    const readOnly = await createWorld({ sessionVaults: [{ vaultId: P, modes: ["read"] }] });
+    const uri = readOnly.platform.seed(P, "t:Person", { "a:name": "Ben Larsen", "a:givenName": "Ben", "a:familyName": "Larsen" });
+    const rid = uri.slice(uri.lastIndexOf("/") + 1);
+    vi.stubGlobal("fetch", heldWorld(readOnly).fetch);
+    mountInProvider(readOnly, <StakeholderRecordCard recordId={rid} vaultId={P} />, { viewedVaultId: P });
+    await waitFor(() => expect(text("contact-card-name")).toBe("Ben Larsen"), { timeout: 6000 });
+    await waitFor(() => expect(screen.getAllByTestId("field-present").length).toBe(2));
+    expect(screen.queryByTestId("card-edit")).toBeNull();
+    expect(screen.queryByTestId("contact-header-add-relation")).toBeNull();
+  });
+});
+
+describe("the card writes", () => {
+  test("an edit is saved by itself: one PATCH at the record's own node, against the version the card read, signed", async () => {
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await ready();
+    const etag = await etagNow();
+    expect(etag).toBeTruthy();
+    await userEvent.click(screen.getByTestId("card-edit"));
+    await userEvent.type(screen.getByDisplayValue("Ben"), "x");
+    await waitFor(() => expect(world.calls.filter((c) => c.method === "PATCH").length).toBe(1), { timeout: 4000 });
+    const patch = world.calls.find((c) => c.method === "PATCH")!;
+    expect(patch.url).toBe(`${HOST}/lws/r/${id}`);
+    expect(patch.headers["if-match"]).toBe(etag);
+    expect(patch.headers["authorization"]).toMatch(/^DPoP /);
+    expect(JSON.parse(patch.body!)).toMatchObject({ "a:givenName": "Benx" });
+    expect(world.signed.some((s) => s.method === "PATCH" && s.url === patch.url)).toBe(true);
+    // The platform kept it.
+    expect(world.platform.entities.get(`${HOST}/base/e/${id}`)!.facts["a:givenName"]).toBe("Benx");
+  });
+
+  test("+ Relation writes the kind as a relation in the holder's vault: one PUT at the vault's node, the vault in its body, private to the holder", async () => {
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await ready();
+    await waitFor(() => expect(text("contact-header-holder-name")).toContain("Ann Ward"));
+    await userEvent.click(screen.getByTestId("contact-header-add-relation"));
+    const friend = await waitFor(() => {
+      const o = screen.getAllByTestId("contact-kind-option").find((e) => e.textContent === "Friend");
+      expect(o).toBeTruthy();
+      return o!;
+    });
+    await userEvent.click(friend);
+    await waitFor(() => expect(writes().filter((c) => c.method === "PUT" && /\/base\/r\//.test(c.url)).length).toBe(1));
+    const put = writes().find((c) => /\/base\/r\//.test(c.url))!;
+    expect(put.method).toBe("PUT");
+    expect(new URL(put.url).origin).toBe(HOST);
+    const body = JSON.parse(put.body!) as Record<string, any>;
+    expect(body.vault).toBe(P);
+    expect(body.type).toBe("t:FriendOf");
+    expect(body.facts["role:source"]["@id"]).toBe(`${HOST}/base/e/${id}`);
+    expect(body.facts["a:visibilityTier"]).toBe("private");
+    expect(world.signed.some((s) => s.method === "PUT" && s.url === put.url)).toBe(true);
+    // Nothing was written at the platform's apex or at any other host.
+    expect(writes().filter((c) => new URL(c.url).origin !== HOST)).toEqual([]);
+  });
+
+  test("My Note is written at the holder's vault node: one PUT of the annotations route, naming the vault and the person", async () => {
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await ready();
+    await userEvent.type(screen.getByTestId("contact-note-editor"), "Met at the summit");
+    await userEvent.tab();
+    await waitFor(() => expect(hw.puts.length).toBe(1));
+    expect(hw.puts[0]!.url).toBe(`${HOST}/base/connect/annotations`);
+    expect(hw.puts[0]!.body).toMatchObject({ heldParty: `${HOST}/base/e/${id}`, vaultId: P, note: "Met at the summit" });
+    expect(world.signed.some((s) => s.method === "PUT" && s.url === hw.puts[0]!.url)).toBe(true);
+  });
+});
+
+describe("the header and the slots share one hook", () => {
+  function Header() {
+    return <>{JSON.stringify([useContext(StakeholderContactHeaderHostContext)!.useHolderOriginLine === useHolderOriginLine, useContext(StakeholderContactHeaderHostContext)!.useContactLabels === useContactLabels])}</>;
+  }
+
+  test("the header's useHolderOriginLine and useContactLabels are the ones of contact-card-slots and contact-labels, which the body's slots call", () => {
+    const view = mountInProvider(world, <Header />);
+    expect(view.container.textContent).toBe("[true,true]");
+  });
+
+  test("a line met-at that the body's group reads is drawn in the header from the SAME read: one request of the annotations route", async () => {
+    hw.origins.set(`${HOST}/base/e/${id}`, "Oslo summit");
+    mountInProvider(world, card(), { viewedVaultId: P });
+    await waitFor(() => expect(screen.getByTestId("contact-card-origin-inline").textContent).toContain("Oslo summit"), { timeout: 6000 });
+    await waitFor(() => expect(screen.getByTestId("connection-origin").textContent).toContain("Oslo summit"));
+    expect(world.requests("GET", /\/base\/connect\/annotations/).length).toBe(1);
+  });
+
+  test("a hook of the developer's replaces the header's, and then the header does not draw the body's line", async () => {
+    hw.origins.set(`${HOST}/base/e/${id}`, "Oslo summit");
+    mountInProvider(world, card(), { viewedVaultId: P, useHolderOriginLine: () => ({ origin: null, loading: false }) });
+    await waitFor(() => expect(screen.getByTestId("connection-origin").textContent).toContain("Oslo summit"), { timeout: 6000 });
+    expect(screen.queryByTestId("contact-card-origin-inline")).toBeNull();
+  });
+});
+
+describe("the held card's host", () => {
+  function Host({ into }: { into: unknown[] }) {
+    into.push(useContext(StakeholderRecordCardHostContext));
+    return null;
+  }
+
+  test("the record card's host has the shell, the photo keys (async and sync), the vocabulary and the label hook, and leaves the optional pieces out", () => {
+    const seen: unknown[] = [];
+    mountInProvider(world, <Host into={seen} />);
+    const host = seen[seen.length - 1] as Record<string, unknown>;
+    expect(Object.keys(host).sort()).toEqual(["photoReadKeys", "photoReadKeysSync", "useRefLabel", "useShell", "vocabulary"]);
+  });
+
+  test("photoReadKeys resolves the photo term's keys once the master answers; photoReadKeysSync has them then", async () => {
+    const answered = await createWorld({ photoTerm: "a:avatarImage" });
+    vi.stubGlobal("fetch", answered.fetch);
+    const seen: unknown[] = [];
+    mountInProvider(answered, <Host into={seen} />);
+    const host = seen[seen.length - 1] as { photoReadKeys(): Promise<readonly string[]>; photoReadKeysSync(): readonly string[] };
+    expect(await host.photoReadKeys()).toContain("a:avatarImage");
+    expect(host.photoReadKeysSync()).toContain("a:avatarImage");
+  });
+});
+
+describe("the door is passed to onOpenRecord", () => {
+  function Shell({ into }: { into: { openRecordFromList(id: string): void }[] }) {
+    into.push(useContext(StakeholderRecordCardHostContext)!.useShell());
+    return null;
+  }
+
+  test("a record a create of this session wrote into a vault is opened with that vault as its door; a record whose vault is not known is opened by id alone", () => {
+    const opened: unknown[][] = [];
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const shells: { openRecordFromList(id: string): void }[] = [];
+    mountInProvider(world, <Shell into={shells} />, { queryClient: qc, onOpenRecord: (...a) => void opened.push(a) });
+    rememberCreatedIn(qc, "r1", P);
+    shells[shells.length - 1]!.openRecordFromList("r1");
+    shells[shells.length - 1]!.openRecordFromList("r2");
+    expect(opened).toEqual([["r1", P], ["r2"]]);
+  });
+
+  test("after + Add your own, the page is told the new record and the vault it was created in, and the held card of that record draws there", async () => {
+    const opened: unknown[][] = [];
+    function Page() {
+      const [at, setAt] = useState<{ id: string; door?: string } | null>(null);
+      return (
+        <StakeholderCardGilbPlatformProvider
+          {...providerProps(world)}
+          viewedVaultId={P}
+          onOpenRecord={(openedId, door) => {
+            opened.push(door === undefined ? [openedId] : [openedId, door]);
+            setAt(door === undefined ? { id: openedId } : { id: openedId, door });
+          }}
+        >
+          {at ? <StakeholderRecordCard recordId={at.id} {...(at.door ? { vaultId: at.door } : {})} /> : <OnlineStakeholderCard principal={BEN} placementMode="content" />}
+        </StakeholderCardGilbPlatformProvider>
+      );
+    }
+    render(<Page />);
+    await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy(), { timeout: 6000 });
+    await userEvent.click(screen.getByTestId("add-own"));
+    await waitFor(() => expect(opened.length).toBe(1), { timeout: 8000 });
+    const [newId, door] = opened[0] as [string, string];
+    expect(door).toBe(P);
+    // The held card of the new record, read at the vault the create wrote it into, draws with the person's name.
+    await waitFor(() => expect(text("contact-card-name")).toBe("Ben Larsen"), { timeout: 8000 });
+    expect(world.requests("GET", new RegExp(`/lws/r/${newId}$`)).every((r) => r.url.startsWith(HOST))).toBe(true);
+  });
+});

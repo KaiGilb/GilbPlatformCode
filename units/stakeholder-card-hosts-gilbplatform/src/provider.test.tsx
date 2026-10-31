@@ -327,16 +327,17 @@ describe("the shell from the session", () => {
     expect(world.requests("GET", /\/lws\/vaults$/).length).toBe(1);
   });
 
-  test("the content scope names the vault being viewed and no reach; the card reads the landing row instead", async () => {
+  test("the content scope names the read vault (the viewed one when the holder's set holds it, else the landing vault) and no reach; the card reads the landing row instead", async () => {
     const seen: OnlineStakeholderCardShell[] = [];
     const Shell = shellOf(seen);
     const view = mountInProvider(world, <Shell />, { viewedVaultId: P });
-    await waitFor(() => expect(seen[seen.length - 1]!.session).toBeDefined());
-    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVaultId: P, reach: null });
+    await waitFor(() => expect(seen[seen.length - 1]!.vaults[0]?.isLandingVault).toBe(true));
+    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVault: expect.objectContaining({ vaultId: P }), readVaultId: P, reach: null });
+    // A vault the holder's set does not hold is not the read vault (GilbApp: `selectedVault ?? landingVault`): the landing vault is.
     view.rerenderWith(<Shell />, { viewedVaultId: "https://holder.example.test/base/pother" });
-    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVaultId: "https://holder.example.test/base/pother", reach: null });
+    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVault: expect.objectContaining({ vaultId: P }), readVaultId: P, reach: null });
     view.rerenderWith(<Shell />, { viewedVaultId: undefined });
-    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVaultId: null, reach: null });
+    expect(seen[seen.length - 1]!.contentScope).toEqual({ readVault: expect.objectContaining({ vaultId: P }), readVaultId: P, reach: null });
   });
 
   test("openRecordFromList calls the latest onOpenRecord, and nothing when there is none", async () => {

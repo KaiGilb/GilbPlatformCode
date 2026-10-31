@@ -8,3 +8,6 @@ export { createCardReferencesHost } from "./cardReferencesHost";
 export { createOrgMarkHost } from "./orgMarkHost";
 export { createOrgEmployeesHost, type OrgEmployeesHostOptions } from "./orgEmployeesHost";
 export { createPickerQuery } from "./pickerQuery";
+export { createContactRowsHost } from "./contactRowsHost";
+export { createStakeholderRecordCardHost, type StakeholderRecordCardHostOptions } from "./stakeholderRecordCardHost";
+export { createAdderCardHost, createAddedByHost, createOtherLinkedRecordsHost } from "./heldCardPeerHosts";

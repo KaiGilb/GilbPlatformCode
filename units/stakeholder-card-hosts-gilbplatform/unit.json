@@ -2,8 +2,8 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.3.2",
-  "purpose": "The ready-made GilbPlatform host for the Stakeholder entry card: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card needs, so it draws, reads and adds with no host object written.",
+  "version": "0.4.0",
+  "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card and the held stakeholder record card need, so they draw, read, add and edit with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
@@ -33,14 +33,6 @@
         "to": "src/inline.ts"
       },
       {
-        "path": "src/lib/base/recordHooks.ts",
-        "lines": [
-          2836,
-          2845
-        ],
-        "to": "src/inline.ts"
-      },
-      {
         "path": "src/lib/mynet/place/usePlaceClaims.ts",
         "lines": [
           50,
@@ -63,38 +55,6 @@
           84
         ],
         "to": "src/inline.ts"
-      },
-      {
-        "path": "src/lib/base/adderCard.ts",
-        "lines": [
-          29,
-          41
-        ],
-        "to": "src/adderCard.ts"
-      },
-      {
-        "path": "src/lib/base/adderCard.ts",
-        "lines": [
-          57,
-          66
-        ],
-        "to": "src/adderCard.ts"
-      },
-      {
-        "path": "src/lib/base/adderCard.ts",
-        "lines": [
-          68,
-          88
-        ],
-        "to": "src/adderCard.ts"
-      },
-      {
-        "path": "src/lib/base/adderCard.ts",
-        "lines": [
-          98,
-          110
-        ],
-        "to": "src/adderCard.ts"
       },
       {
         "path": "src/lib/base/photoTerm.ts",
@@ -145,14 +105,6 @@
         "to": "src/hosts/stakeholderListDoorsHost.ts"
       },
       {
-        "path": "src/lib/base/adderCard.ts",
-        "lines": [
-          43,
-          55
-        ],
-        "to": "src/adderCard.ts"
-      },
-      {
         "path": "src/lib/base/photoTerm.ts",
         "lines": [
           32,
@@ -177,57 +129,71 @@
         "to": "src/photoTerm.ts"
       },
       {
-        "path": "src/lib/mynet/place/lws.ts",
-        "lines": [
-          57,
-          71
-        ],
-        "to": "src/inline.ts"
-      },
-      {
-        "path": "src/lib/mynet/place/lws.ts",
-        "lines": [
-          164,
-          170
-        ],
-        "to": "src/inline.ts"
-      },
-      {
         "path": "src/components/records/orgCard/OrgRecordPicker.tsx",
         "lines": [
           144,
           150
         ],
         "to": "src/inline.ts"
+      },
+      {
+        "path": "src/components/AppShell.tsx",
+        "lines": [
+          471,
+          472
+        ],
+        "to": "src/shell.ts"
+      },
+      {
+        "path": "src/components/AppShell.tsx",
+        "lines": [
+          503,
+          516
+        ],
+        "to": "src/shell.ts"
+      },
+      {
+        "path": "src/components/records/EntityRefValue.tsx",
+        "lines": [
+          18,
+          46
+        ],
+        "to": "src/refLabel.ts"
       }
     ]
   },
   "namedChanges": [
-    "src/inline.ts holds the inline copies, each token-equal to the declaration it cites: `HELD_RECORD_FRESH_MS` (recordHooks.ts 449), `heldRecordOf` (456-462), `useRecordsBeingDeleted` (2609-2630), `createdInVaultKey` and `rememberCreatedIn` (2836-2845), `placeClaimsKey` and `PLACE_CLAIMS_STALE_MS` (usePlaceClaims.ts 50-52). Their free names are the units' exports of the same names (`vaultOriginOf` of `vault-origin-rule`, `watchRecordDeletes` of `plan-record-hooks`, `deletedLinkedRecords`, `deletedLinkedRevision` and `onDeletedLinkedRecords` of `stakeholder-list-state`).",
+    "src/inline.ts holds the inline copies, each token-equal to the declaration it cites: `HELD_RECORD_FRESH_MS` (recordHooks.ts 449), `heldRecordOf` (456-462), `useRecordsBeingDeleted` (2609-2630), `placeClaimsKey` and `PLACE_CLAIMS_STALE_MS` (usePlaceClaims.ts 50-52). Their free names are the units' exports of the same names (`vaultOriginOf` of `vault-origin-rule`, `watchRecordDeletes` of `plan-record-hooks`, `deletedLinkedRecords`, `deletedLinkedRevision` and `onDeletedLinkedRecords` of `stakeholder-list-state`). 0.4.0: `createdInVaultKey`, `rememberCreatedIn` and `CREATED_IN_VAULT_HEAD` (2836-2845) are removed: `record-detail-reads` holds them, token-equal (9, 20 and 49 tokens).",
     "src/inline.ts `createIsGeoEntityId(geoOrigin)` is `isGeoEntityId` (baseGeo.ts 82-84) over the prefix `<geoOrigin without trailing slashes>/base/e/` (baseGeo.ts 61-64), the origin a provider prop where the app's was a constant built from the GilbGeo vault id.",
-    "src/adderCard.ts holds `adderCardOf` whole (adderCard.ts 98-110) with `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf`, `nameFromEmail`, `making`, `readFinding` and `findOrMake` (68-88): each is token-equal to the source's (measured with the census tool: 22, 38, 118, 53, 160 and 174 tokens). The make half is the units': `ensureVaultSelfCard` and `vaultRootOf` of `vault-profile-photo`, `readRecord` of `lws-records`, `vaultLabel` of `vault-list`. 0.2.0 removes `NO_OWN_CARD_SAYS` (0.1.0 refused with it where the source made the card).",
+    "0.4.0: src/adderCard.ts is deleted. `adderCardOf`, `NO_OWN_VAULT_SAYS`, `NoOwnVaultError`, `landingVaultOf` and `nameFromEmail` are the ones of `adder-card`: the comment-stripped inline declarations were token-equal to the unit's (6, 23, 39, 119, 21, 53, 160 and 175 tokens, measured before the deletion). The export `NO_OWN_VAULT_SAYS` is kept, re-exported from `adder-card`.",
     "src/photoTerm.ts is `photoTerm` and `photoReadKeysSync` (photoTerm.ts 19-22, 74-76) with `vedaOrigin` the provider's `origin` (the app's `BASE_ORIGIN`), one resolver per origin, and `store` the device's `localStorage` when there is one. 0.2.0 adds `photoReadKeysOf(resolver)`, the app's `photoReadKeys` (37-41) over that resolver: one ask shared for 60 s (`PHOTO_TERM_RETRY_MS`, 32), a failed resolve answering the last answer that worked, else none with the source's warning (`askPhotoReadKeys`, 48-64). Left out: `tellIfKeysChanged` (the app's subscription for its sync readers; this unit's sync read is `peek()`). One function per resolver, so the header, the Employees group and the card share one ask as the app's module did.",
     "src/defaults.ts holds the values a member takes when the developer gives none: no held-note line, no place claims, and for `useContactLabels` the value of the source's hook in its disabled branch (useContactLabels.ts 256-258, read, not run). Since 0.2.0 the three photo members default to the units': `discoverVaultProfilePhoto` and `loadPhotoObjectUrl` of `vault-profile-photo` (the first over a host with the photo term's read keys; `noteVaultPicture` left absent) and `loadGranteeFace` of `grantee-face`.",
-    "src/shell.ts builds the shell the card reads (`useShell`, ShellContext.ts 412) from the credential's session and the `useVaults` of `reachable-vaults` (the vault set of hooks.ts 108-129); `contentScope` is `{ readVaultId, reach: null }`.",
+    "src/shell.ts builds the shell the card reads (`useShell`, ShellContext.ts 412) from the credential's session and the `useVaults` of `reachable-vaults` (the vault set of hooks.ts 108-129); `contentScope` is `{ readVaultId, reach: null }`. 0.4.0: the shell also carries `session.vault.shortWebId`, `writeGuard` (`writeGuardOf`: AppShell.tsx 503-516, the source's words) and `contentScope.readVault` / `readVaultId` (`readVaultOf`: AppShell.tsx 471-472, `selectedVault ?? landingVault`); `readVaultId` was the `viewedVaultId` prop and is now the read vault's id. `createUseSession` is the passive session read of the adder's card.",
     "src/provider.tsx takes the query client's defaults from main.tsx 72-76.",
     "every other member is a function a unit exports (`masterKindReader` and `useRelations` of `plan-stakeholder-io`), a prop of the provider, or `() => 0` (`requestsSent`, requestMeter.ts 39).",
     "test/ holds the master and platform fixtures of `person-create` (`support.ts`, `fixtureReference.ts`, `fixtureTag.ts`, `fixturePlatform.ts`, `writableFields.ts`), copied unchanged; they are not shipped as source (`files` lists `test`, as the Plan-card provider's does).",
     "0.2.0 hosts the standalone Org units. src/hosts/ gains `createCardReferencesHost` (`changeRecordFactItems` of `record-fact-items`), `createOrgMarkHost` (`downloadFileOutcome` of `file-download-outcome`), `createOrgEmployeesHost` (`readResources` inline, `useSheetHistory` and `dropStaleSheetEntry` of `sheet-history`, the photo keys, and `RecordFace` when given) and `createPickerQuery` (`usePickerQuery`, inline). The provider mounts `OrgEmployeesHostContext`, `OrgMarkHostContext` and `PickerQueryContext` (which `org-hierarchy` reads); the `card-references` host is a factory, as the unit takes it as an argument.",
-    "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150), `getResource` (lws.ts 57-71, with `resourceOf` inlined and the etag, which nothing here reads, left out; not token-equal) and `readResources` (lws.ts 164-170, token-equal, 90 tokens) over `mapWithConcurrency` and `MAX_PARALLEL_DEREFERENCES` of `lws-vault-sets`, `idFromResourceUri` of `resource-id` and `entityUriInVault` of `vault-namespace`.",
-    "0.3.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`."
+    "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150). 0.4.0: `getResource` (lws.ts 57-71) and `readResources` (164-170) are removed: `readResources` of `vault-resources` is token-equal (91 tokens) and its `getResource` differs only by also answering `etag` and by `resourceOf` being a function, which the one caller (`readResources`) does not read.",
+    "0.3.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`.",
+    "0.4.0 hosts the held card (`stakeholder-record-card`). src/hosts/ gains `createStakeholderRecordCardHost`, `createContactRowsHost`, `createAdderCardHost`, `createAddedByHost` and `createOtherLinkedRecordsHost`; the provider mounts `StakeholderRecordCardHostContext`, `RefLabelContext`, `ContactRowsHostProvider`, `StakeholderSetFieldsHostProvider` (the `createCardReferencesHost()` host), `OtherLinkedRecordsHostContext`, `AddedByHostContext` and `AdderCardHostProvider`. The field pickers, the place members, `holdingVaultOf` and the eight render slots of the held card stay absent.",
+    "0.4.0: `useHolderOriginLine` and `useContactLabels` of the header host default to `contact-card-slots`' and `contact-labels`' (they defaulted to none); the provider props still override. src/refLabel.ts is the `entity-ref-value` README example hook (GilbApp `useResolvedRefLabel`, EntityRefValue.tsx 18-46). `settings.mynetProfileUrl` is set through `setMyNetProfileUrl` of `own-card-state`. `onOpenRecord(id, door?)` passes the vault a create of this session wrote the record into (`createdInVaultOf`) when known.",
+    "0.4.0 peers: added adder-card, added-by, contact-card-slots, contact-labels, contact-rows, entity-ref-value, home-dial, main-tag, modes-label, other-linked-records, own-card-state, phone-value, record-detail-reads, record-sidecar-save, skill-picker-sheet, social-logo, stakeholder-record-card, stakeholder-set-fields, vault-resources; dropped lws-vault-sets, plan-self-source, resource-id, vault-namespace. test/ gains `heldWorld.ts` and `contactCatalogue.master.json` (copied from `contact-labels`, the master's host replaced when loaded)."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
     "src/adderCard.test.ts",
-    "src/adderCard.ts",
     "src/both.test.tsx",
     "src/card.test.tsx",
     "src/defaults.ts",
     "src/example.test.tsx",
+    "src/heldCard.test.tsx",
+    "src/heldHosts.test.tsx",
     "src/hostAgnostic.test.ts",
     "src/hosts.test.tsx",
     "src/hosts/cardReferencesHost.ts",
     "src/hosts/cardVocabularyHost.ts",
+    "src/hosts/contactRowsHost.ts",
+    "src/hosts/heldCardPeerHosts.ts",
     "src/hosts/index.ts",
     "src/hosts/oneCardHost.ts",
     "src/hosts/onlineStakeholderCardHost.ts",
@@ -237,6 +203,7 @@
     "src/hosts/pickerQuery.ts",
     "src/hosts/stakeholderContactHeaderHost.ts",
     "src/hosts/stakeholderListDoorsHost.ts",
+    "src/hosts/stakeholderRecordCardHost.ts",
     "src/index.ts",
     "src/inline.test.ts",
     "src/inline.ts",
@@ -244,15 +211,19 @@
     "src/photoTerm.ts",
     "src/provider.test.tsx",
     "src/provider.tsx",
+    "src/refLabel.ts",
     "src/settings.ts",
+    "src/shell.test.tsx",
     "src/shell.ts",
     "src/standalone.test.tsx",
+    "test/contactCatalogue.master.json",
     "test/example.tsx",
     "test/fakeSession.ts",
     "test/fixturePlatform.ts",
     "test/fixtureReference.ts",
     "test/fixtureTag.ts",
     "test/harness.tsx",
+    "test/heldWorld.ts",
     "test/memoryStorage.ts",
     "test/setup.ts",
     "test/support.ts",
@@ -263,7 +234,7 @@
     {
       "member": "OnlineStakeholderCardHost.useShell",
       "replaces": "useShell(), GilbApp src/components/ShellContext.ts:412 (value built in components/AppShell.tsx:1662)",
-      "implementedBy": "this unit (src/shell.ts): the credential's session, reachable-vaults.useVaults, the content scope, the prop `onOpenRecord`"
+      "implementedBy": "this unit (src/shell.ts): the credential's session (with `shortWebId`), reachable-vaults.useVaults, the content scope (`readVault`), the write guard, the prop `onOpenRecord`"
     },
     {
       "member": "OnlineStakeholderCardHost.refreshOnlineStakeholders",
@@ -313,12 +284,12 @@
     {
       "member": "PersonCreateHost.adderCardOf",
       "replaces": "src/lib/base/adderCard.ts:98",
-      "implementedBy": "inline, src/adderCard.ts (token-equal; a person with no own card gets a basic one: `ensureVaultSelfCard` of `vault-profile-photo`)"
+      "implementedBy": "`adderCardOf` of `adder-card` (token-equal to the inline copy of 0.2.0-0.3.2, which is removed); a person with no own card gets a basic one: `ensureVaultSelfCard` of `vault-profile-photo`"
     },
     {
       "member": "PersonCreateHost.rememberCreatedIn",
       "replaces": "src/lib/base/recordHooks.ts:2842",
-      "implementedBy": "inline copy, src/inline.ts (token-equal)"
+      "implementedBy": "`rememberCreatedIn` of `record-detail-reads` (token-equal to the inline copy, which is removed)"
     },
     {
       "member": "CardVocabularyHost.masterKindReader",
@@ -348,12 +319,12 @@
     {
       "member": "StakeholderContactHeaderHost.useHolderOriginLine",
       "replaces": "src/components/records/ContactCardSlots.tsx:156",
-      "implementedBy": "provider prop `useHolderOriginLine`; default `{ origin: null, loading: false }`"
+      "implementedBy": "provider prop `useHolderOriginLine`; default `useHolderOriginLine` of `contact-card-slots` (the function the held card's slots call too)"
     },
     {
       "member": "StakeholderContactHeaderHost.useContactLabels",
       "replaces": "src/lib/contact/useContactLabels.ts:139",
-      "implementedBy": "provider prop `useContactLabels`; default the disabled-branch value (src/defaults.ts)"
+      "implementedBy": "provider prop `useContactLabels`; default `useContactLabels` of `contact-labels`"
     },
     {
       "member": "StakeholderContactHeaderHost.useRelations",
@@ -408,7 +379,7 @@
     {
       "member": "OrgEmployeesHost.readResources",
       "replaces": "src/lib/mynet/place/lws.ts:164",
-      "implementedBy": "inline, src/inline.ts (token-equal)"
+      "implementedBy": "`readResources` of `vault-resources` (token-equal to the inline copy, which is removed)"
     },
     {
       "member": "OrgEmployeesHost.photoReadKeys",
@@ -434,6 +405,61 @@
       "member": "PickerQueryContext.usePickerQuery",
       "replaces": "src/components/records/orgCard/OrgRecordPicker.tsx:144-150",
       "implementedBy": "inline, src/inline.ts, via `createPickerQuery`; the provider mounts `PickerQueryContext`"
+    },
+    {
+      "member": "StakeholderRecordCardHost.useShell",
+      "replaces": "useShell(), GilbApp src/components/ShellContext.ts:412",
+      "implementedBy": "this unit (src/shell.ts), the same hook as the online card's"
+    },
+    {
+      "member": "StakeholderRecordCardHost.photoReadKeys",
+      "replaces": "photoReadKeys(), src/lib/base/photoTerm.ts:37",
+      "implementedBy": "`photoReadKeysOf(resolver)`, src/photoTerm.ts"
+    },
+    {
+      "member": "StakeholderRecordCardHost.photoReadKeysSync",
+      "replaces": "photoReadKeysSync(), src/lib/base/photoTerm.ts:74",
+      "implementedBy": "`photoReadKeysSyncOf(resolver)`, src/photoTerm.ts"
+    },
+    {
+      "member": "StakeholderRecordCardHost.vocabulary",
+      "replaces": "stakeholderCardVocabularyQuery()",
+      "implementedBy": "createCardVocabularyHost()"
+    },
+    {
+      "member": "StakeholderRecordCardHost.useRefLabel",
+      "replaces": "useResolvedRefLabel, src/components/records/EntityRefValue.tsx:18-46",
+      "implementedBy": "src/refLabel.ts (the `entity-ref-value` example hook); also mounted as RefLabelContext"
+    },
+    {
+      "member": "StakeholderRecordCardHost.holdingVaultOf and the render slots",
+      "replaces": "holdingVaultOf and the host-owned sections",
+      "implementedBy": "absent: the card's defaults stand"
+    },
+    {
+      "member": "ContactRowsHost (all members)",
+      "replaces": "the imports of ContactRows.tsx",
+      "implementedBy": "`useHomeDial` of `home-dial`, `saveRecordSidecar` and `noteServedVersion` of `record-sidecar-save`, `PhoneValue`, `SkillPickerSheet`, `SkillDepthNote`, `SocialLogo`, `socialPlatformName`, `HeldVisibilitySwitch`, `AddedByLine` of their units, via createContactRowsHost()"
+    },
+    {
+      "member": "StakeholderSetFieldsHost.changeRecordFactItems",
+      "replaces": "src/lib/base/recordFactItems.ts:55",
+      "implementedBy": "createCardReferencesHost()"
+    },
+    {
+      "member": "OtherLinkedRecordsHost.useShell",
+      "replaces": "useShell(), OtherLinkedRecords.tsx:33",
+      "implementedBy": "the shell's vaults, via createOtherLinkedRecordsHost"
+    },
+    {
+      "member": "AddedByHost.useShell",
+      "replaces": "useContext(ShellContext), AddedByLine.tsx",
+      "implementedBy": "the shell's openRecordFromList, via createAddedByHost"
+    },
+    {
+      "member": "AdderCardHost.useSession",
+      "replaces": "the session query of the shell",
+      "implementedBy": "createUseSession (src/shell.ts): the shell's own session query, passive"
     }
   ],
   "library": {
