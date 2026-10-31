@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/term-name-text",
+  "package": "@kaigilb/gilbplatformcode-term-name-text",
+  "version": "0.1.0",
+  "purpose": "Names a skill or an interest from its catalogue address, never by the address itself.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": []
+  },
+  "namedChanges": [
+    "New code; no line of the source is copied."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/termNameText.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
