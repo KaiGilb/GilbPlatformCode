@@ -44,7 +44,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-geo-catalogue": "^0.1.0",
-    "@kaigilb/gilbplatformcode-geo-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-geo-origin": "^0.1.1",
     "@kaigilb/gilbplatformcode-place-claims": "^0.1.1",
     "@kaigilb/gilbplatformcode-place-lines": "^0.1.0",
     "@kaigilb/gilbplatformcode-place-vocab": "^0.1.0",

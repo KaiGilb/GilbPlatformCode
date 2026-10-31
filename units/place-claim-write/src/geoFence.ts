@@ -3,25 +3,23 @@
 // remove. The URL is the one `vault-origin-rule` builds from the same arguments the record client will be given, so what is checked is what would be sent
 // (a planted entity address under the catalogue is refused even when the vault argument is the holder's). The test is on the PARSED origin
 // (`isGeoUrl` of `geo-origin`), never on the text.
-import { isGeoUrl } from "@kaigilb/gilbplatformcode-geo-origin";
+import { GeoWriteRefusedError, geoOrigin, isGeoUrl } from "@kaigilb/gilbplatformcode-geo-origin";
 import { entityUriInVault } from "@kaigilb/gilbplatformcode-vault-namespace";
 import { LWS_RESOURCE_URL, LWS_VAULT_CONTAINER_URL } from "@kaigilb/gilbplatformcode-vault-origin-rule";
 
-/** A write was addressed to the place catalogue. The message names no address. */
-export class GeoWriteRefusedError extends Error {
-  constructor() {
-    super("The place catalogue is read only, so nothing can be written to it.");
-    this.name = "GeoWriteRefusedError";
-  }
-}
+export { GeoWriteRefusedError };
 
-/** True when the address is inside the catalogue. An origin that was never set means no catalogue is known, so nothing is inside it. */
+/**
+ * True when the address is inside the catalogue. FAILS CLOSED: when the catalogue's origin was never set the question cannot be answered, and a guard that protects a
+ * system vault refuses when it cannot tell, so this throws `GeoWriteRefusedError("origin-unknown")` (CHANGED: 0.1.0 treated an unknown origin as "nothing is inside it").
+ */
 function insideCatalogue(url: string): boolean {
   try {
-    return isGeoUrl(url);
+    geoOrigin();
   } catch {
-    return false;
+    throw new GeoWriteRefusedError("origin-unknown");
   }
+  return isGeoUrl(url);
 }
 
 /** The URL a create in `vaultId` is POSTed to. */

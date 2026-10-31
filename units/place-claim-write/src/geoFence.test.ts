@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ResolvedPlaceVocab } from "@kaigilb/gilbplatformcode-place-vocab";
 import { resolvePlaceVocab } from "@kaigilb/gilbplatformcode-place-vocab";
+import { resetGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
 import type { PlaceClaim } from "@kaigilb/gilbplatformcode-place-claims";
 import {
   GeoWriteRefusedError,
@@ -141,5 +142,37 @@ describe("the world: nothing but a GET at the catalogue", () => {
     await removePlaceClaim(VAULT, d!, RECORD);
     expect(fake.geoRequests().length).toBeGreaterThan(0); // it did read the place (slotsForFields)
     expect(fake.geoRequests().every((r) => r.method === "GET")).toBe(true);
+  });
+});
+
+describe("FAIL CLOSED: when the catalogue's origin is not known, no write is made (a guard that cannot tell refuses)", () => {
+  const unknown = async (p: Promise<unknown>) => {
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(GeoWriteRefusedError);
+    expect((err as GeoWriteRefusedError).reason).toBe("origin-unknown");
+    expect((err as Error).message).toBe("Addresses cannot be saved here: the place catalogue is not known.");
+    expect(fake.calls).toEqual([]); // not one request
+  };
+
+  it("every write function throws origin-unknown before any request (create, change, remove and each field write)", async () => {
+    const c = await stored();
+    const street = c.fields.find((f) => f.subject === "street")!;
+    resetGeoOrigin();
+    fake.calls.length = 0;
+    await unknown(createPlaceClaim(VAULT, RECORD, input({ label: "home", streetLine: "x" }), PRINCIPAL));
+    await unknown(createPlaceFieldClaim(VAULT, RECORD, { streetLine: "x" }, vocab, c.uri, PRINCIPAL));
+    await unknown(updatePlaceClaim(VAULT, c, RECORD, input({ label: "cabin", streetLine: "Gate 1", place: { city: null, region: null, country: NORWAY } }), PRINCIPAL));
+    await unknown(updatePlaceFieldClaim(VAULT, street.id, { streetLine: "x" }, vocab, street.uri));
+    await unknown(removePlaceClaim(VAULT, c, RECORD));
+    await unknown(removePlaceFieldClaim(VAULT, street.id, street.uri));
+    expect(store.size).toBe(1 + c.fields.length);
+  });
+
+  it("a write that would also have been outside the catalogue is refused just the same while the origin is unknown", async () => {
+    resetGeoOrigin();
+    await unknown(createPlaceClaim(VAULT, RECORD, input({ label: "home", streetLine: "x" }), PRINCIPAL));
   });
 });
