@@ -79,3 +79,17 @@ export function isGeoUrl(value: unknown): boolean {
   if (url.username !== "" || url.password !== "") return false;
   return url.origin === home;
 }
+
+/**
+ * A write was refused because of the place catalogue: it is read only, so nothing may be written to it (`reason: "catalogue"`, the default), or the write could not be
+ * checked because the catalogue's origin is not known (`reason: "origin-unknown"`), and a guard that protects the catalogue refuses when it cannot tell (it fails CLOSED).
+ * The message is a fixed sentence and names no address. Added in 0.1.1 (the write fence of `place-claim-write` throws it).
+ */
+export class GeoWriteRefusedError extends Error {
+  readonly reason: "catalogue" | "origin-unknown";
+  constructor(reason: "catalogue" | "origin-unknown" = "catalogue") {
+    super(reason === "origin-unknown" ? "Addresses cannot be saved here: the place catalogue is not known." : "The place catalogue is read only, so nothing can be written to it.");
+    this.name = "GeoWriteRefusedError";
+    this.reason = reason;
+  }
+}

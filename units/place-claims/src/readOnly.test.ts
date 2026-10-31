@@ -15,6 +15,7 @@ function code(file: string): string {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   let out = "";
   const visit = (n: ts.Node) => {
+    if (n.kind === ts.SyntaxKind.JSDoc) return; // a doc comment is not code
     const kids = n.getChildren(sf);
     if (kids.length === 0) out += n.getText(sf) + " ";
     else kids.forEach(visit);

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-claims",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Reads a person's addresses from the vault that holds them: the address claims, their field claims, and what each says.",

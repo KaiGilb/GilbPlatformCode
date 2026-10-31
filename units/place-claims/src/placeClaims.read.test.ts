@@ -19,6 +19,8 @@ import {
   placeClaimHeading,
   placeClaimsKey,
   PlaceClaimsIncompleteError,
+  isPartOfAddress,
+  listFieldClaimsDetailing,
   readPlaceClaimsInVault,
   toPlaceFieldClaim,
   type PlaceClaim,
@@ -363,5 +365,41 @@ describe("claimsAbout, the key, the pure reads", () => {
     gilbAddress(RECORD, "", {}, [NORWAY]);
     const [c] = await read();
     expect(placeClaimHeading(c!)).toBe("");
+  });
+});
+
+describe("isPartOfAddress / listFieldClaimsDetailing (0.1.1: the read the REMOVE of an address rests on)", () => {
+  it("a field naming the address by id, in any spelling, with no subject or the address's own subjects, is a part; one about another is 'other'; one that names another address is null", async () => {
+    const v = await resolvePlaceVocab();
+    const address = { id: "c1", subjects: [RECORD] };
+    const doc = (extra: Record<string, unknown>) => ({ detailOf: { "@id": `${VAULT}/e/c1` }, postalCode: "1", ...extra });
+    expect(isPartOfAddress(doc({}), v, address)).toBe("part");
+    expect(isPartOfAddress(doc({ claimSubject: { "@id": "base:e/06gkperson0000000000000001" } }), v, address)).toBe("part");
+    expect(isPartOfAddress(doc({ detailOf: { "@id": "https://elsewhere.example/base/e/c1" } }), v, address)).toBe("part");
+    expect(isPartOfAddress(doc({ claimSubject: { "@id": OTHER } }), v, address)).toBe("other");
+    expect(isPartOfAddress(doc({ claimSubject: [{ "@id": RECORD }, { "@id": OTHER }] }), v, address)).toBe("other");
+    expect(isPartOfAddress(doc({ claimSubject: { "@value": "?" } }), v, address)).toBe("other");
+    expect(isPartOfAddress(doc({ detailOf: { "@id": `${VAULT}/e/c1X` } }), v, address)).toBeNull();
+    expect(isPartOfAddress({ postalCode: "1" }, v, address)).toBeNull();
+  });
+
+  it("the listing returns the parts and the others, whole; and says when it was not whole", async () => {
+    const id = gilbAddress(RECORD, "home", { streetLine: "Storgata 1" });
+    fake.seed("t:SelfAssertedFieldClaim", { "a:claimSubject": { "@id": OTHER }, "a:detailOf": { "@id": `${VAULT}/e/${id}` }, "a:postalCode": "0151" });
+    const v = await resolvePlaceVocab();
+    const whole = await listFieldClaimsDetailing(VAULT, v, { id, subjects: [RECORD] });
+    expect(whole.complete).toBe(true);
+    expect(whole.parts).toHaveLength(1);
+    expect(whole.otherSubject).toHaveLength(1);
+    fake.door.pages = (offset, types) => (types.includes("SelfAssertedFieldClaim") ? { records: [], total: 9, complete: false, pageSize: 1, offset, nextOffset: offset } : null);
+    expect(await listFieldClaimsDetailing(VAULT, v, { id, subjects: [RECORD] })).toMatchObject({ complete: false, reason: "stalled", parts: [], otherSubject: [] });
+  });
+
+  it("no vault or no address: nothing, whole, no request", async () => {
+    const v = await resolvePlaceVocab();
+    fake.calls.length = 0;
+    expect(await listFieldClaimsDetailing("", v, { id: "x", subjects: [] })).toMatchObject({ complete: true, parts: [] });
+    expect(await listFieldClaimsDetailing(VAULT, v, { id: "", subjects: [] })).toMatchObject({ complete: true, parts: [] });
+    expect(fake.calls).toEqual([]);
   });
 });

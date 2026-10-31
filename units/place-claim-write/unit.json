@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "unit": "units/place-claim-write",
+  "package": "@kaigilb/gilbplatformcode-place-claim-write",
+  "version": "0.1.0",
+  "purpose": "Writes a person's addresses to the vault that holds them: create, change and remove, one request per fact, never to the place catalogue.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/place/placeFieldClaim.ts",
+        "lines": [
+          85,
+          200
+        ],
+        "to": "src/placeFieldClaimWrite.ts"
+      },
+      {
+        "path": "src/lib/mynet/place/placeFieldClaim.ts",
+        "lines": [
+          216,
+          386
+        ],
+        "to": "src/placeFieldClaimWrite.ts"
+      },
+      {
+        "path": "src/lib/mynet/place/placeClaim.ts",
+        "lines": [
+          297,
+          909
+        ],
+        "to": "src/placeClaimWrite.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the vault surface is `vault-resources`, `vault-namespace` (`entityUriInVault`), `resource-id`; the vocabulary is `place-vocab`; the read side (types, tables, listing) is `place-claims`; `needsFieldMigration` is `place-lines`; the catalogue is `geo-catalogue` (`getPlace`, `resolveGeoGrains` in `slotsForFields`, GETs). `DIRECT_READER` is defined here (GilbApp defined it twice, once in each file; `held-notes` has a named copy of the same string).",
+    "The per-write geo fence (decision 2b, new): see above, and it fails CLOSED. GilbApp had none; the server's whole-vault write grant was the only fence.",
+    "The amend wire (decision 6): GilbApp patched the composite on EVERY amend, re-sent `a:claimSubject` each time (on an address that is also about someone else, a merge patch that replaces a list would drop the other subject), and sent `a:placeClaimLabel: null` whenever the label was blank, changed or not. Now only what the act changed; `a:claimSubject` never. `placeClaimFacts` has no `forAmend` any more; `placeClaimLabelPatch` is new.",
+    "A partial create is said (decision 12): when a field fails after the composite exists, `createPlaceClaim` throws `PlaceClaimPartialError` (`made`, `failure`), not the field's own error as if nothing had been made. Nothing is cleaned up (as GilbApp).",
+    "A remove works only from a whole listing (F4): the listing of the field claims (`listFieldClaimsDetailing`, which moved to `place-claims` 0.1.1 because it reads) answers whether it was whole; if not, `removePlaceClaim` refuses with `REMOVE_NOT_WHOLE_MESSAGE` and deletes nothing. GilbApp's listing ended quietly at its ceiling and deleted on, leaving the parts it never saw.",
+    "Fixed sentences: the refusals a person may be told (`EMPTY_ADDRESS_MESSAGE`, `OLDER_SHAPE_MESSAGE`, the 'cannot be placed' sentence, `REMOVE_NOT_WHOLE_MESSAGE`) are thrown as `PlaceClaimRefusal` with a `sentence`; the 'cannot be placed' sentence is reworded so that it reads to a person (GilbApp's began `Refusing to change this address:`). Every other error is for the log.",
+    "Not taken: nothing of GilbApp's write side is left out. The module headers and the comments that named hosts, a cycle or an agent are reworded with the same facts."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
