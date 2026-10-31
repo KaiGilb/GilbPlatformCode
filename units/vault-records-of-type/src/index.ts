@@ -1,1 +1,1 @@
-export { MAX_LIST_PAGES, VaultListingCappedError, getListedResource, listRecordsOfType, type RecordRef } from "./vaultRecordsOfType";
+export { MAX_LIST_PAGES, getListedResource, listRecordsOfType, type RecordListing, type RecordRef } from "./vaultRecordsOfType";

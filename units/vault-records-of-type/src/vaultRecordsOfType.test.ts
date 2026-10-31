@@ -2,7 +2,10 @@
 // platform at the level of `fetch` (the source mocked the app's list function). The rest is new: F4 (the page ceiling is SAID), the boundary of the
 // ceiling, `getListedResource`, and that the unit only reads.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MAX_LIST_PAGES, VaultListingCappedError, getListedResource, listRecordsOfType } from "./index";
+import { MAX_LIST_PAGES, getListedResource, listRecordsOfType as list } from "./index";
+
+// The listing answers { records, complete, reason? }. These helpers read the records, as the ported cases did when it answered the array.
+const listRecordsOfType = async (vault: string, type: string) => (await list(vault, type)).records;
 import * as fake from "../test/fakePlaceStore";
 import { setUp, tearDown } from "../test/support";
 
@@ -57,52 +60,54 @@ describe("M3f r6 · N23: a body page whose rows were all dropped is not the end"
   });
 });
 
-describe("M3f r7 · X19: a door that names the same offset again does not hold the listing in a loop", () => {
-  it("not complete, nextOffset = this page's own offset: the listing stops after that page", async () => {
+describe("M3f r7 · X19: a door that names the same offset again does not hold the listing in a loop (CHANGED: and says it stalled)", () => {
+  it("not complete, nextOffset = this page's own offset: the listing stops after that page and says `stalled`, never a quiet end", async () => {
     let asked = 0;
     fake.door.pages = (offset) => {
       asked += 1;
       if (asked > 5) throw new Error("looped");
       return { records: [], total: 9, complete: false, pageSize: 1, offset, nextOffset: offset };
     };
-    expect(await listRecordsOfType(VAULT, "PlaceClaim")).toEqual([]);
+    const listing = await list(VAULT, "PlaceClaim");
     expect(asked).toBe(1);
+    expect(listing).toEqual({ records: [], complete: false, reason: "stalled" });
+  });
+
+  it("a stalled door keeps the records it did send", async () => {
+    const row = (i: number) => ({ entity: `${VAULT}/e/r${i}`, typeUri: "t:PlaceClaim", updatedAt: null, label: null, body: { "@id": `${VAULT}/e/r${i}`, "@type": "t:PlaceClaim" }, etag: '"1"' });
+    fake.door.pages = (offset) => (offset === 0 ? { records: [row(0), row(1)], total: 9, complete: false, pageSize: 2, offset: 0, nextOffset: 2 } : { records: [row(2)], total: 9, complete: false, pageSize: 2, offset, nextOffset: offset });
+    const listing = await list(VAULT, "PlaceClaim");
+    expect(listing).toMatchObject({ complete: false, reason: "stalled" });
+    expect(listing.records.map((r) => r.entity)).toEqual([`${VAULT}/e/r0`, `${VAULT}/e/r1`, `${VAULT}/e/r2`]);
+  });
+
+  it("an empty page that is not the last and names no next offset cannot advance either: `stalled`", async () => {
+    fake.door.pages = (offset) => ({ total: 9, complete: false, pageSize: 1, offset, records: [] });
+    expect(await list(VAULT, "PlaceClaim")).toEqual({ records: [], complete: false, reason: "stalled" });
   });
 });
 
-describe("F4: the page ceiling is said, never silent", () => {
-  it(`more than ${MAX_LIST_PAGES} pages: the listing throws VaultListingCappedError (GilbApp returned the first ${MAX_LIST_PAGES} pages and said nothing)`, async () => {
+describe("F4: the page ceiling is said, and what was read is kept", () => {
+  it(`more than ${MAX_LIST_PAGES} pages: the listing answers the ${MAX_LIST_PAGES} pages it read with complete false and reason capped (GilbApp returned them as the whole)`, async () => {
     expect(MAX_LIST_PAGES).toBe(50);
     seedClaims(MAX_LIST_PAGES + 10);
     fake.door.pageSize = 1;
-    const err = await listRecordsOfType(VAULT, "PlaceClaim").then(
-      () => null,
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(VaultListingCappedError);
-    const capped = err as VaultListingCappedError;
-    expect(capped.pages).toBe(MAX_LIST_PAGES);
-    expect(capped.vaultId).toBe(VAULT);
-    expect(capped.read).toHaveLength(MAX_LIST_PAGES); // what was read is not thrown away
+    const listing = await list(VAULT, "PlaceClaim");
+    expect(listing).toMatchObject({ complete: false, reason: "capped" });
+    expect(listing.records).toHaveLength(MAX_LIST_PAGES); // what was read is not thrown away
     expect(fake.listReads()).toHaveLength(MAX_LIST_PAGES); // and no page past the ceiling was asked for
   });
 
-  it("the message says that not every record was read, and names no address", async () => {
-    seedClaims(MAX_LIST_PAGES + 1);
-    fake.door.pageSize = 1;
-    const err = (await listRecordsOfType(VAULT, "PlaceClaim").catch((e: unknown) => e)) as VaultListingCappedError;
-    expect(err.message).toBe("Not every record in this vault was read: the listing stopped after 50 pages.");
-    expect(err.message).not.toMatch(/https?:/);
-  });
-
-  it("exactly the ceiling's worth of pages, the last one complete: no error", async () => {
+  it("exactly the ceiling's worth of pages, the last one complete: complete true, no reason", async () => {
     seedClaims(MAX_LIST_PAGES);
     fake.door.pageSize = 1;
-    const refs = await listRecordsOfType(VAULT, "PlaceClaim");
-    expect(refs).toHaveLength(MAX_LIST_PAGES);
+    const listing = await list(VAULT, "PlaceClaim");
+    expect(listing.records).toHaveLength(MAX_LIST_PAGES);
+    expect(listing).toMatchObject({ complete: true });
+    expect("reason" in listing).toBe(false);
   });
 
-  it("a door that never says complete and pages by the rows it sent (no next offset) is cut and said as well", async () => {
+  it("a door that never says complete and pages by the rows it sent (no next offset) is capped and kept as well", async () => {
     fake.door.pages = (offset) => ({
       total: 9999,
       complete: false,
@@ -110,13 +115,16 @@ describe("F4: the page ceiling is said, never silent", () => {
       offset,
       records: [{ entity: `${VAULT}/e/r${offset}`, typeUri: "t:PlaceClaim", updatedAt: null, label: null }],
     });
-    await expect(listRecordsOfType(VAULT, "PlaceClaim")).rejects.toBeInstanceOf(VaultListingCappedError);
+    const listing = await list(VAULT, "PlaceClaim");
+    expect(listing).toMatchObject({ complete: false, reason: "capped" });
+    expect(listing.records).toHaveLength(MAX_LIST_PAGES);
     expect(fake.listReads()).toHaveLength(MAX_LIST_PAGES);
   });
 
-  it("a short listing is not an error", async () => {
+  it("a short listing is complete", async () => {
     seedClaims(2);
-    expect(await listRecordsOfType(VAULT, "PlaceClaim")).toHaveLength(2);
+    expect(await list(VAULT, "PlaceClaim")).toMatchObject({ complete: true });
+    expect((await list(VAULT, "PlaceClaim")).records).toHaveLength(2);
   });
 });
 

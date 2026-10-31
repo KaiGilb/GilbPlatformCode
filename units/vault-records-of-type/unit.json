@@ -20,8 +20,8 @@
   },
   "namedChanges": [
     "The imports: the vault surface is `vault-resources` (`getResource`), `lws-vault-sets` (`listVaultRecordsPage`), `lws-records` (`recordFromServed`) and `resource-id` (`idFromResourceUri`).",
-    "The page ceiling is said (F4). GilbApp's loop ended at 50 pages and returned the records it had, so addresses past the ceiling were never shown and nothing said so. Now `VaultListingCappedError`. `MAX_LIST_PAGES` is exported (GilbApp: private).",
-    "Not changed, and not an error: a door that names the same offset again ends the listing with what it has (GilbApp's loop guard, pinned by its test); that is a door that cannot advance, not the ceiling.",
+    "An incomplete listing is said and what was read is kept (F4): `listRecordsOfType` answers `{ records, complete, reason? }`, `capped` at the page ceiling or `stalled` by a door that cannot advance (GilbApp ended quietly in both). `MAX_LIST_PAGES` is exported.",
+    "A stalled door is also incomplete (GilbApp's quiet stop, its test X19, now pins the marker).",
     "The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts. No other code changed."
   ],
   "newFiles": [

@@ -3,5 +3,5 @@ import { expect, it } from "vitest";
 import * as unit from "./index";
 
 it("exports exactly these", () => {
-  expect(Object.keys(unit).sort()).toEqual(["MAX_LIST_PAGES", "VaultListingCappedError", "getListedResource", "listRecordsOfType"]);
+  expect(Object.keys(unit).sort()).toEqual(["MAX_LIST_PAGES", "getListedResource", "listRecordsOfType"]);
 });

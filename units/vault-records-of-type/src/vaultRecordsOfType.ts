@@ -41,26 +41,22 @@ export async function getListedResource(ref: RecordRef, vaultId: string): Promis
 export const MAX_LIST_PAGES = 50;
 
 /**
- * CHANGED (new, F4): the listing was cut off at {@link MAX_LIST_PAGES} pages with the door still saying there was more. GilbApp ended the loop
- * there and returned what it had, so some records were never shown and nothing said so. The records read are on the error, so a caller that can
- * say "not every one was read" may still show them; one that cannot must not show them as the whole answer.
+ * CHANGED (new, F4): what a listing came to. GilbApp returned the records it had and ended its loop quietly, whether the listing was whole, cut off at the
+ * page ceiling, or stopped by a door that could not advance, so records past that point were never shown and nothing said so. Now the records read are
+ * ALWAYS returned, with a marker a view can say:
+ *  - `complete: true`: the door said it was the last page (or named no more);
+ *  - `complete: false, reason: "capped"`: the page ceiling ({@link MAX_LIST_PAGES}) ended the loop while the door still had more;
+ *  - `complete: false, reason: "stalled"`: the door could not advance (it named the same offset again, or sent an empty page that was not the last and
+ *    named no next offset).
+ * An incomplete listing is never to be read as "there are no more": show what was read AND say that not every record was read.
  */
-export class VaultListingCappedError extends Error {
-  readonly vaultId: string;
-  readonly pages: number;
-  readonly read: readonly RecordRef[];
-  constructor(vaultId: string, pages: number, read: readonly RecordRef[]) {
-    super(`Not every record in this vault was read: the listing stopped after ${pages} pages.`);
-    this.name = "VaultListingCappedError";
-    this.vaultId = vaultId;
-    this.pages = pages;
-    this.read = read;
-  }
-}
+export type RecordListing =
+  | { readonly records: RecordRef[]; readonly complete: true }
+  | { readonly records: RecordRef[]; readonly complete: false; readonly reason: "capped" | "stalled" };
 
 /** Every record of one type in the vault (MyNet's `GET …/records?type=<bare name>`), every page —
- *  walked as `uiPrefs.listUiPrefsRowsOnVault` walks them. Throws {@link VaultListingCappedError} when the page ceiling cut it short. */
-export async function listRecordsOfType(vaultId: string, typeQuery: string): Promise<RecordRef[]> {
+ *  walked as `uiPrefs.listUiPrefsRowsOnVault` walks them. CHANGED: answers a {@link RecordListing}, not the bare array. */
+export async function listRecordsOfType(vaultId: string, typeQuery: string): Promise<RecordListing> {
   const out: RecordRef[] = [];
   let offset = 0;
   for (let n = 0; n < MAX_LIST_PAGES; n++) {
@@ -73,22 +69,24 @@ export async function listRecordsOfType(vaultId: string, typeQuery: string): Pro
       const read = r.body ? resourceOf(recordFromServed(r.id, r.body, r.etag ?? null)) : undefined;
       out.push({ entity, typeUri: r.typeUri, ...(read ? { read } : {}) });
     }
-    if (page.complete) break;
+    if (page.complete) return { records: out, complete: true };
     // With bodies the door may end a page early at its byte budget, and a page whose rows were all dropped can be empty: it names where
     // the next page starts (`nextOffset`, a number only with `include=body`; null when it names none). M3f r6 (Agent.Scaling delta 5
     // N23): while the page is not complete and a next offset is named, read on, even past an empty page. A door that names none (it
     // does not take `include=body`) pages as before.
     if (typeof page.nextOffset === "number") {
-      if (page.nextOffset <= offset) break;
+      // CHANGED (F4): a door that names this page's own offset again cannot advance; GilbApp ended the loop quietly (X19).
+      if (page.nextOffset <= offset) return { records: out, complete: false, reason: "stalled" };
       offset = page.nextOffset;
-      if (n === MAX_LIST_PAGES - 1) throw new VaultListingCappedError(vaultId, MAX_LIST_PAGES, out);
+      if (n === MAX_LIST_PAGES - 1) return { records: out, complete: false, reason: "capped" };
       continue;
     }
-    if (page.nextOffset === null && page.records.some((r) => !!r.body)) break;
-    if (page.records.length === 0) break;
+    if (page.nextOffset === null && page.records.some((r) => !!r.body)) return { records: out, complete: true };
+    // CHANGED (F4): an empty page that is not the last, with no next offset named, cannot advance either.
+    if (page.records.length === 0) return { records: out, complete: false, reason: "stalled" };
     offset += page.records.length;
     // CHANGED (F4): the ceiling was reached and the door has not said `complete`: say so.
-    if (n === MAX_LIST_PAGES - 1) throw new VaultListingCappedError(vaultId, MAX_LIST_PAGES, out);
+    if (n === MAX_LIST_PAGES - 1) return { records: out, complete: false, reason: "capped" };
   }
-  return out;
+  return { records: out, complete: false, reason: "capped" };
 }
