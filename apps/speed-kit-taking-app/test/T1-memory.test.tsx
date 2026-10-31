@@ -9,7 +9,7 @@ describe("T1 memory", () => {
     click("signin-ann");
     await screen.findByTestId("entry-e1");
     expect(screen.getAllByTestId(/^entry-e\d+$/)).toHaveLength(30);
-    await waitFor(() => expect(panel().dataset.source).toBe("network")); // the first visit had nothing to paint from (the panel follows the rows by a step)
+    await waitFor(() => expect(panel().dataset.source).toBe("preview")); // the first visit had nothing to paint from: its first rows are the walk's preview (the panel follows the rows by a step)
 
     click("nav-entry-e1"); // an Entry page
     expect(screen.queryByTestId("entry-e1")).toBeNull();

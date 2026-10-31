@@ -18,6 +18,8 @@ export interface VaultOptions {
   versionMovesAfterRead?: boolean;
   /** How an ended record reads: the real shape (200 with the lifecycle mark and no body, the default) or a 404. */
   endedAs?: "200" | "404";
+  /** Records requests after the Nth never answer (a list whose first page came and the rest did not). */
+  stallRecordsAfter?: number;
 }
 export interface Call { method: string; url: string; headers: Headers; body: string | undefined }
 
@@ -32,7 +34,7 @@ export function fakeVault(opts: VaultOptions = {}) {
   const calls: Call[] = [];
   const signIn: string[] = [];
   const keys = new Map<string, { digest: string; id: string }>();
-  const stats = { inflight: 0, peak: 0, replays: 0, newCreates: 0, createAttempts: 0 };
+  const stats = { recordsSeen: 0, inflight: 0, peak: 0, replays: 0, newCreates: 0, createAttempts: 0 };
   const reach = opts.reach ?? reachBody([vaultNode(VAULT, "ann"), vaultNode(OTHER_VAULT, "zoe")]);
   const etagOf = (r: Row) => `"v${r.v}"`;
   const json = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
@@ -52,6 +54,7 @@ export function fakeVault(opts: VaultOptions = {}) {
 
     let m = /^\/lws\/vault\/[^/]+\/records$/.exec(u.pathname);
     if (m && method === "GET") {
+      if (opts.stallRecordsAfter !== undefined && ++stats.recordsSeen > opts.stallRecordsAfter) return new Promise<Response>(() => undefined);
       const q = u.searchParams;
       if (q.get("lifecycle") === "ended") return json(200, page([...rows.values()].filter((r) => r.ended)));
       const live = [...rows.values()].filter((r) => !r.ended);

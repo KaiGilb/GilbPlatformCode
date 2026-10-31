@@ -37,36 +37,44 @@ It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/
 
 It proves, in a REAL browser engine with its real IndexedDB, real reloads and a real mouse: the first visit, the return from an entry, the reload painted from the device before any records answer, no trace of Ann after sign-out or after a tab closed without sign-out, and that pointing at the nav sends the request.
 It does NOT prove: anything against the real platform (the vault is the in-page stand-in, so the result is "REAL browser, MOCK vault"), a real phone, or the network cost of the vault (the throttling slows only the page load, since the stand-in answers inside the page).
-B5 first looks at a hover right after sign-in (the idle warm of sign-in has already started the warmer, so within 30 s the hover sends nothing; recorded in the table), then waits 31 s and checks that the hover sends the request.
+B7 holds the IndexedDB read to show a late device copy still paints. B5 first looks at a hover right after sign-in (the idle warm of sign-in has already started the warmer, so within 30 s the hover sends nothing; recorded in the table), then waits 31 s and checks that the hover sends the request.
 
-The speed table of the second run (REAL browser, MOCK vault; vault latency 600 ms; Ann has 500 entries, 3 walk pages):
+The speed table of the latest run (REAL browser, MOCK vault; vault latency 600 ms; Ann has 500 entries, 3 walk pages). `firstRowMs` is the first row; `fullMs` is when the whole list is in (`partial` ended). B1 now shows the first page early (`source` preview, about 2 requests, 1.2 s) while the whole list takes the 5 requests (3.0 s). B7 holds the device read after a reload (0 ms and 600 ms from the sign-in click): the copy that arrives late still paints, and the label says `device`.
 
-| engine | profile | scenario | firstRowMs | source | wall ms | records req at row | records answered at row | records req total | rows | pass | failed | notes |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| chromium | desktop | B1 cold first visit | 3020.4 | network | 3027.6 | 5 | 5 | 5 | 500 | pass |  |  |
-| chromium | desktop | B2 back from an entry | 1.8 | memory | 1.9 |  |  |  | 500 | pass |  |  |
-| chromium | desktop | B3 reload, from the device | 8.4 | device | 10.5 | 0 | 0 |  | 500 | pass |  |  |
-| chromium | desktop | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
-| chromium | desktop | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
-| chromium | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
-| chromium | phone | B1 cold first visit | 3019.4 | network | 3026.8 | 5 | 5 | 5 | 500 | pass |  |  |
-| chromium | phone | B2 back from an entry | 1.6 | memory | 1.8 |  |  |  | 500 | pass |  |  |
-| chromium | phone | B3 reload, from the device | 9.9 | device | 9.7 | 0 | 0 |  | 500 | pass |  |  |
-| chromium | phone | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
-| chromium | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
-| chromium | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
-| webkit | desktop | B1 cold first visit | 3014 | network | 3019 | 5 | 5 | 5 | 500 | pass |  |  |
-| webkit | desktop | B2 back from an entry | 2 | memory | 2 |  |  |  | 500 | pass |  |  |
-| webkit | desktop | B3 reload, from the device | 10 | device | 5 | 0 | 0 |  | 500 | pass |  |  |
-| webkit | desktop | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
-| webkit | desktop | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
-| webkit | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
-| webkit | phone | B1 cold first visit | 3013 | network | 3018 | 5 | 5 | 5 | 500 | pass |  |  |
-| webkit | phone | B2 back from an entry | 2 | memory | 3 |  |  |  | 500 | pass |  |  |
-| webkit | phone | B3 reload, from the device | 10 | device | 5 | 0 | 0 |  | 500 | pass |  |  |
-| webkit | phone | B4 sign-out and Ben |  |  |  |  |  |  | 5 | pass |  |  |
-| webkit | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
-| webkit | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
+| engine | profile | scenario | firstRowMs | fullMs | source | wall ms | records req at row | records answered at row | records req total | rows | pass | failed | notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| chromium | desktop | B1 cold first visit | 1212.8 | 3040.4 | preview | 1220.1 | 3 | 2 | 5 | 500 | pass |  |  |
+| chromium | desktop | B2 back from an entry | 2.4 |  | memory | 2.6 |  |  |  | 500 | pass |  |  |
+| chromium | desktop | B3 reload, from the device | 9.7 |  | device | 10.4 | 0 | 0 |  | 500 | pass |  |  |
+| chromium | desktop | B4 sign-out and Ben |  |  |  |  |  |  |  | 5 | pass |  |  |
+| chromium | desktop | B5 hover warms |  |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| chromium | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  |  | pass |  |  |
+| chromium | desktop | B7 slow disk, held 0 ms | 10.8 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| chromium | desktop | B7 slow disk, held 600 ms | 201.3 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| chromium | phone | B1 cold first visit | 1214.6 | 3045.5 | preview | 1222.1 | 3 | 2 | 5 | 500 | pass |  |  |
+| chromium | phone | B2 back from an entry | 2.4 |  | memory | 2.5 |  |  |  | 500 | pass |  |  |
+| chromium | phone | B3 reload, from the device | 14.1 |  | device | 11.8 | 0 | 0 |  | 500 | pass |  |  |
+| chromium | phone | B4 sign-out and Ben |  |  |  |  |  |  |  | 5 | pass |  |  |
+| chromium | phone | B5 hover warms |  |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| chromium | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  |  | pass |  |  |
+| chromium | phone | B7 slow disk, held 0 ms | 8.2 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| chromium | phone | B7 slow disk, held 600 ms | 201.4 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| webkit | desktop | B1 cold first visit | 1208 | 3017 | preview | 1213 | 3 | 2 | 5 | 500 | pass |  |  |
+| webkit | desktop | B2 back from an entry | 2 |  | memory | 2 |  |  |  | 500 | pass |  |  |
+| webkit | desktop | B3 reload, from the device | 11 |  | device | 5 | 0 | 0 |  | 500 | pass |  |  |
+| webkit | desktop | B4 sign-out and Ben |  |  |  |  |  |  |  | 5 | pass |  |  |
+| webkit | desktop | B5 hover warms |  |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| webkit | desktop | B6 tab closed without sign-out |  |  |  |  |  |  |  |  | pass |  |  |
+| webkit | desktop | B7 slow disk, held 0 ms | 3 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| webkit | desktop | B7 slow disk, held 600 ms | 201 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| webkit | phone | B1 cold first visit | 1211 | 3037 | preview | 1215 | 3 | 2 | 5 | 500 | pass |  |  |
+| webkit | phone | B2 back from an entry | 4 |  | memory | 4 |  |  |  | 500 | pass |  |  |
+| webkit | phone | B3 reload, from the device | 11 |  | device | 5 | 0 | 0 |  | 500 | pass |  |  |
+| webkit | phone | B4 sign-out and Ben |  |  |  |  |  |  |  | 5 | pass |  |  |
+| webkit | phone | B5 hover warms |  |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
+| webkit | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  |  | pass |  |  |
+| webkit | phone | B7 slow disk, held 0 ms | 13 |  | device |  |  | 0 |  | 500 | pass |  |  |
+| webkit | phone | B7 slow disk, held 600 ms | 201 |  | device |  |  | 0 |  | 500 | pass |  |  |
 
 ## Live mode
 

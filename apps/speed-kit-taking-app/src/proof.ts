@@ -1,7 +1,8 @@
 // What a browser run reads: `window.__speedProof.requests` (requests the stand-in received, by route) and
 // `window.__speedProof.lastPaint` (the Entries page: ms from its mount to its first rendered row, and where those rows came from).
-export type PaintSource = "memory" | "device" | "network";
-export interface LastPaint { page: string; ms: number; source: PaintSource }
+export type PaintSource = "memory" | "device" | "preview" | "network";
+/** `ms` is mount to first rows; `fullMs` is mount to the full list (when `partial` went false), set once. */
+export interface LastPaint { page: string; ms: number; source: PaintSource; fullMs?: number }
 /** What `speed.start` answered at the last sign-in: for diagnosing a first paint that did not come from the device. */
 export interface StartReading { disk: boolean; hydrated: boolean; ms: number; entries: number; at: string }
 export interface SpeedProof {

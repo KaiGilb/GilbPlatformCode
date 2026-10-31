@@ -6,7 +6,7 @@ import { entriesKey, loadEntries } from "../entries";
 import { speed } from "../speed";
 
 export function EntryPage({ ws, client, id, onBack }: { ws: string; client: PlatformClient; id: string; onBack: () => void }) {
-  const { data, refresh } = cached.useCached(entriesKey(ws), loadEntries(client, ws));
+  const { data, partial, refresh } = cached.useCached(entriesKey(ws), loadEntries(client, ws));
   const entry = data?.find((e) => e.id === id);
   const [value, setValue] = useState("");
   const [began, setBegan] = useState<string | null>(null); // the name when the edit began
@@ -40,7 +40,7 @@ export function EntryPage({ ws, client, id, onBack }: { ws: string; client: Plat
   return (
     <section>
       <button data-testid="back" onClick={onBack}>Back</button>
-      {entry === undefined ? <p>Loading...</p> : (
+      {entry === undefined ? (data === undefined || partial ? <p>Loading…</p> : <p data-testid="entry-missing">No entry {id} in the list.</p>) : ( // while the list is only a preview, an id beyond it is "Loading…", never "not found"
         <>
           <h2 data-testid="entry-name">{entry.name}</h2>
           <p data-testid="entry-description">{entry.description}</p>

@@ -44,6 +44,22 @@ function recorder() {
   document.addEventListener("click", () => { window.__clickT = performance.now(); window.__rowT = null; window.__rowSnap = null; }, true);
 }
 
+// Simulates a slow device read after a reload: from the sign-in click on, holds a readwrite transaction on the app's database for `sessionStorage.__hold` ms,
+// so the read waits (started at the click, not at page load, so a slow page load cannot use the hold up first).
+function holder() {
+  const hold = Number(sessionStorage.getItem("__hold") || 0);
+  if (!hold) return;
+  document.addEventListener("click", () => {
+    const t0 = performance.now();
+    const r = indexedDB.open("speedkittaking-cache");
+    r.onsuccess = () => {
+      const os = r.result.transaction(["meta", "data"], "readwrite").objectStore("data");
+      const spin = () => { if (performance.now() - t0 < hold) os.get("x").onsuccess = spin; };
+      spin();
+    };
+  }, { capture: true, once: true });
+}
+
 async function dumpDevice(page) {
   return page.evaluate(async () => {
     const out = { databases: [], data: {} };
@@ -77,10 +93,11 @@ async function b1(page) {
   await page.waitForSelector(sel("entry-e1"), { timeout: T });
   await waitPaint(page);
   const r = await reading(page), tm = await rowTiming(page);
-  await page.waitForFunction(() => window.__speedProof.answered.records === window.__speedProof.requests.records, null, { timeout: T });
+  await page.waitForFunction(() => window.__speedProof.lastPaint?.fullMs !== undefined && window.__speedProof.answered.records === window.__speedProof.requests.records, null, { timeout: T });
   const done = await reading(page);
-  const values = { firstRowMs: r.paint.ms, source: r.paint.source, wallMs: tm.wallMs, requestsAtRow: tm.snap?.requests.records, answeredAtRow: tm.snap?.answered.records, requestsTotal: done.requests.records, rows: r.rows };
-  return { values, checks: [["500 rows", r.rows === 500], ["source is network", r.paint.source === "network"]] };
+  const values = { firstRowMs: r.paint.ms, fullMs: done.paint.fullMs, source: r.paint.source, wallMs: tm.wallMs, requestsAtRow: tm.snap?.requests.records, answeredAtRow: tm.snap?.answered.records, requestsTotal: done.requests.records, rows: done.rows };
+  // The first page shows early: head + page 1 is about 2 requests (1200 ms at 600 ms each); the whole list is 5 requests (about 3000 ms).
+  return { values, checks: [["500 rows at the end", done.rows === 500], ["source is preview", r.paint.source === "preview"], ["first row after about 2 requests (under 2000 ms)", r.paint.ms < 2000], ["the full list comes later than the first row", done.paint.fullMs > r.paint.ms]] };
 }
 async function b2(page) {
   await page.click(sel("nav-entry-e1"));
@@ -152,6 +169,26 @@ async function b6(page) {
   return { values: { seenAfterBenClick: seen, annOnDevice: dump.includes("ann.example.test") }, checks: [["no Ann entry text after Ben's click", seen === 0], ["no ann.example.test on the device", !dump.includes("ann.example.test")]] };
 }
 
+// B7: the slow disk. A device copy that arrives after `start` stopped waiting (400 ms) still paints, and the label says device.
+async function b7prepare(page) {
+  await signIn(page, "ann");
+  await page.waitForSelector(sel("entry-e1"), { timeout: T });
+  await page.waitForFunction(() => window.__speedProof.lastPaint?.fullMs !== undefined, null, { timeout: T });
+  await sleep(1500); // the disk save runs on its own timer
+}
+async function b7(page, holdMs) {
+  await page.evaluate((h) => sessionStorage.setItem("__hold", String(h)), holdMs);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForSelector(sel("signin-ann"), { timeout: T });
+  await signIn(page, "ann");
+  await page.waitForSelector(sel("entry-e1"), { timeout: T });
+  await waitPaint(page);
+  const r = await reading(page);
+  const st = await page.evaluate(() => window.__speedProof.start);
+  const limit = holdMs === 0 ? 400 : 1100; // well under the network time (a preview takes about 1200 ms, the whole list about 3000)
+  return { values: { firstRowMs: r.paint.ms, source: r.paint.source, answeredAtRow: r.answered.records, rows: r.rows, startHydrated: st?.hydrated, startMs: st?.ms }, checks: [["source is device", r.paint.source === "device"], [`first row under ${limit} ms`, r.paint.ms < limit], ["rows shown (at least 200)", r.rows >= 200], ...(holdMs >= 600 ? [["the disk answered after start gave up (hydrated no)", st?.hydrated === false]] : [])] };
+}
+
 // ---- the run ----
 const rows = [];
 async function scenario(engine, profile, name, fn) {
@@ -164,10 +201,11 @@ async function scenario(engine, profile, name, fn) {
   console.log(`${row.pass ? "PASS" : "FAIL"} ${engine}/${profile}/${name} ${JSON.stringify(row.values)}${row.failed.length ? " failed: " + row.failed.join("; ") : ""}${row.error ? " error: " + row.error : ""}`);
   return row.pass;
 }
-async function context(browser, engine, profile, extra = "") {
+async function context(browser, engine, profile, extra = "", withHolder = false) {
   const { defaultBrowserType, ...phone } = devices["iPhone 13"];
   const ctx = await browser.newContext(profile === "phone" ? phone : { viewport: { width: 1280, height: 800 } });
   await ctx.addInitScript(recorder);
+  if (withHolder) await ctx.addInitScript(holder);
   ctx.setDefaultTimeout(T);
   const page = await ctx.newPage();
   if (engine === "chromium" && profile === "phone") {
@@ -234,6 +272,15 @@ async function main() {
         const c6 = await context(browser, engine, profile);
         await scenario(engine, profile, "B6 tab closed without sign-out", () => b6(c6.page));
         await c6.ctx.close();
+        const c7 = await context(browser, engine, profile, "", true);
+        const ready = await scenario(engine, profile, "B7 slow disk setup", async () => { await b7prepare(c7.page); return { values: {}, checks: [] }; });
+        if (ready) {
+          await scenario(engine, profile, "B7 slow disk, held 0 ms", () => b7(c7.page, 0));
+          await scenario(engine, profile, "B7 slow disk, held 600 ms", () => b7(c7.page, 600));
+        }
+        await c7.ctx.close();
+        const at = rows.findIndex((r) => r.engine === engine && r.profile === profile && r.scenario === "B7 slow disk setup");
+        if (rows[at].pass) rows.splice(at, 1); // the setup row is not a result when it passed
         rows.forEach((r) => { r.browser ??= undefined; });
       }
       rows.filter((r) => r.engine === engine).forEach((r) => { r.browserVersion = version; });
@@ -252,9 +299,9 @@ async function main() {
     "",
     "Vault latency 600 ms per request (the stand-in's `?latency=`), Ann has 500 entries (3 walk pages of 200). `firstRowMs` is the app's panel (Entries mount to first effect that saw rows); `wall ms` is click to `entry-e1` in the DOM, measured in the page.",
     "",
-    "| engine | profile | scenario | firstRowMs | source | wall ms | records req at row | records answered at row | records req total | rows | pass | failed | notes |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-    ...rows.map((r) => `| ${r.engine} | ${r.profile} | ${r.scenario} | ${fmt(r.values.firstRowMs)} | ${fmt(r.values.source)} | ${fmt(r.values.wallMs)} | ${fmt(r.values.requestsAtRow ?? r.values.recordsBefore)} | ${fmt(r.values.answeredAtRow)} | ${fmt(r.values.requestsTotal ?? r.values.recordsAfter)} | ${fmt(r.values.rows)} | ${r.pass ? "pass" : "FAIL"} | ${[...r.failed, r.error ?? ""].filter(Boolean).join("; ")} | ${r.values.earlyHoverSent !== undefined ? `hover right after sign-in sent ${r.values.earlyHoverSent} records requests` : ""} |`),
+    "| engine | profile | scenario | firstRowMs | fullMs | source | wall ms | records req at row | records answered at row | records req total | rows | pass | failed | notes |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ...rows.map((r) => `| ${r.engine} | ${r.profile} | ${r.scenario} | ${fmt(r.values.firstRowMs)} | ${fmt(r.values.fullMs)} | ${fmt(r.values.source)} | ${fmt(r.values.wallMs)} | ${fmt(r.values.requestsAtRow ?? r.values.recordsBefore)} | ${fmt(r.values.answeredAtRow)} | ${fmt(r.values.requestsTotal ?? r.values.recordsAfter)} | ${fmt(r.values.rows)} | ${r.pass ? "pass" : "FAIL"} | ${[...r.failed, r.error ?? ""].filter(Boolean).join("; ")} | ${r.values.earlyHoverSent !== undefined ? `hover right after sign-in sent ${r.values.earlyHoverSent} records requests` : ""} |`),
     "",
   ].join("\n");
   writeFileSync(join(OUT, `results-${ts}.json`), JSON.stringify({ ts, base: BASE + QUERY, rows }, null, 2));

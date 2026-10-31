@@ -13,7 +13,7 @@ describe("T5 prefetch", () => {
     k.cache.sessionCache.clear(); // a cold cache
     await sleep(20);
     const before = k.proof.requests.records;
-    expect(screen.getByText("Loading...")).toBeTruthy(); // the Entry page has nothing to show
+    expect(screen.getByText("Loading…")).toBeTruthy(); // the Entry page has nothing to show
 
     fireEvent.pointerOver(screen.getByTestId("nav-entries")); // no click
     expect(k.proof.requests.records).toBe(before + 1);
