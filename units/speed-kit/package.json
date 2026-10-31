@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-speed-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The speed units of a GilbPlatform app behind one entry: each unit under its own name, and one small glue that wires the person hub, the session cache, the background jobs, the prefetch registry and the device store to one app name, with a clean sign-out.",
@@ -21,10 +21,10 @@
     "@kaigilb/gilbplatformcode-device-store": "^0.1.0",
     "@kaigilb/gilbplatformcode-prefetch-registry": "^0.1.0",
     "@kaigilb/gilbplatformcode-principal-hub": "^0.1.0",
-    "@kaigilb/gilbplatformcode-record-sync": "^0.4.0",
-    "@kaigilb/gilbplatformcode-session-cache": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-sync": "^0.4.1",
+    "@kaigilb/gilbplatformcode-session-cache": "^0.2.0",
     "@kaigilb/gilbplatformcode-updated-line": "^0.1.0",
-    "@kaigilb/gilbplatformcode-use-cached": "^0.1.0"
+    "@kaigilb/gilbplatformcode-use-cached": "^0.2.0"
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-background-jobs": "file:../background-jobs",
