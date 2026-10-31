@@ -40,15 +40,8 @@ import {
   createPickerQuery,
   createStakeholderContactHeaderHost,
 } from "./hosts";
-import {
-  defaultClaimFieldText,
-  defaultClaimsAbout,
-  defaultListPlaceClaimsInVault,
-  defaultLoadGranteeFace,
-  defaultLoadPhotoObjectUrl,
-  defaultLoadPlaceNames,
-  discoverWith,
-} from "./defaults";
+import { defaultLoadGranteeFace, defaultLoadPhotoObjectUrl, discoverWith } from "./defaults";
+import { createHeldAddressMembers } from "./heldAddresses";
 import { photoReadKeysOf, photoReadKeysSyncOf, photoTermResolverFor } from "./photoTerm";
 import { applyPlatformSetup, applySession, setupKey, type StakeholderCardSettings } from "./settings";
 import { StakeholderCardPlatformContext, type StakeholderCardPlatform } from "./platform";
@@ -103,7 +96,11 @@ export interface StakeholderCardGilbPlatformProviderProps {
   useContactLabels?: StakeholderContactHeaderHost["useContactLabels"];
   /** The face of a record, for the Employees group's rows (`org-employees`, hosted for the standalone units). Default: none, so a row draws no face. Fixed at mount. */
   RecordFace?: ComponentType<RecordFaceProps>;
-  /** The four place members of the one card. The online stakeholder card never calls them; a default answers nothing. Read at each call. */
+  /**
+   * The four place members of the one card. Default (since 0.5.0): the real ones (`heldAddresses.ts`), over the provider's query client: the holder's addresses of a linked
+   * person through the vault's one shared address read, never half of them (a member that rejects leaves the merge unfolded). Give your own only if you mean to break that.
+   * Read at each call.
+   */
   listPlaceClaimsInVault?: OneCardHost["listPlaceClaimsInVault"];
   claimsAbout?: OneCardHost["claimsAbout"];
   claimFieldText?: OneCardHost["claimFieldText"];
@@ -184,12 +181,15 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       useHolderOriginLine: at.useHolderOriginLine ?? heldNoteLine,
       useContactLabels: at.useContactLabels ?? heldContactLabels,
     });
+    // CHANGED (0.5.0): the four place members are the real ones (`heldAddresses.ts`) over the provider's query client; a member the developer gives wins.
+    const realMembers = createHeldAddressMembers(qc);
     const oneCard: OneCardHost = createOneCardHost({
       geoOrigin: props.geoOrigin,
-      listPlaceClaimsInVault: (...a) => (latest.current.listPlaceClaimsInVault ?? defaultListPlaceClaimsInVault)(...a),
-      claimsAbout: (...a) => (latest.current.claimsAbout ?? defaultClaimsAbout)(...a),
-      claimFieldText: (...a) => (latest.current.claimFieldText ?? defaultClaimFieldText)(...a),
-      loadPlaceNames: (...a) => (latest.current.loadPlaceNames ?? defaultLoadPlaceNames)(...a),
+      queryClient: qc,
+      listPlaceClaimsInVault: (...a) => (latest.current.listPlaceClaimsInVault ?? realMembers.listPlaceClaimsInVault)(...a),
+      claimsAbout: (...a) => (latest.current.claimsAbout ?? realMembers.claimsAbout)(...a),
+      claimFieldText: (...a) => (latest.current.claimFieldText ?? realMembers.claimFieldText)(...a),
+      loadPlaceNames: (...a) => (latest.current.loadPlaceNames ?? realMembers.loadPlaceNames)(...a),
     });
     const orgEmployees: OrgEmployeesHost = createOrgEmployeesHost({
       photoReadKeys: photoReadKeysOf(resolver),
