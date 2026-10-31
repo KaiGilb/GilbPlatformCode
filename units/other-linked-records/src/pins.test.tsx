@@ -74,7 +74,7 @@ describe("what is listed", () => {
     render(withHost(shellOf([]), <OtherLinkedRecords holder={KAI} principal={TOM} selfId="r1" onOpen={open} />));
     await userEvent.click(row()[1]!);
     expect(open).toHaveBeenCalledTimes(1);
-    expect(open).toHaveBeenCalledWith("r3");
+    expect(open).toHaveBeenCalledWith("r3", undefined);
   });
 });
 

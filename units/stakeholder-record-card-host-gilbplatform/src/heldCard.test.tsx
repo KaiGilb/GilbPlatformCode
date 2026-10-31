@@ -234,6 +234,67 @@ describe("the whole path, a record the holder already holds (H13)", () => {
   });
 });
 
+describe("an open from inside the held card carries the target's vault (H14)", () => {
+  // The held card of record A, in Ann's vault P. A related child B (it points at A with memberOf) is listed in P but its own address names the vault W, which Ann
+  // also holds. The click on B opens it through the provider; the page is told B and W. A child whose address names a vault Ann does not hold opens the id alone.
+  const W = "https://w.example.test/vault";
+  const Z = "https://z.example.test/vault";
+  const row = (vaultId: string, name: string, landing: boolean) => ({ "@id": `${vaultId}/e/v`, vaultId, name, partOf: null, parentAmbiguous: false, modes: ["read", "write"], isLandingVault: landing });
+
+  async function openChild(childVault: string) {
+    const w = await createWorld({
+      sessionVaults: [{ vaultId: P, modes: ["read", "write"] }, { vaultId: W, modes: ["read", "write"] }],
+      vaultRows: [row(P, "Ann", true), row(W, "Work", false)],
+    });
+    const a = w.platform.seed(P, "t:Person", { "a:name": "Ben Larsen", "a:givenName": "Ben", "a:familyName": "Larsen" });
+    const aId = a.slice(a.lastIndexOf("/") + 1);
+    const kid = w.platform.seed(P, "t:Person", { "a:name": "Kid Child", "a:memberOf": { "@id": a } });
+    // The fake platform mints every address on its one host. The child is served under the address the test names (in W, or in Z), and a request to
+    // that address's host is served by the same fake platform.
+    const served = heldWorld(w).fetch;
+    const kidId = kid.slice(kid.lastIndexOf("/") + 1);
+    const childAddress = `${childVault}/e/${kidId}`;
+    const childHost = new URL(childVault).origin;
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      const u = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const res = await served(u.replace(childHost, HOST), init);
+      const text = await res.text();
+      return new Response(text.split(kid).join(childAddress), { status: res.status, headers: res.headers });
+    });
+    const opened: unknown[][] = [];
+    function Page() {
+      const [at, setAt] = useState<{ id: string; door?: string } | null>(null);
+      return (
+        <StakeholderCardGilbPlatformProvider
+          {...providerProps(w)}
+          viewedVaultId={P}
+          onOpenRecord={(openedId, door) => {
+            opened.push(door === undefined ? [openedId] : [openedId, door]);
+            setAt(door === undefined ? { id: openedId } : { id: openedId, door });
+          }}
+        >
+          <HeldStakeholderCard recordId={at?.id ?? aId} vaultId={at?.door ?? P} />
+        </StakeholderCardGilbPlatformProvider>
+      );
+    }
+    render(<Page />);
+    const button = await screen.findByRole("button", { name: "Kid Child" }, { timeout: 8000 });
+    await userEvent.click(button);
+    await waitFor(() => expect(opened.length).toBe(1), { timeout: 4000 });
+    return { opened, kidId };
+  }
+
+  test("a related child whose address names a vault Ann holds (W): onOpenRecord receives the child and W", async () => {
+    const { opened, kidId } = await openChild(W);
+    expect(opened[0]).toEqual([kidId, W]);
+  }, 20000);
+
+  test("control: a related child whose address names a vault Ann does not hold (Z): onOpenRecord receives the id alone, no door", async () => {
+    const { opened, kidId } = await openChild(Z);
+    expect(opened[0]).toEqual([kidId]);
+  }, 20000);
+});
+
 describe("the Added by line opens the adder's card (H13, path 5)", () => {
   // AddedByLine remembers the card it opens (`rememberAddedByCard`, its own address) and then asks the shell to open it. The provider's shell has no
   // openRecordInVault, so the id goes through onOpenRecord alone. Does the held card then know where to read it?

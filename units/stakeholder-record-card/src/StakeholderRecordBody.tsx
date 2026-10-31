@@ -11,7 +11,7 @@ import { resolveType, type FieldSpec } from "@kaigilb/gilbplatformcode-record-ty
 import { prefetchVedaLabels, useVedaTypeLabel } from "@kaigilb/gilbplatformcode-veda-labels";
 import { clearFreshlyCreated, consumeFreshlyCreated } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { CarrierRenameRefusedError, rebaseOnStored, useUpdateRecord } from "@kaigilb/gilbplatformcode-record-update";
-import { createdInVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
+import { createdInVaultOf, rememberVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
 import { uriTail } from "@kaigilb/gilbplatformcode-lws-relations";
 import { readRecord, RecordConflictError, RecordForbiddenError, type BaseRecord, type RecordFacts } from "@kaigilb/gilbplatformcode-lws-records";
 import { ENTITY_READ_ONLY_REASON, isEntityWriteDenied, markEntityWriteDenied, useEntityCanWrite } from "@kaigilb/gilbplatformcode-entity-write-access";
@@ -112,6 +112,21 @@ export function StakeholderRecordBody({
   // The card is the `content` placement of the record detail: the only one this unit draws.
   const placementMode = "content" as RecordDetailPlacement;
   const qc = useQueryClient();
+  // H14. Every open from inside the card hands the host the TARGET's vault when it is sure (the host reads it back with `knownVaultOf` and passes it
+  // on as the record's door); otherwise the id alone is opened and the opened card says it does not know the vault. Never the card's own vault.
+  // A sure vault is remembered unconditionally (it replaces an older, different one, which the host would otherwise open with); an unsure one stores nothing.
+  //  - `uri`: the target's own address; sure when it names a vault the holder holds and none is nested under it (`unambiguousVaultOfRecord`).
+  //  - `vaultId`: the vault a screen row names; sure only when it is one of the shell's vaults (trailing `/` ignored).
+  const openWithVault = (id: string, hint?: { uri?: string | null; vaultId?: string | null }) => {
+    const held = shellVaults ?? [];
+    const strip = (v: string) => v.replace(/\/+$/, "");
+    const named = hint?.vaultId ? strip(hint.vaultId) : "";
+    const ofRow = named ? (held.find((v) => v.vaultId && strip(v.vaultId) === named)?.vaultId ?? null) : null;
+    const sure = ofRow ?? unambiguousVaultOfRecord(hint?.uri, held);
+    if (sure) rememberVaultOf(qc, id, sure);
+    openRecordFromList(id);
+  };
+  const openByAddress = (id: string, uri?: string) => openWithVault(id, { uri });
   const [photoReadKeysNow, setPhotoReadKeysNow] = useState<readonly string[]>(() => host.photoReadKeysSync());
   useEffect(() => {
     let alive = true;
@@ -810,7 +825,7 @@ export function StakeholderRecordBody({
               onBlur={() => void flushSave()}
               onEnterAdvance={(personNames ? f.slug === givenSlug : f.slug === nameSlug) ? advanceFromName : undefined}
               vaultId={vaultId}
-              onOpenRef={openRecordFromList}
+              onOpenRef={openByAddress}
             />
             </OwnFieldRow>
     );
@@ -872,7 +887,7 @@ export function StakeholderRecordBody({
   const factLabel = (slug: string) =>
     attrLabels[slug] ?? humanizeSlug(slug);
   // A Value's measures link steps Back to the Function. Every other record keeps the list-row replace.
-  const openThisRef = openRecordFromList;
+  const openThisRef = openByAddress;
   const extraFactNodes = recordExtraKeys.map((slug) => {
                         const val = draft[slug] ?? "";
                         const asRef = isEntityRefValue(val);
@@ -1019,7 +1034,7 @@ export function StakeholderRecordBody({
           </p>
         )}
 
-        {showContent ? <OwnCardBand state={ownCard} onOpen={openRecordFromList} /> : null}
+        {showContent ? <OwnCardBand state={ownCard} onOpen={openByAddress} /> : null}
 
         {showContent && (stakeholder.state === "kinds-not-known" || stakeholder.state === "fields-not-known") && (
           <p role="status" data-testid="stakeholder-fields-state" className="text-[12.5px] text-[var(--ink-faint)]">
@@ -1059,7 +1074,7 @@ export function StakeholderRecordBody({
               >
               <div className="flex flex-col gap-4" data-testid="person-card-groups">
                 {session?.principal && linkTargetOf(record) ? (
-                  <OtherLinkedRecords holder={session.principal} principal={linkTargetOf(record)!} selfId={record.id} onOpen={openRecordFromList} />
+                  <OtherLinkedRecords holder={session.principal} principal={linkTargetOf(record)!} selfId={record.id} onOpen={(id, vaultId) => openWithVault(id, { vaultId })} />
                 ) : null}
                 <CardModeHint />
                 <CardTopSlots slots={cardSlots} />
@@ -1101,7 +1116,7 @@ export function StakeholderRecordBody({
                         agent={session?.principal ?? null}
                         carrier={record.entityUri ?? null}
                         vaultId={vaultId}
-                        onOpenRef={openRecordFromList}
+                        onOpenRef={openByAddress}
                         recordId={record.id}
                         carrierKind={stakeholder.kind}
                       />
@@ -1122,7 +1137,7 @@ export function StakeholderRecordBody({
                         agent={session?.principal ?? null}
                         carrier={record.entityUri ?? null}
                         vaultId={vaultId}
-                        onOpenRef={openRecordFromList}
+                        onOpenRef={openByAddress}
                         recordId={record.id}
                         carrierKind={stakeholder.kind}
                       />
@@ -1146,7 +1161,7 @@ export function StakeholderRecordBody({
                     {extraFactNodes}
                   </CardGroup>
                 ) : null}
-                {orgCard ? null : <RelatedChildren record={record} vaultId={vaultId} onOpen={openRecordFromList} />}
+                {orgCard ? null : <RelatedChildren record={record} vaultId={vaultId} onOpen={(id, entityUri) => openWithVault(id, { uri: entityUri })} />}
                 {!optimistic && host.renderAttachments ? (
                   <div data-testid="record-detail-attachments">
                     {host.renderAttachments({

@@ -60,7 +60,7 @@ describe("OwnCardBand: opening the other card", () => {
     render(<OwnCardBand state={OTHER} onOpen={onOpen} />);
     fireEvent.click(screen.getByTestId("own-card-open-mynet-card"));
     expect(onOpen).toHaveBeenCalledTimes(1);
-    expect(onOpen).toHaveBeenCalledWith("mnb-profile-1");
+    expect(onOpen).toHaveBeenCalledWith("mnb-profile-1", "https://k.example.test/vault/e/mnb-profile-1");
     expect(screen.getByTestId("own-card-open-mynet-card").textContent).toBe(OWN_CARD_WORDS.openOther);
   });
   it("'mynet' and 'unknown' offer no such button", () => {
@@ -79,7 +79,7 @@ describe("OwnCardBand: opening the other card", () => {
     const buttons = screen.getAllByRole("button", { name: OWN_CARD_WORDS.openAlso });
     expect(buttons).toHaveLength(2);
     fireEvent.click(buttons[1]!);
-    expect(onOpen).toHaveBeenCalledWith("vsc-bbb");
+    expect(onOpen).toHaveBeenCalledWith("vsc-bbb", "https://k.example.test/vault/e/vsc-bbb");
   });
   it("no second card, no list", () => {
     render(<OwnCardBand state={MYNET} onOpen={() => {}} />);

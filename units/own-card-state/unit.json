@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/own-card-state",
   "package": "@kaigilb/gilbplatformcode-own-card-state",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Tells a record card whether the record is the signed-in person's own card, and draws the band that says so.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -35,6 +35,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1 (H14): `OwnCardBand`'s `onOpen` takes a second, optional argument: the full address of the card it opens (`mynetCardUri`, or an `alsoCards` address), so the host can name the vault the card is in. `(id) => void` callers stay valid. Not in the source.",
     "`MYNET_PROFILE_URL` (`ownCard.ts` line 36, `${MYNET_BASE}/profile`, built when the module loads) is not copied; the band's `href={MYNET_PROFILE_URL}` is `href={myNetProfileUrl()}`, a setting (`setMyNetProfileUrl`, `myNetProfileUrl`, `resetMyNetProfileUrl`) read when the band draws. It throws, naming the setter, when it is not set.",
     "The imports are imports of units: `SELF_CARD_ID_PREFIX`, `VAULT_PATH_SEGMENTS`, `selfCardIdForVault` from `vault-origin-rule`; `OWN_CARD_SLUG_PREFIX`, `isHoldersOwnCard`, `ownCardCaseOf`, `ownCardIds`, `OwnCardCase`, `OwnCardFinding` from `own-card`; `isHeldVault` from `person-create`; `typeLocalName` from `lws-vault-sets`; `ReachableVault` from `plan-record-hooks`; `ownCardFindingQuery` and `vaultRootOf` from `plan-self-source`.",
     "The header comments are new and shorter, and the comments that name a cycle, a ruling, an agent or a ticket are reworded with the same facts. No code changed."

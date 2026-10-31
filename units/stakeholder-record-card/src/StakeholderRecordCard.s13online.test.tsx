@@ -9,6 +9,7 @@
 // from the package on the same master in the same test, never from a list written here.
 import { ShellContext, ShellContextValue, recordsKey, RecordDetail, formatShortDate } from "../test/app";
 import { forgetScreenLinks, setScreenLinks } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
+import { knownVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
 import { editorFacts, extraKeysFromFacts } from "./recordFacts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -388,5 +389,50 @@ describe("M3f r4 · 'Your other cards of this person' on the real RecordDetail",
     mountOpen(qc, rec, () => {});
     await ready();
     expect(screen.queryByTestId("other-linked-records")).toBeNull();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// H14: a row of "Your other cards of this person" opens its record with the vault of its row, when the shell holds that vault
+// (the row's `vaultId`, trailing "/" stripped). A row without a vault, or with one the shell does not hold, opens the id alone.
+// ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+describe("H14 · a row of the person's other cards carries its vault", () => {
+  const W = "https://w.gilb.test/vault"; // not a vault the holder holds
+  const held = [P, Q].map((vaultId) => ({ vaultId, entity: `${vaultId}/e/v`, name: vaultId, parent: null, parentAmbiguous: false, modes: ["read", "write"], represents: null, isLandingVault: false }));
+  const mountRows = (qc: QueryClient, rec: { id: string }, open: (id: string) => void) =>
+    render(
+      <QueryClientProvider client={qc}>
+        <ShellContext.Provider value={{ ...shell(rec), openRecordFromList: open, vaults: held } as unknown as ShellContextValue}>
+          <RecordDetail />
+        </ShellContext.Provider>
+      </QueryClientProvider>,
+    );
+  afterEach(() => forgetScreenLinks());
+
+  it("S4 a row naming a vault the shell holds: the open remembers that vault (the shell's own spelling)", async () => {
+    const { qc, rec } = personWorld();
+    rec.served = { facts: { ...rec.facts, sameAs: { "@id": KARI } }, context: undefined, etag: rec.etag };
+    setScreenLinks(AGENT, new Map([[KARI, "pn"]]), new Map([[KARI, [{ id: "pn", title: "Tom", vaultId: P }, { id: "pn2", title: "Tom (home)", vaultId: `${Q}/` }]]]));
+    const open = vi.fn();
+    mountRows(qc, rec, open);
+    await ready();
+    await userEvent.setup().click(within(await screen.findByTestId("other-linked-records")).getByTestId("other-linked-record"));
+    expect(open).toHaveBeenCalledWith("pn2");
+    expect(knownVaultOf(qc, "pn2")).toBe(Q);
+  });
+
+  it("N3 a row naming no vault, or a vault the shell does not hold: the id alone is opened, nothing is remembered", async () => {
+    const { qc, rec } = personWorld();
+    rec.served = { facts: { ...rec.facts, sameAs: { "@id": KARI } }, context: undefined, etag: rec.etag };
+    setScreenLinks(AGENT, new Map([[KARI, "pn"]]), new Map([[KARI, [{ id: "pn", title: "Tom", vaultId: P }, { id: "pn3", title: "Tom (a)" }, { id: "pn4", title: "Tom (b)", vaultId: W }]]]));
+    const open = vi.fn();
+    mountRows(qc, rec, open);
+    await ready();
+    const rows = within(await screen.findByTestId("other-linked-records")).getAllByTestId("other-linked-record");
+    expect(rows).toHaveLength(2);
+    for (const r of rows) await userEvent.setup().click(r);
+    expect(open.mock.calls.map((c) => c[0]).sort()).toEqual(["pn3", "pn4"]);
+    expect(knownVaultOf(qc, "pn3")).toBeNull();
+    expect(knownVaultOf(qc, "pn4")).toBeNull();
   });
 });

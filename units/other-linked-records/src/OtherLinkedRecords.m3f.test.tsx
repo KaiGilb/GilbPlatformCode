@@ -39,7 +39,7 @@ describe("M3f r4 · the person's other linked records, from their card", () => {
     expect(section.getAttribute("aria-labelledby")).toBeTruthy();
     expect(document.getElementById(section.getAttribute("aria-labelledby")!)!.textContent).toBe("Your other cards of this person");
     await userEvent.click(screen.getByRole("button", { name: /Tom Gilb \(work\)/ }));
-    expect(open).toHaveBeenCalledWith("r2");
+    expect(open).toHaveBeenCalledWith("r2", "https://acme.platform.example.test/vault");
   });
 
   it("each entry names its vault and date, so same-named cards can be told apart", () => {

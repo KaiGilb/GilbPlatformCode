@@ -31,7 +31,8 @@ export function FieldEditor({
    * read grant is a real grant) but cannot be changed. */
   readOnly?: boolean;
   vaultId?: string;
-  onOpenRef?: (id: string) => void;
+  /** Opens the record a reference value names; the second argument is the value (the record's full address). */
+  onOpenRef?: (id: string, uri?: string) => void;
 }) {
   const inputCls =
     "w-full min-h-[44px] px-3 rounded-[var(--r-md)] bg-[var(--surface)] border border-[var(--line)] text-[14px] text-[var(--ink)] outline-none focus:border-[var(--focus)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] placeholder:text-[var(--ink-ghost)]";
@@ -56,7 +57,7 @@ export function FieldEditor({
       <div className="flex flex-col gap-0 py-1" data-testid="field-present" data-field-slug={field.slug}>
         <span className="font-[var(--serif)] text-[13px] italic text-[var(--ink-soft)]">{field.label}</span>
         {asRef && vaultId ? (
-          <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpenRef} quiet />
+          <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpenRef ? (id) => onOpenRef(id, value) : undefined} quiet />
         ) : mode.canEdit && !readOnly ? (
           <button
             type="button"
@@ -79,7 +80,7 @@ export function FieldEditor({
   return (
     <label className={`flex flex-col gap-1 ${mode.managed ? "py-2" : ""}`}>
       <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-ghost)]">{field.label}</span>
-      {asRef && vaultId && <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpenRef} />}
+      {asRef && vaultId && <EntityRefValue value={value} vaultId={vaultId} onOpen={onOpenRef ? (id) => onOpenRef(id, value) : undefined} />}
       {asRef && readOnly ? null : field.kind === "textarea" ? (
         <textarea
           ref={register}

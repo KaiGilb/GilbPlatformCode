@@ -89,7 +89,7 @@ describe("RelatedChildren: the list", () => {
     const onOpen = vi.fn();
     mount({ list: [child(1)], onOpen });
     fireEvent.click(await screen.findByRole("button", { name: "Kid 1" }));
-    expect(onOpen).toHaveBeenCalledWith("kid-1");
+    expect(onOpen).toHaveBeenCalledWith("kid-1", kidUri(1));
     cleanup();
     mount({ list: [child(1)] });
     await screen.findByText("Kid 1");

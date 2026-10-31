@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card-host-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.4.2 (H14): tests only. The whole path for an open from inside the held card: a related child whose address names a vault the holder holds reaches the page as (id, vault); one that names a vault the holder does not hold reaches it as the id alone.",
     "0.4.1 (H13): tests only, and the peer range of the provider (^0.4.3). The whole path now also covers \"+ Add your own\" on a record the holder already holds (the door is the vault the find named), and the Added by line (not a bug: the held card finds the adder's address in the shared query client).",
     "This unit is new composition code, not an extraction: it copies no line of GilbApp. It builds the host of `stakeholder-record-card` (`StakeholderRecordCardHost`) from `useStakeholderCardPlatform()` of `stakeholder-card-hosts-gilbplatform` and mounts it above the card (`HeldStakeholderCard`).",
     "It exists apart from the provider so that the provider does not import `stakeholder-record-card`: the record card's own tests install the provider, and a provider that imported the card would be a dependency cycle.",

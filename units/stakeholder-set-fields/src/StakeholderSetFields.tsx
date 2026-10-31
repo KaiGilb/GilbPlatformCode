@@ -74,7 +74,8 @@ export function StakeholderSetFields({
   agent: string | null;
   carrier: string | null;
   vaultId: string;
-  onOpenRef?: (id: string) => void;
+  /** Opens the record a value names. Since 0.1.1 the second argument is the value itself (the record's full address), so the host can name the vault. */
+  onOpenRef?: (id: string, uri?: string) => void;
   /** The record's id, for a link's remove (the record's own one-key write). */
   recordId?: string;
   /** The carrier's kind as the master's field sets read it (the picker's rule input). */
@@ -129,7 +130,8 @@ export function SetField({
   agent: string | null;
   carrier: string | null;
   vaultId: string;
-  onOpenRef?: (id: string) => void;
+  /** Opens the record a value names. Since 0.1.1 the second argument is the value itself (the record's full address), so the host can name the vault. */
+  onOpenRef?: (id: string, uri?: string) => void;
   recordId: string | null;
   carrierKind: KindFieldSet | null;
 }) {
@@ -226,7 +228,7 @@ export function SetField({
             <CardIcon name={icon} className="shrink-0 text-[16px] text-[var(--ink-faint)]" />
             <div className="min-w-0 flex-1">
               {isEntityRefValue(v) ? (
-                <EntityRefValue value={v} vaultId={vaultId} onOpen={onOpenRef} quiet={present} />
+                <EntityRefValue value={v} vaultId={vaultId} onOpen={onOpenRef ? (id) => onOpenRef(id, v) : undefined} quiet={present} />
               ) : (
                 <span className="text-[14px] text-[var(--ink)] break-words">{v}</span>
               )}
