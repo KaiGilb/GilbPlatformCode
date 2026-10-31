@@ -81,4 +81,4 @@ Ported without change from the source (GilbApp, private repo `KaiGilb/GilbApp`, 
 
 36 tests in 3 files (`npx vitest run`): `languageOrder.test.ts` 22 ported (the marked entry first 7, moving the mark 3, the legacy rung 2, the rules of the mark 8, `contactLanguageDisplay` 2), `exports.test.ts` 1, `hostAgnostic.test.ts` 13.
 
-Mutation checks: see the commit message; every mutant was killed.
+Mutation checks: 11 mutants of `src/languageOrder.ts` (the code match dropped, the primary-subtag rule dropped, a blank tag marking, the mark not moved first, the legacy tag dropped, the code never written, the code always written, an untagged entry markable, an unknown rung public, an unnameable value hidden, the entry itself counted as sharing), 11 killed.
