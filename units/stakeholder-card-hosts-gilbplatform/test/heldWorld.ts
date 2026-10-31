@@ -22,7 +22,7 @@ export interface HeldWorld {
   origins: Map<string, string>;
 }
 
-export function heldWorld(world: World, opts: { catalogue?: boolean } = {}): HeldWorld {
+export function heldWorld(world: World, opts: { catalogue?: boolean; /** The principal every held record is linked to, as the platform's resolver names it (`online-card-anchor`). Default: none, the resolver answers 404. */ anchor?: string } = {}): HeldWorld {
   const puts: HeldWorld["puts"] = [];
   const notes = new Map<string, string>();
   const origins = new Map<string, string>();
@@ -43,6 +43,10 @@ export function heldWorld(world: World, opts: { catalogue?: boolean } = {}): Hel
       const origin = origins.get(party) ?? "";
       world.calls.push({ method: "GET", url, headers: Object.fromEntries(new Headers(init?.headers).entries()), body: null });
       return Response.json({ me: "p", heldParty: party, note: text || null, origin: origin || null, notes: text ? [{ entity: `${P}/e/n`, text }] : [], origins: origin ? [{ entity: `${P}/e/o`, text: origin }] : [], noteLoad: text ? "ok" : "empty", originLoad: origin ? "ok" : "empty", vault: P });
+    }
+    if (opts.anchor && u.pathname === "/base/connect/online-card-anchor") {
+      world.calls.push({ method: "GET", url, headers: Object.fromEntries(new Headers(init?.headers).entries()), body: null });
+      return Response.json({ kind: "person", vaultRepresents: `${ID}/base/t/Person`, principal: opts.anchor, entity: opts.anchor });
     }
     // The user-plane link catalogue the relation write checks its predicate against: the terms of the contact kinds that name a predicate.
     if (opts.catalogue !== false && u.pathname === "/base/vocab" && u.searchParams.get("linkPlane") === "user") {

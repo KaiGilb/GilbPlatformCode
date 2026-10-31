@@ -134,6 +134,24 @@ describe("the card writes", () => {
   });
 });
 
+describe("a record linked to a person's online card", () => {
+  test("the platform's resolver names the person: the online rows are marked, the circle chip is drawn, and My Note is written under the person, not under the record", async () => {
+    const uri = world.platform.seed(P, "t:Person", { "a:name": "Ben Larsen", "a:sameAs": { "@id": BEN } });
+    const linkedId = uri.slice(uri.lastIndexOf("/") + 1);
+    const linked = heldWorld(world, { anchor: BEN });
+    vi.stubGlobal("fetch", linked.fetch);
+    mountInProvider(world, <StakeholderRecordCard recordId={linkedId} vaultId={P} />, { viewedVaultId: P });
+    await waitFor(() => expect(screen.getAllByTestId("one-card-mark").map((e) => e.textContent)).toContain("From their online card"), { timeout: 8000 });
+    expect(text("person-placement-chip")).toBe("Personal Inner Circle");
+    await userEvent.type(await screen.findByTestId("contact-note-editor"), "Linked note");
+    await userEvent.tab();
+    await waitFor(() => expect(linked.puts.length).toBe(1));
+    expect(linked.puts[0]!.url).toBe(`${HOST}/base/connect/annotations`);
+    expect(linked.puts[0]!.body).toMatchObject({ heldParty: BEN, vaultId: P, note: "Linked note" });
+    expect(world.requests("GET", /\/base\/connect\/online-card-anchor/).every((r) => r.url.startsWith(BASE))).toBe(true);
+  });
+});
+
 describe("the header and the slots share one hook", () => {
   function Header() {
     return <>{JSON.stringify([useContext(StakeholderContactHeaderHostContext)!.useHolderOriginLine === useHolderOriginLine, useContext(StakeholderContactHeaderHostContext)!.useContactLabels === useContactLabels])}</>;
