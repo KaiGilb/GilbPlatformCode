@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/contact-card-slots",
+  "package": "@kaigilb/gilbplatformcode-contact-card-slots",
+  "version": "0.1.0",
+  "purpose": "Gives a person's record card its holder-only slots: the 'Where / How we met' line in the header and My Note in the body, from one source.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/ContactCardSlots.tsx",
+        "lines": [
+          1,
+          210
+        ],
+        "to": "src/ContactCardSlots.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `heldNoteKey` and the type `ResolveOutcome` from `person-connections`; the type `CardSlots` from `card-group`; `useCardMode` from `card-mode`; `HolderNoteGroup`, `annotationsFit`, `loadHolderAnnotations`, `AnnotationVaultMismatchError`, `NOTES_VAULT_UNTIED_COPY` and the type `HolderAnnotations` from `contact-annotation`; `ContactKindChips` and `GILBAPP_CHIP_HELP` from `stakeholder-contact-header`; `useContactLabels`, `hasAnnotationRecord`, `resolveHeldClaimType` from `contact-labels`; `NO_OWN_VAULT_SAYS` from `adder-card`; the type `KindVault` from `kind-relation`; `HELD_NOTES_STALE_MS`, `heldClaimsKey`, `listHeldClaimsAbout` from `held-notes`",
+    "`export const GILBAPP_CHIP_HELP = ...` (source lines 32-33, with its comment) is not in this unit: the same line is `src/gilbappChipHelp.ts` of `stakeholder-contact-header`, which this unit imports; it is not re-exported",
+    "the header comments are new and shorter; the comments that name a cycle, a ruling, an agent, a date, a ticket or a wiki rule are reworded with the same facts; no code changed",
+    "`src/index.ts` is new and exports `contactCardSlots`, `useHolderOriginLine` and the type `ContactCardArgs`"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
