@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "unit": "units/held-notes",
+  "package": "@kaigilb/gilbplatformcode-held-notes",
+  "version": "0.1.0",
+  "purpose": "Reads and writes the notes a person keeps about someone in their own vault, private or shared with that person, one claim per note.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/mynet/heldnote/heldNote.ts", "lines": null, "to": "src/heldNote.ts" },
+      { "path": "src/lib/mynet/heldnote/useHeldNotes.ts", "lines": null, "to": "src/useHeldNotes.ts" },
+      { "path": "src/lib/mynet/heldnote/heldDetailMark.ts", "lines": null, "to": "src/heldDetailMark.ts" },
+      { "path": "src/lib/mynet/heldnote/heldNoteVocab.ts", "lines": null, "to": "src/heldNoteVocab.ts" },
+      { "path": "src/lib/mynet/place/placeClaim.ts", "lines": [351, 351], "to": "src/directReader.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units' `lws-vault-sets` (`pageAllByAttribute`, `registerCardPartTypes`), `resource-id` (`idFromResourceUri`), `stated-by` (`isStatedBy`), `vault-origin-rule` (`vaultOriginOf`), `vault-resources` (`createResource`, `deleteResource`, `getResource`, `patchResource`, `readResources`, `FactValue`, `ReadResource`), `lws-records` (`patchRecord`, `readRecord`, `MergePatchValue`, `WriteSource`), `term-slots` (`attributeSpelling`, `typeSpelling`) and `adder-card` (`useAdderCard`).",
+    "`DIRECT_READER` (`\"a:directReader\"`) is a named copy in `src/directReader.ts`, exported: the place-claim module of the app, where it is defined, is in no unit yet and will import it from here.",
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling or a test run are reworded with the same facts; no code changed. The comment-stripped files, imports excluded, equal the source (`heldNote.ts` 1261 words, `useHeldNotes.ts` 1479, `heldDetailMark.ts` 341, `heldNoteVocab.ts` 263; 0 diff lines each).",
+    "Every symbol the source exports is exported from the entry point; nothing is added to the source's own exports (`hostOf`, `MARKS`, `chains`, the vocabulary caches stay private)."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/directReader.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
