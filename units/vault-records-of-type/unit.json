@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/vault-records-of-type",
+  "package": "@kaigilb/gilbplatformcode-vault-records-of-type",
+  "version": "0.1.0",
+  "purpose": "Lists every record of one type in a vault, page by page, and says when the listing stopped before the end.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/place/lws.ts",
+        "lines": [
+          88,
+          146
+        ],
+        "to": "src/vaultRecordsOfType.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the vault surface is `vault-resources` (`getResource`), `lws-vault-sets` (`listVaultRecordsPage`), `lws-records` (`recordFromServed`) and `resource-id` (`idFromResourceUri`).",
+    "The page ceiling is said (F4). GilbApp's loop ended at 50 pages and returned the records it had, so addresses past the ceiling were never shown and nothing said so. Now `VaultListingCappedError`. `MAX_LIST_PAGES` is exported (GilbApp: private).",
+    "Not changed, and not an error: a door that names the same offset again ends the listing with what it has (GilbApp's loop guard, pinned by its test); that is a door that cannot advance, not the ceiling.",
+    "The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
