@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { MAX_LIST_PAGES } from "@kaigilb/gilbplatformcode-vault-records-of-type";
 import { PLACE_CLAIMS_STALE_MS, placeClaimsKey, type PlaceClaimsRead } from "@kaigilb/gilbplatformcode-place-claims";
 import { createPlaceClaim } from "@kaigilb/gilbplatformcode-place-claim-write";
+import { resetGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
 import * as unit from "./index";
 import {
   CATALOGUE_READ_ONLY_SAYS,
@@ -313,6 +314,29 @@ describe("save / amend / remove resolve the truth only when the read-back proves
     });
     expect(result.current.error).toBe(CATALOGUE_READ_ONLY_SAYS);
     expect(fake.calls).toEqual([]);
+  });
+
+  it("(fail closed) the catalogue's origin not known: save, change and remove say so with the fixed sentence, and make no request", async () => {
+    await createPlaceClaim(VAULT, RECORD, FULL, PRINCIPAL);
+    const { result } = hook();
+    await waitFor(() => expect(result.current.claims).toHaveLength(1));
+    resetGeoOrigin();
+    fake.calls.length = 0;
+    fake.writes.length = 0;
+    await act(async () => {
+      expect(await result.current.save(FULL)).toBeNull();
+    });
+    expect(result.current.error).toBe(unit.ORIGIN_UNKNOWN_SAYS);
+    await act(async () => {
+      expect(await result.current.amend(result.current.claims[0]!, { ...FULL, label: "cabin" })).toBe(false);
+    });
+    expect(result.current.error).toBe(unit.ORIGIN_UNKNOWN_SAYS);
+    await act(async () => {
+      expect(await result.current.remove(result.current.claims[0]!)).toBe(false);
+    });
+    expect(result.current.error).toBe(unit.ORIGIN_UNKNOWN_SAYS);
+    expect(unit.ORIGIN_UNKNOWN_SAYS).toBe("Addresses cannot be saved here: the place catalogue is not known.");
+    expect(fake.writes.filter((w) => w.method !== "GET").length).toBe(0);
   });
 
   it("a legacy address: the change is refused with the sentence the write layer gives, which names the older shape and no address", async () => {

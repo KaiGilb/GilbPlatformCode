@@ -47,6 +47,7 @@ export const PARTIAL_SAVE_SAYS = "The address was saved, but one of its details 
 export const CHANGE_FAILED_SAYS = "This change could not be saved right now.";
 export const REMOVE_FAILED_SAYS = "This address could not be removed right now.";
 export const CATALOGUE_READ_ONLY_SAYS = "The place catalogue is read only, so nothing can be written to it.";
+export const ORIGIN_UNKNOWN_SAYS = "Addresses cannot be saved here: the place catalogue is not known.";
 export const VOCAB_DOWN_SAYS = "Addresses cannot be read or written right now, because the ontology did not answer.";
 export const SAVE_NOT_CONFIRMED_SAYS = "Saved, but the addresses could not be read back, so this is not confirmed. Your address is still here — try again.";
 export const SAVE_NOT_KEPT_SAYS = "The store accepted this address but did not keep it, so it is not saved. Your address is still here — try again.";
@@ -113,7 +114,7 @@ export function factsSurvived(kept: PlaceClaim, input: PlaceClaimInput): boolean
 /** What a failed write is told to the person as: a fixed sentence by KIND of failure, never the failure's own text. The detail goes to the log. */
 function sentenceFor(e: unknown, fallback: string): string {
   console.error(e);
-  if (e instanceof GeoWriteRefusedError) return CATALOGUE_READ_ONLY_SAYS;
+  if (e instanceof GeoWriteRefusedError) return e.reason === "origin-unknown" ? ORIGIN_UNKNOWN_SAYS : CATALOGUE_READ_ONLY_SAYS;
   if (e instanceof SharedAddressError) return SHARED_ADDRESS_MESSAGE;
   if (e instanceof PlaceClaimRefusal) return e.sentence;
   if (e instanceof PlaceClaimPartialError) return PARTIAL_SAVE_SAYS;
