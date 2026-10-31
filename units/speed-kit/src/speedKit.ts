@@ -64,11 +64,12 @@ export function createSpeedKit<Ctx extends WarmContext = WarmContext>(o: SpeedKi
       if (!alive()) return false;
       const p = new Persist(kv, principal, s.persist);
       persist = p;
+      // Listening starts now, before the slow reads: a network answer that commits while the disk is still being read is saved too (Persist queues and flushes on its own timer).
+      cache.onCommit((key, value, at) => { const k = keyParts(key); if (k.principal === p.principal && persistable.has(k.resource)) p.saveEntry(k.workspace, k.resource, value, at); });
       await p.adopt();
       const h = await p.hydrate(s.workspace ?? "");
       if (!alive()) return false;
       cache.hydrate(h.entries);
-      cache.onCommit((key, value, at) => { const k = keyParts(key); if (k.principal === p.principal && persistable.has(k.resource)) p.saveEntry(k.workspace, k.resource, value, at); });
       s.onHydrated?.(h);
       return h.entries.length + h.stores.length + (h.vaults ? 1 : 0) > 0;
     })();

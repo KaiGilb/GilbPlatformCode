@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/record-sync",
   "package": "@kaigilb/gilbplatformcode-record-sync",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "purpose": "A vault's typed record list over the platform's record interface, and only what changed in it since a stored position, read through the authenticated fetch the host injects.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -126,7 +126,8 @@
     "the imports of the source's own files lose `.ts` (`./platform`), and the import of `PlatformError, request, routeUrl, vaultSegment, PlatformAnswer, PlatformClient` in `recordPages.ts` lists only the symbols that are taken;",
     "the header comment of each file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed;",
     "0.3.0: the new lines are verbatim except comments (`originHostMismatch`'s comment loses the person, ticket and section references that were in it, and says \"every writer of records\" for the package-internal writer it named; `walkRecordPages`'s comment names \"a platform before the full-row page\" for the ticket tag it carried); no code changed.",
-    "0.4.0: `src/completeCopy.ts` is new code with no line from the source repo: the complete-copy read (`completeCopy`, `PlatformLacks`) ported from Social's `VaultClient.completeCopy` at a1f65a5b (`since=head`, the walk by `after`, one `since=<kept head>` pass); it is reached as `@kaigilb/gilbplatformcode-record-sync/complete-copy` and is not part of the root export list."
+    "0.4.0: `src/completeCopy.ts` is new code with no line from the source repo: the complete-copy read (`completeCopy`, `PlatformLacks`) ported from Social's `VaultClient.completeCopy` at a1f65a5b (`since=head`, the walk by `after`, one `since=<kept head>` pass); it is reached as `@kaigilb/gilbplatformcode-record-sync/complete-copy` and is not part of the root export list.",
+    "0.4.1: `onPage` (a named change, and a PATCH because record-sync is a hub unit, RuleGhsHubUnitChange): `completeCopy` takes the option `onPage` and tells it each walk page as it is read, with every row of the walk so far (`CompletePage`). It only looks: the requests, their order and the result are the same with or without it; no existing export changes meaning. It is not in Social's `VaultClient.completeCopy`, so it is a change made in the unit before the source app has it (RuleGhsResync): keep it when the unit is re-synced."
   ],
   "newFiles": [
     "src/index.ts",

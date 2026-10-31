@@ -21,7 +21,7 @@ describe("useCached", () => {
   test("the result has exactly these members; updatedAt is set once loaded", async () => {
     const cache = createSessionCache();
     const { result } = renderHook(() => useCached(cacheKey("w", "shape"), async () => 1, cache));
-    expect(Object.keys(result.current).sort()).toEqual(["data", "error", "refresh", "updatedAt", "updating"]);
+    expect(Object.keys(result.current).sort()).toEqual(["data", "error", "partial", "refresh", "updatedAt", "updating"]);
     expect(result.current.updatedAt).toBeUndefined();
     await waitFor(() => expect(result.current.updatedAt).toBeTypeOf("number"));
   });

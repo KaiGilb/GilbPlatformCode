@@ -11,8 +11,8 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 | Name | Unit | What it is |
 |---|---|---|
 | `hub` | `principal-hub` | whose tab this is; clears every registered cache on a change of person; drops late answers |
-| `cache` | `session-cache` | the in-memory cache a page opens from at once and revalidates behind |
-| `cached` | `use-cached` | the React hook over it (`cached.useCached`) |
+| `cache` | `session-cache` | the in-memory cache a page opens from at once and revalidates behind; a loader may show the rows it has read so far with `ctx?.preview(rows)` (0.2.0) |
+| `cached` | `use-cached` | the React hook over it (`cached.useCached`); its loader is handed that same `ctx`, and its result has `partial` (0.2.0) |
 | `updated` | `updated-line` | the "Updating… / Updated 14:05" line, the stale note, the refresh note |
 | `jobs` | `background-jobs` | jobs that outlive the page, one flight per key, one lane per workspace, never retried |
 | `prefetch` | `prefetch-registry` | warmers registered per page, run on idle and on intent |
@@ -20,7 +20,7 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 | `sync` | `record-sync` | the typed record list and its changes since a position |
 | `createSpeedKit`, `SpeedKit`, `SpeedKitOptions`, `StartOptions` | this package | the glue below |
 
-`@kaigilb/gilbplatformcode-speed-kit/complete-copy` is `record-sync/complete-copy` (the complete copy: `since=head`, the walk by `after=`, one `since=` pass), under this package's name.
+`@kaigilb/gilbplatformcode-speed-kit/complete-copy` is `record-sync/complete-copy` (the complete copy: `since=head`, the walk by `after=`, one `since=` pass), under this package's name. Its `completeCopy` takes an optional `onPage` (record-sync 0.4.1) that is told each walk page as it is read, with every row so far; it adds no request and changes none. It is an early look, not the copy.
 
 ## What this is not
 
@@ -265,6 +265,11 @@ With it, the screens unmount in the same change and no load starts for the new p
 - "`start` for the same person again wipes the copy." It does not: it closes the earlier run (which writes no more) and reads again.
 - "A cache from `createSessionCache` is emptied by the hub." Only the unit's own `sessionCache` registers itself; `createSpeedKit` registers whichever cache it is given.
 - "A hover always warms." A warmer is not started again for the same workspace and client within `staleMs` (30 s by default) of its last start, even when the cache entry is gone (`runWarmer` in `prefetch.ts` of `prefetch-registry`). A hover soon after the idle warm of sign-in sends nothing.
+- "A preview is stored on the device." It is not. A preview made with `ctx?.preview(rows)` is in the cache entry only: it is not fresh, has no `updatedAt`, and never reaches `onCommit`, which is the only door to the device (`speedKit.ts` is unchanged). Only the committed value of the load is stored, so a reload never paints a half list as if it were whole.
+- "`cached.useCached(...).partial` is true while an update runs." It is not: `partial` is true only while `data` is a preview of a first load. A value held from memory or the device shows with `partial` false while it updates (`updating` is true).
+- "A preview means the list is complete." It means at least what it holds: `cache.peek(key).partial` is true while `data` is a preview. The words "at least N" and why are the app's. After a change of person the preview is gone with the entry, and a preview that arrives late is dropped.
+- "A copy that the disk answers after `waitMs` is lost." In 0.1.0 it was (finding F4); from 0.2.0 it is not: `start` stops waiting at `waitMs`, but the read goes on, and when it ends the copy is handed to the cache (only for the same person). A key whose first load is already running and holds no value takes it and shows it while the load runs (`session-cache` `hydrate`); the load's answer then replaces it.
+- "A network answer that lands while the disk is being read is not saved." It is: the cache's `onCommit` listener is installed as soon as the device copy is open, before `adopt` and `hydrate`, with the same person and `persistResources` checks. (An answer that lands before the disk is even opened is not saved.)
 - "`start` is slow on a slow disk." It waits at most `waitMs` and answers `{ hydrated: false }`; a disk that answers later is still read, and handed over only if the same person is still signed in.
 
 ## Where it came from
@@ -273,6 +278,8 @@ With it, the screens unmount in the same change and no load starts for the new p
 
 Named changes from Social's bridge, and only these: the persistable set is the option `persistResources` (Social's `PERSISTABLE` set), the database name and storage keys come from `appName`, the last-workspace memory and the vault client's seeding stay in the app (the example shows them), the read memo (`readMemo`) and the device keys (`deviceBinding`) are not here, and the hub registers the device copy so a bare `setPrincipal` also closes and wipes it.
 
-Tests (`src/*.test.ts`, jsdom, `fake-indexeddb` 6.2.6): `twoPeople.test.ts` (Ann and Ben across the hub, the session cache, the job store, the warm context and the device store: a change of person, a sign-out, a reload between, a late answer), `speedKit.test.ts` (the glue), `exports.test.ts` (every export of the entry and of each namespace), `readme.test.ts` (the example in this file is the file), `hostAgnostic.test.ts` (the same host-agnostic check as the other units). The fixture is `test/testKit.ts`.
+Tests (`src/*.test.ts`, jsdom, `fake-indexeddb` 6.2.6): `firstPage.test.ts` (a preview through the kit: never on the device, gone with a change of person), `twoPeople.test.ts` (Ann and Ben across the hub, the session cache, the job store, the warm context and the device store: a change of person, a sign-out, a reload between, a late answer), `speedKit.test.ts` (the glue), `exports.test.ts` (every export of the entry and of each namespace), `readme.test.ts` (the example in this file is the file), `hostAgnostic.test.ts` (the same host-agnostic check as the other units). The fixture is `test/testKit.ts`.
+
+Changes in 0.2.0: the first page early. The peer ranges move to `record-sync` ^0.4.1 (`completeCopy` takes `onPage`), `session-cache` ^0.2.0 (a loader is handed `LoadContext`; `cache.peek(key).partial`) and `use-cached` ^0.2.0 (the hook hands the loader the same context). `speedKit.ts` changes in one place: `start` installs the `onCommit` listener right after the device copy is open, before `adopt` and `hydrate`, not after them. The same person and `persistResources` checks apply. `src/firstPage.test.ts` (5 tests, 58 in the unit) pins that a preview is never put on the device, that the committed load stores the complete value, that a preview does not outlive a change of person, that an answer landing during a slow disk read is saved after it, and that a copy read late is shown while the first load runs. The `Cached.partial` member of `use-cached` 0.2.0 is `cached.useCached(...).partial`.
 
 Taken by: `apps/speed-kit-taking-app` takes this package. It was built from this README alone on 2026-10-30, and its `RUNLOG.md` lists what the README lacked.

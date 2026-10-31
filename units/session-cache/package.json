@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-session-cache",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "An in-memory cache that a page opens from at once and revalidates behind, keyed by person and workspace, bounded by entries and bytes, and emptied when the person changes.",
