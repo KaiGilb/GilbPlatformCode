@@ -8,6 +8,7 @@
 //   warm(key, loader)     prefetch: loads when there is no fresh value and no load in flight; never throws.
 //   subscribe(key, fn)    told on every change of that entry (value, updating, error).
 //   peek(key)             the entry as a snapshot (a stable object until it changes).
+// A loader may be handed a LoadContext: `ctx.preview(rows)` shows an early, partial value for an entry that holds no value yet (`partial: true`, no `updatedAt`). It is never committed or fresh, never reaches `onCommit`, and the answer of the load replaces it.
 // A failed load keeps the last good value and exposes the error. Memory is bounded by entries and by estimated bytes (least recently used go first; an entry in flight or subscribed to stays).
 
 import { currentPrincipal, principalGuard, registerCache } from "@kaigilb/gilbplatformcode-principal-hub";
@@ -17,12 +18,15 @@ export const STALE_MS = 30_000;
 export const MAX_ENTRIES = 200;
 export const MAX_BYTES = 32 * 1024 * 1024;
 
-export interface CacheState<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined }
-export type Loader<T> = () => Promise<T>;
+/** `partial` is true ONLY while `data` is an early preview of a load that has not answered (the entry holds no committed value); it is absent otherwise. */
+export interface CacheState<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined; partial?: boolean }
+/** What a loader is handed. `preview(value)` shows `value` as a partial `data` while the load runs; it does nothing once the entry holds a value, or the load is superseded, cleared, answered, or for another person. */
+export interface LoadContext<T> { preview(value: T): void }
+export type Loader<T> = (ctx?: LoadContext<T>) => Promise<T>;
 
 interface Entry<T> {
   has: boolean; value?: T; at: number; focus: number; stale: boolean; error?: unknown;
-  inflight?: Promise<T>; dirty?: boolean; gen: number; loader?: Loader<unknown>; bytes: number; used: number; snap: CacheState<T>;
+  inflight?: Promise<T>; pv?: { value: T }; dirty?: boolean; gen: number; loader?: Loader<unknown>; bytes: number; used: number; snap: CacheState<T>;
 }
 
 export interface SessionCacheOptions { now?: () => number; staleMs?: number; maxEntries?: number; maxBytes?: number; sizeOf?: (v: unknown) => number }
@@ -51,7 +55,7 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
   const committed = (key: string, e: Entry<unknown>) => { try { commitListener?.(key, e.value, e.at); } catch { /* a listener must not break a load */ } };
   let tick = 0;
 
-  const snapOf = (e: Entry<unknown>): CacheState<unknown> => ({ data: e.has ? e.value : undefined, updating: e.inflight !== undefined, error: e.error, updatedAt: e.has ? e.at : undefined });
+  const snapOf = (e: Entry<unknown>): CacheState<unknown> => ({ data: e.has ? e.value : e.pv?.value, updating: e.inflight !== undefined, error: e.error, updatedAt: e.has ? e.at : undefined, ...(e.pv ? { partial: true } : {}) });
   const touch = (e: Entry<unknown>) => { e.snap = snapOf(e); };
   const notify = (key: string) => { for (const f of [...(subs.get(key) ?? [])]) f(); };
   const get = (key: string): Entry<unknown> => {
@@ -79,13 +83,24 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
     e.loader = loader as Loader<unknown>;
     const gen = ++e.gen;
     const alive = principalGuard(); // an answer for the person before is dropped
+    e.pv = undefined; // a new load starts with no preview of an older one
+    let started = false, settled = false;
+    const ctx: LoadContext<T> = {
+      preview(value: T) {
+        // Only the load that is still the entry's, for the same person, before it answers, and only while there is no committed value: a return visit never shrinks to a preview.
+        if (settled || e.has || e.gen !== gen || entries.get(key) !== (e as Entry<unknown>) || !alive()) return;
+        e.pv = { value };
+        if (started) { touch(e as Entry<unknown>); notify(key); } // a preview made before the loader returned is published by the code below
+      },
+    };
     let raw: Promise<T>;
-    try { raw = Promise.resolve(loader()); } catch (err) { raw = Promise.reject(err); } // the loader starts now, not on a later tick
+    try { raw = Promise.resolve(loader(ctx)); } catch (err) { raw = Promise.reject(err); } // the loader starts now, not on a later tick
     const p: Promise<T> = raw.then(
       (v) => {
         // A later load, an invalidation or a clear has superseded this one: its answer is returned to its caller and kept by nobody.
+        settled = true;
         if (e.gen === gen && entries.get(key) === (e as Entry<unknown>) && alive()) {
-          e.has = true; e.value = v; e.at = now(); e.focus = focusEpoch; e.stale = false; e.error = undefined; e.inflight = undefined;
+          e.has = true; e.value = v; e.at = now(); e.focus = focusEpoch; e.stale = false; e.error = undefined; e.inflight = undefined; e.pv = undefined;
           e.bytes = sizeOf(v); e.used = ++tick;
           touch(e as Entry<unknown>);
           enforce(key);
@@ -97,12 +112,14 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
         return v;
       },
       (err) => {
+        settled = true; // a preview that is showing stays, with the error: it is not stored
         if (e.gen === gen && entries.get(key) === (e as Entry<unknown>) && alive()) { e.error = err; e.inflight = undefined; touch(e as Entry<unknown>); notify(key); }
         throw err;
       },
     );
     p.catch(() => undefined); // the entry holds the error; a caller that does not await must not raise an unhandled rejection
     e.inflight = p;
+    started = true;
     touch(e as Entry<unknown>);
     notify(key);
     return p;
@@ -142,7 +159,7 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
     /** A page that has just loaded the value its own way puts it here, so the next visit (or another page) starts from it. Fresh as of now; a load still running for the key is superseded. */
     set<T>(key: string, value: T): void {
       const e = get(key) as Entry<T>;
-      e.gen++; e.inflight = undefined;
+      e.gen++; e.inflight = undefined; e.pv = undefined;
       e.has = true; e.value = value; e.at = now(); e.focus = focusEpoch; e.stale = false; e.error = undefined;
       e.bytes = sizeOf(value); e.used = ++tick;
       touch(e as Entry<unknown>);
@@ -160,6 +177,7 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
       for (const it of items) {
         const e = get(it.key);
         if (e.has || e.inflight) continue;
+        e.pv = undefined;
         e.has = true; e.value = it.value; e.at = it.at; e.focus = focusEpoch; e.stale = true; e.error = undefined;
         e.bytes = sizeOf(it.value); e.used = ++tick;
         touch(e);
@@ -177,7 +195,7 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
       for (const key of hit) {
         const e = entries.get(key)!;
         if ((subs.get(key)?.size ?? 0) > 0 && e.inflight) { e.stale = true; e.dirty = true; touch(e); continue; } // shown and loading: one more load follows this one, not one per invalidation
-        e.stale = true; e.gen++; e.inflight = undefined; // a load that started before this cannot make the entry fresh
+        e.stale = true; e.gen++; e.inflight = undefined; e.pv = undefined; // a load that started before this cannot make the entry fresh
         touch(e);
         if ((subs.get(key)?.size ?? 0) > 0 && e.loader) void start(key, e, e.loader).catch(() => undefined);
         else notify(key);

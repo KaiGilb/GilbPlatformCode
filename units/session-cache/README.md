@@ -8,7 +8,7 @@ Plain TypeScript, no React, no network of its own. The host gives each read a ke
 
 - `createSessionCache(options?)`: makes a cache. Options (all optional): `now` (the clock, default `Date.now`), `staleMs` (`STALE_MS`), `maxEntries` (`MAX_ENTRIES`), `maxBytes` (`MAX_BYTES`), `sizeOf` (a size estimate; default is the length of `JSON.stringify`, and 0 when that throws). It returns these members:
   - `key`: the same function as `cacheKey`.
-  - `peek(key)`: the entry as a snapshot `{ data, updating, error, updatedAt }`, a stable object until the entry changes.
+  - `peek(key)`: the entry as a snapshot `{ data, updating, error, updatedAt }`, plus `partial: true` ONLY while `data` is a preview (see `LoadContext`); a stable object until the entry changes.
   - `swr(key, loader)`: `{ value, stale, promise }`. The value held at once (`undefined` on a miss); `stale` is true when a value is held but not fresh; the promise resolves with the revalidated value (with the held value if the revalidation fails).
   - `refresh(key, loader?)`: ALWAYS loads (a write just happened), never joined to a load that started before it; the newest load wins. It answers a promise of the loaded value (`Promise<T>`, `refresh` in `sessionCache.ts`), and rejects with the loader's error when the load fails (the entry also holds the error). Without a loader it reuses the last one for that key, and rejects when there is none.
   - `set(key, value)`: puts a value the page loaded its own way; fresh as of now; supersedes a load in flight.
@@ -25,7 +25,8 @@ Plain TypeScript, no React, no network of its own. The host gives each read a ke
 - `keyParts(key)`: `{ principal, workspace, resource }`.
 - `sessionCache`: the app's one cache (`createSessionCache()` with the defaults). It registers itself with the hub as `"sessionCache"`, so a change of person empties it.
 - `clearSessionCache()`: `sessionCache.clear()`.
-- `STALE_MS` (30 000), `MAX_ENTRIES` (200), `MAX_BYTES` (32 MiB), and the types `CacheState`, `Loader`, `SessionCacheOptions`, `SessionCache`.
+- `STALE_MS` (30 000), `MAX_ENTRIES` (200), `MAX_BYTES` (32 MiB), and the types `CacheState`, `Loader`, `LoadContext`, `SessionCacheOptions`, `SessionCache`.
+- `LoadContext<T>` (0.2.0): what a loader is handed, `Loader<T> = (ctx?: LoadContext<T>) => Promise<T>`. `ctx.preview(value)` shows `value` as `data`, with `partial: true` and `updating: true`, while the load runs, so a first visit can show the rows read so far. It takes effect only while ALL hold: the entry holds no value (not from `set`, not from the disk by `hydrate`, not from an earlier load), this load is still the newest for the key (no `set`, `refresh`, `invalidate` or `clear` since), it has not answered or failed, and the person is the one who started it. Otherwise it does nothing. A preview is not a value: `updatedAt` stays `undefined`, it is not fresh (a second `swr` joins the load), it is not counted in `bytes`, and it never reaches `onCommit`, so it is never put on disk. The load's answer replaces it in one step. If the load fails the preview stays, with `error` set, `updating: false` and `partial: true`, and is not stored; the next load begins with none. A loader that takes no argument works as before.
 
 ## What this is not
 
@@ -90,16 +91,21 @@ Dynamic imports in the files taken: none.
 - "`invalidate` removes the entry." It keeps the value and marks it stale, so the page still shows it.
 - "`refresh` with no loader loads nothing." It reuses the last loader for that key, and rejects `session cache: nothing to refresh for <resource>` when there is none.
 - "`clear` cancels loads in flight." They finish for their callers; their answers are kept by nobody.
+- "A preview is the data, a little early." It is a view that may lack rows and may show a row since changed. The screen that shows it must say "at least N" and why (RuleAppspeedVisibleWait); this unit supplies `partial` and nothing of the words.
+- "`partial` means the value is old." It means there is NO committed value yet. An old value from the disk or an earlier load is shown with `partial` absent, and a preview never replaces it.
 
 ## Where it came from
 
+Changes in 0.2.0: `LoadContext` and `CacheState.partial` (named change 4 below). Everything else is as in 0.1.0; the exports of 0.1.0 keep their meaning, and `Object.keys(createSessionCache())` is unchanged, because the preview is a call the loader makes, not a method of the cache. Tests: `src/loadContext.test.ts` (21 tests, 70 in the unit).
+
 `KaiGilb/Social` (private repo), commit `a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e`, copied by script: `src/lib/sessionCache.ts` lines 1-235 to `src/sessionCache.ts`.
 
-Named changes, and only these:
+Named changes, and only these (the first three are in 0.1.0):
 
 1. the import of the person hub reads from the package `@kaigilb/gilbplatformcode-principal-hub` instead of `./principalHub`;
 2. the last line of the module, which installed the focus listener on the window when the module loaded (`if (typeof window !== "undefined") sessionCache.installFocus(window);`), is removed: the host calls `sessionCache.installFocus(window)` once (the seam map's rule: no `window` call at import);
-3. comments lose their cycle tags, and the third line no longer names the source app's workspace file. No other code changed.
+3. comments lose their cycle tags, and the third line no longer names the source app's workspace file. No other code changed;
+4. 0.2.0, made in this unit before Social has it (RuleGhsResync; keep it when re-syncing): `LoadContext`, `Loader<T> = (ctx?) => Promise<T>`, `CacheState.partial`, the entry's preview, and the passing of the context in `start`. Named in `unit.json` as `LoadContext.preview`.
 
 `src/index.ts` is new.
 
