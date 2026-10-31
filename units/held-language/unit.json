@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/held-language",
+  "package": "@kaigilb/gilbplatformcode-held-language",
+  "version": "0.1.0",
+  "purpose": "The held language claims of a person card: compose, read, add, set the flag of, and remove one.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/heldnote/heldLanguage.ts",
+        "lines": [
+          1,
+          241
+        ],
+        "to": "src/heldLanguage.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`LANGUAGE_ENTITY.test(language)` in `heldLanguageFacts` becomes `languageEntityPattern().test(language)`: the entry check follows the term origin set now (STOP-7).",
+    "The imports come from the units (`held-notes`, `language-search`, `lws-vault-sets`, `resource-id`, `stated-by`, `term-slots`, `vault-resources`); the header comment is shortened."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
