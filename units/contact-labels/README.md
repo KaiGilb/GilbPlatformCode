@@ -114,7 +114,7 @@ Three promises in `heldContactLabel.ts` (the claim type; the four read terms wit
 ## Wrong readings
 
 - "`GILBVEDA_MASTER_ORIGIN` is a constant." It was one in the source; here it is `termOrigin()` read at each use, so an origin set after the module loaded is the one asked.
-- "`PRIVATE_TIER` here and in `held-notes` are two settings." They are two exports of the same word, `"private"`; this one belongs to the label claim.
+- "`PRIVATE_TIER` is defined here." It is `held-notes`' binding, re-exported under the source's name (one definition, `"private"`).
 - "A card with a chip reads both catalogues." It reads one small document per distinct kind a chip names.
 - "The default and a specific kind are both shown." The default is hidden beside a specific kind; if ending it failed, it is ended by the next change.
 
@@ -132,17 +132,18 @@ Named changes, and only these:
 3. `readOwnKinds` and `readOwnEntryName` of `contact-kind-catalogue` take a host as their first argument; `useContactLabels.ts` holds `const ownKindsHost = { createResource, getResource }` (from `vault-resources`) and passes it at the two calls. The two calls' other arguments are the source's.
 4. The header comments are new and shorter; comments that name a cycle, a ruling, an agent, a date, a ticket or a measuring rig are reworded with the same facts. No code changed.
 5. `src/index.ts` is new and exports by name.
+6. `PRIVATE_TIER` (a second definition of the word in the source) is imported from `held-notes` and re-exported under the same name.
 
-With comments and imports removed, `heldContactLabel.ts` is token-equal to the source (1075 words, 0 diff lines). `useContactLabels.ts` differs by 9 words on 7 lines, exactly the named changes 2 and 3 (the new `ownKindsHost` line, three `termOrigin()` uses, two `ownKindsHost` arguments).
+With comments and imports removed, `heldContactLabel.ts` differs from the source by one line (1075 against 1074 words): `export const PRIVATE_TIER = "private"` is `export { PRIVATE_TIER }` of the imported binding. `useContactLabels.ts` differs by 9 words on 7 lines, exactly the named changes 2 and 3 (the new `ownKindsHost` line, three `termOrigin()` uses, two `ownKindsHost` arguments).
 
 ## Tests
 
-126 tests in 9 files (`npx vitest run`):
+127 tests in 9 files (`npx vitest run`):
 
 - PORTED, the source's 64 + 11 cases: `useContactLabels.s8labels.test.tsx` 12, `useContactLabels.s9labels.test.tsx` 13, `useContactLabels.c214tie.test.tsx` 26, `useContactLabels.c214r5.test.tsx` 13 (64), and `heldContactLabel.s8labels.test.ts` (11 cases, 23 runs because its neutrality refusals are a loop of 13). Re-based on the real peers over the fake platform of `test/fakePlaceStore.ts` (the held-notes fake, with the source's typed-list spy added), the master's documents of `test/masterFetch.ts`, the relation store of `test/relationStoreFake.ts` and the viewer's own card of `test/adderCardMock.ts`; hosts are `example.test` hosts. Two cases changed (below).
 - NEW `choice.test.tsx` 15: what each "+ Relation" choice writes (a kind with a predicate: one private relation and no claim; associated-with: a relation; a circle label and a holder's own kind: one private claim with exactly the five facts and no relation; a label needs the holder's card, a relation does not), every refusal writes nothing (not the signer's vault, no vault entity, no principal), removing follows the split (a relation is ended and nothing deleted, a label is deleted and nothing ended), a tie already there and the default beside any tie are not written, and the floor does not write the default while an older label claim stands as the specific kind.
 - NEW `requests.test.tsx` 8: the three servers and the credentials per request (master public, vault signed for its node), the master's origin read when used, the vocabulary read once at the corpus origin with no credential, a card that needs nothing asks nothing, and the module state of the term caches (asked once, not kept when failed, the claim type registered as a card part).
-- NEW `exports.test.ts` 3; `hostAgnostic.test.ts` 13 (the same host-agnostic check as the other units; it writes to the OS temp directory).
+- NEW `exports.test.ts` 4; `hostAgnostic.test.ts` 13 (the same host-agnostic check as the other units; it writes to the OS temp directory).
 
 No wall-clock waits beyond the source's own `waitFor`. `vi.mock` is used only for the four seams named under "Left out".
 

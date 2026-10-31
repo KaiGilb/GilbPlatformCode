@@ -25,7 +25,7 @@
 import { createResource, deleteResource, type FactValue } from "@kaigilb/gilbplatformcode-vault-resources";
 import { attributeSpelling, typeSpelling } from "@kaigilb/gilbplatformcode-term-slots";
 import { registerCardPartTypes } from "@kaigilb/gilbplatformcode-lws-vault-sets";
-import type { HeldClaimDoc } from "@kaigilb/gilbplatformcode-held-notes";
+import { PRIVATE_TIER, type HeldClaimDoc } from "@kaigilb/gilbplatformcode-held-notes";
 import { sameIri } from "@kaigilb/gilbplatformcode-stated-by";
 import type { CatalogueEntry, LabelAxis } from "@kaigilb/gilbplatformcode-contact-kind-model";
 
@@ -43,8 +43,8 @@ export class ContactLabelVocabUnavailableError extends Error {
   }
 }
 
-/** The ONE tier a label is written at. */
-export const PRIVATE_TIER = "private";
+/** The ONE tier a label is written at: `held-notes` holds the word, this unit re-exports that binding. */
+export { PRIVATE_TIER };
 
 /** The spellings a label claim is written under, ASKED of the master by term name (⛔ none typed here). */
 export interface ContactLabelVocab {

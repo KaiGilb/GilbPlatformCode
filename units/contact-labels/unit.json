@@ -31,7 +31,8 @@
     "`GILBVEDA_MASTER_ORIGIN` (built when the module loaded) is `termOrigin()` at its three uses: the master address of a type name in `masterTypeOf`, and the keys of the circle-label and relationship-kind catalogue queries",
     "`readOwnKinds` and `readOwnEntryName` of `contact-kind-catalogue` take `host: OwnKindsHost` first; `useContactLabels.ts` adds `const ownKindsHost = { createResource, getResource }` (from `vault-resources`) and passes it at the two calls, with the source's other arguments",
     "the header comments are new and shorter; the comments that name a cycle, a ruling, an agent, a date, a ticket or a measuring rig are reworded with the same facts; no code changed",
-    "`src/index.ts` is new and exports by name"
+    "`src/index.ts` is new and exports by name",
+    "`PRIVATE_TIER` is imported from `held-notes` and re-exported under the same name (no second definition)"
   ],
   "newFiles": [
     "src/index.ts"

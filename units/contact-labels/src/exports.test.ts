@@ -50,3 +50,11 @@ describe("the entry point", () => {
     expect(unit.hasAnnotationRecord(claims.slice(0, 1) as never, "t:HeldPartyFieldClaim")).toBe(false);
   });
 });
+
+import { PRIVATE_TIER as HELD_NOTES_TIER } from "@kaigilb/gilbplatformcode-held-notes";
+describe("PRIVATE_TIER", () => {
+  it("is held-notes' binding, the same word, not a second definition", () => {
+    expect(unit.PRIVATE_TIER).toBe(HELD_NOTES_TIER);
+    expect(HELD_NOTES_TIER).toBe("private");
+  });
+});
