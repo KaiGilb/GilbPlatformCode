@@ -36,7 +36,5 @@
     { "member": "persistResources", "replaces": "Social's `PERSISTABLE` set in persistBridge.ts" },
     { "member": "openKv", "replaces": "Social's `indexedDbKv()` call in `warmDisk`" }
   ],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ReadCopy.kit", "title": "Speed kit (open from a copy, update behind)", "note": "The five speed units behind one entry, wired to one app name with a clean sign-out; take it for a whole app. For one part take the unit itself: device-store, session-cache, prefetch-registry, background-jobs or principal-hub." }
 }

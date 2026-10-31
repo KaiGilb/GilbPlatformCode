@@ -26,7 +26,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:Principal.hub", "title": "Whose session this tab is (clears caches on change)", "note": "Only the one place that knows whose tab it is and clears every registered cache when the person changes; it holds no credential. For signing in take signin; for the copy itself take session-cache." }
 }

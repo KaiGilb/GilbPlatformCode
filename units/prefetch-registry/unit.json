@@ -36,7 +36,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ReadCopy.prefetch", "title": "Page warmers (load before the person asks)", "note": "Only the registry that starts a page's loads on hover or idle, once per workspace in the stale window, skipping heavy ones on a slow link. It does not hold the copy: that is session-cache." }
 }

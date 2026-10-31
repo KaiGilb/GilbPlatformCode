@@ -134,7 +134,5 @@
     "src/completeCopy.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:VaultRecord.sync", "title": "Record list and change feed (what changed since a position)", "note": "A vault's typed record list and only what changed in it since a stored position, through the authenticated fetch the host injects. No React and no credential of its own. For one record take lws-records; for a text search or attribute find take lws-vault-sets; for the screen hooks take plan-record-hooks." }
 }

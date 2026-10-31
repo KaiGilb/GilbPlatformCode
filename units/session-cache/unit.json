@@ -34,7 +34,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ReadCopy.session", "title": "Memory copy of what a page read", "note": "An in-memory copy keyed by person and workspace that a page opens from at once and revalidates behind, bounded by entries and bytes. For the copy that survives a reload take device-store; for the React hook take use-cached." }
 }

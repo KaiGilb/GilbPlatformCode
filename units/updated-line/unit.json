@@ -32,7 +32,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ScreenStatusLine.updated", "title": "Updated line (Updating... / Updated 14:05)", "note": "Only the status line, the stale note and the refresh-button feedback; the data and the hook are use-cached. For a plain button take button." }
 }

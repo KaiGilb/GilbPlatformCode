@@ -30,7 +30,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ReadCopy.hook", "title": "Page data from the copy (React hook)", "note": "Only the hook that renders from the session cache and says when an update runs; it needs session-cache for the cache itself. For the \"Updated 14:05\" line take updated-line." }
 }
