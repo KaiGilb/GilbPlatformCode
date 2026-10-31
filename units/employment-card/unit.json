@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "unit": "units/employment-card",
+  "package": "@kaigilb/gilbplatformcode-employment-card",
+  "version": "0.1.0",
+  "purpose": "One person's employments as a framed group: company, role dates, titles; add, edit and remove.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/EmploymentCard.tsx",
+        "lines": [
+          47,
+          564
+        ],
+        "to": "src/EmploymentCard.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `company-search`, `remove-control`, `role-when`, `card-group`, `card-mode`, and the types of `employments-state`. The geo imports (`WorkLocationField`, `getPlace`, `usePlaceHitDetails`, `placeHitLine`) are gone.",
+    "`PlaceName` (source lines 100-132) is not taken: the read-only place name is the optional `renderPlaceName`; the Location box is the optional `renderWorkLocation`. Absent, no place is drawn, no Location box, and the stored place is carried unchanged by every role commit. An employment whose only content is a place is content only when `renderPlaceName` is given.",
+    "New props `find` and `vaultName` are handed to `company-search`; `recordsVaultId` is kept; new prop `vaultUnknown`.",
+    "A company and a role that are addresses are drawn as \"A company\" and \"A role\" (text, labels, the opened box); the source drew the stored text.",
+    "After a failed read (`editor.error`) the add box and \"add employment\" are withheld; the source drew the add box beside the error.",
+    "With `vaultUnknown` the card draws one sentence and is not empty; the source had no such state.",
+    "The header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
