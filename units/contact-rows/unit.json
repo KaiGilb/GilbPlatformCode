@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-rows",
   "package": "@kaigilb/gilbplatformcode-contact-rows",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "purpose": "Edits a person's Email, Phone, Social and Skills rows, any number of each.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -67,7 +67,8 @@
     "`joinPhone` (named copy, FALSE FRIEND of `phone-text`'s `joinPhone`): the app's returns a national number that already starts with \"+\" unchanged; `phone-text`'s does not. Measured: 49 of 140 inputs differ. `toMailtoHref`, `phoneForUri` and `resolvableSocialHref` of `contact-actions` are equal to the app's on 32,915 inputs and are imported.",
     "Comments that name a cycle, a ticket, an agent, a person, a ruling or the other app are reworded; no code changed.",
     "0.1.1: `src/heldNotesState.ts` (a copy of the interface `HeldNotesState`, source `useHeldNotes.ts` lines 73-106) is removed; `ContactRows.tsx` and the entry point import the type from the unit `held-notes` (which now owns it; the stripped declarations compare 0). `HeldNotesState` is still exported from the entry point, re-exported from `held-notes`. No behaviour changes; the unit gains the peer `held-notes` ^0.1.0.",
-    "0.1.2: `joinPhone` is no longer a copy in this unit: `src/dialCode.ts` is one line that re-exports it from the unit `home-dial`, which holds the app's version (its stripped function compares 0 against the copy that is removed: 38 words). The module path `./dialCode` and the entry point's export `joinPhone` are unchanged. No behaviour change; the unit gains the peer `home-dial` ^0.1.0 (and, through it, `phone-text`)."
+    "0.1.2: `joinPhone` is no longer a copy in this unit: `src/dialCode.ts` is one line that re-exports it from the unit `home-dial`, which holds the app's version (its stripped function compares 0 against the copy that is removed: 38 words). The module path `./dialCode` and the entry point's export `joinPhone` are unchanged. No behaviour change; the unit gains the peer `home-dial` ^0.1.0 (and, through it, `phone-text`).",
+    "0.2.0: a skill is shown by its name, never its address. `skillNameOf(row)` (new, private; `r.value`, else `referentNameOf(r.ref)` of the unit `term-name-text`, else \"A skill\") replaces `r.value || r.ref` in the seven places that name a skill (the row's name, the Remove label, both `SkillDepthNote` names, both `HeldVisibilitySwitch` nouns and the presentation row's text). The line that drew the referent address under a picked skill (with its `title`) is removed. The source test \"its name, and its referent under it\" is inverted."
   ],
   "newFiles": [
     "src/index.ts",
