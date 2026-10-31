@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "unit": "units/place-draft",
+  "package": "@kaigilb/gilbplatformcode-place-draft",
+  "version": "0.1.0",
+  "purpose": "The address a person is filling in: its parts, the places picked into it, and the rules that move a pick through it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          86,
+          86
+        ],
+        "to": "src/placeDraft.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          106,
+          152
+        ],
+        "to": "src/placeDraft.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          184,
+          222
+        ],
+        "to": "src/placeDraft.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          255,
+          289
+        ],
+        "to": "src/placeDraft.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceClaimsCard.tsx",
+        "lines": [
+          972,
+          1005
+        ],
+        "to": "src/placeDraft.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`, the input type and the text-slot table are `place-claims`'s.",
+    "`snapshotOf` and its type `FieldSnapshot` are exported (GilbApp kept them inside the card's file). Their code is GilbApp's.",
+    "The module comments are reworded with the same facts (no host, cycle or agent named). No code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
