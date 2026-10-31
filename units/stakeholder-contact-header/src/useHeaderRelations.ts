@@ -18,16 +18,12 @@ import { useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { USER_VOCAB_KEY, readHeaderVocab, readPredicateCurie } from "@kaigilb/gilbplatformcode-contact-kind-catalogue";
 import { edgesToVault, headerRelations } from "@kaigilb/gilbplatformcode-contact-kind-model";
+import { annotationsFit } from "@kaigilb/gilbplatformcode-contact-annotation";
 import type { ContactHeaderRelation } from "@kaigilb/gilbplatformcode-contact-header";
 import { useStakeholderContactHeaderHost, type ContactLabelsState } from "./stakeholderContactHeaderHost";
 
 export { USER_VOCAB_KEY, VocabUnreadableError, readHeaderVocab } from "@kaigilb/gilbplatformcode-contact-kind-catalogue";
 
-/** Does the card's vault fit the route? True only for the signed-in holder's OWN vault (the route reads from there). */
-function annotationsFit(cardVaultId: string | null | undefined, ownVaultId: string | null | undefined): boolean {
-  const norm = (v: string | null | undefined) => (v ? v.replace(/\/+$/, "") : "");
-  return !!norm(cardVaultId) && norm(cardVaultId) === norm(ownVaultId);
-}
 export const predicateCurieKey = (ref: string) => ["s5c-predicate-curie", ref] as const;
 
 export interface HeaderRelationsArgs {

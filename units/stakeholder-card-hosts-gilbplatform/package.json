@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "description": "The ready-made GilbPlatform host for the Stakeholder entry card: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card needs, so it draws, reads and adds with no host object written.",
@@ -65,6 +65,7 @@
     "@kaigilb/gilbplatformcode-card-group": "file:../card-group",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
     "@kaigilb/gilbplatformcode-card-references": "file:../card-references",
+    "@kaigilb/gilbplatformcode-contact-annotation": "file:../contact-annotation",
     "@kaigilb/gilbplatformcode-contact-header": "file:../contact-header",
     "@kaigilb/gilbplatformcode-contact-kind-catalogue": "file:../contact-kind-catalogue",
     "@kaigilb/gilbplatformcode-contact-kind-model": "file:../contact-kind-model",
