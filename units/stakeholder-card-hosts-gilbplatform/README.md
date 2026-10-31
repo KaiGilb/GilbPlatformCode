@@ -117,7 +117,7 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 install-links=true
 ```
 
-The package ships TypeScript source (`src/`); your bundler compiles it. The closure is 119 units besides this one. Of these, 45 are not in the closure of `online-stakeholder-card` (the held card and its peers, and the standalone Org units); `org-hierarchy` is a dev dependency only (the tests draw it); the provider imports nothing of it.
+The package ships TypeScript source (`src/`); your bundler compiles it. The closure is 125 units besides this one. Of these, 45 are not in the closure of `online-stakeholder-card` (the held card and its peers, and the standalone Org units); `org-hierarchy` is a dev dependency only (the tests draw it); the provider imports nothing of it.
 
 ## Styling
 

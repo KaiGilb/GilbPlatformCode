@@ -79,7 +79,7 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 install-links=true
 ```
 
-The package ships TypeScript source (`src/`); your bundler compiles it. The closure is 132 units besides this one. Install it once: a second copy has its own context.
+The package ships TypeScript source (`src/`); your bundler compiles it. The closure is 138 units besides this one. Install it once: a second copy has its own context.
 
 ## Styling
 
