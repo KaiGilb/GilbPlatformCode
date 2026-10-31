@@ -23,7 +23,7 @@
     "the last-workspace memory, the vault client's seeding, the read memo and the device keys stay in the app or are not taken;",
     "the hub registers the device copy, so a bare `setPrincipal` also closes and wipes it;",
     "the hub registers the cache the kit is given, since `createSessionCache` does not.",
-    "0.2.0: no line of `speedKit.ts` changed. The peer ranges move with the units it re-exports (`record-sync` ^0.4.1, `session-cache` ^0.2.0, `use-cached` ^0.2.0), so `cache.peek` can carry `partial` and a loader can be handed a `LoadContext`. A preview never reaches `onCommit`, so it is never put on the device; `src/firstPage.test.ts` pins that."
+    "0.2.0: the `onCommit` listener of `start` is installed right after the device copy is open, before `adopt` and `hydrate` (it was after `hydrate`, so an answer that landed during a slow read was never saved); same person and `persistResources` checks; a fix made in the glue, which has no source in Social. The peer ranges move with the units it re-exports (`record-sync` ^0.4.1, `session-cache` ^0.2.0, `use-cached` ^0.2.0), so `cache.peek` can carry `partial` and a loader can be handed a `LoadContext`. A preview never reaches `onCommit`, so it is never put on the device; `src/firstPage.test.ts` pins that, and the order of the listener."
   ],
   "newFiles": [
     "src/index.ts",

@@ -84,3 +84,49 @@ describe("a preview and a change of person", () => {
     expect(await disk(BEN)).not.toMatch(/ANN-/);
   });
 });
+
+describe("a commit that lands while the disk is still being read", () => {
+  /** A kit whose disk read is held by hand. */
+  function slowKit() {
+    const gate = deferred<void>();
+    const openKv = async () => {
+      const kv = (await indexedDbKv(factory, "example-cache"))!;
+      return { ...kv, read: async (p: string, w: string) => { await gate.promise; return kv.read(p, w); } };
+    };
+    return { gate, kit: makeKit(factory, { persistResources: ["entries"], openKv }) };
+  }
+
+  test("is saved after the read: the listener is installed before adopt and hydrate", async () => {
+    const { gate, kit } = slowKit();
+    const hydrated = deferred<void>();
+    const started = await kit.start(ANN, { workspace: WS, persist: noTimer, waitMs: 20, onHydrated: () => hydrated.resolve() });
+    expect(started.hydrated).toBe(false); // start stopped waiting; the read is still held
+    const key = cacheKey(WS, "entries");
+    kit.cache.set(key, ["NET-1", "NET-2"]); // the network answered during the read
+    await kit.currentPersist()!.flush();
+    gate.resolve();
+    await hydrated.promise;
+    await kit.currentPersist()!.flush();
+    expect(await disk(ANN)).toContain("NET-2");
+  });
+
+  test("the copy read late is shown while the first load is still running, and the answer then replaces it (end to end through the kit)", async () => {
+    const first = kitOf();
+    await first.start(ANN, { workspace: WS, persist: noTimer });
+    first.cache.set(cacheKey(WS, "entries"), ["DEVICE-1", "DEVICE-2", "DEVICE-3"]);
+    await first.currentPersist()!.flush();
+    __freshPageForTests(); // a reload: the memory is gone, the disk stays
+    const { gate, kit } = slowKit();
+    const hydrated = deferred<void>();
+    const key = (await (async () => { await kit.start(ANN, { workspace: WS, persist: noTimer, waitMs: 20, onHydrated: () => hydrated.resolve() }); return cacheKey(WS, "entries"); })());
+    const answer = deferred<string[]>();
+    const asked = kit.cache.swr(key, () => answer.promise); // the page mounted and started its load
+    expect(kit.cache.peek(key).data).toBeUndefined();
+    gate.resolve();
+    await hydrated.promise;
+    expect(kit.cache.peek(key)).toMatchObject({ data: ["DEVICE-1", "DEVICE-2", "DEVICE-3"], updating: true });
+    answer.resolve(["NET-1", "NET-2", "NET-3", "NET-4"]);
+    await asked.promise;
+    expect(kit.cache.peek(key)).toMatchObject({ data: ["NET-1", "NET-2", "NET-3", "NET-4"], updating: false });
+  });
+});
