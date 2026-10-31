@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-online-stakeholder-card",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.",
@@ -23,6 +23,7 @@
     "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
     "@kaigilb/gilbplatformcode-card-group": "file:../card-group",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-contact-annotation": "file:../contact-annotation",
     "@kaigilb/gilbplatformcode-contact-header": "file:../contact-header",
     "@kaigilb/gilbplatformcode-contact-kind-catalogue": "file:../contact-kind-catalogue",
     "@kaigilb/gilbplatformcode-contact-kind-model": "file:../contact-kind-model",
