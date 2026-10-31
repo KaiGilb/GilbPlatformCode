@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-own-card-state",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Tells a record card whether the record is the signed-in person's own card, and draws the band that says so.",

@@ -24,9 +24,9 @@ export const OWN_CARD_WORDS = {
  * The band at the top of the own card.
  *
  * @param state the record's own-card state (`useOwnCard`); the band draws only for `own`
- * @param onOpen opens a record by id in this app (the other card)
+ * @param onOpen opens a record by id in this app (the other card); since 0.1.1 the second argument is that card's full address, so the host can name its vault
  */
-export function OwnCardBand({ state, onOpen }: { state: OwnCardState; onOpen: (id: string) => void }) {
+export function OwnCardBand({ state, onOpen }: { state: OwnCardState; onOpen: (id: string, uri?: string) => void }) {
   if (!state.own) return null;
   const s = state.standing;
   const idOf = (uri: string) => uri.slice(uri.lastIndexOf("/") + 1);
@@ -44,7 +44,7 @@ export function OwnCardBand({ state, onOpen }: { state: OwnCardState; onOpen: (i
         <button
           type="button"
           data-testid="own-card-open-mynet-card"
-          onClick={() => onOpen(s.mynetCardId)}
+          onClick={() => onOpen(s.mynetCardId, s.mynetCardUri)}
           className="self-start min-h-[44px] text-left text-[var(--accent-ink)] underline underline-offset-2"
         >
           {OWN_CARD_WORDS.openOther}
@@ -57,7 +57,7 @@ export function OwnCardBand({ state, onOpen }: { state: OwnCardState; onOpen: (i
             <button
               key={uri}
               type="button"
-              onClick={() => onOpen(idOf(uri))}
+              onClick={() => onOpen(idOf(uri), uri)}
               className="self-start min-h-[44px] text-left text-[var(--accent-ink)] underline underline-offset-2"
             >
               {OWN_CARD_WORDS.openAlso}
