@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-use-place-claims",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The state of a record's addresses on a card: what was read, whether it was all of it, and the acts that save, change and remove one.",

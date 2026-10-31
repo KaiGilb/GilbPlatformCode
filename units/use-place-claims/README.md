@@ -85,13 +85,17 @@ Everything else is GilbApp's code. Each change is marked `CHANGED` in the source
 7. **Surprise 12:** `factsSurvived`'s comment said it compares 'only label/street/places'; its code also compares Address 1, Address 2 and the Postal Code. The comment now says what the code does. The code is unchanged.
 8. `usePlaceClaims`'s MyNet-adaptation header and the comments that named a cycle or an agent are reworded with the same facts.
 
+## Changes in 0.1.1
+
+- After every write's read-back (save, change, remove, and the reload after a partial create) the queries held under the shared key `placeClaimsKey(vaultId)`, but not that key itself, are invalidated. The one card's observer of the holder's addresses lives under it, so a linked card's merge is not served from the answer before the write.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9bce109d5a3`: `src/lib/mynet/place/usePlaceClaims.ts` lines 1-358 to `src/usePlaceClaims.ts`.
 
 ## Tests
 
-`npx vitest run`, 49 tests in 3 files:
+`npx vitest run`, 50 tests in 3 files (0.1.1: one new, the invalidation after a write's read-back):
 
 - `usePlaceClaims.test.tsx` 34: the five states, one test each (no-vault with no request; reading; failed with the fixed sentence and the detail logged; incomplete with the claims read; ready with [] meaning none); one shape under the key, and two cards sharing one read; save / amend / remove resolve the truth only on the read-back (ported in intent from GilbApp's `AddressRows.*` write cases at the level of the hook), including a store that accepts and does not keep, a failed read-back, an incomplete read-back, the partial save, the geo refusal, a legacy address, a shared address; no exported sentence and no sentence of a failed act contains `http`, `/base/`, a status or a term path; `factsSurvived` (every line, places, unnamed lines, trim).
 - `exports.test.ts` 1; `hostAgnostic.test.ts` 13.

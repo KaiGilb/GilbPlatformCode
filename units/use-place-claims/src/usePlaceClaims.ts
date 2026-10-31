@@ -178,6 +178,14 @@ export function usePlaceClaims(
           setStatus("failed");
         }
         return null;
+      } finally {
+        // CHANGED (0.1.1): a fresh read is the read-back of a write. The queries held UNDER the shared key (the one card's observer of the holder's addresses, whose key starts
+        // with it) are now out of date: mark them so, so a linked card's merge never says "You have the same on your card" from the answer before the write. The shared
+        // key itself is excluded: it was just read.
+        if (fresh) {
+          const base = placeClaimsKey(vaultId);
+          void qc.invalidateQueries({ queryKey: base, predicate: (q) => q.queryKey.length > base.length });
+        }
       }
     },
     [vaultId, subject, qc],
