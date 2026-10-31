@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-set-fields",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws and edits the Relations and Contact-preferences fields of a stakeholder card from the ontology's field set.",

@@ -377,7 +377,7 @@ describe("values", () => {
     const onOpenRef = vi.fn();
     setField({ values: [GROUP], onOpenRef });
     fireEvent.click(screen.getByRole("button", { name: "Label of g1" }));
-    expect(onOpenRef).toHaveBeenCalledWith("g1");
+    expect(onOpenRef).toHaveBeenCalledWith("g1", GROUP);
   });
   it("in presentation shows the name only (the address is not drawn under it)", () => {
     setField({ values: [GROUP] }, { editing: false });
