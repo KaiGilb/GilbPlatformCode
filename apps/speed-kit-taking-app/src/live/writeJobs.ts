@@ -1,6 +1,6 @@
 // The three live writes as background jobs (RuleAppspeedInstantAction): rename one entry, add test entries, end this app's test entries.
 // Each says "done" only after a read-back shows the new state. No request is made here directly: every one goes through the writer's gate.
-import { cache } from "@kaigilb/gilbplatformcode-speed-kit";
+import { cache, updated } from "@kaigilb/gilbplatformcode-speed-kit";
 import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
 import { entriesKey, loadEntries, type Entry } from "../entries";
 import { speed } from "../speed";
@@ -11,6 +11,10 @@ import { MAX_IN_FLIGHT, NAME_PREFIX, WriteFailed, type Writer } from "./writes";
 export interface JobDeps { writer: Writer; client: PlatformClient; principal: string; vault: string }
 
 const refreshList = (d: JobDeps): Promise<Entry[]> => cache.sessionCache.refresh(entriesKey(d.vault), loadEntries(d.client, d.vault));
+
+/** Reloads the list after a write that is already done and read back. A failed reload never turns that write into a failure: the caller gets the reason (or null). */
+const reloadAfterWrite = (d: JobDeps): Promise<unknown | null> => refreshList(d).then(() => null, (e: unknown) => e ?? new Error("the list did not load"));
+const PRESS_REFRESH = " The list could not be reloaded; press Refresh.";
 
 /** Runs `worker` over `items` with at most `limit` in flight. After the first failure nothing new is started; those in flight finish. */
 export async function runPool<T>(items: readonly T[], limit: number, worker: (item: T) => Promise<void>): Promise<string | null> {
@@ -47,8 +51,8 @@ export function enqueueRename(d: JobDeps, id: string, shown: string, newName: st
       const back = await d.writer.read(id); // read-back before "renamed"
       const backName = back.state === "live" ? back.entity.name : null;
       if (backName !== newName) return { ok: false, message: `the platform accepted the change but reads the name back as ${JSON.stringify(backName)}` };
-      await refreshList(d);
-      return { ok: true, message: "Renamed." };
+      const late = await reloadAfterWrite(d);
+      return { ok: true, message: late === null ? "Renamed." : `Renamed.${PRESS_REFRESH}` };
     },
   });
 }
@@ -67,7 +71,9 @@ export function enqueueSeed(d: JobDeps, count: number, runId: string) {
         setProgress({ runId, k: made.length, n: count });
       });
       if (failure !== null) return { ok: false, message: `${made.length} made of ${count}; stopped: ${failure}`, data: { ids: made } };
-      const list = await refreshList(d);
+      // The create answers are the only per-entry check; the list is the seed's read-back. If it cannot be read, say so plainly: not a crash, and not "done".
+      let list: Entry[];
+      try { list = await refreshList(d); } catch (e) { return { ok: false, message: `Added ${made.length} of ${count}; could not check them in the list: ${updated.plainWhy(e, "the list did not load")}`, data: { ids: made } }; }
       const seen = list.filter((e) => e.name.startsWith(`${NAME_PREFIX}${runId} `)).length;
       if (seen !== count) return { ok: false, message: `${made.length} made, but the list shows ${seen} with run id ${runId}`, data: { ids: made } };
       return { ok: true, message: `Added ${made.length} of ${count}; the list shows ${seen} with run id ${runId}.`, data: { ids: made } };
@@ -97,8 +103,8 @@ export function enqueueEnd(d: JobDeps) {
       });
       removeMade(d.principal, d.vault, [...ended, ...gone]);
       if (failure !== null) { await refreshList(d).catch(() => undefined); return { ok: false, message: `${ended.length} ended; stopped: ${failure}`, data: { ids: ended } }; }
-      await refreshList(d);
-      return { ok: true, message: `Ended ${ended.length} test entries${skipped ? ` (${skipped} left alone: renamed away from the prefix)` : ""}${gone.length ? ` (${gone.length} were already ended)` : ""}.`, data: { ids: ended } };
+      const late = await reloadAfterWrite(d);
+      return { ok: true, message: `Ended ${ended.length} test entries${skipped ? ` (${skipped} left alone: renamed away from the prefix)` : ""}${gone.length ? ` (${gone.length} were already ended)` : ""}.${late === null ? "" : PRESS_REFRESH}`, data: { ids: ended } };
     },
   });
 }
