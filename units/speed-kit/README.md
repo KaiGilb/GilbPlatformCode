@@ -34,6 +34,7 @@ Measured on `apps/speed-kit-taking-app` (REAL Chromium and WebKit, MOCK vault, 6
 
 - A cold first visit waits for the whole `completeCopy`: `since=head`, then one walk page per 200 rows, then one `since=` pass. At 500 rows that was 5 requests one after the other, and the first row came after about 3.0 s.
 - After that, a page painted from memory in about 2 ms and from the device after a reload in about 10 ms.
+- Live, on production (REAL Chrome, vault `testappvaultaccess`, Kai signing in, 2026-10-30/31; the same app's live mode): at 503 entries the cold first visit took 1.6 to 1.7 s, memory 14 ms and the device 59 ms; at 3 entries, 1015 ms, 1.0 ms and 4.2 ms. One run each, desktop only.
 
 ## The rules and the unit that implements each
 
