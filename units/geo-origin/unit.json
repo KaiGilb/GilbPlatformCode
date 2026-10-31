@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "unit": "units/geo-origin",
+  "package": "@kaigilb/gilbplatformcode-geo-origin",
+  "version": "0.1.0",
+  "purpose": "The one setting \"which origin is the shared place catalogue\", with the two tests every read of it uses: is this value a catalogue row, and is this address inside the catalogue.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/mynet/geo/baseGeo.ts", "lines": [61, 64], "to": "src/geoOrigin.ts" },
+      { "path": "src/lib/mynet/geo/baseGeo.ts", "lines": [82, 84], "to": "src/geoOrigin.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The origin is a setting the app sets (`setGeoOrigin`, as `term-origin` does) and not a constant derived from a vault identity in the app's configuration; `isGeoEntityId` reads it at each call.",
+    "`isGeoUrl` and `resetGeoOrigin` are new: the fence of `geo-catalogue` and the test reset."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
