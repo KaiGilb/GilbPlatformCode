@@ -20,6 +20,8 @@ it("exports exactly these", () => {
     "claimSubjectsOf",
     "claimsAbout",
     "fieldsByComposite",
+    "isPartOfAddress",
+    "listFieldClaimsDetailing",
     "listMyPlaceFieldClaims",
     "listPlaceClaimsInVault",
     "placeClaimHasContent",

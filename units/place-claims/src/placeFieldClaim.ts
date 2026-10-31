@@ -287,3 +287,91 @@ export async function listMyPlaceFieldClaims(
   }
   return listing.complete ? { fields: out, complete: true } : { fields: out, complete: false, reason: listing.reason };
 }
+
+// ── the read the REMOVE of an address rests on (moved here from the write side's file because it reads, and uses this file's private helpers) ──
+
+
+/** A record Remove deletes with its address: its own id and entity URI. */
+export interface AddressPartRef {
+  readonly id: string;
+  readonly uri: string;
+}
+
+
+/**
+ * 🔴 WHAT REMOVE MAY DELETE, AND WHAT IT MUST LEAVE (Agent.Scaling N2 and R1, Cycle214 1e).
+ * `parts` are deleted with the address. `otherSubject` are ⛔ NEVER deleted.
+ */
+export interface AddressParts {
+  /** Records that are part of this address ({@link isPartOfAddress}): deleted with it. */
+  readonly parts: AddressPartRef[];
+  /** `a:detailOf` names this address, but the record is about someone the address is ⛔ not about
+   *  (another person's record). Left as it is; the caller logs a warning. */
+  readonly otherSubject: (AddressPartRef & { readonly subjects: readonly string[] | null })[];
+}
+
+
+/**
+ * 🔴 IS THIS STORED FIELD RECORD A PART OF THE ADDRESS? The rule Remove deletes by (Agent.Scaling
+ * R1, Cycle214 1e):
+ *   1. its `a:detailOf` names the address by id ({@link addressIdOfEdge}), as the read groups it;
+ *   2. it names ⛔ no one, or every `a:claimSubject` it names is one of the address's own, compared
+ *      by opaque id with `idFromResourceUri`, exactly as `claimsAbout` picks a card's addresses.
+ *      A record IRI may come back as `/base/e/`, `/vault/e/` or `base:e/`, or on another host.
+ * ⚠ Before R1, Remove compared the subjects as exact strings. An amend re-stamps the composite's
+ *   subject and ⛔ not its parts', so an address amended under another spelling of the same record
+ *   lost its parts on Remove: gone from the screen, still in the store. A record about ANOTHER
+ *   person has another id and still never passes.
+ *
+ * @param address the address's opaque id and its own `a:claimSubject` values, as stored now
+ * @returns `"part"` (delete with the address), `"other"` (names the address, about someone else:
+ *   keep and warn) or `null` (does not name the address)
+ */
+export function isPartOfAddress(
+  doc: Record<string, unknown>,
+  vocab: PlaceVocab,
+  address: { readonly id: string; readonly subjects: readonly string[] },
+): "part" | "other" | null {
+  // (Q1: `claimSubjectsOf` answers `null` for an unreadable subject, which makes this "other".)
+  const detailOf = firstRefId(picker(doc)(vocab.detailOf));
+  if (detailOf === null || !address.id || addressIdOfEdge(detailOf) !== address.id) return null;
+  return subjectsBelongToAddress(claimSubjectsOf(doc, vocab), address.subjects) ? "part" : "other";
+}
+
+
+/**
+ * 🔴 EVERY FIELD RECORD THAT IS PART OF ONE ADDRESS — read off the store at the moment of Remove,
+ * whatever field it holds (Agent.Scaling F3, Cycle214 1e).
+ *
+ * ⚠ Remove must ⛔ not trust only the last read's `claim.fields`: a record written since (another
+ * tab, a newer client adding a field kind) would be left behind with `a:detailOf` pointing at
+ * nothing — gone from every screen, still readable in the store. ⇒ the store is listed again here.
+ *
+ * 🔴 A record is a part, and Remove deletes it, by {@link isPartOfAddress} (Agent.Scaling R1).
+ *    ⛔ NEVER DELETE ANOTHER PERSON'S DATA (N2, Kai-Zen's decision): a record that names this
+ *    address but is about another person is returned in `otherSubject`, left exactly as it is, and
+ *    the caller logs a warning. Leaving it costs, at worst, a record that details nothing; deleting
+ *    it would destroy a fact about someone who did not ask for it.
+ * ⚠ These are records in the holder's own vault. ⛔ Nothing here touches a pod.
+ *
+ * @param address the address's opaque id and its own `a:claimSubject` values, as stored now
+ */
+export async function listFieldClaimsDetailing(
+  vaultId: string,
+  vocab: PlaceVocab,
+  address: { readonly id: string; readonly subjects: readonly string[] },
+): Promise<AddressParts & ReadMarker> {
+  const out: AddressParts = { parts: [], otherSubject: [] };
+  if (!vaultId || !address.id) return { ...out, complete: true };
+  const listing = await listFieldClaimRecords(vaultId, vocab);
+  for (const ref of listing.records) {
+    const id = idFromResourceUri(ref.entity);
+    const { doc } = await getListedResource(ref, vaultId);
+    const facts = doc as Record<string, unknown>;
+    const verdict = isPartOfAddress(facts, vocab, address);
+    if (verdict === "part") out.parts.push({ id, uri: ref.entity });
+    else if (verdict === "other") out.otherSubject.push({ id, uri: ref.entity, subjects: claimSubjectsOf(facts, vocab) });
+  }
+  // CHANGED (F4): whether the listing was the whole vault. A remove that works from an incomplete one would leave parts behind.
+  return listing.complete ? { ...out, complete: true } : { ...out, complete: false, reason: listing.reason };
+}

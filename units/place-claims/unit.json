@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/place-claims",
   "package": "@kaigilb/gilbplatformcode-place-claims",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Reads a person's addresses from the vault that holds them: the address claims, their field claims, and what each says.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -39,7 +39,8 @@
     "An incomplete read is said and what was read is kept (F4): `readPlaceClaimsInVault` answers `{ claims, complete, reason? }`; `listPlaceClaimsInVault` keeps the one card's `PlaceClaim[]` shape and rejects with `PlaceClaimsIncompleteError` (carrying the claims) when the read is not whole; `listMyPlaceFieldClaims` answers `{ fields, complete, reason? }`.",
     "A field left out is counted (F5): `PlaceClaim.hiddenFieldCount`. GilbApp left a field out of an address when its subjects are not the address's (or cannot be read) and wrote a `console.warn` naming it; nothing on the screen said so.",
     "Not taken here: the write side of both files (`placeClaimFacts`, `createPlaceClaim`, `updatePlaceClaim`, `removePlaceClaim`, `slotsForFields`, `planFieldWrites`, `fieldSpecs`, `compositeEntityUri`, `DIRECT_READER`, `PlaceFieldClaimError`, the grant-plane fence, `placeFieldClaimFacts`, the field create/update/remove, `isPartOfAddress`, `listFieldClaimsDetailing`) are `place-claim-write`'s. `claimStreetLine`, `claimPlaceIds`, `isDecomposed`, `needsFieldMigration`, `boundPlaceIds` are the unit `place-lines`'s (equal to GilbApp's; `claimStreetLine` is not used: `claimFieldText(claim, \"streetLine\")` reads the same). `factsSurvived` and the hook `usePlaceClaims` are `use-place-claims`'s (the key and the freshness are here).",
-    "The module headers and the comments that named hosts, a cycle or an agent are reworded with the same facts. No other code changed."
+    "The module headers and the comments that named hosts, a cycle or an agent are reworded with the same facts. No other code changed.",
+    "0.1.1 (H15d): `isPartOfAddress`, `listFieldClaimsDetailing` (answering a completeness marker) and their types are exported: the read half of GilbApp's remove, moved from the write side's file because they read and use this file's private helpers."
   ],
   "newFiles": [
     "src/index.ts"
