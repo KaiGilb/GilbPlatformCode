@@ -3,7 +3,7 @@
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
   "version": "0.4.0",
-  "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card and the held stakeholder record card need, so they draw, read, add and edit with no host object written.",
+  "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
@@ -175,9 +175,9 @@
     "0.2.0 hosts the standalone Org units. src/hosts/ gains `createCardReferencesHost` (`changeRecordFactItems` of `record-fact-items`), `createOrgMarkHost` (`downloadFileOutcome` of `file-download-outcome`), `createOrgEmployeesHost` (`readResources` inline, `useSheetHistory` and `dropStaleSheetEntry` of `sheet-history`, the photo keys, and `RecordFace` when given) and `createPickerQuery` (`usePickerQuery`, inline). The provider mounts `OrgEmployeesHostContext`, `OrgMarkHostContext` and `PickerQueryContext` (which `org-hierarchy` reads); the `card-references` host is a factory, as the unit takes it as an argument.",
     "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150). 0.4.0: `getResource` (lws.ts 57-71) and `readResources` (164-170) are removed: `readResources` of `vault-resources` is token-equal (91 tokens) and its `getResource` differs only by also answering `etag` and by `resourceOf` being a function, which the one caller (`readResources`) does not read.",
     "0.3.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`.",
-    "0.4.0 hosts the held card (`stakeholder-record-card`). src/hosts/ gains `createStakeholderRecordCardHost`, `createContactRowsHost`, `createAdderCardHost`, `createAddedByHost` and `createOtherLinkedRecordsHost`; the provider mounts `StakeholderRecordCardHostContext`, `RefLabelContext`, `ContactRowsHostProvider`, `StakeholderSetFieldsHostProvider` (the `createCardReferencesHost()` host), `OtherLinkedRecordsHostContext`, `AddedByHostContext` and `AdderCardHostProvider`. The field pickers, the place members, `holdingVaultOf` and the eight render slots of the held card stay absent.",
+    "0.4.0 holds what the held card needs from other units (the held card's own host is `stakeholder-record-card-host-gilbplatform`; this unit does not import the card). src/platform.ts: `StakeholderCardPlatformContext` and `useStakeholderCardPlatform()` carry the shell hook, `photoReadKeys`, `photoReadKeysSync`, the label hook and `persistVocabulary`. src/hosts/ gains `createContactRowsHost`, `createAdderCardHost`, `createAddedByHost` and `createOtherLinkedRecordsHost`; the provider mounts `RefLabelContext`, `ContactRowsHostProvider`, `StakeholderSetFieldsHostProvider` (the `createCardReferencesHost()` host), `OtherLinkedRecordsHostContext`, `AddedByHostContext`, `AdderCardHostProvider` and the platform context.",
     "0.4.0: `useHolderOriginLine` and `useContactLabels` of the header host default to `contact-card-slots`' and `contact-labels`' (they defaulted to none); the provider props still override. src/refLabel.ts is the `entity-ref-value` README example hook (GilbApp `useResolvedRefLabel`, EntityRefValue.tsx 18-46). `settings.mynetProfileUrl` is set through `setMyNetProfileUrl` of `own-card-state`. `onOpenRecord(id, door?)` passes the vault a create of this session wrote the record into (`createdInVaultOf`) when known.",
-    "0.4.0 peers: added adder-card, added-by, contact-card-slots, contact-labels, contact-rows, entity-ref-value, home-dial, main-tag, modes-label, other-linked-records, own-card-state, phone-value, record-detail-reads, record-sidecar-save, skill-picker-sheet, social-logo, stakeholder-record-card, stakeholder-set-fields, vault-resources; dropped lws-vault-sets, plan-self-source, resource-id, vault-namespace. test/ gains `heldWorld.ts` and `contactCatalogue.master.json` (copied from `contact-labels`, the master's host replaced when loaded)."
+    "0.4.0 peers: added adder-card, added-by, contact-card-slots, contact-labels, contact-rows, entity-ref-value, home-dial, main-tag, modes-label, other-linked-records, own-card-state, phone-value, record-detail-reads, record-sidecar-save, skill-picker-sheet, social-logo, stakeholder-set-fields, vault-resources; dropped lws-vault-sets, plan-self-source, resource-id, vault-namespace."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
@@ -186,7 +186,6 @@
     "src/card.test.tsx",
     "src/defaults.ts",
     "src/example.test.tsx",
-    "src/heldCard.test.tsx",
     "src/heldHosts.test.tsx",
     "src/hostAgnostic.test.ts",
     "src/hosts.test.tsx",
@@ -203,12 +202,12 @@
     "src/hosts/pickerQuery.ts",
     "src/hosts/stakeholderContactHeaderHost.ts",
     "src/hosts/stakeholderListDoorsHost.ts",
-    "src/hosts/stakeholderRecordCardHost.ts",
     "src/index.ts",
     "src/inline.test.ts",
     "src/inline.ts",
     "src/photoTerm.test.ts",
     "src/photoTerm.ts",
+    "src/platform.ts",
     "src/provider.test.tsx",
     "src/provider.tsx",
     "src/refLabel.ts",
@@ -216,14 +215,12 @@
     "src/shell.test.tsx",
     "src/shell.ts",
     "src/standalone.test.tsx",
-    "test/contactCatalogue.master.json",
     "test/example.tsx",
     "test/fakeSession.ts",
     "test/fixturePlatform.ts",
     "test/fixtureReference.ts",
     "test/fixtureTag.ts",
     "test/harness.tsx",
-    "test/heldWorld.ts",
     "test/memoryStorage.ts",
     "test/setup.ts",
     "test/support.ts",
@@ -407,34 +404,29 @@
       "implementedBy": "inline, src/inline.ts, via `createPickerQuery`; the provider mounts `PickerQueryContext`"
     },
     {
-      "member": "StakeholderRecordCardHost.useShell",
+      "member": "StakeholderCardPlatform.useShell",
       "replaces": "useShell(), GilbApp src/components/ShellContext.ts:412",
       "implementedBy": "this unit (src/shell.ts), the same hook as the online card's"
     },
     {
-      "member": "StakeholderRecordCardHost.photoReadKeys",
+      "member": "StakeholderCardPlatform.photoReadKeys",
       "replaces": "photoReadKeys(), src/lib/base/photoTerm.ts:37",
       "implementedBy": "`photoReadKeysOf(resolver)`, src/photoTerm.ts"
     },
     {
-      "member": "StakeholderRecordCardHost.photoReadKeysSync",
+      "member": "StakeholderCardPlatform.photoReadKeysSync",
       "replaces": "photoReadKeysSync(), src/lib/base/photoTerm.ts:74",
       "implementedBy": "`photoReadKeysSyncOf(resolver)`, src/photoTerm.ts"
     },
     {
-      "member": "StakeholderRecordCardHost.vocabulary",
-      "replaces": "stakeholderCardVocabularyQuery()",
-      "implementedBy": "createCardVocabularyHost()"
+      "member": "StakeholderCardPlatform.persistVocabulary",
+      "replaces": "the vocabulary setting of the held card",
+      "implementedBy": "provider prop `persistVocabulary`, read at each call; absent when not given"
     },
     {
-      "member": "StakeholderRecordCardHost.useRefLabel",
+      "member": "StakeholderCardPlatform.useRefLabel",
       "replaces": "useResolvedRefLabel, src/components/records/EntityRefValue.tsx:18-46",
       "implementedBy": "src/refLabel.ts (the `entity-ref-value` example hook); also mounted as RefLabelContext"
-    },
-    {
-      "member": "StakeholderRecordCardHost.holdingVaultOf and the render slots",
-      "replaces": "holdingVaultOf and the host-owned sections",
-      "implementedBy": "absent: the card's defaults stand"
     },
     {
       "member": "ContactRowsHost (all members)",

@@ -1,7 +1,7 @@
 // The provider a developer mounts once: it sets the platform's settings and the session, then mounts the query client, the three host
 // contexts of the online stakeholder card (the card's own, the contact header's and the one card's), the three of the standalone Org units
-// (the Employees group's, the mark's and the pickers' query hook) and, since 0.4.0, the hosts of the held card (`stakeholder-record-card`) and of
-// its peers. The online card and the held card draw, read and write inside it.
+// (the Employees group's, the mark's and the pickers' query hook) and, since 0.4.0, the label hook and the hosts of the peers of the held card
+// (`stakeholder-record-card`, hosted by its own unit), and `StakeholderCardPlatformContext`, from which that unit builds the card's host.
 
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,7 +13,6 @@ import { useContactLabels as heldContactLabels } from "@kaigilb/gilbplatformcode
 import { RefLabelContext } from "@kaigilb/gilbplatformcode-entity-ref-value";
 import { OtherLinkedRecordsHostContext } from "@kaigilb/gilbplatformcode-other-linked-records";
 import { createdInVaultOf } from "@kaigilb/gilbplatformcode-record-detail-reads";
-import { StakeholderRecordCardHostContext, type StakeholderRecordCardHost } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
 import { StakeholderSetFieldsHostProvider } from "@kaigilb/gilbplatformcode-stakeholder-set-fields";
 import { OnlineStakeholderCardHostContext, type OnlineStakeholderCardHost } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderContactHeaderHostContext } from "@kaigilb/gilbplatformcode-stakeholder-contact-header";
@@ -34,7 +33,6 @@ import {
   createCardReferencesHost,
   createContactRowsHost,
   createOtherLinkedRecordsHost,
-  createStakeholderRecordCardHost,
   createOneCardHost,
   createOnlineStakeholderCardHost,
   createOrgEmployeesHost,
@@ -53,6 +51,7 @@ import {
 } from "./defaults";
 import { photoReadKeysOf, photoReadKeysSyncOf, photoTermResolverFor } from "./photoTerm";
 import { applyPlatformSetup, applySession, setupKey, type StakeholderCardSettings } from "./settings";
+import { StakeholderCardPlatformContext, type StakeholderCardPlatform } from "./platform";
 import { useRefLabel } from "./refLabel";
 import { createUseSession, createUseShell } from "./shell";
 
@@ -82,7 +81,7 @@ export interface StakeholderCardGilbPlatformProviderProps {
   /**
    * Opens a record of the holder's by its id, in your page (GilbApp's `openRecordFromList`). Default: nothing, so after "+ Add your own" the card stays in place.
    * Since 0.4.0 it is called with the record's door as the second argument when the provider knows it: the id of the vault a create of this session wrote the
-   * record into. Pass it on to `StakeholderRecordCard` as `vaultId`. Read at each call.
+   * record into. Pass it on to the held card as `vaultId`. Read at each call.
    */
   onOpenRecord?: (id: string, door?: string) => void;
   /** A query client you own. Absent: the provider makes one with the app's defaults (`staleTime` 30 s, no refetch on focus, `retry` 1). A given one is used as it is. */
@@ -194,12 +193,13 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
       ...(at.RecordFace ? { RecordFace: at.RecordFace } : {}),
     });
     const photoReadKeys = photoReadKeysOf(resolver);
-    const heldCard: StakeholderRecordCardHost = createStakeholderRecordCardHost({
+    const platform: StakeholderCardPlatform = {
       useShell,
-      photoReadKeys,
+      photoReadKeys: photoReadKeysOf(resolver),
       photoReadKeysSync: photoReadKeysSyncOf(resolver),
+      useRefLabel,
       ...(at.persistVocabulary ? { persistVocabulary: () => latest.current.persistVocabulary?.() ?? true } : {}),
-    });
+    };
     const adderCard: AdderCardHost = createAdderCardHost(createUseSession(session));
     const addedShell = { openRecordFromList };
     const addedBy: AddedByHost = createAddedByHost(() => addedShell);
@@ -209,7 +209,7 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
     });
     const setFields: StakeholderSetFieldsHost = createCardReferencesHost();
     const contactRows: ContactRowsHost = createContactRowsHost();
-    return { card, header, oneCard, orgEmployees, orgMark: createOrgMarkHost(), pickerQuery: createPickerQuery(), heldCard, adderCard, addedBy, otherLinked, setFields, contactRows };
+    return { card, header, oneCard, orgEmployees, orgMark: createOrgMarkHost(), pickerQuery: createPickerQuery(), platform, adderCard, addedBy, otherLinked, setFields, contactRows };
   }, [qc, session, props.origin, props.geoOrigin]);
 
   // 5. The query client and the three contexts.
@@ -227,7 +227,7 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
                         <OtherLinkedRecordsHostContext.Provider value={hosts.otherLinked}>
                           <StakeholderSetFieldsHostProvider host={hosts.setFields}>
                             <ContactRowsHostProvider host={hosts.contactRows}>
-                              <StakeholderRecordCardHostContext.Provider value={hosts.heldCard}>{children}</StakeholderRecordCardHostContext.Provider>
+                              <StakeholderCardPlatformContext.Provider value={hosts.platform}>{children}</StakeholderCardPlatformContext.Provider>
                             </ContactRowsHostProvider>
                           </StakeholderSetFieldsHostProvider>
                         </OtherLinkedRecordsHostContext.Provider>

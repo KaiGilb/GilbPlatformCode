@@ -50,11 +50,12 @@ expectTypeOf<ReturnType<typeof createOrgEmployeesHost>>().toEqualTypeOf<OrgEmplo
 expectTypeOf<ReturnType<typeof createPickerQuery>>().toEqualTypeOf<UsePickerQuery>();
 
 describe("the export list", () => {
-  test("is the provider, the fifteen factories, the defaults constant and the sentence", () => {
+  test("is the provider, the fourteen factories, the defaults constant and the sentence", () => {
     expect(Object.keys(unit).sort()).toEqual([
       "NO_OWN_VAULT_SAYS",
       "STAKEHOLDER_CARD_QUERY_DEFAULTS",
       "StakeholderCardGilbPlatformProvider",
+      "StakeholderCardPlatformContext",
       "createAddedByHost",
       "createAdderCardHost",
       "createCardReferencesHost",
@@ -69,7 +70,8 @@ describe("the export list", () => {
       "createPickerQuery",
       "createStakeholderContactHeaderHost",
       "createStakeholderListDoorsHost",
-      "createStakeholderRecordCardHost",
+      "useRefLabel",
+      "useStakeholderCardPlatform",
     ]);
   });
 });

@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card and the held stakeholder record card need, so they draw, read, add and edit with no host object written.",
+  "description": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -57,7 +57,6 @@
     "@kaigilb/gilbplatformcode-stakeholder-contact-header": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-list-doors": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "^0.2.0",
-    "@kaigilb/gilbplatformcode-stakeholder-record-card": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-set-fields": "^0.1.0",
     "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-key": "^0.1.0",
@@ -201,7 +200,6 @@
     "@kaigilb/gilbplatformcode-stakeholder-list-doors": "file:../stakeholder-list-doors",
     "@kaigilb/gilbplatformcode-stakeholder-list-reader": "file:../stakeholder-list-reader",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "file:../stakeholder-list-state",
-    "@kaigilb/gilbplatformcode-stakeholder-record-card": "file:../stakeholder-record-card",
     "@kaigilb/gilbplatformcode-stakeholder-set-fields": "file:../stakeholder-set-fields",
     "@kaigilb/gilbplatformcode-stakeholder-ui-kit": "file:../stakeholder-ui-kit",
     "@kaigilb/gilbplatformcode-stated-by": "file:../stated-by",

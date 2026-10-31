@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(added-by|adder-card|base-origin|card-references|contact-card-slots|contact-labels|contact-rows|entity-ref-value|file-download-outcome|grantee-face|home-dial|lws-records|lws-session-bridge|main-tag|modes-label|one-card|online-stakeholder-card|org-employees|org-mark|other-linked-records|own-card|own-card-state|person-create|phone-value|photo-term|plan-record-hooks|plan-stakeholder-io|reachable-vaults|record-detail-reads|record-fact-items|record-picker|record-sidecar-save|sheet-history|signin|skill-picker-sheet|social-logo|stakeholder-card-vocabulary|stakeholder-contact-header|stakeholder-list-doors|stakeholder-list-state|stakeholder-record-card|stakeholder-set-fields|term-origin|type-key|vault-list|vault-origin-rule|vault-profile-photo|vault-resources)$/,
+  /^@kaigilb\/gilbplatformcode-(added-by|adder-card|base-origin|card-references|contact-card-slots|contact-labels|contact-rows|entity-ref-value|file-download-outcome|grantee-face|home-dial|lws-records|lws-session-bridge|main-tag|modes-label|one-card|online-stakeholder-card|org-employees|org-mark|other-linked-records|own-card|own-card-state|person-create|phone-value|photo-term|plan-record-hooks|plan-stakeholder-io|reachable-vaults|record-detail-reads|record-fact-items|record-picker|record-sidecar-save|sheet-history|signin|skill-picker-sheet|social-logo|stakeholder-card-vocabulary|stakeholder-contact-header|stakeholder-list-doors|stakeholder-list-state|stakeholder-set-fields|term-origin|type-key|vault-list|vault-origin-rule|vault-profile-photo|vault-resources)$/,
   /^@kaigilb\/gilbplatformcode-signin\/session$/,
 ];
 

@@ -4,7 +4,8 @@ import { useContext } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
-import { StakeholderRecordCardHostContext, type StakeholderRecordCardShell } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
+import { StakeholderCardPlatformContext } from "./platform";
+import type { PlatformShell } from "./shell";
 import { readVaultOf, writeGuardOf } from "./shell";
 import { ANN, HOST, P, P_ENTITY, createWorld, type World } from "../test/world";
 import { fakeSession } from "../test/fakeSession";
@@ -76,16 +77,16 @@ describe("the shell inside the provider", () => {
     vi.stubGlobal("fetch", world.fetch);
   });
 
-  function shellsOf(into: StakeholderRecordCardShell[]) {
+  function shellsOf(into: PlatformShell[]) {
     return function Shell() {
-      into.push(useContext(StakeholderRecordCardHostContext)!.useShell());
+      into.push(useContext(StakeholderCardPlatformContext)!.useShell());
       return null;
     };
   }
-  const last = (a: StakeholderRecordCardShell[]) => a[a.length - 1]!;
+  const last = (a: PlatformShell[]) => a[a.length - 1]!;
 
   test("the guard is the guard of the vault on screen: writable for the landing vault, read-only for a vault held read-only", async () => {
-    const seen: StakeholderRecordCardShell[] = [];
+    const seen: PlatformShell[] = [];
     const Shell = shellsOf(seen);
     const view = mountInProvider(world, <Shell />, { viewedVaultId: P });
     await waitFor(() => expect(last(seen).writeGuard).toEqual({ allowed: true, reason: null }));
@@ -95,7 +96,7 @@ describe("the shell inside the provider", () => {
   });
 
   test("with no vault on screen the landing vault's guard stands", async () => {
-    const seen: StakeholderRecordCardShell[] = [];
+    const seen: PlatformShell[] = [];
     const Shell = shellsOf(seen);
     mountInProvider(world, <Shell />);
     await waitFor(() => expect(last(seen).writeGuard).toEqual({ allowed: true, reason: null }));
@@ -113,7 +114,7 @@ describe("the shell inside the provider", () => {
       }
       return none.fetch(input, init);
     });
-    const seen: StakeholderRecordCardShell[] = [];
+    const seen: PlatformShell[] = [];
     const Shell = shellsOf(seen);
     mountInProvider(none, <Shell />);
     await waitFor(() => expect(last(seen).writeGuard).toEqual({ allowed: false, reason: "Checking which vaults you can reach…" }));
@@ -123,7 +124,7 @@ describe("the shell inside the provider", () => {
   });
 
   test("the read vault is in the content scope, with its id", async () => {
-    const seen: StakeholderRecordCardShell[] = [];
+    const seen: PlatformShell[] = [];
     const Shell = shellsOf(seen);
     mountInProvider(world, <Shell />, { viewedVaultId: OTHER });
     await waitFor(() => expect(last(seen).contentScope).toMatchObject({ readVaultId: OTHER, reach: null }));
@@ -131,7 +132,7 @@ describe("the shell inside the provider", () => {
   });
 
   test("the session carries the vault's short web id when the sign-in has one, and leaves it out when it has none", async () => {
-    const seen: StakeholderRecordCardShell[] = [];
+    const seen: PlatformShell[] = [];
     const Shell = shellsOf(seen);
     const withShort = fakeSession({ principal: ANN, vault: { entity: P_ENTITY, id: "annvault", name: "Ann", shortWebId: "ann" }, vaults: [{ vaultId: P, modes: ["read", "write"] }] }).session;
     mountInProvider(world, <Shell />, { session: withShort });

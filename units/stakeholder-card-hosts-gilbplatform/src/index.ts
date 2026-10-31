@@ -2,6 +2,9 @@ export { StakeholderCardGilbPlatformProvider, STAKEHOLDER_CARD_QUERY_DEFAULTS } 
 export type { StakeholderCardGilbPlatformProviderProps } from "./provider";
 export type { StakeholderCardSettings } from "./settings";
 export type { PlatformShell, WriteGuard } from "./shell";
+export { StakeholderCardPlatformContext, useStakeholderCardPlatform } from "./platform";
+export type { StakeholderCardPlatform } from "./platform";
+export { useRefLabel } from "./refLabel";
 export {
   createAddedByHost,
   createAdderCardHost,
@@ -17,7 +20,6 @@ export {
   createPickerQuery,
   createStakeholderContactHeaderHost,
   createStakeholderListDoorsHost,
-  createStakeholderRecordCardHost,
 } from "./hosts";
 export type {
   CardVocabularyHostOptions,
@@ -25,6 +27,5 @@ export type {
   OnlineStakeholderCardHostOptions,
   OrgEmployeesHostOptions,
   StakeholderContactHeaderHostOptions,
-  StakeholderRecordCardHostOptions,
 } from "./hosts";
 export { NO_OWN_VAULT_SAYS } from "@kaigilb/gilbplatformcode-adder-card";

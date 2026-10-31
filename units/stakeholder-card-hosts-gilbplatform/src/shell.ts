@@ -12,7 +12,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { OnlineStakeholderCardShell } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
-import type { StakeholderRecordCardShell } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { modesLabel } from "@kaigilb/gilbplatformcode-modes-label";
 import { useVaults } from "@kaigilb/gilbplatformcode-reachable-vaults";
@@ -65,8 +64,15 @@ export function readVaultOf(vaults: readonly ReachableVault[], viewedVaultId: st
   return selected ?? vaults.find((p) => p.isLandingVault) ?? null;
 }
 
-/** What the held card and the online card both read of the shell. */
-export type PlatformShell = OnlineStakeholderCardShell & StakeholderRecordCardShell & { contentScope: { readVault: ReachableVault | null; readVaultId: string | null } };
+/**
+ * What the cards read of the shell: the online card's, and the held card's (`stakeholder-record-card`: `session.vault.shortWebId`, `contentScope.readVault`,
+ * `writeGuard`). The held card's own type is structurally this one.
+ */
+export type PlatformShell = OnlineStakeholderCardShell & {
+  session: { principal: string; vault?: { entity?: string | null; shortWebId?: string | null } | null } | null | undefined;
+  contentScope: { reach?: { vaultId: string } | null; readVault: ReachableVault | null; readVaultId: string | null };
+  writeGuard: WriteGuard;
+};
 
 /**
  * The hook that answers the cards' `useShell`. The session is read once from the credential (the query is shared by every card under the

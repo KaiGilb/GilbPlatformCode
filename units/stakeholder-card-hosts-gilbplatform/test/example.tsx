@@ -1,11 +1,9 @@
-// The one complete wiring of the Stakeholder cards on GilbPlatform: the provider with every prop, the online card of a person from the holder's circles,
-// and the held card of the record the holder keeps once "+ Add your own" has made it. It is type-checked with the unit and rendered by
-// `src/example.test.tsx`. Every value that names a place is a placeholder; yours are your own.
+// The one complete wiring of the Stakeholder entry card on GilbPlatform: the provider with every prop, and the card inside it. It is
+// type-checked with the unit and rendered by `src/example.test.tsx`. Every value that names a place is a placeholder; yours are your own.
 import { useState } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import type { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import { OnlineStakeholderCard } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
-import { StakeholderRecordCard } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
 import { StakeholderCardGilbPlatformProvider } from "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform";
 
 export function StakeholderScreen({ session, principal }: {
@@ -13,8 +11,9 @@ export function StakeholderScreen({ session, principal }: {
   principal: string; //          the person whose online card to draw (their principal)
 }) {
   const [myClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 } } }));
-  // Your page's own state: which record it shows. The provider tells it the record and, when it knows, the vault the record was made in (its door).
-  const [held, setHeld] = useState<{ id: string; door: string | undefined } | null>(null);
+  // Your page's own state: the record the card opened after "+ Add your own", and the vault it was made in (its door), when the provider knows it.
+  // Draw it with the held card of `stakeholder-record-card-host-gilbplatform` (`HeldStakeholderCard recordId vaultId`); this unit draws only the online card.
+  const [opened, setOpened] = useState<{ id: string; door: string | undefined } | null>(null);
   return (
     <StakeholderCardGilbPlatformProvider
       origin="https://example.test" //                                       required: the platform's vault origin
@@ -25,7 +24,7 @@ export function StakeholderScreen({ session, principal }: {
       geoOrigin="https://geo.example.test" //                                required: the origin of the shared world catalogue
       viewedVaultId={null} //                                                optional: the vault your screen shows; absent, the holder's landing vault
       refreshOnlineStakeholders={() => {}} //                                optional: draw your online list again (called before a record is opened)
-      onOpenRecord={(id, door) => setHeld({ id, door })} //                  optional: open a record in your page; door is the vault a create of this session wrote it into, when known
+      onOpenRecord={(id, door) => setOpened({ id, door })} //                optional: open a record in your page; door is the vault a create of this session wrote it into, when known
       queryClient={myClient} //                                              optional: your own client (its defaults are yours); absent, the provider makes one
       persistVocabulary={() => true} //                                      optional: whether the card vocabulary is kept on this device
       discoverVaultProfilePhoto={async () => ({ photoRef: null })} //        optional: finds the photo of a vault's profile; absent, the unit's own
@@ -44,17 +43,10 @@ export function StakeholderScreen({ session, principal }: {
         minOntologyQuery: 3, //                                              optional: the shortest query that reaches the ontology
         vocabTypeBatchRevisions: "", //                                      optional: platform revisions that serve the batched vocabulary read
         publicCorpusOrigin: "https://corpus.example.test", //                optional: the public term corpus for a rig with no ontology
-        mynetProfileUrl: "https://mynet.example.test/profile", //            optional, but give it for the held card: the "Edit in MyNet" link of the holder's own card
+        mynetProfileUrl: "https://mynet.example.test/profile", //            optional: the profile editor's address, for the held card's own-card band
       }}
     >
-      {held ? (
-        <>
-          <button type="button" onClick={() => setHeld(null)}>Back to the online card</button>
-          <StakeholderRecordCard recordId={held.id} {...(held.door ? { vaultId: held.door } : {})} />
-        </>
-      ) : (
-        <OnlineStakeholderCard principal={principal} placementMode="content" />
-      )}
+      {opened ? <p>Opened {opened.id}{opened.door ? ` in ${opened.door}` : ""}</p> : <OnlineStakeholderCard principal={principal} placementMode="content" />}
     </StakeholderCardGilbPlatformProvider>
   );
 }
