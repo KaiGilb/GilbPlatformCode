@@ -5,6 +5,7 @@ import { act, waitFor } from "@testing-library/react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { baseOrigin, localRigHosts, minOntologyQuery, ontologyApiOrigin, publicCorpusOrigin, systemVaultHosts, vocabTypeBatchRevisions } from "@kaigilb/gilbplatformcode-base-origin";
 import { termOrigin } from "@kaigilb/gilbplatformcode-term-origin";
+import { geoOrigin, isGeoEntityId } from "@kaigilb/gilbplatformcode-geo-origin";
 import { systemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { dpopReadAuth, dpopWriteAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { typeKey } from "@kaigilb/gilbplatformcode-type-key";
@@ -414,5 +415,56 @@ describe("a changed geoOrigin", () => {
     expect(next).not.toBe(first);
     expect(next.isGeoEntityId("https://elsewhere.example/base/e/x")).toBe(true);
     expect(next.isGeoEntityId(GEO + "/base/e/x")).toBe(false);
+  });
+});
+
+describe("the catalogue's origin (0.4.4)", () => {
+  test("geo-origin answers the geoOrigin prop after the first render, normalised", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    mountInProvider(world, <Probe />, { geoOrigin: `${GEO}/` });
+    expect(geoOrigin()).toBe(GEO);
+  });
+
+  test("a changed geoOrigin is applied at the next render (the setup key includes it)", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    const view = mountInProvider(world, <Probe />);
+    expect(geoOrigin()).toBe(GEO);
+    view.rerenderWith(<Probe />, { geoOrigin: "https://elsewhere.example" });
+    expect(geoOrigin()).toBe("https://elsewhere.example");
+  });
+
+  test("the inline isGeoEntityId of the one card and geo-origin's agree on the same inputs", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    mountInProvider(world, <Probe />);
+    const inline = seen.at(-1)!.oneCard!.isGeoEntityId;
+    const inputs: unknown[] = [
+      `${GEO}/base/e/paris`,
+      `${GEO}/base/e/`,
+      `${GEO}/base/t/Place`,
+      `${GEO}/base/search?q=x`,
+      `${GEO}`,
+      "https://elsewhere.example.org/base/e/paris",
+      "base:e/paris",
+      "",
+      42,
+      null,
+      undefined,
+      { "@id": `${GEO}/base/e/paris` },
+    ];
+    for (const v of inputs) expect(isGeoEntityId(v), JSON.stringify(v)).toBe(inline(v));
+  });
+
+  test("a malformed geoOrigin throws the setter's error at the first render", () => {
+    const seen: All[] = [];
+    const Probe = probe(seen);
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(() => mountInProvider(world, <Probe />, { geoOrigin: "not a url" })).toThrow(/^geo-origin: /);
+    } finally {
+      quiet.mockRestore();
+    }
   });
 });

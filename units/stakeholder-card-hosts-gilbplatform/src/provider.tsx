@@ -120,6 +120,7 @@ export function StakeholderCardGilbPlatformProvider(props: StakeholderCardGilbPl
   const setup = {
     origin: props.origin,
     ontologyOrigin: props.ontologyOrigin,
+    geoOrigin: props.geoOrigin,
     systemVaultHosts: props.systemVaultHosts,
     systemHostLabels: props.systemHostLabels,
     settings: props.settings,

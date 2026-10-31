@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "type": "module",
   "description": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
@@ -58,6 +58,7 @@
     "@kaigilb/gilbplatformcode-stakeholder-list-doors": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-list-state": "^0.2.0",
     "@kaigilb/gilbplatformcode-stakeholder-set-fields": "^0.1.0",
+    "@kaigilb/gilbplatformcode-geo-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-key": "^0.1.0",
     "@kaigilb/gilbplatformcode-vault-list": "^0.1.0",
@@ -214,6 +215,7 @@
     "@kaigilb/gilbplatformcode-tag-client": "file:../tag-client",
     "@kaigilb/gilbplatformcode-tag-grammar": "file:../tag-grammar",
     "@kaigilb/gilbplatformcode-term-name-text": "file:../term-name-text",
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
     "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
     "@kaigilb/gilbplatformcode-type-chooser": "file:../type-chooser",

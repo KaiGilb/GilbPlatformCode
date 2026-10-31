@@ -5,6 +5,7 @@
 
 import { setBaseOrigin, setLocalRigHosts, setMinOntologyQuery, setOntologyApiOrigin, setOntologyApiOriginRaw, setPublicCorpusOrigin, setSystemVaultHosts, setVocabTypeBatchRevisions } from "@kaigilb/gilbplatformcode-base-origin";
 import { setTermOrigin } from "@kaigilb/gilbplatformcode-term-origin";
+import { setGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
 import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { setMyNetProfileUrl } from "@kaigilb/gilbplatformcode-own-card-state";
 import { lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
@@ -43,6 +44,8 @@ export interface StakeholderCardSettings {
 export interface PlatformSetup {
   origin: string;
   ontologyOrigin: string;
+  /** The origin of the shared place catalogue. */
+  geoOrigin: string;
   systemVaultHosts: readonly string[];
   systemHostLabels: readonly string[];
   settings?: StakeholderCardSettings | undefined;
@@ -52,6 +55,7 @@ export interface PlatformSetup {
 export function applyPlatformSetup(setup: PlatformSetup): void {
   setBaseOrigin(setup.origin);
   setTermOrigin(setup.ontologyOrigin);
+  setGeoOrigin(setup.geoOrigin);
   setSystemVaultHosts(setup.systemVaultHosts);
   setSystemHostLabels(setup.systemHostLabels);
   const s = setup.settings;
@@ -77,5 +81,5 @@ export function applySession(session: SessionCredential, proof?: { origin: strin
 
 /** A key that changes exactly when a setup value changes, so a re-render with the same values sets nothing again. */
 export function setupKey(setup: PlatformSetup): string {
-  return JSON.stringify([setup.origin, setup.ontologyOrigin, setup.systemVaultHosts, setup.systemHostLabels, setup.settings ?? null]);
+  return JSON.stringify([setup.origin, setup.ontologyOrigin, setup.geoOrigin, setup.systemVaultHosts, setup.systemHostLabels, setup.settings ?? null]);
 }
