@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-card-slots",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Gives a person's record card its holder-only slots: the 'Where / How we met' line in the header and My Note in the body, from one source.",
@@ -81,6 +81,7 @@
     "@kaigilb/gilbplatformcode-share-refusal": "file:../share-refusal",
     "@kaigilb/gilbplatformcode-sheet-history": "file:../sheet-history",
     "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-skill-uri-label": "file:../skill-uri-label",
     "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary": "file:../stakeholder-card-vocabulary",
     "@kaigilb/gilbplatformcode-stakeholder-contact-header": "file:../stakeholder-contact-header",
     "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
@@ -92,6 +93,7 @@
     "@kaigilb/gilbplatformcode-stated-by": "file:../stated-by",
     "@kaigilb/gilbplatformcode-tag-client": "file:../tag-client",
     "@kaigilb/gilbplatformcode-tag-grammar": "file:../tag-grammar",
+    "@kaigilb/gilbplatformcode-term-name-text": "file:../term-name-text",
     "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
     "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
