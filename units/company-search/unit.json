@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "unit": "units/company-search",
+  "package": "@kaigilb/gilbplatformcode-company-search",
+  "version": "0.1.0",
+  "purpose": "The company box of an employment: type a name, choose an organization record, or use the name as typed.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/CompanySearch.tsx",
+        "lines": [
+          38,
+          194
+        ],
+        "to": "src/CompanySearch.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Only the organization-records branch is taken: `findOrgs`, `orgFindQueryKey`, `OrgFindHit`, `ORGANIZATION_REPRESENTS` and `GILBVEDA_MASTER_ORIGIN` are gone; there is no call to `/base/connect/org-find`.",
+    "The finder is a prop, `find(vaultId, text)`; the source imported `findOrganizationRecords`. `recordsVaultId` is kept; null means no vault, and nothing is searched.",
+    "The answer's `complete` is read (the source dropped it). A miss is said only for `complete: true`; an answer that is not `complete: true` says so and offers \"Try again\"; a failed search says only that, where the source drew the alert and \"No company named “X”. Use “X”\" together.",
+    "Each of those sentences names the vault asked (`vaultName`, else \"this vault\"), never its address.",
+    "The use-the-typed-name button reads \"Use “X” as typed\" and is its own line; it is offered whenever the answer is not a complete list with hits (a miss, an incomplete answer, a failed search, no vault).",
+    "A hit is `{ uri, label }` (the finder's), not an `OrgFindHit`; the `alreadyMember` mark (\"Yours\") belonged to organization vaults and is gone.",
+    "The query key is `[\"company-search\", \"records\", vaultId, text]`; the file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
