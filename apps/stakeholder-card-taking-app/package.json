@@ -64,6 +64,7 @@
     "@kaigilb/gilbplatformcode-flag-image": "file:../../units/flag-image",
     "@kaigilb/gilbplatformcode-flag-source": "file:../../units/flag-source",
     "@kaigilb/gilbplatformcode-folder-part": "file:../../units/folder-part",
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../../units/geo-origin",
     "@kaigilb/gilbplatformcode-grantee-face": "file:../../units/grantee-face",
     "@kaigilb/gilbplatformcode-header-layout": "file:../../units/header-layout",
     "@kaigilb/gilbplatformcode-held-language": "file:../../units/held-language",
