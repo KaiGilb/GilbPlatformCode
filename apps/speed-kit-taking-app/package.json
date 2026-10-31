@@ -1,6 +1,6 @@
 {
   "name": "speed-kit-taking-app",
-  "version": "0.2.3",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "description": "A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.",
@@ -10,18 +10,25 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "proof:browser": "node scripts/browser-proof.mjs"
+    "proof:browser": "node scripts/browser-proof.mjs",
+    "dev:live": "node scripts/dev-live.mjs"
   },
   "dependencies": {
     "@kaigilb/gilbplatformcode-background-jobs": "file:../../units/background-jobs",
+    "@kaigilb/gilbplatformcode-base-origin": "file:../../units/base-origin",
     "@kaigilb/gilbplatformcode-device-store": "file:../../units/device-store",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../../units/lws-session-bridge",
+    "@kaigilb/gilbplatformcode-own-card": "file:../../units/own-card",
+    "@kaigilb/gilbplatformcode-platform-fetch": "file:../../units/platform-fetch",
     "@kaigilb/gilbplatformcode-prefetch-registry": "file:../../units/prefetch-registry",
     "@kaigilb/gilbplatformcode-principal-hub": "file:../../units/principal-hub",
     "@kaigilb/gilbplatformcode-record-sync": "file:../../units/record-sync",
     "@kaigilb/gilbplatformcode-session-cache": "file:../../units/session-cache",
+    "@kaigilb/gilbplatformcode-signin": "file:../../units/signin",
     "@kaigilb/gilbplatformcode-speed-kit": "file:../../units/speed-kit",
     "@kaigilb/gilbplatformcode-updated-line": "file:../../units/updated-line",
     "@kaigilb/gilbplatformcode-use-cached": "file:../../units/use-cached",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../../units/vault-origin-rule",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

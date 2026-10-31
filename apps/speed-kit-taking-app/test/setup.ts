@@ -21,9 +21,10 @@ beforeEach(() => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("localStorage", memoryStorage());
   vi.stubGlobal("sessionStorage", memoryStorage());
-  history.replaceState(null, "", "/?latency=0");
+  if (typeof history !== "undefined") history.replaceState(null, "", "/?latency=0");
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });

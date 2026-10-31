@@ -7,7 +7,7 @@ import { Header } from "./screens/Header";
 import { SignIn } from "./screens/SignIn";
 import { SpeedPanel } from "./screens/SpeedPanel";
 import { session } from "./session";
-import { signIn, signOut } from "./speed";
+import { personOf, signIn, signOut } from "./standin";
 
 type Page = { name: "entries" } | { name: "entry"; id: string };
 
@@ -32,7 +32,7 @@ export function App() {
     <div>
       {person === null || client === null ? <SignIn busy={busy} onSignIn={(v) => void signInAs(v)} /> : (
         <>
-          <Header ws={person} client={client} onNav={() => setPage({ name: "entries" })} onSignOut={out} />
+          <Header ws={person} label={personOf(person)} client={client} onNav={() => setPage({ name: "entries" })} onSignOut={out} />
           <Messages ws={person} />
           {page.name === "entries"
             ? <Entries ws={person} client={client} onOpen={(id) => setPage({ name: "entry", id })} />

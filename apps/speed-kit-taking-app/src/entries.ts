@@ -2,7 +2,7 @@
 import { cache, hub } from "@kaigilb/gilbplatformcode-speed-kit";
 import { completeCopy } from "@kaigilb/gilbplatformcode-speed-kit/complete-copy";
 import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
-import { TYPE } from "./fakePlatform";
+import { TYPE } from "./catalog";
 import { provenance } from "./session";
 
 export interface Entry { id: string; name: string; description: string }
@@ -19,6 +19,6 @@ export function loadEntries(client: PlatformClient, ws: string): () => Promise<E
     const stillHim = hub.principalGuard();
     const copy = await completeCopy(client, ws, TYPE);
     if (stillHim()) provenance.set(key, "network");
-    return copy.records.map((r) => ({ id: idOf(r.entity), name: text(r.body?.name) || r.label || "", description: text(r.body?.description) }));
+    return copy.records.map((r) => ({ id: idOf(r.entity), name: text(r.body?.name) || text(r.body?.["a:name"]) || r.label || "", description: text(r.body?.description) }));
   };
 }

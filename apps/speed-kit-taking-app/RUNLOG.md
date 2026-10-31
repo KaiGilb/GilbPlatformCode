@@ -58,3 +58,32 @@
 
 - T2 flake: `findByTestId("entry-e1")` resolves when the row is in the DOM; the meter is set in an effect and the panel re-renders through `useSyncExternalStore` a step later. Shown by delaying `setPaint` by 20 ms (the meter, not the test, changed): T2 then fails with the dispatcher's line, `expected '' to be 'device'`. Not reproduced natively in 10 cold rounds here. T2 and T1:12 now wait for the reading; the row count and `answered() === 0` stay synchronous at the first row.
 - `scripts/flake-check.sh N` runs N cold rounds.
+
+## Batch S2-D1 (live mode, read only)
+
+- Built and tested locally only: no sign-in, no production call, `dev:live` never started.
+- The server named in the brief (`GilbPlatform/src`) is an old checkout (Cycle196, 2026-09-19) with no `since=`, `include=body` or `nextCursor`; the wire facts are from `GilbPlatform-snapshot-2026-10-30` (3185a3b8).
+
+## Batch S2-D1b (live mode: two origins, port 5251)
+
+- S2-D1 sent sign-in and `/lws/vaults` to the apex derived from the vault host. Wrong: a key-bound call at the apex fails the DPoP htu (RuleRigdevDpopHtuReceivedHost). Now two origins as in records-app (proven live 2026-10-29): `--id` (default `https://id.gilb.com`) for sign-in and `/lws/vaults`, `--platform` (default `https://gilb.com`) for `setBaseOrigin` and the system hosts. For a vault not under gilb.com both flags are required. Nothing is derived.
+- Live port moved from 5197 (held by another session) to 5251.
+- A reach row is the pinned vault by its `vaultId`, else by the origin of its `@id`; the screen says which.
+
+## Batch S2-D2 (live writes)
+
+- Local only. No sign-in, no production call, `dev:live` never started.
+- Server (GilbPlatform 3185a3b8): `Idempotency-Key` on `POST /lws/vault/<v>/c` is honoured (src/lws/routes.ts:849-870, replay at :274-297, key read in src/lws/idempotency.ts:30-52). A single-record end exists: `DELETE /lws/r/<id>` (src/lws/routes.ts:1015-1075), `If-Match` optional.
+- records-app's `createRecord` sends no `Idempotency-Key`, so the create is written here (`src/live/writes.ts`) with the unit's route and body shape.
+- The write keys `a:name` and `a:description` are written as the brief says, not spelled through the vault's context; the read-back catches a vault that stores them differently.
+
+## Batch S2-D2b (an ended record is a 200, not a 404)
+
+- Measured live 2026-10-29 (207 DELETEd records, all re-read as 200 with `a:entityLifecycleState: ended`) and in the server: GilbPlatform 3185a3b8 src/lws/resource-frame.ts:36-38 (`a:entityLifecycleState`, `a:endingActorKind`), src/lws/routes.ts:11-12 and :200. Only a husk or an unreadable record is a 404.
+- `read()` now answers live, ended or gone. End counts ended or gone as ended; a rename of an ended or gone record is refused. The ended-list read (`endedAmong`) is removed: the per-record read proves the same thing.
+
+## Batch S2-D3 (the counter, start diagnostics, live README)
+
+- Live findings: sign-in and `/lws/vaults` go to the identity host (`id.gilb.com`), not the apex (a key-bound call at the apex fails the DPoP check); the platform apex is only `setBaseOrigin` and the system hosts. An ended record reads 200 with `a:entityLifecycleState: "ended"`, not 404 (207 of 207 measured live). 500 creates at 4 in flight took 26.5 s.
+- The "N made by this app" counter was read at mount only, so it showed 0 while 500 ids were in localStorage. It now follows the list through a small store (`src/live/made.ts`), W8.
+- F4 (one device miss) is open: `window.__speedProof.start` and the line under the panel say what `start` answered, in both modes (T11). `entries` there is the number of cache entries `onHydrated` received (one per resource, so 1 for the list), not rows.
