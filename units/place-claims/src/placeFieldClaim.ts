@@ -262,23 +262,28 @@ export function subjectsBelongToAddress(fieldSubjects: readonly string[] | null,
 }
 
 /**
- * F-LIVE — every address FIELD this holder keeps, read off the store.
- *
- * ⛔ Holder's own data only. A read of another person's address fields is not client-addressed;
- * the server crosses for those and applies EACH FIELD's own rung — which is the whole point.
+ * What a read of the vault's records came to (see `RecordListing` of `vault-records-of-type`): whole, or incomplete with the reason, `capped` at the page
+ * ceiling or `stalled` by a door that could not advance. CHANGED (new, F4): an incomplete read is never to be taken as "there are no more".
+ */
+export type ReadMarker = { readonly complete: true } | { readonly complete: false; readonly reason: "capped" | "stalled" };
+
+/**
+ * Every field claim of the address facet in the vault, read once (see {@link listPlaceClaimsInVault}'s account of why the whole vault).
+ * CHANGED (F4): answers `{ fields, ...ReadMarker }`, not the bare array: the fields read are ALWAYS returned, and the marker says whether it was
+ * the whole vault.
  */
 export async function listMyPlaceFieldClaims(
   vaultId: string,
   vocab: PlaceVocab,
-): Promise<PlaceFieldClaim[]> {
-  if (!vaultId) return [];
-  const records = await listFieldClaimRecords(vaultId, vocab);
+): Promise<{ readonly fields: PlaceFieldClaim[] } & ReadMarker> {
+  if (!vaultId) return { fields: [], complete: true };
+  const listing = await listFieldClaimRecords(vaultId, vocab);
   const out: PlaceFieldClaim[] = [];
-  for (const ref of records) {
+  for (const ref of listing.records) {
     const id = idFromResourceUri(ref.entity);
     const { doc, etag } = await getListedResource(ref, vaultId);
     const field = toPlaceFieldClaim(id, ref.entity, doc as Record<string, unknown>, etag, vocab);
     if (field) out.push(field);
   }
-  return out;
+  return listing.complete ? { fields: out, complete: true } : { fields: out, complete: false, reason: listing.reason };
 }

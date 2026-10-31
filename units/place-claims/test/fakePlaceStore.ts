@@ -29,7 +29,7 @@ export interface Door {
   /** Serve bodies when asked (`include=body`). */
   bodies: boolean;
   /** Replace the whole answer for a page (offset -> wire), for a test that needs a door's odd answer. */
-  pages: ((offset: number) => Record<string, unknown> | null) | null;
+  pages: ((offset: number, types: string[]) => Record<string, unknown> | null) | null;
 }
 export const door: Door = { pageSize: 100, neverComplete: false, bodies: true, pages: null };
 
@@ -71,7 +71,7 @@ export async function fakeFetch(input: unknown, init?: RequestInit): Promise<Res
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const wantBody = url.searchParams.get("include") === "body";
     if (door.pages) {
-      const custom = door.pages(offset);
+      const custom = door.pages(offset, types);
       if (custom) return json(custom);
     }
     const rows = [...store.entries()]

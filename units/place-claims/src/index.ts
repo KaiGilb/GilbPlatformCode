@@ -2,16 +2,19 @@ export {
   EMPTY_ADDRESS_MESSAGE,
   PLACE_CLAIM_BOUND_RUNGS,
   PlaceClaimError,
+  PlaceClaimsIncompleteError,
   SHARED_ADDRESS_MESSAGE,
   SharedAddressError,
   claimFieldText,
   claimsAbout,
   fieldsByComposite,
   listPlaceClaimsInVault,
+  readPlaceClaimsInVault,
   placeClaimHasContent,
   placeClaimHeading,
   type PlaceClaim,
   type PlaceClaimInput,
+  type PlaceClaimsRead,
 } from "./placeClaim";
 export {
   PLACE_FIELD_SLOTS,
@@ -30,5 +33,6 @@ export {
   type PlaceTextSlot,
   type PlaceTextTerm,
   type PlaceTextValues,
+  type ReadMarker,
 } from "./placeFieldClaim";
 export { PLACE_CLAIMS_STALE_MS, placeClaimsKey } from "./placeClaimsKey";

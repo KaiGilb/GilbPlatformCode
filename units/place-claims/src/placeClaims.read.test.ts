@@ -5,7 +5,7 @@
 // The cases that WRITE an address (create, change, remove, the facts of a field claim) are the unit `place-claim-write`'s.
 // The rest is new: F4 and F5, and that the unit only reads.
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_LIST_PAGES, VaultListingCappedError } from "@kaigilb/gilbplatformcode-vault-records-of-type";
+import { MAX_LIST_PAGES } from "@kaigilb/gilbplatformcode-vault-records-of-type";
 import { claimPlaceIds, isDecomposed, needsFieldMigration } from "@kaigilb/gilbplatformcode-place-lines";
 import { __resetPlaceVocab, resolvePlaceVocab } from "@kaigilb/gilbplatformcode-place-vocab";
 import {
@@ -18,6 +18,8 @@ import {
   placeClaimHasContent,
   placeClaimHeading,
   placeClaimsKey,
+  PlaceClaimsIncompleteError,
+  readPlaceClaimsInVault,
   toPlaceFieldClaim,
   type PlaceClaim,
   type PlaceClaimInput,
@@ -234,31 +236,69 @@ describe("M3f r5 · the whole read takes the listed documents, not one read per 
   });
 });
 
-describe("F4: not every address was read — said, not silent", () => {
-  it(`more than ${MAX_LIST_PAGES} pages of addresses: the read throws VaultListingCappedError (GilbApp showed the first ${MAX_LIST_PAGES} pages as the whole)`, async () => {
+describe("F4: not every address was read — said, and what was read is kept", () => {
+  it(`more than ${MAX_LIST_PAGES} pages of addresses: the read answers the ${MAX_LIST_PAGES} addresses it read with complete false and reason capped (GilbApp showed them as the whole)`, async () => {
+    for (let i = 0; i < MAX_LIST_PAGES + 5; i += 1) fake.seed("t:PlaceClaim", { "a:claimSubject": { "@id": RECORD }, "a:placeClaimLabel": `a${i}` });
+    fake.door.pageSize = 1;
+    const read = await readPlaceClaimsInVault(VAULT);
+    expect(read).toMatchObject({ complete: false, reason: "capped" });
+    expect(read.claims).toHaveLength(MAX_LIST_PAGES); // never an empty list that reads as "no address"
+  });
+
+  it("the same when it is the FIELD claims that run past the ceiling: the address is returned, its lines are what was read", async () => {
+    gilbAddress(RECORD, "home", { streetLine: "Storgata 1" });
+    for (let i = 0; i < MAX_LIST_PAGES + 5; i += 1) fake.seed("t:SelfAssertedFieldClaim", { "a:claimSubject": { "@id": RECORD }, "a:detailOf": { "@id": `${VAULT}/e/x` }, "a:streetLine": `s${i}` });
+    fake.door.pageSize = 1;
+    const read = await readPlaceClaimsInVault(VAULT);
+    expect(read).toMatchObject({ complete: false, reason: "capped" });
+    expect(read.claims.map((c) => c.label)).toEqual(["home"]);
+  });
+
+  it("a door that cannot advance on the addresses: the addresses read are returned, complete false, reason stalled", async () => {
+    const row = { entity: `${VAULT}/e/pc1`, typeUri: "t:PlaceClaim", updatedAt: null, label: null, body: { "@id": `${VAULT}/e/pc1`, "@type": "t:PlaceClaim", claimSubject: { "@id": RECORD }, placeClaimLabel: "first" }, etag: '"1"' };
+    fake.door.pages = (offset, types) => {
+      if (!types.includes("PlaceClaim")) return null;
+      return offset === 0 ? { records: [row], total: 9, complete: false, pageSize: 1, offset: 0, nextOffset: 1 } : { records: [], total: 9, complete: false, pageSize: 1, offset, nextOffset: offset };
+    };
+    const read = await readPlaceClaimsInVault(VAULT);
+    expect(read).toMatchObject({ complete: false, reason: "stalled" });
+    expect(read.claims.map((c) => c.label)).toEqual(["first"]);
+  });
+
+  it("a door that cannot advance on the field claims: the addresses are returned, marked stalled", async () => {
+    gilbAddress(RECORD, "home", { streetLine: "Storgata 1" });
+    fake.door.pages = (offset, types) => (types.includes("SelfAssertedFieldClaim") ? { records: [], total: 9, complete: false, pageSize: 1, offset, nextOffset: offset } : null);
+    const read = await readPlaceClaimsInVault(VAULT);
+    expect(read).toMatchObject({ complete: false, reason: "stalled" });
+    expect(read.claims).toHaveLength(1);
+  });
+
+  it("listPlaceClaimsInVault (the one card's host shape) REJECTS when the read was not whole, carrying what was read and the reason", async () => {
     for (let i = 0; i < MAX_LIST_PAGES + 5; i += 1) fake.seed("t:PlaceClaim", { "a:claimSubject": { "@id": RECORD }, "a:placeClaimLabel": `a${i}` });
     fake.door.pageSize = 1;
     const err = await listPlaceClaimsInVault(VAULT).then(
       () => null,
       (e: unknown) => e,
     );
-    expect(err).toBeInstanceOf(VaultListingCappedError);
-    expect((err as VaultListingCappedError).vaultId).toBe(VAULT);
-    expect((err as VaultListingCappedError).message).toMatch(/Not every record in this vault was read/);
+    expect(err).toBeInstanceOf(PlaceClaimsIncompleteError);
+    expect((err as PlaceClaimsIncompleteError).reason).toBe("capped");
+    expect((err as PlaceClaimsIncompleteError).claims).toHaveLength(MAX_LIST_PAGES);
+    expect((err as PlaceClaimsIncompleteError).message).toBe("Not every address in this vault was read.");
   });
 
-  it("the same when it is the FIELD claims that run past the ceiling", async () => {
-    gilbAddress(RECORD, "home", { streetLine: "Storgata 1" });
-    for (let i = 0; i < MAX_LIST_PAGES + 5; i += 1) fake.seed("t:SelfAssertedFieldClaim", { "a:claimSubject": { "@id": RECORD }, "a:detailOf": { "@id": `${VAULT}/e/x` }, "a:streetLine": `s${i}` });
-    fake.door.pageSize = 1;
-    // the addresses listing has 1 record (1 page); the field claims have 51+ (one per page)
-    await expect(listPlaceClaimsInVault(VAULT)).rejects.toBeInstanceOf(VaultListingCappedError);
-  });
-
-  it("a vault that fits is read whole, with no error", async () => {
+  it("a vault that fits is read whole: complete true, no reason, and listPlaceClaimsInVault resolves", async () => {
     for (let i = 0; i < 5; i += 1) gilbAddress(RECORD, `a${i}`, { streetLine: `s${i}` });
     fake.door.pageSize = 2;
-    expect(await read()).toHaveLength(5);
+    const read = await readPlaceClaimsInVault(VAULT);
+    expect(read.complete).toBe(true);
+    expect("reason" in read).toBe(false);
+    expect(read.claims).toHaveLength(5);
+    expect(await listPlaceClaimsInVault(VAULT)).toHaveLength(5);
+  });
+
+  it("no vault: complete, empty, no request", async () => {
+    expect(await readPlaceClaimsInVault("")).toEqual({ claims: [], complete: true });
+    expect(fake.calls).toEqual([]);
   });
 });
 

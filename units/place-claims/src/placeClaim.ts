@@ -18,6 +18,7 @@ import {
   subjectsBelongToAddress,
   textSlotOfTerm,
   type PlaceFieldClaim,
+  type ReadMarker,
   type PlaceTextTerm,
   type PlaceTextValues,
 } from "./placeFieldClaim";
@@ -215,6 +216,26 @@ function refIds(v: unknown): string[] {
 }
 
 /**
+ * CHANGED (new, F4): the addresses read, and whether that was all of them.
+ * `claims` are ALWAYS the addresses that were read, never an empty list standing for "none were read"; `complete: false` says that not every address in
+ * the vault was read (`capped`: the page ceiling of the listing ended it; `stalled`: the door could not advance), for the addresses or for their field
+ * claims. A view shows the claims AND says so ("Not every address in this vault was read").
+ */
+export type PlaceClaimsRead = { readonly claims: PlaceClaim[] } & ReadMarker;
+
+/** The one card's host member and any caller that must not work from half an answer: the read was not whole. Carries what was read. */
+export class PlaceClaimsIncompleteError extends Error {
+  readonly claims: PlaceClaim[];
+  readonly reason: "capped" | "stalled";
+  constructor(claims: PlaceClaim[], reason: "capped" | "stalled") {
+    super("Not every address in this vault was read.");
+    this.name = "PlaceClaimsIncompleteError";
+    this.claims = claims;
+    this.reason = reason;
+  }
+}
+
+/**
  * F-LIVE — every address this holder currently keeps, read off the store.
  *
  * ⚠ Read back through the WIRE keys, not the stored keys: the server frames the document with
@@ -226,17 +247,18 @@ function refIds(v: unknown): string[] {
  * ⛔ HOLDER'S OWN DATA ONLY. A read of another person's addresses is not client-addressed; the
  * server crosses for those and applies each claim's own rung.
  */
-export async function listPlaceClaimsInVault(vaultId: string): Promise<PlaceClaim[]> {
-  if (!vaultId) return [];
+export async function readPlaceClaimsInVault(vaultId: string): Promise<PlaceClaimsRead> {
+  if (!vaultId) return { claims: [], complete: true };
   const vocab = await resolvePlaceVocab();
   // Server-side type filter — the bare local name, which is what `?type=` validates.
   // ⚠ GilbApp: the typed read only (see the header).
-  const records = await listRecordsOfType(vaultId, vocab.placeClaimTypeQuery);
+  const listing = await listRecordsOfType(vaultId, vocab.placeClaimTypeQuery);
+  const records = listing.records;
   // 🔴 THE FIELD CLAIMS ARE READ ONCE FOR THE WHOLE VAULT AND GROUPED, ⛔ not re-listed per
   //    address: N addresses × M fields would otherwise be N list calls, and a partial failure
   //    would leave some addresses looking decomposed and others not.
-  const allFields = await listMyPlaceFieldClaims(vaultId, vocab);
-  const grouped = fieldsByComposite(allFields);
+  const fieldsRead = await listMyPlaceFieldClaims(vaultId, vocab);
+  const grouped = fieldsByComposite(fieldsRead.fields);
   const out: PlaceClaim[] = [];
   for (const ref of records) {
     const id = idFromResourceUri(ref.entity);
@@ -327,7 +349,22 @@ export async function listPlaceClaimsInVault(vaultId: string): Promise<PlaceClai
    *   property of the reader's device.
    */
   out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return out;
+  // CHANGED (F4): the marker. The addresses' listing first, then the field claims'.
+  if (!listing.complete) return { claims: out, complete: false, reason: listing.reason };
+  if (!fieldsRead.complete) return { claims: out, complete: false, reason: fieldsRead.reason };
+  return { claims: out, complete: true };
+}
+
+/**
+ * Every address the vault holds, as the one card's host member takes them (`OneCardHost.listPlaceClaimsInVault`: `Promise<PlaceClaim[]>`).
+ * CHANGED (F4): REJECTS with {@link PlaceClaimsIncompleteError} (carrying what was read) when the read was not whole, because the one card's merge
+ * compares the holder's addresses with theirs, and half of them would call an address "different" that is the same. A view that can say "not every
+ * address was read" and show the rest uses {@link readPlaceClaimsInVault}.
+ */
+export async function listPlaceClaimsInVault(vaultId: string): Promise<PlaceClaim[]> {
+  const read = await readPlaceClaimsInVault(vaultId);
+  if (!read.complete) throw new PlaceClaimsIncompleteError(read.claims, read.reason);
+  return read.claims;
 }
 
 /**
