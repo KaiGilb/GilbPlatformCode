@@ -18,6 +18,7 @@ import { useEffect, type ReactNode } from "react";
 import { bareForm } from "@kaigilb/gilbplatformcode-vocabulary-source";
 import { birthdayText } from "@kaigilb/gilbplatformcode-birthday-text";
 import { LanguageRow } from "@kaigilb/gilbplatformcode-language-row";
+import { referentNameOf, termNameWord } from "@kaigilb/gilbplatformcode-term-name-text";
 import { displayPlacements, type PersonCard } from "@kaigilb/gilbplatformcode-person-connections";
 import type { OneCardField, OneCardGroup, OneCardRow } from "@kaigilb/gilbplatformcode-one-card-merge";
 import type { OnlineCardController } from "@kaigilb/gilbplatformcode-online-card";
@@ -120,6 +121,14 @@ function theirValueText(row: OneCardRow): ReactNode {
 }
 
 /**
+ * A skill of theirs is shown by its name: the master's label, else the catalogue name in the term's address (`referentNameOf`), else, for any other
+ * ADDRESS, the word "A skill". Text that is not an address (a free-text skill) is its own name. Never an address, never the last part of one.
+ */
+function skillText(value: string, label: string): string {
+  return label || referentNameOf(value) || (/^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim()) ? termNameWord("skill") : value);
+}
+
+/**
  * A language of theirs is drawn by its name with its country's flag (`LanguageRow`), never as its address. Keyed on the field's TERM
  * (`a:languageUsed`), ⛔ never on the value's shape. Null for every other field.
  */
@@ -184,9 +193,9 @@ export function OneCardBody(props: OneCardBodyProps) {
       byKind: placed.byKind,
       own: placed.own,
       rowLabel: (kind, g) => (kind === "name" || kind === "record" || kind === "time-zone" || kind === "details" ? (g.label ?? (labelFor(g.field) || null)) : null),
-      // A skill is shown by its name (the master's label, else the address's last part). A
+      // A skill is shown by its name (`skillText`). A
       // birthday of theirs reads "14 March" / "14 March 1980" (`theirValueText`).
-      valueText: (row: OneCardRow) => (skill && row.field === skill ? labelFor(row.value) || row.value.split("/").pop() || row.value : theirValueText(row)),
+      valueText: (row: OneCardRow) => (skill && row.field === skill ? skillText(row.value, labelFor(row.value)) : theirValueText(row)),
     };
   }
   const status = statusLine(online.status);
