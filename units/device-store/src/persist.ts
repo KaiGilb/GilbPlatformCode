@@ -120,7 +120,11 @@ export class Persist {
   private readonly now: () => number;
   private readonly flushMs: number;
   private readonly schedule: (fn: () => void, ms: number) => unknown;
-  constructor(private readonly kv: Kv | null, readonly principal: string, o: PersistOptions = {}) {
+  private readonly kv: Kv | null;
+  readonly principal: string;
+  constructor(kv: Kv | null, principal: string, o: PersistOptions = {}) {
+    this.kv = kv;
+    this.principal = principal;
     this.max = o.maxBytes ?? DEFAULT_MAX_BYTES;
     this.now = o.now ?? (() => Date.now());
     this.flushMs = o.flushMs ?? 400;

@@ -97,6 +97,10 @@ Dynamic imports in the files taken: none.
 
 ## Where it came from
 
+### Changes in 0.1.1
+
+An app that takes this unit and compiles with `erasableSyntaxOnly` (GilbApp does) no longer has to switch it off: `Persist`'s constructor wrote `private readonly kv` and `readonly principal` as parameter properties, which that setting forbids. They are now plain fields assigned in the constructor. Nothing else moved; `principal` is still a public readonly field. It is a PATCH. Guard: the unit's `tsconfig.json` sets `erasableSyntaxOnly`, so `npm run typecheck` (part of the proof) fails on the old line.
+
 `KaiGilb/Social` (private repo), commit `a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e`, copied by script and then edited for the seam: `src/lib/persist.ts` lines 1-242 to `src/persist.ts`. The shapes in `src/types.ts` are copied from `shared/vault.ts` of the same commit (lines 17-22, 25, 130, 137, 382) and reduced to what `persist.ts` uses.
 
 Named changes, and only these:
@@ -104,6 +108,7 @@ Named changes, and only these:
 1. the first comment line loses its cycle tag, the app's name and a person's name, and the seventh no longer names the source app's bridge file; no code changed;
 2. the type-only import of `ListedRecord`, `RecordDoc`, `ReachableVault` and `StoreEvent` reads from `./types` instead of the app's `shared/vault`; `src/types.ts` declares them structurally (no runtime code);
 3. `indexedDbKv(factory, name, schema)`: `name` was `name = "social-cache"` and is now a required `string` with no default. Nothing else changed in the function.
+4. the `Persist` constructor no longer uses parameter properties (`private readonly kv`, `readonly principal`): both are declared as fields and assigned in the body, so the source compiles under `erasableSyntaxOnly`; behaviour and the public API are the same, and `tsconfig.json` sets `erasableSyntaxOnly` so `npm run typecheck` fails if one comes back.
 
 `src/index.ts` and `src/types.ts` are new. `StoreSnapshot` here has no `reloaded` member (persist.ts never reads it); a ported test literal that set `reloaded: true` lost that one property.
 

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-device-store",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The copy of what an app has read, kept in the browser per person and workspace as a starting point and never an answer, bounded by size, and gone when the person goes.",
