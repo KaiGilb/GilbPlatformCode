@@ -80,7 +80,7 @@ None.
 
 ## Wrong readings
 
-- "`SOCIAL_LOGOS[name]` is `undefined` for a name that is not a platform." For an ordinary name yes. As in the source, the table is a plain object, so a name that is an inherited property of objects (`constructor`, `toString`) finds a value that is not a shape: the component then draws the globe but names it by the given name and marks it with that name; `socialPlatformName(null, "constructor")` returns `"constructor"`. Left as the source has it (no real platform has such a name).
+- "`SOCIAL_LOGOS[name]` is `undefined` for a name that is not a platform." For an ordinary name yes. As in the source, the table is a plain object, so a name that is an inherited property of objects (`constructor`, `toString`) finds a value that is not a shape: the component then draws the globe but names it by the given name and marks it with that name; `socialPlatformName(null, "constructor")` returns `"constructor"`. Left as the source has it (no real platform has such a name); a test pins it so it is visible.
 - "The logo's name is always the platform." The name falls back to "Web address" for a name not in the table.
 - "`socialPlatformName` checks that the address's platform is in the table." It does not: the address's own name wins as given; the logo then draws the globe.
 
@@ -103,9 +103,9 @@ With comments and imports removed, `SocialLogo.tsx` is token-equal to the source
 
 ## Tests
 
-43 cases in 3 files (`npx vitest run`):
+44 cases in 3 files (`npx vitest run`):
 
-- `SocialLogo.test.tsx` 28: PORTED the source's "platform logos" block (5 cases: every platform has a logo, no orphan logo, each logo draws as a named 18 px image with no external reference, an unknown platform and none draw the globe, the logo's platform name). The first two read the platform names from the online-account reader (`contact-rows`); here the 35 names are written out in the test (and were compared with the reader's when the unit was cut), so this unit's proof does not install the section's whole closure. NEW: what each kind draws (glyph flipped in its viewBox; the X mark on the grid and not flipped; each monogram's initials, outline and no path; the globe's circle, ellipse, line and strokes), the class order, no request while drawing all 36 states, `socialPlatformName` edge cases, the badge and globe geometry, the X path, and a digest of the whole table (taken from the source).
+- `SocialLogo.test.tsx` 29: PORTED the source's "platform logos" block (5 cases: every platform has a logo, no orphan logo, each logo draws as a named 18 px image with no external reference, an unknown platform and none draw the globe, the logo's platform name). The first two read the platform names from the online-account reader (`contact-rows`); here the 35 names are written out in the test (and were compared with the reader's when the unit was cut), so this unit's proof does not install the section's whole closure. NEW: what each kind draws (glyph flipped in its viewBox; the X mark on the grid and not flipped; each monogram's initials, outline and no path; the globe's circle, ellipse, line and strokes), the class order, no request while drawing all 36 states, `socialPlatformName` edge cases, the badge and globe geometry, the X path, a digest of the whole table (taken from the source), and the kept quirk below.
 - `exports.test.ts` 2, `hostAgnostic.test.ts` 13 (the same host-agnostic check test as the other units; it writes to the OS temp directory).
 
 No `vi.mock`.

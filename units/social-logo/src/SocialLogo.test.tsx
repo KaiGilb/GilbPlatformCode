@@ -175,3 +175,15 @@ describe("the drawing's geometry and the table's data", () => {
     expect(createHash("sha256").update(JSON.stringify(SOCIAL_LOGOS)).digest("hex")).toBe("ce0856ede46582df865b4027f8535ced7096baee6a8ce98f997e1c80fb9971ab");
   });
 });
+
+describe("a quirk kept from the source: the table is a plain object", () => {
+  it("a name that is an inherited property of objects ('constructor') finds a non-shape: the globe is drawn, named and marked by that string", () => {
+    const { container } = render(<SocialLogo platform="constructor" />);
+    const svg = container.querySelector("svg")!;
+    expect(svg.getAttribute("aria-label")).toBe("constructor logo");
+    expect(svg.getAttribute("data-social-logo")).toBe("constructor");
+    expect(svg.querySelector("circle")).not.toBeNull();
+    expect(svg.querySelector("path")!.getAttribute("d")).toBe("M3 12h18");
+    expect(socialPlatformName(null, "constructor")).toBe("constructor");
+  });
+});
