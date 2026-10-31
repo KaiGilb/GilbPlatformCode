@@ -7,7 +7,7 @@
  * chips' `a:claimSubject` only (a different field, not a source).
  */
 import { canonicalEntity } from "@kaigilb/gilbplatformcode-contact-kind-model";
-import { expandRelationRef } from "./expandRelationRef";
+import { expandRelationRef } from "@kaigilb/gilbplatformcode-kind-relation";
 
 /**
  * One address in its comparable form.

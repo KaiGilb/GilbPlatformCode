@@ -8,18 +8,23 @@
     "repo": "KaiGilb/GilbApp",
     "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
     "files": [
-      { "path": "src/lib/base/statedBy.ts", "lines": null, "to": "src/statedBy.ts" }
+      {
+        "path": "src/lib/base/statedBy.ts",
+        "lines": null,
+        "to": "src/statedBy.ts"
+      }
     ]
   },
   "namedChanges": [
-    "The imports are `canonicalEntity` from the unit `contact-kind-model` and `expandRelationRef` from `./expandRelationRef`.",
-    "`src/expandRelationRef.ts` is a NAMED COPY of the private file of the same name in `kind-relation` (which does not export it): `expandRelationRef`, `idOf`, `vaultBaseFromDocId`, `firstValue`, each token-equal to the source's `relationDoc.ts` functions (13, 79, 25, 12 words, 0 diff).",
+    "The imports are `canonicalEntity` from the unit `contact-kind-model` and `expandRelationRef` from the unit `kind-relation` (^0.1.1, which exports it since 0.1.1).",
+    "(Until the follow-up commit this unit held a named copy of `kind-relation`'s `expandRelationRef` file; it was removed once `kind-relation` 0.1.1 exported the function. The copy compared 0 against `kind-relation`'s: `expandRelationRef` 13 words, `idOf` 79, `vaultBaseFromDocId` 25, `firstValue` 12.)",
     "Comments that name a cycle, a ticket, a ruling or a test run are reworded with the same facts; no code changed. The comment-stripped file, imports excluded, equals the source (0 diff, 90 words)."
   ],
   "newFiles": [
-    "src/index.ts",
-    "src/expandRelationRef.ts"
+    "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": false }
+  "library": {
+    "admitted": false
+  }
 }
