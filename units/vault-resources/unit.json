@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "unit": "units/vault-resources",
+  "package": "@kaigilb/gilbplatformcode-vault-resources",
+  "version": "0.1.0",
+  "purpose": "Creates, reads, patches and deletes a vault entity by its address, over the record doors.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/mynet/place/lws.ts", "lines": [24, 25], "to": "src/vaultResources.ts" },
+      { "path": "src/lib/mynet/place/lws.ts", "lines": [38, 88], "to": "src/vaultResources.ts" },
+      { "path": "src/lib/mynet/place/lws.ts", "lines": [146, 170], "to": "src/vaultResources.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units' `lws-records` (`createRecord`, `deleteRecord`, `patchRecord`, `readRecord`, `MergePatchValue`, `RecordFactValue`), `lws-vault-sets` (`mapWithConcurrency`, `MAX_PARALLEL_DEREFERENCES`), `resource-id` (`idFromResourceUri`) and `vault-namespace` (`entityUriInVault`); the source's `FactValue` is `RecordFactValue` of `lws-records`, as before.",
+    "Comments that name a cycle, a ticket, an agent, an app or a ruling are reworded with the same facts; no code changed. Each of the nine declarations compares token-equal to the source's (comment-stripped, 0 diff).",
+    "Not taken: `entityUriInVault` and `idFromResourceUri` (units, not re-exported), `RecordRef`, `getListedResource`, `listRecordsOfType`, `MAX_LIST_PAGES` (nothing here reaches them)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

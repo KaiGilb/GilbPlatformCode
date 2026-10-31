@@ -1,4 +1,4 @@
-// The find half of the adder's card (adderCard.ts:98). The platform is the world of `test/world.ts`; the reads are the real own-card finding.
+// The adder's card (`adderCardOf` of `adder-card`, which replaced the inline copy in 0.4.0). The platform is the world of `test/world.ts`; the reads are the real own-card finding.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { resetBaseOrigin, resetSystemVaultHosts, setBaseOrigin, setSystemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
@@ -6,7 +6,7 @@ import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
 import { resetLwsAuth, lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import type { ReachableVault } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { ownCardFindingKey } from "@kaigilb/gilbplatformcode-plan-self-source";
-import { NO_OWN_VAULT_SAYS, NoOwnVaultError, adderCardOf, landingVaultOf, nameFromEmail } from "./adderCard";
+import { NO_OWN_VAULT_SAYS, NoOwnVaultError, adderCardOf, landingVaultOf, nameFromEmail } from "@kaigilb/gilbplatformcode-adder-card";
 import { BASE, P, P_ENTITY, createWorld, type World } from "../test/world";
 
 const vault = (over: Partial<ReachableVault> = {}): ReachableVault => ({

@@ -5,7 +5,7 @@
 // the open at 6.3 s at +140 ms). The platform's own counts per spelling travel from page to page (`counts`), so a later page asks only the
 // spelling that holds records at its offset; a first page asks both together (it learns both counts there).
 import type { AttributeFindResult } from "@kaigilb/gilbplatformcode-lws-vault-sets";
-import { subjectSpellings } from "./subjectSpellings";
+import { subjectSpellings } from "@kaigilb/gilbplatformcode-held-notes";
 
 export type FindFn = (attr: string, value: unknown, page: { limit: number; offset: number }, origin: string) => Promise<AttributeFindResult>;
 

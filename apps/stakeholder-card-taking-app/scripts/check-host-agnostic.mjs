@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react\/jsx-runtime$/,
   /^react-dom\/client$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(online-stakeholder-card|person-connections|plan-self-source|reachable-vaults|signin|stakeholder-card-hosts-gilbplatform|stakeholder-list-doors)$/,
+  /^@kaigilb\/gilbplatformcode-(online-stakeholder-card|person-connections|plan-self-source|reachable-vaults|signin|stakeholder-card-hosts-gilbplatform|stakeholder-list-doors|stakeholder-record-card-host-gilbplatform)$/,
   /^@kaigilb\/gilbplatformcode-signin\/(core|session|signin\.css)$/,
 ];
 

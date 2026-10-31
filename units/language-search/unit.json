@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/language-search",
+  "package": "@kaigilb/gilbplatformcode-language-search",
+  "version": "0.1.0",
+  "purpose": "Searches the catalogue's human languages by name, and finds the one entry for a stored language tag.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/searchLanguagesRemote.ts",
+        "lines": [
+          18,
+          95
+        ],
+        "to": "src/languageSearch.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/languageEntries.ts",
+        "lines": [
+          222,
+          244
+        ],
+        "to": "src/languageSearch.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`LANGUAGE_ENTITY` (a RegExp built from the origin constant when the file loads) becomes `languageEntityPattern()`, built from `termOrigin()` at each call (STOP-7). A test pins that it refuses the same path on a foreign origin.",
+    "The catalogue origin and the vault id come from `termOrigin()` (unit `term-origin`) in place of the source's constants; the vault id is the two own lines `${termOrigin()}/base`.",
+    "`searchLanguagesRemote` builds the pattern once per call and tests each hit with it."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

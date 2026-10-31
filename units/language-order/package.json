@@ -1,0 +1,30 @@
+{
+  "name": "@kaigilb/gilbplatformcode-language-order",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "x",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-language-entry": "file:../language-entry",
+    "@kaigilb/gilbplatformcode-language-fetch-pool": "file:../language-fetch-pool",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-language-entry": "^0.1.0"
+  }
+}

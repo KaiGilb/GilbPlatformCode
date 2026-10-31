@@ -3,12 +3,8 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { readRecord, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
-import { MAX_PARALLEL_DEREFERENCES, mapWithConcurrency } from "@kaigilb/gilbplatformcode-lws-vault-sets";
+import type { BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
 import type { PickerQueryArgs, PickerQueryResult } from "@kaigilb/gilbplatformcode-record-picker";
-import { idFromResourceUri } from "@kaigilb/gilbplatformcode-resource-id";
-import { entityUriInVault } from "@kaigilb/gilbplatformcode-vault-namespace";
-import type { ReadResource } from "@kaigilb/gilbplatformcode-org-employees";
 import { watchRecordDeletes } from "@kaigilb/gilbplatformcode-plan-record-hooks";
 import { deletedLinkedRecords, deletedLinkedRevision, onDeletedLinkedRecords } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
 import { vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
@@ -56,18 +52,6 @@ export function useRecordsBeingDeleted(): ReadonlySet<string> {
   }, [pending, landedRev]);
 }
 
-// holdingVaultOf and the door lookup of the app both read it through createdInVaultOf. GilbApp: lib/base/recordHooks.ts:2836.
-const CREATED_IN_VAULT_HEAD = ["created-in-vault"] as const;
-/** The cache key for where a create made in this session wrote a record (its short id). GilbApp: `createdInVaultKey`, recordHooks.ts:2838-2840. */
-export function createdInVaultKey(recordId: string) {
-  return [...CREATED_IN_VAULT_HEAD, recordId] as const;
-}
-/** Remember the vault a create wrote into, for the session. GilbApp: `rememberCreatedIn`, lib/base/recordHooks.ts:2842-2845. */
-export function rememberCreatedIn(qc: QueryClient, recordId: string, vaultId: string): void {
-  qc.setQueryDefaults(CREATED_IN_VAULT_HEAD, { gcTime: Infinity, staleTime: Infinity });
-  qc.setQueryData(createdInVaultKey(recordId), vaultId);
-}
-
 /** The one React Query key of a vault's address set. GilbApp: `placeClaimsKey`, lib/mynet/place/usePlaceClaims.ts:50. */
 export const placeClaimsKey = (vaultId: string) => ["mynet", "place-claims", vaultId] as const;
 /** How old a held vault read a card load may use. GilbApp: `PLACE_CLAIMS_STALE_MS`, lib/mynet/place/usePlaceClaims.ts:52. */
@@ -95,24 +79,5 @@ export function usePickerQuery(a: PickerQueryArgs): PickerQueryResult {
     enabled: a.enabled,
     staleTime: a.staleTime,
     retry: false,
-  });
-}
-
-/** One entity's served document and whether the store answered 404. GilbApp: `getResource` and `resourceOf`, lib/mynet/place/lws.ts:57-75 (the etag is not read by `readResources`, so it is left out). */
-async function getResource(id: string, vaultId: string, entityUri?: string): Promise<{ doc: Record<string, unknown>; gone: boolean; typeUri?: string }> {
-  const rec = await readRecord(id, entityUri ?? entityUriInVault(vaultId, id));
-  if (!rec) return { doc: {}, gone: true };
-  return { doc: rec.served?.facts ?? rec.facts, gone: false, ...(rec.typeUri ? { typeUri: rec.typeUri } : {}) };
-}
-
-/**
- * Read MANY records, at most six in flight, in input order; a record the store answered 404 for comes back `gone` with an empty `doc`; any other
- * failed read rejects. GilbApp: `readResources`, lib/mynet/place/lws.ts:164-170 (the host member `readResources` of the Employees group).
- */
-export async function readResources(uris: readonly string[], vaultId: string): Promise<ReadResource[]> {
-  return mapWithConcurrency(uris, MAX_PARALLEL_DEREFERENCES, async (uri) => {
-    const id = idFromResourceUri(uri);
-    const { doc, gone, typeUri } = await getResource(id, vaultId, uri);
-    return { id, uri, doc, gone, ...(typeUri ? { typeUri } : {}) };
   });
 }

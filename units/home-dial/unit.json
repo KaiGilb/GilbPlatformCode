@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "unit": "units/home-dial",
+  "package": "@kaigilb/gilbplatformcode-home-dial",
+  "version": "0.1.0",
+  "purpose": "Finds the holder's home country calling code, to prefill a new phone number.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/phone/useHomeDial.ts",
+        "lines": null,
+        "to": "src/useHomeDial.ts"
+      },
+      {
+        "path": "src/lib/mynet/phone/countryCallingCode.ts",
+        "lines": [
+          21,
+          35
+        ],
+        "to": "src/countryCallingCode.ts"
+      },
+      {
+        "path": "src/lib/mynet/phone/dialCode.ts",
+        "lines": [
+          20,
+          27
+        ],
+        "to": "src/dialCode.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the imports are the units': `claimForPhonePrefill` and `callingCodesOf` from `phone-text` (peer); `splitPhone`, `claimLabeledHome`, `claimForPhonePrefill` and `callingCodesOf` of the source are not copied",
+    "the header comments are new and shorter, and the comments that name a cycle, a ruling, an agent, a date, a ticket or a MyNet commit are reworded with the same facts; no code changed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    {
+      "member": "resolveAncestry",
+      "replaces": "the geo walk from a place to its country (MyNet `lib/geo/baseGeo` `resolveAncestry`); a parameter in the source, default `noAncestry` (src/lib/mynet/phone/useHomeDial.ts:24-27)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

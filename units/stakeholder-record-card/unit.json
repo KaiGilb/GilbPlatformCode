@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-record-card",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-record-card",
+  "version": "0.1.3",
+  "purpose": "Draws and edits the card of a person the holder keeps a record of, with Edit, +, the groups in their order, autosave, and the link to their online card.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          156,
+          164
+        ],
+        "to": "src/StakeholderRecordBody.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          174,
+          183
+        ],
+        "to": "src/recordFacts.ts"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          189,
+          371
+        ],
+        "to": "src/StakeholderRecordCard.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          372,
+          459
+        ],
+        "to": "src/recordFacts.ts"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          464,
+          472
+        ],
+        "to": "src/StakeholderRecordBody.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          473,
+          2470
+        ],
+        "to": "src/StakeholderRecordBody.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          2504,
+          2507
+        ],
+        "to": "src/StakeholderRecordBody.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          2816,
+          2858
+        ],
+        "to": "src/ExtraFact.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          2860,
+          2866
+        ],
+        "to": "src/StakeholderRecordCard.tsx"
+      },
+      {
+        "path": "src/components/records/RecordDetail.tsx",
+        "lines": [
+          2910,
+          3041
+        ],
+        "to": "src/FieldEditor.tsx"
+      },
+      {
+        "path": "src/lib/base/recordVault.ts",
+        "lines": [
+          104,
+          117
+        ],
+        "to": "src/unambiguousVaultOfRecord.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `bareForm` from `vocabulary-source`, `OneCardGroup` from `one-card-merge`, `readLink` from `online-card-link`, `resolveType` `FieldSpec` `ALLOWED_EXTRA_ATTR_SLUGS` `isAppAddressableSlug` from `record-types`, `entityDisplayName` `isTempId` `refreshRecordInCaches` from `record-cache-kit` (not `entity-name`'s `entityDisplayName`), `openTypeNameSlug` from `entity-name`, `useVedaTypeLabel` `prefetchVedaLabels` from `veda-labels`, `clearFreshlyCreated` `consumeFreshlyCreated` from `plan-record-hooks`, `CarrierRenameRefusedError` `rebaseOnStored` `useUpdateRecord` from `record-update`, `createdInVaultOf` `useCachedRecord` `useKnownRecordDoor` `useRecord` from `record-detail-reads`, `uriTail` from `lws-relations`, `readRecord` `RecordConflictError` `RecordForbiddenError` `BaseRecord` `RecordFacts` from `lws-records`, `ENTITY_READ_ONLY_REASON` `isEntityWriteDenied` `markEntityWriteDenied` `useEntityCanWrite` from `entity-write-access`, `recordWriteAllowed` `sessionIdentityKeys` from `record-write`, `vaultOriginOf` `recordDoor` from `vault-origin-rule`, `vaultLabel` from `vault-list`, the card model and vocabulary from `stakeholder-card-model` and `stakeholder-card-vocabulary`, `attributeSpelling` from `term-slots`, `joinPersonName` `ownVaultIdOf` from `plan-self-source` (not `person-name`), the card's frame from `card-mode`, `card-group`, `one-card`, `one-card-context`, `stakeholder-set-fields`, `stakeholder-contact-header`, `contact-rows`, `contact-card-slots`, `add-information`, `person-field-row`, `other-linked-records`, `own-card-state`, `related-children`, `header-layout`, `person-name`, `kind-relation`, `photo-term`, `entity-ref-value`, `vaultNamespaceOfEntityUri` from `plan-stakeholder-lines`.",
+    "The record detail's `content` placement is the only placement: `placementMode` is the constant \"content\" inside the body (the type `RecordDetailPlacement` is kept, not exported); `showActions` (line 511) is removed; the Tags section, the actions rail (2105-2456), the actions title line, the `full`-only band picture size are dropped.",
+    "Dropped ranges (line numbers of the source): 148-155 `ADDRESS_LOCK_ON`; 165-173 the placement type; 209-225 `useSelectedFile`; 264-266 `addedByCardOf`; 267-289 the online-person and select-a-record branches; 290-318 `FileDetail`; 319-323 `NameOnlyCard`; 541-546, 577-578, 598-617, 899-903, 974, 980, 997, 1073-1086, 1185-1190, 1634-1635, 1777-1785, 1789, 1885, 1908-1911 (`PlanFunctionForm`) the Plan arms; 561 `kindsUnknown`; 665-667, 669, 672-677, 873-874, 1930-1942 the organization card (the detection of it, 668 and 670, stays and refuses); 732-733 `setOffersOnly`; 744-767, 769-770, 814-846, 884-895, 919-945, 1302-1356 delete, retype, picture-file guard, Add field; 1803-1817, 1823-1834, 1845-1852; 2036-2101 the generic editor; 2105-2456 the actions rail; 2472-2499, 2508-2815, 2867-2909 `genericDeleteRefusal`, `recordDisplayName`, `RecordReadSections`, `PlanHeaderTitle`.",
+    "Replaced by slot calls of the host, same props at the same places: 1445-1527 the Address, Employment and Skills / Interests / Languages arms (`renderAddress`, `renderEmployment`, `renderSkillsAndInterests`, `renderLanguages`; with no `renderSkillsAndInterests` the skills section is `ContactRows kind=\"skill\"` as the source's own fallback arm at 1528 draws it); 1695-1719 and 1746-1764 `VaultAvatar` (`renderRecordPicture`); 1765-1775 `TypeIcon` (`renderBandIcon`); 1790-1796 `TypeDescription` (`renderTypeDescription`); 2019-2029 `Attachments` (`renderAttachments`).",
+    "Inline edits: `useShell()` (498) is `host.useShell()`, read after `useStakeholderRecordCardHost()`; `photoReadKeysSync()` (502) and `photoReadKeys()` (505) are `host.`; `stakeholderCardVocabularyQuery()` (530) takes `host.vocabulary`; `holdingVaultOf(qc, id)` (679, 739) is `(host.holdingVaultOf ?? createdInVaultOf)(qc, id)`; `languagesShown` (721) also needs `renderLanguages`; `recordWriteAllowed(...)` (1055) gets `isEntityWriteDenied(recordRef.current.id)` as its fourth argument; the dynamic import of `vedaLabels` (907) is a static `prefetchVedaLabels`; `retypingRef` (1021) is gone; `managedCard` (1584) is `ready && !orgCard`; the else arm of the content (2036) is one status line (`cardStatusLine`).",
+    "The entry `StakeholderRecordCard({ recordId, vaultId?, slots? })` replaces the outer `RecordDetail` (189-370): the record id and the door are props; with no door (no `vaultId`, no `createdInVaultOf`, no cached copy that names one) it reads nothing and says so; the not-returned sentence looks the vault up in `vaults` (not `contentScope.readVault`); the body is wrapped in `RefLabelContext.Provider value={host.useRefLabel}`.",
+    "`ExtraFact`, `FieldEditor`, `editorFacts`, `sameEditorFacts`, `extraKeysFromFacts`, `openNodeFields`, `effectiveFields`, `linkTargetOf` are exported by their files (the source had `editorFacts` and `extraKeysFromFacts` exported, the rest private); `unambiguousVaultOfRecord` (recordVault.ts 104-117) is copied whole with its import of `vaultNamespaceOfEntityUri`.",
+    "Comments naming a cycle, ruling, agent, date, ticket or wiki rule are removed; the others are kept; a header comment is new in every file."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/stakeholderRecordCardHost.ts",
+    "src/StakeholderRecordBody.tsx",
+    "src/StakeholderRecordCard.tsx"
+  ],
+  "host": [
+    {
+      "member": "useShell",
+      "replaces": "useShell(), a hook, GilbApp src/components/ShellContext.ts:412, called at RecordDetail.tsx:197, :199 (outer) and :498 (body); the card reads session, vaults, contentScope.reach, writeGuard, openRecordFromList"
+    },
+    {
+      "member": "photoReadKeys",
+      "replaces": "photoReadKeys(), GilbApp src/lib/base/photoTerm.ts:37, called at RecordDetail.tsx:505"
+    },
+    {
+      "member": "photoReadKeysSync",
+      "replaces": "photoReadKeysSync(), GilbApp src/lib/base/photoTerm.ts:74, called at RecordDetail.tsx:502"
+    },
+    {
+      "member": "holdingVaultOf",
+      "replaces": "holdingVaultOf(qc, id), GilbApp src/lib/base/recordVault.ts:26 (optional; the default is createdInVaultOf), called at RecordDetail.tsx:679 and :739"
+    },
+    {
+      "member": "vocabulary",
+      "replaces": "the CardVocabularyHost given to stakeholderCardVocabularyQuery(), GilbApp src/lib/base/stakeholderCard.ts, called at RecordDetail.tsx:530 (it took none)"
+    },
+    {
+      "member": "useRefLabel",
+      "replaces": "useResolvedRefLabel(ref, vaultId), a hook, GilbApp src/components/records/EntityRefValue.tsx:18, inside EntityRefValue drawn by FieldEditor and ExtraFact"
+    },
+    {
+      "member": "renderRecordPicture",
+      "replaces": "VaultAvatar and forgetRecordFace, GilbApp src/components/VaultAvatar.tsx, used at RecordDetail.tsx:1698 and :1747 (optional)"
+    },
+    {
+      "member": "renderBandIcon",
+      "replaces": "TypeIcon with recordTypePictureSrc, used at RecordDetail.tsx:1765 (optional)"
+    },
+    {
+      "member": "renderTypeDescription",
+      "replaces": "TypeDescription, GilbApp src/components/records/TypeDescription.tsx, used at RecordDetail.tsx:1791 (optional)"
+    },
+    {
+      "member": "renderAttachments",
+      "replaces": "Attachments, GilbApp src/components/records/Attachments.tsx, used at RecordDetail.tsx:2021 (optional)"
+    },
+    {
+      "member": "renderAddress",
+      "replaces": "AddressRows, GilbApp src/components/records/AddressRows.tsx, used at RecordDetail.tsx:1449 (optional)"
+    },
+    {
+      "member": "renderEmployment",
+      "replaces": "EmploymentRows, GilbApp src/components/records/EmploymentRows.tsx, used at RecordDetail.tsx:1470 (optional)"
+    },
+    {
+      "member": "renderLanguages",
+      "replaces": "LanguageSection, GilbApp src/components/records/LanguageSection.tsx, used at RecordDetail.tsx:1519 (optional)"
+    },
+    {
+      "member": "renderSkillsAndInterests",
+      "replaces": "SkillRows and InterestRows, GilbApp src/components/records/SkillRows.tsx and InterestRows.tsx, used at RecordDetail.tsx:1493 and :1511 (optional)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

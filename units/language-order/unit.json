@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/language-order",
+  "package": "@kaigilb/gilbplatformcode-language-order",
+  "version": "0.1.0",
+  "purpose": "The rules of a person's language list: which language the contact-language tag marks, the list with the marked one first, what moving the mark writes.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/languageEntries.ts",
+        "lines": [
+          138,
+          220
+        ],
+        "to": "src/languageOrder.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/contactLanguageTag.ts",
+        "lines": [
+          82,
+          90
+        ],
+        "to": "src/languageOrder.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports come from `language-entry` (`sameLanguageTag`, `contactLanguageName`, the type `LanguageEntryInfo`); the file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

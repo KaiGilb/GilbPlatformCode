@@ -6,6 +6,7 @@
 import { setBaseOrigin, setLocalRigHosts, setMinOntologyQuery, setOntologyApiOrigin, setOntologyApiOriginRaw, setPublicCorpusOrigin, setSystemVaultHosts, setVocabTypeBatchRevisions } from "@kaigilb/gilbplatformcode-base-origin";
 import { setTermOrigin } from "@kaigilb/gilbplatformcode-term-origin";
 import { setSystemHostLabels } from "@kaigilb/gilbplatformcode-own-card";
+import { setMyNetProfileUrl } from "@kaigilb/gilbplatformcode-own-card-state";
 import { lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { setTypeKey } from "@kaigilb/gilbplatformcode-type-key";
 import { typeFacetKey } from "@kaigilb/gilbplatformcode-plan-record-hooks";
@@ -31,6 +32,12 @@ export interface StakeholderCardSettings {
    * every request is signed for the host it is sent to.
    */
   dpopProofOrigin?: string;
+  /**
+   * The address of the profile editor, for the held card's own-card band ("Edit in MyNet"): an absolute http or https address with no user name or password
+   * (`setMyNetProfileUrl` of `own-card-state`; it throws a TypeError for any other). Default: none set. The band is drawn only on the holder's OWN card, and then
+   * reads the address when it draws and throws, naming the setter, when none was set: give it when the holder may open their own card.
+   */
+  mynetProfileUrl?: string;
 }
 
 export interface PlatformSetup {
@@ -54,6 +61,7 @@ export function applyPlatformSetup(setup: PlatformSetup): void {
   if (s?.minOntologyQuery !== undefined) setMinOntologyQuery(s.minOntologyQuery);
   if (s?.vocabTypeBatchRevisions !== undefined) setVocabTypeBatchRevisions(s.vocabTypeBatchRevisions);
   if (s?.publicCorpusOrigin !== undefined) setPublicCorpusOrigin(s.publicCorpusOrigin);
+  if (s?.mynetProfileUrl !== undefined) setMyNetProfileUrl(s.mynetProfileUrl);
 }
 
 /**

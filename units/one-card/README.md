@@ -145,6 +145,14 @@ The app shares these keys, so they are not renamed:
 - The fact key `sameAs` (`ONLINE_CARD_LINK_KEY`): the record fact that holds the link.
 - No `localStorage` or `sessionStorage` key.
 
+## Changes in 0.2.0
+
+A row of theirs on the language term (`a:languageUsed`, found by the field's term, with or without its `a:` prefix, never by the value's shape) is drawn by its name with its country's flag, as `LanguageRow` of `language-row` draws it, and no longer as the language's address. This is in both views: the linked one (`valueText` of the linked card, through `theirValueText`) and the one with a single source. Every other field is drawn as before (a birthday as a day and month, a skill by its label, any other value as served). The card makes no request of its own for this; `language-row` reads the language entry and the flag files once each (see its README). The card has no host member for it. `OneCardView.valueText` already returned a `ReactNode`; `theirValueText` (private to `OneCardBody.tsx`) now returns one too, and it is called only there.
+
+One new peer: `language-row` ^0.1.0 (and, through it, `flag-image`, `flag-choice`, `flag-source`, `language-entry`, `language-fetch-pool`).
+
+Tests: 171 (166 as in 0.2.0: 160 kept unchanged and 6 in `OneCardBody.languageUsed.test.tsx`; 5 new in `OneCardBody.skillName.test.tsx`).
+
 ## Do not
 
 - Do not give the host a `placeClaimsKey` of its own: it must be the key the Address group reads under, or the card sends a request on every open.
@@ -159,6 +167,12 @@ The app shares these keys, so they are not renamed:
 - "`Date.now() < online.retryAt` is a timer." It is read at render only: "Try again" is enabled when the card next draws after the platform's wait, not at the moment the wait ends.
 - "`usePersonCard` asks again by itself on any change." It asks again only when the controller's state changes while the kept answer is a failed lookup; a settled answer (person, organization, none) is never asked again for the card's life.
 - "`useHeldAddresses` follows a change of host." The memos list no host; a host is set once.
+
+## Changes in 0.3.0
+
+- Named change in `src/OneCardBody.tsx` (`skillText`, new, used by the linked view's `valueText`): a skill of theirs is shown by its name. The master's label when there is one; else the catalogue name in the term's address (`referentNameOf` of the new peer `term-name-text`: `.../base/t/StreetWelding` is "Street Welding"); else, for any other address, the word "A skill"; text that is not an address (a free-text skill) is its own name. Before: the label, else the last part of the address, else the address. The `languageUsed` and birthday paths are unchanged.
+- New peer: `term-name-text` ^0.1.0 (and through it `skill-uri-label`, `term-origin`). The ontology origin must be set (`setTermOrigin`), as the held card's units already need.
+- New test file `src/OneCardBody.skillName.test.tsx` (5 cases). Mutation checks of `src/OneCardBody.tsx`: 6 mutants (the source's last-part fallback back, any other address shown as the address, a free-text skill replaced by the word, the term address's name not used, the master's label ignored, a storage address taken as text), 6 killed.
 
 ## Where it came from
 

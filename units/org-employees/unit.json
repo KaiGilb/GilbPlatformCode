@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/org-employees",
   "package": "@kaigilb/gilbplatformcode-org-employees",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Lists an organization's employees inline and in a searchable sheet.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -16,9 +16,7 @@
       { "path": "src/components/records/orgCard/OrgEmployeeRow.tsx", "lines": null, "to": "src/OrgEmployeeRow.tsx" },
       { "path": "src/components/records/orgCard/OrgShortList.tsx", "lines": null, "to": "src/OrgShortList.tsx" },
       { "path": "src/components/records/orgCard/OrgListSheet.tsx", "lines": null, "to": "src/OrgListSheet.tsx" },
-      { "path": "src/components/records/orgCard/useOrgEmployees.ts", "lines": null, "to": "src/useOrgEmployees.ts" },
-      { "path": "src/lib/mynet/heldnote/heldNote.ts", "lines": [116, 123], "to": "src/subjectSpellings.ts" },
-      { "path": "src/lib/mynet/heldnote/heldNote.ts", "lines": [130, 142], "to": "src/subjectSpellings.ts" }
+      { "path": "src/components/records/orgCard/useOrgEmployees.ts", "lines": null, "to": "src/useOrgEmployees.ts" }
     ]
   },
   "namedChanges": [
@@ -27,7 +25,8 @@
     "`OrgEmployeeRow` reads `RecordFace` from the host and draws it only when the host gives one (absent: no face is drawn, the name and titles still show and the row still opens the person);",
     "`OrgShortList` reads `useSheetHistory` and `dropStaleSheetEntry` from the host, called at the same places as the source called its own; `useOrgEmployees` passes the host to `readOrgEmployeesPage`;",
     "comments made generic (cycle, step, tester and ruling tags, dates, person names and app names removed); no other code change.",
-    "0.2.0: `src/servedValue.ts` (a copy of `orgTerms.ts` lines 47-58) and the host member `resolveEmploymentLinkVocab` are removed; `refsOf`, `servedValue` and the type `EmploymentLinkVocab` are still exported from the entry point, re-exported from `org-terms`."
+    "0.2.0: `src/servedValue.ts` (a copy of `orgTerms.ts` lines 47-58) and the host member `resolveEmploymentLinkVocab` are removed; `refsOf`, `servedValue` and the type `EmploymentLinkVocab` are still exported from the entry point, re-exported from `org-terms`.",
+    "0.2.1: `src/subjectSpellings.ts` (copies of `subjectSpellings`, `hostOf` and `inVault`, source `heldNote.ts` lines 116-123 and 130-142) is removed; `pagedFind.ts` and the entry point import `subjectSpellings` and `inVault` from the unit `held-notes` (which now owns them; the stripped declarations compare 0; `hostOf` was private to the copy and is private in `held-notes`). `subjectSpellings` and `inVault` are still exported from the entry point, re-exported from `held-notes`. No behaviour changes; the unit gains the peer `held-notes` ^0.1.0."
   ],
   "newFiles": [
     "src/index.ts",

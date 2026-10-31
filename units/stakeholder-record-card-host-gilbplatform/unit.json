@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "unit": "units/stakeholder-record-card-host-gilbplatform",
+  "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
+  "version": "0.3.0",
+  "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
+    "files": []
+  },
+  "namedChanges": [
+    "This unit is new composition code, not an extraction: it copies no line of GilbApp. It builds the host of `stakeholder-record-card` (`StakeholderRecordCardHost`) from `useStakeholderCardPlatform()` of `stakeholder-card-hosts-gilbplatform` and mounts it above the card (`HeldStakeholderCard`).",
+    "It exists apart from the provider so that the provider does not import `stakeholder-record-card`: the record card's own tests install the provider, and a provider that imported the card would be a dependency cycle.",
+    "`HeldStakeholderCard` draws the sentence \"The MyNet profile address is not set, so this card is not drawn.\" and no card when `settings.mynetProfileUrl` was not given to the provider, because the card's own-card band (`own-card-state`) throws when no address is set. GilbApp built the address from the profile app's base address at module load.",
+    "test/ holds the master and platform fixtures of the provider's tests (`world.ts`, `support.ts`, `fixture*.ts`, `writableFields.ts`, `fakeSession.ts`, `memoryStorage.ts`), copied unchanged, and `heldWorld.ts` with the contact catalogue, which the held card's tests need; they are not shipped as source.",
+    "0.2.0: the host gives `renderLanguages` (`LanguageSection` of `language-section`, the slot's props as they are, no `renderCountrySearch`). New: `test/languagesWorld.ts`; `test/fixturePlatform.ts` gains a `DELETE /lws/r/<id>` route (a test fixture).",
+    "0.3.0: the host gives `renderSkillsAndInterests` (`Fragment` of `SkillRows` of `skill-rows` and `InterestRows` of `interest-rows`, each with its half of the slot's props as they are). New: `src/heldCard.skills.test.tsx`, `test/skillsWorld.ts` (test fixtures); the lockfile is made again."
+  ],
+  "newFiles": [
+    "scripts/check-host-agnostic.mjs",
+    "src/HeldStakeholderCard.tsx",
+    "src/example.test.tsx",
+    "src/heldCard.languages.test.tsx",
+    "src/heldCard.skills.test.tsx",
+    "src/heldCard.test.tsx",
+    "src/hostAgnostic.test.ts",
+    "src/index.ts",
+    "src/recordCardHost.test.tsx",
+    "src/recordCardHost.ts",
+    "test/contactCatalogue.master.json",
+    "test/example.tsx",
+    "test/fakeSession.ts",
+    "test/fixturePlatform.ts",
+    "test/fixtureReference.ts",
+    "test/fixtureTag.ts",
+    "test/harness.tsx",
+    "test/heldWorld.ts",
+    "test/languagesWorld.ts",
+    "test/memoryStorage.ts",
+    "test/setup.ts",
+    "test/skillsWorld.ts",
+    "test/support.ts",
+    "test/world.ts",
+    "test/writableFields.ts"
+  ],
+  "host": [
+    {
+      "member": "StakeholderRecordCardHost.useShell",
+      "replaces": "useShell(), GilbApp src/components/ShellContext.ts:412",
+      "implementedBy": "`useShell` of the provider's platform (`StakeholderCardPlatform`)"
+    },
+    {
+      "member": "StakeholderRecordCardHost.photoReadKeys",
+      "replaces": "photoReadKeys(), src/lib/base/photoTerm.ts:37",
+      "implementedBy": "the platform's `photoReadKeys`"
+    },
+    {
+      "member": "StakeholderRecordCardHost.photoReadKeysSync",
+      "replaces": "photoReadKeysSync(), src/lib/base/photoTerm.ts:74",
+      "implementedBy": "the platform's `photoReadKeysSync`"
+    },
+    {
+      "member": "StakeholderRecordCardHost.vocabulary",
+      "replaces": "stakeholderCardVocabularyQuery()",
+      "implementedBy": "`createCardVocabularyHost` of the provider, with the platform's `persistVocabulary` when given"
+    },
+    {
+      "member": "StakeholderRecordCardHost.useRefLabel",
+      "replaces": "useResolvedRefLabel, src/components/records/EntityRefValue.tsx:18-46",
+      "implementedBy": "the platform's `useRefLabel`"
+    },
+    {
+      "member": "StakeholderRecordCardHost.holdingVaultOf and the render slots",
+      "replaces": "holdingVaultOf and the host-owned sections",
+      "implementedBy": "absent: the card's defaults stand"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

@@ -13,6 +13,12 @@ import { __resetEmploymentLinkVocab, __resetOrgTerms } from "@kaigilb/gilbplatfo
 import { __resetPersonKinds } from "@kaigilb/gilbplatformcode-org-employees";
 import { __resetSheetHistory } from "@kaigilb/gilbplatformcode-sheet-history";
 import { resetGranteeFaces } from "@kaigilb/gilbplatformcode-grantee-face";
+import { __resetAnnotationCapability } from "@kaigilb/gilbplatformcode-contact-annotation";
+import { __resetContactLabelVocab } from "@kaigilb/gilbplatformcode-contact-labels";
+import { __resetAddedByForTest } from "@kaigilb/gilbplatformcode-added-by";
+import { resetStoredSpellingCache, resetVaultContextCache } from "@kaigilb/gilbplatformcode-lws-records";
+import { clearEntityWriteDenials } from "@kaigilb/gilbplatformcode-entity-write-access";
+import { resetMyNetProfileUrl } from "@kaigilb/gilbplatformcode-own-card-state";
 import { __resetPhotoTermResolvers } from "../src/photoTerm";
 
 // jsdom has no object URLs: the loaders make and drop them, so a no-op pair stands in unless a test brings its own.
@@ -20,6 +26,19 @@ for (const name of ["createObjectURL", "revokeObjectURL"] as const) {
   if (typeof (URL as unknown as Record<string, unknown>)[name] !== "function") {
     Object.defineProperty(URL, name, { configurable: true, writable: true, value: name === "createObjectURL" ? () => "blob:stand-in" : () => undefined });
   }
+}
+
+// jsdom lacks these; the held card's header reads its width through ResizeObserver.
+if (typeof window !== "undefined") {
+  if (!window.ResizeObserver)
+    window.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof window.ResizeObserver;
+  if (!window.matchMedia)
+    window.matchMedia = ((query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia;
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 }
 
 function memoryStorage(): Storage {
@@ -43,6 +62,13 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   __resetPhotoTermResolvers();
+  __resetAnnotationCapability();
+  __resetContactLabelVocab();
+  __resetAddedByForTest();
+  clearEntityWriteDenials();
+  resetMyNetProfileUrl();
+  resetStoredSpellingCache();
+  resetVaultContextCache();
   resetGranteeFaces();
   __resetOrgTerms();
   __resetEmploymentLinkVocab();

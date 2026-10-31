@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/picker-box",
+  "package": "@kaigilb/gilbplatformcode-picker-box",
+  "version": "0.1.0",
+  "purpose": "A search box with a list to pick one value from; only a picked match is ever handed on.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PickerBox.tsx",
+        "lines": [
+          13,
+          191
+        ],
+        "to": "src/PickerBox.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "None to the code; the file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

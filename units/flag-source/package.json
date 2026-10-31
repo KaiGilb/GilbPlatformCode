@@ -1,0 +1,31 @@
+{
+  "name": "@kaigilb/gilbplatformcode-flag-source",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads a country's flag from the geo catalogue once and keeps it on the device.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-flag-choice": "file:../flag-choice",
+    "@kaigilb/gilbplatformcode-language-fetch-pool": "file:../language-fetch-pool",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-flag-choice": "^0.1.0",
+    "@kaigilb/gilbplatformcode-language-fetch-pool": "^0.1.0"
+  }
+}

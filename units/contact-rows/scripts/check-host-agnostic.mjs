@@ -20,7 +20,7 @@ const UNIT = "units/contact-rows";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\./i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^react$/, /^react\/jsx-runtime$/, /^react-dom$/, /^@kaigilb\/gilbplatformcode-add-your-own$/, /^@kaigilb\/gilbplatformcode-card-group$/, /^@kaigilb\/gilbplatformcode-card-mode$/, /^@kaigilb\/gilbplatformcode-contact-actions$/, /^@kaigilb\/gilbplatformcode-contact-rows-model$/, /^@kaigilb\/gilbplatformcode-one-card-context$/, /^@kaigilb\/gilbplatformcode-one-card-rows$/, /^@kaigilb\/gilbplatformcode-open-popups$/, /^@kaigilb\/gilbplatformcode-remove-control$/, /^@kaigilb\/gilbplatformcode-term-origin$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^react$/, /^react\/jsx-runtime$/, /^react-dom$/, /^@kaigilb\/gilbplatformcode-add-your-own$/, /^@kaigilb\/gilbplatformcode-card-group$/, /^@kaigilb\/gilbplatformcode-card-mode$/, /^@kaigilb\/gilbplatformcode-contact-actions$/, /^@kaigilb\/gilbplatformcode-contact-rows-model$/, /^@kaigilb\/gilbplatformcode-held-notes$/, /^@kaigilb\/gilbplatformcode-home-dial$/, /^@kaigilb\/gilbplatformcode-one-card-context$/, /^@kaigilb\/gilbplatformcode-one-card-rows$/, /^@kaigilb\/gilbplatformcode-open-popups$/, /^@kaigilb\/gilbplatformcode-remove-control$/, /^@kaigilb\/gilbplatformcode-term-name-text$/, /^@kaigilb\/gilbplatformcode-term-origin$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);

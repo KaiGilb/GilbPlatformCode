@@ -12,12 +12,12 @@ One section component for the four multi-valued contact terms of a person record
   - **Email**: the sub-label is Work or Private, tap it to switch; an address that does not fit `name@domain.tld` is shown with the reason and never saved; Send email link.
   - **Phone**: the value is edited by the host's `PhoneValue` (country code and number); call and text links. A sub-label is shown only when stored.
   - **Social** (online account): the value must be a web address, stored as a full link and labelled with its platform when it is a known one (about 30); an Open link; the platform's small logo in front of its name.
-  - **Skills**: a skill is picked from the catalogue through the host's picker, shown by name with its referent under it, saved as a reference at once; under it the host's "About this skill" note, who added it and who sees it.
+  - **Skills**: a skill is picked from the catalogue through the host's picker, shown by its name (never its address), saved as a reference at once; under it the host's "About this skill" note, who added it and who sees it.
   - In presentation (a `card-mode` card not being edited) the rows are text, nothing edits, and no empty row is drawn. On a one-card (`one-card-context`) the "+ Add your own" field is drawn in place and a pick from "Add information" opens the new row ready for typing (phone: the country-code box has the cursor; skill: the picker's search box).
 - `OWN_FIELD_BOX`: the class string of the "+ Add your own" box.
 - `ContactRowsHostProvider`, `ContactRowsHostContext`, `useContactRowsHost()`: the host (see below).
-- `joinPhone(dial, national)`: the app's own, a named copy (see "Wrong readings").
-- `isEmailFormat`, `EMAIL_FORMAT_HINT`; `isWebAddress`, `normalizeWebAddress`, `platformOf`, `PLATFORM_LABELS`, `WEB_ADDRESS_HINT`; `skillReferentUri` and the types `ThinSkill`, `HeldNotesState`: the checks the section runs, exported so a host builds its pieces with the same rules.
+- `joinPhone(dial, national)`: the app's own (held by `home-dial`, re-exported here; see "Wrong readings").
+- `isEmailFormat`, `EMAIL_FORMAT_HINT`; `isWebAddress`, `normalizeWebAddress`, `platformOf`, `PLATFORM_LABELS`, `WEB_ADDRESS_HINT`; `skillReferentUri` and the types `ThinSkill`, `HeldNotesState` (re-exported from `held-notes` since 0.1.1): the checks the section runs, exported so a host builds its pieces with the same rules.
 
 ## What this is not
 
@@ -33,7 +33,7 @@ Package: `@kaigilb/gilbplatformcode-contact-rows`
 From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/contact-rows` prints:
 
 ```sh
-npm install react@^19.0.0 react-dom@^19.0.0 <path-to-the-library>/units/add-your-own <path-to-the-library>/units/card-mode <path-to-the-library>/units/contact-actions <path-to-the-library>/units/contact-rows-model <path-to-the-library>/units/online-card-link <path-to-the-library>/units/open-popups <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/remove-control <path-to-the-library>/units/stakeholder-ui-kit <path-to-the-library>/units/term-origin <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/one-card-merge <path-to-the-library>/units/one-card-rows <path-to-the-library>/units/one-card-context <path-to-the-library>/units/card-group <path-to-the-library>/units/contact-rows
+npm install @tanstack/react-query@^5.101.2 react@^19.0.0 react-dom@^19.0.0 <path-to-the-library>/units/add-your-own <path-to-the-library>/units/base-origin <path-to-the-library>/units/base-record <path-to-the-library>/units/card-mode <path-to-the-library>/units/contact-actions <path-to-the-library>/units/contact-rows-model <path-to-the-library>/units/credential-surface <path-to-the-library>/units/direct-shares <path-to-the-library>/units/entity-ref <path-to-the-library>/units/file-words <path-to-the-library>/units/folder-part <path-to-the-library>/units/id-tail <path-to-the-library>/units/narrow-total <path-to-the-library>/units/online-card-link <path-to-the-library>/units/open-popups <path-to-the-library>/units/own-card <path-to-the-library>/units/phone-text <path-to-the-library>/units/home-dial <path-to-the-library>/units/photo-term <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/record-types <path-to-the-library>/units/relation-role <path-to-the-library>/units/remove-control <path-to-the-library>/units/resource-id <path-to-the-library>/units/result-total <path-to-the-library>/units/share-refusal <path-to-the-library>/units/signin <path-to-the-library>/units/skill-uri-label <path-to-the-library>/units/stakeholder-list-reader <path-to-the-library>/units/stakeholder-ui-kit <path-to-the-library>/units/contact-header <path-to-the-library>/units/term-origin <path-to-the-library>/units/term-name-text <path-to-the-library>/units/term-slots <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/plan-links-model <path-to-the-library>/units/description-parts-model <path-to-the-library>/units/vault-list <path-to-the-library>/units/vault-modes <path-to-the-library>/units/vault-namespace <path-to-the-library>/units/vault-origin-rule <path-to-the-library>/units/lws-session-bridge <path-to-the-library>/units/lws-records <path-to-the-library>/units/file-download-outcome <path-to-the-library>/units/lws-vault-sets <path-to-the-library>/units/ontology-reads <path-to-the-library>/units/lws-relations <path-to-the-library>/units/platform-fetch <path-to-the-library>/units/stakeholder-list-state <path-to-the-library>/units/vault-profile-photo <path-to-the-library>/units/vault-resources <path-to-the-library>/units/vault-type-census <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/holder-reference <path-to-the-library>/units/one-card-merge <path-to-the-library>/units/one-card-rows <path-to-the-library>/units/one-card-context <path-to-the-library>/units/card-group <path-to-the-library>/units/stakeholder-card-vocabulary <path-to-the-library>/units/contact-kind-model <path-to-the-library>/units/contact-kind-catalogue <path-to-the-library>/units/tag-grammar <path-to-the-library>/units/tag-client <path-to-the-library>/units/main-tag <path-to-the-library>/units/record-cache-kit <path-to-the-library>/units/working-set-store <path-to-the-library>/units/plan-record-hooks <path-to-the-library>/units/kind-relation <path-to-the-library>/units/plan-self-source <path-to-the-library>/units/reachable-vaults <path-to-the-library>/units/adder-card <path-to-the-library>/units/stated-by <path-to-the-library>/units/held-notes <path-to-the-library>/units/contact-rows
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -101,6 +101,23 @@ Also needed: one `CardModeProvider` (`card-mode`) above the card when it has a p
 
 `ContactRowsHostContext` is one React context. A provider from another installed copy of this unit is not seen. Install the unit once.
 
+## Changes in 0.2.0
+
+A skill is shown by its name, never by its address (Kai, 2026-10-31). Before, an edit row drew the skill's referent address as a line under its name (and `title` of it), and every place that names the skill fell back to the address (`r.value || r.ref`): the row, the "Remove" control, the note's "About <name>" and "Edit note for <name>", and the visibility switch.
+
+- The name is `skillNameOf(row)`: the name the sidecar entry cached, else the catalogue name in the skill's term address (`referentNameOf` of the new peer `term-name-text`: `.../base/t/SellProducts` is "Sell Products"), else the word "A skill". It is used in the seven places that read `r.value || r.ref`.
+- The address line under a picked skill is not drawn, and no `title` carries the address.
+- The test "shows a picked skill as MyNet does: its name, and its referent under it" is inverted: it now asserts the name and that the address is not there. `ContactRows.skillName.test.tsx` (new, 10 cases) pins the four name cases in edit and presentation: nothing a person sees or hears (text, `aria-label`, `title`) holds `https://` or the tail of an address.
+- New peer: `term-name-text` ^0.1.0 (and through it `skill-uri-label`, `term-origin`).
+
+## Changes in 0.1.1
+
+A patch release: no behaviour changes. The interface `HeldNotesState` (the state of the held notes of one kind, which the Skills rows read) is no longer a copy in this unit: it is imported, as a type, from the unit `held-notes`, which owns the held-note layer (its stripped declaration compares 0 against the copy that is removed, and against the source). `ContactRows.tsx` and the entry point import it from there; the entry point still exports the type under the same name. The unit gains the peer `held-notes` ^0.1.0 (and, through it, the peers of that unit). All tests are unchanged and pass.
+
+## Changes in 0.1.2
+
+A patch release: no behaviour changes. `joinPhone` is no longer a copy in this unit: it is imported from the unit `home-dial`, which holds the app's version (the stripped function compares 0 against the copy that is removed, 38 words, and against the source). `src/dialCode.ts` is now one line that re-exports it, so `ContactRows.tsx`, the entry point (which still exports `joinPhone`) and the tests read it from the same path. The unit gains the peer `home-dial` ^0.1.0 (and, through it, `phone-text`). All tests are unchanged and pass.
+
 ## Changes from production
 
 **Added behaviour (the app always has these members).** All other changes are in "Where it came from". The absent-member paths, exactly:
@@ -137,8 +154,7 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24e
 - `src/components/records/ContactRows.tsx` lines 62-762 to `src/ContactRows.tsx` (the header comment and imports are replaced).
 - `src/lib/base/emailFormat.ts`, whole, to `src/emailFormat.ts`.
 - `src/lib/base/onlineAccount.ts`, whole, to `src/onlineAccount.ts`.
-- `src/lib/mynet/phone/dialCode.ts` lines 20-27 (`joinPhone`) to `src/dialCode.ts`.
-- `src/lib/mynet/heldnote/useHeldNotes.ts` lines 73-106 (the interface `HeldNotesState`) to `src/heldNotesState.ts`.
+- `src/lib/mynet/phone/dialCode.ts` lines 20-27 (`joinPhone`): copied to `src/dialCode.ts` up to 0.1.1; since 0.1.2 it is `home-dial`'s (see "Changes in 0.1.2").
 - `src/lib/mynet/skills/thinSkills.ts` lines 19-46 (`ThinSkill`) and 60-81 (`skillReferentUri`) to `src/thinSkills.ts`.
 
 **Merged units compared and taken.** `contact-actions` (`toMailtoHref`, `phoneForUri`, `resolvableSocialHref`: equal to the app's on measured inputs), `contact-rows-model`, `add-your-own`, `card-group`, `card-mode`, `one-card-context`, `one-card-rows`, `open-popups`, `remove-control` and `term-origin`.
@@ -156,3 +172,5 @@ Named changes, and only these (a token diff of `ContactRows.tsx` against the sou
 `src/index.ts` and `src/contactRowsHost.tsx` are new.
 
 Tests (hosts are `example.test`, people Ann and Ben): 9 of the 10 `ContactRows*.test.tsx` files ported as `ContactRows.{actions,addOwn,controls,emailFormat,focus,look,onlineAccount,save,skills}.test.tsx` (74 cases; the 10 `vi.mock` calls are the fake host and `test/` doubles). Left out: `ContactRows.addFocus.c214e9.test.tsx` (2 cases) tests the app's `PhoneValue`, not this unit. `ContactRows.absent.test.tsx` (18) and `ContactRows.pins.test.tsx` (13) are new. `src/hostAgnostic.test.ts` runs the host-agnostic check against planted faults.
+
+Since 0.2.0: `ContactRows.skillName.test.tsx` (new, 10 cases) and the inverted case of `ContactRows.skills.test.tsx`. Mutation checks of 0.2.0: 11 mutants of `src/ContactRows.tsx` (the address line drawn again, the address as a title, the address or its tail as the fallback name, the old `r.value || r.ref` in the Remove label, in the note of an edit row and of a presentation row, in the visibility switch of an edit row and of a presentation row, in the presentation row's text, and the cached name ignored): 9 killed; 2 are not observable (the presentation row's note and visibility switch use the name only in the `aria-label` of controls that are not drawn while the card is read-only: the name never reaches the screen or a screen reader there).

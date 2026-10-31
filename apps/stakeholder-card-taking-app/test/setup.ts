@@ -11,6 +11,30 @@ import { resetTypeKey } from "@kaigilb/gilbplatformcode-type-key";
 import { forgetStakeholderKindReaders } from "@kaigilb/gilbplatformcode-stakeholder-kinds";
 import { forgetLinkedRecords, forgetPageLinks, forgetScreenLinks } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
 import { __resetPersonCardSession } from "@kaigilb/gilbplatformcode-stakeholder-list-doors";
+import { __resetAnnotationCapability } from "@kaigilb/gilbplatformcode-contact-annotation";
+import { __resetContactLabelVocab } from "@kaigilb/gilbplatformcode-contact-labels";
+import { __resetAddedByForTest } from "@kaigilb/gilbplatformcode-added-by";
+import { resetStoredSpellingCache, resetVaultContextCache } from "@kaigilb/gilbplatformcode-lws-records";
+import { clearEntityWriteDenials } from "@kaigilb/gilbplatformcode-entity-write-access";
+import { resetMyNetProfileUrl } from "@kaigilb/gilbplatformcode-own-card-state";
+
+// jsdom lacks these; the held card's header reads its width through ResizeObserver.
+if (typeof window !== "undefined") {
+  if (!window.ResizeObserver)
+    window.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof window.ResizeObserver;
+  if (!window.matchMedia)
+    window.matchMedia = ((query: string) => ({ matches: false, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia;
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+}
+for (const name of ["createObjectURL", "revokeObjectURL"] as const) {
+  if (typeof (URL as unknown as Record<string, unknown>)[name] !== "function") {
+    Object.defineProperty(URL, name, { configurable: true, writable: true, value: name === "createObjectURL" ? () => "blob:stand-in" : () => undefined });
+  }
+}
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -33,6 +57,13 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  __resetAnnotationCapability();
+  __resetContactLabelVocab();
+  __resetAddedByForTest();
+  clearEntityWriteDenials();
+  resetMyNetProfileUrl();
+  resetStoredSpellingCache();
+  resetVaultContextCache();
   resetBaseOrigin();
   resetSystemVaultHosts();
   resetLocalRigHosts();
