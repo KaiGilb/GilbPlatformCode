@@ -1,5 +1,5 @@
 // The held card's Employment section, end to end in the app (fakes only): "+ Add your own" makes a record, the platform's world gives that record two employments, and the
-// held card draws each by its COMPANY NAME, its role line and its titles, never an address and never the work place (the host gives no place slot). Reading makes no write of the
+// held card draws each by its COMPANY NAME, its role line and its titles, never an address (since host 0.5.0 the work place is drawn too, by its name; this world serves no catalogue, so a place is "A place"). Reading makes no write of the
 // section's: the only writes are the ones "+ Add your own" makes. Both tests are the app's own proof that the host 0.4.0 supplies the section (the installed host copy with
 // the slot taken out makes them fail).
 import { describe, expect, test } from "vitest";
@@ -27,7 +27,7 @@ async function heldCardWithEmployments() {
 }
 
 describe("the held card's Employment", () => {
-  test("each employment is drawn by its company name, its role line and its titles: no address, no work place", async () => {
+  test("each employment is drawn by its company name, its role line and its titles: no address; a place whose name is not known is \"A place\"", async () => {
     const { held } = await heldCardWithEmployments();
     const section = await within(held).findByTestId("employment-rows", {}, { timeout: 8000 });
     await waitFor(() => expect(within(section).getAllByTestId("employment-company-value").map((n) => n.textContent)).toEqual(["Acme AS", "Beta Holding"]), { timeout: 8000 });
@@ -37,6 +37,7 @@ describe("the held card's Employment", () => {
     expect(lines[1]).toMatch(/2012 – .*2018/);
     expect(section.textContent).not.toContain("://");
     expect(section.textContent).not.toMatch(/osm-|Oslo|geo\./);
+    expect(within(section).getAllByTestId("experience-role-place").map((n) => n.textContent)).toEqual(["A place"]);
   }, 30_000);
 
   test("opening and idling the card write nothing for the section: the writes are \"+ Add your own\"'s alone, and no employment entity is written or deleted", async () => {

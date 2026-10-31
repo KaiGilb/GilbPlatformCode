@@ -8,8 +8,11 @@ import { EmploymentRows } from "@kaigilb/gilbplatformcode-employment-rows";
 import { LanguageSection } from "@kaigilb/gilbplatformcode-language-section";
 import { findOrganizationRecords } from "@kaigilb/gilbplatformcode-org-hierarchy";
 import { SkillRows } from "@kaigilb/gilbplatformcode-skill-rows";
+import { WorkLocationField } from "@kaigilb/gilbplatformcode-work-location-field";
+import { WorkPlaceName } from "@kaigilb/gilbplatformcode-work-place-name";
+import { resetGeoOrigin } from "@kaigilb/gilbplatformcode-geo-origin";
 import { createStakeholderRecordCardHost } from "./index";
-import { P, createWorld, type World } from "../test/world";
+import { GEO, P, createWorld, type World } from "../test/world";
 import { mountInProvider } from "../test/harness";
 
 // The probe: the props `EmploymentRows` is given. The section itself is proved end to end in `heldCard.employment.test.tsx`.
@@ -87,7 +90,7 @@ describe("createStakeholderRecordCardHost", () => {
     expect(el.props.children[1]!.props).toEqual(interests);
   });
 
-  test("0.4.0: renderEmployment is the host's Employment component, which gives EmploymentRows the slot's props as they are, the finder of organization records, the holding vault's name when the shell lists it, and NO place slot", async () => {
+  test("0.5.0: renderEmployment is the host's Employment component, which gives EmploymentRows the slot's props as they are, the finder of organization records, the holding vault's name when the shell lists it, the two work-place slots and the catalogue's origin", async () => {
     const host = createStakeholderRecordCardHost(platformOf());
     const slotProps = { title: "Employment", recordId: "r1", recordEntityUri: `${P}/e/r1`, vaultId: P, edgeKey: "employment", servedEdges: [{ "@id": `${P}/e/x1` }], servedReady: true, canEdit: true, onSaved: () => undefined };
     const el = host.renderEmployment!(slotProps) as unknown as { type: unknown; props: Record<string, unknown> };
@@ -98,13 +101,22 @@ describe("createStakeholderRecordCardHost", () => {
     // The shell lists the holder's vaults after the first draw: the name arrives with the list.
     await waitFor(() => expect(seenRows[seenRows.length - 1]?.vaultName).toBe("Ann"));
     const given = seenRows[seenRows.length - 1]!;
-    expect(Object.keys(given).sort()).toEqual([...Object.keys(slotProps), "find", "vaultName"].sort());
+    expect(Object.keys(given).sort()).toEqual([...Object.keys(slotProps), "catalogueOrigin", "find", "renderPlaceName", "renderWorkLocation", "vaultName"].sort());
     expect(given.find).toBe(findOrganizationRecords);
     expect(given.vaultName).toBe("Ann");
     expect(given.onSaved).toBe(slotProps.onSaved);
-    expect("renderWorkLocation" in given).toBe(false);
-    expect("renderPlaceName" in given).toBe(false);
-    expect("catalogueOrigin" in given).toBe(false);
+    // 0.5.0: the work place. The Location box and the read-only name are the units' own, mapped from the slot's names; the origin is the provider's `geoOrigin`.
+    expect(typeof given.renderWorkLocation).toBe("function");
+    expect(typeof given.renderPlaceName).toBe("function");
+    expect(given.catalogueOrigin).toBe(GEO);
+    const box = (given.renderWorkLocation as (p: unknown) => { type: unknown; props: Record<string, unknown> })({ placeId: "p1", placeLabel: "Oslo", onChange: () => undefined });
+    expect(box.type).toBe(WorkLocationField);
+    expect(box.props).toMatchObject({ placeId: "p1", label: "Oslo" });
+    const name = (given.renderPlaceName as (p: unknown) => { type: unknown; props: Record<string, unknown> })({ placeId: "p1", placeLabel: "Oslo" });
+    expect(name.type).toBe(WorkPlaceName);
+    expect(name.props).toEqual({ placeId: "p1", label: "Oslo" });
+    // the write guard: nothing is held back for a vault that is not the catalogue
+    expect(given.canEdit).toBe(true);
     seenRows.length = 0;
     cleanup();
     // A vault the shell does not list has no name to give: none is passed (the section then says "this vault"). The list must have arrived first.
@@ -119,5 +131,49 @@ describe("createStakeholderRecordCardHost", () => {
     await waitFor(() => expect(listed[listed.length - 1]).toBeGreaterThan(0));
     await waitFor(() => expect(seenRows.length).toBeGreaterThan(0));
     expect(seenRows.every((g) => !("vaultName" in g))).toBe(true);
+  });
+
+  test("0.5.0: with no catalogue origin known, no catalogueOrigin is given (a compact place then reads as none), and the slots still are", async () => {
+    const host = createStakeholderRecordCardHost(platformOf());
+    const slotProps = { title: "Employment", recordId: "r1", recordEntityUri: `${P}/e/r1`, vaultId: P, edgeKey: "employment", servedEdges: [], servedReady: true, canEdit: true, onSaved: () => undefined };
+    seenRows.length = 0;
+    cleanup();
+    // The provider sets the origin before its children render; the probe runs first among them and forgets it, as a page that never set one.
+    function Forget() {
+      resetGeoOrigin();
+      return null;
+    }
+    mountInProvider(world, <><Forget />{host.renderEmployment!(slotProps)}</>);
+    await waitFor(() => expect(seenRows.length).toBeGreaterThan(0));
+    const given = seenRows[seenRows.length - 1]!;
+    expect("catalogueOrigin" in given).toBe(false);
+    expect(typeof given.renderWorkLocation).toBe("function");
+    expect(given.canEdit).toBe(true);
+  });
+
+  test("0.5.0 (write guard): a section whose vault, record or employment edge is the place catalogue is given canEdit false; any other is given the slot's", async () => {
+    const host = createStakeholderRecordCardHost(platformOf());
+    const slotProps = { title: "Employment", recordId: "r1", recordEntityUri: `${P}/e/r1`, vaultId: P, edgeKey: "employment", servedEdges: [{ "@id": `${P}/e/x1` }], servedReady: true, canEdit: true, onSaved: () => undefined };
+    const cases: Array<[string, Partial<typeof slotProps>, boolean]> = [
+      ["no catalogue target", {}, true],
+      ["the vault is the catalogue", { vaultId: `${GEO}/base` }, false],
+      ["the record is a catalogue row", { recordEntityUri: `${GEO}/base/e/osm-r-1` }, false],
+      ["an edge is a catalogue row", { servedEdges: [{ "@id": `${P}/e/x1` }, { "@id": `${GEO}/base/e/osm-r-1` }] }, false],
+      ["an edge is a catalogue row, written as a bare string", { servedEdges: `${GEO}/base/e/osm-r-1` as unknown as never[] }, false],
+      ["a catalogue address smuggled in a query is not the catalogue", { vaultId: `https://elsewhere.example.test/base/p?u=${GEO}/base/e/x` }, true],
+    ];
+    for (const [name, over, canEdit] of cases) {
+      seenRows.length = 0;
+      cleanup();
+      mountInProvider(world, host.renderEmployment!({ ...slotProps, ...over }));
+      await waitFor(() => expect(seenRows.length).toBeGreaterThan(0));
+      expect(seenRows[seenRows.length - 1]!.canEdit, name).toBe(canEdit);
+    }
+    // a read-only slot stays read-only whatever the targets
+    seenRows.length = 0;
+    cleanup();
+    mountInProvider(world, host.renderEmployment!({ ...slotProps, canEdit: false }));
+    await waitFor(() => expect(seenRows.length).toBeGreaterThan(0));
+    expect(seenRows[seenRows.length - 1]!.canEdit).toBe(false);
   });
 });

@@ -1,18 +1,26 @@
 // The held card's Employment section with the host 0.4.0 builds, inside the provider alone (the record card, the provider's host, the real `employment-rows`, a fake platform).
 // What is pinned: the section draws each employment by company, role line and title (never an address); mounting, drawing and idling write nothing; one edit is one PATCH of exactly
-// what changed (no null the person did not ask for); a stored work place is carried, not drawn, not cleared; with the slot REMOVED from the host the card is exactly the card of the 0.3.0 host.
+// what changed (no null the person did not ask for); a stored work place is carried and not cleared (since 0.5.0 it is also drawn by name: `heldCard.workLocation.test.tsx`); with the slot REMOVED from the host the card is exactly the card of the 0.3.0 host.
 import { useMemo } from "react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StakeholderCardGilbPlatformProvider, useStakeholderCardPlatform } from "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform";
 import { StakeholderRecordCard, StakeholderRecordCardHostContext, type StakeholderRecordCardProps } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
-import { P, createWorld, type World } from "../test/world";
+import { GEO, P, createWorld, type World } from "../test/world";
 import { heldWorld } from "../test/heldWorld";
 import { providerProps } from "../test/harness";
 import { NORWAY, NORWEGIAN, addLanguageTerms, languagesWorld } from "../test/languagesWorld";
 import { PHOTOGRAPHY, WELDING, addSkillTerms } from "../test/skillsWorld";
+import { __resetGeoCache, __resetGeoGrainCache } from "@kaigilb/gilbplatformcode-geo-catalogue";
 import { HeldStakeholderCard, createStakeholderRecordCardHost } from "./index";
+
+// The world-level proof: across this file, nothing but a GET ever went to the place catalogue.
+const geoWritesSeen: string[] = [];
+afterEach(() => {
+  for (const c of world.calls) if (c.url.startsWith(GEO) && c.method !== "GET") geoWritesSeen.push(`${c.method} ${c.url}`);
+});
+afterAll(() => expect(geoWritesSeen).toEqual([]));
 
 let world: World;
 let id: string;
@@ -22,6 +30,8 @@ let beta: string;
 const PLACE = "https://geo.example.test/base/e/osm-r-2775550";
 
 beforeEach(async () => {
+  __resetGeoCache();
+  __resetGeoGrainCache();
   world = await createWorld();
   addLanguageTerms(world);
   acme = world.platform.seed(P, "t:Employment", { "a:org": "Acme AS", "a:jobTitle": "Welder", "a:startDate": "2019-03", "a:ongoing": true, "a:workLocation": { "@id": PLACE } });
@@ -69,7 +79,7 @@ const employmentRequests = () => world.calls.filter((c) => /\/base\/a\/(org|clai
 const section = () => screen.findByTestId("employment-rows", {}, { timeout: 6000 });
 
 describe("the slot is given (host 0.4.0)", () => {
-  test("the Employment section draws each employment by company, role line and title, and nothing that is an address or a place", async () => {
+  test("the Employment section draws each employment by company, role line and title, and no address; a stored place whose name is not known (this world serves no catalogue) is 'A place'", async () => {
     mount(<HeldStakeholderCard recordId={id} vaultId={P} />);
     await ready();
     const s = await section();
@@ -79,6 +89,7 @@ describe("the slot is given (host 0.4.0)", () => {
     expect(within(s).getAllByTestId("experience-role")[1]!.textContent).toMatch(/2012 – .*2018/);
     expect(s.textContent).not.toMatch(/:\/\//);
     expect(s.textContent).not.toMatch(/osm-|Oslo|geo\./);
+    expect(within(s).getByTestId("experience-role-place").textContent).toBe("A place");
     expect(s.querySelector("[aria-label='Role location']")).toBeNull();
   });
 

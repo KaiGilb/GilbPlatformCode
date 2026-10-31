@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
@@ -17,7 +17,9 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
+    "@kaigilb/gilbplatformcode-employment-edges": "^0.1.0",
     "@kaigilb/gilbplatformcode-employment-rows": "^0.1.0",
+    "@kaigilb/gilbplatformcode-geo-origin": "^0.1.0",
     "@kaigilb/gilbplatformcode-interest-rows": "^0.1.0",
     "@kaigilb/gilbplatformcode-language-section": "^0.1.0",
     "@kaigilb/gilbplatformcode-org-hierarchy": "^0.1.2",
@@ -25,6 +27,8 @@
     "@kaigilb/gilbplatformcode-skill-rows": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform": "^0.4.3",
     "@kaigilb/gilbplatformcode-stakeholder-record-card": "^0.1.0",
+    "@kaigilb/gilbplatformcode-work-location-field": "^0.1.0",
+    "@kaigilb/gilbplatformcode-work-place-name": "^0.1.0",
     "@tanstack/react-query": "^5.101.2",
     "react": "^19.0.0"
   },
@@ -82,6 +86,7 @@
     "@kaigilb/gilbplatformcode-flag-image": "file:../flag-image",
     "@kaigilb/gilbplatformcode-flag-source": "file:../flag-source",
     "@kaigilb/gilbplatformcode-folder-part": "file:../folder-part",
+    "@kaigilb/gilbplatformcode-geo-catalogue": "file:../geo-catalogue",
     "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
     "@kaigilb/gilbplatformcode-grantee-face": "file:../grantee-face",
     "@kaigilb/gilbplatformcode-header-layout": "file:../header-layout",
@@ -132,6 +137,7 @@
     "@kaigilb/gilbplatformcode-photo-term": "file:../photo-term",
     "@kaigilb/gilbplatformcode-pick-or-create": "file:../pick-or-create",
     "@kaigilb/gilbplatformcode-picker-box": "file:../picker-box",
+    "@kaigilb/gilbplatformcode-place-hit-details": "file:../place-hit-details",
     "@kaigilb/gilbplatformcode-place-lines": "file:../place-lines",
     "@kaigilb/gilbplatformcode-plan-button-row": "file:../plan-button-row",
     "@kaigilb/gilbplatformcode-plan-card": "file:../plan-card",
@@ -226,6 +232,8 @@
     "@kaigilb/gilbplatformcode-vault-type-census": "file:../vault-type-census",
     "@kaigilb/gilbplatformcode-veda-labels": "file:../veda-labels",
     "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@kaigilb/gilbplatformcode-work-location-field": "file:../work-location-field",
+    "@kaigilb/gilbplatformcode-work-place-name": "file:../work-place-name",
     "@kaigilb/gilbplatformcode-working-set-store": "file:../working-set-store",
     "@tanstack/react-query": "^5.101.2",
     "@testing-library/react": "^16.3.0",

@@ -64,6 +64,7 @@
     "@kaigilb/gilbplatformcode-flag-image": "file:../../units/flag-image",
     "@kaigilb/gilbplatformcode-flag-source": "file:../../units/flag-source",
     "@kaigilb/gilbplatformcode-folder-part": "file:../../units/folder-part",
+    "@kaigilb/gilbplatformcode-geo-catalogue": "file:../../units/geo-catalogue",
     "@kaigilb/gilbplatformcode-geo-origin": "file:../../units/geo-origin",
     "@kaigilb/gilbplatformcode-grantee-face": "file:../../units/grantee-face",
     "@kaigilb/gilbplatformcode-header-layout": "file:../../units/header-layout",
@@ -113,6 +114,7 @@
     "@kaigilb/gilbplatformcode-photo-term": "file:../../units/photo-term",
     "@kaigilb/gilbplatformcode-pick-or-create": "file:../../units/pick-or-create",
     "@kaigilb/gilbplatformcode-picker-box": "file:../../units/picker-box",
+    "@kaigilb/gilbplatformcode-place-hit-details": "file:../../units/place-hit-details",
     "@kaigilb/gilbplatformcode-place-lines": "file:../../units/place-lines",
     "@kaigilb/gilbplatformcode-plan-card-facts": "file:../../units/plan-card-facts",
     "@kaigilb/gilbplatformcode-plan-kinds": "file:../../units/plan-kinds",
@@ -178,6 +180,8 @@
     "@kaigilb/gilbplatformcode-vault-type-census": "file:../../units/vault-type-census",
     "@kaigilb/gilbplatformcode-veda-labels": "file:../../units/veda-labels",
     "@kaigilb/gilbplatformcode-vocabulary-source": "file:../../units/vocabulary-source",
+    "@kaigilb/gilbplatformcode-work-location-field": "file:../../units/work-location-field",
+    "@kaigilb/gilbplatformcode-work-place-name": "file:../../units/work-place-name",
     "@kaigilb/gilbplatformcode-working-set-store": "file:../../units/working-set-store"
   },
   "devDependencies": {

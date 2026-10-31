@@ -1,0 +1,1 @@
+export { WorkPlaceName } from "./WorkPlaceName";

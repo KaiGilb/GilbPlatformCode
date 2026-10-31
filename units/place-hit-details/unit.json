@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "unit": "units/place-hit-details",
+  "package": "@kaigilb/gilbplatformcode-place-hit-details",
+  "version": "0.1.0",
+  "purpose": "Says what a catalogue place is and where it is, for a list of same-named places.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/geo/placeHitDetails.ts",
+        "lines": [
+          1,
+          210
+        ],
+        "to": "src/placeHitDetails.ts"
+      },
+      {
+        "path": "src/lib/mynet/geo/usePlaceHitDetails.ts",
+        "lines": [
+          1,
+          27
+        ],
+        "to": "src/usePlaceHitDetails.ts"
+      },
+      {
+        "path": "src/components/mynet/PlaceHitMeta.tsx",
+        "lines": [
+          1,
+          21
+        ],
+        "to": "src/PlaceHitMeta.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is the unit `geo-catalogue`.",
+    "`tail` is replaced by `position` (name rule). GilbApp told two identical rows apart by the tail of the row's catalogue address (\"entry osm-r-2775550\"): an id drawn as text. A row still identical to others now carries `{ n, of }` and the line ends \"1 of 2 with this name\".",
+    "A container that was not read says so (F12). GilbApp drew the kind alone for `unavailable`, which cannot be told from a place with no container: now \"where: not read\"; and after a partial chain \"and further up: not read\".",
+    "The module headers and the comments that named hosts, a cycle or an agent are reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

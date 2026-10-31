@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/work-place-name",
+  "package": "@kaigilb/gilbplatformcode-work-place-name",
+  "version": "0.1.0",
+  "purpose": "Draws a role's work place by its name, with what it is and where, or says plainly when the name is not known.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/EmploymentCard.tsx",
+        "lines": [
+          98,
+          132
+        ],
+        "to": "src/WorkPlaceName.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`, the kind line is `place-hit-details`.",
+    "A name that is not known is said (F10). GilbApp's `PlaceName` swallowed a failed read (`.catch(() => undefined)`) and, with no label, drew nothing at all, so a stored place looked \"not set\". Now \"A place\" and a line that tells a 404, a failed read and an address outside the catalogue apart.",
+    "`PlaceName` and `NO_PLACE` of `EmploymentCard.tsx` are a unit of their own, named `WorkPlaceName` and exported (GilbApp: private to the card), because the card of this library draws the place only through a slot.",
+    "No other code changed; the `data-testid`s are GilbApp's."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
