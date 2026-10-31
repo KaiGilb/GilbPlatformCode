@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/place-names",
+  "package": "@kaigilb/gilbplatformcode-place-names",
+  "version": "0.1.0",
+  "purpose": "Reads the names of catalogue places, one answer per place: named, missing, or not read.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/geo/usePlaceNames.ts",
+        "lines": [
+          1,
+          66
+        ],
+        "to": "src/placeNames.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`.",
+    "Per-place answers (F6). GilbApp's `usePlaceNames` returned the named places only (\"the caller is told by the shorter list\"), which cannot tell a place that is gone from one that was not read. Now one answer per id: `named`, `missing`, `failed`. The hook returns `readonly PlaceRead[] | null`, not `GeoPlace[] | null`.",
+    "`loadPlaceNames` rejects when a place failed (F8). GilbApp resolved with the readable subset for both a 404 and a failure, so the one card's merge could compare a partial address. A row with no name counts as failed (GilbApp dropped it silently).",
+    "`placeLine` of the source is the unit `place-line`'s (equal).",
+    "The module header is reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
