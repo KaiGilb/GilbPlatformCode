@@ -60,3 +60,41 @@ describe("useCached hands the cache's LoadContext to the loader", () => {
     expect(seen).toEqual(["one:function", "two:function"]);
   });
 });
+
+describe("useCached says partial", () => {
+  test("partial is false before anything, true while only a preview is held, false after the commit", async () => {
+    const cache = createSessionCache();
+    const l = held();
+    const { result } = renderHook(() => useCached(K, l.fn, cache));
+    await waitFor(() => expect(l.fn).toHaveBeenCalledTimes(1));
+    expect(result.current.partial).toBe(false);
+    act(() => l.ctxs[0]!.preview(["a"]));
+    expect(result.current.partial).toBe(true);
+    await act(async () => { l.answer(["a", "b"]); });
+    await waitFor(() => expect(result.current.partial).toBe(false));
+    expect(result.current.data).toEqual(["a", "b"]);
+  });
+
+  test("a value that is held (from an earlier load) is never partial, and a preview over it does nothing", async () => {
+    const cache = createSessionCache({ staleMs: 0 });
+    await cache.swr(K, async () => ["a", "b", "c"]).promise;
+    const l = held();
+    const { result } = renderHook(() => useCached(K, l.fn, cache));
+    await waitFor(() => expect(l.fn).toHaveBeenCalledTimes(1));
+    act(() => l.ctxs[0]!.preview(["a"]));
+    expect(result.current.data).toEqual(["a", "b", "c"]);
+    expect(result.current.partial).toBe(false);
+  });
+
+  test("a failed load leaves the preview and partial stays true, with the error", async () => {
+    const cache = createSessionCache();
+    let fail!: (e: Error) => void;
+    const { result } = renderHook(() => useCached(K, (ctx) => new Promise<string[]>((_r, rej) => { ctx?.preview(["a"]); fail = rej; }), cache));
+    await waitFor(() => expect(result.current.partial).toBe(true));
+    await act(async () => { fail(new Error("page 2 failed")); });
+    await waitFor(() => expect(result.current.updating).toBe(false));
+    expect(result.current.partial).toBe(true);
+    expect(result.current.data).toEqual(["a"]);
+    expect((result.current.error as Error).message).toBe("page 2 failed");
+  });
+});

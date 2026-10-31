@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { sessionCache, type CacheState, type Loader, type SessionCache } from "@kaigilb/gilbplatformcode-session-cache";
 
-export interface Cached<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined; /** Loads again, always (after a write). */ refresh: () => Promise<void> }
+export interface Cached<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined; /** True ONLY while `data` is an early preview (the cache holds no committed value yet); false otherwise. */ partial: boolean; /** Loads again, always (after a write). */ refresh: () => Promise<void> }
 
 const NONE: CacheState<never> = { data: undefined, updating: false, error: undefined, updatedAt: undefined };
 
@@ -27,5 +27,5 @@ export function useCached<T>(key: string | null, loader: Loader<T>, cache: Sessi
     if (!key) return;
     try { await cache.refresh<T>(key, (ctx) => loaderRef.current(ctx)); } catch { /* the entry holds the error */ }
   }, [key, cache]);
-  return { data: state.data, updating: state.updating, error: state.error, updatedAt: state.updatedAt, refresh };
+  return { data: state.data, updating: state.updating, error: state.error, updatedAt: state.updatedAt, partial: state.partial === true, refresh };
 }
