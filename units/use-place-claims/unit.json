@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "unit": "units/use-place-claims",
+  "package": "@kaigilb/gilbplatformcode-use-place-claims",
+  "version": "0.1.0",
+  "purpose": "The state of a record's addresses on a card: what was read, whether it was all of it, and the acts that save, change and remove one.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/place/usePlaceClaims.ts",
+        "lines": [
+          1,
+          358
+        ],
+        "to": "src/usePlaceClaims.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the writes are `place-claim-write`, the reads `place-claims`, `boundPlaceIds`/`claimPlaceIds` `place-lines`, the vocabulary `place-vocab`.",
+    "The state is told apart (F1, F2, F4): `status` (`no-vault | reading | failed | incomplete | ready`) and `reason`. GilbApp had `claims`, `loading`, `busy`, `error`; `claims: []` with `error: null` meant 'no vault', 'not yet' and 'none' alike. `loading` is kept (`status === 'reading'`).",
+    "One shape under `placeClaimsKey`: the hook stores the whole `PlaceClaimsRead` (GilbApp stored the bare `PlaceClaim[]`). The one card's merge (a later batch) reads through it.",
+    "Fixed sentences only (F3, F15): GilbApp wrote `Could not read the addresses: <message>`, `Could not save this address: <message>`, `Could not save this change: <message>`, `Could not remove this address: <message>`, with the error's own text (a status, a server detail, a term path). Now a fixed sentence by kind; the detail is `console.error`.",
+    "The partial save is said (decision 12): `PARTIAL_SAVE_SAYS`, and the address is shown by a fresh read; GilbApp showed the field's own error.",
+    "An incomplete read-back proves nothing (F4): a save, change or remove whose read-back was not the whole vault, and which does not hold the address, is 'not confirmed', not 'kept' or 'gone'.",
+    "Surprise 12: `factsSurvived`'s comment said it compares 'only label/street/places'; its code also compares Address 1, Address 2 and the Postal Code. The comment now says what the code does. The code is unchanged.",
+    "`usePlaceClaims`'s MyNet-adaptation header and the comments that named a cycle or an agent are reworded with the same facts."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

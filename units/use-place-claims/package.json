@@ -1,0 +1,59 @@
+{
+  "name": "@kaigilb/gilbplatformcode-use-place-claims",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The state of a record's addresses on a card: what was read, whether it was all of it, and the acts that save, change and remove one.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-geo-catalogue": "file:../geo-catalogue",
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-lws-vault-sets": "file:../lws-vault-sets",
+    "@kaigilb/gilbplatformcode-narrow-total": "file:../narrow-total",
+    "@kaigilb/gilbplatformcode-place-claim-write": "file:../place-claim-write",
+    "@kaigilb/gilbplatformcode-place-claims": "file:../place-claims",
+    "@kaigilb/gilbplatformcode-place-lines": "file:../place-lines",
+    "@kaigilb/gilbplatformcode-place-vocab": "file:../place-vocab",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-resource-id": "file:../resource-id",
+    "@kaigilb/gilbplatformcode-result-total": "file:../result-total",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
+    "@kaigilb/gilbplatformcode-vault-namespace": "file:../vault-namespace",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@kaigilb/gilbplatformcode-vault-records-of-type": "file:../vault-records-of-type",
+    "@kaigilb/gilbplatformcode-vault-resources": "file:../vault-resources",
+    "@tanstack/react-query": "^5.101.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-place-claim-write": "^0.1.0",
+    "@kaigilb/gilbplatformcode-place-claims": "^0.1.1",
+    "@kaigilb/gilbplatformcode-place-lines": "^0.1.0",
+    "@kaigilb/gilbplatformcode-place-vocab": "^0.1.0",
+    "@tanstack/react-query": "^5.101.2",
+    "react": "^19.0.0"
+  }
+}
