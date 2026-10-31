@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-use-cached",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A React hook that shows a page's data on the first render when the session cache holds it, revalidates behind it, and says when an update is running.",

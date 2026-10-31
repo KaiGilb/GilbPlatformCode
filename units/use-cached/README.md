@@ -8,6 +8,7 @@ A React hook that shows a page's data on the first render when the session cache
 
 - `useCached<T>(key, loader, cache = sessionCache)`: returns `Cached<T>` = `{ data, updating, error, updatedAt, refresh }`. `key` is a key made by `cacheKey` of the `session-cache` unit, or `null` while the workspace is not known (nothing is loaded and `refresh` does nothing). `refresh()` loads again, always (after a write), never rejects (the entry holds the error), and keeps its identity while `key` and `cache` stay the same.
 - The type `Cached<T>`.
+- The `loader` is called with the cache's `LoadContext` (0.2.0), on mount and on `refresh`: `loader(ctx)`. A loader that takes no argument is unchanged; one that wants to show the rows it has read so far calls `ctx?.preview(rows)` (see `session-cache`). While a preview is shown, `data` is the preview, `updating` is true and `updatedAt` is `undefined`.
 
 ## What this is not
 
@@ -72,12 +73,16 @@ Dynamic imports in the files taken: none.
 - "A new `loader` function on each render reloads the data." It does not; the latest loader is held in a ref and is used only when a load starts.
 - "`refresh` rejects when the load fails." It never rejects; the failure is `error`, beside the last good `data`.
 - "`useCached` always loads on mount." A fresh value is not loaded again.
+- "The loader's `ctx` is always there." It is handed by the cache; a test that calls the loader by hand passes none, so write `ctx?.preview(...)`.
+- "A preview is stored." It is not: it lives in the entry until the load answers, it is not on `updatedAt`, and `session-cache` never sends it to `onCommit`.
 
 ## Where it came from
 
+Changes in 0.2.0: the loader is handed the cache's `LoadContext` (named change 2 below). Needs `session-cache` 0.2.0. The result of `useCached` has the same members as in 0.1.0. Tests: `src/loadContext.test.tsx` (4 tests, 35 in the unit).
+
 `KaiGilb/Social` (private repo), commit `a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e`, copied by script: `src/lib/useCached.ts` lines 1-31 to `src/useCached.ts`.
 
-Named changes, and only these: the import of the cache reads from the package `@kaigilb/gilbplatformcode-session-cache` instead of `./sessionCache`, and the first comment line loses its cycle tag. No code changed. `src/index.ts` is new.
+Named changes, and only these (the first is in 0.1.0): 1. the import of the cache reads from the package `@kaigilb/gilbplatformcode-session-cache` instead of `./sessionCache`, and the first comment line loses its cycle tag. No code changed. 2. 0.2.0, made in this unit before Social has it (RuleGhsResync; keep it when re-syncing): context forwarding, `(ctx) => loaderRef.current(ctx)` in the call to `swr` and in the call to `refresh`. `src/index.ts` is new.
 
 Tests (`src/*.test.tsx`; no shared set-up; jsdom): `useCached.test.tsx` is ported whole from the source app's `src/lib/useCached.test.tsx` (5 tests). `useCachedRules.test.tsx` is ported whole from the source app's `tester-s1/tester-s1-useCached.test.tsx` (8 tests: paint from memory, one request in flight per key, errors not stored, the latest loader, fresh before write), with the host renamed `a.example`. `useCachedPins.test.tsx` is new and pins the library entry, the default cache, the result's members, the null key and the stable `refresh`. `hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
 

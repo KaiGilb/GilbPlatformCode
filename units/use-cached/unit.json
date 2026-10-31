@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/use-cached",
   "package": "@kaigilb/gilbplatformcode-use-cached",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "A React hook that shows a page's data on the first render when the session cache holds it, revalidates behind it, and says when an update is running.",
   "source": {
     "repo": "KaiGilb/Social",
@@ -23,7 +23,8 @@
   ],
   "namedChanges": [
     "the import of the cache reads from the package \"@kaigilb/gilbplatformcode-session-cache\" instead of \"./sessionCache\";",
-    "the first comment line loses its cycle tag; no code changed."
+    "the first comment line loses its cycle tag; no code changed.",
+    "context forwarding (0.2.0): `useCached` calls the loader with the `LoadContext` the cache hands it, `(ctx) => loaderRef.current(ctx)`, on mount (`swr`) and in `refresh`, so a loader may call `ctx?.preview(value)`. It is not in Social's `useCached.ts`, so it is a change made in the unit before the source app has it (RuleGhsResync): keep it when the unit is re-synced. A loader that takes no argument behaves as before."
   ],
   "newFiles": [
     "src/index.ts"
