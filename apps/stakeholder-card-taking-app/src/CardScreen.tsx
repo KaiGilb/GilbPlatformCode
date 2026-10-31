@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { OnlineStakeholderCard } from "@kaigilb/gilbplatformcode-online-stakeholder-card";
 import { StakeholderCardGilbPlatformProvider } from "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform";
+import { StakeholderRecordCard } from "@kaigilb/gilbplatformcode-stakeholder-record-card";
 import { sessionConnections } from "@kaigilb/gilbplatformcode-stakeholder-list-doors";
 import { displayPlacements, placementLabel } from "@kaigilb/gilbplatformcode-person-connections";
 import { useVaults } from "@kaigilb/gilbplatformcode-reachable-vaults";
@@ -69,8 +70,14 @@ function CirclesList({ session, onPick }: { session: SessionCredential; onPick: 
   );
 }
 
+/** The record the card opened after "+ Add your own": its id, and the vault it was made in (its door) when the provider knew it. */
+export interface OpenedRecord {
+  id: string;
+  door: string | undefined;
+}
+
 /** The person's field, the placement select, the circles list and the card. It is drawn inside the provider, so the list and the card share its client. */
-function Panel({ session, openedId }: { session: SessionCredential; openedId: string | null }) {
+function Panel({ session, opened, onBack }: { session: SessionCredential; opened: OpenedRecord | null; onBack: () => void }) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<PlacementMode>("content");
   const [shown, setShown] = useState<string | null>(null);
@@ -106,18 +113,26 @@ function Panel({ session, openedId }: { session: SessionCredential; openedId: st
       </form>
       {problem && <p role="alert">{problem}</p>}
       <CirclesList session={session} onPick={setText} />
-      {openedId && <p role="status">The card opened the record {openedId}. This app has no record view.</p>}
-      {shown && <OnlineStakeholderCard key={`${shown}|${mode}`} principal={shown} placementMode={mode} />}
+      {opened ? (
+        <section aria-label="Record card">
+          <button type="button" onClick={onBack}>
+            Back to the online card
+          </button>
+          <StakeholderRecordCard recordId={opened.id} {...(opened.door ? { vaultId: opened.door } : {})} />
+        </section>
+      ) : (
+        shown && <OnlineStakeholderCard key={`${shown}|${mode}`} principal={shown} placementMode={mode} />
+      )}
     </>
   );
 }
 
 export function CardScreen({ settings, session }: { settings: AppSettings; session: SessionCredential }) {
-  const [openedId, setOpenedId] = useState<string | null>(null);
+  const [opened, setOpened] = useState<OpenedRecord | null>(null);
   return (
     <section aria-label="Card">
-      <StakeholderCardGilbPlatformProvider {...providerSettings(settings)} session={session} onOpenRecord={setOpenedId}>
-        <Panel session={session} openedId={openedId} />
+      <StakeholderCardGilbPlatformProvider {...providerSettings(settings)} session={session} onOpenRecord={(id, door) => setOpened({ id, door })}>
+        <Panel session={session} opened={opened} onBack={() => setOpened(null)} />
       </StakeholderCardGilbPlatformProvider>
     </section>
   );

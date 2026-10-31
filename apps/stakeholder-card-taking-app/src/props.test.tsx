@@ -48,6 +48,8 @@ describe("the props the app passes", () => {
     expect(last.systemHostLabels).toEqual(["id", "ontology"]);
     expect(last.session).toBe(credential);
     expect(typeof last.onOpenRecord).toBe("function");
+    // The second argument of onOpenRecord is the door (since the host 0.4.0): the app takes both.
+    expect((last.onOpenRecord as (...a: unknown[]) => void).length).toBe(2);
     expect(Object.keys(last).sort()).toEqual(["children", "geoOrigin", "onOpenRecord", "ontologyOrigin", "origin", "session", "settings", "systemHostLabels", "systemVaultHosts"]);
   });
 
@@ -59,6 +61,11 @@ describe("the props the app passes", () => {
   test("the DPoP proof origin reaches the provider's settings; empty means absent", async () => {
     await signedInApp({}, { ...TEST_SETTINGS, dpopProofOrigin: " https://id.example.test " });
     expect(seen.provider.at(-1)!.settings).toEqual({ dpopProofOrigin: "https://id.example.test" });
+  });
+
+  test("the MyNet profile address reaches the provider's settings, trimmed; empty means absent", async () => {
+    await signedInApp({}, { ...TEST_SETTINGS, mynetProfileUrl: " https://mynet.example.test/profile " });
+    expect(seen.provider.at(-1)!.settings).toEqual({ mynetProfileUrl: "https://mynet.example.test/profile" });
   });
 
   test("with no optional setting the provider gets no settings prop", async () => {

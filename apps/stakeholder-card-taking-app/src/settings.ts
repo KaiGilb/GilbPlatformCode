@@ -29,6 +29,8 @@ export interface AppSettings {
   localRigHosts: string;
   /** Optional: the shortest query that reaches the ontology, in letters. */
   minOntologyQuery: string;
+  /** Optional: the address of the MyNet profile editor (`https://host/profile`), for the "Edit in MyNet" link on the holder's own card. */
+  mynetProfileUrl: string;
   /** Optional: platform revisions that serve the batched vocabulary read, comma-separated text. */
   vocabTypeBatchRevisions: string;
 }
@@ -46,6 +48,7 @@ export const EMPTY_SETTINGS: AppSettings = {
   dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
+  mynetProfileUrl: "",
   vocabTypeBatchRevisions: "",
 };
 
@@ -83,6 +86,17 @@ function originProblem(label: string, value: string): string | null {
   return null;
 }
 
+/** An address that may carry a path (the profile editor's): absolute http or https, naming a host, with no user name or password. */
+function addressProblem(label: string, value: string): string | null {
+  try {
+    const u = new URL(value.trim());
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || u.hostname === "" || u.username !== "" || u.password !== "") return `${label} must look like https://host/profile.`;
+  } catch {
+    return `${label} must look like https://host/profile.`;
+  }
+  return null;
+}
+
 /** What is wrong with the settings, in plain sentences; empty when they can be used. */
 export function settingsProblems(s: AppSettings): string[] {
   const out: string[] = [];
@@ -101,6 +115,10 @@ export function settingsProblems(s: AppSettings): string[] {
     if (d) out.push(d);
   }
   if (s.minOntologyQuery.trim() !== "" && !/^\d+$/.test(s.minOntologyQuery.trim())) out.push("The shortest ontology query must be a whole number.");
+  if (s.mynetProfileUrl.trim() !== "") {
+    const m = addressProblem("The MyNet profile address", s.mynetProfileUrl);
+    if (m) out.push(m);
+  }
   return out;
 }
 
@@ -116,6 +134,7 @@ export function providerSettings(s: AppSettings): Pick<StakeholderCardGilbPlatfo
   if (s.vocabTypeBatchRevisions.trim() !== "") optional.vocabTypeBatchRevisions = s.vocabTypeBatchRevisions.trim();
   if (s.publicCorpusOrigin.trim() !== "") optional.publicCorpusOrigin = s.publicCorpusOrigin.trim();
   if (s.dpopProofOrigin.trim() !== "") optional.dpopProofOrigin = s.dpopProofOrigin.trim();
+  if (s.mynetProfileUrl.trim() !== "") optional.mynetProfileUrl = s.mynetProfileUrl.trim();
   return {
     origin: s.origin.trim(),
     ontologyOrigin: s.ontologyOrigin.trim(),

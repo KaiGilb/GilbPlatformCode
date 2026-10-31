@@ -5,7 +5,8 @@ import userEvent from "@testing-library/user-event";
 import type { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import { App } from "../src/App";
 import { SETTINGS_KEY, type AppSettings } from "../src/settings";
-import { BASE, GEO, ONTOLOGY, createWorld, type WorldOptions } from "./world";
+import { BASE, BEN, GEO, ONTOLOGY, createWorld, type WorldOptions } from "./world";
+import { heldWorld } from "./heldWorld";
 
 export const TEST_SETTINGS: AppSettings = {
   origin: BASE,
@@ -20,6 +21,7 @@ export const TEST_SETTINGS: AppSettings = {
   dpopProofOrigin: "",
   localRigHosts: "",
   minOntologyQuery: "",
+  mynetProfileUrl: "",
   vocabTypeBatchRevisions: "",
 };
 
@@ -33,7 +35,9 @@ export async function fakeCredential(options: WorldOptions = {}) {
   const signInWithCode = vi.fn(async (_origin: string, _email: string, _code: string) => ({ token: "t", principal: "p", needsVaultName: false }));
   const invalidate = vi.fn();
   const credential = Object.assign(world.session, { signInWithCode, invalidate }) as unknown as SessionCredential;
-  return { world, credential, signInWithCode, invalidate };
+  // The world's `fetch` and the routes of the held card (the annotations route, the contact catalogue) in front of it.
+  const held = heldWorld(world, { anchor: BEN });
+  return { world, held, credential, signInWithCode, invalidate };
 }
 
 /** A transport that answers every sign-in request with 200 and records the URLs. */
@@ -57,7 +61,7 @@ export async function signIn(user: ReturnType<typeof userEvent.setup>) {
 /** Render the app with saved settings over the world's fake `fetch`, sign in with an email and a code, and return the user. */
 export async function signedInApp(options: WorldOptions = {}, settings: AppSettings = TEST_SETTINGS) {
   const creds = await fakeCredential(options);
-  vi.stubGlobal("fetch", creds.world.fetch);
+  vi.stubGlobal("fetch", creds.held.fetch);
   keepSettings(settings);
   const t = okTransport();
   const view = render(<App makeSession={() => creds.credential} transport={t.transport} />);
