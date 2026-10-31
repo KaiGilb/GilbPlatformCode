@@ -437,6 +437,15 @@ export function fixturePlatform(options: FixtureOptions = {}): FixturePlatform {
       // ── PATCH /lws/r/<id> (merge patch) ──────────────────────────────────────
       // Served at /lws/r/<id> only: `PATCH /base/e/<id>` has no route (rig, 2026-10-02). A `null`
       // member removes the field (RFC 7386).
+      // DELETE retracts the entity (added for the held card's Languages: removing a language deletes its claim); 404 when it is not there.
+      m = /^\/lws\/r\/([^/]+)$/.exec(path);
+      if (m && method === "DELETE") {
+        const id = `${VAULT_HOST}/base/e/${m[1]}`;
+        const e = entities.get(id);
+        if (!e || !reach.has(e.vault)) return json(404, { error: "NotFound" });
+        entities.delete(id);
+        return new Response(null, { status: 204 });
+      }
       m = /^\/lws\/r\/([^/]+)$/.exec(path);
       if (m && method === "PATCH") {
         const e = entities.get(`${VAULT_HOST}/base/e/${m[1]}`);
