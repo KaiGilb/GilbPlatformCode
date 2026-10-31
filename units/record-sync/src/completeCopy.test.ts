@@ -351,3 +351,99 @@ describe("completeCopy: what the platform refuses", () => {
     expect((err as RecordListError).status).toBe(503);
   });
 });
+
+describe("completeCopy: onPage (the walk's pages as they are read, 0.4.1)", () => {
+  type Told = { n: number; ids: string[]; pages: number; walkDone: boolean };
+  const listen = (told: Told[], seen?: () => string[]) => (p: { records: Array<{ entity: string }>; pages: number; walkDone: boolean }) => {
+    told.push({ n: p.records.length, ids: ids(p.records), pages: p.pages, walkDone: p.walkDone });
+    seen?.();
+  };
+
+  it("is told once per walk page, with every row so far, newest first; pages counts 1..k; walkDone only on the last", async () => {
+    const r = rig(many(450));
+    const told: Told[] = [];
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { onPage: listen(told) });
+    expect(told.map((t) => t.n)).toEqual([200, 400, 450]);
+    expect(told.map((t) => t.pages)).toEqual([1, 2, 3]);
+    expect(told.map((t) => t.walkDone)).toEqual([false, false, true]);
+    expect(told[0]!.ids).toEqual(ids(copy.records).slice(0, 200));
+    expect(told[1]!.ids).toEqual(ids(copy.records).slice(0, 400));
+    expect(told[2]!.ids).toEqual(ids(copy.records));
+    expect(told[0]!.ids[0]).toBe("t449");
+  });
+
+  it("each call holds the rows read by the time it is made (not later ones), and the array is the listener's own copy", async () => {
+    const r = rig(many(450));
+    const held: Array<Array<{ entity: string }>> = [];
+    const lengthsAtCall: number[] = [];
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { onPage: (p) => { held.push(p.records); lengthsAtCall.push(p.records.length); p.records.length = 0; } });
+    expect(lengthsAtCall).toEqual([200, 400, 450]); // emptying one call's array does not shorten the next
+    expect(held[0]).toHaveLength(0);
+    expect(copy.records).toHaveLength(450);
+  });
+
+  it("the requests and the result are the same with and without onPage; the head is answered before the first page is told", async () => {
+    const plain = rig(many(450), { onList: (_u, n) => { if (n === 3) plain.put("mid", { n: -1 }); } });
+    const watched = rig(many(450), { onList: (_u, n) => { if (n === 3) watched.put("mid", { n: -1 }); } });
+    const without = await completeCopy(plain.platform, VAULT, "Thing");
+    const kindsAtCall: string[][] = [];
+    const withIt = await completeCopy(watched.platform, VAULT, "Thing", { onPage: () => { kindsAtCall.push(watched.urls.map(kind)); } });
+    expect(watched.urls.map(String)).toEqual(plain.urls.map(String));
+    expect(watched.urls.map(kind)).toEqual(["head", "first", "after", "after", "since"]);
+    expect(withIt).toEqual(without);
+    expect(kindsAtCall).toEqual([["head", "first"], ["head", "first", "after"], ["head", "first", "after", "after"]]);
+  });
+
+  it("an error thrown by onPage changes nothing: the copy is complete and the requests are the same", async () => {
+    const r = rig(many(450));
+    const reference = rig(many(450));
+    let calls = 0;
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { onPage: () => { calls += 1; throw new Error("the listener broke"); } });
+    const plain = await completeCopy(reference.platform, VAULT, "Thing");
+    expect(calls).toBe(3);
+    expect(copy).toEqual(plain);
+    expect(r.urls.map(String)).toEqual(reference.urls.map(String));
+  });
+
+  it("after the walk restarts by offset it never tells a smaller list than it told before", async () => {
+    let afters = 0;
+    const refuseSecond = (f: typeof fetch) => (async (i: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(i)).searchParams.has("after") && ++afters === 2) return json(400, { error: "after_cursor_invalid" });
+      return f(i, init);
+    }) as typeof fetch;
+    const r = rig(many(850), {}, refuseSecond);
+    const told: Told[] = [];
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { onPage: listen(told) });
+    expect(told.map((t) => t.n)).toEqual([200, 400, 400, 600, 800, 850]);
+    expect(told.map((t) => t.n)).toEqual([...told.map((t) => t.n)].sort((a, b) => a - b));
+    expect(told.map((t) => t.pages)).toEqual([1, 2, 2, 3, 4, 5]);
+    expect(told.at(-1)!.walkDone).toBe(true);
+    expect(copy.records).toHaveLength(850);
+  });
+
+  it("is not told about the since pass: a row written during the walk reaches the copy but no call", async () => {
+    const r = rig(many(450), { onList: (_u, n) => { if (n === 3) r.put("mid", { n: -1 }); } });
+    const told: Told[] = [];
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { onPage: listen(told) });
+    expect(told).toHaveLength(3);
+    expect(told.every((t) => !t.ids.includes("mid"))).toBe(true);
+    expect(ids(copy.records)[0]).toBe("mid");
+    expect(copy.records).toHaveLength(451);
+  });
+
+  it("a walk cut by maxPages is told the pages it read, none of them walkDone", async () => {
+    const r = rig(many(450));
+    const told: Told[] = [];
+    const copy = await completeCopy(r.platform, VAULT, "Thing", { maxPages: 3, onPage: listen(told) });
+    expect(copy.truncated).toBe(true);
+    expect(told.map((t) => t.n)).toEqual([200, 400]);
+    expect(told.map((t) => t.walkDone)).toEqual([false, false]);
+  });
+
+  it("a one-page list is told once, walkDone", async () => {
+    const r = rig(many(3));
+    const told: Told[] = [];
+    await completeCopy(r.platform, VAULT, "Thing", { onPage: listen(told) });
+    expect(told).toEqual([{ n: 3, ids: ["t2", "t1", "t0"], pages: 1, walkDone: true }]);
+  });
+});
