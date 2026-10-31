@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/employment-rows",
+  "package": "@kaigilb/gilbplatformcode-employment-rows",
+  "version": "0.1.0",
+  "purpose": "A person record's Employment section: the employments over the record's edges, in the card's modes.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/EmploymentRows.tsx",
+        "lines": [
+          20,
+          53
+        ],
+        "to": "src/EmploymentRows.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `employment-card`, `employments-state`, `card-mode`, and `employment-edges` (for `storedEdgeItems`); the finder, the vault's name, the two place slots and the catalogue origin are props handed on.",
+    "`vaultUnknown`: with no vault and a record that names employments, the card is told, and says the employments were not read; the source drew nothing (the section read nothing and drew no group).",
+    "The source passed `recordsVaultId={vaultId}`; the finder is the new prop `find`. There is no call to an organization-vault finder.",
+    "The file's header comment is new."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

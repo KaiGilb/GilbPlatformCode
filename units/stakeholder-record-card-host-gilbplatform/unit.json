@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card-host-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -15,12 +15,14 @@
     "`HeldStakeholderCard` draws the sentence \"The MyNet profile address is not set, so this card is not drawn.\" and no card when `settings.mynetProfileUrl` was not given to the provider, because the card's own-card band (`own-card-state`) throws when no address is set. GilbApp built the address from the profile app's base address at module load.",
     "test/ holds the master and platform fixtures of the provider's tests (`world.ts`, `support.ts`, `fixture*.ts`, `writableFields.ts`, `fakeSession.ts`, `memoryStorage.ts`), copied unchanged, and `heldWorld.ts` with the contact catalogue, which the held card's tests need; they are not shipped as source.",
     "0.2.0: the host gives `renderLanguages` (`LanguageSection` of `language-section`, the slot's props as they are, no `renderCountrySearch`). New: `test/languagesWorld.ts`; `test/fixturePlatform.ts` gains a `DELETE /lws/r/<id>` route (a test fixture).",
-    "0.3.0: the host gives `renderSkillsAndInterests` (`Fragment` of `SkillRows` of `skill-rows` and `InterestRows` of `interest-rows`, each with its half of the slot's props as they are). New: `src/heldCard.skills.test.tsx`, `test/skillsWorld.ts` (test fixtures); the lockfile is made again."
+    "0.3.0: the host gives `renderSkillsAndInterests` (`Fragment` of `SkillRows` of `skill-rows` and `InterestRows` of `interest-rows`, each with its half of the slot's props as they are). New: `src/heldCard.skills.test.tsx`, `test/skillsWorld.ts` (test fixtures); the lockfile is made again.",
+    "0.4.0: the host gives `renderEmployment` (a small component of the host that gives `EmploymentRows` of `employment-rows` the slot's props as they are, `find` = `findOrganizationRecords` of `org-hierarchy`, and `vaultName` = the shell's name for the holding vault when it lists one; no work-place slot). Peers gain `employment-rows` ^0.1.0 and `org-hierarchy` ^0.1.2; the host-agnostic script allows the two imports. New: `src/heldCard.employment.test.tsx`; `test/world.ts` also serves the terms of an employment entity (test fixture); the lockfile is made again."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
     "src/HeldStakeholderCard.tsx",
     "src/example.test.tsx",
+    "src/heldCard.employment.test.tsx",
     "src/heldCard.languages.test.tsx",
     "src/heldCard.skills.test.tsx",
     "src/heldCard.test.tsx",
@@ -71,9 +73,14 @@
       "implementedBy": "the platform's `useRefLabel`"
     },
     {
-      "member": "StakeholderRecordCardHost.holdingVaultOf and the render slots",
+      "member": "StakeholderRecordCardHost.holdingVaultOf and the render slots not given (picture, band icon, type description, attachments, address)",
       "replaces": "holdingVaultOf and the host-owned sections",
       "implementedBy": "absent: the card's defaults stand"
+    },
+    {
+      "member": "StakeholderRecordCardHost.renderEmployment",
+      "replaces": "EmploymentRows, GilbApp src/components/records/RecordDetail.tsx:1470",
+      "implementedBy": "`EmploymentRows` of `employment-rows` through the host's own component, with `findOrganizationRecords` of `org-hierarchy` and the shell's name for the holding vault; no work-place slot"
     }
   ],
   "library": {

@@ -2,17 +2,37 @@
   "schema": 1,
   "unit": "units/org-hierarchy",
   "package": "@kaigilb/gilbplatformcode-org-hierarchy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Shows and edits an organization's parent organization and units.",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6",
     "files": [
-      { "path": "src/lib/base/orgCard/orgUnits.ts", "lines": null, "to": "src/orgUnits.ts" },
-      { "path": "src/lib/base/orgCard/orgRecords.ts", "lines": null, "to": "src/orgRecords.ts" },
-      { "path": "src/lib/mynet/org/orgHierarchy.ts", "lines": null, "to": "src/orgHierarchy.ts" },
-      { "path": "src/components/records/orgCard/OrgHierarchySections.tsx", "lines": null, "to": "src/OrgHierarchySections.tsx" },
-      { "path": "src/components/records/orgCard/useOrgUnits.ts", "lines": null, "to": "src/useOrgUnits.ts" }
+      {
+        "path": "src/lib/base/orgCard/orgUnits.ts",
+        "lines": null,
+        "to": "src/orgUnits.ts"
+      },
+      {
+        "path": "src/lib/base/orgCard/orgRecords.ts",
+        "lines": null,
+        "to": "src/orgRecords.ts"
+      },
+      {
+        "path": "src/lib/mynet/org/orgHierarchy.ts",
+        "lines": null,
+        "to": "src/orgHierarchy.ts"
+      },
+      {
+        "path": "src/components/records/orgCard/OrgHierarchySections.tsx",
+        "lines": null,
+        "to": "src/OrgHierarchySections.tsx"
+      },
+      {
+        "path": "src/components/records/orgCard/useOrgUnits.ts",
+        "lines": null,
+        "to": "src/useOrgUnits.ts"
+      }
     ]
   },
   "namedChanges": [
@@ -21,11 +41,14 @@
     "`orgRecords.ts` no longer declares `OrgRecordHit` (source lines 60-72): the type is imported from `record-picker`, whose declaration differs only in `row?: PickerRow` where the source had `row?: BaseRecord` (`BaseRecord` is assignable to it; no code here sets `row`); the import of `BaseRecord` is gone, and this unit's entry point does not export `OrgRecordHit`;",
     "`OrgHierarchySections.tsx`: the parent picker is given its find, `find={(text) => findOrganizationRecords(vaultId, text)}` (the source's `OrgRecordPicker` chose `findOrganizationRecords(vaultId, text)` itself when `find` was omitted; the unit `record-picker` has no default). Its query key is then the picker's own `[\"record-picker\", \"Parent organization\", vaultId, text]` where the source's default was `[\"mynet\", \"org-records\", vaultId, text]`, and the host gives the picker's query hook through `PickerQueryContext`;",
     "comments only otherwise: cycle, agent, ticket and ruling tags, dates and person names are removed or reworded, and the 'Copied from MyNet' line of `orgHierarchy.ts`; no code changed.",
-    "0.1.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`."
+    "0.1.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`.",
+    "0.1.2: `findOrganizationRecords` (typed text): a hit the search named but that could not be read (the read failed, or the record is not served to the viewer) makes the answer `complete: false`; it was dropped silently and the answer stayed complete. A hit that reads but is not an organization, or has no name, is not a failure. No other behaviour changed."
   ],
   "newFiles": [
     "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": false }
+  "library": {
+    "admitted": false
+  }
 }

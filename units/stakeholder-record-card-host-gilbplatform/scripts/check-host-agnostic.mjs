@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(interest-rows|language-section|own-card-state|skill-rows|stakeholder-card-hosts-gilbplatform|stakeholder-record-card)$/,
+  /^@kaigilb\/gilbplatformcode-(employment-rows|interest-rows|language-section|org-hierarchy|own-card-state|skill-rows|stakeholder-card-hosts-gilbplatform|stakeholder-record-card)$/,
 ];
 
 if (!existsSync(srcRoot)) {

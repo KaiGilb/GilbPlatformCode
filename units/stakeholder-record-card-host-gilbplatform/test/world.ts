@@ -89,7 +89,8 @@ export function masterWithNames(): FixtureMaster {
     { "@id": t("FamilyName"), "a:predicateAttribute": "a:familyName", "a:label": "Family name", "a:encoding": "inline-literal:text", "a:fieldOf": person },
   );
   m.listing(pages as never);
-  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf", "claimSubject", "visibilityTier"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
+  // The employment entity's terms (`org` ... `workLocation`) are served too, so the Employment section the host gives can read its vocabulary.
+  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf", "claimSubject", "visibilityTier", "org", "claimSlotKey", "name", "startDate", "endDate", "ongoing", "workLocation"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
   return m;
 }
 
