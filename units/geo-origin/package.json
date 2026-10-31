@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-geo-origin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The one setting \"which origin is the shared place catalogue\", with the two tests every read of it uses: is this value a catalogue row, and is this address inside the catalogue.",

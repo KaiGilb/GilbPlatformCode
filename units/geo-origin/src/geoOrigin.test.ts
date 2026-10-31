@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { geoOrigin, isGeoEntityId, isGeoUrl, resetGeoOrigin, setGeoOrigin } from "./geoOrigin";
+import { GeoWriteRefusedError, geoOrigin, isGeoEntityId, isGeoUrl, resetGeoOrigin, setGeoOrigin } from "./geoOrigin";
 import * as api from "./index";
 
 afterEach(() => resetGeoOrigin());
@@ -134,8 +134,8 @@ describe("resetGeoOrigin", () => {
 });
 
 describe("the export list", () => {
-  test("is exactly the five functions", () => {
-    expect(Object.keys(api).sort()).toEqual(["geoOrigin", "isGeoEntityId", "isGeoUrl", "resetGeoOrigin", "setGeoOrigin"]);
+  test("is exactly the five functions and the error", () => {
+    expect(Object.keys(api).sort()).toEqual(["GeoWriteRefusedError", "geoOrigin", "isGeoEntityId", "isGeoUrl", "resetGeoOrigin", "setGeoOrigin"]);
   });
 });
 
@@ -190,4 +190,20 @@ describe("isGeoUrl (the fence: inside the catalogue by PARSED origin, never by t
     [null],
     [{ href: "https://geo.example.test/" }],
   ])("%j is outside", (u) => expect(isGeoUrl(u)).toBe(false));
+});
+
+describe("GeoWriteRefusedError (0.1.1)", () => {
+  test("the default reason is the catalogue's: read only, a fixed sentence that names no address", () => {
+    const e = new GeoWriteRefusedError();
+    expect(e.reason).toBe("catalogue");
+    expect(e.name).toBe("GeoWriteRefusedError");
+    expect(e.message).toBe("The place catalogue is read only, so nothing can be written to it.");
+    expect(e).toBeInstanceOf(Error);
+  });
+  test("origin-unknown has its own fixed sentence", () => {
+    const e = new GeoWriteRefusedError("origin-unknown");
+    expect(e.reason).toBe("origin-unknown");
+    expect(e.message).toBe("Addresses cannot be saved here: the place catalogue is not known.");
+    expect(e.message).not.toMatch(/https?:|\/base\//);
+  });
 });

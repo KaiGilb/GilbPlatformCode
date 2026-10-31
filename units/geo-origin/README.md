@@ -14,6 +14,8 @@ The place catalogue (GilbGeo) is read by address. A shared unit must not name a 
 - `isGeoEntityId(value)`: true when `value` is a string that starts with `<origin>/base/e/`. It says nothing about whether the row exists.
 - `isGeoUrl(value)`: true when `value` parses as an absolute http(s) address with no user name or password whose origin is exactly the catalogue's. The test is on the parsed origin, never on the text, so `https://other.example/?u=<catalogue>/base/e/x`, `https://<catalogue host>@other.example/` and `https://<catalogue host>.other.example/` are outside. Every read of the catalogue asks this first and makes no request when the answer is false.
 
+- `GeoWriteRefusedError(reason?)` (0.1.1): a write was refused because of the place catalogue. `reason` `"catalogue"` (default; "The place catalogue is read only, so nothing can be written to it.") or `"origin-unknown"` ("Addresses cannot be saved here: the place catalogue is not known.": the write could not be checked, and a guard that protects the catalogue fails closed). Fixed sentences, no address.
+
 ## What this is not
 
 - Not a fetcher. It never asks the origin anything; it only keeps the text and tests addresses against it.
@@ -71,6 +73,10 @@ One value, the origin. An app must have ONE copy of this unit: install it once.
 
 - "`isGeoEntityId` fences the reads." It does not: it answers only for `<origin>/base/e/` values. The fence is `isGeoUrl`.
 - "`isGeoUrl` says the place exists." It says the address is inside the catalogue, nothing more.
+
+## Changes in 0.1.1
+
+- New export `GeoWriteRefusedError`, so the units that fence their writes (`place-claim-write`) throw one error. Additive; `reason` is optional.
 
 ## Where it came from
 
