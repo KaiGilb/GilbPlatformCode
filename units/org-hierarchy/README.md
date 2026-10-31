@@ -18,6 +18,10 @@ The two hierarchy groups of an organization card, with the reads and the rules u
 
 Test ids: `org-partof-section`, `org-chain`, `org-chain-node`, `org-chain-link`, `org-chain-hidden`, `org-chain-end`, `org-partof-add`, `org-partof-change`, `org-partof-error`, `org-units-section`, `org-unit`, `org-unit-name`, `org-unit-count`, `org-units-count`, `org-units-error`, and those of `OrgShortList` and `OrgMark`.
 
+## Changes in 0.1.1
+
+Package metadata only; no source or test change. The unit's `devDependencies` gain `held-notes` and the units of its peer tree, and the lockfile is refreshed (no third-party version changes), because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`. The peer ranges of this unit are unchanged.
+
 ## What this is not
 
 - Not the organization card: two groups only. The card, the other groups and their order are the caller's.
