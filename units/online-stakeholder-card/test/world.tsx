@@ -159,6 +159,10 @@ export function fakeHost(over: Partial<OnlineStakeholderCardHost> = {}, shellOve
       return [];
     },
     doors: { requestsSent: () => 0, heldRecordFreshMs: 15_000, heldRecordOf: () => null, useRecordsBeingDeleted: () => new Set<string>() },
+    rememberVaultOf: (id: string, vault: string) => {
+      LOG.push(`vault:${id}@${vault}`);
+      M.vaults[id] = vault;
+    },
     person: { adderCardOf: async () => `${OWN}/e/self`, rememberCreatedIn: () => {} },
     vocabulary: { masterKindReader: () => { throw new Error("the vocabulary query is a fake in these tests"); } },
     ...over,

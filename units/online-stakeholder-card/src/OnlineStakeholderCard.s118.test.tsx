@@ -21,9 +21,9 @@ import {
   notePageLinks,
   setScreenLinks,
 } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
-import { CIRCLES, FIND, M, reset } from "../test/mocks";
+import { CIRCLES, FIND, LOG, M, reset } from "../test/mocks";
 import { setUp, tearDown } from "../test/support";
-import { ANN, BEN, FOREIGN, OWN, STRANGER, draw, sent, stubPlatform } from "../test/world";
+import { ANN, BEN, FOREIGN, OWN, STRANGER, TEAM, draw, fakeHost, sent, stubPlatform } from "../test/world";
 
 beforeEach(() => {
   setUp();
@@ -87,6 +87,74 @@ describe("'+ Add your own' on a person the holder already holds a linked record 
     await waitFor(() => expect(M.opened).toEqual(["bo9"]));
     expect(M.made).toEqual([]);
     FIND.ids = [];
+  });
+});
+
+// ── H13: the vault travels with an existing record to the host's open ──────────────────────────────────────
+// Live case, 2026-10-31: the find named the record and its vault; the card passed the id alone, and the held card said "which vault holds this
+// card is not known, so it was not read". The vault is handed to the host (`rememberVaultOf`) just before `openRecordFromList`.
+describe("'+ Add your own' on a record the holder already holds hands the host its vault (H13)", () => {
+  const finds = () => sent.filter((s) => /find-by-attribute/.test(s));
+  it("the store's find names the record and its vault: the host is given both, before the record is opened", async () => {
+    FIND.ids = [`${TEAM}/e/bo9`];
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["bo9"]));
+    expect(M.vaults).toEqual({ bo9: TEAM });
+    expect(LOG.indexOf(`vault:bo9@${TEAM}`)).toBeGreaterThan(-1);
+    expect(LOG.indexOf(`vault:bo9@${TEAM}`)).toBeLessThan(LOG.indexOf("open:bo9"));
+    expect(M.made).toEqual([]);
+  });
+  it("a loaded record whose screen row names its vault: the host is given it and no find is sent", async () => {
+    setScreenLinks(ANN, new Map([[BEN, "ada1"]]), new Map([[BEN, [{ id: "ada1", title: "Ben Larsen", vaultId: OWN }]]]));
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["ada1"]));
+    expect(M.vaults).toEqual({ ada1: OWN });
+    expect(finds()).toEqual([]);
+    expect(M.made).toEqual([]);
+  });
+  it("a loaded record whose screen row names no vault: the one find names it, and the host is given it", async () => {
+    setScreenLinks(ANN, new Map([[BEN, "ada1"]]));
+    FIND.ids = [`${TEAM}/e/ada1`];
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["ada1"]));
+    expect(M.vaults).toEqual({ ada1: TEAM });
+    expect(finds().length).toBeGreaterThan(0);
+    expect(M.made).toEqual([]);
+  });
+  it("a loaded record whose vault the find cannot name either: opened with no door (the held card's refusal then speaks), nothing made", async () => {
+    setScreenLinks(ANN, new Map([[BEN, "ada1"]]));
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["ada1"]));
+    expect(M.vaults).toEqual({});
+    expect(M.made).toEqual([]);
+  });
+  it("a loaded record whose vault is not named and whose find fails: opened with no door, nothing made", async () => {
+    setScreenLinks(ANN, new Map([[BEN, "ada1"]]));
+    FIND.fail = true;
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["ada1"]));
+    expect(M.vaults).toEqual({});
+    expect(M.made).toEqual([]);
+    FIND.fail = false;
+  });
+  it("a new record (the create) gives the host no vault here: its create already remembered it", async () => {
+    draw();
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["newrec"]));
+    expect(M.vaults).toEqual({});
+  });
+  it("a host without rememberVaultOf still opens the record (the door is then not handed on)", async () => {
+    FIND.ids = [`${TEAM}/e/bo9`];
+    const fake = fakeHost();
+    delete (fake.host as { rememberVaultOf?: unknown }).rememberVaultOf;
+    draw("content", BEN, fake);
+    await press();
+    await waitFor(() => expect(M.opened).toEqual(["bo9"]));
   });
 });
 

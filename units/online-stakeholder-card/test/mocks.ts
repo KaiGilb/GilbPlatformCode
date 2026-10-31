@@ -27,6 +27,8 @@ export const M = {
   /** Every delete as (id, address). */
   deleteArgs: [] as [string, unknown][],
   opened: [] as string[],
+  /** The vault the card handed the host for each existing record it opened (`rememberVaultOf`). */
+  vaults: {} as Record<string, string>,
   deleted: [] as string[],
   patchFails: 0,
   /** When set, the create waits for it (two presses can then be made while the first is out). */
@@ -65,6 +67,7 @@ export function reset(): void {
   M.patched = [];
   M.deleteArgs = [];
   M.opened = [];
+  M.vaults = {};
   M.deleted = [];
   M.patchFails = 0;
   M.gate = null;
