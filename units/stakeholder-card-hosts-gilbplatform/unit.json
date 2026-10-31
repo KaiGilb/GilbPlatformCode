@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "purpose": "The ready-made GilbPlatform host for the Stakeholder entry card: one provider that sets the platform's origins and the session and supplies every host the online stakeholder card needs, so it draws, reads and adds with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -213,7 +213,8 @@
     "every other member is a function a unit exports (`masterKindReader` and `useRelations` of `plan-stakeholder-io`), a prop of the provider, or `() => 0` (`requestsSent`, requestMeter.ts 39).",
     "test/ holds the master and platform fixtures of `person-create` (`support.ts`, `fixtureReference.ts`, `fixtureTag.ts`, `fixturePlatform.ts`, `writableFields.ts`), copied unchanged; they are not shipped as source (`files` lists `test`, as the Plan-card provider's does).",
     "0.2.0 hosts the standalone Org units. src/hosts/ gains `createCardReferencesHost` (`changeRecordFactItems` of `record-fact-items`), `createOrgMarkHost` (`downloadFileOutcome` of `file-download-outcome`), `createOrgEmployeesHost` (`readResources` inline, `useSheetHistory` and `dropStaleSheetEntry` of `sheet-history`, the photo keys, and `RecordFace` when given) and `createPickerQuery` (`usePickerQuery`, inline). The provider mounts `OrgEmployeesHostContext`, `OrgMarkHostContext` and `PickerQueryContext` (which `org-hierarchy` reads); the `card-references` host is a factory, as the unit takes it as an argument.",
-    "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150), `getResource` (lws.ts 57-71, with `resourceOf` inlined and the etag, which nothing here reads, left out; not token-equal) and `readResources` (lws.ts 164-170, token-equal, 90 tokens) over `mapWithConcurrency` and `MAX_PARALLEL_DEREFERENCES` of `lws-vault-sets`, `idFromResourceUri` of `resource-id` and `entityUriInVault` of `vault-namespace`."
+    "src/inline.ts gains `usePickerQuery` (the five options of OrgRecordPicker.tsx 144-150), `getResource` (lws.ts 57-71, with `resourceOf` inlined and the etag, which nothing here reads, left out; not token-equal) and `readResources` (lws.ts 164-170, token-equal, 90 tokens) over `mapWithConcurrency` and `MAX_PARALLEL_DEREFERENCES` of `lws-vault-sets`, `idFromResourceUri` of `resource-id` and `entityUriInVault` of `vault-namespace`.",
+    "0.3.1: package metadata only (no source or test change): `held-notes` and the units of its peer tree are added to `devDependencies`, and the lockfile is refreshed, because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
