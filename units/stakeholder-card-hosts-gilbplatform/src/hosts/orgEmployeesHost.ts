@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 import type { OrgEmployeesHost, RecordFaceProps } from "@kaigilb/gilbplatformcode-org-employees";
 import { dropStaleSheetEntry, useSheetHistory } from "@kaigilb/gilbplatformcode-sheet-history";
 import { baseOrigin } from "@kaigilb/gilbplatformcode-base-origin";
-import { readResources } from "../inline";
+import { readResources } from "@kaigilb/gilbplatformcode-vault-resources";
 import { photoReadKeysOf, photoTermResolverFor } from "../photoTerm";
 
 export interface OrgEmployeesHostOptions {
@@ -13,8 +13,8 @@ export interface OrgEmployeesHostOptions {
 }
 
 /**
- * The host of the Employees group (`org-employees`; the value of its context, which `org-hierarchy` also reads): `readResources` is the inline copy of
- * GilbApp's (lws.ts:164), `useSheetHistory` and `dropStaleSheetEntry` are those of `sheet-history`, `photoReadKeys` is the photo term's. `RecordFace` is
+ * The host of the Employees group (`org-employees`; the value of its context, which `org-hierarchy` also reads): `readResources` is the one of
+ * `vault-resources`, `useSheetHistory` and `dropStaleSheetEntry` are those of `sheet-history`, `photoReadKeys` is the photo term's. `RecordFace` is
  * given by the developer or absent.
  */
 export function createOrgEmployeesHost(options: OrgEmployeesHostOptions = {}): OrgEmployeesHost {

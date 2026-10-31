@@ -91,7 +91,7 @@ export function masterWithNames(): FixtureMaster {
     { "@id": t("FamilyName"), "a:predicateAttribute": "a:familyName", "a:label": "Family name", "a:encoding": "inline-literal:text", "a:fieldOf": person },
   );
   m.listing(pages as never);
-  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
+  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf", "claimSubject", "visibilityTier"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
   return m;
 }
 

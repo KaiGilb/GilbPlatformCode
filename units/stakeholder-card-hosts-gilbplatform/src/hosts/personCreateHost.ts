@@ -1,10 +1,10 @@
 import type { PersonCreateHost } from "@kaigilb/gilbplatformcode-person-create";
-import { adderCardOf } from "../adderCard";
-import { rememberCreatedIn } from "../inline";
+import { adderCardOf } from "@kaigilb/gilbplatformcode-adder-card";
+import { rememberCreatedIn } from "@kaigilb/gilbplatformcode-record-detail-reads";
 
 /**
- * The host of `person-create`. `adderCardOf` is GilbApp's (see `../adderCard`): a person with no card of their own in their
- * landing vault gets a basic one, made through `vault-profile-photo`. `rememberCreatedIn` is the inline copy of `recordHooks.ts:2842`.
+ * The host of `person-create`. `adderCardOf` is the one of `adder-card`: a person with no card of their own in their landing vault gets a basic
+ * one, made through `vault-profile-photo`. `rememberCreatedIn` is the one of `record-detail-reads`.
  */
 export function createPersonCreateHost(): PersonCreateHost {
   return { adderCardOf, rememberCreatedIn };

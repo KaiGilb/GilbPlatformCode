@@ -56,6 +56,12 @@ export interface WorldOptions {
   files?: Record<string, string>;
   /** The vaults the session reaches. Default: Ann's own vault, read and write. */
   sessionVaults?: GilbSession["vaults"];
+  /** A one-time-code session: no vault entity and no vault list in the session itself, so the vaults come only from `GET /lws/vaults`. */
+  bareSession?: boolean;
+  /** `GET /lws/vaults` never answers. */
+  vaultsHold?: boolean;
+  /** The rows `GET /lws/vaults` answers (wire nodes) instead of Ann's landing vault. */
+  vaultRows?: unknown[];
 }
 
 /** The bytes of the two photos the fake platform serves (a stand-in for an image). */
@@ -83,7 +89,7 @@ export function masterWithNames(): FixtureMaster {
     { "@id": t("FamilyName"), "a:predicateAttribute": "a:familyName", "a:label": "Family name", "a:encoding": "inline-literal:text", "a:fieldOf": person },
   );
   m.listing(pages as never);
-  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
+  for (const slug of ["givenName", "familyName", "logo", "parentOrganization", "employer", "employee", "jobTitle", "memberOf", "claimSubject", "visibilityTier"]) m.put(`a/${slug}`, { "@context": CONTEXT, "@id": a(slug), "a:predicateAttribute": `a:${slug}` });
   return m;
 }
 
@@ -109,8 +115,8 @@ export async function createWorld(options: WorldOptions = {}) {
 
   const session: GilbSession = {
     principal: ANN,
-    vault: { entity: P_ENTITY, id: "annvault", name: "Ann" },
-    vaults: options.sessionVaults ?? [{ vaultId: P, modes: ["read", "write"] }],
+    vault: options.bareSession ? null : { entity: P_ENTITY, id: "annvault", name: "Ann" },
+    vaults: options.bareSession ? [] : options.sessionVaults ?? [{ vaultId: P, modes: ["read", "write"] }],
   };
 
   async function handle(input: string | URL | Request, init?: RequestInit): Promise<Response> {
@@ -128,6 +134,8 @@ export async function createWorld(options: WorldOptions = {}) {
     }
     if (u.pathname === "/lws/vaults" && method === "GET") {
       if ((options.vaultsStatus ?? 200) !== 200) return json(options.vaultsStatus!, { error: "Unavailable" });
+      if (options.vaultsHold) return new Promise<Response>(() => {});
+      if (options.vaultRows) return json(200, { total: options.vaultRows.length, vaults: options.vaultRows });
       return json(200, { total: 1, vaults: [{ "@id": P_ENTITY, vaultId: P, name: "Ann", partOf: null, parentAmbiguous: false, modes: ["read", "write"], isLandingVault: true }] });
     }
     if (u.pathname === "/base/connect/audience-rung/members" && method === "GET") {

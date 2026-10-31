@@ -48,22 +48,29 @@ describe("the props the app passes", () => {
     expect(last.systemHostLabels).toEqual(["id", "ontology"]);
     expect(last.session).toBe(credential);
     expect(typeof last.onOpenRecord).toBe("function");
+    // The second argument of onOpenRecord is the door (since the host 0.4.0): the app takes both.
+    expect((last.onOpenRecord as (...a: unknown[]) => void).length).toBe(2);
     expect(Object.keys(last).sort()).toEqual(["children", "geoOrigin", "onOpenRecord", "ontologyOrigin", "origin", "session", "settings", "systemHostLabels", "systemVaultHosts"]);
   });
 
-  test("the optional settings arrive in the provider's settings prop, and none is passed when none is set", async () => {
+  test("the optional settings arrive in the provider's settings prop with the MyNet profile address", async () => {
     await signedInApp({}, OPTIONAL);
-    expect(seen.provider.at(-1)!.settings).toEqual({ ontologyApiOrigin: "https://search.example.test", minOntologyQuery: 4, localRigHosts: ["rig.example.test"] });
+    expect(seen.provider.at(-1)!.settings).toEqual({ ontologyApiOrigin: "https://search.example.test", minOntologyQuery: 4, localRigHosts: ["rig.example.test"], mynetProfileUrl: "https://mynet.example.test/profile" });
   });
 
   test("the DPoP proof origin reaches the provider's settings; empty means absent", async () => {
     await signedInApp({}, { ...TEST_SETTINGS, dpopProofOrigin: " https://id.example.test " });
-    expect(seen.provider.at(-1)!.settings).toEqual({ dpopProofOrigin: "https://id.example.test" });
+    expect(seen.provider.at(-1)!.settings).toEqual({ dpopProofOrigin: "https://id.example.test", mynetProfileUrl: "https://mynet.example.test/profile" });
   });
 
-  test("with no optional setting the provider gets no settings prop", async () => {
+  test("the MyNet profile address reaches the provider's settings, trimmed", async () => {
+    await signedInApp({}, { ...TEST_SETTINGS, mynetProfileUrl: " https://mynet.example.test/profile " });
+    expect(seen.provider.at(-1)!.settings).toEqual({ mynetProfileUrl: "https://mynet.example.test/profile" });
+  });
+
+  test("with no optional setting the provider's settings hold the MyNet profile address alone", async () => {
     await signedInApp();
-    expect("settings" in seen.provider.at(-1)!).toBe(false);
+    expect(seen.provider.at(-1)!.settings).toEqual({ mynetProfileUrl: "https://mynet.example.test/profile" });
   });
 
   test("the card gets the typed principal, and the placement defaults to content", async () => {

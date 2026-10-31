@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws and edits the card of a person the holder keeps a record of, with Edit, +, the groups in their order, autosave, and the link to their online card.",
   "source": {
     "repo": "KaiGilb/GilbApp",

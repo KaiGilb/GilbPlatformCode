@@ -28,6 +28,7 @@ describe("settings", () => {
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
       ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
     ] as const) await user.type(screen.getByLabelText(label), value);
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(loadSettings()).toEqual(TEST_SETTINGS);
@@ -54,6 +55,7 @@ describe("settings", () => {
       ["World catalogue origin", TEST_SETTINGS.geoOrigin],
       ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
       ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
     ] as const) await user.type(screen.getByLabelText(label), value);
     const proof = screen.getByLabelText("DPoP proof origin for the platform origin");
     await user.type(proof, "not an origin");
@@ -63,6 +65,37 @@ describe("settings", () => {
     await user.type(proof, "https://id.example.test");
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(loadSettings()).toEqual({ ...TEST_SETTINGS, dpopProofOrigin: "https://id.example.test" });
+  });
+
+  test("the MyNet profile address is required: an empty one is asked for, a malformed one is named, and a good one is kept and loaded again", async () => {
+    const user = userEvent.setup();
+    render(<App makeSession={() => (null as never)} />);
+    for (const [label, value] of [
+      ["Platform origin of the vault", TEST_SETTINGS.origin],
+      ["Sign-in origin (the platform's identity service)", TEST_SETTINGS.signInOrigin],
+      ["Ontology origin", TEST_SETTINGS.ontologyOrigin],
+      ["World catalogue origin", TEST_SETTINGS.geoOrigin],
+      ["System vault hosts", TEST_SETTINGS.systemVaultHosts],
+      ["System host labels", TEST_SETTINGS.systemHostLabels],
+      ["MyNet profile address", TEST_SETTINGS.mynetProfileUrl],
+    ] as const) await user.type(screen.getByLabelText(label), value);
+    const address = screen.getByLabelText("MyNet profile address");
+    expect((address as HTMLInputElement).placeholder).toBe("https://mynet.example.test/profile");
+    await user.clear(address);
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(screen.getByRole("alert").textContent).toContain("The MyNet profile address is needed.");
+    expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
+    for (const bad of ["not an address", "javascript:alert(1)", "https://user:pw@mynet.example.test/profile"]) {
+      await user.clear(address);
+      await user.type(address, bad);
+      await user.click(screen.getByRole("button", { name: "Save settings" }));
+      expect(screen.getByRole("alert").textContent).toContain("The MyNet profile address must look like https://host/profile.");
+      expect(localStorage.getItem(SETTINGS_KEY)).toBeNull();
+    }
+    await user.clear(address);
+    await user.type(address, "https://mynet.example.test/profile");
+    await user.click(screen.getByRole("button", { name: "Save settings" }));
+    expect(loadSettings()).toEqual({ ...TEST_SETTINGS, mynetProfileUrl: "https://mynet.example.test/profile" });
   });
 
   test("kept settings skip the Settings screen on the next run, and the Settings button edits them later", async () => {
@@ -134,13 +167,13 @@ describe("the card", () => {
     await waitFor(() => expect(screen.getByTestId("online-stakeholder-actions").textContent).toContain("nothing of it can be changed here"));
   });
 
-  test("+ Add your own, with an own card, sends the create with DPoP headers and says which record opened", async () => {
+  test("+ Add your own, with an own card, sends the create with DPoP headers and lands on the held card of the new record, read at the vault it was made in", async () => {
     const { world } = await signedInApp();
     const user = userEvent.setup();
     await showCard(user);
     await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
     await user.click(screen.getByTestId("add-own"));
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy(), { timeout: 8000 });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Back to the online card" })).toBeTruthy(), { timeout: 8000 });
     const creates = world.requests("POST", /\/lws\/vault\/[^/]+\/c$/);
     expect(creates.length).toBe(1);
     const create = creates[0]!;
@@ -152,7 +185,52 @@ describe("the card", () => {
     expect(body.facts["a:name"]).toBe("Ben Larsen");
     const link = world.requests("PATCH", /\/lws\/r\//)[0]!;
     const id = link.url.slice(link.url.lastIndexOf("/") + 1);
-    expect(screen.getByRole("status").textContent).toBe(`The card opened the record ${id}. This app has no record view.`);
+    // The sentence of the old record-less app is gone; the held card of that record is drawn instead.
+    expect(screen.queryByText(/This app has no record view/)).toBeNull();
+    const held = screen.getByRole("region", { name: "Record card" });
+    await waitFor(() => expect(within(held).getByTestId("contact-card-name").textContent).toBe("Ben Larsen"), { timeout: 8000 });
+    expect(screen.queryByTestId("online-stakeholder-card")).toBeNull();
+    // The header and the groups of the held card: the holder's vault, the notes, the Name group with its fields, Edit.
+    await waitFor(() => expect(within(held).getByTestId("contact-header-holder-name").textContent).toContain("Ann"));
+    await waitFor(() => expect(within(held).getByTestId("contact-note-group")).toBeTruthy(), { timeout: 8000 });
+    expect(within(held).getByTestId("connection-origin-group")).toBeTruthy();
+    expect(within(held).getByTestId("card-edit")).toBeTruthy();
+    // The record is read at its own vault node, signed.
+    const read = world.requests("GET", new RegExp(`/lws/r/${id}$`));
+    expect(read.length).toBeGreaterThan(0);
+    expect(read.every((r) => r.url === `${HOST}/lws/r/${id}`)).toBe(true);
+    expect(read[0]!.headers.authorization).toBe("DPoP fake-access-token");
+  }, 20_000);
+
+  test("Back to the online card returns to the online card of the person that was shown", async () => {
+    await signedInApp();
+    const user = userEvent.setup();
+    await showCard(user);
+    await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
+    await user.click(screen.getByTestId("add-own"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Back to the online card" })).toBeTruthy(), { timeout: 8000 });
+    await user.click(screen.getByRole("button", { name: "Back to the online card" }));
+    await waitFor(() => expect(screen.getByTestId("online-stakeholder-card")).toBeTruthy());
+    expect(screen.queryByRole("region", { name: "Record card" })).toBeNull();
+    expect(principalField().value).toBe(BEN);
+  });
+
+  test("an edit on the held card is saved with a PATCH at the record's own node, against the version it read", async () => {
+    const { world } = await signedInApp();
+    const user = userEvent.setup();
+    await showCard(user);
+    await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
+    await user.click(screen.getByTestId("add-own"));
+    const held = await screen.findByRole("region", { name: "Record card" }, { timeout: 8000 });
+    await waitFor(() => expect(within(held).getByTestId("card-edit")).toBeTruthy(), { timeout: 8000 });
+    await user.click(within(held).getByTestId("card-edit"));
+    const box = await within(held).findByDisplayValue("Ben");
+    await user.type(box, "x");
+    await waitFor(() => expect(world.calls.filter((c) => c.method === "PATCH").length).toBe(2), { timeout: 6000 });
+    const patch = world.calls.filter((c) => c.method === "PATCH")[1]!;
+    expect(patch.url).toMatch(new RegExp(`^${HOST}/lws/r/`));
+    expect(patch.headers["if-match"]).toBeTruthy();
+    expect(JSON.parse(patch.body!)).toMatchObject({ "a:givenName": "Benx" });
   });
 
   test("with no own card the provider makes the basic one first (a selfcard POST with DPoP), then sends the create", async () => {
@@ -161,7 +239,7 @@ describe("the card", () => {
     await showCard(user);
     await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy());
     await user.click(screen.getByTestId("add-own"));
-    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy(), { timeout: 8000 });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Back to the online card" })).toBeTruthy(), { timeout: 8000 });
     expect(screen.queryByTestId("online-stakeholder-add-error")).toBeNull();
     const selfcard = world.requests("POST", /\/selfcard$/);
     expect(selfcard.length).toBe(1);
