@@ -87,6 +87,10 @@ The card makes one write of its own: the autosave, `PATCH /lws/r/<id>` with `If-
 10. **The label hook** for fields that point at records (`useRefLabel`) is a host member mounted by the card.
 11. **The dynamic import** of the label prefetch is a static import of `veda-labels`; `ExtraFact` and `FieldEditor` are exported by their files.
 
+## Changes in 0.1.1
+
+Package metadata only; no source or test change. The unit's `devDependencies` gain `modes-label`, which the provider `stakeholder-card-hosts-gilbplatform` 0.4.0 imports (the tests mount every host over that provider, so they install its peers), and the lockfile is refreshed. The peer ranges are unchanged. The tests still build this card's host themselves (`test/app.tsx`); they do not depend on `stakeholder-record-card-host-gilbplatform`, which is this card's ready-made host for a taker.
+
 ## Where it came from
 
 GilbApp `src/components/records/RecordDetail.tsx` at a703b3ed78e612e2cab77e94876ce9bce109d5a3, the ranges listed in `unit.json`, and `src/lib/base/recordVault.ts` lines 104-117. About 1,120 of the 3,041 lines are kept as written (comments naming a cycle, ruling, agent, date or ticket are removed; the others are kept), 180 are replaced by slot calls, 1,179 are dropped. The stripped range compare (comments and imports removed, word by word) shows only the named changes: `recordFacts.ts`, `ExtraFact.tsx`, `FieldEditor.tsx`: 0 words removed from the source, one added (`export`); the body: the dropped ranges, the slot calls and the edits listed in `unit.json`.
