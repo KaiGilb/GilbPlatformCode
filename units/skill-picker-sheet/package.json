@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-skill-picker-sheet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Lets the holder pick a skill from the catalogue, with its depth, in a sheet.",
@@ -39,6 +39,7 @@
     "@kaigilb/gilbplatformcode-folder-part": "file:../folder-part",
     "@kaigilb/gilbplatformcode-held-notes": "file:../held-notes",
     "@kaigilb/gilbplatformcode-holder-reference": "file:../holder-reference",
+    "@kaigilb/gilbplatformcode-home-dial": "file:../home-dial",
     "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
     "@kaigilb/gilbplatformcode-kind-relation": "file:../kind-relation",
     "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
@@ -56,6 +57,7 @@
     "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
     "@kaigilb/gilbplatformcode-own-card": "file:../own-card",
     "@kaigilb/gilbplatformcode-person-connections": "file:../person-connections",
+    "@kaigilb/gilbplatformcode-phone-text": "file:../phone-text",
     "@kaigilb/gilbplatformcode-photo-term": "file:../photo-term",
     "@kaigilb/gilbplatformcode-plan-card-facts": "file:../plan-card-facts",
     "@kaigilb/gilbplatformcode-plan-kinds": "file:../plan-kinds",

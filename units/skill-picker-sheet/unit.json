@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/skill-picker-sheet",
   "package": "@kaigilb/gilbplatformcode-skill-picker-sheet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Lets the holder pick a skill from the catalogue, with its depth, in a sheet.",
   "source": {
     "repo": "KaiGilb/GilbApp",
