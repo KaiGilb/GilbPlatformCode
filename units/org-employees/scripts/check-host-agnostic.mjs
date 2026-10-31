@@ -26,7 +26,7 @@ const ALLOWED_IMPORT = [
   /^react\/jsx-runtime$/,
   /^react-dom$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(card-group|lws-records|lws-vault-sets|open-popups|org-terms|photo-term|plan-stakeholder-io|record-picker|resource-id|stakeholder-card-model|stakeholder-card-vocabulary|term-slots|vault-origin-rule)$/,
+  /^@kaigilb\/gilbplatformcode-(card-group|held-notes|lws-records|lws-vault-sets|open-popups|org-terms|photo-term|plan-stakeholder-io|record-picker|resource-id|stakeholder-card-model|stakeholder-card-vocabulary|term-slots|vault-origin-rule)$/,
 ];
 
 if (!existsSync(srcRoot)) {

@@ -38,7 +38,7 @@ import { RemoveControl } from "@kaigilb/gilbplatformcode-remove-control";
 import { useContactRowsHost } from "./contactRowsHost";
 import { joinPhone } from "./dialCode";
 import { EMAIL_FORMAT_HINT, isEmailFormat } from "./emailFormat";
-import type { HeldNotesState } from "./heldNotesState";
+import type { HeldNotesState } from "@kaigilb/gilbplatformcode-held-notes";
 import { isWebAddress, normalizeWebAddress, platformOf, WEB_ADDRESS_HINT } from "./onlineAccount";
 import { skillReferentUri, type ThinSkill } from "./thinSkills";
 

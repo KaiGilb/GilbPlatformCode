@@ -49,6 +49,10 @@ The card needs the vaults the holder reaches, with the landing flag on one of th
 | | `RecordFace` | your prop, optional, fixed at mount; absent: the row draws no face and still shows the name and the titles |
 | `PickerQueryContext` (a hook) | `usePickerQuery` | inline copy of the picker's `useQuery` call, with `retry: false` as the source's |
 
+## Changes in 0.3.1
+
+Package metadata only; no source or test change. The unit's `devDependencies` gain `held-notes` and the units of its peer tree, and the lockfile is refreshed (no third-party version changes), because `org-employees` 0.2.1 imports `subjectSpellings` and `inVault` from `held-notes`. The peer ranges of this unit are unchanged.
+
 ## What this is not
 
 - Not the card: `OnlineStakeholderCard` is in `online-stakeholder-card`. This unit only supplies what it needs.

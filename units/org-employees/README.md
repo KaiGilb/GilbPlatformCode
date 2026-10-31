@@ -14,7 +14,7 @@ The Employees group of an organization card: the reader that finds the people, a
 - `searchScopeSentence`, `noMatchSentence`, `stillLoadingSentence`, `groupCountText`, `filterEmployeesByName`, `foldName`, `SEARCH_DEBOUNCE_MS` (250), `FULL_LIST_STEP` (50), `INLINE_EMPLOYEES` (10), `EMPLOYEES_PAGE` (50): the search over the loaded list and the words that say what was searched.
 - `pagedFindBothSpellings`: one page across the two address spellings of a record (`/base/e/` and `/vault/e/`) as one list.
 - `orgSectionOrder`: the order of the organization card's sections.
-- `subjectSpellings`, `inVault`: pure helpers, copied from the app (see "Where it came from"); `org-hierarchy` takes them from here.
+- `subjectSpellings`, `inVault`: pure helpers of the held-note layer, re-exported from `held-notes` since 0.2.1 (before that, copies in this unit); `org-hierarchy` takes them from here.
 - `refsOf`, `servedValue` and the type `EmploymentLinkVocab`: re-exported from `org-terms`, as in 0.1.0 (see "Changes in 0.2.0").
 - `OrgEmployeesHostContext`, `useOrgEmployeesHost`, and the types `OrgEmployeesHost`, `ReadResource`, `RecordFaceProps`: how the host gives the group what no unit holds.
 - `__resetPersonKinds()`: a test seam, never called by product code (see "Module state").
@@ -93,7 +93,7 @@ Two installed copies of this unit would each read the kinds once and keep their 
 - "The count is the number of people in the organization." It is the number the viewer may read and has loaded; the group says when more exist.
 - "No face means no photo is read." The photo reference is still read from the person's facts and passed to the row; only the host's drawing of it is absent.
 - "A failed read says there are none." It says the employees could not be read and that this is not a statement that there are none.
-- "`subjectSpellings` and `inVault` belong to this unit's concern only." They are the app's held-note helpers, copied; `org-hierarchy` takes them from here.
+- "`subjectSpellings` and `inVault` belong to this unit's concern only." They are the held-note layer's helpers (`held-notes` owns them; this unit re-exports them); `org-hierarchy` takes them from here.
 - "The app's `RecordFace` is a unit." It is a host member here; this unit does not draw photos.
 
 ## Where it came from
@@ -102,7 +102,7 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24e
 
 - `src/lib/base/orgCard/orgEmployees.ts` (258 lines), `orgEmployeeSearch.ts` (97), `pagedFind.ts` (57), `orgCardOrder.ts` (14);
 - `src/components/records/orgCard/OrgEmployeesSection.tsx` (69), `OrgEmployeeRow.tsx` (35), `OrgShortList.tsx` (147), `OrgListSheet.tsx` (198), `useOrgEmployees.ts` (50);
-- `src/lib/mynet/heldnote/heldNote.ts` lines 116-123 (`subjectSpellings`) and 130-142 (`hostOf`, `inVault`) to `src/subjectSpellings.ts`: pure functions no merged unit holds, each with its doc comment. Compared token for token with the source: the same. (`orgTerms.ts` lines 47-58, `refsOf` and `servedValue`, were copied to `src/servedValue.ts` in 0.1.0; since 0.2.0 they come from `org-terms`.)
+- (`orgTerms.ts` lines 47-58, `refsOf` and `servedValue`, were copied to `src/servedValue.ts` in 0.1.0; since 0.2.0 they come from `org-terms`. `heldNote.ts` lines 116-123 and 130-142, `subjectSpellings`, `hostOf` and `inVault`, were copied to `src/subjectSpellings.ts` until 0.2.1; since 0.2.1 they come from `held-notes`.)
 
 `src/index.ts` and `src/orgEmployeesHost.ts` are new.
 
@@ -124,6 +124,10 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24e
 - **Not taken.** `readResources` and `photoReadKeys` are MyNet and photo-term-cache libraries that no unit holds (the `photo-term` README names its cold-start difference from the app's `photoTerm.ts`), so they are host members. `RecordFace` and `useSheetHistory` are the app's own components.
 
 **Tests.** 78 lib tests are the source's, ported (`orgEmployees` 49, `orgEmployeeSearch` 18, `pagedFind` 8, `orgCardOrder` 3). 82 component tests are the source's (the brief counted 65 in 5 files; the source has 6 files for this component: `OrgEmployeesSection` s8org 8, s9fix 9, s10fix 6, s12 31, s12f1 11 and `OrgEmployeesSheet.history.s12` 17). Their ten `vi.mock`s of the app's modules are one fake host (`test/fakeHost.tsx`) and one mock of `./orgEmployees` for the reader (the component tests drive the group, not the reader). Fixture hosts are `example.test`. Waits for the clock use the virtual timers of `test/timing.ts` for the long timers; the tests' `waitFor` polls the DOM as in the source. 65 tests are new: `exports.test.ts` (29: each export pinned), `hostWiring.test.ts` (13: the two data members, the `org-terms` peer and the module promise), `hostComponents.test.tsx` (8: the context, the optional face, the history members), `reexport.test.ts` (5: what is re-exported from `org-terms`, and the missing host member) and `hostAgnostic.test.ts` (10). In all 225 tests. Left out: none of the nine files' tests; the organization number, hierarchy and units sections' tests belong to other units.
+
+## Changes in 0.2.1
+
+A patch release: no behaviour changes. `subjectSpellings` and `inVault` (and the private `hostOf` under `inVault`) are no longer copies in this unit: `pagedFind.ts` imports `subjectSpellings` from the unit `held-notes`, which owns the held-note layer (its stripped declarations compare 0 against the copies that are removed, and against the source), and the entry point re-exports `subjectSpellings` and `inVault` from there under the same names. The unit gains the peer `held-notes` ^0.1.0 (and, through it, the peers of that unit). All tests are unchanged and pass.
 
 ## Changes in 0.2.0
 

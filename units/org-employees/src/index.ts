@@ -12,7 +12,7 @@ export type { ListNoun } from "./orgEmployeeSearch";
 export { pagedFindBothSpellings } from "./pagedFind";
 export type { FindFn, PagedFind } from "./pagedFind";
 export { orgSectionOrder } from "./orgCardOrder";
-export { subjectSpellings, inVault } from "./subjectSpellings";
+export { subjectSpellings, inVault } from "@kaigilb/gilbplatformcode-held-notes";
 export { refsOf, servedValue } from "@kaigilb/gilbplatformcode-org-terms";
 export { OrgEmployeesHostContext, useOrgEmployeesHost } from "./orgEmployeesHost";
 export type { OrgEmployeesHost, ReadResource, RecordFaceProps } from "./orgEmployeesHost";

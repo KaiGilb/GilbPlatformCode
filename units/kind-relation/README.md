@@ -22,6 +22,10 @@ The default link (`partyTie.ts`): `masterTypeAddress`, `isPartyTypeRef`, `defaul
 
 `expandRelationRef.ts` is internal (four small functions copied from the app, see "Where it came from"); it is not exported from the entry.
 
+## Changes in 0.1.1
+
+Additive (a patch bump). `expandRelationRef(value, docUri)` is exported from the entry point; it was a private file of the unit. Its body is unchanged. `stated-by` imports it. Tests: 3 new in `src/expandRelationRef.test.ts`.
+
 ## What this is not
 
 - Not the relation write itself (`lws-relations`: `writePairRelation`, `endRelation`, `mintRelationId`), not the catalogue of kinds (`contact-kind-catalogue`) and not the model of a kind (`contact-kind-model`).
