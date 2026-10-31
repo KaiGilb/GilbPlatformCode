@@ -33,6 +33,10 @@ From `planSolution`:
 
 Wire vocabulary, verbatim from the code: the fact names `fvParent`, `partOf`, `unitTag` and `tag` (a caller passes any link name as `slug`); the served link `{ "@id": <address> }`; `{ "a:label" }`; the relation type `t:SolutionOf`; the roles `role:source` and `role:target`; an entity address `http(s)://<host>/(base|vault)/e/<id>`.
 
+## Changes in 0.2.1
+
+- `SKIP_SLUGS` (the eleven identity and profile-card slugs this unit passes to `entity-ref`) is exported, unchanged. Nothing else changes.
+
 ## Changes in 0.2.0
 
 - `recordTag` takes the record's main tag as an optional second argument, the fallback when the record holds no `unitTag` or `tag`. A call with one argument answers as before.
@@ -128,7 +132,7 @@ GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed
   - `./entityRefFacts` (`childrenPointingAt`, `entityRefFromFact`) is `@kaigilb/gilbplatformcode-entity-ref`; `./search` (`idFromEntityUri`) is `@kaigilb/gilbplatformcode-id-tail`; `./planCard` (`memberValue`) is `@kaigilb/gilbplatformcode-plan-card-facts`;
   - `MASTER_TAG_SLUGS` of `./entityDisplayName` (line 28) is a non-exported `const MASTER_TAG_SLUGS = ["unitTag", "tag"] as const;` in the file, with the same value;
   - `isTypeName` (lines 28-31) is deleted and imported from `@kaigilb/gilbplatformcode-type-key`, then re-exported (`export { isTypeName };`), so the export list is the source's;
-  - `childrenPointingAt(record, typed)` (line 269) is `childrenPointingAt(record, typed, SKIP_SLUGS)`. The app's version skips eleven identity names inside; the `entity-ref` unit takes them as an argument. `const SKIP_SLUGS = new Set([...])` is copied from `src/lib/base/entityRefFacts.ts` lines 21-33 (same eleven names) as a non-exported constant.
+  - `childrenPointingAt(record, typed)` (line 269) is `childrenPointingAt(record, typed, SKIP_SLUGS)`. The app's version skips eleven identity names inside; the `entity-ref` unit takes them as an argument. `const SKIP_SLUGS = new Set([...])` is copied from `src/lib/base/entityRefFacts.ts` lines 21-33 (same eleven names) as a constant, exported since 0.2.1.
 - `src/lib/base/planSolution.ts` (whole, 124 lines) to `src/planSolution.ts`. Code verbatim; the imports are re-pointed: `./entityRefFacts` to `entity-ref`, `./planCard` to `plan-card-facts`, `./recordPlane` (`typeLocalName`) to `type-curie`, `./relationDoc` (`roleIs`) and `./relations` (`RecordRelation`, a type) to `relation-role`.
 
 The peers' bodies were compared with the app's (comments stripped):
@@ -137,4 +141,4 @@ The peers' bodies were compared with the app's (comments stripped):
 - `idFromEntityUri` of `id-tail` (it is `slashTail`) is the same as the app's `search.ts` function (`lastIndexOf("/")`, then the rest, or the whole string).
 - `typeLocalName` of `type-curie` is the same as the app's `recordPlane.ts` function.
 
-`src/index.ts` is new. The tests are ported from `planSolution.roles.vaultit.test.ts` (3 cases), the `wouldLoop` cases of `planSearch.vaultit.test.ts` (4), the Part of loop case of `planQaTester2.vaultit.test.ts` (1), the Part of System case of `planQaTester.vaultit.test.ts` (1) and the link cases of `planServedShapes.vaultit.test.ts` (2), with host names in the fixtures made generic; the rest of those files need a search, a store or other units and are not ported, and `tagUsedInVault` has no test here. `planLinks.test.ts`, `planSolution.test.ts`, `wouldLoop.test.ts` (the extra cases) and `example.test.ts` are new and pin every export.
+`src/index.ts` is new. The tests are ported from `planSolution.roles.vaultit.test.ts` (3 cases), the `wouldLoop` cases of `planSearch.vaultit.test.ts` (4), the Part of loop case of `planQaTester2.vaultit.test.ts` (1), the Part of System case of `planQaTester.vaultit.test.ts` (1) and the link cases of `planServedShapes.vaultit.test.ts` (2), with host names in the fixtures made generic; the rest of those files need a search, a store or other units and are not ported, and `tagUsedInVault` has no test here. `planLinks.test.ts`, `planSolution.test.ts`, `wouldLoop.test.ts` (the extra cases) and `example.test.ts` are new and pin every export; `skipSlugs.test.ts` (0.2.1) pins the exported skip set.

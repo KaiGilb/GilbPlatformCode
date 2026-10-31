@@ -12,7 +12,7 @@ export { isTypeName };
 const MASTER_TAG_SLUGS = ["unitTag", "tag"] as const;
 
 // Identity and profile-card pointers: the graph draws these itself, so they are not counted as children.
-const SKIP_SLUGS = new Set([
+export const SKIP_SLUGS = new Set([
   "claimSubject",
   "heldParty",
   "profilePhoto",
