@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-stakeholder-lines",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "The Stakeholder line and the Authority line of a Plan card, and on a Development Resource the Resource Owner line: linked records as chips with their role marks, names that are not records yet as text, the picker to link a person or organization, creating a new stakeholder, removing, and an Authority's \"acts for\". The host provides every read and write.",
