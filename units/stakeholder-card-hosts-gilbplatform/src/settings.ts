@@ -25,6 +25,12 @@ export interface StakeholderCardSettings {
   vocabTypeBatchRevisions?: string;
   /** The origin of the public term corpus that stands in when the origin is a local rig that holds no ontology. */
   publicCorpusOrigin?: string;
+  /**
+   * The identity host that `origin` forwards to (an apex that a front door forwards to the identity host). A request sent to `origin` is then
+   * signed for this host (its path, no query); a request to a vault host is signed for that vault host. Never name a vault host here. Default: none,
+   * every request is signed for the host it is sent to.
+   */
+  dpopProofOrigin?: string;
 }
 
 export interface PlatformSetup {
@@ -50,9 +56,14 @@ export function applyPlatformSetup(setup: PlatformSetup): void {
   if (s?.publicCorpusOrigin !== undefined) setPublicCorpusOrigin(s.publicCorpusOrigin);
 }
 
-/** Sets the auth seam from the session, then the type key. */
-export function applySession(session: SessionCredential): void {
-  setLwsAuth(lwsAuthFromSession(session));
+/**
+ * Sets the auth seam from the session, then the type key. With `dpopProofOrigin`, a request sent to `origin` is signed for that host.
+ * Throws the TypeError of `URL` for a `dpopProofOrigin` that is not an address.
+ */
+export function applySession(session: SessionCredential, proof?: { origin: string; dpopProofOrigin?: string | undefined }): void {
+  const proofOrigin = proof?.dpopProofOrigin;
+  if (proofOrigin !== undefined) new URL(proofOrigin);
+  setLwsAuth(proofOrigin === undefined ? lwsAuthFromSession(session) : lwsAuthFromSession(session, { proofOriginFor: { fetchOrigin: proof!.origin, proofOrigin } }));
   setTypeKey(typeFacetKey);
 }
 

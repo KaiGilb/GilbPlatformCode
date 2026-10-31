@@ -1,0 +1,43 @@
+{
+  "name": "@kaigilb/gilbplatformcode-person-field-row",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Draws one field of a person's own card as an editable row, with a picker where one exists.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-birthday-picker": "file:../birthday-picker",
+    "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
+    "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-field-row": "file:../field-row",
+    "@kaigilb/gilbplatformcode-open-popups": "file:../open-popups",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
+    "@tanstack/react-query": "^5.101.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-field-row": "^0.2.0",
+    "@kaigilb/gilbplatformcode-term-slots": "^0.1.0",
+    "@tanstack/react-query": "^5.101.2",
+    "react": "^19.0.0"
+  }
+}

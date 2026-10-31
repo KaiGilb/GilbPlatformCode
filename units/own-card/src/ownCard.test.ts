@@ -1,7 +1,7 @@
-// Ported from `gilb-stakeholders` `test/ownCard/ownCard.test.ts` at 27fe0cef: 20 of its 25 tests (the others call symbols that are not in this unit).
+// Ported from `gilb-stakeholders` `test/ownCard/ownCard.test.ts` at 0a261488: 24 of its 25 tests (20 at 0.1.0, the 4 of `ownCardCaseOf` at 0.1.1); the one left out pins the hash of a production vault root, which the `example.test` hosts of the port change.
 import { createHash } from "node:crypto";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { OWN_CARD_SLUG_PREFIX, cardIdOf, findOwnCard, ownCardIds, siblingVaultRoot, type FindOwnCardDeps } from "./ownCard";
+import { OWN_CARD_SLUG_PREFIX, cardIdOf, findOwnCard, ownCardCaseOf, ownCardIds, siblingVaultRoot, type FindOwnCardDeps, type OwnCardFinding } from "./ownCard";
 import { resetSystemHostLabels, setSystemHostLabels } from "./systemHostLabels";
 
 
@@ -226,6 +226,41 @@ describe("ownCard", () => {
       const { deps, reads } = world({});
       await expect(findOwnCard(deps, { vaultRoot: " " })).rejects.toThrow(/vault root/);
       expect(reads).toEqual([]);
+    });
+  });
+
+  describe("ownCardCaseOf", () => {
+    const finding = (cardId: string | null, other: string[] = [], known = true): OwnCardFinding => ({
+      cardId,
+      cardUri: cardId ? `${ROOT}/e/${cardId}` : null,
+      road: cardId ? "pointer" : "none",
+      otherOwnerCards: other,
+      otherOwnerCardsKnown: known,
+      ignoredPointer: null,
+    });
+
+    it("the open card is MyNet's card", () => {
+      expect(ownCardCaseOf("vsc-1", finding("vsc-1"))).toEqual({ kind: "mynet", alsoCards: [] });
+    });
+
+    it("the open card is MyNet's card and a second owner card exists: it is named", () => {
+      expect(ownCardCaseOf("mnb-profile-1", finding("mnb-profile-1", [`${ROOT}/e/vsc-1`]))).toEqual({
+        kind: "mynet",
+        alsoCards: [`${ROOT}/e/vsc-1`],
+      });
+    });
+
+    it("the open card is not MyNet's card: MyNet's card is named", () => {
+      expect(ownCardCaseOf("vsc-1", finding("mnb-profile-1", [`${ROOT}/e/vsc-1`]))).toEqual({
+        kind: "other",
+        mynetCardId: "mnb-profile-1",
+        mynetCardUri: `${ROOT}/e/mnb-profile-1`,
+      });
+    });
+
+    it("not known: no finding yet, a failed finding, or MyNet has no card on these roads", () => {
+      expect(ownCardCaseOf("vsc-1", null)).toEqual({ kind: "unknown" });
+      expect(ownCardCaseOf("vsc-1", finding(null))).toEqual({ kind: "unknown" });
     });
   });
 });

@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { sessionCache, type CacheState, type Loader, type SessionCache } from "@kaigilb/gilbplatformcode-session-cache";
 
-export interface Cached<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined; /** Loads again, always (after a write). */ refresh: () => Promise<void> }
+export interface Cached<T> { data: T | undefined; updating: boolean; error: unknown; updatedAt: number | undefined; /** True ONLY while `data` is an early preview (the cache holds no committed value yet); false otherwise. */ partial: boolean; /** Loads again, always (after a write). */ refresh: () => Promise<void> }
 
 const NONE: CacheState<never> = { data: undefined, updating: false, error: undefined, updatedAt: undefined };
 
 /**
  * @param key `workspace|resource` (cacheKey), or null while the workspace is not known (nothing is loaded)
- * @param loader how to read it; the latest one is used, a new function each render does not reload
+ * @param loader how to read it; the latest one is used, a new function each render does not reload. It is handed the cache's LoadContext, so it may `ctx?.preview(rows)` for a first visit
  * @param cache the cache (the app's own unless a test passes one)
  */
 export function useCached<T>(key: string | null, loader: Loader<T>, cache: SessionCache = sessionCache): Cached<T> {
@@ -21,11 +21,11 @@ export function useCached<T>(key: string | null, loader: Loader<T>, cache: Sessi
   );
   useEffect(() => {
     if (!key) return;
-    void cache.swr<T>(key, () => loaderRef.current()).promise.catch(() => undefined);
+    void cache.swr<T>(key, (ctx) => loaderRef.current(ctx)).promise.catch(() => undefined);
   }, [key, cache]);
   const refresh = useCallback(async () => {
     if (!key) return;
-    try { await cache.refresh<T>(key, () => loaderRef.current()); } catch { /* the entry holds the error */ }
+    try { await cache.refresh<T>(key, (ctx) => loaderRef.current(ctx)); } catch { /* the entry holds the error */ }
   }, [key, cache]);
-  return { data: state.data, updating: state.updating, error: state.error, updatedAt: state.updatedAt, refresh };
+  return { data: state.data, updating: state.updating, error: state.error, updatedAt: state.updatedAt, partial: state.partial === true, refresh };
 }

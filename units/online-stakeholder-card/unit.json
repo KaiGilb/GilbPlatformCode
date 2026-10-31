@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/online-stakeholder-card",
   "package": "@kaigilb/gilbplatformcode-online-stakeholder-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.",
   "source": {
     "repo": "KaiGilb/GilbApp",

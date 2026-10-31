@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetBaseOrigin, setBaseOrigin } from "@kaigilb/gilbplatformcode-base-origin";
 import * as api from "./index";
 import {
+  ALLOWED_EXTRA_ATTR_SLUGS,
   RECORD_TYPES,
   RECORD_TYPE_BY_ID,
   attrKey,
@@ -168,6 +169,7 @@ describe("attrKey and isAppAddressableSlug", () => {
 describe("the export list", () => {
   it("is exactly these names (the three types are erased)", () => {
     expect(Object.keys(api).sort()).toEqual([
+      "ALLOWED_EXTRA_ATTR_SLUGS",
       "RECORD_TYPES",
       "RECORD_TYPE_BY_ID",
       "attrKey",
@@ -180,5 +182,20 @@ describe("the export list", () => {
       "typeUri",
       "typeUriForVaultNamespace",
     ]);
+  });
+});
+
+describe("ALLOWED_EXTRA_ATTR_SLUGS", () => {
+  it("is the nine seed slugs, in this order", () => {
+    expect([...ALLOWED_EXTRA_ATTR_SLUGS]).toEqual(["url", "phone", "email", "due", "personalNote", "jobTitle", "postalAddress", "account", "org"]);
+  });
+
+  it("holds only slugs the app can address, with none twice", () => {
+    expect(ALLOWED_EXTRA_ATTR_SLUGS.every((s) => isAppAddressableSlug(s))).toBe(true);
+    expect(new Set(ALLOWED_EXTRA_ATTR_SLUGS).size).toBe(ALLOWED_EXTRA_ATTR_SLUGS.length);
+  });
+
+  it("is also reachable from the package index", () => {
+    expect(api.ALLOWED_EXTRA_ATTR_SLUGS).toBe(ALLOWED_EXTRA_ATTR_SLUGS);
   });
 });

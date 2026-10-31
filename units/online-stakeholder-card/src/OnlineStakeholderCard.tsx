@@ -327,7 +327,7 @@ export function OnlineStakeholderCard({ principal, placementMode }: OnlineStakeh
           canWrite={false}
           fieldOrder={shownFieldOrder}
           servedFacts={{}}
-          skillPredicate={null}
+          skillPredicate={fieldOfTerm(fields, "skill")?.writeKey ?? null}
           groupOf={groupOf}
           skip={skip}
           order={order}

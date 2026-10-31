@@ -74,6 +74,10 @@ install-links=true
 
 The package ships TypeScript source (`src/`); your bundler compiles it. The closure is 91 units besides this one. Of these, 18 are not in the closure of `online-stakeholder-card`: `card-references`, `entity-ref-value`, `file-download-outcome`, `file-words`, `grantee-face`, `org-employees`, `org-mark`, `org-terms`, `photo-term`, `plan-stakeholder-io`, `reachable-vaults`, `record-fact-items`, `record-picker`, `resource-id`, `sheet-history`, `vault-modes`, `vault-namespace` and `vault-profile-photo`. `org-hierarchy` is a dev dependency only (the tests draw it); the provider imports nothing of it.
 
+## Styling
+
+The units this provider draws ship no style sheet (`contact-header` aside): they draw with Tailwind v4 utility classes over the host's CSS variables. A taker runs Tailwind v4 with the installed units' sources in its `@source` scan (for example `@source "../node_modules/@kaigilb/*/src/**/*.{ts,tsx}";`, since installed copies in `node_modules` are not scanned on their own) and defines the variables the units read (`--ink`, `--ink-soft`, `--ink-faint`, `--accent`, `--accent-ink`, `--paper`, `--surface`, `--surface-sunken`, `--line`, `--warn`, `--bad`, `--serif`); without it the photos draw at their natural size and the layout collapses. `apps/stakeholder-card-taking-app/styles/app.css` is a working example.
+
 ## Example
 
 The one complete wiring, with every prop. It is type-checked with the unit and rendered by `src/example.test.tsx` (`test/example.tsx`). Every value that names a place is a placeholder; yours are your own.
@@ -157,7 +161,7 @@ Optional:
 | `useContactLabels` | A hook: the kind chips. Fixed at mount. | no chips |
 | `listPlaceClaimsInVault`, `claimsAbout`, `claimFieldText`, `loadPlaceNames` | The four place members of the one card. The online stakeholder card never calls them. Read at each call. | find nothing |
 | `RecordFace` | A component: the face of a record in the Employees group's rows (`org-employees`). Fixed at mount. | none: no face |
-| `settings` | `localRigHosts`, `ontologyApiOrigin`, `ontologyApiOriginRaw`, `minOntologyQuery`, `vocabTypeBatchRevisions`, `publicCorpusOrigin`: the optional platform settings, as `plan-card-hosts-gilbplatform` takes them. | the units' defaults |
+| `settings` | `localRigHosts`, `ontologyApiOrigin`, `ontologyApiOriginRaw`, `minOntologyQuery`, `vocabTypeBatchRevisions`, `publicCorpusOrigin`: the optional platform settings, as `plan-card-hosts-gilbplatform` takes them. `dpopProofOrigin` (since 0.3.0): the identity host that `origin` forwards to. A request sent to `origin` is signed for that host (path kept, query dropped); a request sent to a vault host is signed for that vault host. Set it only when `origin` is an apex that a front door forwards to the identity host (the server compares a proof with the host it received). Never a vault host. | the units' defaults |
 
 ## What the host must supply
 

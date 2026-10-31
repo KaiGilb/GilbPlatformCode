@@ -201,3 +201,37 @@ describe("error mapping", () => {
     expect(new NotSignedInError()).not.toBeInstanceOf(Theirs);
   });
 });
+
+describe("proofOriginFor (a front door that forwards to the identity host)", () => {
+  const APEX = "https://apex.example.test";
+  const ID = "https://id.apex.example.test";
+  const VAULT = "https://john.apex.example.test";
+  const opts = { proofOriginFor: { fetchOrigin: APEX, proofOrigin: ID } };
+  beforeEach(() => setBaseOrigin(APEX));
+
+  it("a URL at the fetch origin is signed for the proof origin plus the path, with no query, by all three calls", async () => {
+    setLwsAuth(lwsAuthFromSession(signedIn(), opts));
+    const url = `${APEX}/lws/vaults?x=1&y=2#frag`;
+    for (const h of [await bearerHeaderFor(url), await dpopReadAuth("GET", url), await dpopWriteAuth("POST", url)]) {
+      expect(claims(h.dpop!).htu).toBe(`${ID}/lws/vaults`);
+    }
+  });
+  it("a URL at another origin is signed for itself", async () => {
+    setLwsAuth(lwsAuthFromSession(signedIn(), opts));
+    const h = await dpopReadAuth("GET", `${VAULT}/base/connect/audience-rung/members?vaultId=a`);
+    expect(claims(h.dpop!).htu).toBe(`${VAULT}/base/connect/audience-rung/members`);
+  });
+  it("the proof origin itself is signed for itself (only the exact fetch origin is rewritten)", async () => {
+    setLwsAuth(lwsAuthFromSession(signedIn(), opts));
+    expect(claims((await dpopReadAuth("GET", `${ID}/x`)).dpop!).htu).toBe(`${ID}/x`);
+  });
+  it("the session is asked for the proof URL, the method is kept", async () => {
+    const f = fake();
+    await lwsAuthFromSession(asSession(f), opts).dpopWriteAuth("PUT", `${APEX}/a/b?q=1`);
+    expect(f.authHeaders.mock.calls).toEqual([["PUT", `${ID}/a/b`]]);
+  });
+  it("without the option the proof is for the request URL, as before", async () => {
+    setLwsAuth(lwsAuthFromSession(signedIn()));
+    expect(claims((await dpopReadAuth("GET", `${APEX}/lws/vaults`)).dpop!).htu).toBe(`${APEX}/lws/vaults`);
+  });
+});

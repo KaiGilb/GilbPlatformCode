@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/own-card",
   "package": "@kaigilb/gilbplatformcode-own-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Finding the record that is the holder's own card in a vault, by hard identity: the id derived for that vault, or the record the vault's profile pointer names.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -31,13 +31,30 @@
           299
         ],
         "to": "src/ownCard.ts"
+      },
+      {
+        "path": "src/ownCard/ownCard.ts",
+        "lines": [
+          156,
+          169
+        ],
+        "to": "src/ownCard.ts"
+      },
+      {
+        "path": "src/ownCard/ownCard.ts",
+        "lines": [
+          301,
+          350
+        ],
+        "to": "src/ownCard.ts"
       }
     ]
   },
   "namedChanges": [
     "**the host constant becomes a setting** (RuleGhsSettingUnit; the one change in what the code does): `SYSTEM_HOST_LABELS = new Set([...])` (lines 102-106, a constant evaluated when the module loads and holding the platform's own host labels) is not copied. The one use, `ownCard.ts` line 150 of the source, `SYSTEM_HOST_LABELS.has(hostParts[0]!.toLowerCase())`, is `systemHostLabels().has(hostParts[0]!.toLowerCase())`, read when the function runs. `systemHostLabels()` is in the new file `src/systemHostLabels.ts` and throws until `setSystemHostLabels` is called. The labels are not hosts (so `base-origin`'s `systemVaultHosts()`, which holds whole hosts, would answer something else); the setting is kept inside this unit and not added to `base-origin`;",
     "the new import `./systemHostLabels` is the only import of the file (the source has none);",
-    "the header comment of the file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed."
+    "the header comment of the file is a new, shorter one, and comments that name a host, a person, an agent or a ticket are reworded; no code changed.",
+    "0.1.1 adds `isPersonCardType` (lines 156-169), `isHoldersOwnCard`, `OwnCardCase` and `ownCardCaseOf` (lines 301-350), read from `gilb-stakeholders` commit 0a261488be7c98d1ac5d79887c966a445b8928bd, the pin of GilbApp a703b3ed, where the file's lines up to 154 and from 171 on are token-equal (comments removed) to the commit above apart from the first change; the only change in the added code is one phrase in a doc comment that named an agent and a ruling"
   ],
   "newFiles": [
     "src/index.ts",

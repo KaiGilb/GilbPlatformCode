@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/related-children",
+  "package": "@kaigilb/gilbplatformcode-related-children",
+  "version": "0.1.0",
+  "purpose": "Lists the records that point at this one as a member, read from the parent's own vault.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/base/entityRefChildren.ts",
+        "lines": [
+          1,
+          134
+        ],
+        "to": "src/entityRefChildren.ts"
+      },
+      {
+        "path": "src/components/records/EntityRefValue.tsx",
+        "lines": [
+          93,
+          163
+        ],
+        "to": "src/RelatedChildren.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`entityRefsOf(rec)` is `entityRefsOf(rec, SKIP_SLUGS)` and `childrenPointingAt(record, pool)` is `childrenPointingAt(record, pool, SKIP_SLUGS)`: the `entity-ref` unit takes the eleven identity slugs as an argument; the set is `SKIP_SLUGS` of `plan-links-model` 0.2.1 (0 diff against `entityRefFacts.ts` lines 21-33).",
+    "The imports are imports of units: `entityRefFromFact`, `entityRefsOf`, `childrenPointingAt` from `entity-ref`; `refDisplayName` from `entity-ref-value`; `readRecord`, `BaseRecord` from `lws-records`; `cacheRowsOf` from `record-detail-reads`; `vaultOriginOf` from `vault-origin-rule`; `idFromEntityUri`, `pageAllByAttribute` from `lws-vault-sets`; `useRecords` from `plan-record-hooks`.",
+    "The header comments are new, and the comments that name a cycle, a ticket, an agent or a host are reworded with the same facts. No code changed. The call-site comment on why an organization card draws no such list (RecordDetail.tsx 2013-2018) is carried in the header of RelatedChildren.tsx and in the README."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

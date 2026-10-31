@@ -24,6 +24,21 @@ export interface CompleteCopyOptions {
   partialOk?: boolean;
   /** Rows asked per walk page (1..200, default 200; the platform clamps to what it serves). */
   pageLimit?: number;
+  /**
+   * Told after each walk page is read, with every row of the walk so far (see {@link CompletePage}). It only looks: the requests, their order and the result are the same with or without it.
+   * An error it throws is ignored.
+   */
+  onPage?: (page: CompletePage) => void;
+}
+
+/** What {@link CompleteCopyOptions.onPage} is told: an early, UNCOMMITTED view of the walk. The final copy can differ (a row changed or written during the walk, or the since pass). */
+export interface CompletePage {
+  /** Every row of the walk so far, newest first, as a fresh array (a copy the caller may keep). Not merged with the since pass. */
+  records: RecordRow[];
+  /** How many walk pages these rows came from. */
+  pages: number;
+  /** True on the walk's last page (only the since pass is left). */
+  walkDone: boolean;
 }
 
 /** What {@link completeCopy} read. */
@@ -157,6 +172,7 @@ interface WalkCap {
   partialOk?: boolean;
   reason?: unknown;
   pageLimit: number;
+  onPage?: (page: CompletePage) => void;
 }
 
 type BodyPage = { rows: RecordRow[]; complete: boolean; next: number | null; cursor: string | null };
@@ -184,9 +200,12 @@ async function walkType(platform: PlatformClient, vaultId: string, type: string,
   let cursor: string | null = null;
   let noAfter = false;
   let seen = new Set<string>();
+  let pages = 0;
+  let told = 0; // the most rows `onPage` has been told of: after a restart it is silent until the new walk holds as many again
   const restartByOffset = () => {
     out = [];
     seen = new Set();
+    pages = 0;
     offset = 0;
     cursor = null;
     noAfter = true;
@@ -210,6 +229,15 @@ async function walkType(platform: PlatformClient, vaultId: string, type: string,
       }
       for (const r of got.rows) seen.add(r.entity);
       out.push(...got.rows);
+      pages += 1;
+      if (cap.onPage && out.length >= told) {
+        told = out.length;
+        try {
+          cap.onPage({ records: [...out], pages, walkDone: got.complete });
+        } catch {
+          /* a listener must not break a copy */
+        }
+      }
       if (got.complete) return out;
       if (after !== undefined || (got.cursor !== null && !noAfter)) {
         if (got.cursor === null || got.cursor === after) throw new PlatformError(`find ${type}: the listing did not say where the next page starts`, 0, "", "");
@@ -303,7 +331,7 @@ async function sinceMerge(platform: PlatformClient, vaultId: string, type: strin
  * yet served is skipped by the walk: the `since` pass returns it, and its rows replace the walk's, by `entity`. A changed row that no
  * longer holds the filter leaves the copy (the `since` pass is of the whole type; the filter is applied here). A 400
  * `since_cursor_invalid` on the kept head restarts the pass from `start`, which returns the whole type and replaces the walk.
- * Ended records are not tracked.
+ * Ended records are not tracked. `opts.onPage` is told each walk page as it is read (an early view that is not the copy); it changes nothing in what is asked or returned.
  *
  * @param platform the platform client (the host app's authenticated fetch, at the vault's own origin)
  * @param vaultId the vault, as `GET /lws/vaults` names it
@@ -322,6 +350,7 @@ export async function completeCopy(platform: PlatformClient, vaultId: string, ty
     partialOk: opts.partialOk,
     reason: undefined,
     pageLimit: Math.max(1, Math.min(200, Math.floor(opts.pageLimit ?? DEFAULT_PAGE_LIMIT))),
+    onPage: opts.onPage,
   };
   const walked = await walkType(platform, vaultId, type, f, cap);
   const copy = new Map<string, RecordRow>();

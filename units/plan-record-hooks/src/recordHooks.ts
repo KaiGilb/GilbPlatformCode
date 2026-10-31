@@ -244,6 +244,19 @@ export function isFreshlyCreated(id: string): boolean {
   return true;
 }
 
+/**
+ * True when `id` was minted by +New within the fresh window, so this open is the create flow and not an ordinary open.
+ * Idempotent within the window (see the note above); a stale entry is dropped on read.
+ */
+export function consumeFreshlyCreated(id: string): boolean {
+  return isFreshlyCreated(id);
+}
+
+/** Explicitly end a record's fresh window, once the create flow is over (the person typed, saved or left), so a later open behaves normally. */
+export function clearFreshlyCreated(id: string): void {
+  freshlyCreatedIds.delete(id);
+}
+
 function newTempId(): string {
   return `temp:${Math.random().toString(36).slice(2)}`;
 }

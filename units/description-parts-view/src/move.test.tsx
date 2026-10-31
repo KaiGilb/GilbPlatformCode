@@ -399,11 +399,15 @@ describe("drag, by the keys of the tree", () => {
     const grip = document.querySelector(`[data-tree-handle='${id}']`) as HTMLButtonElement;
     grip.focus();
     fireEvent.keyDown(grip, { code: "Space", key: " " });
-    await settle(10);
+    await waitFor(() => expect(live()).toMatch(/^Picked up /));
+    // The drag library starts listening for the arrow keys from a zero-delay timer it set while picking up; a timer set after it runs after it.
+    await act(() => new Promise<void>((r) => setTimeout(r, 0)));
   }
-  const press = async (code: string) => {
+  // The drag library plans each step from where the previous step was drawn, and draws it after the key. A key pressed before that
+  // is drawn plans from the old place and the step is lost. So each press waits for the sentence the tree says once it is drawn.
+  const press = async (code: string, said: string) => {
     fireEvent.keyDown(document, { code, key: code });
-    await settle(10);
+    await waitFor(() => expect(live()).toBe(said));
   };
   const ASSUMPTION = { type: "https://pv.example.test/base/t/Assumption" };
   const withAssumption = () => [...bonesFixture(), part("assume", "Sol.Assumption", SOL_ID, 3, "", ASSUMPTION), part("floor", "Sol.Assumption.Floor", "assume", 1, "Flat.", ASSUMPTION)];
@@ -412,11 +416,11 @@ describe("drag, by the keys of the tree", () => {
     const { world, host } = makeWorld({ parts: bonesFixture() });
     render(<Frame host={host} world={world} />);
     await pickUp("feet");
-    await press("ArrowUp");
-    await press("ArrowUp");
-    await press("ArrowUp");
+    await press("ArrowUp", "Feet moved under Bones, after Hip");
+    await press("ArrowUp", "Feet moved under Bones, first");
+    await press("ArrowUp", "Feet moved to the top level, first");
     expect(live()).toBe("Feet moved to the top level, first");
-    await press("Space");
+    await press("Space", "Dropped. Feet moved to the top level, first.");
     await waitFor(() => expect(world.callsOf("invalidatePlanFind")).toHaveLength(1));
     expect(live()).toBe("Dropped. Feet moved to the top level, first.");
     expect(world.callsOf("patchRecord").map((c) => [c.args[0], c.args[1]])).toEqual([
@@ -429,10 +433,10 @@ describe("drag, by the keys of the tree", () => {
     const { world, host } = makeWorld({ parts: bonesFixture() });
     render(<Frame host={host} world={world} />);
     await pickUp("feet");
-    await press("ArrowUp");
-    await press("ArrowUp");
+    await press("ArrowUp", "Feet moved under Bones, after Hip");
+    await press("ArrowUp", "Feet moved under Bones, first");
     expect(live()).toBe("Feet moved under Bones, first");
-    await press("Space");
+    await press("Space", "Dropped. Feet moved under Bones, first.");
     await waitFor(() => expect(world.callsOf("invalidatePlanFind")).toHaveLength(2));
     expect(sequence(world, WRITES).map((l) => l.replace(/ \{"at".*$/, ""))).toEqual([
       'patchRecord "feet" {"partOf":{"@id":"PV/e/bones"},"elementOrder":1} "PV/e/feet"',
@@ -450,10 +454,10 @@ describe("drag, by the keys of the tree", () => {
     render(<Frame host={host} world={world} />);
     act(() => world.cutLevel(SOL_ID, 2));
     await pickUp("feet");
-    await press("ArrowUp");
-    await press("ArrowUp");
-    await press("ArrowUp");
-    await press("Space");
+    await press("ArrowUp", "Feet moved under Bones, after Hip");
+    await press("ArrowUp", "Feet moved under Bones, first");
+    await press("ArrowUp", "Feet moved to the top level, first");
+    await press("Space", "Dropped. Feet moved to the top level, first.");
     await waitFor(() => expect(world.callsOf("invalidatePlanFind")).toHaveLength(1));
     expect(sequence(world, ["pageChildIds"])).toEqual(['pageChildIds "PV" "PV/e/sol1" {"cap":1000}']);
     expect(world.callsOf("patchRecord").map((c) => [c.args[0], c.args[1]])).toEqual([
@@ -466,9 +470,9 @@ describe("drag, by the keys of the tree", () => {
     const { world, host } = makeWorld({ parts: withAssumption() });
     render(<Frame host={host} world={world} />);
     await pickUp("floor");
-    await press("ArrowLeft");
+    await press("ArrowLeft", "Floor is an assumption: it stays under the Assumption part.");
     expect(live()).toBe("Floor is an assumption: it stays under the Assumption part.");
-    await press("Space");
+    await press("Space", "Floor was not moved. Floor is an assumption: it stays under the Assumption part.");
     expect(live()).toBe("Floor was not moved. Floor is an assumption: it stays under the Assumption part.");
     await settle(40);
     expect(world.callsOf("patchRecord")).toHaveLength(0);
@@ -478,9 +482,9 @@ describe("drag, by the keys of the tree", () => {
     const { world, host } = makeWorld({ parts: withAssumption() });
     render(<Frame host={host} world={world} />);
     await pickUp("feet");
-    await press("ArrowDown");
+    await press("ArrowDown", "Feet is not an assumption: it cannot go under the Assumption part.");
     expect(live()).toBe("Feet is not an assumption: it cannot go under the Assumption part.");
-    await press("Space");
+    await press("Space", "Feet was not moved. Feet is not an assumption: it cannot go under the Assumption part.");
     await settle(40);
     expect(world.callsOf("patchRecord")).toHaveLength(0);
   });

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/session-cache",
   "package": "@kaigilb/gilbplatformcode-session-cache",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "An in-memory cache that a page opens from at once and revalidates behind, keyed by person and workspace, bounded by entries and bytes, and emptied when the person changes.",
   "source": {
     "repo": "KaiGilb/Social",
@@ -26,7 +26,9 @@
   "namedChanges": [
     "the import of the person hub reads from the package \"@kaigilb/gilbplatformcode-principal-hub\" instead of \"./principalHub\";",
     "the last line of the module, which installed the focus listener on the window when the module loaded (`if (typeof window !== \"undefined\") sessionCache.installFocus(window);`), is removed: the host calls `sessionCache.installFocus(window)` once;",
-    "comments lose their cycle tags, and the third line no longer names the source app's workspace file; no other code changed."
+    "comments lose their cycle tags, and the third line no longer names the source app's workspace file; no other code changed.",
+    "LoadContext.preview (0.2.0): a loader is handed an optional `LoadContext` (`Loader<T> = (ctx?) => Promise<T>`); `ctx.preview(value)` shows an early value for an entry that holds none yet, as `data` with `partial: true` in the snapshot (`CacheState.partial`), never as `updatedAt`, never committed, never fresh, never to `onCommit`. It is cleared by the load's commit, `set`, `hydrate`, `invalidate` that supersedes, a new load and `clear`, and it stays, with the error, when the load fails. It is not in Social's `sessionCache.ts`, so it is a change made in the unit before the source app has it (RuleGhsResync): keep it when the unit is re-synced; a loader that takes no argument behaves as before.",
+    "hydrate of a late device copy (0.2.0): `hydrate` skips a key only when it HOLDS a value; a key whose load is still running and which holds no value takes the stored value (stale, dated as stored, any preview dropped) and the load is not superseded, so its answer commits over it. Social's `hydrate` skips a key with a load in flight (`if (e.has || e.inflight) continue;`), which drops a copy that the disk answers after the app has already started its load. It is a fix made in the unit before the source app has it (RuleGhsResync): keep it when the unit is re-synced."
   ],
   "newFiles": [
     "src/index.ts"
