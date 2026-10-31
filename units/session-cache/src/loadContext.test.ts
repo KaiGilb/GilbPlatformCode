@@ -315,3 +315,59 @@ describe("a loader that takes no context", () => {
     expect(plain).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("hydrate: a copy from the disk that arrives while the first load is running", () => {
+  test("an in-flight key with no value takes it (stale, dated as stored, no onCommit); the load is not superseded and its answer replaces it", async () => {
+    const { cache, held } = rig();
+    const committed = vi.fn();
+    cache.onCommit(committed);
+    const l = held<string[]>();
+    const p = cache.swr(K, l.fn).promise;
+    cache.hydrate([{ key: K, value: ["d1", "d2", "d3"], at: 777 }]);
+    expect(cache.peek(K)).toEqual({ data: ["d1", "d2", "d3"], updating: true, error: undefined, updatedAt: 777 });
+    expect(committed).not.toHaveBeenCalled();
+    expect(cache.swr(K, l.fn).value).toEqual(["d1", "d2", "d3"]);
+    expect(cache.swr(K, l.fn).stale).toBe(true);
+    expect(l.fn).toHaveBeenCalledTimes(1); // joined the running load, no second one
+    l.answer(["n1", "n2", "n3", "n4"]);
+    await p;
+    expect(cache.peek(K)).toMatchObject({ data: ["n1", "n2", "n3", "n4"], updating: false, updatedAt: 1_000_000 });
+    expect(committed).toHaveBeenCalledTimes(1);
+    expect(committed.mock.calls[0]![1]).toEqual(["n1", "n2", "n3", "n4"]);
+  });
+
+  test("subscribers are told of the copy", () => {
+    const { cache, held } = rig();
+    const l = held<string[]>();
+    void cache.swr(K, l.fn).promise.catch(() => undefined);
+    const told = vi.fn();
+    cache.subscribe(K, told);
+    cache.hydrate([{ key: K, value: ["d"], at: 5 }]);
+    expect(told).toHaveBeenCalledTimes(1);
+  });
+
+  test("an in-flight key that HAS a value is untouched (a disk value never overwrites a newer one)", async () => {
+    const { cache, held } = rig();
+    cache.set(K, ["new"]);
+    const l = held<string[]>();
+    void cache.refresh(K, l.fn).catch(() => undefined);
+    cache.hydrate([{ key: K, value: ["old-from-disk"], at: 1 }]);
+    expect(cache.peek(K)).toMatchObject({ data: ["new"], updating: true, updatedAt: 1_000_000 });
+  });
+
+  test("a showing preview is replaced by the copy: partial is gone, updatedAt is the stored date; the load's own later preview is ignored", async () => {
+    const { cache, held } = rig();
+    const l = held<string[]>();
+    void cache.swr(K, l.fn).promise.catch(() => undefined);
+    l.ctx().preview(["p1"]);
+    expect(cache.peek(K).partial).toBe(true);
+    cache.hydrate([{ key: K, value: ["d1", "d2", "d3"], at: 42 }]);
+    const s = cache.peek<string[]>(K);
+    expect(s.data).toEqual(["d1", "d2", "d3"]);
+    expect(s.updatedAt).toBe(42);
+    expect("partial" in s).toBe(false);
+    expect(s.updating).toBe(true);
+    l.ctx().preview(["p1", "p2"]);
+    expect(cache.peek(K).data).toEqual(["d1", "d2", "d3"]);
+  });
+});

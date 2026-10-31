@@ -13,7 +13,7 @@ Plain TypeScript, no React, no network of its own. The host gives each read a ke
   - `refresh(key, loader?)`: ALWAYS loads (a write just happened), never joined to a load that started before it; the newest load wins. It answers a promise of the loaded value (`Promise<T>`, `refresh` in `sessionCache.ts`), and rejects with the loader's error when the load fails (the entry also holds the error). Without a loader it reuses the last one for that key, and rejects when there is none.
   - `set(key, value)`: puts a value the page loaded its own way; fresh as of now; supersedes a load in flight.
   - `onCommit(fn | undefined)`: one listener, told `(key, value, at)` with each value that lands (a load answered, or `set`). A listener that throws does not break a load.
-  - `hydrate(items)`: puts `{ key, value, at }` values read from disk in, before anything is asked: stale, dated as stored, and a key that already holds a value is left alone.
+  - `hydrate(items)`: puts `{ key, value, at }` values read from disk in, before anything is asked: stale, dated as stored, and a key that already holds a value is left alone. A key whose load is still running and holds no value DOES take the copy (0.2.0): a copy read from the disk late still shows while the load runs, stale and dated as stored, and any preview is dropped; the load is not superseded, so its answer replaces the copy. `hydrate` does not call `onCommit`.
   - `invalidate(keys)`: marks entries stale (value kept). A key ending in `*` is a prefix. An entry someone is subscribed to is revalidated now (when it is already loading, once more right after that load).
   - `warm(key, loader)`: loads when there is no fresh value and no load in flight; never throws.
   - `subscribe(key, fn)`: told on every change of that entry; returns the remover.
@@ -90,13 +90,14 @@ Dynamic imports in the files taken: none.
 - "`swr` always returns a promise of a fresh value." On a failed revalidation it resolves with the value held; the error is on `peek(key).error`.
 - "`invalidate` removes the entry." It keeps the value and marks it stale, so the page still shows it.
 - "`refresh` with no loader loads nothing." It reuses the last loader for that key, and rejects `session cache: nothing to refresh for <resource>` when there is none.
+- "`hydrate` skips every key that is loading." It did in 0.1.0, which threw away a copy that the disk answered after the app had started its load (a slow disk). From 0.2.0 only a key that holds a value is skipped; a disk value never overwrites a value.
 - "`clear` cancels loads in flight." They finish for their callers; their answers are kept by nobody.
 - "A preview is the data, a little early." It is a view that may lack rows and may show a row since changed. The screen that shows it must say "at least N" and why (RuleAppspeedVisibleWait); this unit supplies `partial` and nothing of the words.
 - "`partial` means the value is old." It means there is NO committed value yet. An old value from the disk or an earlier load is shown with `partial` absent, and a preview never replaces it.
 
 ## Where it came from
 
-Changes in 0.2.0: `LoadContext` and `CacheState.partial` (named change 4 below). Everything else is as in 0.1.0; the exports of 0.1.0 keep their meaning, and `Object.keys(createSessionCache())` is unchanged, because the preview is a call the loader makes, not a method of the cache. Tests: `src/loadContext.test.ts` (21 tests, 70 in the unit).
+Changes in 0.2.0: `LoadContext` and `CacheState.partial` (named change 4 below). Everything else is as in 0.1.0; the exports of 0.1.0 keep their meaning, and `Object.keys(createSessionCache())` is unchanged, because the preview is a call the loader makes, not a method of the cache. Tests: `src/loadContext.test.ts` (25 tests, 74 in the unit).
 
 `KaiGilb/Social` (private repo), commit `a1f65a5b2567d5dbdfa91fa8e64e7b2af84fa66e`, copied by script: `src/lib/sessionCache.ts` lines 1-235 to `src/sessionCache.ts`.
 
@@ -105,7 +106,8 @@ Named changes, and only these (the first three are in 0.1.0):
 1. the import of the person hub reads from the package `@kaigilb/gilbplatformcode-principal-hub` instead of `./principalHub`;
 2. the last line of the module, which installed the focus listener on the window when the module loaded (`if (typeof window !== "undefined") sessionCache.installFocus(window);`), is removed: the host calls `sessionCache.installFocus(window)` once (the seam map's rule: no `window` call at import);
 3. comments lose their cycle tags, and the third line no longer names the source app's workspace file. No other code changed;
-4. 0.2.0, made in this unit before Social has it (RuleGhsResync; keep it when re-syncing): `LoadContext`, `Loader<T> = (ctx?) => Promise<T>`, `CacheState.partial`, the entry's preview, and the passing of the context in `start`. Named in `unit.json` as `LoadContext.preview`.
+4. 0.2.0, made in this unit before Social has it (RuleGhsResync; keep it when re-syncing): `LoadContext`, `Loader<T> = (ctx?) => Promise<T>`, `CacheState.partial`, the entry's preview, and the passing of the context in `start`. Named in `unit.json` as `LoadContext.preview`;
+5. 0.2.0, also made in this unit before Social has it (RuleGhsResync): `hydrate` fills a key whose load is in flight and which holds no value (`if (e.has) continue;` where Social has `if (e.has || e.inflight) continue;`).
 
 `src/index.ts` is new.
 

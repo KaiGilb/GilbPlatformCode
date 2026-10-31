@@ -171,13 +171,13 @@ export function createSessionCache(o: SessionCacheOptions = {}) {
     onCommit(fn: ((key: string, value: unknown, at: number) => void) | undefined): void { commitListener = fn; },
     /**
      * Puts values read from disk in, BEFORE anything is asked. Each is a starting point only: it is stale (the next use revalidates it, with since= for what is stored as a store), it is dated as it was stored,
-     * and a key that already holds a value (a load answered first) is left alone. Subscribers are told.
+     * and a key that already holds a value (a load answered first) is left alone. A key whose load is still running and which holds no value takes the copy (stale, dated as stored, any preview dropped): a copy read late still shows while the load runs, and the load's answer replaces it. Subscribers are told.
      */
     hydrate(items: ReadonlyArray<{ key: string; value: unknown; at: number }>): void {
       for (const it of items) {
         const e = get(it.key);
-        if (e.has || e.inflight) continue;
-        e.pv = undefined;
+        if (e.has) continue; // never overwrite a value with a disk value
+        e.pv = undefined; // a load in flight is NOT superseded (no gen change): it answers over this copy, newest wins; the copy is the whole list, a preview only part of one
         e.has = true; e.value = it.value; e.at = it.at; e.focus = focusEpoch; e.stale = true; e.error = undefined;
         e.bytes = sizeOf(it.value); e.used = ++tick;
         touch(e);
