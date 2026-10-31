@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-contact-header",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws a stakeholder's header with circle chips, kind chips and the vault photo.",
@@ -21,6 +21,7 @@
     "@kaigilb/gilbplatformcode-birthday-text": "file:../birthday-text",
     "@kaigilb/gilbplatformcode-card-group": "file:../card-group",
     "@kaigilb/gilbplatformcode-card-mode": "file:../card-mode",
+    "@kaigilb/gilbplatformcode-contact-annotation": "file:../contact-annotation",
     "@kaigilb/gilbplatformcode-contact-header": "file:../contact-header",
     "@kaigilb/gilbplatformcode-contact-kind-catalogue": "file:../contact-kind-catalogue",
     "@kaigilb/gilbplatformcode-contact-kind-model": "file:../contact-kind-model",
@@ -90,6 +91,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
+    "@kaigilb/gilbplatformcode-contact-annotation": "^0.1.0",
     "@kaigilb/gilbplatformcode-contact-header": "^0.1.0",
     "@kaigilb/gilbplatformcode-contact-kind-catalogue": "^0.1.0",
     "@kaigilb/gilbplatformcode-contact-kind-model": "^0.1.0",
