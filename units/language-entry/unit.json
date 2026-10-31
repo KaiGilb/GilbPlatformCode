@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "unit": "units/language-entry",
+  "package": "@kaigilb/gilbplatformcode-language-entry",
+  "version": "0.1.0",
+  "purpose": "Reads one language entry from the catalogue: its name, its code and the countries it names.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/languages/contactLanguageTag.ts",
+        "lines": [
+          29,
+          80
+        ],
+        "to": "src/contactLanguageTag.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/contactLanguageTag.ts",
+        "lines": [
+          91,
+          101
+        ],
+        "to": "src/contactLanguageTag.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/languageEntries.ts",
+        "lines": [
+          31,
+          136
+        ],
+        "to": "src/languageEntries.ts"
+      },
+      {
+        "path": "src/lib/mynet/languages/useLanguageInfos.ts",
+        "lines": [
+          16,
+          61
+        ],
+        "to": "src/useLanguageInfos.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`FetchTimeoutError` and `pooledGet` are imported from the unit `language-fetch-pool`; the import of `contactLanguageName` is dropped from `languageEntries.ts` (only the legacy search used it, which is not in this unit).",
+    "The file headers are new; comments that name a cycle, an agent, an app or a ruling are reworded with the same facts. No code changed. Every declaration and `useLanguageInfos.ts` as a whole file, comment-stripped, equal the source (0 diff lines)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
