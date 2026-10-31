@@ -53,6 +53,7 @@
     "@kaigilb/gilbplatformcode-flag-image": "file:../flag-image",
     "@kaigilb/gilbplatformcode-flag-source": "file:../flag-source",
     "@kaigilb/gilbplatformcode-folder-part": "file:../folder-part",
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
     "@kaigilb/gilbplatformcode-grantee-face": "file:../grantee-face",
     "@kaigilb/gilbplatformcode-header-layout": "file:../header-layout",
     "@kaigilb/gilbplatformcode-held-notes": "file:../held-notes",
