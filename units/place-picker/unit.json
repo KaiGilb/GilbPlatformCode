@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "unit": "units/place-picker",
+  "package": "@kaigilb/gilbplatformcode-place-picker",
+  "version": "0.1.0",
+  "purpose": "The box where a place is searched in the catalogue and chosen, one rung at a time: city, region or country.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/mynet/PlacePicker.tsx",
+        "lines": [
+          1,
+          581
+        ],
+        "to": "src/PlacePicker.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: the catalogue client is `geo-catalogue`, the second line of a row is `place-hit-details` (`usePlaceHitDetails`, `PlaceHitMeta`).",
+    "A partial answer is not 'no match' (F13). The search is `searchPlacesInCountryDetailed` as before; GilbApp used `capped` only. Now `unplaced` (matches with no country found while a country is chosen) travels with the answer too: empty and `unplaced > 0` says \"Some matches could not be placed in a country, so they are not listed.\" and is never \"No city matches\"; a list with `unplaced > 0` says it under the list.",
+    "A failed search says one fixed sentence (F15). GilbApp drew the catalogue's message or `String(e)`. Now \"The place catalogue could not be searched right now. This is not a statement that the place does not exist.\" for any failure, including the fence's refusal; the cause goes to `console.error`.",
+    "A failed pick (F15). GilbApp drew the catalogue's message or `String(e)`. Now the catalogue's own sentence (it names no address) or \"That place could not be added right now.\"; the cause of the second goes to `console.error`.",
+    "No address or id tail as text (F14). The second line of a row is `place-hit-details`'s, which says a position (\"1 of 2 with this name\") where GilbApp wrote `entry <end of the address>`. The box itself wrote no address as text; `data-place-id` stays.",
+    "`RUNG_LABEL` says \"Region\", as GilbApp's picker did; `place-display` (the read-only address line) says \"Region/State\".",
+    "The module header and the comments that named a cycle, an agent or a person are reworded with the same facts. No other code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
