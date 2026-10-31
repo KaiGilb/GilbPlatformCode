@@ -12,7 +12,7 @@ export type {
 } from "./contactRowsHost";
 export { joinPhone } from "./dialCode";
 export { EMAIL_FORMAT_HINT, isEmailFormat } from "./emailFormat";
-export type { HeldNotesState } from "./heldNotesState";
+export type { HeldNotesState } from "@kaigilb/gilbplatformcode-held-notes";
 export { PLATFORM_LABELS, WEB_ADDRESS_HINT, isWebAddress, normalizeWebAddress, platformOf } from "./onlineAccount";
 export { skillReferentUri } from "./thinSkills";
 export type { ThinSkill } from "./thinSkills";
