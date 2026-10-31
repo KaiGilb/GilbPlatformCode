@@ -1,0 +1,29 @@
+// @vitest-environment node
+// New. This unit asks the catalogue only through `geo-catalogue` and `place-hit-details` (fenced, GET only). Its own source calls no network function and names no method.
+import { describe, expect, test } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+
+const src = fileURLToPath(new URL(".", import.meta.url));
+const files = readdirSync(src).filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f));
+function code(file: string): string {
+  const sf = ts.createSourceFile(file, readFileSync(join(src, file), "utf8"), ts.ScriptTarget.Latest, true);
+  let out = "";
+  const visit = (n: ts.Node) => {
+    const kids = n.getChildren(sf);
+    if (kids.length === 0) out += n.getText(sf) + " ";
+    else kids.forEach(visit);
+  };
+  visit(sf);
+  return out;
+}
+describe("the source makes no request of its own", () => {
+  test("there is source to look at", () => expect(files.length).toBeGreaterThan(0));
+  test.each(files)("%s: no fetch, no method, no write verb", (f) => {
+    const c = code(f);
+    expect(c).not.toMatch(/\bfetch\b|XMLHttpRequest|sendBeacon|WebSocket|\bmethod\b/);
+    expect(c).not.toMatch(/\b(POST|PUT|PATCH|DELETE)\b/);
+  });
+});
