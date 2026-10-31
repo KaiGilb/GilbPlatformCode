@@ -1,0 +1,29 @@
+{
+  "name": "@kaigilb/gilbplatformcode-geo-catalogue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads the shared place catalogue: search by kind of place, one place, the walk up to its country, and the ontology's map of which kind of place is a city, a region or a country.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-geo-origin": "file:../geo-origin",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-geo-origin": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "unit": "units/geo-catalogue",
+  "package": "@kaigilb/gilbplatformcode-geo-catalogue",
+  "version": "0.1.0",
+  "purpose": "Reads the shared place catalogue: search by kind of place, one place, the walk up to its country, and the ontology's map of which kind of place is a city, a region or a country.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/geo/baseGeo.ts",
+        "lines": [
+          66,
+          676
+        ],
+        "to": "src/geoCatalogue.ts"
+      },
+      {
+        "path": "src/lib/mynet/geo/baseGeo.ts",
+        "lines": [
+          698,
+          838
+        ],
+        "to": "src/geoCatalogue.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The catalogue's origin is `geoOrigin()` of `geo-origin`, read at each use (GilbApp: a constant derived from a vault identity); `GEO_ENTITY_PREFIX` and `isGeoEntityId` are `geo-origin`'s.",
+    "The ontology's origin (`VEDA_BASE`) is `termOrigin()` (GilbApp: a constant for the master). The live setting is `https://veda.gilb.com`; an operator who points `ontologyOrigin` elsewhere gets that master's grains.",
+    "The fence: `geoFetch`, `getPlace` and `peekPlace` refuse an address outside the catalogue with no request; `GeoUnavailableError` has a new `reason` (`unreachable` or `not-geo`).",
+    "`credentials: \"omit\"` on the catalogue's requests.",
+    "The ontology reads have their own fetcher (`vedaFetch`).",
+    "A row's own `@id` is taken as its id only when it is inside the catalogue; `resolveAncestry` does not follow a parent outside it.",
+    "`RestrictedSearch.unplaced` (new): the candidates left out for want of a country.",
+    "`immediateParent` and `searchPlacesInCountry` are not taken (no caller). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
