@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/kind-relation",
   "package": "@kaigilb/gilbplatformcode-kind-relation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Writes and ends the tie between a person and a kind of contact, with race guards.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -69,7 +69,8 @@
     "`GILBVEDA_MASTER_ORIGIN` (built when the module loaded) is `termOrigin()` at its two uses in `kindRelation.ts` (the master address of a type name) and the one in `partyTie.ts` (`masterTypeAddress`).",
     "`export const DEFAULT_TIE_ENTRY_ID = `${GILBVEDA_MASTER_ORIGIN}/base/t/${typeTail(DEFAULT_PARTY_TIE_CURIE)}`;` is `export function defaultTieEntryId(): string { return `${termOrigin()}/base/t/${typeTail(DEFAULT_PARTY_TIE_CURIE)}`; }`; its two uses are `defaultTieEntryId()`.",
     "`expandRelationRef` is copied from the app's `relationDoc.ts` (lines 35-39, 68-80, 82-84 and 133-135: `vaultBaseFromDocId`, `idOf`, `firstValue`, `expandRelationRef`) into `src/expandRelationRef.ts`, because `lws-relations` keeps those private and exports no `expandRelationRef`.",
-    "Comments that name a cycle, a ticket, an agent, a person, a ruling, a measuring run or the host app are reworded; no code changed. One string literal carries the app's name: the lock name `gilbapp:kind-tie:<vault>:<contact>` (`tieLockName`), kept as it is (see the README, \"Do not\")."
+    "Comments that name a cycle, a ticket, an agent, a person, a ruling, a measuring run or the host app are reworded; no code changed. One string literal carries the app's name: the lock name `gilbapp:kind-tie:<vault>:<contact>` (`tieLockName`), kept as it is (see the README, \"Do not\").",
+    "0.1.1: the entry point exports `expandRelationRef` (a one-line export of the existing file; nothing else changes), so that `stated-by` imports it instead of keeping a copy."
   ],
   "newFiles": [
     "src/index.ts"
