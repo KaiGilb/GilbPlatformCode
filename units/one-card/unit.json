@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/one-card",
   "package": "@kaigilb/gilbplatformcode-one-card",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -68,7 +68,8 @@
     "`heldAddresses.ts`, before: `ownAddressOf(claim, places)` with `claimFieldText(claim, \"streetLine\")`, `\"addressLine1\"`, `\"addressLine2\"`, `\"postalCode\"`; after: `ownAddressOf(host, claim, places)` with `host.claimFieldText(claim, ...)` for the same four terms. In `useHeldAddresses` the first statement is `const host = useOneCardHost();`; `placeClaimsKey(vaultId ?? \"\")` is `host.placeClaimsKey(vaultId ?? \"\")`, `listPlaceClaimsInVault(vaultId!)` is `host.listPlaceClaimsInVault(vaultId!)`, `PLACE_CLAIMS_STALE_MS` is `host.placeClaimsStaleMs`, `claimsAbout(q.data, subject!)` is `host.claimsAbout(q.data, subject!)`, `loadPlaceNames(ids)` is `host.loadPlaceNames(ids)` and `ownAddressOf(c, ...)` is `ownAddressOf(host, c, ...)`. The dependency lists of the hook's memos are as in the source (the host does not change);",
     "the types `PlaceClaim` and `GeoPlace` (MyNet interfaces, `lib/mynet/place/placeClaim.ts:123` and `lib/mynet/geo/baseGeo.ts:280`) are declared in `src/oneCardHost.ts` as the structural subsets the unit reads: `PlaceClaim` is `PlaceLineClaim` of `place-lines` plus `uri`; `GeoPlace` is `id`, `label`, `type`, `memberOf`; `PlaceTextTerm` is the four terms;",
     "`claimPlaceIds` is the one of `place-lines` (72 tokens each; the unit's parameter type is `PlaceLineClaim` and its lambda parameter is named `candidate` where the app's is `f`; measured equal on 5000 random claims);",
-    "comments made generic (cycle, step, tester, design-note and ruling tags, dates, person and app names and a spec reference removed; the example host address in `theirPlaces.ts` reworded); no code changed. No string literal carries a tag."
+    "comments made generic (cycle, step, tester, design-note and ruling tags, dates, person and app names and a spec reference removed; the example host address in `theirPlaces.ts` reworded); no code changed. No string literal carries a tag.",
+    "0.2.0: `theirValueText` returns a `ReactNode` and a row on the language term (`a:languageUsed`, by term) is drawn by `LanguageRow` of the unit `language-row` in both the linked and the single-source view (`valueText` of `unlinkedView`); every other field is unchanged. This is new behaviour, not a port: the source draws the language's address there. The comment-stripped file differs from the 0.1.0 file in exactly these lines (new function `languageUsedText`, `theirValueText`, `unlinkedView`'s `valueText`, plus one import)."
   ],
   "newFiles": [
     "src/index.ts",

@@ -145,6 +145,14 @@ The app shares these keys, so they are not renamed:
 - The fact key `sameAs` (`ONLINE_CARD_LINK_KEY`): the record fact that holds the link.
 - No `localStorage` or `sessionStorage` key.
 
+## Changes in 0.2.0
+
+A row of theirs on the language term (`a:languageUsed`, found by the field's term, with or without its `a:` prefix, never by the value's shape) is drawn by its name with its country's flag, as `LanguageRow` of `language-row` draws it, and no longer as the language's address. This is in both views: the linked one (`valueText` of the linked card, through `theirValueText`) and the one with a single source. Every other field is drawn as before (a birthday as a day and month, a skill by its label, any other value as served). The card makes no request of its own for this; `language-row` reads the language entry and the flag files once each (see its README). The card has no host member for it. `OneCardView.valueText` already returned a `ReactNode`; `theirValueText` (private to `OneCardBody.tsx`) now returns one too, and it is called only there.
+
+One new peer: `language-row` ^0.1.0 (and, through it, `flag-image`, `flag-choice`, `flag-source`, `language-entry`, `language-fetch-pool`).
+
+Tests: 166 (160 kept unchanged, 6 new in `OneCardBody.languageUsed.test.tsx`).
+
 ## Do not
 
 - Do not give the host a `placeClaimsKey` of its own: it must be the key the Address group reads under, or the card sends a request on every open.

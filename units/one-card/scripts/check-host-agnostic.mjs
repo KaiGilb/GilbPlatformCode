@@ -25,7 +25,7 @@ const ALLOWED_IMPORT = [
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(birthday-text|card-group|one-card-context|one-card-merge|one-card-rows|online-card|online-card-link|open-popups|person-connections|place-lines|record-cache-kit|stakeholder-list-doors|stakeholder-list-state|term-slots|vocabulary-source)$/,
+  /^@kaigilb\/gilbplatformcode-(birthday-text|card-group|language-row|one-card-context|one-card-merge|one-card-rows|online-card|online-card-link|open-popups|person-connections|place-lines|record-cache-kit|stakeholder-list-doors|stakeholder-list-state|term-slots|vocabulary-source)$/,
 ];
 
 if (!existsSync(srcRoot)) {

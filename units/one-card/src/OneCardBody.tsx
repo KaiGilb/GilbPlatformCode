@@ -17,6 +17,7 @@
 import { useEffect, type ReactNode } from "react";
 import { bareForm } from "@kaigilb/gilbplatformcode-vocabulary-source";
 import { birthdayText } from "@kaigilb/gilbplatformcode-birthday-text";
+import { LanguageRow } from "@kaigilb/gilbplatformcode-language-row";
 import { displayPlacements, type PersonCard } from "@kaigilb/gilbplatformcode-person-connections";
 import type { OneCardField, OneCardGroup, OneCardRow } from "@kaigilb/gilbplatformcode-one-card-merge";
 import type { OnlineCardController } from "@kaigilb/gilbplatformcode-online-card";
@@ -114,8 +115,16 @@ function statusLine(status: string): { text: string; alert: boolean } | null {
  * encoding is `inline-literal:date-or-month-day`), ⛔ never on the value's shape: "--03-14" is also a lawful nickname. A birthday
  * that is not a lawful one reads as stored, ⛔ never a guessed date.
  */
-function theirValueText(row: OneCardRow): string {
-  return bareForm(row.field) === "birthday" ? (birthdayText(row.value) ?? row.value) : row.value;
+function theirValueText(row: OneCardRow): ReactNode {
+  return languageUsedText(row) ?? (bareForm(row.field) === "birthday" ? (birthdayText(row.value) ?? row.value) : row.value);
+}
+
+/**
+ * A language of theirs is drawn by its name with its country's flag (`LanguageRow`), never as its address. Keyed on the field's TERM
+ * (`a:languageUsed`), ⛔ never on the value's shape. Null for every other field.
+ */
+function languageUsedText(row: OneCardRow): ReactNode | null {
+  return bareForm(row.field) === "languageUsed" ? <LanguageRow language={row.value} /> : null;
 }
 
 export function OneCardBody(props: OneCardBodyProps) {
@@ -222,7 +231,7 @@ export function OneCardBody(props: OneCardBodyProps) {
 /** The one card's view with one source (no online card): the holder's own rows placed in the card's groups, no marks. */
 function unlinkedView(card: ReturnType<typeof oneCardOf>, props: OneCardBodyProps): OneCardView {
   const placed = placeOneCard(card, props.groupOf, props.skip, props.order);
-  return { marks: card.marks, byKind: placed.byKind, own: placed.own, rowLabel: () => null, valueText: (row: OneCardRow) => row.value };
+  return { marks: card.marks, byKind: placed.byKind, own: placed.own, rowLabel: () => null, valueText: (row: OneCardRow) => languageUsedText(row) ?? row.value };
 }
 
 /** The groups of their card that the card draws nowhere else (a field of theirs the person card has no group for), each a group of its own. */
