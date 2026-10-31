@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-record-card-host-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "purpose": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.4.1 (H13): tests only, and the peer range of the provider (^0.4.3). The whole path now also covers \"+ Add your own\" on a record the holder already holds (the door is the vault the find named), and the Added by line (not a bug: the held card finds the adder's address in the shared query client).",
     "This unit is new composition code, not an extraction: it copies no line of GilbApp. It builds the host of `stakeholder-record-card` (`StakeholderRecordCardHost`) from `useStakeholderCardPlatform()` of `stakeholder-card-hosts-gilbplatform` and mounts it above the card (`HeldStakeholderCard`).",
     "It exists apart from the provider so that the provider does not import `stakeholder-record-card`: the record card's own tests install the provider, and a provider that imported the card would be a dependency cycle.",
     "`HeldStakeholderCard` draws the sentence \"The MyNet profile address is not set, so this card is not drawn.\" and no card when `settings.mynetProfileUrl` was not given to the provider, because the card's own-card band (`own-card-state`) throws when no address is set. GilbApp built the address from the profile app's base address at module load.",

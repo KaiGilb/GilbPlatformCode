@@ -30,7 +30,7 @@ import {
   personCardPlatform,
   sessionConnections,
 } from "@kaigilb/gilbplatformcode-stakeholder-list-doors";
-import { forgetLinkedFinds, isDeletedLinkedRecord, newestLinkedId, screenRecordLinkedTo } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
+import { forgetLinkedFinds, isDeletedLinkedRecord, newestLinkedId, screenLinkedRecordsOf, screenRecordLinkedTo } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
 import { fieldOfTerm, stakeholderCardState, termName } from "@kaigilb/gilbplatformcode-stakeholder-card-model";
 import { stakeholderCardVocabularyQuery } from "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary";
 import { afterRecordPerson, pickerReadingQuery, recordableKinds, recordPerson } from "@kaigilb/gilbplatformcode-person-create";
@@ -181,19 +181,29 @@ export function OnlineStakeholderCard({ principal, placementMode }: OnlineStakeh
       // left out). A check that could not be made makes nothing (⛔ never a second record on a guess).
       const onScreen = screenRecordLinkedTo(holder!, principal);
       const loaded = onScreen && !isDeletedLinkedRecord(onScreen) ? onScreen : null;
+      // The vault of a record on the screen: the screen's own group row names it (when it carries one).
+      const loadedVault = loaded ? (screenLinkedRecordsOf(holder!, principal).find((r) => r.id === loaded)?.vaultId ?? null) : null;
       let found: Awaited<ReturnType<typeof linkedRecordsOf>> | null = null;
-      if (!loaded) {
+      // A loaded record whose vault the screen does not name is looked up in the store's find too, so the held card has its door
+      // (⛔ never an id opened alone when the find can name the vault). A find that fails then opens it without a door; the held card says so.
+      if (!loaded || !loadedVault) {
         try {
           found = await linkedRecordsOf(host.doors, holder!, heldVaultsOwnFirst(vaults, ownVaultId), [principal]);
         } catch {
-          setAddError(CHECK_FAILED);
-          return;
+          if (!loaded) {
+            setAddError(CHECK_FAILED);
+            return;
+          }
         }
       }
       // The person's row is their NEWEST linked record; a cold deep link opens the same one.
+      const foundVaults = new Map((found ?? []).map((f) => [idFromUri(f.record.recordId), f.vaultId] as const));
       const existing = loaded ?? (found ? newestLinkedId(found.map((f) => idFromUri(f.record.recordId))) : null);
       if (existing) {
         host.refreshOnlineStakeholders();
+        // The door travels with the id: the host remembers it for the session before the open, where the open reads it (the held card reads the record there).
+        const door = (loaded ? loadedVault : null) ?? foundVaults.get(existing) ?? null;
+        if (door) host.rememberVaultOf?.(existing, door);
         openRecordFromList(existing);
         return;
       }

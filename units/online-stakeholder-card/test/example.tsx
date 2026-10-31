@@ -30,6 +30,7 @@ const cardHost: OnlineStakeholderCardHost = {
   useShell: useYourShell,
   refreshOnlineStakeholders: () => {}, // draw your online list again
   photoReadKeysSync: () => [], // the photo term's read keys now, each with its `a:` prefix
+  rememberVaultOf: () => {}, // OPTIONAL: remember the vault of an existing record just before openRecordFromList(id), so your page can pass it on as the record's door
   doors: { requestsSent: () => 0, heldRecordFreshMs: 15_000, heldRecordOf: () => null, useRecordsBeingDeleted: () => new Set<string>() }, // `stakeholder-list-doors`
   person: { adderCardOf: async () => "https://ann.platform.example.test/vault/e/self", rememberCreatedIn: () => {} }, // `person-create`
   vocabulary: { masterKindReader: () => { throw new Error("give the page's kind reader"); } }, // `stakeholder-card-vocabulary`

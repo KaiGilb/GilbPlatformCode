@@ -105,6 +105,9 @@ describe("the members of each host", () => {
     const host = createOnlineStakeholderCardHost({ useShell: useShell as never, refreshOnlineStakeholders: refresh, photoReadKeysSync: keys });
     expect(host.useShell).toBe(useShell);
     expect(host.refreshOnlineStakeholders).toBe(refresh);
+    expect("rememberVaultOf" in host).toBe(false);
+    const remember = vi.fn();
+    expect(createOnlineStakeholderCardHost({ useShell: useShell as never, refreshOnlineStakeholders: refresh, photoReadKeysSync: keys, rememberVaultOf: remember }).rememberVaultOf).toBe(remember);
     expect(host.photoReadKeysSync).toBe(keys);
     expect(host.doors.heldRecordFreshMs).toBe(15_000);
     expect(host.person.adderCardOf).toBe(adderCardOf);

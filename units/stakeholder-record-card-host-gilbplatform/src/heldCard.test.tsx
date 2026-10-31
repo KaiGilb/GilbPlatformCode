@@ -1,7 +1,10 @@
 // The held card (`HeldStakeholderCard`: `StakeholderRecordCard` of `stakeholder-record-card`, with the host this unit builds) drawn inside the provider and this unit ALONE: no host object written. Each test names the server
 // each request went to: a record is read, patched and annotated at the node of the vault that holds it, a relation is written at that node with the vault in
 // its body, and the platform's apex is asked only for the session's vaults and the photo term.
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { QueryClient } from "@tanstack/react-query";
+import { AddedByHostContext } from "@kaigilb/gilbplatformcode-added-by";
+import { rememberAddedByCard } from "@kaigilb/gilbplatformcode-record-detail-reads";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -191,6 +194,99 @@ describe("the whole path", () => {
     // The held card of the new record, read at the vault the create wrote it into, draws with the person's name.
     await waitFor(() => expect(text("contact-card-name")).toBe("Ben Larsen"), { timeout: 8000 });
     expect(world.requests("GET", new RegExp(`/lws/r/${newId}$`)).every((r) => r.url.startsWith(HOST))).toBe(true);
+  });
+});
+
+describe("the whole path, a record the holder already holds (H13)", () => {
+  // Live case, 2026-10-31: John held a record for Kai in his own vault; "+ Add your own" found it, wrote nothing, and opened the held card,
+  // which said "Which vault holds this card is not known, so it was not read". The find knew the vault and the id was passed alone.
+  function Page({ opened }: { opened: unknown[][] }) {
+    const [at, setAt] = useState<{ id: string; door?: string } | null>(null);
+    return (
+      <StakeholderCardGilbPlatformProvider
+        {...providerProps(world)}
+        viewedVaultId={P}
+        onOpenRecord={(openedId, door) => {
+          opened.push(door === undefined ? [openedId] : [openedId, door]);
+          setAt(door === undefined ? { id: openedId } : { id: openedId, door });
+        }}
+      >
+        {at ? <HeldStakeholderCard recordId={at.id} {...(at.door ? { vaultId: at.door } : {})} /> : <OnlineStakeholderCard principal={BEN} placementMode="content" />}
+      </StakeholderCardGilbPlatformProvider>
+    );
+  }
+
+  test("an existing linked record in the holder's vault: + Add your own writes nothing, opens it with that vault as the door, and the held card reads it", async () => {
+    const existing = world.platform.seed(P, "t:Person", { "a:name": "Ben Larsen", "a:givenName": "Ben", "a:familyName": "Larsen", "a:sameAs": { "@id": BEN } });
+    const existingId = existing.slice(existing.lastIndexOf("/") + 1);
+    const opened: unknown[][] = [];
+    render(<Page opened={opened} />);
+    await waitFor(() => expect(screen.getByTestId("add-own")).toBeTruthy(), { timeout: 6000 });
+    const before = world.calls.filter((c) => c.method !== "GET").length;
+    await userEvent.click(screen.getByTestId("add-own"));
+    await waitFor(() => expect(opened.length).toBe(1), { timeout: 8000 });
+    expect(opened[0]).toEqual([existingId, P]);
+    await waitFor(() => expect(text("contact-card-name")).toBe("Ben Larsen"), { timeout: 8000 });
+    expect(screen.queryByText(/not known, so it was not read/)).toBeNull();
+    expect(world.requests("GET", new RegExp(`/lws/r/${existingId}$`)).every((r) => r.url.startsWith(HOST))).toBe(true);
+    // Nothing was made: the same writes as before the press (none for a create).
+    expect(world.calls.filter((c) => c.method !== "GET").length).toBe(before);
+  });
+});
+
+describe("the Added by line opens the adder's card (H13, path 5)", () => {
+  // AddedByLine remembers the card it opens (`rememberAddedByCard`, its own address) and then asks the shell to open it. The provider's shell has no
+  // openRecordInVault, so the id goes through onOpenRecord alone. Does the held card then know where to read it?
+  test("the page is told the id alone, and the held card of it, with no door, reads the record at the address the line remembered", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const adder = world.platform.seed(P, "t:Person", { "a:name": "Cora Adder", "a:givenName": "Cora", "a:familyName": "Adder" });
+    const adderId = adder.slice(adder.lastIndexOf("/") + 1);
+    const opened: unknown[][] = [];
+    function Page() {
+      const shell = useContext(AddedByHostContext)!.useShell()!;
+      return (
+        <button
+          data-testid="open-adder"
+          onClick={() => {
+            rememberAddedByCard(qc, adderId, { door: adder, name: "Cora Adder" });
+            shell.openRecordFromList(adderId);
+          }}
+        />
+      );
+    }
+    // The page keeps `at` in a parent so the provider's onOpenRecord can set it.
+    function Root() {
+      const [at, setAt] = useState<{ id: string; door?: string } | null>(null);
+      return (
+        <StakeholderCardGilbPlatformProvider
+          {...providerProps(world)}
+          queryClient={qc}
+          viewedVaultId={P}
+          onOpenRecord={(id, door) => {
+            opened.push(door === undefined ? [id] : [id, door]);
+            setAt(door === undefined ? { id } : { id, door });
+          }}
+        >
+          {at ? <HeldStakeholderCard recordId={at.id} {...(at.door ? { vaultId: at.door } : {})} /> : <Page />}
+        </StakeholderCardGilbPlatformProvider>
+      );
+    }
+    render(<Root />);
+    await userEvent.click(screen.getByTestId("open-adder"));
+    await waitFor(() => expect(opened.length).toBe(1));
+    expect(opened[0]![0]).toBe(adderId);
+    await waitFor(() => expect(text("record-header")).toContain("Cora Adder"), { timeout: 8000 });
+    expect(screen.queryByText(/not known, so it was not read/)).toBeNull();
+    expect(world.requests("GET", new RegExp(`/lws/r/${adderId}$`)).every((r) => r.url.startsWith(HOST))).toBe(true);
+    // NOT A BUG: the held card finds the door itself, in the same query client (findKnownRecordInCache reads addedByCardOf). Control below.
+  }, 20000);
+
+  test("control: with nothing remembered for the id and no door, the same open is refused (the test above does discriminate)", async () => {
+    const adder = world.platform.seed(P, "t:Person", { "a:name": "Cora Adder", "a:givenName": "Cora", "a:familyName": "Adder" });
+    const adderId = adder.slice(adder.lastIndexOf("/") + 1);
+    mountInProvider(world, <HeldStakeholderCard recordId={adderId} />, { viewedVaultId: P });
+    expect(await screen.findByText(/not known, so it was not read/)).toBeTruthy();
+    expect(world.requests("GET", new RegExp(`/lws/r/${adderId}$`))).toEqual([]);
   });
 });
 

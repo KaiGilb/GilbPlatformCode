@@ -10,6 +10,8 @@ export interface OnlineStakeholderCardHostOptions extends CardVocabularyHostOpti
   refreshOnlineStakeholders(): void;
   /** The photo term's read keys now, each with its `a:` prefix; empty while not known. */
   photoReadKeysSync(): readonly string[];
+  /** Remembers the vault of an existing record before the card opens it (the card's optional `rememberVaultOf`). Absent: the card gets none. */
+  rememberVaultOf?(recordId: string, vaultId: string): void;
 }
 
 /** The host of the online stakeholder card: the three own members from `options`, and the three pass-through hosts from their factories. */
@@ -18,6 +20,7 @@ export function createOnlineStakeholderCardHost(options: OnlineStakeholderCardHo
     useShell: options.useShell,
     refreshOnlineStakeholders: options.refreshOnlineStakeholders,
     photoReadKeysSync: options.photoReadKeysSync,
+    ...(options.rememberVaultOf ? { rememberVaultOf: options.rememberVaultOf } : {}),
     doors: createStakeholderListDoorsHost(),
     person: createPersonCreateHost(),
     vocabulary: createCardVocabularyHost(options.persistVocabulary ? { persistVocabulary: options.persistVocabulary } : {}),

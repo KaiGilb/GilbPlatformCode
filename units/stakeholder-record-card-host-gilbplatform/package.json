@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
@@ -23,7 +23,7 @@
     "@kaigilb/gilbplatformcode-org-hierarchy": "^0.1.2",
     "@kaigilb/gilbplatformcode-own-card-state": "^0.1.0",
     "@kaigilb/gilbplatformcode-skill-rows": "^0.1.0",
-    "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform": "^0.4.0",
+    "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform": "^0.4.3",
     "@kaigilb/gilbplatformcode-stakeholder-record-card": "^0.1.0",
     "@tanstack/react-query": "^5.101.2",
     "react": "^19.0.0"

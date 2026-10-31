@@ -74,7 +74,7 @@
     "@kaigilb/gilbplatformcode-entity-ref": "^0.1.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.1",
     "@kaigilb/gilbplatformcode-plan-stakeholder-lines": "^0.2.1",
-    "@kaigilb/gilbplatformcode-record-detail-reads": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-detail-reads": "^0.2.0",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "^0.1.0",
     "@tanstack/react-query": "^5.101.2",
     "react": "^19.0.0"

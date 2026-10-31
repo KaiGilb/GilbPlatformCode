@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/online-stakeholder-card",
   "package": "@kaigilb/gilbplatformcode-online-stakeholder-card",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "purpose": "Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -16,6 +16,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.5 (H13): when \"+ Add your own\" opens a record the holder already holds, the card hands the host the record's vault first (the optional host member `rememberVaultOf(recordId, vaultId)`), from the store's find (`LinkedFound.vaultId`) or the screen's row (`screenLinkedRecordsOf(...).vaultId`). A loaded record whose screen row names no vault is looked up by the one find; a find that cannot name it, or fails, opens the record without a door. A new record (the create) is unchanged. Not in the source.",
     "The imports are the peers': `createOnlineCardController` and `cardName` from `@kaigilb/gilbplatformcode-online-card`; `resolvePersonCard` from `person-connections`; `PartialCreateError` from `pick-or-create`; `bareForm` from `vocabulary-source`; the type `OneCardGroup` from `one-card-merge`; `AddYourOwnButton` from `add-your-own`; `StakeholderContactHeader` from `stakeholder-contact-header`; `OneCardBody`, `OneCardOwnGroups`, `useOnlineCardState`, `useOnlineCardLabelFor` from `one-card`; `ownVaultIdOf` from `plan-self-source`; `canonicaliserFor`, `personCardPlatform`, `sessionConnections`, `onlineCardDeps`, `heldVaultsOwnFirst`, `linkedRecordsOf` from `stakeholder-list-doors`; `newestLinkedId`, `screenRecordLinkedTo`, `forgetLinkedFinds`, `isDeletedLinkedRecord` from `stakeholder-list-state`; `stakeholderCardState`, `fieldOfTerm`, `termName` from `stakeholder-card-model`; `stakeholderCardVocabularyQuery` from `stakeholder-card-vocabulary`; `afterRecordPerson`, `pickerReadingQuery`, `recordableKinds`, `recordPerson` from `person-create`; `deleteRecord` from `lws-records`; `idFromEntityUri`, `idFromUri` from `lws-vault-sets`. In the source these are `gilb-stakeholders`, `gilb-stakeholders-ui`, `../ShellContext`, `./StakeholderContactHeader`, `./OneCardBody`, `../../lib/...` and `./onlineStakeholders`.",
     "`ONLINE_ROW_TYPE` (GilbApp `src/components/records/onlineStakeholders.ts:257`, a fragment) is a private constant of the file, the same literal `\"t:Person\"`, declared after `PERSON`.",
     "Six host members are added (the interface `OnlineStakeholderCardHost`, its context and `useOnlineStakeholderCardHost()`, which throws an error naming the missing provider): the hook `useShell`, the callback `refreshOnlineStakeholders`, `photoReadKeysSync`, and the three hosts the peers take as an argument: `doors` (`StakeholderListDoorsHost`), `person` (`PersonCreateHost`) and `vocabulary` (`CardVocabularyHost`). The component begins with `const host = useOnlineStakeholderCardHost();` (a context read before the source's first statement). `useShell()` is `host.useShell()`, `refreshOnlineStakeholders()` is `host.refreshOnlineStakeholders()` (three calls), `photoReadKeysSync()` is `host.photoReadKeysSync()`, `stakeholderCardVocabularyQuery()` is `stakeholderCardVocabularyQuery(host.vocabulary)`, `linkedRecordsOf(holder!, ...)` is `linkedRecordsOf(host.doors, holder!, ...)`, `recordPerson(deps, input)` is `recordPerson(host.person, deps, input)` and `afterRecordPerson(qc, made)` is `afterRecordPerson(host.person, qc, made)` (two calls). Same place, same other arguments.",
@@ -27,6 +28,10 @@
     "src/onlineStakeholderCardHost.ts"
   ],
   "host": [
+    {
+      "member": "rememberVaultOf",
+      "replaces": "nothing (optional, new in 0.1.5): GilbApp reads the vault of an existing record from its list caches (holdingVaultOf), which a library host page does not have"
+    },
     {
       "member": "useShell",
       "replaces": "useShell(), a hook, GilbApp src/components/ShellContext.ts:412, called at src/components/records/OnlineStakeholderCard.tsx:86 (session, vaults, contentScope, openRecordFromList)"

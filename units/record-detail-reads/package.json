@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-detail-reads",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Reads one record for a record card, from the page's cache when the list already has it and from its own vault otherwise, and knows which vault holds it.",

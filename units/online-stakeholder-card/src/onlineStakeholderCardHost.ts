@@ -57,6 +57,14 @@ export interface OnlineStakeholderCardHost {
    * GilbApp: stakeholderCardVocabularyQuery(), lib/base/stakeholderCard.ts (called at OnlineStakeholderCard.tsx:131).
    */
   vocabulary: CardVocabularyHost;
+  /**
+   * OPTIONAL (since 0.1.5). Remembers the vault that holds an existing record of the holder's, for the session, so that the shell's
+   * `openRecordFromList(id)` that follows can hand the vault to the page as the record's door. Called just before `openRecordFromList` when
+   * "+ Add your own" finds a record the holder already holds and the vault is known (the store's find names it, or the screen's row does).
+   * A host without it opens the id alone, and the held card then refuses to read ("which vault holds this card is not known").
+   * GilbApp: none needed; its list caches attribute the record to its vault (`holdingVaultOf`).
+   */
+  rememberVaultOf?(recordId: string, vaultId: string): void;
 }
 
 /** The provider the card reads. With none, the card throws an error that names it. */

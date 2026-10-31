@@ -194,7 +194,7 @@
     "@kaigilb/gilbplatformcode-plan-self-source": "^0.2.0",
     "@kaigilb/gilbplatformcode-plan-stakeholder-lines": "^0.2.1",
     "@kaigilb/gilbplatformcode-record-cache-kit": "^0.3.0",
-    "@kaigilb/gilbplatformcode-record-detail-reads": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-detail-reads": "^0.2.0",
     "@kaigilb/gilbplatformcode-record-types": "^0.1.1",
     "@kaigilb/gilbplatformcode-record-update": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-write": "^0.1.0",
