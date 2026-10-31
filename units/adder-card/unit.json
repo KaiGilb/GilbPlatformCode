@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/adder-card",
+  "package": "@kaigilb/gilbplatformcode-adder-card",
+  "version": "0.1.0",
+  "purpose": "Finds or makes the signed-in person's own card, the source of what they add.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      { "path": "src/lib/base/adderCard.ts", "lines": null, "to": "src/adderCard.ts" }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units' `lws-records` (`readRecord`), `lws-session-bridge` (`NotSignedInError`), `plan-record-hooks` (`ReachableVault`), `plan-self-source` (`ownCardFindingKey`, `ownCardFindingQuery`), `reachable-vaults` (`listReachableVaults`, `vaultsKey`), `vault-list` (`vaultLabel`) and `vault-profile-photo` (`ensureVaultSelfCard`, `vaultRootOf`).",
+    "In `useAdderCard`: `const session = useSession({ enabled: false });` (the app's session hook) becomes `const host = useAdderCardHost(); const session = host.useSession({ enabled: false });`. `src/adderCardHost.tsx` (the context, its provider and `useAdderCardHost`, which throws naming `AdderCardHostProvider` when there is none) is new. Nothing else in the file changes in code.",
+    "Comments that name a cycle, a ticket, a ruling, a person or a host are reworded with the same facts; the two example emails in the `nameFromEmail` comment use the library's example host. The comment-stripped file, imports excluded, equals the source but for the two host lines (3 diff lines). The eight pure declarations are token-equal to the source's and to the provider's copy (0 diff lines each)."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/adderCardHost.tsx"
+  ],
+  "host": [
+    {
+      "member": "useSession",
+      "replaces": "useSession({ enabled: false }) of GilbApp src/lib/base/hooks.ts:35, imported at src/lib/base/adderCard.ts:20 and called at :146 (a passive read of the session query the shell already holds; it must never fetch or mint a session)",
+      "optional": false
+    }
+  ],
+  "library": { "admitted": false }
+}
