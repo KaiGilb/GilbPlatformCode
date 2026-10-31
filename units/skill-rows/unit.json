@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/skill-rows",
+  "package": "@kaigilb/gilbplatformcode-skill-rows",
+  "version": "0.1.0",
+  "purpose": "A person card's Skills section with the held note under each picked skill.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/SkillRows.tsx",
+        "lines": [
+          7,
+          26
+        ],
+        "to": "src/SkillRows.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `ContactRows` from `contact-rows`, `useHeldNotes` from `held-notes`.",
+    "The file's header comment is new and shorter; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

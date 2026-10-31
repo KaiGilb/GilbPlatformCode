@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-record-card-host-gilbplatform",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.",
@@ -17,8 +17,10 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
+    "@kaigilb/gilbplatformcode-interest-rows": "^0.1.0",
     "@kaigilb/gilbplatformcode-language-section": "^0.1.0",
     "@kaigilb/gilbplatformcode-own-card-state": "^0.1.0",
+    "@kaigilb/gilbplatformcode-skill-rows": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform": "^0.4.0",
     "@kaigilb/gilbplatformcode-stakeholder-record-card": "^0.1.0",
     "@tanstack/react-query": "^5.101.2",
@@ -77,6 +79,7 @@
     "@kaigilb/gilbplatformcode-holder-reference": "file:../holder-reference",
     "@kaigilb/gilbplatformcode-home-dial": "file:../home-dial",
     "@kaigilb/gilbplatformcode-id-tail": "file:../id-tail",
+    "@kaigilb/gilbplatformcode-interest-rows": "file:../interest-rows",
     "@kaigilb/gilbplatformcode-kind-relation": "file:../kind-relation",
     "@kaigilb/gilbplatformcode-language-entry": "file:../language-entry",
     "@kaigilb/gilbplatformcode-language-fetch-pool": "file:../language-fetch-pool",
@@ -160,6 +163,8 @@
     "@kaigilb/gilbplatformcode-sheet-history": "file:../sheet-history",
     "@kaigilb/gilbplatformcode-signin": "file:../signin",
     "@kaigilb/gilbplatformcode-skill-picker-sheet": "file:../skill-picker-sheet",
+    "@kaigilb/gilbplatformcode-skill-rows": "file:../skill-rows",
+    "@kaigilb/gilbplatformcode-skill-uri-label": "file:../skill-uri-label",
     "@kaigilb/gilbplatformcode-social-logo": "file:../social-logo",
     "@kaigilb/gilbplatformcode-sortable-tree": "file:../sortable-tree",
     "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform": "file:../stakeholder-card-hosts-gilbplatform",
@@ -178,6 +183,7 @@
     "@kaigilb/gilbplatformcode-tag-carrier": "file:../tag-carrier",
     "@kaigilb/gilbplatformcode-tag-client": "file:../tag-client",
     "@kaigilb/gilbplatformcode-tag-grammar": "file:../tag-grammar",
+    "@kaigilb/gilbplatformcode-term-name-text": "file:../term-name-text",
     "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
     "@kaigilb/gilbplatformcode-type-chooser": "file:../type-chooser",

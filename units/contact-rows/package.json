@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-rows",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Edits a person's Email, Phone, Social and Skills rows, any number of each.",
@@ -72,6 +72,7 @@
     "@kaigilb/gilbplatformcode-result-total": "file:../result-total",
     "@kaigilb/gilbplatformcode-share-refusal": "file:../share-refusal",
     "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-skill-uri-label": "file:../skill-uri-label",
     "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary": "file:../stakeholder-card-vocabulary",
     "@kaigilb/gilbplatformcode-stakeholder-field-sets": "file:../stakeholder-field-sets",
     "@kaigilb/gilbplatformcode-stakeholder-kinds": "file:../stakeholder-kinds",
@@ -81,6 +82,7 @@
     "@kaigilb/gilbplatformcode-stated-by": "file:../stated-by",
     "@kaigilb/gilbplatformcode-tag-client": "file:../tag-client",
     "@kaigilb/gilbplatformcode-tag-grammar": "file:../tag-grammar",
+    "@kaigilb/gilbplatformcode-term-name-text": "file:../term-name-text",
     "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
     "@kaigilb/gilbplatformcode-term-slots": "file:../term-slots",
     "@kaigilb/gilbplatformcode-type-curie": "file:../type-curie",
@@ -117,6 +119,7 @@
     "@kaigilb/gilbplatformcode-one-card-rows": "^0.1.0",
     "@kaigilb/gilbplatformcode-open-popups": "^0.1.0",
     "@kaigilb/gilbplatformcode-remove-control": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-name-text": "^0.1.0",
     "@kaigilb/gilbplatformcode-term-origin": "^0.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "unit": "units/interest-rows",
+  "package": "@kaigilb/gilbplatformcode-interest-rows",
+  "version": "0.1.0",
+  "purpose": "A person card's Interests: each with its note, who added it and who sees it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/components/records/InterestRows.tsx",
+        "lines": [
+          20,
+          185
+        ],
+        "to": "src/InterestRows.tsx"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports are the units': `HeldVisibilitySwitch` and `AddedByLine` from `added-by`, `CardGroup` from `card-group`, `useCardMode` from `card-mode`, `skillReferentUri` and `ThinSkill` from `contact-rows`, `useHeldNotes` from `held-notes`, `RemoveControl` from `remove-control`, `SkillDepthNote` and `SkillPickerSheet` from `skill-picker-sheet`, `termLabelOfIri` from `term-slots`.",
+    "THE NAME RULE (Kai, 2026-10-31): an interest is shown by its name, never by its address or the last part of it. The private component `TermName` (source lines 33-47: the label or `iri.slice(iri.lastIndexOf(\"/\") + 1)`) is the hook `useTermNames(iris, picked)` (new): the picked name, else the term's label, else \"…\" while it is read, else `referentNameOf(iri)` of `term-name-text`, else `termNameWord(\"interest\")`. `nameOf(iri)` replaces `picked[iri] ?? <last part of the address>` at the four places that named the interest (the (−) label, the edit button's label, the note's name, the visibility switch's noun) and `<TermName/>` at the two places that drew it.",
+    "The line that drew the interest's address outside presentation (source line 133, `<p className=\"truncate font-mono ...\">{iri}</p>`) is removed.",
+    "`INTEREST_READING_TEXT` (\"…\") is exported (new)."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}

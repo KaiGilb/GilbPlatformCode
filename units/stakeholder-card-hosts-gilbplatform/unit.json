@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",

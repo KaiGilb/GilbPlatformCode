@@ -9,11 +9,12 @@ vi.mock("@kaigilb/gilbplatformcode-stakeholder-list-state", async (orig) => (awa
 
 import { forgetLinkedRecords, forgetPageLinks, forgetScreenLinks } from "@kaigilb/gilbplatformcode-stakeholder-list-state";
 import { reset, VOCAB } from "../test/mocks";
-import { setUp, tearDown } from "../test/support";
+import { ONTOLOGY, setUp, tearDown } from "../test/support";
 import { draw, personFields, stubPlatform } from "../test/world";
 
-const SKILL_A = "https://veda.example.test/base/t/EvolutionaryProjectManagement";
-const SKILL_B = "https://veda.example.test/base/t/RequirementsEngineering";
+// 0.1.4: the skills are term addresses of the ontology origin the test sets (they were on another host); `one-card` 0.3.0 words the name from the address.
+const SKILL_A = `${ONTOLOGY}/base/t/EvolutionaryProjectManagement`;
+const SKILL_B = `${ONTOLOGY}/base/t/RequirementsEngineering`;
 
 beforeEach(() => {
   setUp();
@@ -39,9 +40,10 @@ describe("a skill of theirs is drawn by its name", () => {
     draw();
     const heading = await screen.findByRole("heading", { name: "Skills" });
     const group = heading.closest("[data-testid='card-group']") as HTMLElement;
-    expect(group.textContent).toContain("EvolutionaryProjectManagement");
-    expect(group.textContent).toContain("RequirementsEngineering");
+    expect(group.textContent).toContain("Evolutionary Project Management");
+    expect(group.textContent).toContain("Requirements Engineering");
     expect(group.textContent).not.toContain("https://");
+    expect(group.textContent).not.toContain("EvolutionaryProjectManagement");
     expect(group.getAttribute("data-group")).toBe("theirs:a:skill");
   });
 });

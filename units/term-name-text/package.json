@@ -1,0 +1,31 @@
+{
+  "name": "@kaigilb/gilbplatformcode-term-name-text",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Names a skill or an interest from its catalogue address, never by the address itself.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-skill-uri-label": "file:../skill-uri-label",
+    "@kaigilb/gilbplatformcode-term-origin": "file:../term-origin",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-skill-uri-label": "^0.1.0",
+    "@kaigilb/gilbplatformcode-term-origin": "^0.1.0"
+  }
+}

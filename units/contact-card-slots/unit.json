@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-card-slots",
   "package": "@kaigilb/gilbplatformcode-contact-card-slots",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Gives a person's record card its holder-only slots: the 'Where / How we met' line in the header and My Note in the body, from one source.",
   "source": {
     "repo": "KaiGilb/GilbApp",

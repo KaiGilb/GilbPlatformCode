@@ -43,12 +43,14 @@ function props(over: Partial<Props> = {}): Props {
 }
 
 describe("MyNet's Skills section", () => {
-  it("shows a picked skill as MyNet does: its name, and its referent under it; no text box", () => {
+  // 0.2.0 (inverted): the source drew the referent address under the name and asserted it ("its name, and its referent under it"). A skill is shown by its name, never its address.
+  it("shows a picked skill by its name, and NOT its referent address; no text box", () => {
     render(<ContactRows {...props()} />);
     expect(screen.getByRole("heading").textContent).toBe("Skill");
     const shown = screen.getByTestId("skill-row-value");
     expect(shown.textContent).toContain("nursing");
-    expect(shown.textContent).toContain(NURSING);
+    expect(shown.textContent).not.toContain(NURSING);
+    expect(shown.textContent).not.toContain("https://");
     expect(screen.queryByTestId("skill-row-input")).toBeNull();
   });
 

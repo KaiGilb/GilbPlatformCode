@@ -35,6 +35,7 @@ import { useAddInPlace, useOneCardOwn } from "@kaigilb/gilbplatformcode-one-card
 import { YourRow } from "@kaigilb/gilbplatformcode-one-card-rows";
 import { eventTargetInTopDialog, modalIsOpen } from "@kaigilb/gilbplatformcode-open-popups";
 import { RemoveControl } from "@kaigilb/gilbplatformcode-remove-control";
+import { referentNameOf, termNameWord } from "@kaigilb/gilbplatformcode-term-name-text";
 import { useContactRowsHost } from "./contactRowsHost";
 import { joinPhone } from "./dialCode";
 import { EMAIL_FORMAT_HINT, isEmailFormat } from "./emailFormat";
@@ -50,6 +51,14 @@ const GROUP_ICON: Record<ContactKind, CardIconName> = { email: "email", phone: "
 /** A person record carries no place claims here: the phone's code box starts at "+" (see
  *  `useHomeDial` of the host). One constant, so the hook's key never changes. */
 const NO_HOME_CLAIMS: never[] = [];
+
+/**
+ * A picked skill is named by its name: the one the sidecar entry cached, else the catalogue name in the skill's term address, else the word "A skill".
+ * Never the address (`ref`) and never the last part of an address that is not a term address.
+ */
+function skillNameOf(r: ContactRow): string {
+  return r.value || (r.ref ? referentNameOf(r.ref) : null) || termNameWord("skill");
+}
 
 export function ContactRows({
   kind,
@@ -416,7 +425,7 @@ export function ContactRows({
               <>
                 {SkillDepthNote ? (
                 <SkillDepthNote
-                  skillName={r.value || r.ref}
+                  skillName={skillNameOf(r)}
                   note={skillNotes.noteFor(r.ref)}
                   readOnly
                   saving={false}
@@ -427,7 +436,7 @@ export function ContactRows({
                 {/* Who added the note. */}
                 {AddedByLine && skillNotes.sourceFor(r.ref) ? <AddedByLine item={skillNotes.sourceFor(r.ref)!.item} own={skillNotes.sourceFor(r.ref)!.own} hasSource={skillNotes.sourceFor(r.ref)!.hasSource} /> : null}
                 {/* The label only (nothing is edited in presentation). */}
-                {HeldVisibilitySwitch && skillNotes.markFor(r.ref) === "private" ? <HeldVisibilitySwitch isPrivate editing={false} noun={`skill ${r.value || r.ref}`} onSet={() => {}} /> : null}
+                {HeldVisibilitySwitch && skillNotes.markFor(r.ref) === "private" ? <HeldVisibilitySwitch isPrivate editing={false} noun={`skill ${skillNameOf(r)}`} onSet={() => {}} /> : null}
               </>
             ) : null
           }
@@ -451,7 +460,7 @@ export function ContactRows({
                 workPrivate
                   ? `Remove ${r.label} ${noun}`
                   : r.ref
-                    ? `Remove ${title} ${r.value || r.ref}`
+                    ? `Remove ${title} ${skillNameOf(r)}`
                     : `Remove ${title}${r.label ? " " + r.label : ""}`
               }
               onClick={() => {
@@ -504,15 +513,12 @@ export function ContactRows({
               </p>
             ) : null}
             {r.ref ? (
-              // A catalogue skill: the name, and the referent under it.
+              // A catalogue skill: its name. The referent address is not drawn.
               <div className="mt-0.5 min-w-0" data-testid="skill-row-value">
-                <p className="text-[15px] capitalize text-[var(--ink)]">{r.value || r.ref}</p>
-                <p className="mt-0.5 break-all font-[var(--mono)] text-[10px] text-[var(--ink-faint)]" title={r.ref}>
-                  {r.ref}
-                </p>
+                <p className="text-[15px] capitalize text-[var(--ink)]">{skillNameOf(r)}</p>
                 {skillNotes && SkillDepthNote && (
                   <SkillDepthNote
-                    skillName={r.value || r.ref}
+                    skillName={skillNameOf(r)}
                     note={skillNotes.noteFor(r.ref)}
                     readOnly={!canEdit || !skillNotes.editableFor(r.ref)}
                     saving={skillNotes.savingFor(r.ref)}
@@ -528,7 +534,7 @@ export function ContactRows({
                     isPrivate={skillNotes.markFor(r.ref) === "private"}
                     editing={canEdit}
                     busy={skillNotes.savingFor(r.ref)}
-                    noun={`skill ${r.value || r.ref}`}
+                    noun={`skill ${skillNameOf(r)}`}
                     onSet={(makePrivate) => void skillNotes.setPrivate(r.ref!, makePrivate)}
                   />
                 )}
@@ -658,7 +664,7 @@ function PresentRow({
 }) {
   const { SocialLogo, socialPlatformName } = useContactRowsHost();
   const name = workPrivate ? `${r.label} ${noun}` : `${title}${r.label ? " " + r.label : ""}`;
-  const valueText = r.ref ? r.value || r.ref : r.value;
+  const valueText = r.ref ? skillNameOf(r) : r.value;
   const valueCls = "block min-h-10 w-full break-words rounded-[var(--r-sm)] py-1.5 text-left text-[15px] text-[var(--ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
   return (
     <div className="flex items-start gap-2 py-1" data-testid={`${kind}-row`} data-presentation="true">
