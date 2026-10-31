@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/employment-edges",
+  "package": "@kaigilb/gilbplatformcode-employment-edges",
+  "version": "0.1.0",
+  "purpose": "The ordered employment edges on a person's record, changed as stored now and written one key at a time.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "a703b3ed78e612e2cab77e94876ce9bce109d5a3",
+    "files": [
+      {
+        "path": "src/lib/mynet/employment/employmentEdges.ts",
+        "lines": [
+          23,
+          62
+        ],
+        "to": "src/employmentEdges.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The import is the unit's: `changeRecordFactItems`, `storedFactItems` from `record-fact-items`.",
+    "The file's header comment is new and shorter; no code changed."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
