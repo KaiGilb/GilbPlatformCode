@@ -68,24 +68,47 @@ The speed table of the second run (REAL browser, MOCK vault; vault latency 600 m
 | webkit | phone | B5 hover warms |  |  |  | 5 |  | 6 |  | pass |  | hover right after sign-in sent 0 records requests |
 | webkit | phone | B6 tab closed without sign-out |  |  |  |  |  |  |  | pass |  |  |
 
-## Live mode (read only)
+## Live mode
 
-A second mode of the same app: a real sign-in to GilbPlatform and a real `completeCopy` read of `t:CatalogEntry` in ONE named test vault. It reads and never writes (rename comes in the next batch). It is chosen at build time (`VITE_PLATFORM=live`); the stand-in mode above is unchanged. Live and stand-in use different device databases (`speedkittaking-live-cache` and `speedkittaking-cache`), so their copies never meet.
+A second mode of the same app: a real sign-in to GilbPlatform and a real `completeCopy` read of `t:CatalogEntry` in ONE named test vault, and (with `--allow-write`) three writes in that vault. It is chosen at build time (`VITE_PLATFORM=live`); the stand-in mode above is unchanged. Live and stand-in use different device databases (`speedkittaking-live-cache` and `speedkittaking-cache`), so their copies never meet.
 
 ```sh
-npm run dev:live -- --vault https://<host>/vault     # for a vault not under gilb.com also: --id https://<identity host> --platform https://<platform apex>
+npm run dev:live -- --vault https://<host>/vault [--allow-write]
+# a vault not under gilb.com also needs: --id https://<identity host> --platform https://<platform apex>
 ```
 
-`scripts/dev-live.mjs` refuses without `--vault`, refuses a value that is not `https://<host>/vault`, refuses when port 5251 is taken, sets every `VITE_` variable itself, prints the URL and both origins, and logs to `~/Library/Logs/speed-kit-taking-app-live.log`. Two origins are used, as in records-app (proven live on 2026-10-29): the identity origin (`--id`, default `https://id.gilb.com`) takes every sign-in call and `GET /lws/vaults`, and the platform apex (`--platform`, default `https://gilb.com`) is only what the units treat as the platform, so no request goes to it. The defaults apply to a vault under `gilb.com`; for any other host both flags are required. Production admits a local app only at `http://localhost:5197` or `http://localhost:5251`; live mode runs at 5251.
+`scripts/dev-live.mjs` refuses without `--vault`, refuses a value that is not `https://<host>/vault`, refuses when port 5251 is taken, sets every `VITE_` variable itself, prints the URL and both origins, and logs to `~/Library/Logs/speed-kit-taking-app-live.log`. It never starts without you: you sign in yourself.
 
-What you do and see: open the URL; type your email; the code arrives by email; type it. A page reload ends the session (the key and token live in memory only), so sign in again with a new code. The person on screen is the principal the server returns after sign-in, not the email you typed. The page shows the vaults you reach (with `complete` and `incompletePeers`). If the pinned vault is not among them it says so and loads nothing; when `complete` is false it also offers "Try reading it anyway", which makes one read and reports the status. A 401 shows "Your sign-in has run out; sign in again." The speed panel works as in stand-in mode.
+- **Two origins**, as in records-app (proven live on 2026-10-29). The identity origin (`--id`, default `https://id.gilb.com`) takes every sign-in call and `GET /lws/vaults`. The platform apex (`--platform`, default `https://gilb.com`) is only what the units treat as the platform (`setBaseOrigin`, the system hosts), and no request goes to it: a key-bound call at the apex fails the DPoP check. The vault's own data calls go to the vault's own host. The defaults apply to a vault under `gilb.com`; for any other host both flags are required.
+- **Port 5251.** Production admits a local app only at `http://localhost:5197` or `http://localhost:5251`. Live mode uses 5251 (`strictPort`), the origin records-app's proven live run used.
+- **A reload signs you out** on this local check. The DPoP key and the token live in memory only; sign in again with a new code (it arrives by email).
+- **The person** on screen is the principal the server returns after sign-in, never the typed email. The page shows the vaults you reach (`complete`, `incompletePeers`) and which field matched the pinned vault (`vaultId`, or the origin of `@id`). If the pinned vault is not reached it says so and loads nothing; with `complete: false` it also offers "Try reading it anyway" (one read, status shown, read only). A 401 shows "Your sign-in has run out; sign in again."
 
-Tests `test/L1` to `test/L8` fake only the network, with answer shapes taken from the server source.
+### `--allow-write`: the three writes
 
-### Live writes (`--allow-write`)
+Without the flag live mode only reads and none of the buttons exists. With it, every write passes one gate in `src/live/writes.ts` (the flag is on, and the URL's origin is the pinned vault's origin), and each is a background job that says "done" only after a read-back.
 
-`npm run dev:live -- --vault https://<host>/vault --allow-write` turns on three writes, all in the pinned vault and nowhere else. Without the flag live mode only reads, and none of the buttons exists. Every write passes one gate in `src/live/writes.ts` (the flag is on, and the URL's origin is the pinned vault's origin), and each is a background job that says "done" only after a read-back.
+- **Rename** (the Entry page): a fresh read of that record, then `PATCH /lws/r/<id>` with `If-Match` and the write key `a:name`, then a read-back. A 412 shows "Someone changed it; look again" and is not retried. An ended record is refused.
+- **Add test entries** (10, 50, 200 or 500): `POST /lws/vault/<vault>/c`, each with its own `Idempotency-Key` (`speedkit-proof.<runId>.<n>`), at most 4 in flight, named `speedkit-proof <runId> <n>`. The ids are kept in localStorage under `speedkittaking-live.made.<principal>.<vault>`, and "N made by this app" follows that list.
+- **End my test entries**: `DELETE /lws/r/<id>` with `If-Match`, only for ids on that list whose name, read fresh, still starts with `speedkit-proof `. Each is read back.
+- **An ended record reads 200, not 404.** The server serves it with `a:entityLifecycleState: "ended"` and no name or body (measured live on 2026-10-29: 207 of 207). The app treats ended and a 404 both as ended.
 
-- Rename (the Entry page): a fresh read of that record, then `PATCH /lws/r/<id>` with `If-Match` and the write key `a:name`, then a read-back. A 412 shows "Someone changed it; look again" and is not retried.
-- Add test entries (10, 50, 200 or 500): `POST /lws/vault/<vault>/c`, each with its own `Idempotency-Key` (`speedkit-proof.<runId>.<n>`), at most 4 in flight, named `speedkit-proof <runId> <n>`. The ids are kept in localStorage under `speedkittaking-live.made.<principal>.<vault>`.
-- End my test entries: `DELETE /lws/r/<id>` with `If-Match`, only for ids on that list whose name, read fresh, still starts with `speedkit-proof `. Each is read back: an ended record is served as a 200 marked `a:entityLifecycleState: ended` (a 404 also counts).
+### Measured live
+
+REAL browser (Chrome), production GilbPlatform, vault `testappvaultaccess`, 503 entries, 2026-10-30/31, Kai signing in himself (S2-D2b run). Not a lab: one run.
+
+| Step | Result |
+|---|---|
+| Add 500 (read back 500) | 26.5 s |
+| Rename (If-Match, read back) | 2.5 s |
+| End 500 (each read back ended); the 3 original entries untouched | done |
+| Cold first visit (first row, from the network) | 1622 and 1744 ms |
+| First row from memory | 14.2 ms |
+| First row from the device (after a reload) | 58.8 ms |
+| Sign-out | the live database held 0 keys |
+
+With the 3 original entries (S2-D1b, same vault): network 1015 ms, memory 1.0 ms, device 4.2 ms.
+
+Not proven: a real phone (all runs are on a desktop browser), and one device miss (finding F4): once, a reload a few seconds after a rename and a fresh sign-in painted the first row from the network (1622 ms) although the device held the copy. The cause is open; the page now shows what `start` answered (`start: disk yes|no, hydrated yes|no, N entries, M ms`, also `window.__speedProof.start`) so the next occurrence can be told apart.
+
+Tests `test/L1` to `test/L10`, `test/W-live-writes` fake only the network, with answer shapes taken from the server source.

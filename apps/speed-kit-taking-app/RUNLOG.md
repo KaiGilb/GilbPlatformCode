@@ -81,3 +81,9 @@
 
 - Measured live 2026-10-29 (207 DELETEd records, all re-read as 200 with `a:entityLifecycleState: ended`) and in the server: GilbPlatform 3185a3b8 src/lws/resource-frame.ts:36-38 (`a:entityLifecycleState`, `a:endingActorKind`), src/lws/routes.ts:11-12 and :200. Only a husk or an unreadable record is a 404.
 - `read()` now answers live, ended or gone. End counts ended or gone as ended; a rename of an ended or gone record is refused. The ended-list read (`endedAmong`) is removed: the per-record read proves the same thing.
+
+## Batch S2-D3 (the counter, start diagnostics, live README)
+
+- Live findings: sign-in and `/lws/vaults` go to the identity host (`id.gilb.com`), not the apex (a key-bound call at the apex fails the DPoP check); the platform apex is only `setBaseOrigin` and the system hosts. An ended record reads 200 with `a:entityLifecycleState: "ended"`, not 404 (207 of 207 measured live). 500 creates at 4 in flight took 26.5 s.
+- The "N made by this app" counter was read at mount only, so it showed 0 while 500 ids were in localStorage. It now follows the list through a small store (`src/live/made.ts`), W8.
+- F4 (one device miss) is open: `window.__speedProof.start` and the line under the panel say what `start` answered, in both modes (T11). `entries` there is the number of cache entries `onHydrated` received (one per resource, so 1 for the list), not rows.

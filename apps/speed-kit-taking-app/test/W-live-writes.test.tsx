@@ -254,4 +254,17 @@ describe("W live writes", () => {
     await waitFor(() => expect(screen.getByTestId("toast").textContent).toContain("Ended 2 test entries"), { timeout: 5000 });
     expect(JSON.parse(localStorage.getItem(madeKey)!)).toEqual([]);
   });
+
+  test("W8 counter: 'N made by this app' follows the made-list with no remount: 0, then 50 after a seed of 50, then 0 after End", async () => {
+    const t = await signedIn();
+    const count = () => screen.getByTestId("made-count").textContent;
+    expect(count()).toBe("0 made by this app");
+    fireEvent.change(screen.getByTestId("seed-count"), { target: { value: "50" } });
+    await t.user.click(screen.getByTestId("seed-button"));
+    await waitFor(() => expect(screen.getByTestId("toast").textContent).toContain("Added 50 of 50"), { timeout: 5000 });
+    expect(count()).toBe("50 made by this app"); // no reload
+    await t.user.click(screen.getByTestId("end-button"));
+    await waitFor(() => expect(screen.getAllByTestId("toast").some((x) => (x.textContent ?? "").includes("Ended 50"))).toBe(true), { timeout: 5000 });
+    expect(count()).toBe("0 made by this app");
+  });
 });

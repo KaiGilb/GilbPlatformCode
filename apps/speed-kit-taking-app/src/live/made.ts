@@ -7,8 +7,14 @@ export function readMade(principal: string, vault: string): string[] {
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   } catch { return []; }
 }
+const listeners = new Set<() => void>();
+/** Told whenever the made-list changes (this tab's add and end jobs write through here). */
+export const subscribeMade = (fn: () => void): (() => void) => { listeners.add(fn); return () => { listeners.delete(fn); }; };
+export const madeCount = (principal: string, vault: string): number => readMade(principal, vault).length;
+
 export function writeMade(principal: string, vault: string, ids: readonly string[]): void {
   try { localStorage.setItem(madeKey(principal, vault), JSON.stringify([...new Set(ids)])); } catch { /* storage blocked: End then sees nothing, which is the safe side */ }
+  for (const l of [...listeners]) l();
 }
 export function addMade(principal: string, vault: string, id: string): void { writeMade(principal, vault, [...readMade(principal, vault), id]); }
 export function removeMade(principal: string, vault: string, gone: readonly string[]): void {
