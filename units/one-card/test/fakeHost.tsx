@@ -1,7 +1,8 @@
 // Test support: a OneCardHost whose members do what the app's do, over plain data, and the provider that carries it.
 import type { ReactNode } from "react";
+import type { AddressSpellings } from "@kaigilb/gilbplatformcode-one-card-merge";
 import { vi } from "vitest";
-import { OneCardHostContext, type GeoPlace, type OneCardHost, type PlaceClaim, type PlaceTextTerm } from "../src/oneCardHost";
+import { OneCardHostContext, type GeoPlace, type OneCardHost, type PlaceClaim, type PlaceTextTerm, type TheirPlaceRead } from "../src/oneCardHost";
 
 export const GEO_PREFIX = "https://geo.example.test/base/e/";
 
@@ -20,12 +21,22 @@ export interface FakeHost extends OneCardHost {
   claimFieldText: ReturnType<typeof vi.fn<(claim: PlaceClaim, term: PlaceTextTerm) => string>>;
   isGeoEntityId: ReturnType<typeof vi.fn<(value: unknown) => boolean>>;
   placeClaimsKey: ReturnType<typeof vi.fn<(vaultId: string) => readonly unknown[]>>;
+  addressSpellings?: ReturnType<typeof vi.fn<() => Promise<AddressSpellings>>>;
+  readPlaceNames?: ReturnType<typeof vi.fn<(ids: readonly string[]) => Promise<TheirPlaceRead[]>>>;
 }
 
-export function fakeHost(over: { claims?: readonly FakeClaim[]; places?: readonly GeoPlace[]; staleMs?: number } = {}): FakeHost {
+export function fakeHost(over: {
+  claims?: readonly FakeClaim[];
+  places?: readonly GeoPlace[];
+  staleMs?: number;
+  /** When omitted, `addressSpellings` is absent. `"reject"` rejects the promise. */
+  spellings?: AddressSpellings | "reject";
+  /** When omitted, `readPlaceNames` is absent. */
+  reads?: (ids: readonly string[]) => TheirPlaceRead[] | Promise<TheirPlaceRead[]>;
+} = {}): FakeHost {
   const claims = over.claims ?? [];
   const places = over.places ?? [];
-  return {
+  const host: FakeHost = {
     isGeoEntityId: vi.fn((value: unknown) => typeof value === "string" && value.startsWith(GEO_PREFIX)),
     listPlaceClaimsInVault: vi.fn(async (_vaultId: string) => [...claims] as PlaceClaim[]),
     claimsAbout: vi.fn((all: readonly PlaceClaim[], subject: string) =>
@@ -40,6 +51,15 @@ export function fakeHost(over: { claims?: readonly FakeClaim[]; places?: readonl
     placeClaimsKey: vi.fn((vaultId: string) => ["mynet", "place-claims", vaultId] as const),
     placeClaimsStaleMs: over.staleMs ?? 60_000,
   };
+  if (over.spellings !== undefined) {
+    const spellings = over.spellings;
+    host.addressSpellings = vi.fn(() => (spellings === "reject" ? Promise.reject(new Error("address spellings were not read")) : Promise.resolve(spellings)));
+  }
+  if (over.reads !== undefined) {
+    const reads = over.reads;
+    host.readPlaceNames = vi.fn((ids: readonly string[]) => Promise.resolve(reads(ids)));
+  }
+  return host;
 }
 
 export function HostProvider({ host, children }: { host: OneCardHost; children: ReactNode }) {

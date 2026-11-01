@@ -8,7 +8,7 @@ const FUNCTIONS = [
   "publishTheirPlaces", "useTheirPlaces", "__resetTheirPlaces",
   "isOnlineCardLinkKey", "onlineCardLabelFor", "useOnlineCardLabelFor",
   "useOnlineCardState", "useOnlineCardController", "usePersonCard",
-  "ownAddressOf", "useHeldAddresses",
+  "ownAddressOf", "useHeldAddresses", "orderPlaces", "useTheirAddresses",
   "GlobeIcon", "NoOnlineCardFoot", "ConnectedMarker",
   "isTheirPlaceGroup", "OneCardBody", "OneCardOwnGroups",
 ] as const;

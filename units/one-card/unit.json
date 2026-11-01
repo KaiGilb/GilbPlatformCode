@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/one-card",
   "package": "@kaigilb/gilbplatformcode-one-card",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "purpose": "Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -70,11 +70,14 @@
     "`claimPlaceIds` is the one of `place-lines` (72 tokens each; the unit's parameter type is `PlaceLineClaim` and its lambda parameter is named `candidate` where the app's is `f`; measured equal on 5000 random claims);",
     "comments made generic (cycle, step, tester, design-note and ruling tags, dates, person and app names and a spec reference removed; the example host address in `theirPlaces.ts` reworded); no code changed. No string literal carries a tag.",
     "0.2.0: `theirValueText` returns a `ReactNode` and a row on the language term (`a:languageUsed`, by term) is drawn by `LanguageRow` of the unit `language-row` in both the linked and the single-source view (`valueText` of `unlinkedView`); every other field is unchanged. This is new behaviour, not a port: the source draws the language's address there. The comment-stripped file differs from the 0.1.0 file in exactly these lines (new function `languageUsedText`, `theirValueText`, `unlinkedView`'s `valueText`, plus one import).",
-    "0.3.0: `skillText(value, label)` (new, private) replaces `labelFor(row.value) || row.value.split(\"/\").pop() || row.value` in the linked view's `valueText` for the skill field: the label, else `referentNameOf(value)` of `term-name-text`, else \"A skill\" for any other address, else the text itself. The `languageUsed` and birthday paths and the unlinked view are unchanged."
+    "0.3.0: `skillText(value, label)` (new, private) replaces `labelFor(row.value) || row.value.split(\"/\").pop() || row.value` in the linked view's `valueText` for the skill field: the label, else `referentNameOf(value)` of `term-name-text`, else \"A skill\" for any other address, else the text itself. The `languageUsed` and birthday paths and the unlinked view are unchanged.",
+    "Beyond the source (Kai, 2026-11-01): optional host members `addressSpellings` and `readPlaceNames`, and `useTheirAddresses`, read the place names of an address of theirs (city, region, country, country id) and say honestly when a place of that address was not read (`unread`) or is gone (`gone`). `orderPlaces` is the finest-first sort `ownAddressOf` already used, now shared. Absent either member, or the read not enabled, or the fields not in hand: no request, and the card stays as before. No drawing."
   ],
   "newFiles": [
     "src/index.ts",
-    "src/oneCardHost.ts"
+    "src/oneCardHost.ts",
+    "src/placeOrder.ts",
+    "src/theirAddresses.ts"
   ],
   "host": [
     {
@@ -118,6 +121,18 @@
       "member": "placeClaimsStaleMs",
       "replaces": "src/lib/mynet/place/usePlaceClaims.ts:52 (PLACE_CLAIMS_STALE_MS = 60_000; read at heldAddresses.ts:71)",
       "implementedBy": "the number of milliseconds a held vault read is taken as fresh when the card opens (60000)"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "addressSpellings",
+      "replaces": "Beyond the source (Kai, 2026-11-01): not a GilbApp call. The spellings of an address's fields, asked of the ontology master. Absent: their address is not drawn.",
+      "implementedBy": "resolvePlaceVocab of place-vocab, mapped to AddressSpellings (stakeholder-card-hosts-gilbplatform)"
+    },
+    {
+      "context": "OneCardHostContext",
+      "member": "readPlaceNames",
+      "replaces": "Beyond the source (Kai, 2026-11-01): not a GilbApp call. One answer per place id: named, missing or failed. Absent: their address is not drawn.",
+      "implementedBy": "readPlaceNames of place-names, mapped to TheirPlaceRead (stakeholder-card-hosts-gilbplatform)"
     }
   ],
   "library": {

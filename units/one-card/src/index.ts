@@ -6,6 +6,8 @@ export * from "./useOnlineCardState";
 export * from "./useOnlineCardController";
 export * from "./usePersonCard";
 export * from "./heldAddresses";
+export * from "./placeOrder";
+export * from "./theirAddresses";
 export * from "./OneCardFind";
 export * from "./ConnectedMarker";
 export * from "./OneCardBody";
