@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain ESM script without types
+import { checkStorageStateFile, main as runMain } from "../scripts/app-runner.mjs";
+// @ts-expect-error plain ESM script without types
 import { forgetSignin } from "../scripts/forget-signin.mjs";
 // @ts-expect-error plain ESM script without types
 import { insideGitTree, parseArgs, saveSignin } from "../scripts/save-signin.mjs";
@@ -138,5 +140,30 @@ describe("S save sign-in", () => {
     expect(refused.err.join("\n")).not.toContain(secret);
     expect(fs.readFileSync(wide, "utf8")).toBe(`{"token":"${secret}"}`);
     expect(fs.statSync(wide).mode & 0o777).toBe(0o644);
+  });
+
+  it("run-app refuses a storage state others can read and accepts mode 600", async () => {
+    const dir = tempDir();
+    const secret = "SESSION-SECRET-SENTINEL";
+    const wide = path.join(dir, "wide.json");
+    fs.writeFileSync(wide, `{"cookies":[{"value":"${secret}"}]}`);
+    fs.chmodSync(wide, 0o644);
+    expect(fs.statSync(wide).mode & 0o077).not.toBe(0);
+    expect(checkStorageStateFile(wide)).toBe("storage state is readable by others: chmod 600 it");
+    const quiet = { log() {}, error(m: unknown) { this.last = String(m); }, last: "" };
+    const refused = await runMain(["--url", "http://127.0.0.1:9/", "--app", "a", "--storage-state", wide, "--commit", "abc"], {}, quiet);
+    expect(refused.code).toBe(2);
+    expect(refused.rows).toEqual([]);
+    expect(quiet.last).toBe("storage state is readable by others: chmod 600 it");
+    expect(quiet.last).not.toContain(secret);
+    expect(JSON.stringify(refused)).not.toContain(secret);
+
+    const tight = path.join(dir, "tight.json");
+    fs.writeFileSync(tight, `{"cookies":[{"value":"${secret}"}]}`);
+    fs.chmodSync(tight, 0o600);
+    expect(fs.statSync(tight).mode & 0o077).toBe(0);
+    const accepted = checkStorageStateFile(tight);
+    expect(accepted).toBeNull();
+    expect(String(accepted)).not.toContain(secret);
   });
 });

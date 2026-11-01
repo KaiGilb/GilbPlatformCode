@@ -134,7 +134,21 @@ Defaults: `--key __speedMeter`, `--engines chromium,webkit`, `--profiles desktop
 
 A step is `click:<data-testid>` (click that element, waiting for it up to the timeout) or `wait:<data-testid>` (wait until it is visible). Separate steps with commas. Any other kind is an error and the runner does not start.
 
-An app that needs a signed-in person: you make a Playwright storage-state JSON yourself and pass `--storage-state <file.json>`. The runner hands that file to the browser. It never creates the file, and it never prints it. A missing file is an error.
+### Signed-in apps
+
+```sh
+npm run save-signin -- --url <app> --out ~/Developer/.speed-lab/secrets/<name>.json --page <page>
+```
+
+This opens a browser window. You sign in there, then open the page to be measured. It saves once the app's meter reports that page (`window.<key>.lastPaint`, default key `__speedMeter`, the same as `run-app`). The file is a credential: mode 600, never in a repository, never printed (the command shows only how many cookies and origins were stored). Pass it with `--storage-state`. A missing file is an error, and so is a file others can read (`storage state is readable by others: chmod 600 it`).
+
+```sh
+npm run forget-signin -- --out <file>
+```
+
+`forget-signin` overwrites the file with zeros and deletes it. Run it when you are done.
+
+A session saved in one browser engine may not work in another (`save-signin` defaults to chromium; `--engine webkit` saves a WebKit session), and a session can expire. The runner then fails with "meter found" or "lastPaint present", and the fix is to save again.
 
 Two tests, one page, for each engine and profile:
 
