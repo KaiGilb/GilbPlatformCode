@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/online-card",
   "package": "@kaigilb/gilbplatformcode-online-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Controls the link between a holder's record of a person and that person's own online card: find, link, unlink, refresh.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -21,7 +21,8 @@
     "In `controller.ts`: the import of `readLink` and the type `LinkReading` from `./link.ts` is the peer `@kaigilb/gilbplatformcode-online-card-link`; `linkWrite`, `unlinkWrite` and the type `LinkWrite` come from `./linkWrite`; `resolveOnlineCard` and the type `ResolveOutcome` from `./anchorResolver.ts` are the peer `@kaigilb/gilbplatformcode-person-connections`; the type `PlatformClient` from `../platform.ts` is the peer `@kaigilb/gilbplatformcode-record-sync`; the own-file imports lose `.ts`.",
     "In `find.ts` and `publicCard.ts`: the imports from `../platform.ts` (`request`, `routeUrl`, `retryAfterMs`, `expectStatus`, `PlatformError`, `PlatformClient`, `RequestBound`) are the peer `@kaigilb/gilbplatformcode-record-sync`; the own-file imports lose `.ts`.",
     "In `rungs.ts`: the import from `../connections/placements.ts` (`ATOMIC_PLACEMENTS`, `CONTEXT_WORDS`, `DEPTH_WORDS`, `atomicRungTerm`, `placementLabel`, the type `AudienceDepth`) is the peer `@kaigilb/gilbplatformcode-person-connections`.",
-    "Comments made generic (person names, cycle and ticket tags, app names, a claim name and a platform file name removed from the files' comments); no code change."
+    "Comments made generic (person names, cycle and ticket tags, app names, a claim name and a platform file name removed from the files' comments); no code change.",
+    "Beyond the source (Kai, 2026-11-01): `OnlineCardField` keeps `composite`, the id of the address (`t:PlaceClaim`) a field belongs to, as the public-card route now serves it, and `parseOnlineCard` adds it to the line-dedup key when a field has one, so two addresses that name one place at one rung keep a line each. A field without `composite` is read and deduplicated exactly as before. Kai asked for their address to be shown the way MyNet shows it (names, never addresses)."
   ],
   "newFiles": [
     "src/index.ts"

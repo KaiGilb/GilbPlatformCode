@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-online-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Controls the link between a holder's record of a person and that person's own online card: find, link, unlink, refresh.",
