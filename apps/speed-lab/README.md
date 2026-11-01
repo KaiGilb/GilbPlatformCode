@@ -108,7 +108,7 @@ npm run compare -- SL-007 --last 8 --runs <dir>
 - `NO READING`: the latest run has no number for the primary reading.
 - `MISSING IN LATEST`: a row that earlier runs had is absent from the latest run.
 
-It ends with `<id>: no flags (...)` or `<id>: <k> flag(s): ...`. Exit codes: 0 no flags; 1 any flag; 2 bad arguments, an unknown id, or no result files found (it prints `no result files for <id> in <dir> (searched <count> files)`, so an empty search is never read as a pass).
+It ends with one summary line. Exit codes: 0 judged and no flags (`<id>: no flags (...)`); 1 any flag (`<id>: <k> flag(s): ...`, plus `; not judged: <k> key(s)` if some keys lacked runs); 2 bad arguments, an unknown id, or no result files found (it prints `no result files for <id> in <dir> (searched <count> files)`, so an empty search is never read as a pass); 3 not judged: no flags, but at least one key had too few runs (`<id>: not judged for <k> key(s) (too few runs: need 2 earlier readings); ...`). Tests that only pass or fail (SL-004 to SL-006) are judged on `pass` alone and are never "not judged".
 
 ## Live mode
 

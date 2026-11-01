@@ -86,7 +86,7 @@ describe("R results.mjs and compare.mjs", () => {
     expect(one(run([10, 10, 10], 25)).flags).toEqual([]);
     const few = one(run([100], 500));
     expect(few.flags).toEqual([]);
-    expect(few.notes).toEqual(["too few runs to judge"]);
+    expect(few.notes).toEqual(["too few runs to judge"]); // not judged
     expect(one(run([100, 100, 100], 100, false)).flags).toEqual(["FAIL"]);
     expect(one(run([100, 100, 100], null)).flags).toEqual(["NO READING"]);
     expect(one({ k: [{ pass: true, values: {} }, { pass: true, values: {} }] }, null).flags).toEqual([]);
@@ -112,6 +112,17 @@ describe("R results.mjs and compare.mjs", () => {
     expect(fine.status).toBe(1); // the failing webkit/phone row is flagged
     expect(fine.stdout).toContain("FAIL: webkit/phone");
     expect(compare("SL-099", "--runs", dir).status).toBe(2);
+    const two = tmp();
+    [100, 100].forEach((ms, i) => {
+      const p = fixture();
+      p.rows.forEach((r) => { r.values.firstRowMs = ms; r.pass = true; r.failed = []; });
+      writeResults(two, toResults(p, { ...META, at: `2026-11-01T13:0${i}:00.000Z` }).files);
+    });
+    const nj = compare("SL-001", "--runs", two);
+    expect(nj.status).toBe(3);
+    expect(nj.stdout).toContain("not judged");
+    expect(compare("SL-004", "--runs", two).status).toBe(0);
+    expect(compare("SL-001", "--runs", dir).status).toBe(1);
   });
 
   it("R6 runsDir honours SPEED_LAB_RUNS and falls back", () => {

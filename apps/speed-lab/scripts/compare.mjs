@@ -113,9 +113,11 @@ export function main(argv, env, out = console) {
     for (const f of v.flags) { out.log(`${f}: ${v.key}`); flagged.push(`${f} ${v.key}`); }
     for (const n of v.notes) out.log(`${n}: ${v.key}`);
   }
-  if (flagged.length) out.log(`${id}: ${flagged.length} flag(s): ${flagged.join("; ")}`);
+  const notJudged = verdicts.filter((v) => v.notes.includes("too few runs to judge")).length;
+  if (flagged.length) out.log(`${id}: ${flagged.length} flag(s): ${flagged.join("; ")}${notJudged ? `; not judged: ${notJudged} key(s)` : ""}`);
+  else if (notJudged) out.log(`${id}: not judged for ${notJudged} key(s) (too few runs: need ${MIN_EARLIER} earlier readings); no flags otherwise (latest ${latestAt})`);
   else out.log(`${id}: no flags (latest ${latestAt}, compared with ${shown.length - 1} earlier runs)`);
-  return flagged.length ? 1 : 0;
+  return flagged.length ? 1 : notJudged ? 3 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2), process.env);
