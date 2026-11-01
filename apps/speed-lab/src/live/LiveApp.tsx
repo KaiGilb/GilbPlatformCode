@@ -113,7 +113,7 @@ export function LiveApp({ makeSession = () => new SessionCredential(), transport
   if (phase.k === "signin" || phase.k === "noProof" || phase.k === "problem" || phase.k === "expired") {
     body = (
       <section>
-        <h1>Speed kit taking app (live check)</h1>
+        <h1>Speed Lab (live check)</h1>
         <p>Reads the catalogue entries of one vault: {vault}</p>
         <p>On this local check a reload signs you out; sign in again with a new code.</p>
         {phase.k === "expired" && <p role="alert" data-testid="expired">Your sign-in has run out; sign in again.</p>}
