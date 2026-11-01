@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, devices, webkit } from "playwright-core";
+import { appVersion, gitMeta, isoOfTs, runsDir, toResults, writeResults } from "./results.mjs";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = process.env.PROOF_OUT ?? join(APP, "proof-out"); // next to the app, ignored by git; PROOF_OUT overrides
@@ -307,9 +308,17 @@ async function main() {
   writeFileSync(join(OUT, `results-${ts}.json`), JSON.stringify({ ts, base: BASE + QUERY, rows }, null, 2));
   writeFileSync(join(OUT, `SPEED-TABLE-${ts}.md`), table);
   console.log(table);
+  let resultsWritten = true;
+  try {
+    const { files, unmapped } = toResults({ ts, base: BASE + QUERY, rows }, { ...gitMeta(APP), appVersion: appVersion(APP), at: isoOfTs(ts) });
+    const dir = runsDir(process.env, APP);
+    writeResults(dir, files);
+    console.log(`result files: ${files.length} in ${dir}`);
+    if (unmapped.length) console.log(`unmapped scenarios: ${unmapped.join("; ")}`);
+  } catch (e) { resultsWritten = false; console.log(`result files NOT written: ${e?.message ?? e}`); }
   const failed = rows.filter((r) => !r.pass).length;
   console.log(failed ? `${failed} check(s) FAILED` : "all checks passed");
   console.log(`lsof :${PORT} LISTEN after the run: ${lsof === "" ? "(empty)" : lsof}`);
-  process.exitCode = failed || lsof ? 1 : 0;
+  process.exitCode = failed || lsof || !resultsWritten ? 1 : 0;
 }
 main().catch((e) => { console.error(String(e?.stack ?? e)); try { const l = spawnSync("lsof", ["-nP", `-iTCP:${PORT}`, "-sTCP:LISTEN"], { encoding: "utf8" }).stdout.trim(); console.log(`lsof :${PORT} LISTEN after the run: ${l === "" ? "(empty)" : l}`); } catch { /* none */ } process.exitCode = 1; });
