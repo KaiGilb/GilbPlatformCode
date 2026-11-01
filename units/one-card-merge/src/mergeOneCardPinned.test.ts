@@ -21,7 +21,7 @@ const card = (fields: { field: string; value: string; rung: string }[], extra: R
 
 describe("one-card-merge exports", () => {
   it("exports the merge, the compare, the address and the label functions and the purposes table", () => {
-    expect(Object.keys(unit).sort()).toEqual(["SLOT_PURPOSES", "addressLine", "compareRuleOf", "mergeOneCard", "normalizeForCompare", "sameAddress", "slotLabel"]);
+    expect(Object.keys(unit).sort()).toEqual(["SLOT_PURPOSES", "addressLine", "compareRuleOf", "mergeOneCard", "normalizeForCompare", "sameAddress", "slotLabel", "theirAddressLine", "theirAddressesOf"]);
   });
 });
 

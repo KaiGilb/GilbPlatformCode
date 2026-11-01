@@ -19,6 +19,15 @@ Pure functions and types: no fetch, no write, no React, no markup, no clock. An 
 - `slotLabel(slot, kind?)`: the purpose a value's slot states, or `null`. `SLOT_PURPOSES`: the five known purposes (`work`, `private`, `personal`, `home`, `mobile`) and their words.
 - Types `OneCardField`, `OwnHeldClaim`, `OwnAddress`, `OwnCard`, `MergeOneCardInput`, `RowSource`, `OneCardRow`, `OneCardGroup`, `IdentitySource`, `OneCardHeader`, `OneCard`, `CompareRule`.
 
+## Their address
+
+- `theirAddressesOf(fields, spellings)`: groups the address fields of their online card (`OnlineCardField[]`) into `{ addresses, loose }`. `spellings` (`AddressSpellings`: `label`, `streetLine`, `addressLine1`, `addressLine2`, `postalCode`, `claimPlace`) are passed IN by the app; the unit types none.
+  - A part joins the address whose id equals the part's `composite`; the address's id is its label row's `sourceEntity`. Never by position, by "only one label", or by an id prefix.
+  - A part whose label row was not served still forms an address (`label: null`). An address part with no `composite`, and a label row with no `sourceEntity`, go to `loose` unchanged. Other fields are in neither.
+  - A `TheirAddress` is `{ composite, label, street, line1, line2, postalCode, placeIds, rungs, partPredicates }`. Of two parts with one predicate the first is kept. `placeIds` are place ids (not names), in server order, no duplicates; `rungs` the distinct rungs of the parts drawn, first-seen order. `addresses` are in the order any of their fields first appears.
+- `theirAddressLine(address)`: the comparable line `addressLine` builds, over street, the two lines and the postal code. The place parts are not in it: only ids are held here and `sameAddress` compares names, so an address of yours with a city, region or country is not equal to this line until the app has read the names.
+- Types `AddressSpellings`, `TheirAddress`.
+
 ## What this is not
 
 - Not a reader: it fetches nothing. The online card, the record's facts, the held claims and the field set are what the app already read.

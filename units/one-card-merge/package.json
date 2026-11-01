@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-one-card-merge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Merges a person's published rows with the holder's own rows into one list of groups, each row marked theirs, yours or both.",
