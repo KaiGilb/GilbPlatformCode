@@ -33,5 +33,5 @@
     "scripts/check-host-agnostic.mjs"
   ],
   "host": [],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:SpeedReading.meter", "title": "Speed readings (requests, page paint, writes)", "note": "An in-memory meter an app calls so it reports speed readings: requests received and answered by route, the time from a page's start to its first rows and to the full list with where the rows came from, the start of the read copy, and write timings. It only records; Speed Lab judges. For the copy itself take speed-kit; for the line that says when data was updated take updated-line." }
 }
