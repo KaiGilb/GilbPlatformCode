@@ -11,6 +11,8 @@ The app id `speedkittakinglive` and the storage names `speedkittaking-*` keep th
 | SL-001 to SL-007 | B1 to B7 | SL-001 (B1) cold first visit: first row and full list from the network. SL-002 (B2) back from an entry: rows from memory. SL-003 (B3) reload: rows painted from the device before any records answer. SL-004 (B4) sign-out and Ben: nothing of Ann seen. SL-005 (B5) hover warms: pointing at the nav sends the request. SL-006 (B6) tab closed without sign-out: nothing of Ann left. SL-007 (B7) slow disk: a late device copy still paints, labelled `device`. | stand-in: real Chromium + WebKit, fake vault (`npm run proof:browser`) |
 | SL-008 | live cold first row | first row and full list on a cold first visit to one named test vault on production, read only (see "Measured live") | live, read only, Kai signs in |
 | SL-009 | live writes | Add / Rename / End test entries, each said "done" only after a read-back | live, only with `--allow-write` and Kai's word |
+| SL-101 | — | first open: first rows and full list, as the app's own meter reports them | any app: real Chromium and WebKit (`npm run run-app`) |
+| SL-102 | — | reload: first rows after a reload, as the app's own meter reports them | any app: real Chromium and WebKit (`npm run run-app`) |
 
 The code and its output still print B1 to B7; this table is the mapping.
 
@@ -109,6 +111,50 @@ npm run compare -- SL-007 --last 8 --runs <dir>
 - `MISSING IN LATEST`: a row that earlier runs had is absent from the latest run.
 
 It ends with one summary line. Exit codes: 0 judged and no flags (`<id>: no flags (...)`); 1 any flag (`<id>: <k> flag(s): ...`, plus `; not judged: <k> key(s)` if some keys lacked runs); 2 bad arguments, an unknown id, or no result files found (it prints `no result files for <id> in <dir> (searched <count> files)`, so an empty search is never read as a pass); 3 not judged: no flags, but at least one key had too few runs (`<id>: not judged for <k> key(s) (too few runs: need 2 earlier readings); ...`). Tests that only pass or fail (SL-004 to SL-006) are judged on `pass` alone and are never "not judged".
+
+SL-101 and SL-102 need `--app <name>`. Only files whose `app.name` is that name are read. A result file that has an `app` field is left out of SL-001 to SL-007, so a run of another app never mixes into Speed Lab's own tests. When `--app` is given and nothing matches, the "no result files" line names that app.
+
+## Measure any app (run-app)
+
+`npm run run-app` drives any app in a real browser and writes down what that app's own speed meter says. It does not know the app. It opens the address you give it, does the steps you give it, and records the meter's reading. It runs in Chromium and WebKit, at desktop size and at phone size.
+
+The app has to take `units/speed-meter` (see that unit's README: `npm install <path-to-the-library>/units/speed-meter`) and leave the reading on `window[globalKey]`. The default key is `__speedMeter`. Speed Lab itself uses `__speedProof`. The reading that matters here is `lastPaint`: `{ page, ms, source, fullMs? }`. `source` is `memory`, `device`, `preview` or `network`. `ms` is the first rows. `fullMs`, when the app sets it, is the whole list.
+
+```sh
+npm run run-app -- --url <app url> --app <name> [--key <globalKey>] [--page <name>] \
+  [--steps "<step>,<step>"] [--reload-steps "<step>,..."] [--engines chromium,webkit] [--profiles desktop,phone] \
+  [--storage-state <file.json>] [--commit <sha> | --version-url <url>] [--runs <dir>] [--timeout <ms>] [--settle <ms>]
+```
+
+Defaults: `--key __speedMeter`, `--engines chromium,webkit`, `--profiles desktop,phone`, `--timeout 60000`, `--settle 1500`, `--reload-steps` the same list as `--steps`, and the runs folder `runs/` next to the app (`SPEED_LAB_RUNS` names another folder, and so does `--runs`).
+
+`--app` is a short name: a letter or a digit, then up to 39 more letters, digits or hyphens. The result file is named with that name and the app's commit.
+
+`--commit` is the app's commit, written down as you give it. Otherwise `--version-url` is fetched with no credentials and the first string among `revision`, `commit`, `sha` and `gitSha` is kept. If neither is given, the commit is `unknown`. The runner does not invent one.
+
+A step is `click:<data-testid>` (click that element, waiting for it up to the timeout) or `wait:<data-testid>` (wait until it is visible). Separate steps with commas. Any other kind is an error and the runner does not start.
+
+An app that needs a signed-in person: you make a Playwright storage-state JSON yourself and pass `--storage-state <file.json>`. The runner hands that file to the browser. It never creates the file, and it never prints it. A missing file is an error.
+
+Two tests, one page, for each engine and profile:
+
+- **SL-101, first open.** Open the url, run `--steps`, wait until `lastPaint` is set (and its `page` is `--page`, when you gave one), and record it. Then wait for `fullMs`. If `fullMs` never comes, it is recorded as null and that is not a failure.
+- **SL-102, reload.** Wait `--settle` milliseconds (so a copy the app writes on its own timer can land), reload the same page, run `--reload-steps`, and record the new `lastPaint` the same way.
+
+The values are `firstRowMs` (`lastPaint.ms`), `fullMs`, `source`, `page`, `requestsTotal` (the requests added up) and `writes` (how many). The checks are generic, the same for every app: the meter is at `window.<key>`, `lastPaint` is present, `source` is one of `memory`, `device`, `preview`, `network`, and `firstRowMs` is a finite number that is at least 0. There is no limit that says "this app is fast enough". The runner records. `npm run compare -- SL-101 --app <name>` is what flags a later run that got slower, by the same 1.25× and 20 ms rule as Speed Lab's own tests. One run is not judged.
+
+The result file (`schema` `speed-lab.result/1`) carries an `app` block (`name`, `url`, `commit`) and `run.tool` `run-app`. The file name is `<YYYYMMDDTHHMMSSZ>-<app name>-<first 7 of the app's commit, or unknown>-<SL-101 or SL-102>.json`. Speed Lab's own proof files have no `app` field, and compare keeps them apart.
+
+```sh
+npm run proof:app-self -- --engines chromium --profiles desktop
+```
+
+`proof:app-self` is the known answer, on Speed Lab itself. It builds the app, serves `vite preview` on port 5261, and runs the runner at `http://localhost:5261/?entries=500&latency=600` with `--app speed-lab-self`, `--key __speedProof`, `--page entries`, `--steps click:signin-ann` and Speed Lab's own git commit. `--engines` and `--profiles` are passed through; the default is both engines and both profiles. It then checks the rows:
+
+- SL-101: `source` is `preview`, `firstRowMs` is under 2000, and `fullMs` is a number greater than `firstRowMs`. That is the 500-entry walk at 600 ms per request: the first page is early, the whole list comes later.
+- SL-102: `source` is `device`. The copy kept on the device is what paints after the reload.
+
+It always stops the server. `SPEED_LAB_RUNS` decides where the result files go, as for the runner. The log is `~/Library/Logs/speed-lab-app-self.log`.
 
 ## Live mode
 
