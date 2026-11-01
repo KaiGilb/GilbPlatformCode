@@ -88,6 +88,28 @@ The speed table of the latest run (REAL browser, MOCK vault; vault latency 600 m
 | webkit | phone | B7 slow disk, held 0 ms | 13 |  | device |  |  | 0 |  | 500 | pass |  |  |
 | webkit | phone | B7 slow disk, held 600 ms | 201 |  | device |  |  | 0 |  | 500 | pass |  |  |
 
+## Result files and compare
+
+Every `npm run proof:browser` run ends by writing one result file per test (SL-001 to SL-007) into `runs/` in the app folder (git ignores it). `SPEED_LAB_RUNS=<dir>` names another folder. Files are never overwritten: a name that exists is an error, and then the proof exits non-zero (its own outputs, `proof-out/results-<ts>.json` and the table, are written first). The live tests (SL-008, SL-009) do not write result files yet.
+
+File name: `<run start UTC as YYYYMMDDTHHMMSSZ>-<first 7 of the commit>[-dirty]-<SL id>.json`, for example `20261101T130501Z-db4a9e9-SL-001.json`. If git cannot be read the commit is `unknown` and `dirty` is `null`.
+
+Body (`schema` `speed-lab.result/1`): `test`, `title`, `primary` (the reading that is compared: `firstRowMs`, or `null` for tests that only pass or fail), `run` (`at`, `commit`, `dirty`, `appVersion`, `tool`), `condition` (`browser` REAL, `vault` MOCK, `base`, `entries`, `latencyMs`; the last two are read from the URL query, `null` if absent), `rows` (one per engine, profile and variant: `pass`, `values`, `failed`, `error`) and `pass` (true only if every row passed). An existing proof file can be converted: `node scripts/results.mjs --from proof-out/results-<ts>.json [--commit <sha>]`.
+
+```sh
+npm run compare -- SL-001              # the last 5 runs
+npm run compare -- SL-007 --last 8 --runs <dir>
+```
+
+`compare` reads every result file of that test, sorts by `run.at`, shows the last N (default 5) as one table per engine/profile/variant, and judges the latest run only:
+
+- `FAIL`: that row did not pass.
+- `SLOWER`: the test has a primary reading, the latest reading is more than 1.25 times the median of the earlier shown readings, and it is more than 20 ms above that median. At least 2 earlier readings are needed; with fewer it prints `too few runs to judge` (not a pass).
+- `NO READING`: the latest run has no number for the primary reading.
+- `MISSING IN LATEST`: a row that earlier runs had is absent from the latest run.
+
+It ends with `<id>: no flags (...)` or `<id>: <k> flag(s): ...`. Exit codes: 0 no flags; 1 any flag; 2 bad arguments, an unknown id, or no result files found (it prints `no result files for <id> in <dir> (searched <count> files)`, so an empty search is never read as a pass).
+
 ## Live mode
 
 A second mode of the same app: a real sign-in to GilbPlatform and a real `completeCopy` read of `t:CatalogEntry` in ONE named test vault, and (with `--allow-write`) three writes in that vault. It is chosen at build time (`VITE_PLATFORM=live`); the stand-in mode above is unchanged. Live and stand-in use different device databases (`speedkittaking-live-cache` and `speedkittaking-cache`), so their copies never meet.
