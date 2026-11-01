@@ -23,6 +23,8 @@ export interface OnlineCardField {
   /** The purpose slot / profile kind the server recovered, when it did. */
   slot?: string;
   kind?: string;
+  /** The id of the address (t:PlaceClaim) this part belongs to, as served; absent when the server named none (older server, or not an address part). */
+  composite?: string;
 }
 
 export interface OnlineCardSkill {
@@ -82,7 +84,9 @@ export function parseOnlineCard(principal: string, body: Record<string, unknown>
   const who = principal;
   const fields: OnlineCardField[] = [];
   // The card route can name one value twice (the name postings and the profile fields both carry it, measured on a scratch rig):
-  // the same predicate, value and rung is ONE line for the reader. A different value or rung is never merged.
+  // the same predicate, value and rung is ONE line for the reader. A different value or rung is never merged. A field that names
+  // the address it belongs to (`composite`) is one line only within that address: two addresses that both name one place at one
+  // rung keep one line each. A field with no composite keeps the key it always had.
   const seen = new Set<string>();
   for (const f of Array.isArray(body.fields) ? body.fields : []) {
     if (!f || typeof f !== "object") continue;
@@ -91,12 +95,14 @@ export function parseOnlineCard(principal: string, body: Record<string, unknown>
     const value = text(r.value);
     const predicate = text(r.field);
     if (!predicate || value.trim() === "") continue;
-    const key = JSON.stringify([predicate, value, text(r.rung)]);
+    const composite = text(r.composite).trim() === "" ? "" : text(r.composite);
+    const key = JSON.stringify(composite ? [predicate, value, text(r.rung), composite] : [predicate, value, text(r.rung)]);
     if (seen.has(key)) continue;
     seen.add(key);
     const out: OnlineCardField = { predicate, value, rung: text(r.rung), sourceEntity: text(r.sourceEntity) || null };
     if (typeof r.slot === "string") out.slot = r.slot;
     if (typeof r.kind === "string") out.kind = r.kind;
+    if (composite) out.composite = composite;
     fields.push(out);
   }
   // The person's name first (given, then family), then every other field in the server's own order.
