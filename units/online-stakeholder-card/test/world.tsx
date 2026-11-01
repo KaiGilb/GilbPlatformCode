@@ -54,7 +54,12 @@ export function personFields(rows: readonly (readonly [string, string, string])[
 
 /** Every request the stubbed platform saw, as "METHOD url". */
 export let sent: string[] = [];
-export function stubPlatform(opts: { skills?: string[]; ben?: { given: string; family: string; email?: string | null; nickname?: string | null; birthday?: string | null } } = {}) {
+export function stubPlatform(opts: {
+  skills?: string[];
+  ben?: { given: string; family: string; email?: string | null; nickname?: string | null; birthday?: string | null };
+  /** Extra public-card fields, as the route serves them (an address's parts). Absent: the card is unchanged. */
+  extra?: readonly { field: string; value: string; rung?: string; sourceEntity?: string; composite?: string }[];
+} = {}) {
   sent = [];
   const ben = { given: "Ben", family: "Larsen", email: "ben@example.test", nickname: null, birthday: null, ...opts.ben };
   vi.stubGlobal("fetch", async (u: string, init?: RequestInit) => {
@@ -68,7 +73,15 @@ export function stubPlatform(opts: { skills?: string[]; ben?: { given: string; f
         ben.birthday != null ? { principal: BEN, field: "a:birthday", value: ben.birthday, rung: "public" } : null,
         { principal: BEN, field: "a:familyName", value: ben.family, rung: "public" },
         ben.email != null ? { principal: BEN, field: "a:email", value: ben.email, rung: "public" } : null,
-      ].filter(Boolean);
+      ].filter((f): f is { principal: string; field: string; value: string; rung: string } => f !== null);
+      for (const e of opts.extra ?? []) {
+        const row: { principal: string; field: string; value: string; rung: string; sourceEntity?: string; composite?: string } = {
+          principal: BEN, field: e.field, value: e.value, rung: e.rung ?? "public",
+        };
+        if (e.sourceEntity) row.sourceEntity = e.sourceEntity;
+        if (e.composite) row.composite = e.composite;
+        fields.push(row);
+      }
       return new Response(JSON.stringify({ principal: BEN, fields, skills: (opts.skills ?? []).map((skillUri) => ({ skillUri, rung: "public" })), photoUrl: null }), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.includes("/base/find-by-attribute")) {

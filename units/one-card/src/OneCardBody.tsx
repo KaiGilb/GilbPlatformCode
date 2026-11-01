@@ -11,8 +11,9 @@
  * A link that resolves to nothing, or to an organization's card, is the linked body with one source: the platform's words at the top, no
  * row of theirs (no mark, no legend), and the foot with Unlink.
  *
- * ⛔ No request is added. The controller reads the online card once per open (`useOnlineCardState` loads on mount; a load in flight is
- * shared); the merge is pure. ⛔ Nothing of theirs is written into the record, ever: the theirs rows have no control.
+ * The controller reads the online card once per open (`useOnlineCardState` loads on mount; a load in flight is shared); the merge is
+ * pure. When the card is linked and ready and an address field is named, `useTheirAddresses` asks the host for the address spellings
+ * and the place names. ⛔ Nothing of theirs is written into the record, ever: the theirs rows have no control.
  */
 import { useEffect, type ReactNode } from "react";
 import { bareForm } from "@kaigilb/gilbplatformcode-vocabulary-source";
@@ -20,7 +21,7 @@ import { birthdayText } from "@kaigilb/gilbplatformcode-birthday-text";
 import { LanguageRow } from "@kaigilb/gilbplatformcode-language-row";
 import { referentNameOf, termNameWord } from "@kaigilb/gilbplatformcode-term-name-text";
 import { displayPlacements, type PersonCard } from "@kaigilb/gilbplatformcode-person-connections";
-import type { OneCardField, OneCardGroup, OneCardRow } from "@kaigilb/gilbplatformcode-one-card-merge";
+import type { OneCardField, OneCardGroup, OneCardRow, TheirAddressInput } from "@kaigilb/gilbplatformcode-one-card-merge";
 import type { OnlineCardController } from "@kaigilb/gilbplatformcode-online-card";
 import { OneCardFoot } from "@kaigilb/gilbplatformcode-one-card-rows";
 import { CardGroup } from "@kaigilb/gilbplatformcode-card-group";
@@ -29,6 +30,7 @@ import { useOnlineCardState } from "./useOnlineCardState";
 import { publishTheirPlaces, type TheirPlaceGroup } from "./theirPlaces";
 import { NoOnlineCardFoot } from "./OneCardFind";
 import { useHeldAddresses } from "./heldAddresses";
+import { useTheirAddresses, type TheirAddressView } from "./theirAddresses";
 import { useOneCardHost, type OneCardHost } from "./oneCardHost";
 
 export interface OneCardBodyProps {
@@ -136,6 +138,19 @@ function languageUsedText(row: OneCardRow): ReactNode | null {
   return bareForm(row.field) === "languageUsed" ? <LanguageRow language={row.value} /> : null;
 }
 
+/** `TheirAddressView` as the merge's input. The line is `addressLine` of these parts. */
+function toTheirInput(a: TheirAddressView): TheirAddressInput {
+  return {
+    composite: a.composite,
+    label: a.label,
+    parts: { street: a.street, line1: a.line1, line2: a.line2, postalCode: a.postalCode, city: a.city, region: a.region, country: a.country },
+    countryId: a.countryId,
+    rungs: a.rungs,
+    unread: a.unread,
+    gone: a.gone,
+  };
+}
+
 export function OneCardBody(props: OneCardBodyProps) {
   const { controller, labelFor, searchName, canWrite, children } = props;
   const host = useOneCardHost();
@@ -147,6 +162,10 @@ export function OneCardBody(props: OneCardBodyProps) {
     props.addressVaultId,
     props.addressSubject,
   );
+  // Their addresses are read only for a linked card whose online card is ready and which names an address field.
+  // Until that read is `ready` (still reading, failed, or the host has no address members) the card is exactly as before.
+  const onlineReady = state?.link.state === "linked" && state.online.status === "ready" ? state.online : null;
+  const theirState = useTheirAddresses(!!props.addressPredicate && onlineReady !== null, onlineReady ? onlineReady.card.fields : null);
   if (!controller || !state) return <>{children}</>;
   const linked = state.link.state === "linked";
   if (!linked) {
@@ -170,13 +189,15 @@ export function OneCardBody(props: OneCardBodyProps) {
   let view: OneCardView | null = null;
   let places: TheirPlaceGroup[] = [];
   if (online.status === "ready" && props.servedFacts !== null) {
+    const theirReady = theirState.state === "ready" ? theirState : null;
     const card = oneCardOf({
-      online: online.card,
+      online: theirReady ? { ...online.card, fields: theirReady.rest } : online.card,
       servedFacts: props.servedFacts!,
       fieldOrder: props.fieldOrder,
       skillPredicate: props.skillPredicate,
       addressPredicate: props.addressPredicate ?? null,
       addresses: addresses ?? [],
+      theirAddresses: theirReady ? theirReady.addresses.map(toTheirInput) : undefined,
     });
     // The place groups are taken off the card (and handed to Details below).
     const placeGroups = card.groups.filter((g) => !props.skip(g) && isTheirPlaceGroup(host, g, props.groupOf));
@@ -195,7 +216,11 @@ export function OneCardBody(props: OneCardBodyProps) {
       rowLabel: (kind, g) => (kind === "name" || kind === "record" || kind === "time-zone" || kind === "details" ? (g.label ?? (labelFor(g.field) || null)) : null),
       // A skill is shown by its name (`skillText`). A
       // birthday of theirs reads "14 March" / "14 March 1980" (`theirValueText`).
-      valueText: (row: OneCardRow) => (skill && row.field === skill ? skillText(row.value, labelFor(row.value)) : theirValueText(row)),
+      valueText: (row: OneCardRow) => {
+        // This batch draws the plain address line. The flag and CompactAddress are a later batch.
+        if (row.address) return row.value;
+        return skill && row.field === skill ? skillText(row.value, labelFor(row.value)) : theirValueText(row);
+      },
     };
   }
   const status = statusLine(online.status);

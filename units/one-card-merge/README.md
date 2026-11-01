@@ -8,16 +8,16 @@ Merges a person's published rows with the holder's own rows into one list of gro
 
 Pure functions and types: no fetch, no write, no React, no markup, no clock. An app shows one card per person. What the person publishes (their online card, read live) is "theirs"; the holder's own record, held claims and addresses are "yours". This unit puts the two into the groups of rows the card draws, in the order of the kind's field set, and gives the header its name and photo.
 
-- `mergeOneCard({ online, own, fieldOrder, rungWords?, skillPredicate?, addressPredicate? })`: the merge. Answers `{ header, groups, marks }`.
+- `mergeOneCard({ online, own, fieldOrder, rungWords?, skillPredicate?, addressPredicate?, theirAddresses? })`: the merge. Answers `{ header, groups, marks }`.
   - `online`: their card as `parseOnlineCard` (`online-card`) made it, or `null` when no card is linked. `own`: `{ name?, photo?, facts?, heldClaims?, addresses? }`. `fieldOrder`: the kind's field set in display order (a `StakeholderField` fits).
-  - `rungWords(rung)`: the words for a rung; default `rungChipWords` (`online-card`). `skillPredicate`: the predicate their skills are matched under; without it (also when empty) their skills are shown under the card route's key `skills`, matched with nothing. `addressPredicate`: the field the holder's `own.addresses` belong to; without it `own.addresses` is not read.
+  - `rungWords(rung)`: the words for a rung; default `rungChipWords` (`online-card`). `skillPredicate`: the predicate their skills are matched under; without it (also when empty) their skills are shown under the card route's key `skills`, matched with nothing. `addressPredicate`: the field the holder's `own.addresses` and `theirAddresses` belong to; without it neither `own.addresses` nor `theirAddresses` is read.
   - `groups`: one per field with at least one row, in the set's order, then predicates the set does not know (`known: false`, `many: true`) in the order first met. Each group has `field` (the write spelling), `term`, `label`, `known`, `many`, `bothKept` and `rows`. Rows: theirs first, then yours.
-  - A row: `field`, `value`, `source` (`"theirs"` or `"yours"`), `editable` (yours only), and as they apply `rung` and `rungWords` (theirs), `label` and `labels`, `sameAsTheirs` (their row, and the holder holds an equal value), `notes`, `ownNotes`, `ownLabels`, `claims`.
+  - A row: `field`, `value`, `source` (`"theirs"` or `"yours"`), `editable` (yours only), and as they apply `rung` and `rungWords` (theirs), `label` and `labels`, `sameAsTheirs` (their row, and the holder holds an equal value), `notes`, `ownNotes`, `ownLabels`, `claims`, and `address` (only a theirs row made from a `TheirAddressInput`).
   - `header`: `name`, `nameSource`, `photo`, `photoSource` (each `"theirs"`, `"yours"` or `"none"`) and `linked`. `marks` is true only when an online card is linked.
 - `compareRuleOf(spellings)`: `"email"`, `"phone"`, `"address"` or `"text"` from a field's spellings. `normalizeForCompare(rule, value)`: the form two values are compared in (NFC first; email lower-cased; phone as its international or `national:` key, or `""` when no digit is left; address trimmed, collapsed and case-folded; text trimmed).
 - `addressLine(address)`: the non-empty parts joined by `", "`. `sameAddress(a, b)`: two structured addresses part by part, or one string against the other as lines; an address with nothing in it is never the same as anything.
 - `slotLabel(slot, kind?)`: the purpose a value's slot states, or `null`. `SLOT_PURPOSES`: the five known purposes (`work`, `private`, `personal`, `home`, `mobile`) and their words.
-- Types `OneCardField`, `OwnHeldClaim`, `OwnAddress`, `OwnCard`, `MergeOneCardInput`, `RowSource`, `OneCardRow`, `OneCardGroup`, `IdentitySource`, `OneCardHeader`, `OneCard`, `CompareRule`.
+- Types `OneCardField`, `OwnHeldClaim`, `OwnAddress`, `TheirAddressInput`, `OwnCard`, `MergeOneCardInput`, `RowSource`, `OneCardRow`, `OneCardGroup`, `IdentitySource`, `OneCardHeader`, `OneCard`, `CompareRule`.
 
 ## Their address
 
@@ -27,6 +27,18 @@ Pure functions and types: no fetch, no write, no React, no markup, no clock. An 
   - A `TheirAddress` is `{ composite, label, street, line1, line2, postalCode, placeIds, rungs, partPredicates }`. Of two parts with one predicate the first is kept. `placeIds` are place ids (not names), in server order, no duplicates; `rungs` the distinct rungs of the parts drawn, first-seen order. `addresses` are in the order any of their fields first appears.
 - `theirAddressLine(address)`: the comparable line `addressLine` builds, over street, the two lines and the postal code. The place parts are not in it: only ids are held here and `sameAddress` compares names, so an address of yours with a city, region or country is not equal to this line until the app has read the names.
 - Types `AddressSpellings`, `TheirAddress`.
+
+## Their address as a row (beyond the source)
+
+Beyond the source (Kai, 2026-11-01). `theirAddresses` (`TheirAddressInput[]`) is read only when `addressPredicate` is set. Each entry becomes one theirs row of that field, in input order, before values are matched:
+
+- `value` is `addressLine` of `parts` (city, region and country are place names). When that line is empty, the value is `label`. When both are empty, the address is skipped.
+- `label` and `labels` are `[label]` when the label is non-empty, so the row reads their name for it ("home").
+- `rung` is the parts' rungs joined with `" · "`. `rungWords` is the distinct `rungWords` of each rung, joined the same way.
+- `address` is `{ composite, parts, countryId, unread, gone }`.
+- The row is keyed by `composite`, not by the line, so two addresses with the same line stay two rows.
+- An equal address of yours folds as for any other value (`sameAsTheirs`, claims kept), except a half address (`unread > 0` or `gone > 0`) is never marked `sameAsTheirs` and the own row stays.
+- Without `addressPredicate`, `theirAddresses` is ignored and the merge is the one the caller had.
 
 ## What this is not
 
@@ -78,7 +90,7 @@ card.groups[1].rows; // [ { source: "yours", value: "Engineer", editable: true }
 ## What the host must supply
 
 - The inputs of `mergeOneCard`: `online` (their card, or `null`), `own` (the holder's side; every part optional), `fieldOrder` (the kind's fields in display order).
-- Optionally `rungWords`, `skillPredicate` and `addressPredicate` (see above).
+- Optionally `rungWords`, `skillPredicate`, `addressPredicate` and `theirAddresses` (see above). `theirAddresses` is read only together with `addressPredicate`.
 - Nothing else. No setting, no start-up call, no network, no CSS.
 
 ## Module state
@@ -106,7 +118,7 @@ These behaviours are as the source has them, kept on purpose and pinned by tests
 - "Both kept appears whenever both sides have a value." It is claimed only for a one-value field that holds a value of theirs and a different value of yours.
 - "A `same` row shows my label." It shows THEIR labels; the holder's are in `ownLabels`.
 - "A label is the slot's name." Only a known purpose is a label: one app's own email slots, or `<kind>-<purpose>` with a purpose in `SLOT_PURPOSES`. `email-long` has none.
-- "`own.addresses` is always read." Only when `addressPredicate` is named.
+- "`own.addresses` is always read." Only when `addressPredicate` is named. `theirAddresses` is the same: ignored unless that field is named. A half address of theirs is never "the same" as one of yours.
 
 ## Where it came from
 

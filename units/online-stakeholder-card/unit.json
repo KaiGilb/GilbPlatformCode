@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/online-stakeholder-card",
   "package": "@kaigilb/gilbplatformcode-online-stakeholder-card",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "purpose": "Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -21,7 +21,8 @@
     "`ONLINE_ROW_TYPE` (GilbApp `src/components/records/onlineStakeholders.ts:257`, a fragment) is a private constant of the file, the same literal `\"t:Person\"`, declared after `PERSON`.",
     "Six host members are added (the interface `OnlineStakeholderCardHost`, its context and `useOnlineStakeholderCardHost()`, which throws an error naming the missing provider): the hook `useShell`, the callback `refreshOnlineStakeholders`, `photoReadKeysSync`, and the three hosts the peers take as an argument: `doors` (`StakeholderListDoorsHost`), `person` (`PersonCreateHost`) and `vocabulary` (`CardVocabularyHost`). The component begins with `const host = useOnlineStakeholderCardHost();` (a context read before the source's first statement). `useShell()` is `host.useShell()`, `refreshOnlineStakeholders()` is `host.refreshOnlineStakeholders()` (three calls), `photoReadKeysSync()` is `host.photoReadKeysSync()`, `stakeholderCardVocabularyQuery()` is `stakeholderCardVocabularyQuery(host.vocabulary)`, `linkedRecordsOf(holder!, ...)` is `linkedRecordsOf(host.doors, holder!, ...)`, `recordPerson(deps, input)` is `recordPerson(host.person, deps, input)` and `afterRecordPerson(qc, made)` is `afterRecordPerson(host.person, qc, made)` (two calls). Same place, same other arguments.",
     "Comments made generic (cycle, ticket and agent tags and names removed); no code change.",
-    "Nothing else changed: the hook order, the person-card query options and key, the exported messages and the markup are the source's."
+    "Nothing else changed: the hook order, the person-card query options and key, the exported messages and the markup are the source's.",
+    "Beyond the source (Kai, 2026-11-01): `addressPredicate` passed to `OneCardBody` is the address field's write key (`fieldOfTerm(fields, \"postalAddress\")?.writeKey ?? null`), as `skillPredicate` is passed for the skill. The field set's term for that field is `postalAddress`. With one-card 0.3.2 their address is one row of that group and the raw part rows are not drawn."
   ],
   "newFiles": [
     "src/index.ts",

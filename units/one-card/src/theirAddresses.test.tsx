@@ -126,6 +126,7 @@ describe("useTheirAddresses", () => {
     expect(result.current).toEqual({
       state: "ready",
       loose: [],
+      rest: [],
       addresses: [
         expect.objectContaining({
           composite: "E1",

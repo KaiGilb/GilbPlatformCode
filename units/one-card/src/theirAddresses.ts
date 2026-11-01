@@ -1,11 +1,12 @@
 /**
  * The addresses of theirs on the online card, with the names of the places they bind, and an honest count when a place
- * was not read or is gone. No drawing: the card's body is unchanged.
+ * was not read or is gone. Drawing is `OneCardBody`'s: this hook only reads.
  *
  * ⛔ Off (no request) unless the read is enabled, the fields are in hand, and the host has both `addressSpellings` and
  * `readPlaceNames`. Absent either member, the card stays as before.
  * ⛔ A rejected spelling read is `failed`, never an empty address list: "no address" must not come from a failed read.
  * ⛔ Names are not handed back until every asked id has an answer. An empty answer is "not read", not "no place".
+ * `ready` also returns `rest`: the input fields minus every field that went into an address.
  * Beyond the source (Kai, 2026-11-01).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,7 +28,7 @@ export type TheirAddressesState =
   | { state: "off" } // host has no addressSpellings/readPlaceNames, or not enabled, or fields null
   | { state: "reading" } // spellings or names not answered yet
   | { state: "failed" } // spellings rejected: we cannot tell which fields are address parts
-  | { state: "ready"; addresses: TheirAddressView[]; loose: OnlineCardField[] };
+  | { state: "ready"; addresses: TheirAddressView[]; loose: OnlineCardField[]; rest: OnlineCardField[] };
 
 type SpellingsState = { state: "ready"; value: AddressSpellings } | { state: "failed" };
 type SpellingsCache =
@@ -159,7 +160,16 @@ export function useTheirAddresses(enabled: boolean, fields: readonly OnlineCardF
     if (spellings.state === "failed") return { state: "failed" };
     if (!grouped) return { state: "reading" };
     if (asked.length > 0 && !(reads && reads.key === key)) return { state: "reading" };
+    if (fields === null || spellings.state !== "ready") return { state: "reading" };
     const rows = asked.length > 0 ? reads!.rows : [];
-    return { state: "ready", addresses: grouped.addresses.map((a) => viewOf(a, asked, rows)), loose: grouped.loose };
-  }, [on, spellings, grouped, asked, reads, key]);
+    const ids = new Set(grouped.addresses.map((a) => a.composite));
+    const spell = spellings.value;
+    const partPreds = new Set<string>([spell.streetLine, spell.addressLine1, spell.addressLine2, spell.postalCode, spell.claimPlace]);
+    const rest = fields.filter((f) => {
+      if (f.predicate === spell.label && !!f.sourceEntity && ids.has(f.sourceEntity)) return false;
+      if (partPreds.has(f.predicate) && !!f.composite && ids.has(f.composite)) return false;
+      return true;
+    });
+    return { state: "ready", addresses: grouped.addresses.map((a) => viewOf(a, asked, rows)), loose: grouped.loose, rest };
+  }, [on, spellings, grouped, asked, reads, key, fields]);
 }
