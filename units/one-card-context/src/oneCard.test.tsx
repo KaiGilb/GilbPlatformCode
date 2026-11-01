@@ -267,6 +267,28 @@ describe("oneCardOf", () => {
     const withName = oneCardOf({ online: null, servedFacts: {}, fieldOrder: [ADDR], skillPredicate: null, addressPredicate: "a:postalAddress", addresses });
     expect(withName.groups[0]!.rows[0]).toMatchObject({ value: "Main St 1, Oslo", source: "yours", claims: ["e1"] });
   });
+  it("passes their addresses into the merge when the address field is named, and ignores them otherwise", () => {
+    const P = "https://ann.example.test/";
+    const card = parseOnlineCard(P, { fields: [{ principal: P, field: "a:email", value: "ann@example.test", rung: "public" }] });
+    const theirAddresses = [{
+      composite: "E1",
+      label: "home",
+      parts: { street: "Gladvollveien 38c", city: "Oslo", region: "Oslo", country: "Norway" },
+      countryId: "norway",
+      rungs: ["public"],
+      unread: 0,
+      gone: 0,
+    }];
+    const passed = oneCardOf({ online: card, servedFacts: {}, fieldOrder: [EMAIL, ADDR], skillPredicate: null, addressPredicate: "a:postalAddress", theirAddresses });
+    expect(passed.groups.find((g) => g.field === "a:postalAddress")?.rows[0]).toMatchObject({
+      source: "theirs",
+      value: "Gladvollveien 38c, Oslo, Oslo, Norway",
+      label: "home",
+    });
+    const ignored = oneCardOf({ online: card, servedFacts: {}, fieldOrder: [EMAIL, ADDR], skillPredicate: null, theirAddresses });
+    const plain = oneCardOf({ online: card, servedFacts: {}, fieldOrder: [EMAIL, ADDR], skillPredicate: null });
+    expect(ignored).toEqual(plain);
+  });
 });
 
 describe("OwnFieldRow", () => {

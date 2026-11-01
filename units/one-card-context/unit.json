@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/one-card-context",
   "package": "@kaigilb/gilbplatformcode-one-card-context",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Holds the merged person card for the rows below it, so a card group can draw a person's rows beside the holder's.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -13,7 +13,8 @@
   },
   "namedChanges": [
     "The imports are the peers': `mergeOneCard` and the types `OneCard`, `OneCardField`, `OneCardGroup`, `OneCardRow`, `OwnAddress` from `@kaigilb/gilbplatformcode-one-card-merge`; the type `OnlineCard` from `@kaigilb/gilbplatformcode-online-card` (in the source all of them came from `gilb-stakeholders`); `YourRow` from `@kaigilb/gilbplatformcode-one-card-rows` (source: `gilb-stakeholders-ui`); `useCardMode` from `@kaigilb/gilbplatformcode-card-mode` (source: `./cardMode`).",
-    "Comments made generic (cycle, step, tester and design-note tags, dates and person names removed); no code change. No string literal carries a tag."
+    "Comments made generic (cycle, step, tester and design-note tags, dates and person names removed); no code change. No string literal carries a tag.",
+    "Beyond the source (Kai, 2026-11-01): `oneCardOf` takes `theirAddresses` (`TheirAddressInput` of `one-card-merge`) and passes it to `mergeOneCard`. Nothing else. The merge reads them only when `addressPredicate` is set."
   ],
   "newFiles": [
     "src/index.ts"

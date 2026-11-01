@@ -16,7 +16,7 @@ React context and pure helpers. A person linked to an online card is one card: t
 - `useFoldedClaims(kind)`: the held claims (by entity) the merge folded into a row of theirs in this group; an empty set outside the one card.
 - `OwnFieldRow({ kind, term?, value, fold?, children })`: one of the card's own editors in the one card. Outside it, the editor alone. Presented and empty, the editor alone. Presented and folded into a row of theirs (and `fold` not false), nothing. Otherwise the editor inside `YourRow` (a box with `data-source="yours"` when two sources are shown).
 - `placeOneCard(card, groupOf, skip?, order?)`: which of the card's own groups each merged group is drawn in; returns `{ byKind, own }`. A group the card draws nowhere gets the kind `theirs:<predicate>`, and only when it has a row of theirs.
-- `oneCardOf({ online, servedFacts, fieldOrder, skillPredicate, addressPredicate?, addresses? })`: the merge's input from what the card already holds, and `mergeOneCard`'s output. `online` null means one source and no marks.
+- `oneCardOf({ online, servedFacts, fieldOrder, skillPredicate, addressPredicate?, addresses?, theirAddresses? })`: the merge's input from what the card already holds, and `mergeOneCard`'s output. `online` null means one source and no marks. `theirAddresses` is passed through; the merge reads it only when `addressPredicate` is set.
 - `ownMarksOf(kind)`: `"rows"` for the groups whose own editors carry a mark each, `"none"` for `my-note` and `how-we-met`, `"block"` for the rest.
 - `foldedInto(groups, value)`: is a value of yours folded into a row of theirs?
 - Types: `OneCardView`, `PlacedGroup`, `GroupOfTerm`, `OwnMarks`.

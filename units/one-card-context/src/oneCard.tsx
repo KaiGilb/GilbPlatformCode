@@ -14,7 +14,7 @@
  * passed in: their reads stay where they are.
  */
 import { createContext, useContext, type ReactNode } from "react";
-import { mergeOneCard, type OneCard, type OneCardField, type OneCardGroup, type OneCardRow, type OwnAddress } from "@kaigilb/gilbplatformcode-one-card-merge";
+import { mergeOneCard, type OneCard, type OneCardField, type OneCardGroup, type OneCardRow, type OwnAddress, type TheirAddressInput } from "@kaigilb/gilbplatformcode-one-card-merge";
 import type { OnlineCard } from "@kaigilb/gilbplatformcode-online-card";
 import { YourRow } from "@kaigilb/gilbplatformcode-one-card-rows";
 import { useCardMode } from "@kaigilb/gilbplatformcode-card-mode";
@@ -173,6 +173,8 @@ export function oneCardOf(input: {
   /** The address field's write spelling, and the holder's held addresses of this person. */
   addressPredicate?: string | null;
   addresses?: readonly OwnAddress[];
+  /** Addresses of theirs, parts already named. Passed through; the merge reads them only when `addressPredicate` is set. */
+  theirAddresses?: readonly TheirAddressInput[];
 }): OneCard {
   return mergeOneCard({
     online: input.online,
@@ -180,6 +182,7 @@ export function oneCardOf(input: {
     fieldOrder: input.fieldOrder,
     skillPredicate: input.skillPredicate,
     addressPredicate: input.addressPredicate ?? null,
+    theirAddresses: input.theirAddresses,
   });
 }
 
