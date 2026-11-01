@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-section-menu",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "The section menu: a header button that says where you are, and a large panel that opens at once on hover or tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.",

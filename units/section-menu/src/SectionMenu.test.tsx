@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
-import { HOVER_INTENT_MS, SectionMenu, type SectionMenuHandle, type SectionMenuProps } from "./SectionMenu";
+import { HOVER_INTENT_MS, HOVER_OPEN_DELAY_MS, SectionMenu, type SectionMenuHandle, type SectionMenuProps } from "./SectionMenu";
 import { placesFor, visibleSections, type MenuOption, type MenuSection } from "./menuList";
 
 type Id = "home" | "notes" | "files";
@@ -132,10 +132,12 @@ describe("SectionMenu", () => {
       expect(screen.getByTestId("section-menu-here-tag").textContent).toBe("You are here");
     });
 
-    test("a fine pointer that can hover opens it on enter; the click that follows keeps it open", () => {
+    test("a fine pointer that rests on the button opens it after the delay; the click that follows keeps it open", () => {
+      vi.useFakeTimers();
       hoverable = true;
       renderMenu();
       fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS + 10); });
       expect(isOpen()).toBe(true);
       fireEvent.click(trigger());
       expect(isOpen()).toBe(true);
@@ -144,6 +146,64 @@ describe("SectionMenu", () => {
       fireEvent.click(trigger());
       expect(isOpen()).toBe(false);
       now.mockRestore();
+      vi.useRealTimers();
+    });
+
+    test("a pointer that only swipes across the button opens nothing (it leaves before the delay)", () => {
+      vi.useFakeTimers();
+      hoverable = true;
+      renderMenu();
+      fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS - 50); });
+      expect(isOpen()).toBe(false);
+      fireEvent.pointerLeave(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS * 5); });
+      expect(isOpen()).toBe(false);
+      vi.useRealTimers();
+    });
+
+    test("the delay restarts on each entry: leaving and coming back does not add up the two visits", () => {
+      vi.useFakeTimers();
+      hoverable = true;
+      renderMenu();
+      fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS - 50); });
+      fireEvent.pointerLeave(trigger(), { pointerType: "mouse" });
+      fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS - 50); });
+      expect(isOpen()).toBe(false);
+      act(() => { vi.advanceTimersByTime(60); });
+      expect(isOpen()).toBe(true);
+      vi.useRealTimers();
+    });
+
+    test("a click while the hover is still pending opens at once, and the later hover timer does not undo it", () => {
+      vi.useFakeTimers();
+      hoverable = true;
+      renderMenu();
+      fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      fireEvent.click(trigger());
+      expect(isOpen()).toBe(true);
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS * 3); });
+      expect(isOpen()).toBe(true);
+      // That click was a real click, not the tail of a hover-open: a second click closes it.
+      fireEvent.click(trigger());
+      expect(isOpen()).toBe(false);
+      vi.useRealTimers();
+    });
+
+    test("closing while the hover is pending (Esc, Close) leaves nothing to open it again", () => {
+      vi.useFakeTimers();
+      hoverable = true;
+      renderMenu();
+      fireEvent.click(trigger());
+      expect(isOpen()).toBe(true);
+      fireEvent.pointerLeave(trigger(), { pointerType: "mouse" });
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(isOpen()).toBe(false);
+      act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS * 3); });
+      expect(isOpen()).toBe(false);
+      vi.useRealTimers();
     });
 
     test("touch does not open on enter, and nothing opens on enter where hover is coarse", () => {

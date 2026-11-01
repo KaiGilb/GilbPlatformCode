@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HOVER_CLICK_GRACE_MS, HOVER_INTENT_MS, SectionMenu, type SectionMenuProps } from "./SectionMenu";
+import { HOVER_CLICK_GRACE_MS, HOVER_INTENT_MS, HOVER_OPEN_DELAY_MS, SectionMenu, type SectionMenuProps } from "./SectionMenu";
 import { menuCommands, type MenuOption, type MenuSection } from "./menuList";
 
 type Id = "home" | "notes";
@@ -87,6 +87,7 @@ describe("round 5 probes", () => {
     renderMenu();
     const t = screen.getByTestId("section-menu-trigger");
     fireEvent.pointerEnter(t, { pointerType: "mouse" });
+    act(() => { vi.advanceTimersByTime(HOVER_OPEN_DELAY_MS + 10); });
     expect(isOpen()).toBe(true);
     const home = panel().querySelector<HTMLElement>('[data-section="home"]')!;
     fireEvent.mouseEnter(home);

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
-import { SectionMenu, type SectionMenuProps } from "./SectionMenu";
+import { HOVER_OPEN_DELAY_MS, SectionMenu, type SectionMenuProps } from "./SectionMenu";
 import { forYouFor, menuCommands, menuOptionsOf, placesFor, visibleSections, type MenuList, type MenuOption, type MenuSection } from "./menuList";
 import { createIntentChannel, type Intent } from "./intent";
 
@@ -87,21 +87,23 @@ describe("round 3 — OptionList glyphs", () => {
 });
 
 describe("round 3 — opening and the pointer", () => {
-  test("R4 hover-open does not close when the pointer leaves the button or the panel", () => {
+  test("R4 hover-open does not close when the pointer leaves the button or the panel", async () => {
     hoverable = true;
     render(<SectionMenu {...props()} />);
     fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     expect(isOpen()).toBe(true);
     fireEvent.pointerLeave(trigger(), { pointerType: "mouse" });
     fireEvent.mouseLeave(trigger());
     fireEvent.mouseLeave(panel());
     expect(isOpen()).toBe(true);
   });
-  test("R5 hover-open, then a click after the grace closes it", () => {
+  test("R5 hover-open, then a click after the grace closes it", async () => {
     hoverable = true;
     vi.useFakeTimers({ toFake: ["Date"] });
     render(<SectionMenu {...props()} />);
     fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     vi.setSystemTime(Date.now() + 700);
     fireEvent.click(trigger());
     expect(isOpen()).toBe(false);
