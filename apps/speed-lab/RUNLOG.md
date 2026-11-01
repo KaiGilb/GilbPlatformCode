@@ -1,3 +1,5 @@
+2026-11-01: renamed from apps/speed-kit-taking-app to apps/speed-lab (Speed Lab, SL-1). Entries below keep the old name.
+
 # RUNLOG: Batch S2-A (Agent.Coder, Sonnet)
 
 - Start: 2026-10-30T13:16:52Z. End: 2026-10-30T13:27Z (the date -u before the commit is in the handback).

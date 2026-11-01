@@ -9,7 +9,7 @@ import { chromium, devices, webkit } from "playwright-core";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = process.env.PROOF_OUT ?? join(APP, "proof-out"); // next to the app, ignored by git; PROOF_OUT overrides
-const LOG = join(homedir(), "Library/Logs/speed-kit-taking-app-proof.log");
+const LOG = join(homedir(), "Library/Logs/speed-lab-proof.log");
 const PORT = 5261;
 const BASE = `http://localhost:${PORT}/`;
 const QUERY = "?entries=500&latency=600";
