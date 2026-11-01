@@ -1,4 +1,4 @@
-// The address field's write key is handed to the one card, so their address is one row of that group.
+// The address field's write key is handed to the one card, so their address is one row of that group, drawn as lines.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import type { AddressSpellings } from "@kaigilb/gilbplatformcode-one-card-merge";
@@ -14,7 +14,6 @@ import { reset, VOCAB } from "../test/mocks";
 import { setUp, tearDown } from "../test/support";
 import { draw, oneCardHost, personFields, stubPlatform } from "../test/world";
 
-const LINE = "Gladvollveien 38c, Oslo, Oslo, Norway";
 const S: AddressSpellings = {
   label: "a:placeClaimLabel",
   streetLine: "a:streetLine",
@@ -63,10 +62,13 @@ afterEach(() => {
 describe("their address on the online stakeholder card", () => {
   it("OneCardBody receives the address field's write key", async () => {
     draw();
-    const value = await screen.findByText(LINE);
-    const row = value.closest("[data-testid='one-card-row']") as HTMLElement;
+    const street = await screen.findByTestId("their-address-street");
+    expect(street).toHaveTextContent("Gladvollveien 38c");
+    expect(screen.getByTestId("their-address-postal-city")).toHaveTextContent("Oslo");
+    expect(screen.getByTestId("their-address-region-country")).toHaveTextContent("Oslo, Norway");
+    const row = street.closest("[data-testid='one-card-row']") as HTMLElement;
     expect(row.querySelector("[data-testid='one-card-row-label']")?.textContent).toBe("home");
-    expect(value.closest("[data-testid='card-group']")?.getAttribute("data-group")).toBe("theirs:a:postalAddress");
+    expect(street.closest("[data-testid='card-group']")?.getAttribute("data-group")).toBe("theirs:a:postalAddress");
     const values = screen.getAllByTestId("one-card-row-value").map((el) => el.textContent);
     expect(values).not.toContain("Gladvollveien 38c");
   });

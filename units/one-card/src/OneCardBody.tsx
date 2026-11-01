@@ -31,6 +31,7 @@ import { publishTheirPlaces, type TheirPlaceGroup } from "./theirPlaces";
 import { NoOnlineCardFoot } from "./OneCardFind";
 import { useHeldAddresses } from "./heldAddresses";
 import { useTheirAddresses, type TheirAddressView } from "./theirAddresses";
+import { TheirAddressLines } from "./TheirAddressLines";
 import { useOneCardHost, type OneCardHost } from "./oneCardHost";
 
 export interface OneCardBodyProps {
@@ -88,6 +89,8 @@ function PublishTheirPlaces({ recordUri, groups }: { recordUri: string; groups: 
 }
 
 const LOADING = "Loading their online card…";
+const READING_THEIR_ADDRESS = "Reading their address…";
+const THEIR_ADDRESS_FAILED = "Their address could not be read right now.";
 
 /** The status of their card while it is not ready, in the frame's own words. */
 function statusLine(status: string): { text: string; alert: boolean } | null {
@@ -163,7 +166,8 @@ export function OneCardBody(props: OneCardBodyProps) {
     props.addressSubject,
   );
   // Their addresses are read only for a linked card whose online card is ready and which names an address field.
-  // Until that read is `ready` (still reading, failed, or the host has no address members) the card is exactly as before.
+  // `ready` merges from `rest` and the addresses. `reading` with `rest` (spellings known) merges from `rest` only, so the
+  // raw part rows are already gone. Before the spellings, and on `failed` or `off`, the card is the online card as served.
   const onlineReady = state?.link.state === "linked" && state.online.status === "ready" ? state.online : null;
   const theirState = useTheirAddresses(!!props.addressPredicate && onlineReady !== null, onlineReady ? onlineReady.card.fields : null);
   if (!controller || !state) return <>{children}</>;
@@ -190,8 +194,10 @@ export function OneCardBody(props: OneCardBodyProps) {
   let places: TheirPlaceGroup[] = [];
   if (online.status === "ready" && props.servedFacts !== null) {
     const theirReady = theirState.state === "ready" ? theirState : null;
+    // `[]` is a real rest (every field was an address part). Absent means the spellings are not known yet.
+    const theirRest = theirReady?.rest ?? (theirState.state === "reading" ? theirState.rest : undefined);
     const card = oneCardOf({
-      online: theirReady ? { ...online.card, fields: theirReady.rest } : online.card,
+      online: theirRest !== undefined ? { ...online.card, fields: theirRest } : online.card,
       servedFacts: props.servedFacts!,
       fieldOrder: props.fieldOrder,
       skillPredicate: props.skillPredicate,
@@ -217,8 +223,8 @@ export function OneCardBody(props: OneCardBodyProps) {
       // A skill is shown by its name (`skillText`). A
       // birthday of theirs reads "14 March" / "14 March 1980" (`theirValueText`).
       valueText: (row: OneCardRow) => {
-        // This batch draws the plain address line. The flag and CompactAddress are a later batch.
-        if (row.address) return row.value;
+        // Lines and the flag, copied from address-card-parts `compactLines` / CompactAddress. Not the plain one-line value.
+        if (row.address) return <TheirAddressLines address={row.address} />;
         return skill && row.field === skill ? skillText(row.value, labelFor(row.value)) : theirValueText(row);
       },
     };
@@ -247,6 +253,12 @@ export function OneCardBody(props: OneCardBodyProps) {
               </button>
             ) : null}
           </div>
+        ) : null}
+        {theirState.state === "reading" || theirState.state === "failed" ? (
+          // Only while their address is being read or the read failed. Never a claim that there is no address.
+          <p role="status" aria-live="polite" className="m-0 text-[13px] text-[var(--ink-soft)]" data-testid="their-address-status">
+            {theirState.state === "reading" ? READING_THEIR_ADDRESS : THEIR_ADDRESS_FAILED}
+          </p>
         ) : null}
         {state.error ? (
           <p role="alert" className="text-[13px] text-[var(--warn)]" data-testid="one-card-error">

@@ -92,13 +92,18 @@ describe("useTheirAddresses", () => {
     host.readPlaceNames!.mockImplementation(() => new Promise((res) => { resolveNames = res; }));
     const { result } = renderTheir(host, true, homeFields);
     expect(result.current).toEqual({ state: "reading" });
+    expect(result.current).not.toHaveProperty("rest");
     await waitFor(() => expect(host.addressSpellings).toHaveBeenCalledTimes(1));
     expect(host.readPlaceNames).not.toHaveBeenCalled();
     expect(result.current.state).toBe("reading");
+    expect(result.current).not.toHaveProperty("rest");
 
     await act(async () => { resolveSpellings(S); });
     await waitFor(() => expect(host.readPlaceNames).toHaveBeenCalledTimes(1));
     expect(result.current.state).toBe("reading");
+    // Spellings are known: the same rest a ready read would return, so the raw part rows can leave before the names.
+    if (result.current.state !== "reading") throw new Error("not reading");
+    expect(result.current.rest?.map((f) => f.value)).toEqual([]);
 
     const asked = host.readPlaceNames!.mock.calls[0]![0];
     await act(async () => { resolveNames(rowsFor(asked)); });
