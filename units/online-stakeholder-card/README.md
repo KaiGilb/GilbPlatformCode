@@ -194,6 +194,7 @@ Named, and only these (also in `unit.json`; the comment-stripped diff against th
    - `afterRecordPerson(qc, made)` becomes `afterRecordPerson(host.person, qc, made)` (two calls).
 4. Comments are generic (cycle, ticket and agent tags and names removed).
 5. 0.1.1: `skillPredicate` is the skill field's write key (`fieldOfTerm(fields, "skill")?.writeKey ?? null`, as the record card passes it), not `null`: a skill of theirs draws by its name, not its address, in a group titled with the field's label.
+6. 0.1.6: `addressPredicate` is the address field's write key (`fieldOfTerm(fields, "postalAddress")?.writeKey ?? null`). The field set names that term `postalAddress`. With one-card 0.3.2 their address is one row of that group and the raw part rows are not drawn.
 
 `deleteRecord`, `idFromEntityUri` and `idFromUri` are the peers' own and take no host. No origin is held at load in this file, so no setting unit changed.
 
@@ -216,6 +217,10 @@ Kept as the app has them (RuleGhsKeepQuirks), for the owner:
 ## Changes in 0.1.3
 
 - devDependencies only: the units `one-card` 0.2.0 now needs (`flag-choice`, `language-fetch-pool`, `flag-source`, `flag-image`, `language-entry`, `language-row`), so the installed card resolves them in the tests. The peer `one-card` is now `^0.2.0`. The install line is the output of `peers.mjs` again. No source or test changed.
+
+## Changes in 0.1.6
+
+Beyond the source (Kai, 2026-11-01). `OneCardBody` is given `addressPredicate={fieldOfTerm(fields, "postalAddress")?.writeKey ?? null}`, the same way `skillPredicate` is given for the skill. The term in the field set is `postalAddress` (write key `a:postalAddress`). Their address is then one row of that group when the host supplies `addressSpellings` and `readPlaceNames` (one-card 0.3.2); the raw "Place Claim Label" row is not drawn. A host without those members leaves the card as before.
 
 ## Changes in 0.1.4
 

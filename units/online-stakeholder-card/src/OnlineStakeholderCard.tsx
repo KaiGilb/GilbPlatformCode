@@ -338,6 +338,7 @@ export function OnlineStakeholderCard({ principal, placementMode }: OnlineStakeh
           fieldOrder={shownFieldOrder}
           servedFacts={{}}
           skillPredicate={fieldOfTerm(fields, "skill")?.writeKey ?? null}
+          addressPredicate={fieldOfTerm(fields, "postalAddress")?.writeKey ?? null}
           groupOf={groupOf}
           skip={skip}
           order={order}
