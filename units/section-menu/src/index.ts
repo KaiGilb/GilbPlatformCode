@@ -7,6 +7,7 @@ export {
   Kbd,
   DEFAULT_LABELS,
   HOVER_INTENT_MS,
+  HOVER_OPEN_DELAY_MS,
   HOVER_CLICK_GRACE_MS,
   CLOSE_MIN_WIDTH,
   type SectionMenuProps,

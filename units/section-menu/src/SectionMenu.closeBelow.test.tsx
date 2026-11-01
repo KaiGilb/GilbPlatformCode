@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CLOSE_MIN_WIDTH, HOVER_CLICK_GRACE_MS, SectionMenu } from "./SectionMenu";
+import { CLOSE_MIN_WIDTH, HOVER_CLICK_GRACE_MS, HOVER_OPEN_DELAY_MS, SectionMenu } from "./SectionMenu";
 import type { MenuSection } from "./menuList";
 
 type Id = "notes" | "files";
@@ -151,6 +151,7 @@ describe("the menu opens by the button and closes by Close, Esc and the dimmed e
     window.matchMedia = ((q: string) => ({ matches: q.includes("hover: hover"), media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
     renderMenu();
     fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     expect(isOpen()).toBe(true);
     await frame();
     // Well inside the grace window that keeps a hover-open menu open on the button's own click.

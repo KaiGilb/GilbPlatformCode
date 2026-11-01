@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState, type ReactNode } from "react";
 import axe from "axe-core";
-import { HOVER_INTENT_MS, SectionMenu, type SectionMenuProps } from "./SectionMenu";
+import { HOVER_INTENT_MS, HOVER_OPEN_DELAY_MS, SectionMenu, type SectionMenuProps } from "./SectionMenu";
 import { menuCommands, menuOptionsOf, placesFor, visibleSections, type MenuOption, type MenuSection } from "./menuList";
 import { createIntentChannel, type Intent } from "./intent";
 
@@ -175,6 +175,7 @@ describe("ported — SectionMenu", () => {
     hoverable = true;
     renderMenu();
     fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     expect(isOpen()).toBe(true);
     await frame();
     fireEvent.keyDown(document, { key: "Escape" });

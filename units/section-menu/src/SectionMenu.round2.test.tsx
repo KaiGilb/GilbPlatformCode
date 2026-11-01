@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, createRef, useState } from "react";
-import { SectionMenu, type SectionMenuHandle, type SectionMenuProps } from "./SectionMenu";
+import { HOVER_OPEN_DELAY_MS, SectionMenu, type SectionMenuHandle, type SectionMenuProps } from "./SectionMenu";
 import { forYouFor, menuCommands, menuOptionsOf, placesFor, visibleSections, type MenuOption, type MenuSection } from "./menuList";
 import { createIntentChannel, type Intent } from "./intent";
 
@@ -118,12 +118,14 @@ describe("round 2 — SectionMenu", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
-  test("Q7 touch/pen pointer enter does not open; mouse with fine hover does", () => {
+  test("Q7 touch/pen pointer enter does not open; mouse with fine hover does", async () => {
     hoverable = true;
     render(<SectionMenu {...props()} />);
     fireEvent.pointerEnter(trigger(), { pointerType: "touch" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     expect(isOpen()).toBe(false);
     fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+    await act(() => new Promise<void>((r) => setTimeout(r, HOVER_OPEN_DELAY_MS + 30)));
     expect(isOpen()).toBe(true);
   });
 

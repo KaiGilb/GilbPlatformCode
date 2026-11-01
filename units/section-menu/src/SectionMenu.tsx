@@ -4,7 +4,8 @@
  * (`menuList.ts`) and its acts through `api`; this component draws them and owns the behaviour.
  *
  * Behaviour:
- *  • Opens on pointer enter where the pointer can hover finely, and on click or tap everywhere.
+ *  • Opens when a pointer that can hover finely rests on the button ~200 ms (a swipe across it opens
+ *    nothing), and at once on click or tap everywhere.
  *    It does NOT close when the pointer leaves: it is too big for that.
  *  • Instant: the panel is always mounted, and opening it is a class change. Nothing here fetches.
  *  • Closes with Close, Esc, a click on the dimmed edge, or any choice; focus returns to the
@@ -33,6 +34,12 @@ import { openColors, parseCssColor, type OpenColors } from "./openColors";
 
 /** How long the pointer must rest on a section before its options are previewed. */
 export const HOVER_INTENT_MS = 120;
+/**
+ * How long the pointer must rest ON THE BUTTON before the menu opens. A pointer that only swipes
+ * across the button on its way elsewhere leaves before this runs out, and nothing opens (Kai
+ * 2026-11-01). Click, tap and keyboard are not delayed.
+ */
+export const HOVER_OPEN_DELAY_MS = 200;
 /** A click this soon after a hover opened the menu is the same gesture, not a request to close. */
 export const HOVER_CLICK_GRACE_MS = 600;
 
@@ -192,6 +199,14 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     hoverTimer.current = null;
   };
 
+  // The pending hover-open on the button. Its own timer, so clearing the row preview (clearHover) never
+  // cancels it and cancelling it never touches the preview.
+  const openTimer = useRef<number | null>(null);
+  const clearOpenTimer = () => {
+    if (openTimer.current !== null) window.clearTimeout(openTimer.current);
+    openTimer.current = null;
+  };
+
   // When the pointer's enter opened the menu, the click that usually follows must not close it.
   const hoverOpenedAt = useRef(0);
 
@@ -203,6 +218,7 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 
   const close = useCallback(() => {
     clearHover();
+    clearOpenTimer();
     setOpen(false);
     triggerRef.current?.focus({ preventScroll: true });
   }, []);
@@ -294,7 +310,7 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     };
   }, [open, close]);
 
-  useEffect(() => clearHover, []);
+  useEffect(() => () => { clearHover(); clearOpenTimer(); }, []);
 
   // Read the accent and the two text tokens as drawn on each opening (a theme may have changed them while closed).
   useLayoutEffect(() => {
@@ -424,11 +440,20 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
         data-testid="section-menu-trigger"
         onPointerEnter={(e) => {
           if (e.pointerType === "mouse" && canHoverOpen() && !open) {
-            hoverOpenedAt.current = Date.now();
-            show();
+            // Open only if the pointer is still here after the delay: a swipe across the button on the
+            // way elsewhere leaves first (onPointerLeave) and opens nothing.
+            clearOpenTimer();
+            openTimer.current = window.setTimeout(() => {
+              openTimer.current = null;
+              hoverOpenedAt.current = Date.now();
+              show();
+            }, HOVER_OPEN_DELAY_MS);
           }
         }}
+        onPointerLeave={clearOpenTimer}
         onClick={() => {
+          // A click is not delayed: it takes over from a pending hover-open and opens (or closes) now.
+          clearOpenTimer();
           // The click that follows a hover-open keeps it open; a later click closes it.
           if (open && Date.now() - hoverOpenedAt.current < HOVER_CLICK_GRACE_MS) return;
           if (open) close();
