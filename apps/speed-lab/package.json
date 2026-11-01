@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "proof:browser": "node scripts/browser-proof.mjs",
+    "run-app": "node scripts/app-runner.mjs",
     "dev:live": "node scripts/dev-live.mjs",
     "compare": "node scripts/compare.mjs"
   },

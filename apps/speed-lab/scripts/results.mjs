@@ -1,4 +1,4 @@
-// Result files: one file per test (SL-001 to SL-007) per run, written after `npm run proof:browser`.
+// Result files: one file per test per run. `proof:browser` writes SL-001 to SL-007; `run-app` writes SL-101 and SL-102.
 // `compare.mjs` reads them. Node built-ins only; the pure functions are exported for the tests.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,13 +22,24 @@ export const TESTS = Object.freeze({
   ]),
 });
 
-/** scenario string of the proof -> { id, variant }, or null when unknown. */
+const appTest = (id, title, primary) => Object.freeze({ id, title, primary });
+export const APP_TESTS = Object.freeze({
+  "SL-101": appTest("SL-101", "first open: first rows and full list, as the app's own meter reports them", "firstRowMs"),
+  "SL-102": appTest("SL-102", "reload: first rows after a reload, as the app's own meter reports them", "firstRowMs"),
+});
+
+/** scenario string of the proof -> { id, variant }, or null when unknown. Stays on TESTS only: an app row is not a B-scenario. */
 export function testOf(scenario) {
   for (const def of Object.values(TESTS)) {
     const hit = def.scenarios.find((s) => s.scenario === scenario);
     if (hit) return { id: def.id, variant: hit.variant };
   }
   return null;
+}
+
+/** TESTS plus the any-app tests. compare accepts these ids; testOf does not. */
+export function allTests() {
+  return { ...TESTS, ...APP_TESTS };
 }
 
 const stamp = (iso) => iso.replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
@@ -74,6 +85,45 @@ export function toResults(proof, meta) {
     files.push({ name, body });
   }
   return { files, unmapped };
+}
+
+/** rows carry `test` (SL-101 or SL-102). meta = { app: { name, url, commit }, at, runner: { commit, dirty, appVersion } }. One file per test id present. */
+export function toAppResults(rows, meta) {
+  const byId = new Map();
+  for (const r of rows) {
+    if (!Object.hasOwn(APP_TESTS, r.test)) continue;
+    if (!byId.has(r.test)) byId.set(r.test, []);
+    byId.get(r.test).push({
+      engine: r.engine,
+      profile: r.profile,
+      variant: null,
+      pass: r.pass,
+      values: r.values,
+      failed: r.failed,
+      error: r.error ?? null,
+    });
+  }
+  const commit = typeof meta.app.commit === "string" && meta.app.commit !== "" ? meta.app.commit : "unknown";
+  const short = commit === "unknown" ? "unknown" : commit.slice(0, 7);
+  const files = [];
+  for (const id of Object.keys(APP_TESTS)) {
+    const list = byId.get(id);
+    if (!list) continue;
+    const def = APP_TESTS[id];
+    const body = {
+      schema: SCHEMA,
+      test: id,
+      title: def.title,
+      primary: def.primary,
+      app: { name: meta.app.name, url: meta.app.url, commit },
+      run: { at: meta.at, commit: meta.runner.commit, dirty: meta.runner.dirty, appVersion: meta.runner.appVersion, tool: "run-app" },
+      condition: { browser: "REAL", vault: "as the app is configured", url: meta.app.url },
+      rows: list,
+      pass: list.every((r) => r.pass === true),
+    };
+    files.push({ name: `${stamp(meta.at)}-${meta.app.name}-${short}-${id}.json`, body });
+  }
+  return { files };
 }
 
 /** Writes each file with flag "wx": an existing name is an error naming the path. Returns the paths written. */
