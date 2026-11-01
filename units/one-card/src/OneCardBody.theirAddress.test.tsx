@@ -1,10 +1,12 @@
-// Their address on the linked card: one row, the raw part rows gone. Beyond the source (Kai, 2026-11-01).
+// Their address on the linked card: lines with the flag, and an honest status while the names are read. Beyond the source (Kai, 2026-11-01).
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, cleanup, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import type { OnlineCardField } from "@kaigilb/gilbplatformcode-online-card";
 import type { AddressSpellings, OneCardField } from "@kaigilb/gilbplatformcode-one-card-merge";
+import { __resetFlags, setFlagSource, setFlagStore } from "@kaigilb/gilbplatformcode-flag-source";
+import { CardGroup } from "@kaigilb/gilbplatformcode-card-group";
 import { OneCardBody, OneCardOwnGroups, type OneCardBodyProps } from "./OneCardBody";
 import { useTheirAddresses } from "./theirAddresses";
 import { __resetTheirPlaces, useTheirPlaces } from "./theirPlaces";
@@ -12,7 +14,9 @@ import { HostProvider, fakeHost, type FakeHost } from "../test/fakeHost";
 import type { GeoPlace, TheirPlaceRead } from "./oneCardHost";
 import { ANN, GEO, RECORD, controllerOf, field, rig, type PublicField } from "../test/rig";
 
-const LINE = "Gladvollveien 38c, Oslo, Oslo, Norway";
+const NORWAY_ID = "https://geo.example.test/base/e/norway";
+const READING = "Reading their address…";
+const FAILED_LINE = "Their address could not be read right now.";
 const S: AddressSpellings = {
   label: "a:placeClaimLabel",
   streetLine: "a:streetLine",
@@ -22,12 +26,13 @@ const S: AddressSpellings = {
   claimPlace: "a:claimPlace",
 };
 
-const osloCity: GeoPlace = { id: "osloCity", label: "Oslo", type: "City", memberOf: ["osloRegion", "norway"] };
-const osloRegion: GeoPlace = { id: "osloRegion", label: "Oslo", type: "Region", memberOf: ["norway"] };
-const norway: GeoPlace = { id: "norway", label: "Norway", type: "Country", memberOf: [] };
-const BY_ID: Record<string, GeoPlace> = { osloCity, osloRegion, norway };
+const osloCity: GeoPlace = { id: "osloCity", label: "Oslo", type: "City", memberOf: ["osloRegion", NORWAY_ID] };
+const osloRegion: GeoPlace = { id: "osloRegion", label: "Oslo", type: "Region", memberOf: [NORWAY_ID] };
+const norway: GeoPlace = { id: NORWAY_ID, label: "Norway", type: "Country", memberOf: [] };
+const BY_ID: Record<string, GeoPlace> = { osloCity, osloRegion, [NORWAY_ID]: norway };
 const named = (p: GeoPlace): TheirPlaceRead => ({ state: "named", place: p });
-const rowsFor = (ids: readonly string[]): TheirPlaceRead[] => ids.map((id) => named(BY_ID[id]!));
+const rowsFor = (ids: readonly string[], over: Record<string, TheirPlaceRead> = {}): TheirPlaceRead[] =>
+  ids.map((id) => over[id] ?? named(BY_ID[id]!));
 
 const cardField = (predicate: string, value: string, extra: Partial<OnlineCardField> = {}): OnlineCardField => ({
   predicate, value, rung: "public", sourceEntity: null, ...extra,
@@ -59,7 +64,7 @@ function kaiWires(extra: Wire[] = []): Wire[] {
     wire(S.streetLine, "Gladvollveien 38c", { composite: "E1" }),
     wire(S.claimPlace, "osloCity", { composite: "E1" }),
     wire(S.claimPlace, "osloRegion", { composite: "E1" }),
-    wire(S.claimPlace, "norway", { composite: "E1" }),
+    wire(S.claimPlace, NORWAY_ID, { composite: "E1" }),
     ...extra,
   ];
 }
@@ -80,7 +85,13 @@ const props = (over: Partial<OneCardBodyProps> = {}): OneCardBodyProps => ({
   order: () => 0,
   personCard: null,
   recordUri: RECORD,
-  children: <OneCardOwnGroups labelFor={labelFor} />,
+  // The given name is placed in the card's name group; the address is a group of its own. Both have to be on the page.
+  children: (
+    <>
+      <CardGroup kind="name" title="Name" icon="record" empty addable={false}>{null}</CardGroup>
+      <OneCardOwnGroups labelFor={labelFor} />
+    </>
+  ),
   ...over,
 });
 
@@ -113,8 +124,17 @@ function rowValues(): string[] {
 
 beforeEach(() => {
   __resetTheirPlaces();
+  __resetFlags();
+  setFlagStore(null);
+  // A country's flag is not fetched in these tests: the globe stands in, and no catalogue host is asked.
+  setFlagSource({ read: async () => null });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  setFlagSource(null);
+  setFlagStore(null);
+  __resetFlags();
+});
 
 describe("useTheirAddresses rest", () => {
   const email = cardField("a:email", "kai@example.test", { composite: "E1" });
@@ -128,7 +148,7 @@ describe("useTheirAddresses rest", () => {
     dup,
     partRow(S.claimPlace, "osloCity", "E1"),
     partRow(S.claimPlace, "osloRegion", "E1"),
-    partRow(S.claimPlace, "norway", "E1"),
+    partRow(S.claimPlace, NORWAY_ID, "E1"),
     given,
     loose,
   ];
@@ -150,7 +170,7 @@ describe("useTheirAddresses rest", () => {
     expect(values).not.toContain("Other Street 9");
     expect(values).not.toContain("osloCity");
     expect(values).not.toContain("osloRegion");
-    expect(values).not.toContain("norway");
+    expect(values).not.toContain(NORWAY_ID);
   });
 
   it("R2 a loose part is kept in rest", async () => {
@@ -164,56 +184,125 @@ describe("useTheirAddresses rest", () => {
   });
 });
 
+function linkedKai(extra: Wire[] = []) {
+  return rig({ link: { state: "linked", target: ANN }, fields: kaiWires(extra) as PublicField[] });
+}
+
 describe("their address on the card", () => {
-  it('Kai\'s linked card: no text "Place Claim Label" anywhere, and no group for the label predicate; one row "Gladvollveien 38c, Oslo, Oslo, Norway" with "home"', async () => {
-    const r = rig({ link: { state: "linked", target: ANN }, fields: kaiWires() as PublicField[] });
-    draw(props({ controller: controllerOf(r) }), readyHost());
-    await waitFor(() => expect(rowValues()).toContain(LINE));
+  it('D1 Kai\'s linked card draws "home", "Gladvollveien 38c", "Oslo", "Oslo, Norway" with data-country-id = norway\'s id; the text "Place Claim Label" is nowhere', async () => {
+    draw(props({ controller: controllerOf(linkedKai()) }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("their-address-street")).toHaveTextContent("Gladvollveien 38c"));
+    expect(screen.getByTestId("their-address-postal-city")).toHaveTextContent("Oslo");
+    const region = screen.getByTestId("their-address-region-country");
+    expect(region).toHaveTextContent("Oslo, Norway");
+    expect(region).toHaveAttribute("data-country-id", NORWAY_ID);
+    expect(region.querySelector("[data-testid='flag-image']")).not.toBeNull();
+    const row = region.closest("[data-testid='one-card-row']");
+    expect(row?.querySelector("[data-testid='one-card-row-label']")?.textContent).toBe("home");
     expect(document.body.textContent).not.toContain("Place Claim Label");
     expect(document.querySelector('[data-group="theirs:a:placeClaimLabel"]')).toBeNull();
-    const row = screen.getAllByTestId("one-card-row").find((el) => el.querySelector("[data-testid='one-card-row-value']")?.textContent === LINE);
-    expect(row?.querySelector("[data-testid='one-card-row-label']")?.textContent).toBe("home");
+  });
+
+  it("D2 no URI and no predicate name in the card's text", async () => {
+    draw(props({ controller: controllerOf(linkedKai()) }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("their-address-region-country")).toHaveTextContent("Oslo, Norway"));
+    const text = screen.getByTestId("one-card").textContent ?? "";
+    expect(text).not.toContain("https://");
+    expect(text).not.toContain("a:");
+    expect(text).not.toContain("placeClaimLabel");
+  });
+
+  // B4 changed (B3b): while the names are reading, the spellings are already known, so the raw part rows are gone
+  // and the status line is shown. Before B3b this expected the card as today (the raw "Place Claim Label" row still on screen).
+  it('D3 reading after the spellings are known: no raw label row, no raw street row, and "Reading their address…" shown', async () => {
+    let resolveNames!: (rows: TheirPlaceRead[]) => void;
+    const host = readyHost();
+    host.readPlaceNames!.mockImplementation(() => new Promise((res) => { resolveNames = res; }));
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
+    await waitFor(() => expect(host.readPlaceNames).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
+    expect(document.body.textContent).not.toContain("Place Claim Label");
+    expect(rowValues()).not.toContain("Gladvollveien 38c");
+    expect(screen.queryByText("Gladvollveien 38c")).toBeNull();
+    expect(screen.getByTestId("their-address-status")).toHaveTextContent(READING);
+    expect(rowValues()).toContain("Kai");
+    await act(async () => { resolveNames(rowsFor(host.readPlaceNames!.mock.calls[0]![0])); });
+  });
+
+  it('D4 reading before the spellings answer: card as today, and "Reading their address…" shown', async () => {
+    let resolveSpellings!: (value: AddressSpellings) => void;
+    const host = readyHost();
+    host.addressSpellings!.mockImplementation(() => new Promise((res) => { resolveSpellings = res; }));
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
+    await waitFor(() => expect(host.addressSpellings).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
+    expect(document.body.textContent).toContain("Place Claim Label");
+    expect(rowValues()).toContain("Gladvollveien 38c");
+    expect(screen.getByTestId("their-address-status")).toHaveTextContent(READING);
+    await act(async () => { resolveSpellings(S); });
+  });
+
+  it('D5 failed: "Their address could not be read right now." and the card as today; never the text "No address"', async () => {
+    const host = fakeHost({ spellings: "reject", reads: rowsFor });
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
+    await waitFor(() => expect(host.addressSpellings).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
+    await act(async () => { await new Promise<void>((res) => setTimeout(res, 30)); });
+    expect(screen.getByTestId("their-address-status")).toHaveTextContent(FAILED_LINE);
+    expect(document.body.textContent).toContain("Place Claim Label");
+    expect(rowValues()).toContain("Gladvollveien 38c");
+    expect(document.body.textContent).not.toContain("No address");
+    expect(host.readPlaceNames).not.toHaveBeenCalled();
+  });
+
+  it('D6 partial: one place failed → the known lines and "1 more place not read right now"', async () => {
+    const host = fakeHost({
+      spellings: S,
+      reads: (ids) => rowsFor(ids, { osloRegion: { state: "failed" } }),
+    });
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
+    await waitFor(() => expect(screen.getByTestId("their-address-note")).toHaveTextContent("1 more place not read right now"));
+    expect(screen.getByTestId("their-address-street")).toHaveTextContent("Gladvollveien 38c");
+    expect(screen.getByTestId("their-address-postal-city")).toHaveTextContent("Oslo");
+    const region = screen.getByTestId("their-address-region-country");
+    expect(region).toHaveTextContent("Norway");
+    expect(region).not.toHaveTextContent("Oslo, Norway");
+    expect(region).toHaveAttribute("data-country-id", NORWAY_ID);
+  });
+
+  it("D7 the status line is absent for a card that does not name an address field and absent when ready", async () => {
+    const wires = kaiWires() as PublicField[];
+    draw(props({ controller: controllerOf(rig({ link: { state: "linked", target: ANN }, fields: wires })), addressPredicate: null }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
+    await act(async () => { await new Promise<void>((res) => setTimeout(res, 30)); });
+    expect(screen.queryByTestId("their-address-status")).toBeNull();
+    cleanup();
+
+    draw(props({ controller: controllerOf(rig({ link: { state: "linked", target: ANN }, fields: wires })) }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("their-address-street")).toBeTruthy());
+    expect(screen.queryByTestId("their-address-status")).toBeNull();
   });
 
   it("the street part is not drawn as its own row", async () => {
-    const r = rig({ link: { state: "linked", target: ANN }, fields: kaiWires() as PublicField[] });
-    draw(props({ controller: controllerOf(r) }), readyHost());
-    await waitFor(() => expect(rowValues()).toContain(LINE));
+    draw(props({ controller: controllerOf(linkedKai()) }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("their-address-street")).toHaveTextContent("Gladvollveien 38c"));
     expect(rowValues()).not.toContain("Gladvollveien 38c");
   });
 
   it("a loose street (no composite) is still drawn as its own row", async () => {
-    const r = rig({
-      link: { state: "linked", target: ANN },
-      fields: kaiWires([wire(S.streetLine, "Sideveien 4")]) as PublicField[],
-    });
-    draw(props({ controller: controllerOf(r) }), readyHost());
-    await waitFor(() => expect(rowValues()).toContain(LINE));
+    draw(props({ controller: controllerOf(linkedKai([wire(S.streetLine, "Sideveien 4")])) }), readyHost());
+    await waitFor(() => expect(screen.getByTestId("their-address-street")).toHaveTextContent("Gladvollveien 38c"));
     expect(rowValues()).toContain("Sideveien 4");
-  });
-
-  it("while the names are reading, the card is as today", async () => {
-    let resolveNames!: (rows: TheirPlaceRead[]) => void;
-    const host = readyHost();
-    host.readPlaceNames!.mockImplementation(() => new Promise((res) => { resolveNames = res; }));
-    const r = rig({ link: { state: "linked", target: ANN }, fields: kaiWires() as PublicField[] });
-    draw(props({ controller: controllerOf(r) }), host);
-    await waitFor(() => expect(host.readPlaceNames).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
-    expect(document.body.textContent).toContain("Place Claim Label");
-    expect(screen.queryByText(LINE)).toBeNull();
-    await act(async () => { resolveNames(rowsFor(host.readPlaceNames!.mock.calls[0]![0])); });
   });
 
   it("spellings fail → the card is as today", async () => {
     const host = fakeHost({ spellings: "reject", reads: rowsFor });
-    const r = rig({ link: { state: "linked", target: ANN }, fields: kaiWires() as PublicField[] });
-    draw(props({ controller: controllerOf(r) }), host);
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
     await waitFor(() => expect(host.addressSpellings).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
     await act(async () => { await new Promise<void>((res) => setTimeout(res, 30)); });
     expect(document.body.textContent).toContain("Place Claim Label");
-    expect(screen.queryByText(LINE)).toBeNull();
+    expect(screen.queryByText("Gladvollveien 38c, Oslo, Oslo, Norway")).toBeNull();
     expect(host.readPlaceNames).not.toHaveBeenCalled();
   });
 
@@ -223,14 +312,14 @@ describe("their address on the card", () => {
     const reads = host.readPlaceNames!;
     delete host.addressSpellings;
     delete host.readPlaceNames;
-    const r = rig({ link: { state: "linked", target: ANN }, fields: kaiWires() as PublicField[] });
-    draw(props({ controller: controllerOf(r) }), host);
+    draw(props({ controller: controllerOf(linkedKai()) }), host);
     await waitFor(() => expect(screen.getByTestId("one-card")).toHaveAttribute("data-online-status", "ready"));
     await act(async () => { await new Promise<void>((res) => setTimeout(res, 30)); });
     expect(spellings).not.toHaveBeenCalled();
     expect(reads).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Place Claim Label");
-    expect(screen.queryByText(LINE)).toBeNull();
+    expect(screen.queryByTestId("their-address-status")).toBeNull();
+    expect(screen.queryByText("Gladvollveien 38c, Oslo, Oslo, Norway")).toBeNull();
   });
 
   it("the address's places are not handed to Details; a loose place still is", async () => {
@@ -250,7 +339,7 @@ describe("their address on the card", () => {
     });
     draw(props({ controller: controllerOf(r) }), host);
     await waitFor(() => {
-      expect(screen.getByText(LINE)).toBeTruthy();
+      expect(screen.getByTestId("their-address-street")).toHaveTextContent("Gladvollveien 38c");
       expect(JSON.parse(screen.getByTestId("published").textContent!)).toEqual([{ label: "Claim Place", places: [LOOSE] }]);
     });
   });

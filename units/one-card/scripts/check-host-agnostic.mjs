@@ -21,11 +21,13 @@ const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.u
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
 const ALLOWED_IMPORT = [
+  // Extension kept: `./TheirAddressLines` is the same path as `./theirAddressLines` when the volume ignores case.
+  /^\.\/TheirAddressLines\.tsx$/,
   /^\.\/[A-Za-z0-9_-]+$/,
   /^react$/,
   /^react\/jsx-runtime$/,
   /^@tanstack\/react-query$/,
-  /^@kaigilb\/gilbplatformcode-(birthday-text|card-group|language-row|one-card-context|one-card-merge|one-card-rows|online-card|online-card-link|open-popups|person-connections|place-lines|record-cache-kit|stakeholder-list-doors|stakeholder-list-state|term-name-text|term-slots|vocabulary-source)$/,
+  /^@kaigilb\/gilbplatformcode-(birthday-text|card-group|flag-image|language-row|one-card-context|one-card-merge|one-card-rows|online-card|online-card-link|open-popups|person-connections|place-lines|record-cache-kit|stakeholder-list-doors|stakeholder-list-state|term-name-text|term-slots|vocabulary-source)$/,
 ];
 
 if (!existsSync(srcRoot)) {

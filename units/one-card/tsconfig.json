@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "strict": true,
     "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "noEmit": true,
     "lib": [

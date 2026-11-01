@@ -7,6 +7,7 @@
  * ⛔ A rejected spelling read is `failed`, never an empty address list: "no address" must not come from a failed read.
  * ⛔ Names are not handed back until every asked id has an answer. An empty answer is "not read", not "no place".
  * `ready` also returns `rest`: the input fields minus every field that went into an address.
+ * `reading` returns that same `rest` once the spellings are known, and not before.
  * Beyond the source (Kai, 2026-11-01).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +27,7 @@ export interface TheirAddressView extends TheirAddress {
 
 export type TheirAddressesState =
   | { state: "off" } // host has no addressSpellings/readPlaceNames, or not enabled, or fields null
-  | { state: "reading" } // spellings or names not answered yet
+  | { state: "reading"; rest?: OnlineCardField[] } // no `rest` until the spellings are known; then the same `rest` as `ready`
   | { state: "failed" } // spellings rejected: we cannot tell which fields are address parts
   | { state: "ready"; addresses: TheirAddressView[]; loose: OnlineCardField[]; rest: OnlineCardField[] };
 
@@ -72,7 +73,8 @@ function viewOf(address: TheirAddress, asked: readonly string[], rows: readonly 
 
 /**
  * The addresses of theirs, for a caller that will draw them. `reading` until the spellings and, when an address binds
- * places, the names have answered. `failed` only when the spellings reject.
+ * places, the names have answered. Once the spellings are known, `reading` carries `rest` (the same fields `ready`
+ * leaves out) so the raw part rows can leave before the names. `failed` only when the spellings reject.
  *
  * @param enabled read only when their address is wanted (the feature is on)
  * @param fields the online card's fields, or null while the card itself has not been read
@@ -158,10 +160,8 @@ export function useTheirAddresses(enabled: boolean, fields: readonly OnlineCardF
     if (!on) return { state: "off" };
     if (!spellings) return { state: "reading" };
     if (spellings.state === "failed") return { state: "failed" };
-    if (!grouped) return { state: "reading" };
-    if (asked.length > 0 && !(reads && reads.key === key)) return { state: "reading" };
-    if (fields === null || spellings.state !== "ready") return { state: "reading" };
-    const rows = asked.length > 0 ? reads!.rows : [];
+    // Spellings are not known yet (or the fields are not): no `rest` key, so the card stays as served.
+    if (!grouped || fields === null || spellings.state !== "ready") return { state: "reading" };
     const ids = new Set(grouped.addresses.map((a) => a.composite));
     const spell = spellings.value;
     const partPreds = new Set<string>([spell.streetLine, spell.addressLine1, spell.addressLine2, spell.postalCode, spell.claimPlace]);
@@ -170,6 +170,8 @@ export function useTheirAddresses(enabled: boolean, fields: readonly OnlineCardF
       if (partPreds.has(f.predicate) && !!f.composite && ids.has(f.composite)) return false;
       return true;
     });
+    if (asked.length > 0 && !(reads && reads.key === key)) return { state: "reading", rest };
+    const rows = asked.length > 0 ? reads!.rows : [];
     return { state: "ready", addresses: grouped.addresses.map((a) => viewOf(a, asked, rows)), loose: grouped.loose, rest };
   }, [on, spellings, grouped, asked, reads, key, fields]);
 }
