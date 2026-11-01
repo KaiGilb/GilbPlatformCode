@@ -2,6 +2,7 @@
 // the places they bind) and the geo address test. Each member is the call the source made, with the same arguments, at the same place.
 
 import { createContext, useContext } from "react";
+import type { AddressSpellings } from "@kaigilb/gilbplatformcode-one-card-merge";
 import type { PlaceLineClaim } from "@kaigilb/gilbplatformcode-place-lines";
 
 /** One address a person keeps, as the card reads it: the fields `claimPlaceIds` reads, and the address of the claim's entity. */
@@ -23,6 +24,13 @@ export interface GeoPlace {
 
 /** The four free-text terms of an address that the card reads. */
 export type PlaceTextTerm = "streetLine" | "addressLine1" | "addressLine2" | "postalCode";
+
+/**
+ * One answer for one place id of an address of theirs, in the order the ids were asked.
+ * `named` carries the row; `missing` means the catalogue no longer has it; `failed` means it was not read.
+ * Beyond the source (Kai, 2026-11-01).
+ */
+export type TheirPlaceRead = { state: "named"; place: GeoPlace } | { state: "missing" } | { state: "failed" };
 
 export interface OneCardHost {
   /**
@@ -64,6 +72,17 @@ export interface OneCardHost {
    * GilbApp: PLACE_CLAIMS_STALE_MS = 60_000, lib/mynet/place/usePlaceClaims.ts:52 (read at heldAddresses.ts:71).
    */
   placeClaimsStaleMs: number;
+  /**
+   * The spellings of an address's fields, asked of the ontology master. Rejects when they cannot be read.
+   * Absent: their address is not drawn (the card stays as before).
+   * Beyond the source (Kai, 2026-11-01).
+   */
+  addressSpellings?(): Promise<AddressSpellings>;
+  /**
+   * One answer per place id, in order, never rejecting: named (with the row), missing (gone from the catalogue), or failed (not read).
+   * Beyond the source (Kai, 2026-11-01).
+   */
+  readPlaceNames?(ids: readonly string[]): Promise<TheirPlaceRead[]>;
 }
 
 /** The provider `OneCardBody` and `useHeldAddresses` read. With none, they throw an error that names it. */

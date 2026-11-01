@@ -35,7 +35,7 @@ Test ids: `one-card`, `one-card-status`, `one-card-retry`, `one-card-error`, `on
 
 Package: `@kaigilb/gilbplatformcode-one-card`
 
-From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/one-card` prints. That command prints the full install line (it is long because the peers have peers of their own). Of those, this unit imports from fifteen: `birthday-text` (`birthdayText`), `card-group` (`CardGroup`), `one-card-context` (`OneCardProvider`, `oneCardOf`, `placeOneCard`, `useOneCard`, the type `OneCardView`), `one-card-merge` (the types `OneCardField`, `OneCardGroup`, `OneCardRow`, `OwnAddress`), `one-card-rows` (`OneCardFoot`), `online-card` (`createOnlineCardController`, `WORDS`, the types `OnlineCardController`, `OnlineCardState`), `online-card-link` (`readLink`, the type `LinkReading`), `open-popups` (`eventTargetInTopDialog`, `modalIsOpen`), `person-connections` (`displayPlacements`, the type `PersonCard`), `place-lines` (`claimPlaceIds`), `record-cache-kit` (`refreshRecordInCaches`), `stakeholder-list-doors` (`onlineCardDeps`, `bindAnchorShare`, `forgetAnchor`, `sharedAnchor`, `anchorShareOf`, `resolveRecordPersonCard`, the type `AnchorShare`), `stakeholder-list-state` (`forgetLinkedFinds`), `term-slots` (`attributeLabel`) and `vocabulary-source` (`bareForm`); and from the third-party `@tanstack/react-query` (`useQuery`, `useQueryClient`) and `react`.
+From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/one-card` prints. That command prints the full install line (it is long because the peers have peers of their own). Of those, this unit imports from fifteen: `birthday-text` (`birthdayText`), `card-group` (`CardGroup`), `one-card-context` (`OneCardProvider`, `oneCardOf`, `placeOneCard`, `useOneCard`, the type `OneCardView`), `one-card-merge` (the types `OneCardField`, `OneCardGroup`, `OneCardRow`, `OwnAddress`, `AddressSpellings`, `TheirAddress`, and `theirAddressesOf`), `one-card-rows` (`OneCardFoot`), `online-card` (`createOnlineCardController`, `WORDS`, the types `OnlineCardController`, `OnlineCardState`, `OnlineCardField`), `online-card-link` (`readLink`, the type `LinkReading`), `open-popups` (`eventTargetInTopDialog`, `modalIsOpen`), `person-connections` (`displayPlacements`, the type `PersonCard`), `place-lines` (`claimPlaceIds`), `record-cache-kit` (`refreshRecordInCaches`), `stakeholder-list-doors` (`onlineCardDeps`, `bindAnchorShare`, `forgetAnchor`, `sharedAnchor`, `anchorShareOf`, `resolveRecordPersonCard`, the type `AnchorShare`), `stakeholder-list-state` (`forgetLinkedFinds`), `term-slots` (`attributeLabel`) and `vocabulary-source` (`bareForm`); and from the third-party `@tanstack/react-query` (`useQuery`, `useQueryClient`) and `react`.
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
 
@@ -107,7 +107,7 @@ function PersonCardBody(props: { record: RecordWhole; vaultId: string; holder: s
 
 ## What the host must supply
 
-One host object, `OneCardHost`, read from `OneCardHostContext` by `OneCardBody` and `useHeldAddresses`. Without the provider they throw an error that names it: "The one card needs a OneCardHostContext.Provider above it." Each member is the call the app made, with the same arguments, at the same place.
+One host object, `OneCardHost`, read from `OneCardHostContext` by `OneCardBody`, `useHeldAddresses` and `useTheirAddresses`. Without the provider they throw an error that names it: "The one card needs a OneCardHostContext.Provider above it." Each member is the call the app made, with the same arguments, at the same place. Two members are optional (`addressSpellings`, `readPlaceNames`); absent either one, their address is not read and the card stays as before (see "Their address (beyond the source)").
 
 | Member | GilbApp call it replaces | When it is called |
 |---|---|---|
@@ -116,10 +116,12 @@ One host object, `OneCardHost`, read from `OneCardHostContext` by `OneCardBody` 
 | `claimsAbout(claims, subject): PlaceClaim[]` | `claimsAbout`, `placeClaim.ts:632` | sync; when the vault's claims arrive (`heldAddresses.ts:74`) |
 | `claimFieldText(claim, term): string` | `claimFieldText`, `placeClaim.ts:263` | sync; four times for each address: `streetLine`, `addressLine1`, `addressLine2`, `postalCode` (`heldAddresses.ts:48-51`) |
 | `loadPlaceNames(ids): Promise<GeoPlace[]>` | `loadPlaceNames`, `lib/mynet/geo/usePlaceNames.ts:27` | async; from an effect, when the place ids of the held addresses change (`heldAddresses.ts:81`) |
+| `addressSpellings(): Promise<AddressSpellings>` (optional) | Beyond the source (Kai, 2026-11-01). Not a GilbApp call | async; once per mount of `useTheirAddresses`, when the read is enabled, the fields are in hand, and `readPlaceNames` is also present. Rejects when the spellings cannot be read. Absent: no request, their address is not drawn |
+| `readPlaceNames(ids): Promise<TheirPlaceRead[]>` (optional) | Beyond the source (Kai, 2026-11-01). Not a GilbApp call | async; from an effect, one call per distinct set of place ids of their addresses, after the spellings have answered and at least one address binds a place. One answer per id, in order, never rejecting: `named` (the row), `missing` (gone), `failed` (not read). Absent: no request |
 | `placeClaimsKey(vaultId): readonly unknown[]` | `placeClaimsKey`, `lib/mynet/place/usePlaceClaims.ts:50` | sync; at render (`heldAddresses.ts:69`). The app's value is `["mynet", "place-claims", vaultId]`: the key MUST be the one the app's address group reads under, or the card makes a read of its own |
 | `placeClaimsStaleMs: number` | `PLACE_CLAIMS_STALE_MS = 60_000`, `usePlaceClaims.ts:52` | read at render as the `staleTime` of the shared read (`heldAddresses.ts:71`) |
 
-There are no optional members and no app UI components: `OneCardFoot` and `CardGroup` are units. The host also gives:
+There are no app UI components: `OneCardFoot` and `CardGroup` are units. The host also gives:
 
 - `QueryClientProvider` (`useQuery` for the held addresses and for the person card; `useQueryClient` in the controller and the person card). The reads: the held addresses under the host's `placeClaimsKey(vaultId)` with `staleTime: placeClaimsStaleMs` and `enabled` only for a linked card whose online card is read; the person card under `["person-card", "record", holder, ownVaultId, recordUri, target]` with `staleTime: 0`, `gcTime: 0`, `retry: false`, `refetchOnWindowFocus: false`.
 - The settings, once at start-up: `setBaseOrigin` of `base-origin` (the platform origin the controller's requests go to, read when a card is opened) and `setTermOrigin` of `term-origin` (the ontology origin `attributeLabel` asks); and the signed-in session of `lws-session-bridge` and `lws-records` (the controller's reads carry a DPoP proof; the link write is `patchRecord`).
@@ -173,6 +175,21 @@ Tests: 171 (166 as in 0.2.0: 160 kept unchanged and 6 in `OneCardBody.languageUs
 - Named change in `src/OneCardBody.tsx` (`skillText`, new, used by the linked view's `valueText`): a skill of theirs is shown by its name. The master's label when there is one; else the catalogue name in the term's address (`referentNameOf` of the new peer `term-name-text`: `.../base/t/StreetWelding` is "Street Welding"); else, for any other address, the word "A skill"; text that is not an address (a free-text skill) is its own name. Before: the label, else the last part of the address, else the address. The `languageUsed` and birthday paths are unchanged.
 - New peer: `term-name-text` ^0.1.0 (and through it `skill-uri-label`, `term-origin`). The ontology origin must be set (`setTermOrigin`), as the held card's units already need.
 - New test file `src/OneCardBody.skillName.test.tsx` (5 cases). Mutation checks of `src/OneCardBody.tsx`: 6 mutants (the source's last-part fallback back, any other address shown as the address, a free-text skill replaced by the word, the term address's name not used, the master's label ignored, a storage address taken as text), 6 killed.
+
+## Their address (beyond the source)
+
+Beyond the source (Kai, 2026-11-01). An address of theirs arrives as separate fields of the online card. `useTheirAddresses(enabled, fields)` asks the host for the spellings (`addressSpellings`), groups the fields with `theirAddressesOf` of `one-card-merge`, then asks once for the names of the distinct place ids (`readPlaceNames`) and orders each address's named places with `orderPlaces` (the same finest-first sort a held address uses: city, then regions joined `", "`, then a country-typed last place).
+
+The state is honest:
+
+- `off` — the read is not enabled, `fields` is null, or the host lacks either member. No request is made, and the card stays as before.
+- `reading` — the spellings have not answered, or an address binds places and the names have not answered. Nothing is handed back half-named.
+- `failed` — the spellings rejected, so it is not known which fields are address parts. This is never `ready` with no addresses: "no address" must not come from a failed read.
+- `ready` — `addresses` (each `TheirAddress` plus `city`, `region`, `country`, `countryId`, and that address's own `unread` and `gone`) and `loose` (the address parts the server named no address for).
+
+`unread` counts the places of that address that were not read: a `failed` answer, a named row with an empty label, or an id the answer left out (including a stub that returns `[]` for the ids it was asked — that is "not read", not "no place"). `gone` counts `missing` (the catalogue answered 404). A rejection of `readPlaceNames` itself, which the member must not do, is the same as every id `failed`: `ready`, the text lines kept, every place `unread`, and the rejection is handled. No drawing in this version: `OneCardBody` is unchanged.
+
+`orderPlaces` is pure and exported. `ownAddressOf` calls it; the held-address behaviour is unchanged.
 
 ## Where it came from
 

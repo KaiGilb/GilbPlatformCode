@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { OwnAddress } from "@kaigilb/gilbplatformcode-one-card-merge";
 import { claimPlaceIds } from "@kaigilb/gilbplatformcode-place-lines";
 import { useOneCardHost, type GeoPlace, type OneCardHost, type PlaceClaim } from "./oneCardHost";
+import { orderPlaces } from "./placeOrder";
 
 /**
  * A held address as the merge's parts: its typed lines (street, Address 1 and 2, postal code) and the names of the places it binds,
@@ -20,34 +21,15 @@ import { useOneCardHost, type GeoPlace, type OneCardHost, type PlaceClaim } from
  */
 export function ownAddressOf(host: OneCardHost, claim: PlaceClaim, places: readonly GeoPlace[]): OwnAddress {
   const ids = claimPlaceIds(claim);
-  const bound = ids.map((id) => places.find((p) => p.id === id)).filter((p): p is GeoPlace => !!p && p.label.trim() !== "");
-  // finest first: the more of its bound places a place sits in (through its parents' parents too), the finer it is
-  const byId = new Map(bound.map((p) => [p.id, p]));
-  const depth = (p: GeoPlace): number => {
-    const seen = new Set<string>();
-    const walk = (q: GeoPlace) => {
-      for (const up of q.memberOf) {
-        const parent = byId.get(up);
-        if (parent && !seen.has(up)) {
-          seen.add(up);
-          walk(parent);
-        }
-      }
-    };
-    walk(p);
-    return seen.size;
-  };
-  const fine = [...bound].sort((a, b) => depth(b) - depth(a));
-  const country = fine.length > 0 && /country/i.test(fine[fine.length - 1]!.type) ? fine.pop()! : null;
-  const city = fine.shift() ?? null;
-  const region = fine.length > 0 ? fine.map((p) => p.label).join(", ") : null;
+  const bound = ids.map((id) => places.find((p) => p.id === id)).filter((p): p is GeoPlace => !!p);
+  const { city, regions, country } = orderPlaces(bound);
   return {
     street: host.claimFieldText(claim, "streetLine"),
     line1: host.claimFieldText(claim, "addressLine1"),
     line2: host.claimFieldText(claim, "addressLine2"),
     postalCode: host.claimFieldText(claim, "postalCode"),
     city: city?.label ?? null,
-    region,
+    region: regions.map((p) => p.label).join(", ") || null,
     country: country?.label ?? null,
     entity: claim.uri,
   };
