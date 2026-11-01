@@ -21,8 +21,6 @@ const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.u
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
 const ALLOWED_IMPORT = [
-  // Extension kept: `./TheirAddressLines` is the same path as `./theirAddressLines` when the volume ignores case.
-  /^\.\/TheirAddressLines\.tsx$/,
   /^\.\/[A-Za-z0-9_-]+$/,
   /^react$/,
   /^react\/jsx-runtime$/,

@@ -5,7 +5,7 @@ import { emptyDraft, type PlaceClaimDraft } from "@kaigilb/gilbplatformcode-plac
 import { compactLines } from "../node_modules/@kaigilb/gilbplatformcode-address-card-parts/src/addressLines";
 import { unreadNotes } from "../node_modules/@kaigilb/gilbplatformcode-address-card-parts/src/BoundPlaceLine";
 import type { PlaceRead } from "@kaigilb/gilbplatformcode-place-names";
-import { theirAddressLines, theirUnreadNotes, type TheirLine } from "./theirAddressLines";
+import { theirAddressLines, theirUnreadNotes, type TheirLine } from "./theirAddressLineRule";
 import type { OwnAddress } from "@kaigilb/gilbplatformcode-one-card-merge";
 
 const NORWAY = "https://geo.example.test/base/e/norway";

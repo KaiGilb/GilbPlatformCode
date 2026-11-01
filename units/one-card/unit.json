@@ -80,7 +80,7 @@
     "src/oneCardHost.ts",
     "src/placeOrder.ts",
     "src/theirAddresses.ts",
-    "src/theirAddressLines.ts",
+    "src/theirAddressLineRule.ts",
     "src/TheirAddressLines.tsx"
   ],
   "host": [

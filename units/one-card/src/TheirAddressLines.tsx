@@ -2,7 +2,7 @@
 // Beyond the source (Kai, 2026-11-01).
 import type { OneCardRow } from "@kaigilb/gilbplatformcode-one-card-merge";
 import { FlagImage } from "@kaigilb/gilbplatformcode-flag-image";
-import { theirAddressLines, theirUnreadNotes } from "./theirAddressLines";
+import { theirAddressLines, theirUnreadNotes } from "./theirAddressLineRule";
 
 const named = (x: string | null | undefined): boolean => (x ?? "").trim() !== "";
 
