@@ -1,6 +1,6 @@
 {
   "name": "speed-lab",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Speed Lab: takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next. It grows a test for every kind of speed.",
@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "proof:browser": "node scripts/browser-proof.mjs",
+    "run-app": "node scripts/app-runner.mjs",
+    "proof:app-self": "node scripts/app-self-proof.mjs",
     "dev:live": "node scripts/dev-live.mjs",
     "compare": "node scripts/compare.mjs"
   },
