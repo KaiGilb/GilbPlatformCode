@@ -31,7 +31,8 @@ import { publishTheirPlaces, type TheirPlaceGroup } from "./theirPlaces";
 import { NoOnlineCardFoot } from "./OneCardFind";
 import { useHeldAddresses } from "./heldAddresses";
 import { useTheirAddresses, type TheirAddressView } from "./theirAddresses";
-// The `.tsx` is required: extensionless `./TheirAddressLines` resolves to `theirAddressLines.ts` on a case-insensitive volume.
+// Extension kept: on a case-insensitive volume `./TheirAddressLines` is `theirAddressLines.ts`.
+// @ts-expect-error TS5097 — intentional `.tsx`; allowImportingTsExtensions stays off so a dependent can typecheck this file.
 import { TheirAddressLines } from "./TheirAddressLines.tsx";
 import { useOneCardHost, type OneCardHost } from "./oneCardHost";
 
