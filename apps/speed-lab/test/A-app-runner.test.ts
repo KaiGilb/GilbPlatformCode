@@ -187,4 +187,35 @@ describe("A app runner", () => {
     expect(ignored.code).toBe(2);
     expect(ignored.stderr).toContain(`no result files for SL-001 in ${runnerOnly}`);
   });
+
+  it("compare shows the measured app's commit for SL-101 and Speed Lab's own commit for SL-001", () => {
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "app-runner-"));
+    const runner = { commit: "ffffffff" + "f".repeat(32), dirty: true, appVersion: "0.9.0" };
+    const writeApp = (commit: string, at: string) => {
+      const { files } = toAppResults(
+        [row("SL-101", "chromium", "desktop", true, 10)],
+        { ...META, at, app: { name: "a", url: "http://example.test/", commit }, runner },
+      );
+      writeResults(dir, files);
+    };
+    writeApp("1111111aaaa", "2026-11-01T13:01:00.000Z");
+    writeApp("2222222bbbb", "2026-11-01T13:02:00.000Z");
+    const app = capture(["SL-101", "--app", "a", "--runs", dir]);
+    expect(app.stdout).toContain("1111111");
+    expect(app.stdout).toContain("2222222");
+    expect(app.stdout).toContain("app commit");
+    expect(app.stdout).toContain("| at | app commit | runner |");
+    expect(app.stdout).toContain("| 1111111 | fffffff-dirty |");
+    expect(app.stdout).toContain("| 2222222 | fffffff-dirty |");
+    expect(app.stdout).not.toContain("1111111-dirty");
+
+    const proof = {
+      ts: "20261101T130100Z", base: "http://localhost:5261/?entries=500&latency=600",
+      rows: [{ engine: "chromium", profile: "desktop", scenario: "B1 cold first visit", pass: true, values: { firstRowMs: 10, fullMs: 20 }, failed: [], error: null }],
+    };
+    writeResults(dir, toResults(proof, { commit: "db4a9e9" + "0".repeat(33), dirty: false, appVersion: "0.8.0", at: "2026-11-01T13:03:00.000Z" }).files);
+    const own = capture(["SL-001", "--runs", dir]);
+    expect(own.stdout).toContain("| at | commit |");
+    expect(own.stdout).not.toContain("app commit");
+  });
 });

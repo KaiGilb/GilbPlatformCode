@@ -99,18 +99,22 @@ export function main(argv, env, out = console) {
   const rowsByKey = {};
   for (const run of shown) {
     for (const r of run.rows) {
-      (rowsByKey[keyOf(r)] ??= []).push({ ...r, at: run.run.at, commit: run.run.commit, appVersion: run.run.appVersion, dirty: run.run.dirty });
+      (rowsByKey[keyOf(r)] ??= []).push({ ...r, at: run.run.at, commit: run.run.commit, appCommit: run.app?.commit, appVersion: run.run.appVersion, dirty: run.run.dirty });
     }
   }
   const primary = def.primary;
+  // An app test's commit is the measured app (`app.commit`). `-dirty` stays on the runner: dirtiness is Speed Lab's.
+  const appCommitCell = (stored) => (stored === "unknown" ? "unknown" : String(stored ?? "").slice(0, 7));
   for (const [key, rows] of Object.entries(rowsByKey)) {
     out.log("");
     out.log(key);
-    const head = primary ? ["at", "commit", "appVersion", "pass", primary, ...(rows.some((r) => num(r.values?.fullMs) !== null) ? ["fullMs"] : [])] : ["at", "commit", "appVersion", "pass", "failed"];
+    const commitCols = appTest ? ["app commit", "runner"] : ["commit"];
+    const head = primary ? ["at", ...commitCols, "appVersion", "pass", primary, ...(rows.some((r) => num(r.values?.fullMs) !== null) ? ["fullMs"] : [])] : ["at", ...commitCols, "appVersion", "pass", "failed"];
     out.log(`| ${head.join(" | ")} |`);
     out.log(`|${head.map(() => "---").join("|")}|`);
     for (const r of rows) {
-      const cells = [r.at, `${String(r.commit).slice(0, 7)}${r.dirty ? "-dirty" : ""}`, r.appVersion, r.pass ? "pass" : "FAIL"];
+      const lab = `${String(r.commit).slice(0, 7)}${r.dirty ? "-dirty" : ""}`;
+      const cells = [r.at, ...(appTest ? [appCommitCell(r.appCommit), lab] : [lab]), r.appVersion, r.pass ? "pass" : "FAIL"];
       if (primary) { cells.push(fmt(r.values?.[primary])); if (head.includes("fullMs")) cells.push(fmt(r.values?.fullMs)); }
       else cells.push([...(r.failed ?? []), r.error ?? ""].filter(Boolean).join("; "));
       out.log(`| ${cells.join(" | ")} |`);
