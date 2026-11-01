@@ -1,6 +1,6 @@
 # Speed Lab
 
-Speed Lab measures the speed of GilbPlatform and its apps with the same tool, so a run that gets slower is seen at once. It is also the worked example of an app built from the `units/speed-kit/README.md` alone. It was named `speed-kit-taking-app` until 2026-11-01. It takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next. It grows a test for every kind of speed.
+Speed Lab measures the speed of GilbPlatform and its apps with the same tool, so a run that gets slower is seen at once. It is also the worked example of an app built from the `units/speed-kit/README.md` alone. It was named `speed-kit-taking-app` until 2026-11-01. It takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next. It grows a test for every kind of speed. Its meter is `units/speed-meter` (taken like any developer would, with `routes`, `answeredRoutes`, `globalKey: "__speedProof"` and an unbounded log), so `window.__speedProof` reads as before plus `writes`.
 
 The app id `speedkittakinglive` and the storage names `speedkittaking-*` keep the old name on purpose, so copies already on a device and saved sign-ins still work.
 
