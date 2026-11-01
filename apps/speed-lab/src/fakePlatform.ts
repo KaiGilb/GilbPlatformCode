@@ -3,7 +3,7 @@
 //   PATCH /lws/vault/<vault segment>/records/<id>  one entry's `name` (the route form is this stand-in's own; the real platform's write differs)
 // Any query parameter completeCopy does not send answers 400, so a mismatch is loud.
 import type { PlatformClient } from "@kaigilb/gilbplatformcode-record-sync";
-import { proof } from "./proof";
+import { meter } from "./proof";
 
 import { TYPE } from "./catalog";
 export { TYPE };
@@ -111,8 +111,7 @@ export function createFakePlatform(options: { latencyMs?: () => number; annCount
         const method = init?.method ?? "GET";
         const m = /^\/lws\/vault\/([^/]+)\/records(?:\/([^/]+))?$/.exec(u.pathname);
         const route = m && method === "GET" && !m[2] ? "records" : m && method === "PATCH" && m[2] ? "patch" : "other";
-        proof.requests[route] += 1;
-        proof.log.push({ route, method, url });
+        meter.countRequest(route, method, url);
         const vaultId = m ? decodeURIComponent(m[1]!) : "";
         const gate = route === "records" ? gates.get(vaultId) : undefined;
         if (gate && ++gate.seen > gate.after) {
@@ -121,8 +120,8 @@ export function createFakePlatform(options: { latencyMs?: () => number; annCount
         }
         await holds.get(vaultId);
         await sleep(api.latencyMs());
-        if (route === "records") { const r = records(vaultId, u.searchParams); answeredRecords += 1; proof.answered.records += 1; return r; }
-        if (route === "patch") { const r = patch(vaultId, m![2]!, init?.body ? JSON.parse(String(init.body)) : null); proof.answered.patch += 1; return r; }
+        if (route === "records") { const r = records(vaultId, u.searchParams); answeredRecords += 1; meter.countAnswered("records"); return r; }
+        if (route === "patch") { const r = patch(vaultId, m![2]!, init?.body ? JSON.parse(String(init.body)) : null); meter.countAnswered("patch"); return r; }
         return json(404, { error: "no_such_route" });
       },
     };

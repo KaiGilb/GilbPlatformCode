@@ -50,7 +50,6 @@ A browser run reads `window.__speedMeter`, or `window[globalKey]` when you set a
 - Not storage. It does not read or write disk, and it does not touch `localStorage`.
 - Not React. There is no hook and no component.
 - Not a judge. It does not decide pass or fail. Speed Lab does that.
-- Not wired into Speed Lab. Speed Lab still uses `apps/speed-lab/src/proof.ts`. This package does not replace that file.
 
 ## How to take it
 
@@ -149,3 +148,5 @@ Named changes, and only these:
 9. installProofHooks takes a hooks object and a key instead of one clearCache function.
 
 `src/index.ts`, `src/speedMeter.test.ts`, `src/hostAgnostic.test.ts` and `scripts/check-host-agnostic.mjs` are new. `startLine` is the same string as in the source file.
+
+Taken by: `apps/speed-lab` (Speed Lab), through `src/proof.ts`, with the options above.
