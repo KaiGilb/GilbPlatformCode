@@ -30,7 +30,7 @@ Entry points (`src/index.ts`; each name is the whole of that unit's exports):
 
 ## Speed you can expect
 
-Measured on `apps/speed-kit-taking-app` (REAL Chromium and WebKit, MOCK vault, 600 ms per request, 500 entries, 2026-10-30; `npm run proof:browser` there repeats it):
+Measured on `apps/speed-lab` (REAL Chromium and WebKit, MOCK vault, 600 ms per request, 500 entries, 2026-10-30; `npm run proof:browser` there repeats it):
 
 - A cold first visit waits for the whole `completeCopy`: `since=head`, then one walk page per 200 rows, then one `since=` pass. At 500 rows that was 5 requests one after the other, and the first row came after about 3.0 s.
 - After that, a page painted from memory in about 2 ms and from the device after a reload in about 10 ms.
@@ -72,7 +72,7 @@ Then install the units in order (the line `node scripts/peers.mjs speed-kit` pri
 npm install react@^19.0.0 <path-to-the-library>/units/device-store <path-to-the-library>/units/principal-hub <path-to-the-library>/units/background-jobs <path-to-the-library>/units/prefetch-registry <path-to-the-library>/units/record-sync <path-to-the-library>/units/session-cache <path-to-the-library>/units/updated-line <path-to-the-library>/units/use-cached <path-to-the-library>/units/speed-kit
 ```
 
-An app that renders also needs `npm install react-dom@^19.0.0`. To build and test it needs `vite`, `vitest`, `jsdom`, `@testing-library/react` and `fake-indexeddb`; `apps/speed-kit-taking-app/package.json` has the versions.
+An app that renders also needs `npm install react-dom@^19.0.0`. To build and test it needs `vite`, `vitest`, `jsdom`, `@testing-library/react` and `fake-indexeddb`; `apps/speed-lab/package.json` has the versions.
 
 The eight units are peers of this package and `principal-hub` holds module state: install ONE copy of each. The package ships TypeScript source (`src/`); your bundler compiles it. `examples/consumer` is a fresh app that is exactly the example below; it was compiled with `tsc --noEmit` after that install (a copy of it in a scratch folder, since `node_modules` does not belong in the unit).
 
@@ -242,7 +242,7 @@ Dynamic imports in the files taken: none.
 
 A screen that is still mounted when the person changes (a bare `hub.setPrincipal(other)`, with no `signOut`) makes its cache key again, and `cacheKey` now reads the new person. It still holds the old person's client and workspace. So it loads the old person's vault into the new person's cache key, and the old person's rows show under the new person. The taking app saw exactly this in its test T9.
 
-The remedy is a hub clearer that takes the screens back to sign-in. From `apps/speed-kit-taking-app/src/App.tsx`:
+The remedy is a hub clearer that takes the screens back to sign-in. From `apps/speed-lab/src/App.tsx`:
 
 ```ts
 useEffect(() => {
@@ -257,7 +257,7 @@ With it, the screens unmount in the same change and no load starts for the new p
 
 - On Node 25 (seen on 25.9.0) jsdom's `localStorage` is not usable (`localStorage.clear is not a function`). Stub `localStorage` and `sessionStorage` with an in-memory `Storage` in your test set-up.
 - A reload in a test is `vi.resetModules()` plus a fresh dynamic `import()` of your app. The hub, the cache, the job store and the kit start empty, as on a new page; the fake IndexedDB stays, as the device does.
-- `apps/speed-kit-taking-app/test/helpers.tsx` (`boot()` and `reload()`) is a worked example.
+- `apps/speed-lab/test/helpers.tsx` (`boot()` and `reload()`) is a worked example.
 
 ## Wrong readings
 
@@ -282,4 +282,4 @@ Tests (`src/*.test.ts`, jsdom, `fake-indexeddb` 6.2.6): `firstPage.test.ts` (a p
 
 Changes in 0.2.0: the first page early. The peer ranges move to `record-sync` ^0.4.1 (`completeCopy` takes `onPage`), `session-cache` ^0.2.0 (a loader is handed `LoadContext`; `cache.peek(key).partial`) and `use-cached` ^0.2.0 (the hook hands the loader the same context). `speedKit.ts` changes in one place: `start` installs the `onCommit` listener right after the device copy is open, before `adopt` and `hydrate`, not after them. The same person and `persistResources` checks apply. `src/firstPage.test.ts` (5 tests, 58 in the unit) pins that a preview is never put on the device, that the committed load stores the complete value, that a preview does not outlive a change of person, that an answer landing during a slow disk read is saved after it, and that a copy read late is shown while the first load runs. The `Cached.partial` member of `use-cached` 0.2.0 is `cached.useCached(...).partial`.
 
-Taken by: `apps/speed-kit-taking-app` takes this package. It was built from this README alone on 2026-10-30, and its `RUNLOG.md` lists what the README lacked.
+Taken by: `apps/speed-lab` (Speed Lab; named speed-kit-taking-app until 2026-11-01) takes this package. It was built from this README alone on 2026-10-30, and its `RUNLOG.md` lists what the README lacked.
