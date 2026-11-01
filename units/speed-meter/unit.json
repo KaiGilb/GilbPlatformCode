@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "unit": "units/speed-meter",
+  "package": "@kaigilb/gilbplatformcode-speed-meter",
+  "version": "0.1.0",
+  "purpose": "An in-memory meter of the requests an app received and answered, how long a page took to paint, and how long a write took.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "b53704e08e2c0cb01ae1787eb8f5c927e905e98d",
+    "files": [
+      {
+        "path": "apps/speed-lab/src/proof.ts",
+        "lines": [1, 40],
+        "to": "src/speedMeter.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the module-level object becomes createSpeedMeter(options)",
+    "fixed request keys become routes",
+    "the global key, target, clock and limits become options",
+    "writes and timeWrite are new",
+    "timePage is new",
+    "subscribe replaces subscribePaint and also fires on setStart and writes",
+    "reset is new",
+    "a throwing listener no longer stops the others",
+    "installProofHooks takes a hooks object and a key instead of one clearCache function"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/speedMeter.test.ts",
+    "src/hostAgnostic.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
