@@ -185,9 +185,15 @@ The state is honest:
 - `off` — the read is not enabled, `fields` is null, or the host lacks either member. No request is made, and the card stays as before.
 - `reading` — the spellings have not answered, or an address binds places and the names have not answered. Nothing is handed back half-named.
 - `failed` — the spellings rejected, so it is not known which fields are address parts. This is never `ready` with no addresses: "no address" must not come from a failed read.
-- `ready` — `addresses` (each `TheirAddress` plus `city`, `region`, `country`, `countryId`, and that address's own `unread` and `gone`) and `loose` (the address parts the server named no address for).
+- `ready` — `addresses` (each `TheirAddress` plus `city`, `region`, `country`, `countryId`, and that address's own `unread` and `gone`), `loose` (the address parts the server named no address for) and `rest` (the input fields minus every field that went into an address: a label whose `sourceEntity` is one of those addresses, and a part whose predicate is one of the five part spellings and whose `composite` is one of those addresses, including a duplicate the grouping ignored). Loose parts and every other field stay in `rest`, in the order they were given. `off`, `reading` and `failed` do not carry `rest`.
 
-`unread` counts the places of that address that were not read: a `failed` answer, a named row with an empty label, or an id the answer left out (including a stub that returns `[]` for the ids it was asked — that is "not read", not "no place"). `gone` counts `missing` (the catalogue answered 404). A rejection of `readPlaceNames` itself, which the member must not do, is the same as every id `failed`: `ready`, the text lines kept, every place `unread`, and the rejection is handled. No drawing in this version: `OneCardBody` is unchanged.
+`unread` counts the places of that address that were not read: a `failed` answer, a named row with an empty label, or an id the answer left out (including a stub that returns `[]` for the ids it was asked — that is "not read", not "no place"). `gone` counts `missing` (the catalogue answered 404). A rejection of `readPlaceNames` itself, which the member must not do, is the same as every id `failed`: `ready`, the text lines kept, every place `unread`, and the rejection is handled. Drawing the row is the next section.
+
+## Their address on the card (beyond the source)
+
+Beyond the source (Kai, 2026-11-01). For a linked card whose online card is ready and whose `addressPredicate` is set, `OneCardBody` calls `useTheirAddresses` (the hook is unconditional, like `useHeldAddresses`; it is not enabled otherwise). When that read is `ready`, the merge is built from `online` with `fields: rest` and from `theirAddresses` mapped to `TheirAddressInput` (`parts` is street, line1, line2, postalCode, city, region, country). The row's text this version is the plain address line (`row.value`). The flag and `CompactAddress` are not drawn. When the read is `off`, `reading` or `failed`, the card is exactly as before: the same online card, and no `theirAddresses`.
+
+The place groups handed to Details are still taken from the merged card. An address's places are no longer among them, because their `claimPlace` fields were consumed into the address. A loose place still is.
 
 `orderPlaces` is pure and exported. `ownAddressOf` calls it; the held-address behaviour is unchanged.
 

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/one-card",
   "package": "@kaigilb/gilbplatformcode-one-card",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "purpose": "Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -71,7 +71,8 @@
     "comments made generic (cycle, step, tester, design-note and ruling tags, dates, person and app names and a spec reference removed; the example host address in `theirPlaces.ts` reworded); no code changed. No string literal carries a tag.",
     "0.2.0: `theirValueText` returns a `ReactNode` and a row on the language term (`a:languageUsed`, by term) is drawn by `LanguageRow` of the unit `language-row` in both the linked and the single-source view (`valueText` of `unlinkedView`); every other field is unchanged. This is new behaviour, not a port: the source draws the language's address there. The comment-stripped file differs from the 0.1.0 file in exactly these lines (new function `languageUsedText`, `theirValueText`, `unlinkedView`'s `valueText`, plus one import).",
     "0.3.0: `skillText(value, label)` (new, private) replaces `labelFor(row.value) || row.value.split(\"/\").pop() || row.value` in the linked view's `valueText` for the skill field: the label, else `referentNameOf(value)` of `term-name-text`, else \"A skill\" for any other address, else the text itself. The `languageUsed` and birthday paths and the unlinked view are unchanged.",
-    "Beyond the source (Kai, 2026-11-01): optional host members `addressSpellings` and `readPlaceNames`, and `useTheirAddresses`, read the place names of an address of theirs (city, region, country, country id) and say honestly when a place of that address was not read (`unread`) or is gone (`gone`). `orderPlaces` is the finest-first sort `ownAddressOf` already used, now shared. Absent either member, or the read not enabled, or the fields not in hand: no request, and the card stays as before. No drawing."
+    "Beyond the source (Kai, 2026-11-01): optional host members `addressSpellings` and `readPlaceNames`, and `useTheirAddresses`, read the place names of an address of theirs (city, region, country, country id) and say honestly when a place of that address was not read (`unread`) or is gone (`gone`). `orderPlaces` is the finest-first sort `ownAddressOf` already used, now shared. Absent either member, or the read not enabled, or the fields not in hand: no request, and the card stays as before. No drawing.",
+    "Beyond the source (Kai, 2026-11-01): `useTheirAddresses` in `ready` also returns `rest`, the input fields minus every field that went into an address (a label whose `sourceEntity` is an address id, and a part whose predicate is one of the five part spellings and whose `composite` is an address id, including a duplicate the grouping ignored). Loose parts and every other field stay, in order. `OneCardBody`, for a linked card whose online card is ready and which names `addressPredicate`, builds the merge from `rest` and from those addresses once the read is `ready`, and draws the plain address line as the row. While the read is off, reading or failed, the card is exactly as before. An address's places are not handed to Details; a loose place still is."
   ],
   "newFiles": [
     "src/index.ts",
