@@ -68,7 +68,5 @@
       "replaces": "the literal check that the kind \"pick\" leaves no toast"
     }
   ],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:BackgroundJob.store", "title": "Background jobs (outlive the page)", "note": "Only the store of jobs that outlive the page: one flight per key, one lane per workspace, never retried, failures kept as notices. For the cached read take session-cache; for the clear on sign-out take principal-hub." }
 }
