@@ -52,7 +52,8 @@ The card needs the vaults the holder reaches, with the landing flag on one of th
 | | `useHolderOriginLine`, `useContactLabels` | your props; since 0.4.0 the defaults are the real hooks: `useHolderOriginLine` of `contact-card-slots` (the SAME function the held card's slots call, so the header and the body share one read) and `useContactLabels` of `contact-labels` |
 | `OneCardHost` | `isGeoEntityId` | inline, over your `geoOrigin` |
 | | `placeClaimsKey`, `placeClaimsStaleMs` | inline (`["mynet", "place-claims", vaultId]`, `60_000`) |
-| | `listPlaceClaimsInVault`, `claimsAbout`, `claimFieldText`, `loadPlaceNames` | your props; the card never calls them, and the defaults find nothing |
+| | `listPlaceClaimsInVault`, `claimsAbout`, `claimFieldText`, `loadPlaceNames` | your props; since 0.5.0 the defaults are the real ones over the provider's query client (`heldAddresses.ts`), and without a query client they find nothing |
+| | `addressSpellings`, `readPlaceNames` | always the real ones (0.5.1, beyond the source): `resolvePlaceVocab` of `place-vocab` mapped to the address spellings, and `readPlaceNames` of `place-names` mapped to one `TheirPlaceRead` per id (`failed` drops its reason). Your props win. They do not need a query client |
 | `CardReferencesHost` (an argument, no context) | `changeRecordFactItems` | `changeRecordFactItems` of `record-fact-items`, from `createCardReferencesHost()` |
 | `OrgMarkHost` (`OrgMarkHostContext`) | `downloadFileOutcome` | `downloadFileOutcome` of `file-download-outcome` |
 | `OrgEmployeesHost` (`OrgEmployeesHostContext`) | `readResources` | `readResources` of `vault-resources` (since 0.4.0; the inline copy is gone), six in flight |
@@ -318,6 +319,12 @@ Install this unit once. Two copies would each keep their own resolver and findin
 - **Never half of an answer** (F8). `listPlaceClaimsInVault` REJECTS, with the claims it read (`PlaceClaimsIncompleteError`), when the read was not the whole vault; `loadPlaceNames` REJECTS (`PlaceNamesNotReadError`) when any place could not be read (a place the catalogue answered 404 for is an absence and is left out). The one card turns a rejection into "the holder's addresses are not known", which leaves the merge unfolded, so a linked card never says "You have the same on your card" from a part of the list or a part of an address. The rejection of `loadPlaceNames` is returned on a promise whose derived promises are marked handled: the one card gives its `then` no second argument, so otherwise the rejection would be reported as unhandled.
 - **One shape under the shared key.** The shared read holds the whole `PlaceClaimsRead`. The one card's own observer (`useQuery`, whose `queryFn` is the member) has its own key, `heldAddressesKey(vaultId)`, which starts with the shared read's, so the two shapes never meet under one key. The `placeClaimsKey` of the host is that key when the host is made with a query client (the provider does); without one it is GilbApp's and the members answer nothing, as before.
 - New peers `place-claims` and `place-names`; new export-free file `src/heldAddresses.ts` and its test; `createOneCardHost` takes `queryClient`.
+
+## Changes in 0.5.1
+
+- **Their address, the real members** (beyond the source, Kai, 2026-11-01). `createOneCardHost` now always supplies `addressSpellings` and `readPlaceNames`, with or without a query client. `addressSpellings` asks `resolvePlaceVocab` of `place-vocab` and maps `placeClaimLabel`, `streetLine`, `addressLine1`, `addressLine2`, `postalCode` and `claimPlace`. `readPlaceNames` asks `readPlaceNames` of `place-names` and maps each answer, in order, to the one card's `TheirPlaceRead`: a named row keeps `id`, `label`, `type` and `memberOf`; `missing` stays missing; `failed` drops its reason. A member you pass still wins. Nothing is drawn here: the one card's hook reads them.
+- New peer `place-vocab` `^0.1.0` (it was already a dev dependency, through the place units). Peer `one-card` is now `^0.3.1`, the release that declares the two optional members.
+- New test `src/theirAddressMembers.test.ts` (the vocabulary mapping, named/missing/failed in order, and the overrides).
 
 ## Tests (0.5.0)
 

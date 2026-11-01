@@ -192,7 +192,7 @@ describe("what it mounts", () => {
     expect(Object.keys(at.card!.person).sort()).toEqual(["adderCardOf", "rememberCreatedIn"]);
     expect(Object.keys(at.card!.vocabulary)).toEqual(["masterKindReader"]);
     expect(Object.keys(at.header!).sort()).toEqual(["discoverVaultProfilePhoto", "loadGranteeFace", "loadPhotoObjectUrl", "useContactLabels", "useHolderOriginLine", "useRelations"]);
-    expect(Object.keys(at.oneCard!).sort()).toEqual(["claimFieldText", "claimsAbout", "isGeoEntityId", "listPlaceClaimsInVault", "loadPlaceNames", "placeClaimsKey", "placeClaimsStaleMs"]);
+    expect(Object.keys(at.oneCard!).sort()).toEqual(["addressSpellings", "claimFieldText", "claimsAbout", "isGeoEntityId", "listPlaceClaimsInVault", "loadPlaceNames", "placeClaimsKey", "placeClaimsStaleMs", "readPlaceNames"]);
   });
 
   test("the three contexts of the standalone Org units are filled too: the Employees host, the mark's host and the pickers' query hook", () => {

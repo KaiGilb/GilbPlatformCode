@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/stakeholder-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-stakeholder-card-hosts-gilbplatform",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "purpose": "The ready-made GilbPlatform host for the Stakeholder cards: one provider that sets the platform's origins and the session, supplies every host the online stakeholder card needs, and holds the platform pieces and the peer hosts the held stakeholder record card is built from, so they draw, read, add and edit with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -180,7 +180,8 @@
     "0.4.0: `useHolderOriginLine` and `useContactLabels` of the header host default to `contact-card-slots`' and `contact-labels`' (they defaulted to none); the provider props still override. src/refLabel.ts is the `entity-ref-value` README example hook (GilbApp `useResolvedRefLabel`, EntityRefValue.tsx 18-46). `settings.mynetProfileUrl` is set through `setMyNetProfileUrl` of `own-card-state`. `onOpenRecord(id, door?)` passes the vault a create of this session wrote the record into (`createdInVaultOf`) when known.",
     "0.4.0 peers: added adder-card, added-by, contact-card-slots, contact-labels, contact-rows, entity-ref-value, home-dial, main-tag, modes-label, other-linked-records, own-card-state, phone-value, record-detail-reads, record-sidecar-save, skill-picker-sheet, social-logo, stakeholder-set-fields, vault-resources; dropped lws-vault-sets, plan-self-source, resource-id, vault-namespace.",
     "0.4.4 (H15a): `applyPlatformSetup` also calls `setGeoOrigin(setup.geoOrigin)` (new peer `geo-origin`) and `setupKey` includes `geoOrigin`. The inline `isGeoEntityId` stays and a test pins that it agrees with `geo-origin`'s.",
-    "0.5.0 (H15g): the one card's four place members are the real ones (`src/heldAddresses.ts`), over the provider's query client: the holder's addresses of a linked person through the vault's one shared address read; `listPlaceClaimsInVault` rejects with the claims it read when the read was not the whole vault, `loadPlaceNames` rejects when any place could not be read (F8). The one card's own observer has its own key, `heldAddressesKey`, under the shared read's. A member the developer gives still wins. New peers `place-claims`, `place-names`."
+    "0.5.0 (H15g): the one card's four place members are the real ones (`src/heldAddresses.ts`), over the provider's query client: the holder's addresses of a linked person through the vault's one shared address read; `listPlaceClaimsInVault` rejects with the claims it read when the read was not the whole vault, `loadPlaceNames` rejects when any place could not be read (F8). The one card's own observer has its own key, `heldAddressesKey`, under the shared read's. A member the developer gives still wins. New peers `place-claims`, `place-names`.",
+    "Beyond the source (Kai, 2026-11-01): `createOneCardHost` supplies `addressSpellings` (`resolvePlaceVocab` of `place-vocab`, mapped to `AddressSpellings`) and `readPlaceNames` (`readPlaceNames` of `place-names`, mapped to `TheirPlaceRead`; a failure's reason is dropped). Both are always the real ones, with or without a query client; a member the developer gives still wins. New peer `place-vocab`. Peer `one-card` is now ^0.3.1."
   ],
   "newFiles": [
     "scripts/check-host-agnostic.mjs",
@@ -191,6 +192,7 @@
     "src/example.test.tsx",
     "src/heldAddresses.test.tsx",
     "src/heldAddresses.ts",
+    "src/theirAddressMembers.test.ts",
     "src/heldHosts.test.tsx",
     "src/hostAgnostic.test.ts",
     "src/hosts.test.tsx",
