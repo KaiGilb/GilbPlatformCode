@@ -1,9 +1,9 @@
 {
-  "name": "speed-kit-taking-app",
-  "version": "0.5.1",
+  "name": "speed-lab",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
-  "description": "A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.",
+  "description": "Speed Lab: takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next. It grows a test for every kind of speed.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

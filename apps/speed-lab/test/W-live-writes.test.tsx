@@ -122,7 +122,7 @@ describe("W live writes", () => {
       expect(b.type).toBe("t:CatalogEntry");
       expect(Object.keys(b.facts).sort()).toEqual(["a:description", "a:name"]); // the WRITE keys
       expect(b.facts["a:name"]).toMatch(NAMED);
-      expect(b.facts["a:description"]).toBe("Test entry made by speed-kit-taking-app; safe to end.");
+      expect(b.facts["a:description"]).toBe("Test entry made by speed-lab; safe to end.");
     }
     const stored = JSON.parse(localStorage.getItem(madeKey)!) as string[];
     expect(stored).toHaveLength(50);
@@ -157,7 +157,7 @@ describe("W live writes", () => {
   test("W5 end: only listed ids whose fresh name has the prefix are ended; others stay; ended ids leave the list", async () => {
     const k = await bootLive();
     const vault = fakeVault();
-    for (let i = 1; i <= 8; i++) vault.add(`p${i}`, `speedkit-proof zz ${i}`, "Test entry made by speed-kit-taking-app; safe to end.");
+    for (let i = 1; i <= 8; i++) vault.add(`p${i}`, `speedkit-proof zz ${i}`, "Test entry made by speed-lab; safe to end.");
     vault.add("p9", "Renamed away from the prefix", "x"); // on the list, but renamed
     vault.add("p10", "speedkit-proof zz 10", "x"); // has the prefix, but this app did not make it (not on the list)
     localStorage.setItem(madeKey, JSON.stringify(["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9"]));

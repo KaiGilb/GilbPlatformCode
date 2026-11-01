@@ -5,7 +5,7 @@ import type { TermFetch } from "@kaigilb/gilbplatformcode-platform-fetch";
 import { TYPE } from "../catalog";
 
 export const NAME_PREFIX = "speedkit-proof ";
-export const DESCRIPTION = "Test entry made by speed-kit-taking-app; safe to end.";
+export const DESCRIPTION = "Test entry made by speed-lab; safe to end.";
 export const SEED_COUNTS = [10, 50, 200, 500] as const;
 /** RuleBasespeedBoundedFanOut: never more than this many writes in flight. */
 export const MAX_IN_FLIGHT = 4;

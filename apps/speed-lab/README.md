@@ -1,6 +1,18 @@
-A small app that takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next.
+# Speed Lab
 
-# speed-kit-taking-app
+Speed Lab measures the speed of GilbPlatform and its apps with the same tool, so a run that gets slower is seen at once. It is also the worked example of an app built from the `units/speed-kit/README.md` alone. It was named `speed-kit-taking-app` until 2026-11-01. It takes speed-kit from this repository and shows a vault's catalogue entries the GilbPlatform-fast way: from memory at once, from the device after a reload, refreshed behind the screen, with nothing of one person left for the next. It grows a test for every kind of speed.
+
+The app id `speedkittakinglive` and the storage names `speedkittaking-*` keep the old name on purpose, so copies already on a device and saved sign-ins still work.
+
+## Tests
+
+| Id | Was | What it measures | How it runs |
+|---|---|---|---|
+| SL-001 to SL-007 | B1 to B7 | SL-001 (B1) cold first visit: first row and full list from the network. SL-002 (B2) back from an entry: rows from memory. SL-003 (B3) reload: rows painted from the device before any records answer. SL-004 (B4) sign-out and Ben: nothing of Ann seen. SL-005 (B5) hover warms: pointing at the nav sends the request. SL-006 (B6) tab closed without sign-out: nothing of Ann left. SL-007 (B7) slow disk: a late device copy still paints, labelled `device`. | stand-in: real Chromium + WebKit, fake vault (`npm run proof:browser`) |
+| SL-008 | live cold first row | first row and full list on a cold first visit to one named test vault on production, read only (see "Measured live") | live, read only, Kai signs in |
+| SL-009 | live writes | Add / Rename / End test entries, each said "done" only after a read-back | live, only with `--allow-write` and Kai's word |
+
+The code and its output still print B1 to B7; this table is the mapping.
 
 Vite + React 19 + TypeScript. It takes the eight speed units and `speed-kit` exactly as `units/speed-kit/README.md` says (`.npmrc` with `install-links=true`, then the README's install line with `<path-to-the-library>` = `../..`). `RUNLOG.md` lists every place that README was wrong or silent.
 
@@ -23,7 +35,7 @@ npm run typecheck && npm test && npm run build
 
 `src/fakePlatform.ts` is NOT the platform. It answers in memory, after a delay, `GET /lws/vault/<vault>/records` (the shape `completeCopy` reads; any other query parameter answers 400) and `PATCH /lws/vault/<vault>/records/<id>` (the route form is this stand-in's own; the real platform's write differs). `src/session.ts`'s client and `src/entries.ts`'s loader are the seams to the real platform.
 
-## Tests
+## Unit tests
 
 `test/T1` to `test/T8` (13 tests): the real units, with only the platform (the stand-in), IndexedDB (`fake-indexeddb`) and storage faked. `test/helpers.tsx` `boot()` loads the app on a fresh module registry, and `reload()` is a page reload (the device stays, the module state goes).
 
@@ -33,7 +45,7 @@ npm run typecheck && npm test && npm run build
 npm run proof:browser   # builds, serves `vite preview` on 5261, runs real Chromium and WebKit; about 4 minutes
 ```
 
-It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/ms-playwright/` (chromium 1228, webkit 2311; nothing is downloaded) at desktop (1280x800) and phone (`devices["iPhone 13"]`; in Chromium the phone also gets 400 ms / 1.6 Mbit down / 0.75 Mbit up) and writes a JSON file and a table to `proof-out/` in the app folder (ignored by git; `PROOF_OUT` names another folder); the server log is `~/Library/Logs/speed-kit-taking-app-proof.log`. It is not part of `npm test` (CI has no browsers).
+It uses `playwright-core` 1.61.0 with the browsers already in `~/Library/Caches/ms-playwright/` (chromium 1228, webkit 2311; nothing is downloaded) at desktop (1280x800) and phone (`devices["iPhone 13"]`; in Chromium the phone also gets 400 ms / 1.6 Mbit down / 0.75 Mbit up) and writes a JSON file and a table to `proof-out/` in the app folder (ignored by git; `PROOF_OUT` names another folder); the server log is `~/Library/Logs/speed-lab-proof.log`. It is not part of `npm test` (CI has no browsers).
 
 It proves, in a REAL browser engine with its real IndexedDB, real reloads and a real mouse: the first visit, the return from an entry, the reload painted from the device before any records answer, no trace of Ann after sign-out or after a tab closed without sign-out, and that pointing at the nav sends the request.
 It does NOT prove: anything against the real platform (the vault is the in-page stand-in, so the result is "REAL browser, MOCK vault"), a real phone, or the network cost of the vault (the throttling slows only the page load, since the stand-in answers inside the page).
@@ -85,7 +97,7 @@ npm run dev:live -- --vault https://<host>/vault [--allow-write]
 # a vault not under gilb.com also needs: --id https://<identity host> --platform https://<platform apex>
 ```
 
-`scripts/dev-live.mjs` refuses without `--vault`, refuses a value that is not `https://<host>/vault`, refuses when port 5251 is taken, sets every `VITE_` variable itself, prints the URL and both origins, and logs to `~/Library/Logs/speed-kit-taking-app-live.log`. It never starts without you: you sign in yourself.
+`scripts/dev-live.mjs` refuses without `--vault`, refuses a value that is not `https://<host>/vault`, refuses when port 5251 is taken, sets every `VITE_` variable itself, prints the URL and both origins, and logs to `~/Library/Logs/speed-lab-live.log`. It never starts without you: you sign in yourself.
 
 - **Two origins**, as in records-app (proven live on 2026-10-29). The identity origin (`--id`, default `https://id.gilb.com`) takes every sign-in call and `GET /lws/vaults`. The platform apex (`--platform`, default `https://gilb.com`) is only what the units treat as the platform (`setBaseOrigin`, the system hosts), and no request goes to it: a key-bound call at the apex fails the DPoP check. The vault's own data calls go to the vault's own host. The defaults apply to a vault under `gilb.com`; for any other host both flags are required.
 - **Port 5251.** Production admits a local app only at `http://localhost:5197` or `http://localhost:5251`. Live mode uses 5251 (`strictPort`), the origin records-app's proven live run used.

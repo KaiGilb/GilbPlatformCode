@@ -3,7 +3,7 @@
 import { checkVaultName, prepareVaultName, requestSignInCode, type SignInAuth, type Transport } from "@kaigilb/gilbplatformcode-signin/core";
 import type { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 
-export const PRODUCT_NAME = "Speed kit taking app";
+export const PRODUCT_NAME = "Speed Lab";
 
 export function makeAuth(session: Pick<SessionCredential, "signInWithCode">, origin: string, transport?: Transport): SignInAuth {
   const http = transport ? { transport } : {};

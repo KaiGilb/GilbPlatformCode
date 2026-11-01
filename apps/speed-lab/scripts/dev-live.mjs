@@ -69,7 +69,7 @@ export function parseArgs(argv) {
   return out;
 }
 
-export async function main({ argv = process.argv.slice(2), port = 5251, spawnFn = spawn, log = console.log, err = console.error, logFile = join(homedir(), "Library/Logs/speed-kit-taking-app-live.log") } = {}) {
+export async function main({ argv = process.argv.slice(2), port = 5251, spawnFn = spawn, log = console.log, err = console.error, logFile = join(homedir(), "Library/Logs/speed-lab-live.log") } = {}) {
   const args = parseArgs(argv);
   if (args.problem) { err(args.problem); return 1; }
   if (!args.vault) { err("usage: node scripts/dev-live.mjs --vault https://<host>/vault"); return 1; }
@@ -110,7 +110,7 @@ export async function main({ argv = process.argv.slice(2), port = 5251, spawnFn 
     child.once("exit", (code) => finish(code ?? 1));
     child.once("error", (e) => {
       if (done) return;
-      err(`Could not start vite (${e.code ?? e.message}). Run npm ci in apps/speed-kit-taking-app first.`);
+      err(`Could not start vite (${e.code ?? e.message}). Run npm ci in apps/speed-lab first.`);
       finish(1);
     });
   });
