@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/one-card-merge",
   "package": "@kaigilb/gilbplatformcode-one-card-merge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Merges a person's published rows with the holder's own rows into one list of groups, each row marked theirs, yours or both.",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -14,7 +14,8 @@
   "namedChanges": [
     "In `mergeOneCard.ts`: `bareForm` from `../terms.ts` is the peer `@kaigilb/gilbplatformcode-vocabulary-source`; the type `StakeholderField` from `../fieldSets.ts` is the peer `@kaigilb/gilbplatformcode-stakeholder-field-sets`; `cardName` and the type `OnlineCard` from `./publicCard.ts` and `rungChipWords` from `./rungs.ts` are one import from the peer `@kaigilb/gilbplatformcode-online-card`.",
     "Comments made generic (cycle, ticket, tester and spec tags, person names, dates of rulings and app names removed from the file's comments); no code change.",
-    "Beyond the source (Kai, 2026-11-01): `src/theirAddresses.ts` adds `theirAddressesOf`, `theirAddressLine` and the types `AddressSpellings` and `TheirAddress`, which group the address fields of their online card by the `composite` the card now carries (`online-card` 0.1.1), and `src/index.ts` exports it. Kai asked for their address to be shown the way MyNet shows it (names, never addresses)."
+    "Beyond the source (Kai, 2026-11-01): `src/theirAddresses.ts` adds `theirAddressesOf`, `theirAddressLine` and the types `AddressSpellings` and `TheirAddress`, which group the address fields of their online card by the `composite` the card now carries (`online-card` 0.1.1), and `src/index.ts` exports it. Kai asked for their address to be shown the way MyNet shows it (names, never addresses).",
+    "Beyond the source (Kai, 2026-11-01): `mergeOneCard` takes `theirAddresses` (`TheirAddressInput`) when `addressPredicate` is set and adds each as one row of theirs in that field, in input order, keyed by the address id so two addresses with the same line stay two rows. The row's value is `addressLine` of the named parts (or the label when no part was served), its label is their name for it, and it carries `address` (`composite`, `parts`, `countryId`, `unread`, `gone`). A half address (`unread` or `gone` above zero) is never marked `sameAsTheirs`. Without `addressPredicate`, `theirAddresses` is ignored."
   ],
   "newFiles": [
     "src/index.ts",

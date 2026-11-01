@@ -62,6 +62,17 @@ export interface OwnAddress {
   kind?: string;
 }
 
+/** One address of theirs, its parts already named (city/region/country are place NAMES). Beyond the source (Kai, 2026-11-01). */
+export interface TheirAddressInput {
+  composite: string; // the address's entity id
+  label: string | null; // their own name for it ("home"), null when not served to this viewer
+  parts: OwnAddress; // street, line1, line2, postalCode, city, region, country (no entity)
+  countryId: string | null; // for the flag (B3b)
+  rungs: readonly string[]; // distinct rungs of its parts
+  unread: number; // places not read right now
+  gone: number; // places no longer in the catalogue
+}
+
 /** The holder's own side of the card. Every part is optional: a person with no record has none. */
 export interface OwnCard {
   /** The record's own name (`readPartyName`), or null. */
@@ -89,6 +100,8 @@ export interface MergeOneCardInput {
   /** The field the holder's held addresses (`own.addresses`) belong to (the address field's write spelling, `a:postalAddress`).
    *  Without it, `own.addresses` is not read (additive: an app that does not name it gets the merge it had). */
   addressPredicate?: string | null;
+  /** Addresses of theirs, parts already named. Read only when `addressPredicate` is set; otherwise ignored. */
+  theirAddresses?: readonly TheirAddressInput[];
 }
 
 export type RowSource = "theirs" | "yours";
@@ -124,6 +137,8 @@ export interface OneCardRow {
   /** Every held claim this row stands for (a yours row, or a theirs row the holder's equal claim was folded into), so the app can
    *  reach each of them to edit or remove it. Absent when no held claim is behind the row. */
   claims?: string[];
+  /** Set only on a theirs row made from a `TheirAddressInput`: the address behind the line. */
+  address?: { composite: string; parts: OwnAddress; countryId: string | null; unread: number; gone: number };
 }
 
 export interface OneCardGroup {
@@ -332,6 +347,9 @@ interface Theirs {
   rung: string;
   labels: Set<string>;
   notes: Set<string>;
+  /** Chip words already made, when `rung` is several rungs joined (an address of theirs). */
+  rungWords?: string;
+  address?: OneCardRow["address"];
 }
 interface Yours {
   value: string;
@@ -486,6 +504,39 @@ export function mergeOneCard(input: MergeOneCardInput): OneCard {
       const line = addressLine(a);
       if (line !== "") addYours(b, line, undefined, a.entity, slotLabel(a.slot, a.kind));
     }
+    // Their addresses, each one row of theirs, in the order given, before the rows are matched.
+    // Keyed by the address id, not the line: two addresses with the same line stay two rows.
+    for (const a of input.theirAddresses ?? []) {
+      const line = addressLine(a.parts);
+      const value = line !== "" ? line : (a.label ?? "");
+      if (value === "") continue;
+      const norm = normalizeForCompare(b.rule, value);
+      if (norm === "") continue;
+      const rung = a.rungs.join(LABEL_JOIN);
+      const seenWords = new Set<string>();
+      const rungWordList: string[] = [];
+      for (const r of a.rungs) {
+        const w = words(r);
+        if (seenWords.has(w)) continue;
+        seenWords.add(w);
+        rungWordList.push(w);
+      }
+      const key = JSON.stringify(["their-address", a.composite]);
+      let t = b.theirsByKey.get(key);
+      if (!t) {
+        t = {
+          value,
+          rung,
+          labels: new Set(),
+          notes: new Set(),
+          rungWords: rungWordList.join(LABEL_JOIN),
+          address: { composite: a.composite, parts: a.parts, countryId: a.countryId, unread: a.unread, gone: a.gone },
+        };
+        b.theirsByKey.set(key, t);
+        b.theirs.push(t);
+      }
+      if (a.label) t.labels.add(a.label);
+    }
   }
   for (const c of own.heldClaims ?? []) {
     if (!c.predicate || typeof c.value !== "string" || c.value.trim() === "") continue;
@@ -497,15 +548,18 @@ export function mergeOneCard(input: MergeOneCardInput): OneCard {
   for (const b of [...known, ...unknown.values()]) {
     const matched = new Set<Yours>();
     const rows: OneCardRow[] = b.theirs.map((t) => {
-      const row: OneCardRow = { field: b.field, value: t.value, source: "theirs", rung: t.rung, rungWords: words(t.rung), editable: false };
+      const row: OneCardRow = { field: b.field, value: t.value, source: "theirs", rung: t.rung, rungWords: t.rungWords ?? words(t.rung), editable: false };
+      if (t.address) row.address = t.address;
       if (t.labels.size) {
         row.labels = [...t.labels];
         row.label = row.labels.join(LABEL_JOIN);
       }
       if (t.notes.size) row.notes = [...t.notes];
       // An equal value of yours is shown once, as theirs. Their same value served at two rungs is marked once (the first).
+      // A half address (a place not read, or gone) is never compared: it is not marked the same.
       const y = b.yours.get(normalizeForCompare(b.rule, t.value));
-      if (y && !matched.has(y)) {
+      const halfAddress = !!t.address && (t.address.unread > 0 || t.address.gone > 0);
+      if (y && !matched.has(y) && !halfAddress) {
         matched.add(y);
         row.sameAsTheirs = true;
         // The holder's own notes and claims on his equal value stay reachable on the one row.
