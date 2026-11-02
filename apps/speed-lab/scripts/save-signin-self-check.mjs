@@ -3,7 +3,7 @@
 // Builds, serves `vite preview` on 5261, saves, prints the mode, forgets the file, and always stops the server.
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { forgetSignin } from "./forget-signin.mjs";
@@ -14,7 +14,6 @@ const LOG = join(homedir(), "Library/Logs/speed-lab-save-signin-self.log");
 const PORT = 5261;
 const BASE = `http://localhost:${PORT}/`;
 const URL = `${BASE}?entries=30&latency=50`;
-const SPEED_TMP = "/Users/kaigilb/Developer/.grok-runs/speedkit-dev/sl5c/tmp";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,19 +23,13 @@ function whyOf(e) {
 }
 
 function tempOut() {
-  const roots = [SPEED_TMP];
-  const env = process.env.TMPDIR;
-  if (env && env !== SPEED_TMP) roots.push(env);
-  const skipped = [];
-  for (const root of roots) {
-    if (insideGitTree(join(root, "x.json"))) { skipped.push(root); continue; }
-    mkdirSync(root, { recursive: true, mode: 0o700 });
-    const dir = mkdtempSync(join(root, "save-signin-self-"));
-    chmodSync(dir, 0o700);
-    if (skipped.length) console.log(`temp root: ${root} (${skipped.join(", ")} is inside a git work tree)`);
-    return { dir, out: join(dir, "signin.json") };
+  const dir = mkdtempSync(join(tmpdir(), "speed-lab-signin-"));
+  chmodSync(dir, 0o700);
+  if (insideGitTree(dir)) {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error(`temp root is inside a git work tree: ${dir}`);
   }
-  throw new Error(`every temp root is inside a git work tree: ${roots.join(", ")}`);
+  return { dir, out: join(dir, "signin.json") };
 }
 
 function assertStorageShape(file) {

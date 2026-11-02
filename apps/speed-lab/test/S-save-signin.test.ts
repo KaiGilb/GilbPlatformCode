@@ -1,8 +1,9 @@
 // @vitest-environment node
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 // @ts-expect-error plain ESM script without types
 import { checkStorageStateFile, main as runMain } from "../scripts/app-runner.mjs";
 // @ts-expect-error plain ESM script without types
@@ -11,23 +12,18 @@ import { forgetSignin } from "../scripts/forget-signin.mjs";
 import { insideGitTree, parseArgs, saveSignin } from "../scripts/save-signin.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const SPEED_TMP = "/Users/kaigilb/Developer/.grok-runs/speedkit-dev/sl5c/tmp";
-
-function tempRoot(): string {
-  if (!insideGitTree(path.join(SPEED_TMP, "x.json"))) return SPEED_TMP;
-  const env = process.env.TMPDIR;
-  if (env && env !== SPEED_TMP && !insideGitTree(path.join(env, "x.json"))) {
-    console.log(`temp root: ${env} (${SPEED_TMP} is inside a git work tree)`);
-    return env;
-  }
-  throw new Error(`${SPEED_TMP} is inside a git work tree and TMPDIR (${env ?? "unset"}) is not a usable temp root outside a repo`);
-}
+const tempDirs: string[] = [];
 
 function tempDir(): string {
-  const root = tempRoot();
-  fs.mkdirSync(root, { recursive: true });
-  return fs.mkdtempSync(path.join(root, "save-signin-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "speed-lab-signin-"));
+  tempDirs.push(dir);
+  if (insideGitTree(dir)) throw new Error(`temp root is inside a git work tree: ${dir}`);
+  return dir;
 }
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 async function capture(fn: () => Promise<unknown>) {
   const out: string[] = [];
@@ -82,8 +78,9 @@ describe("S save sign-in", () => {
     expect(insideGitTree(inside)).toBe(true);
     const dir = tempDir();
     const outside = path.join(dir, "x.json");
-    expect(insideGitTree(outside)).toBe(false);
-    expect(outside.startsWith(tempRoot())).toBe(true);
+    expect(insideGitTree(dir), `temp root is inside a git work tree: ${dir}`).toBe(false);
+    expect(insideGitTree(outside), `temp root is inside a git work tree: ${dir}`).toBe(false);
+    expect(outside.startsWith(dir)).toBe(true);
   });
 
   it("forget-signin deletes a temp json file, refuses a path in the repo, and reports a missing file", () => {
