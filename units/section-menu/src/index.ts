@@ -16,6 +16,7 @@ export {
   type SectionStatus,
   type MenuFooterAction,
   type MenuSizeClass,
+  type MenuPanelContext,
 } from "./SectionMenu";
 export {
   visibleSections,

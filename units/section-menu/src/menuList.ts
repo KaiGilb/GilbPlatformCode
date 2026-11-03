@@ -28,6 +28,12 @@ export interface MenuOption<Api = unknown, Gate = unknown, Icon extends string =
   href?: string;
   run?: (api: Api) => void;
   /**
+   * Opens the host's own panel with this id in the options column, in place of the options, instead of closing the
+   * menu and running an act (the host draws it through the menu's `renderPanel`). An option with a panel has no `run`
+   * and no `href`. Without `renderPanel` the option is left out of the menu, and a command palette never lists it.
+   */
+  panel?: string;
+  /**
    * Shown only when this returns true for the gate the host passes (the menu's `gate` prop, or the
    * helpers' `gate` argument). With no gate given, an entry that has `show` is left out.
    */
@@ -150,7 +156,7 @@ export interface MenuCommandWords {
 /**
  * Every command-palette row from the list: "Go to" each visible section, then each section's options
  * (command-only ones too), the places, the "For you" entries and the extra commands; every entry whose
- * gate is closed for `gate` is left out.
+ * gate is closed for `gate` is left out. An option with `panel` set is left out too: it has no act.
  * When `current` is given, the current section's rows come first; otherwise the list order holds.
  * @param list the host's list
  * @param gate what the gates read; undefined counts as no gate, and a gated entry is then left out
@@ -165,17 +171,22 @@ export function menuCommands<Id extends string, Api, Gate, Icon extends string>(
 ): MenuCommand<Id, Api, Icon>[] {
   const goTo = words.goTo ?? ((label: string) => `Go to ${label}`);
   const out: MenuCommand<Id, Api, Icon>[] = [];
+  // A panel option opens the host's panel; it is not a command, at every place an option becomes one.
+  const pushOption = (o: MenuOption<Api, Gate, Icon>, loc: string, section: Id | null) => {
+    if (o.panel) return;
+    out.push(toCommand(o, loc, section));
+  };
   for (const s of visibleSections(list.sections, gate)) {
     out.push({ id: `go.${s.id}`, icon: s.icon, label: goTo(s.label), keywords: [s.label, s.description],
       loc: s.label, section: s.id, coming: false, run: s.go });
     // Command-only options are rows here; gated-off ones are not.
-    for (const o of s.options.filter((x) => passes(x, gate, gate !== undefined))) out.push(toCommand(o, s.label, s.id));
+    for (const o of s.options.filter((x) => passes(x, gate, gate !== undefined))) pushOption(o, s.label, s.id);
   }
-  for (const p of forYouFor(list.places ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(p, "", null));
-  for (const o of forYouFor(list.forYou ?? [], gate)) out.push(toCommand<Id, Api, Gate, Icon>(o, words.forYou ?? "For you", null));
+  for (const p of forYouFor(list.places ?? [], gate)) pushOption(p, "", null);
+  for (const o of forYouFor(list.forYou ?? [], gate)) pushOption(o, words.forYou ?? "For you", null);
   // The extra command's `loc` names its section even when the gate hides that section from this person.
   const labelOf = (id: Id | null) => list.sections.find((s) => s.id === id)?.label ?? "";
-  for (const o of forYouFor(list.extraCommands ?? [], gate)) out.push(toCommand(o, labelOf(o.section), o.section));
+  for (const o of forYouFor(list.extraCommands ?? [], gate)) pushOption(o, labelOf(o.section), o.section);
   if (!current) return out;
   // A stable partition: the current section's rows, then the rest, each in list order.
   return [...out.filter((c) => c.section === current), ...out.filter((c) => c.section !== current)];
