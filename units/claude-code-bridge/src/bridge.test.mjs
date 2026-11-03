@@ -14,7 +14,9 @@ import {
   childEnv,
   createBridge,
   HOP_MAX_MS,
+  MAX_HANDOFFS_AT_ONCE,
   MCP_TOOL_TIMEOUT_MS,
+  BRIDGE_BUILD,
   loadAllowedOrigins,
   normalizeOrigin,
   parseCli,
@@ -628,7 +630,7 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
     expect(runs().filter((r) => r.event === "run")).toHaveLength(2);
   });
 
-  it("only one hand-off runs at a time for a turn", async () => {
+  it("a second hand-off of the same turn runs while the first is still in a tool call", async () => {
     const { body } = await pair();
     let second;
     await turn(body.secret, { prompt: "CALLTOOL" }, async (req, turnId) => {
@@ -638,7 +640,8 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
       });
       return { result: "{}", isError: false };
     });
-    expect(second.status).toBe(429);
+    expect(second.status).toBe(200);
+    expect(second.events.find((e) => e[0] === "message")[1].content).toBe("echo: the task");
   });
 
   it("a hand-off for a turn that is not running is refused", async () => {
@@ -784,8 +787,6 @@ describe("an abandoned hand-off is stopped", () => {
     // The hand-off the page opened for it.
     const nested = hop(body.secret, parent.turnId, { prompt: "WAITFOREVER" });
     await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
-    // While it runs, a second one is refused.
-    expect((await hop(body.secret, parent.turnId)).status).toBe(429);
 
     // The parent's claude abandons the call.
     expect((await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 77, reason: "timed out" } })).status).toBe(202);
@@ -813,8 +814,8 @@ describe("an abandoned hand-off is stopped", () => {
     await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
     await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 5 } });
     await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
+    await new Promise((r) => setTimeout(r, 250));
     expect(runs().some((r) => r.event === "sigterm")).toBe(false);
-    expect((await hop(body.secret, parent.turnId)).status).toBe(429);
     await parent.close();
     void nested;
   });
@@ -1016,6 +1017,191 @@ describe("a pending tool call is kept alive with progress notifications (HT2)", 
     expect(msgs.at(-1).id).toBe(1);
     expect(msgs.slice(0, -1).every((m) => m.method === "notifications/progress")).toBe(true);
     await p.close();
+  });
+});
+
+describe("several hand-offs of one turn, and a call that ends stops only its own", () => {
+  const PARENT_TOOLS = [
+    { name: "list_vaults", description: "d", inputSchema: { type: "object", properties: {} } },
+    { name: "run_named_role", description: "d", inputSchema: { type: "object", properties: {} } },
+    { name: "ask_agent_concept", description: "d", inputSchema: { type: "object", properties: {} } },
+  ];
+  const until = async (fn, what) => {
+    for (let i = 0; i < 100; i++) {
+      if (fn()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  /** Opens a turn and reads its stream in the background. A non-200 is returned with its JSON body and no events. */
+  async function openTurn(secret, body) {
+    const events = [];
+    const res = await fetch(`${base}/v1/turn`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-bridge-secret": secret },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 200) return { status: res.status, events, body: await res.json().catch(() => null), close: async () => {} };
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    const pump = (async () => {
+      for (;;) {
+        const { done, value } = await reader.read().catch(() => ({ done: true }));
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const blk = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          const ev = /event: (.*)/.exec(blk)?.[1];
+          const data = /data: (.*)/.exec(blk)?.[1];
+          if (ev && data) events.push([ev, JSON.parse(data)]);
+        }
+      }
+    })();
+    return {
+      status: 200,
+      events,
+      close: async () => {
+        await reader.cancel().catch(() => undefined);
+        await pump.catch(() => undefined);
+      },
+    };
+  }
+  const rpc = (url, msg) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", ...msg }) });
+  const hopBody = (parentTurnId, extra = {}) => ({
+    system: "You are Agent.Outcome.",
+    tools: HOP_TOOLS,
+    prompt: "WAITFOREVER",
+    parentTurnId,
+    ...extra,
+  });
+  async function openParent(secret) {
+    const parent = await openTurn(secret, { system: "s", tools: PARENT_TOOLS, prompt: "WAITFOREVER" });
+    await until(() => parent.events.some((e) => e[0] === "start") && runs().some((r) => r.event === "run"), "the parent turn to start");
+    const turnId = parent.events.find((e) => e[0] === "start")[1].turnId;
+    const run = runs().find((r) => r.event === "run");
+    const cfg = JSON.parse(run.argv[run.argv.indexOf("--mcp-config") + 1]);
+    return { ...parent, turnId, mcpUrl: cfg.mcpServers.gilb.url };
+  }
+
+  it("two hand-offs of one turn run at the same time, and the fifth is told to wait", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const hops = [];
+    for (let i = 0; i < MAX_HANDOFFS_AT_ONCE; i++) {
+      const h = await openTurn(body.secret, hopBody(parent.turnId));
+      expect(h.status).toBe(200);
+      await until(() => h.events.some((e) => e[0] === "start"), `hand-off ${i + 1} to start`);
+      hops.push(h);
+    }
+    const ids = hops.map((h) => h.events.find((e) => e[0] === "start")[1].turnId);
+    expect(new Set(ids).size).toBe(MAX_HANDOFFS_AT_ONCE);
+    expect(ids[0]).toMatch(/^[0-9a-f]{16}$/);
+    await until(() => runs().filter((r) => r.event === "run").length === 1 + MAX_HANDOFFS_AT_ONCE, "every hand-off claude");
+    const fifth = await openTurn(body.secret, hopBody(parent.turnId, { prompt: "the task" }));
+    expect(fifth.status).toBe(429);
+    expect(fifth.body).toEqual({
+      error: `Too many hand-offs are running for this turn at once (${MAX_HANDOFFS_AT_ONCE}). Wait for one to answer.`,
+    });
+    expect(runs().filter((r) => r.event === "run")).toHaveLength(1 + MAX_HANDOFFS_AT_ONCE);
+    await parent.close();
+    for (const h of hops) await h.close();
+  });
+
+  it("cancelling one hand-off call stops that nested turn and leaves the other running", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    void rpc(parent.mcpUrl, { id: 77, method: "tools/call", params: { name: "run_named_role", arguments: { role: "R", task: "t" } } });
+    void rpc(parent.mcpUrl, { id: 78, method: "tools/call", params: { name: "ask_agent_concept", arguments: {} } });
+    await until(() => parent.events.filter((e) => e[0] === "tool_request").length === 2, "both tool requests");
+    const reqs = parent.events.filter((e) => e[0] === "tool_request").map((e) => e[1]);
+    // The two calls are in flight together, so the page sees them in whichever order the bridge read them.
+    const reqA = reqs.find((r) => r.name === "run_named_role").id;
+    const reqB = reqs.find((r) => r.name === "ask_agent_concept").id;
+    const hopA = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: reqA }));
+    const hopB = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: reqB }));
+    await until(() => hopA.events.some((e) => e[0] === "start") && hopB.events.some((e) => e[0] === "start"), "both hand-offs to start");
+    await until(() => runs().filter((r) => r.event === "run").length === 3, "both nested claudes");
+
+    expect((await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 77, reason: "gave up" } })).status).toBe(202);
+    await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
+    expect(parent.events.filter((e) => e[0] === "tool_cancelled").map((e) => e[1])).toEqual([{ type: "tool_cancelled", id: reqA }]);
+    await until(() => hopA.events.some((e) => e[0] === "error"), "the cancelled hand-off to stop");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(runs().filter((r) => r.event === "sigterm")).toHaveLength(1);
+    expect(hopB.events.some((e) => e[0] === "error")).toBe(false);
+    expect(hopB.events.some((e) => e[0] === "start")).toBe(true);
+    await parent.close();
+    await hopA.close();
+    await hopB.close();
+  });
+
+  it("the CLI closing an SSE tool call before the answer cancels it, stops its hand-off, and the next hand-off starts", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const ac = new AbortController();
+    const sse = fetch(parent.mcpUrl, {
+      method: "POST",
+      signal: ac.signal,
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 77,
+        method: "tools/call",
+        params: { name: "run_named_role", arguments: { role: "R" }, _meta: { progressToken: "tok-abort" } },
+      }),
+    }).catch((e) => e);
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const reqId = parent.events.find((e) => e[0] === "tool_request")[1].id;
+    const nested = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: reqId }));
+    await until(() => nested.events.some((e) => e[0] === "start") && runs().filter((r) => r.event === "run").length === 2, "the nested claude");
+    ac.abort();
+    await sse;
+    await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
+    expect(parent.events.find((e) => e[0] === "tool_cancelled")[1]).toEqual({ type: "tool_cancelled", id: reqId });
+    await until(() => runs().some((r) => r.event === "sigterm"), "the nested claude to get SIGTERM");
+    const next = await hop(body.secret, parent.turnId, { prompt: "again" });
+    expect(next.status).toBe(200);
+    expect(next.events.find((e) => e[0] === "start")).toBeTruthy();
+    expect(next.events.find((e) => e[0] === "message")[1].content).toBe("echo: again");
+    await nested.close();
+    await parent.close();
+  });
+
+  it("a parentCallId that is not a waiting hand-off call is refused and starts nothing", async () => {
+    const { body } = await pair();
+    const parent = await openParent(body.secret);
+    const runsNow = () => runs().filter((r) => r.event === "run").length;
+    const before = runsNow();
+    const missing = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: "0123456789abcdef", prompt: "the task" }));
+    expect(missing.status).toBe(409);
+    expect(missing.body).toEqual({ error: "The call that asked for this hand-off is no longer waiting." });
+    expect(runsNow()).toBe(before);
+
+    void rpc(parent.mcpUrl, { id: 5, method: "tools/call", params: { name: "list_vaults", arguments: {} } });
+    await until(() => parent.events.some((e) => e[0] === "tool_request"), "the tool request");
+    const vaultId = parent.events.find((e) => e[0] === "tool_request")[1].id;
+    const notHandoff = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: vaultId, prompt: "the task" }));
+    expect(notHandoff.status).toBe(409);
+    expect(notHandoff.body).toEqual({ error: "The call that asked for this hand-off is no longer waiting." });
+    const bad = await openTurn(body.secret, hopBody(parent.turnId, { parentCallId: "NOT-AN-ID", prompt: "the task" }));
+    expect(bad.status).toBe(409);
+    expect(runsNow()).toBe(before);
+    await parent.close();
+  });
+});
+
+describe("hello reports the build", () => {
+  it("GET /v1/hello returns build equal to the package version", async () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(HERE, "../package.json"), "utf8"));
+    const res = await fetch(`${base}/v1/hello`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.5", billing: "claude-subscription" });
+    expect(body.build).toBe(pkg.version);
+    expect(body.build).toBe(BRIDGE_BUILD);
   });
 });
 

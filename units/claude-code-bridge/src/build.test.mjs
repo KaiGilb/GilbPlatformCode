@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildAll } from "../scripts/build-bridge.mjs";
+import { BRIDGE_BUILD } from "../bridge/bridge.mjs";
 
 const unit = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,5 +20,10 @@ describe("built == committed", () => {
 
   it("the built plugin imports the built bridge", () => {
     expect(fs.readFileSync(path.join(unit, "bridge/vite-plugin.mjs"), "utf8")).toContain('from "./bridge.mjs"');
+  });
+
+  it("BRIDGE_BUILD is the package version", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(unit, "package.json"), "utf8"));
+    expect(BRIDGE_BUILD).toBe(pkg.version);
   });
 });
