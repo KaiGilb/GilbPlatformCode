@@ -66,6 +66,10 @@ if (await client.probe()) {
 const { start } = bridgeCommands({ origin: window.location.origin, basePath: "/", allowOrigin: window.location.origin });
 ```
 
+## Slipping a message into a running turn
+
+`sendTurn` takes an optional `takeSlipped`. When a top-level tool answer is about to go back to Claude Code, the client calls it and, if it returns messages, appends them after that tool's own result (`slippedSuffix`) and emits a `slipped` event with their ids. The text rides on the next top-level tool answer only: a hand-off's nested turn never takes it. A turn that makes no more tool calls never calls `takeSlipped`; the host then sends the message after the turn.
+
 ## What the host must supply
 
 - `principal`: who is signed in. An empty principal is "nobody": nothing connects.
