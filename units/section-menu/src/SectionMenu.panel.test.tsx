@@ -223,4 +223,80 @@ describe("a host panel in the options column", () => {
     expect(screen.getByTestId("section-menu-host-panel").getAttribute("data-panel")).toBe("you");
     expect(isOpen()).toBe(true);
   });
+
+  test("a field in the host panel stays in the Tab order, and the trap wraps back to it", async () => {
+    // Focusing another section on a wide screen previews it and leaves the host panel, so the field
+    // would unmount mid-cycle. On a phone, focus does not preview, and the field stays to be wrapped to.
+    renderMenu({
+      sizeClass: "compact",
+      renderPanel: () => (
+        <>
+          <input aria-label="Find" />
+          <button>Go</button>
+        </>
+      ),
+    });
+    await openOnPick();
+    await frame();
+    const find = screen.getByRole("textbox", { name: "Find" });
+    const go = screen.getByRole("button", { name: "Go" });
+    expect(document.activeElement).toBe(find);
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(go);
+
+    const seen: Element[] = [];
+    for (let i = 0; i < 6; i++) {
+      await userEvent.tab();
+      seen.push(document.activeElement!);
+    }
+    expect(seen).toEqual([
+      section("files"),
+      screen.getByTestId("section-menu-close"),
+      section("home"),
+      section("notes"),
+      screen.getByTestId("section-menu-panel-back"),
+      find,
+    ]);
+
+    act(() => { go.focus(); });
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(find);
+  });
+
+  test("a select and a textarea are Tab stops; a tabIndex -1 control and a disabled input are not", async () => {
+    renderMenu({
+      renderPanel: () => (
+        <>
+          <select aria-label="Kind"><option value="a">A</option></select>
+          <button type="button" tabIndex={-1}>Skip</button>
+          <input aria-label="Nope" disabled />
+          <textarea aria-label="Note" />
+        </>
+      ),
+    });
+    await openOnPick();
+    await frame();
+    const kind = screen.getByRole("combobox", { name: "Kind" });
+    const note = screen.getByRole("textbox", { name: "Note" });
+    const skip = screen.getByRole("button", { name: "Skip" });
+    const nope = screen.getByRole("textbox", { name: "Nope" });
+    expect(document.activeElement).toBe(kind);
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(note);
+
+    act(() => { note.focus(); });
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(kind);
+
+    const seen: Element[] = [];
+    for (let i = 0; i < 8; i++) {
+      await userEvent.tab();
+      seen.push(document.activeElement!);
+    }
+    expect(seen).toContain(note);
+    expect(seen).not.toContain(skip);
+    expect(seen).not.toContain(nope);
+  });
 });

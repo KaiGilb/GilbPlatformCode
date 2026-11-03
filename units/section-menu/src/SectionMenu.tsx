@@ -289,7 +289,11 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
       const p = panelRef.current;
       if (!p) return [];
       const usable = (root: ParentNode | null) =>
-        Array.from(root?.querySelectorAll<HTMLElement>(withComing ? "a[href], button:not([disabled])" : "a[href], button:not([disabled]):not([aria-disabled='true'])") ?? []);
+        Array.from(root?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter((el) => {
+          if (el.tabIndex < 0) return false;
+          if (!withComing && el.getAttribute("aria-disabled") === "true") return false;
+          return true;
+        });
       const closeBtn = p.querySelector<HTMLElement>("[data-testid='section-menu-close']");
       const here = usable(p.querySelector("[data-testid='section-menu-here']"));
       // "Also useful here" belongs to the previewed section too, so it follows that section's options:
@@ -809,12 +813,13 @@ function openFill(p: OpenColors): string {
   return `color-mix(in srgb, var(--accent) ${100 - p.mix}%, ${toward} ${p.mix}%)`;
 }
 
+/** Everything Tab may stop on inside the panel. `firstFocusable` and the trap read the same list. */
+const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
 /** The first thing inside `root` that can take focus: a link, a button or a field. */
 function firstFocusable(root: ParentNode | null | undefined): HTMLElement | null {
   if (!root) return null;
-  const nodes = root.querySelectorAll<HTMLElement>(
-    "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-  );
+  const nodes = root.querySelectorAll<HTMLElement>(FOCUSABLE);
   for (const el of nodes) {
     if (el.getAttribute("aria-disabled") === "true") continue;
     if (el.tabIndex < 0) continue;
