@@ -55,7 +55,12 @@ export interface ClaudeCodeReply {
   content: string;
   model: string;
   payer: "person-claude-code";
+  /** True when the turn ended because its tool rounds were used up. Absent otherwise. The page sends {@link BUDGET_SPENT_CONTINUE} to go on. */
+  budgetSpent?: boolean;
 }
+
+/** The text the page sends to go on after a turn ended because its tool rounds were used up. */
+export const BUDGET_SPENT_CONTINUE = "continue";
 
 /** What the page tells the app while a turn runs. `standing` carries the platform's raw report; the app reads it as it likes. */
 export type ClaudeCodeStreamEvent =
@@ -163,6 +168,7 @@ interface BridgeTurnOut {
   content: string;
   model: string;
   sessionId: string | undefined;
+  budgetSpent?: boolean;
 }
 
 interface SseEvent {
@@ -228,6 +234,18 @@ function toolAnswerOk(result: string): boolean {
     return !(v && typeof v === "object" && "error" in v);
   } catch {
     return true;
+  }
+}
+
+/** GilbPlatform's own ceiling, inside a tool answer's JSON. Not the bridge's longer sentence. */
+const PLATFORM_BUDGET_ERROR = "this turn has used all its tool rounds";
+
+function platformBudgetSpent(result: string): boolean {
+  try {
+    const v = JSON.parse(result) as unknown;
+    return !!v && typeof v === "object" && (v as { error?: unknown }).error === PLATFORM_BUDGET_ERROR;
+  } catch {
+    return false;
   }
 }
 
@@ -354,6 +372,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       return new ClaudeCodeBridgeError(401, "The bridge no longer knows this pairing. Press Connect and enter its new code.");
     };
 
+    /** Set when this person turn, or a hand-off inside it, ran out of tool rounds. The reply carries it. */
+    let turnBudgetSpent = false;
+
     /**
      * Runs ONE turn on the bridge (the person's turn, or a hand-off's nested turn when `parentTurnId` is set) and relays
      * its tool calls to `onTool` until it ends. The same loop for both, so a nested turn is exactly a turn.
@@ -379,6 +400,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       let turnId = "";
       let out: BridgeTurnOut | null = null;
       let streamError: string | null = null;
+      let spent = false;
 
       // Tool requests are handled side by side, so one long call (a hand-off) never holds up the others. At most
       // MAX_CONCURRENT_TOOLS run at once; the rest wait in order. Each is keyed by its request id, as the bridge sent it.
@@ -458,7 +480,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           } else if (ev.event === "tool_cancelled") {
             // The bridge's call for this id was abandoned (its Claude Code gave up on it): stop working on it, answer nothing.
             open.get(String(data.id ?? ""))?.abort();
+          } else if (ev.event === "budget_spent") {
+            spent = true;
+            turnBudgetSpent = true;
           } else if (ev.event === "message") {
+            if (data.budgetSpent === true) {
+              spent = true;
+              turnBudgetSpent = true;
+            }
             const content = typeof data.content === "string" ? data.content.trim() : "";
             if (content) {
               out = {
@@ -485,6 +514,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       if (readErr) throw readErr;
       if (streamError) throw new ClaudeCodeBridgeError(502, streamError);
       if (!out) throw new ClaudeCodeBridgeError(502, "Claude Code returned no answer.");
+      // The person's turn also picks up a hand-off, or a platform tool answer, that spent the budget.
+      if (spent || (announceStart && turnBudgetSpent)) out.budgetSpent = true;
       return out;
     }
 
@@ -539,6 +570,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         isError = true;
         result = JSON.stringify({ error: err instanceof Error ? err.message : `${name} could not run` });
       }
+      if (platformBudgetSpent(result)) turnBudgetSpent = true;
       opts.onEvent?.({ event: "tool", data: { name, ok: !isError } });
       return { result, isError };
     };
@@ -616,7 +648,13 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         /* quota */
       }
     }
-    return { role: "assistant", content: out.content, model: out.model, payer: "person-claude-code" };
+    return {
+      role: "assistant",
+      content: out.content,
+      model: out.model,
+      payer: "person-claude-code",
+      ...(out.budgetSpent ? { budgetSpent: true } : {}),
+    };
   }
 
   const client: ClaudeCodeClient = {
