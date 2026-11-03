@@ -1,7 +1,7 @@
 // Drives any app in real Chromium and WebKit and records what its speed meter reports.
 // SL-101 is the first open. SL-102 is the same reading after a reload. The checks are generic: the runner records, compare judges.
 // node scripts/app-runner.mjs --url <app url> --app <name> [options]
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, devices, webkit } from "playwright-core";
@@ -84,6 +84,16 @@ function sel(id) {
 
 function isTimeout(e) {
   return e?.name === "TimeoutError" || /Timeout/i.test(String(e?.message ?? ""));
+}
+
+/** Null when the file may be handed to the browser. Never reads the file. */
+export function checkStorageStateFile(file) {
+  if (!existsSync(file)) return `storage state file not found: ${file}`;
+  let mode;
+  try { mode = statSync(file).mode; }
+  catch { return `storage state file not found: ${file}`; }
+  if ((mode & 0o077) !== 0) return "storage state is readable by others: chmod 600 it";
+  return null;
 }
 
 // Same desktop and phone setup as browser-proof.mjs, including the Chromium phone throttle. One context, one page, for both tests.
@@ -243,9 +253,12 @@ export async function main(argv, env = process.env, out = console) {
   try { opt = optionsFrom(argv); }
   catch (e) { out.error(`${USAGE}\n${String(e?.message ?? e).split("\n")[0]}`); return { code: 2, rows: [] }; }
   const { got, key, pageName, steps, reloadSteps, engines, profiles, timeout, settle } = opt;
-  if (got.storageState && !existsSync(got.storageState)) {
-    out.error(`storage state file not found: ${got.storageState}`);
-    return { code: 2, rows: [] };
+  if (got.storageState) {
+    const problem = checkStorageStateFile(got.storageState);
+    if (problem) {
+      out.error(problem);
+      return { code: 2, rows: [] };
+    }
   }
   let appCommit;
   try { appCommit = await commitOf(got, timeout); }
