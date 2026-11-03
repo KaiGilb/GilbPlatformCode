@@ -12,10 +12,10 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
 - **a dimmed edge** below the host's header. A click on it closes the menu.
 - **the panel**, always in the page, so opening it is a class change and nothing more. While closed it is `inert` and `aria-hidden`. It is a modal dialog named "Go to".
   - Left: the sections. The one you are in is marked "You are here". Resting the pointer on another section for 120 ms, or focusing it, previews its options; a quick pass does not. Each opening starts from the section you are in.
-  - Next: "In <section>", that section's options. A coming entry the owner named is drawn greyed out and does nothing, even when it has an address. An option with an address opens it in a new tab.
+  - Next: "In <section>", that section's options. A coming entry the owner named is drawn greyed out and does nothing, even when it has an address. An option with an address opens it in a new tab. An option with `panel` opens the host's own panel in this column instead of closing (see below).
   - Right: "Also useful here" (places that fit the previewed section) and "For you". Without either, there are two columns.
   - Footer: a hint ("Press Esc to close" unless the host passes its own) and one act of the host's, such as Sign out.
-- **four ways to close**: Close, Esc, the dimmed edge, or any choice. Focus goes back to the button.
+- **four ways to close**: Close, Esc, the dimmed edge, or any choice. Focus goes back to the button. While a host panel is open, Esc and Back return to the options instead of closing.
   - **Close sits straight below the button** (0.2.0), in the panel's top row: its left edge under the button's left edge, at least as wide as the button (and never under `CLOSE_MIN_WIDTH`, 96 px), kept inside the row. It is measured on each opening and on a resize while open, so the hand that opened the menu, by hover or by click, closes it with one short move down. "Go to" stays at the row's start when it fits before Close, and otherwise follows it. There is one Close only; 0.1.0's Close at the far right is gone.
 - **keyboard**: on open, focus lands on the section you are in. Tab stays inside the panel and visits Close, then every section, each followed (when it is previewed) by its options and places, then "For you", then the footer act, and wraps. Tab skips a coming entry; the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order. Up, Down, Home and End move between sections; Right goes into the options; Left comes back.
 - **phone** (`sizeClass="compact"`): one column, no hover preview; the options are those of the section you are in. Medium is two columns.
@@ -23,7 +23,7 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
 
 Also in the unit:
 
-- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart. Every entry may carry a gate (`show`); each helper (`visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, `menuCommands`) and the menu leave out an entry whose gate is closed for the gate the host passes, and one that has a gate when none is passed or the gate is undefined: one rule, so the menu and a palette agree.
+- `menuList`: the list's shape (`MenuSection`, `MenuOption`, `MenuList`) and the helpers that read it: `visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, and `menuCommands` / `toCommand`, so a command palette reads the same list and the two cannot drift apart. Every entry may carry a gate (`show`); each helper (`visibleSections`, `menuOptionsOf`, `placesFor`, `forYouFor`, `menuCommands`) and the menu leave out an entry whose gate is closed for the gate the host passes, and one that has a gate when none is passed or the gate is undefined: one rule, so the menu and a palette agree. An option with `panel` is left out of `menuCommands` (it opens a host panel and has no act).
 - `createIntentChannel()`: "act once the destination is mounted". A menu choice that must do something in the section it goes to (open a dialog, focus a search) leaves an intent; a component there runs it once it is on screen, and once only (also under React's StrictMode). A window event fired in the same tick would reach nobody.
 - `MenuIcon`: the line icon set, in `currentColor`.
 - `Kbd`: a key name as drawn in the footer hint.
@@ -82,6 +82,24 @@ npm install <path-to-the-library>/units/section-menu
 
 An app that already takes sibling checkouts by link and a Vite alias (GilbApp takes `gilb-signin` that way) may take this unit the same way: a `file:` dependency, an alias to `src/index.ts`, `resolve.dedupe: ["react", "react-dom"]`, and `server.fs.allow` for the folder.
 
+## An option that opens a host panel
+
+Since 0.2.3 an option may open the host's own panel in the options column instead of closing the menu. Set `panel` to an id and give it no `run` and no `href`. Choosing it keeps the menu open and swaps "In <section>" for what `renderPanel` draws. `ctx.choose(run, target?)` closes the menu and runs `run`, and `onChoose(target)` is called first, exactly as choosing an option does. `ctx.back()` returns to the options; so do the Back button and Esc (a second Esc closes). Back's accessible name is `labels.backTo` (default "Back to In <section>"). Without `renderPanel` that option is left out of the menu. `menuCommands` never lists an option that has `panel`. It works the same on a phone (`sizeClass="compact"`).
+
+```tsx
+// { id: "notes.pick", icon: "records", label: "Pick one", description: "Choose which.", panel: "pick" }
+<SectionMenu
+  sections={sections}
+  current={current}
+  api={api}
+  sizeClass={sizeClass}
+  layers={layers}
+  renderPanel={(id, ctx) => (
+    <button type="button" onClick={() => ctx.choose(() => doIt())}>Do it</button>
+  )}
+/>
+```
+
 ## What you pass
 
 | Prop | Meaning |
@@ -101,11 +119,12 @@ An app that already takes sibling checkouts by link and a Vite alias (GilbApp ta
 | `labels` | optional: every word the menu draws, the footer hint included (`DEFAULT_LABELS` is English) |
 | `scrimTop`, `panelTop` | optional CSS lengths below the host's header; default `3.5rem` and `4rem` |
 | `renderIcon` | optional: draws the host's own icons; default `MenuIcon` |
+| `renderPanel` | optional: `(panelId, ctx) => node` draws the host's panel for an option's `panel` id. `ctx.choose(run, target?)` closes and runs; `ctx.back()` returns to the options |
 | `ref` | optional: `SectionMenuHandle` with `openAt(id?)` and `close()` |
 
 ## What you get
 
-The button, the dimmed edge and the panel, side by side in the page. Test hooks: `data-testid` `section-menu-trigger` (with `data-state` `open` or `closed`), `-trigger-label`, `-trigger-icon`, `-trigger-chevron`, `-top-row`, `-scrim`, `-panel` (with `data-open`), `-close`, `-sections`, `-here`, `-here-tag`, `-places`, `-foryou`, `-<section id>-warning`, and the footer act's `testId` (default `section-menu-footer-action`); `data-section`, `data-option`, `data-current`, `data-previewing` on the rows.
+The button, the dimmed edge and the panel, side by side in the page. Test hooks: `data-testid` `section-menu-trigger` (with `data-state` `open` or `closed`), `-trigger-label`, `-trigger-icon`, `-trigger-chevron`, `-top-row`, `-scrim`, `-panel` (with `data-open`), `-close`, `-sections`, `-here`, `-here-tag`, `-places`, `-foryou`, `-panel-back`, `-host-panel` (with `data-panel`), `-<section id>-warning`, and the footer act's `testId` (default `section-menu-footer-action`); `data-section`, `data-option`, `data-option-id`, `data-current`, `data-previewing` on the rows.
 
 ## Host must supply
 

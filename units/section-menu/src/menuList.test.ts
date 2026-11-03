@@ -84,6 +84,41 @@ describe("menuList", () => {
       expect(cmds.slice(3).some((c) => c.section === "notes")).toBe(false);
     });
 
+    test("an option with panel yields no command, and the options beside it still do", () => {
+      const notes = LIST.sections[1]!;
+      const list: MenuList<Id, Api, Gate> = {
+        ...LIST,
+        sections: LIST.sections.map((s) => s.id === "notes" ? {
+          ...notes,
+          options: [
+            notes.options[0]!,
+            { id: "notes.pick", icon: "records", label: "Pick", description: "A host panel.", panel: "pick" },
+            notes.options[1]!,
+          ],
+        } : s),
+        places: [
+          ...(LIST.places ?? []),
+          { id: "place.pick", icon: "files", label: "Place panel", description: "A host panel.", panel: "place" },
+        ],
+        forYou: [
+          ...(LIST.forYou ?? []),
+          { id: "you.pick", icon: "user", label: "You panel", description: "A host panel.", panel: "you" },
+        ],
+        extraCommands: [
+          ...(LIST.extraCommands ?? []),
+          { id: "cmd.pick", icon: "plus", label: "Extra panel", description: "A host panel.", panel: "extra", section: "notes" },
+        ],
+      };
+      const ids = menuCommands(list, { ...GATE, hasPicture: false }, null).map((c) => c.id);
+      expect(ids).toEqual(["go.home", "go.notes", "notes.new", "notes.cards", "news", "help", "you.picture", "cmd.out"]);
+      const currentFirst = menuCommands(list, { ...GATE, hasPicture: false }, "notes").map((c) => c.id);
+      expect(currentFirst.slice(0, 3)).toEqual(["go.notes", "notes.new", "notes.cards"]);
+      expect(currentFirst).not.toContain("notes.pick");
+      expect(currentFirst).not.toContain("place.pick");
+      expect(currentFirst).not.toContain("you.pick");
+      expect(currentFirst).not.toContain("cmd.pick");
+    });
+
     test("words the rows as the host asks, and runs the section's own go", () => {
       const api = { go: vi.fn(), newNote: vi.fn(), signOut: vi.fn() };
       const cmds = menuCommands(LIST, GATE, null, { goTo: (l) => `Open ${l}` });

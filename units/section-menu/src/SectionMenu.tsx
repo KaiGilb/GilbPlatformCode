@@ -9,7 +9,8 @@
  *    It does NOT close when the pointer leaves: it is too big for that.
  *  • Instant: the panel is always mounted, and opening it is a class change. Nothing here fetches.
  *  • Closes with Close, Esc, a click on the dimmed edge, or any choice; focus returns to the
- *    button. Focus moves into the panel on open and Tab stays inside it.
+ *    button. A choice that opens a host panel does not close: Back and Esc return to the options
+ *    first. Focus moves into the panel on open and Tab stays inside it.
  *  • Close sits in the panel's top row straight below the button (measured on open), so the hand
  *    that opened the menu closes it with one short move down (GilbApp C214-UI1, Kai 2026-10-21).
  *  • The button is the strongest control in the header: closed it is the accent outline and tint,
@@ -70,6 +71,10 @@ export interface SectionMenuLabels {
   close: string;
   here: string;
   coming: string;
+  /** The host panel's way back to the options. */
+  back: string;
+  /** The Back button's accessible name, given the section's label. */
+  backTo: (label: string) => string;
 }
 
 export const DEFAULT_LABELS: SectionMenuLabels = {
@@ -85,6 +90,8 @@ export const DEFAULT_LABELS: SectionMenuLabels = {
   close: "Close",
   here: "You are here",
   coming: "Coming",
+  back: "Back",
+  backTo: (label) => `Back to In ${label}`,
 };
 
 /** What a host may say about one section: a warning line under it, and whether it is busy. */
@@ -100,6 +107,15 @@ export interface MenuFooterAction<Api, Icon extends string> {
   run: (api: Api) => void;
   /** Default `section-menu-footer-action`. */
   testId?: string;
+}
+
+/**
+ * What the host's panel may do. `choose` closes the menu and runs, exactly as choosing an option does.
+ * `back` returns to the options.
+ */
+export interface MenuPanelContext<Id extends string> {
+  choose: (run: () => void, target?: Id) => void;
+  back: () => void;
 }
 
 /** What a host can do to the menu from outside. */
@@ -143,6 +159,11 @@ export interface SectionMenuProps<Id extends string, Api, Icon extends string = 
   panelTop?: string;
   /** Draws an icon. Default: this unit's `MenuIcon` for its own names, nothing for any other. */
   renderIcon?: (icon: Icon, size: number) => ReactNode;
+  /**
+   * Draws the host's panel for an option's `panel` id. `ctx.choose(run, target?)` closes the menu and runs `run`,
+   * exactly as choosing an option does (`onChoose(target)` is called first). `ctx.back()` returns to the options.
+   */
+  renderPanel?: (panelId: string, ctx: MenuPanelContext<Id>) => ReactNode;
   ref?: Ref<SectionMenuHandle<Id>>;
 }
 
@@ -168,7 +189,7 @@ export function SectionMenu<Id extends string, Api, Icon extends string = MenuIc
 function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(props: SectionMenuProps<Id, Api, Icon, Gate>) {
   const {
     sections, current: currentId, api, sizeClass, places, forYou, sectionStatus, onChoose, dismissed = false,
-    footerHint, footerAction, layers, scrimTop = "3.5rem", panelTop = "4rem", ref,
+    footerHint, footerAction, layers, scrimTop = "3.5rem", panelTop = "4rem", ref, renderPanel,
   } = props;
   // The options' gate: passed on to the helpers only when the host gave one (see MenuOption.show).
   // Undefined (a gate still loading) counts as none (Agent.Tester round 2, D8).
@@ -181,8 +202,13 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<Id>(current);
+  const [panel, setPanel] = useState<{ section: Id; optionId: string; panelId: string; label: string } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // Read from the key handler, which stays subscribed for the whole open (it must not re-focus on each change).
+  const panelNow = useRef(panel);
+  panelNow.current = panel;
+  const backRef = useRef<() => void>(() => {});
   const hoverTimer = useRef<number | null>(null);
   const panelId = useId();
   const closeRowRef = useRef<HTMLDivElement>(null);
@@ -211,27 +237,45 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
   const hoverOpenedAt = useRef(0);
 
   const show = useCallback(() => {
-    // Each opening starts from where you are.
+    // Each opening starts from where you are, not inside a host panel.
     setPreview(current);
+    setPanel(null);
     setOpen(true);
   }, [current]);
 
   const close = useCallback(() => {
     clearHover();
     clearOpenTimer();
+    setPanel(null);
     setOpen(false);
     triggerRef.current?.focus({ preventScroll: true });
   }, []);
 
+  // Compared by attribute, not by a selector, so an option id with a quote in it still works (as focusSection does).
+  const focusOption = (optionId: string) => {
+    Array.from(panelRef.current?.querySelectorAll<HTMLElement>("[data-option-id]") ?? [])
+      .find((el) => el.getAttribute("data-option-id") === optionId)
+      ?.focus();
+  };
+  const back = () => {
+    const optionId = panelNow.current?.optionId;
+    setPanel(null);
+    requestAnimationFrame(() => {
+      if (optionId) focusOption(optionId);
+    });
+  };
+  backRef.current = back;
+
   useImperativeHandle(ref, () => ({
     openAt: (id?: Id) => {
       setPreview(id ?? current);
+      setPanel(null);
       setOpen(true);
     },
     close,
   }), [current, close]);
 
-  // --- While open: Esc closes, Tab stays inside (MegaMenu.vue's trap), focus moves in ---
+  // --- While open: Esc closes (or leaves a host panel), Tab stays inside (MegaMenu.vue's trap), focus moves in ---
   useEffect(() => {
     if (!open) return;
     // The Tab order (GilbApp round 3, Rule_Code_accessibility RuleA11yKeyboard): EVERY section is its
@@ -266,7 +310,9 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        close();
+        // A host panel is a step inside the menu: Esc returns to the options. The next Esc closes.
+        if (panelNow.current) backRef.current();
+        else close();
         return;
       }
       if (e.key !== "Tab") return;
@@ -350,6 +396,7 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     if (dismissed && open) {
       clearHover();
       setOpen(false);
+      setPanel(null);
     }
   }, [dismissed, open]);
 
@@ -359,6 +406,23 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 
   const shown = compact ? currentSection : sections.find((s) => s.id === preview) ?? currentSection;
   const previewing = shown.id !== current;
+
+  // The host panel belongs to the section it was opened from. Previewing another, or losing renderPanel, leaves it.
+  // renderPanel's identity may change every render (an inline function); returning the same state bails out.
+  useEffect(() => {
+    setPanel((p) => (p && (p.section !== shown.id || !renderPanel) ? null : p));
+  }, [shown.id, renderPanel]);
+
+  // Once the host panel is drawn, focus moves to its first focusable control (or Back, if it has none).
+  useEffect(() => {
+    if (!open || !panel) return;
+    const id = requestAnimationFrame(() => {
+      const root = panelRef.current?.querySelector<HTMLElement>("[data-testid='section-menu-host-panel']");
+      const backBtn = panelRef.current?.querySelector<HTMLElement>("[data-testid='section-menu-panel-back']");
+      (firstFocusable(root) ?? backBtn)?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, panel]);
 
   const choose = (run: (() => void) | undefined, target?: Id) => {
     close();
@@ -423,10 +487,22 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
     onClick: () => choose(api !== undefined ? () => s.go(api) : undefined, s.id),
   });
 
-  const shownPlaces = places?.(shown) ?? [];
-  const forYouList = forYou ?? [];
-  const hasThird = shownPlaces.length > 0 || forYouList.length > 0;
   const runOf = (o: MenuOption<Api, Gate, Icon>) => (api !== undefined && o.run ? () => o.run!(api) : undefined);
+  const onPick = (o: MenuOption<Api, Gate, Icon>, target?: Id) => {
+    if (o.panel && renderPanel) {
+      setPanel({ section: shown.id, optionId: o.id, panelId: o.panel, label: o.label });
+      return;
+    }
+    choose(runOf(o), target);
+  };
+  // A panel option needs renderPanel; without it the option is left out (a palette never lists it either).
+  const listed = (options: readonly MenuOption<Api, Gate, Icon>[]) =>
+    renderPanel ? options : options.filter((o) => !o.panel);
+  const shownOptions = listed(menuOptionsOf(shown, ...gateArgs));
+  const shownPlaces = listed(places?.(shown) ?? []);
+  const forYouList = listed(forYou ?? []);
+  const hasThird = shownPlaces.length > 0 || forYouList.length > 0;
+  const ctx: MenuPanelContext<Id> = { choose: (run, target) => choose(run, target), back };
 
   return (
     <>
@@ -645,21 +721,43 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           </div>
 
           <div data-testid="section-menu-here">
-            <ColumnHeading>
-              {L.inSection(shown.label)}
-              {previewing && (
-                <span className="block text-[12px] font-medium tracking-normal normal-case text-[var(--accent-ink)] mt-1">
-                  {L.previewHint(shown.label)}
-                </span>
-              )}
-            </ColumnHeading>
-            <OptionList
-              options={menuOptionsOf(shown, ...gateArgs)}
-              onChoose={(o) => choose(runOf(o), shown.id)}
-              onKeyDown={onOptionKey}
-              icon={icon}
-              comingLabel={L.coming}
-            />
+            {panel && panel.section === shown.id && renderPanel ? (
+              <>
+                <ColumnHeading>
+                  <button
+                    type="button"
+                    data-testid="section-menu-panel-back"
+                    aria-label={L.backTo(shown.label)}
+                    onClick={back}
+                    className="inline-flex items-center gap-1 min-h-[44px] -ml-1 px-1 text-[var(--accent-ink)] hover:underline normal-case tracking-normal"
+                  >
+                    <span aria-hidden>‹</span>{L.back}
+                  </button>
+                  <span className="block mt-1">{panel.label}</span>
+                </ColumnHeading>
+                <div data-testid="section-menu-host-panel" data-panel={panel.panelId}>
+                  {renderPanel(panel.panelId, ctx)}
+                </div>
+              </>
+            ) : (
+              <>
+                <ColumnHeading>
+                  {L.inSection(shown.label)}
+                  {previewing && (
+                    <span className="block text-[12px] font-medium tracking-normal normal-case text-[var(--accent-ink)] mt-1">
+                      {L.previewHint(shown.label)}
+                    </span>
+                  )}
+                </ColumnHeading>
+                <OptionList
+                  options={shownOptions}
+                  onChoose={(o) => onPick(o, shown.id)}
+                  onKeyDown={onOptionKey}
+                  icon={icon}
+                  comingLabel={L.coming}
+                />
+              </>
+            )}
           </div>
 
           {hasThird && (
@@ -667,13 +765,13 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
               {shownPlaces.length > 0 && (
                 <>
                   <ColumnHeading>{L.alsoUseful}</ColumnHeading>
-                  <OptionList options={shownPlaces} onChoose={(o) => choose(runOf(o))} testId="section-menu-places" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
+                  <OptionList options={shownPlaces} onChoose={(o) => onPick(o)} testId="section-menu-places" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
                 </>
               )}
               {forYouList.length > 0 && (
                 <>
                   <ColumnHeading>{L.forYou}</ColumnHeading>
-                  <OptionList options={forYouList} onChoose={(o) => choose(runOf(o))} testId="section-menu-foryou" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
+                  <OptionList options={forYouList} onChoose={(o) => onPick(o)} testId="section-menu-foryou" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
                 </>
               )}
             </div>
@@ -709,6 +807,20 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 function openFill(p: OpenColors): string {
   const toward = p.mixToward === "ink" ? "var(--ink)" : "var(--on-accent)";
   return `color-mix(in srgb, var(--accent) ${100 - p.mix}%, ${toward} ${p.mix}%)`;
+}
+
+/** The first thing inside `root` that can take focus: a link, a button or a field. */
+function firstFocusable(root: ParentNode | null | undefined): HTMLElement | null {
+  if (!root) return null;
+  const nodes = root.querySelectorAll<HTMLElement>(
+    "a[href], button:not([disabled]), input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+  );
+  for (const el of nodes) {
+    if (el.getAttribute("aria-disabled") === "true") continue;
+    if (el.tabIndex < 0) continue;
+    return el;
+  }
+  return null;
 }
 
 /** A column of options. A coming entry is greyed and does nothing; an address opens a new tab. */
@@ -759,6 +871,7 @@ function OptionList<Api, Icon extends string, Gate>({
               target="_blank"
               rel="noopener noreferrer"
               data-option={o.id}
+              data-option-id={o.id}
               onKeyDown={onKeyDown}
               onClick={() => onChoose({ ...o, run: undefined })}
               className={itemClass("plain") + " px-3 py-2.5"}
@@ -772,6 +885,7 @@ function OptionList<Api, Icon extends string, Gate>({
             key={o.id}
             type="button"
             data-option={o.id}
+            data-option-id={o.id}
             onKeyDown={onKeyDown}
             aria-disabled={o.coming ? true : undefined}
             onClick={() => {
