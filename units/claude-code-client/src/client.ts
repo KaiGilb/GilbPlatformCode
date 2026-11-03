@@ -66,7 +66,23 @@ export const BUDGET_SPENT_CONTINUE = "continue";
 export type ClaudeCodeStreamEvent =
   | { event: "start"; data: { ok: true } }
   | { event: "tool"; data: { name: string; ok: boolean } }
+  | { event: "slipped"; data: { ids: string[] } }
   | { event: "standing"; data: unknown };
+
+/** A message the person wrote while a Claude Code turn was already running. */
+export interface SlippedMessage {
+  id: string;
+  text: string;
+}
+
+/** The same sentence GilbPlatform uses, so the model reads one wording whichever path runs. */
+export const SLIPPED_LEAD =
+  "The person wrote this while you were working. Read it now and take it into account before your next step:";
+
+/** The text appended to a tool answer: a blank line, the lead, a blank line, the texts joined by a blank line. */
+export function slippedSuffix(msgs: readonly SlippedMessage[]): string {
+  return "\n\n" + SLIPPED_LEAD + "\n\n" + msgs.map((m) => m.text).join("\n\n");
+}
 
 export interface ClaudeCodeConnection {
   provider: typeof CLAUDE_CODE_PROVIDER;
@@ -116,6 +132,11 @@ export interface SendClaudeCodeOpts {
   /** An own agent's entry URI. When set, sent instead of `agent`. */
   agentEntry?: string;
   onEvent?: (ev: ClaudeCodeStreamEvent) => void;
+  /**
+   * The person's messages slipped into this running turn. Taken when a top-level tool answer is about to go back to
+   * Claude Code and added after it; ⛔ never into a hand-off's nested turn.
+   */
+  takeSlipped?: () => readonly SlippedMessage[];
   /**
    * Told, for the turn and for each hand-off's nested turn, what the CLI itself says it runs with. `apiKeySource` is
    * "none" on a subscription; the bridge stops any run that says otherwise.
@@ -571,6 +592,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         result = JSON.stringify({ error: err instanceof Error ? err.message : `${name} could not run` });
       }
       if (platformBudgetSpent(result)) turnBudgetSpent = true;
+      // Top-level answers only. If this turn was already left, take nothing: the answer is not posted, so the text would be lost.
+      if (!hopId && !sig.aborted) {
+        const slipped = opts.takeSlipped?.() ?? [];
+        if (slipped.length > 0) {
+          result = result + slippedSuffix(slipped);
+          opts.onEvent?.({ event: "slipped", data: { ids: slipped.map((s) => s.id) } });
+        }
+      }
       opts.onEvent?.({ event: "tool", data: { name, ok: !isError } });
       return { result, isError };
     };
