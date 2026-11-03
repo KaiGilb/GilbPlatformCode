@@ -1,0 +1,1189 @@
+#!/usr/bin/env node
+// gilb-connector: Claude Code and Claudian, as a GilbPlatform agent, on this computer.
+//
+// A stdio MCP server. stdout is protocol only (one JSON-RPC message per line). Logs go to stderr.
+// Each process signs in once as this computer and keeps one platform turn. Tool calls go to
+// POST /base/ai/claude-code/tool. A hand-off comes back as { hop } and runs as a nested `claude -p`
+// whose own MCP server is this file in hop mode. A hop cannot hop. Up to MAX_HOPS_AT_ONCE run at once,
+// each for at most HOP_MAX_MS.
+//
+// Zero runtime dependencies. Node 18 or newer.
+
+import { spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import type { ChildProcess } from "node:child_process";
+
+export const CONNECTOR_VERSION = "0.1.0";
+export const DEFAULT_AGENT = "Kai-Zen";
+/** The identity door. A proof for any other host is refused, so this is the default. */
+export const DEFAULT_ORIGIN = "https://id.gilb.com";
+export const DEFAULT_USER_TEXT = "Work with the person in Claude Code.";
+
+/** What a tool answers when this computer has no GilbPlatform credential. */
+export const NOT_CONNECTED =
+  "This computer is not connected to GilbPlatform yet. Run: gilb-computer add — approve it once in GilbApp — then restart Claude Code.";
+
+/** What the model is told when a hand-off it asked for could not finish. Same sentence as the page client. */
+export const HAND_OFF_FAILED_NEXT =
+  "Do not call this hand-off again with the same Agent. Tell the person which Agent could not take the work, and why.";
+
+const SIGN_IN_FAILED = "This computer could not sign in to GilbPlatform.";
+
+/** How long one hand-off may run. The page client's bridge uses the same limit. */
+export const HOP_MAX_MS = 15 * 60 * 1000;
+/** How many hand-offs may run at once. */
+export const MAX_HOPS_AT_ONCE = 4;
+/** A pending tools/call that asked for progress is told "still working" this often. */
+export const PROGRESS_EVERY_MS = 15 * 1000;
+/** How long the Claude CLI is told to wait for one MCP tool call: the longest hand-off, plus a minute. */
+export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000;
+
+const TURN_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const PROFILE_NAME = /^[A-Za-z0-9._-]{1,40}$/;
+const USER_TEXT_MAX = 24_000;
+
+/**
+ * Names that would bill an API key, a gateway, or another account instead of the person's Claude subscription.
+ * A copy of the bridge's list, including the families, so a later variable under a known family is still removed.
+ */
+const BILLING_ENV_DENY = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_CUSTOM_HEADERS",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
+  "CLAUDE_CODE_REMOTE_SDK_URL",
+  "CLAUDE_API_KEY",
+];
+
+const BILLING_ENV_DENY_PREFIXES = [
+  "ANTHROPIC_",
+  "CLAUDE_CODE_USE_",
+  "CLAUDE_CODE_OAUTH_",
+  "CLAUDE_CODE_CUSTOM_OAUTH",
+  "CLAUDE_CODE_API_",
+  "CLAUDE_CODE_GATEWAY_",
+  "CLAUDE_CODE_HOST_",
+  "CLAUDE_CODE_PROVIDER_",
+  "CLAUDE_CODE_MODEL_CATALOG",
+  "CLAUDE_CODE_CLIENT_",
+  "CLAUDE_BRIDGE_",
+  "CLAUDE_BG_",
+  "AWS_BEARER_TOKEN_",
+];
+
+function envDenied(key: string): boolean {
+  const upper = key.toUpperCase();
+  return BILLING_ENV_DENY.includes(upper) || BILLING_ENV_DENY_PREFIXES.some((prefix) => upper.startsWith(prefix));
+}
+
+/** The environment a nested `claude` gets: the connector's, minus billing variables, with the MCP wait raised. */
+export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && !envDenied(key)) out[key] = value;
+  }
+  const own = Number(out.MCP_TOOL_TIMEOUT);
+  if (!(Number.isFinite(own) && own > MCP_TOOL_TIMEOUT_MS)) out.MCP_TOOL_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
+  const ownIdle = Number(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT);
+  if (!(Number.isFinite(ownIdle) && ownIdle > MCP_TOOL_TIMEOUT_MS)) out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
+  return out;
+}
+
+export interface ToolSpec {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+interface McpTool {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+}
+
+interface Ctx {
+  system: string;
+  tools: ToolSpec[];
+}
+
+interface ComputerCred {
+  authHeaders(method: string, url: string): Promise<Record<string, string>>;
+}
+
+interface TransportInit {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeoutMs?: number;
+}
+
+type Transport = (url: string, init?: TransportInit) => Promise<{ status: number; json: () => Promise<unknown>; headers: Headers }>;
+
+interface LineWriter {
+  write(chunk: string, cb?: (err?: Error | null) => void): boolean;
+}
+
+interface LineReader {
+  setEncoding(encoding: "utf8"): void;
+  on(event: "data", listener: (chunk: string) => void): void;
+  on(event: "end", listener: () => void): void;
+  on(event: "error", listener: (err: Error) => void): void;
+  resume(): void;
+}
+
+export interface StartOptions {
+  input: LineReader;
+  output: LineWriter;
+  agent?: string;
+  origin?: string;
+  vaults?: readonly string[];
+  profile?: string;
+  claudeBin?: string;
+  hopId?: string;
+  turnId?: string;
+  hopTools?: readonly ToolSpec[];
+  userText?: string;
+  progressEveryMs?: number;
+  hopMaxMs?: number;
+  maxHops?: number;
+  env?: NodeJS.ProcessEnv;
+  selfFile?: string;
+}
+
+export interface ConnectorSession {
+  readonly done: Promise<void>;
+  readonly turnId: string;
+  close(): void;
+}
+
+interface JsonMsg {
+  jsonrpc?: unknown;
+  id?: unknown;
+  method?: unknown;
+  params?: unknown;
+}
+
+interface ToolResult {
+  content: [{ type: "text"; text: string }];
+  isError: boolean;
+}
+
+interface HopShape {
+  id: string;
+  system: string;
+  task: string;
+  tools: unknown[];
+  role: string;
+  answer: Record<string, unknown>;
+}
+
+export class CliError extends Error {
+  readonly help: boolean;
+  constructor(message: string, help = false) {
+    super(message);
+    this.name = "CliError";
+    this.help = help;
+  }
+}
+
+export interface CliOptions {
+  agent: string;
+  origin: string;
+  vaults: string[];
+  profile: string | undefined;
+  claudeBin: string;
+  hopId: string | undefined;
+  turnId: string | undefined;
+  hopToolsPath: string | undefined;
+  progressEveryMs: number;
+  help: boolean;
+}
+
+class PlatformError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "PlatformError";
+    this.status = status;
+  }
+}
+
+class NotConnected extends Error {
+  constructor(message = NOT_CONNECTED) {
+    super(message);
+    this.name = "NotConnected";
+  }
+}
+
+const GILB_AGENT: ToolSpec = {
+  name: "gilb_agent",
+  description:
+    "Switch the GilbPlatform agent for this session (for example Kai-Zen or Agent.Jackfruit) and return that agent's standing instructions.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      agent: { type: "string", description: "The agent tag, for example Kai-Zen or Agent.Jackfruit." },
+    },
+    required: ["agent"],
+    additionalProperties: false,
+  },
+};
+
+const GILB_TASK: ToolSpec = {
+  name: "gilb_task",
+  description: "Set the person's request. GilbPlatform loads the agent's standing from this text.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      text: { type: "string", description: "What the person is asking." },
+    },
+    required: ["text"],
+    additionalProperties: false,
+  },
+};
+
+const AGENT_PROMPT = {
+  name: "agent",
+  description: "Start as a GilbPlatform agent with its standing instructions.",
+  arguments: [
+    {
+      name: "name",
+      description: "Agent tag, for example Kai-Zen or Agent.Jackfruit. Defaults to the current agent.",
+      required: false,
+    },
+  ],
+};
+
+function newTurnId(): string {
+  return randomBytes(16).toString("hex");
+}
+
+function mcpTool(tool: ToolSpec): McpTool {
+  return {
+    name: tool.name,
+    description: tool.description ?? "",
+    inputSchema: tool.inputSchema ?? { type: "object", properties: {} },
+  };
+}
+
+function asTool(value: unknown): ToolSpec | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as { name?: unknown; description?: unknown; inputSchema?: unknown };
+  if (typeof row.name !== "string" || row.name === "") return null;
+  const tool: ToolSpec = { name: row.name };
+  if (typeof row.description === "string") tool.description = row.description;
+  if (row.inputSchema !== undefined) tool.inputSchema = row.inputSchema;
+  return tool;
+}
+
+function asTools(value: unknown): ToolSpec[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: ToolSpec[] = [];
+  for (const item of value) {
+    const tool = asTool(item);
+    if (!tool) return null;
+    out.push(tool);
+  }
+  return out;
+}
+
+/** The only request the computer credential may send: renewing its own token. */
+function computerTransport(origin: string): Transport {
+  const allowed = new URL(`${origin}/base/auth/computer/token`);
+  return async (url, init = {}) => {
+    const method = String(init.method ?? "GET").toUpperCase();
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || method !== "POST" || parsed.origin !== allowed.origin || parsed.pathname !== allowed.pathname || parsed.search || parsed.hash) {
+      throw new Error("the computer transport only renews the computer's token");
+    }
+    const req: RequestInit = { method, redirect: "manual" };
+    if (init.headers) req.headers = init.headers;
+    if (init.body !== undefined) req.body = init.body;
+    if (init.timeoutMs != null) req.signal = AbortSignal.timeout(init.timeoutMs);
+    const res = await fetch(url, req);
+    return { status: res.status, json: () => res.json() as Promise<unknown>, headers: res.headers };
+  };
+}
+
+function isMissingComputer(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const row = err as { code?: unknown; name?: unknown };
+  if (row.code === "ERR_MODULE_NOT_FOUND" || row.code === "MODULE_NOT_FOUND" || row.code === "ENOENT" || row.code === "not_found") return true;
+  if (err instanceof Error && /cannot find module/i.test(err.message)) return true;
+  if (row.name === "ComputerNotActiveError") return true;
+  return row.name === "ComputerKeyError" && row.code === "not_found";
+}
+
+function readJsonText(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text };
+  }
+}
+
+function errorText(status: number, body: unknown, fallback: string): string {
+  if (body && typeof body === "object") {
+    const row = body as { message?: unknown; error?: unknown };
+    for (const value of [row.message, row.error]) {
+      if (typeof value === "string" && /\s/.test(value.trim())) return value;
+    }
+  }
+  return `${fallback} (HTTP ${status}).`;
+}
+
+function toolAnswerIsError(result: string): boolean {
+  try {
+    const value = JSON.parse(result) as unknown;
+    return !!value && typeof value === "object" && "error" in value;
+  } catch {
+    return false;
+  }
+}
+
+function toolResult(text: string, isError: boolean): ToolResult {
+  return { content: [{ type: "text", text }], isError };
+}
+
+function argumentString(args: unknown): string {
+  if (typeof args === "string") return args;
+  if (args === undefined || args === null) return "{}";
+  return JSON.stringify(args);
+}
+
+function fieldString(args: unknown, key: string): string {
+  if (!args || typeof args !== "object") return "";
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOrigin(input: string): string {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new CliError(`"${input}" is not an origin.`);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new CliError(`"${input}" must be an http or https origin.`);
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
+    throw new CliError(`"${input}" must be an origin with no path.`);
+  }
+  return url.origin;
+}
+
+function diskProfile(env: NodeJS.ProcessEnv): string | undefined {
+  // The real process reads this computer's profile, as openKey does. A caller that passes its own env
+  // and no GILB_HOME does not (tests must not open the profile on the machine they happen to run on).
+  if (env !== process.env && env.GILB_HOME === undefined) return undefined;
+  const root = env.GILB_HOME || join(homedir(), ".gilb");
+  const file = join(root, "computer", "profile");
+  try {
+    if (!existsSync(file)) return undefined;
+    const line = readFileSync(file, "utf8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+    return line || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function computerModulePath(env: NodeJS.ProcessEnv): string {
+  if (env.GILB_CONNECTOR_COMPUTER_MODULE) return env.GILB_CONNECTOR_COMPUTER_MODULE;
+  if (env !== process.env && env.GILB_HOME === undefined) return "";
+  const root = env.GILB_HOME || join(homedir(), ".gilb");
+  return join(root, "lib/gilb-signin/current/node/computerNode.mjs");
+}
+
+function flagValues(argv: string[], name: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token === undefined || token !== name) continue;
+    const value = argv[i + 1];
+    if (value === undefined || value.startsWith("--")) throw new CliError(`${name} needs a value.`);
+    out.push(value);
+    i += 1;
+  }
+  return out;
+}
+
+function oneFlag(argv: string[], name: string): string | undefined {
+  const all = flagValues(argv, name);
+  return all.length > 0 ? all[all.length - 1] : undefined;
+}
+
+const KNOWN_FLAGS = new Set([
+  "--agent",
+  "--origin",
+  "--vault",
+  "--profile",
+  "--claude",
+  "--hop",
+  "--turn",
+  "--hop-tools",
+  "--progress-ms",
+  "--help",
+  "-h",
+]);
+
+export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): CliOptions {
+  if (argv.includes("--help") || argv.includes("-h")) {
+    return {
+      agent: DEFAULT_AGENT,
+      origin: DEFAULT_ORIGIN,
+      vaults: [],
+      profile: undefined,
+      claudeBin: "claude",
+      hopId: undefined,
+      turnId: undefined,
+      hopToolsPath: undefined,
+      progressEveryMs: PROGRESS_EVERY_MS,
+      help: true,
+    };
+  }
+  const unknown = argv.filter((token) => token.startsWith("-") && !KNOWN_FLAGS.has(token.split("=")[0] ?? token));
+  if (unknown.length > 0) throw new CliError(`Unknown option: ${unknown.join(" ")}`);
+
+  const agentRaw = (oneFlag(argv, "--agent") ?? env.GILB_CONNECTOR_AGENT ?? DEFAULT_AGENT).trim();
+  if (!agentRaw || agentRaw.length > 64) throw new CliError("--agent must be 1 to 64 characters.");
+  const origin = normalizeOrigin(oneFlag(argv, "--origin") ?? env.GILB_CONNECTOR_ORIGIN ?? DEFAULT_ORIGIN);
+  const fromFlags = flagValues(argv, "--vault");
+  const fromEnv = (env.GILB_CONNECTOR_VAULT ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  const vaults = fromFlags.length > 0 ? fromFlags : fromEnv;
+  const profileRaw = oneFlag(argv, "--profile") ?? env.GILB_CONNECTOR_PROFILE ?? env.GILB_COMPUTER_PROFILE ?? diskProfile(env);
+  if (profileRaw !== undefined && !PROFILE_NAME.test(profileRaw)) throw new CliError("The computer profile name is not valid.");
+  const claudeBin = oneFlag(argv, "--claude") ?? env.GILB_CONNECTOR_CLAUDE ?? "claude";
+  const hopId = oneFlag(argv, "--hop") ?? (env.GILB_CONNECTOR_HOP || undefined);
+  const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
+  const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
+  if (hopId !== undefined && !/^[0-9a-f]{24}$/.test(hopId)) throw new CliError("--hop must be the hand-off id.");
+  if (turnId !== undefined && !TURN_ID_RE.test(turnId)) throw new CliError("--turn must be the turn id.");
+  if (hopId !== undefined && (turnId === undefined || hopToolsPath === undefined)) {
+    throw new CliError("Hop mode needs --turn and --hop-tools.");
+  }
+  const progressRaw = oneFlag(argv, "--progress-ms") ?? env.GILB_CONNECTOR_PROGRESS_MS;
+  let progressEveryMs = PROGRESS_EVERY_MS;
+  if (progressRaw !== undefined && progressRaw !== "") {
+    const parsed = Number(progressRaw);
+    if (!Number.isInteger(parsed) || parsed < 5 || parsed > 600_000) {
+      throw new CliError("--progress-ms must be a whole number of milliseconds from 5 to 600000.");
+    }
+    progressEveryMs = parsed;
+  }
+  return {
+    agent: agentRaw,
+    origin,
+    vaults,
+    profile: profileRaw,
+    claudeBin,
+    hopId,
+    turnId,
+    hopToolsPath,
+    progressEveryMs,
+    help: false,
+  };
+}
+
+function helpText(): string {
+  return `Usage: node gilb-connector.mjs [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH]
+       node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --agent NAME --origin URL
+
+Default agent: ${DEFAULT_AGENT}
+Default origin: ${DEFAULT_ORIGIN}`;
+}
+
+function safeTail(stderr: string): string {
+  if (/dpop|authorization|bearer |api[_-]?key|token|proof/i.test(stderr)) return "";
+  const tail = stderr.trim().split("\n").slice(-2).join(" ");
+  return tail ? ` ${tail}` : "";
+}
+
+function validHop(value: unknown): value is HopShape {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const hop = value as { id?: unknown; system?: unknown; task?: unknown; tools?: unknown; role?: unknown; answer?: unknown };
+  if (typeof hop.id !== "string" || typeof hop.system !== "string" || typeof hop.task !== "string" || !Array.isArray(hop.tools)) return false;
+  return true;
+}
+
+function hopRole(hop: HopShape): string {
+  return typeof hop.role === "string" ? hop.role : "";
+}
+
+function hopAnswer(hop: HopShape): Record<string, unknown> {
+  return hop.answer && typeof hop.answer === "object" && !Array.isArray(hop.answer) ? hop.answer : {};
+}
+
+function claudeArgs(system: string, mcpConfig: string, sessionId: string): string[] {
+  return [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--tools",
+    "",
+    "--strict-mcp-config",
+    "--mcp-config",
+    mcpConfig,
+    "--allowedTools",
+    "mcp__gilb",
+    "--permission-mode",
+    "dontAsk",
+    "--disable-slash-commands",
+    "--restricted",
+    "--system-prompt",
+    system,
+    "--system-prompt-snapshot",
+    "off",
+    "--session-id",
+    sessionId,
+  ];
+}
+
+const CANCELLED = Symbol("cancelled");
+
+/**
+ * Speaks MCP on `input` / `output` until the input ends.
+ * Hop mode (`hopId` set) lists `hopTools` and posts every tool call with that hop id. It does not hand off again.
+ */
+export function startConnector(opts: StartOptions): ConnectorSession {
+  const env = opts.env ?? process.env;
+  let agent = opts.agent?.trim() || DEFAULT_AGENT;
+  const origin = (opts.origin ?? DEFAULT_ORIGIN).replace(/\/+$/, "");
+  const vaults = [...(opts.vaults ?? [])];
+  const profile = opts.profile;
+  const claudeBin = opts.claudeBin ?? "claude";
+  const hopId = opts.hopId;
+  const hopMode = hopId !== undefined && hopId !== "";
+  const hopTools = [...(opts.hopTools ?? [])];
+  const turnId = opts.turnId ?? newTurnId();
+  if (!TURN_ID_RE.test(turnId)) throw new Error("turnId does not match the platform pattern.");
+  let userText = opts.userText !== undefined && opts.userText.trim() !== "" ? opts.userText : DEFAULT_USER_TEXT;
+  const progressEveryMs = opts.progressEveryMs !== undefined && opts.progressEveryMs >= 5 ? opts.progressEveryMs : PROGRESS_EVERY_MS;
+  const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
+  const maxHops = opts.maxHops ?? MAX_HOPS_AT_ONCE;
+  const selfFile = opts.selfFile ?? fileURLToPath(import.meta.url);
+  const contextUrl = `${origin}/base/ai/claude-code/context`;
+  const toolUrl = `${origin}/base/ai/claude-code/tool`;
+
+  const input = opts.input;
+  const output = opts.output;
+  let writing: Promise<void> = Promise.resolve();
+  const children = new Set<ChildProcess>();
+  const calls = new Map<string, AbortController>();
+  let hopsRunning = 0;
+  let pending = 0;
+  let inputEnded = false;
+  let stopped = false;
+  let saidSignIn = false;
+  let resolveDone: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+
+  function checkDone(): void {
+    if ((inputEnded || stopped) && pending === 0) resolveDone();
+  }
+
+  function emit(msg: unknown): Promise<void> {
+    let line: string;
+    try {
+      line = JSON.stringify(msg) + "\n";
+    } catch {
+      return Promise.resolve();
+    }
+    const flushed = writing.then(
+      () =>
+        new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          try {
+            output.write(line, () => finish());
+          } catch {
+            finish();
+          }
+        }),
+    );
+    writing = flushed.catch(() => undefined);
+    return flushed;
+  }
+
+  function say(line: string): void {
+    if (saidSignIn) return;
+    saidSignIn = true;
+    process.stderr.write(line + "\n");
+  }
+
+  // One open per process. A failure is remembered: the person restarts Claude Code after connecting.
+  let opening: Promise<ComputerCred> | null = null;
+  function credential(): Promise<ComputerCred> {
+    if (!opening) opening = openCredential();
+    return opening;
+  }
+
+  async function openCredential(): Promise<ComputerCred> {
+    const modulePath = computerModulePath(env);
+    if (!modulePath) {
+      say(NOT_CONNECTED);
+      throw new NotConnected();
+    }
+    let loaded: { openComputerCredential?: (openOpts: { origin: string; transport: Transport; profile?: string }) => Promise<ComputerCred> };
+    try {
+      loaded = (await import(pathToFileURL(modulePath).href)) as typeof loaded;
+    } catch (err) {
+      if (isMissingComputer(err)) {
+        say(NOT_CONNECTED);
+        throw new NotConnected();
+      }
+      say(SIGN_IN_FAILED);
+      throw new NotConnected(SIGN_IN_FAILED);
+    }
+    if (typeof loaded.openComputerCredential !== "function") {
+      say(NOT_CONNECTED);
+      throw new NotConnected();
+    }
+    const transport = computerTransport(origin);
+    const openOpts: { origin: string; transport: Transport; profile?: string } = { origin, transport };
+    if (profile) openOpts.profile = profile;
+    try {
+      const cred = await loaded.openComputerCredential(openOpts);
+      if (!cred || typeof cred.authHeaders !== "function") {
+        say(NOT_CONNECTED);
+        throw new NotConnected();
+      }
+      return cred;
+    } catch (err) {
+      if (err instanceof NotConnected) throw err;
+      if (isMissingComputer(err)) {
+        say(NOT_CONNECTED);
+        throw new NotConnected();
+      }
+      say(SIGN_IN_FAILED);
+      throw new NotConnected(SIGN_IN_FAILED);
+    }
+  }
+
+  function turnFields(forAgent: string = agent): Record<string, unknown> {
+    const body: Record<string, unknown> = { userText, turnId, agent: forAgent };
+    const ids = vaults.map((id) => id.trim()).filter((id) => id.startsWith("http"));
+    if (ids.length > 0) body.contentVaultIds = ids;
+    return body;
+  }
+
+  async function postPlatform(url: string, payload: unknown, signal?: AbortSignal): Promise<{ status: number; body: unknown }> {
+    const send = async (): Promise<{ status: number; body: unknown }> => {
+      const cred = await credential();
+      if (signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+      let headers: Record<string, string>;
+      try {
+        headers = {
+          ...(await cred.authHeaders("POST", url)),
+          "content-type": "application/json",
+          accept: "application/json",
+        };
+      } catch (err) {
+        if (isMissingComputer(err)) throw new NotConnected();
+        throw new NotConnected(SIGN_IN_FAILED);
+      }
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          ...(signal ? { signal } : {}),
+        });
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        throw new PlatformError(0, "GilbPlatform could not be reached.");
+      }
+      return { status: res.status, body: readJsonText(await res.text()) };
+    };
+    let res = await send();
+    if (res.status === 401 && !signal?.aborted) res = await send();
+    if (res.status === 401) throw new PlatformError(401, "Your session needs to re-authorize — try again.");
+    return res;
+  }
+
+  let cache: { agent: string; userText: string; ctx: Ctx } | null = null;
+
+  async function fetchContext(forAgent: string): Promise<Ctx> {
+    const res = await postPlatform(contextUrl, turnFields(forAgent));
+    if (res.status < 200 || res.status >= 300) {
+      throw new PlatformError(res.status, errorText(res.status, res.body, "The agent could not answer"));
+    }
+    const body = res.body as { system?: unknown; tools?: unknown } | null;
+    if (!body || typeof body.system !== "string" || !Array.isArray(body.tools)) {
+      throw new PlatformError(502, "The agent returned an unexpected answer.");
+    }
+    const tools: ToolSpec[] = [];
+    for (const item of body.tools) {
+      const tool = asTool(item);
+      if (tool) tools.push(tool);
+    }
+    return { system: body.system, tools };
+  }
+
+  async function loadContext(force: boolean): Promise<Ctx> {
+    if (!force && cache && cache.agent === agent && cache.userText === userText) return cache.ctx;
+    const ctx = await fetchContext(agent);
+    cache = { agent, userText, ctx };
+    return ctx;
+  }
+
+  async function closeHop(id: string): Promise<void> {
+    try {
+      await postPlatform(toolUrl, { ...turnFields(), name: "hop_done", arguments: "{}", hop: { id, done: true } });
+    } catch {
+      // An id that is never closed still expires on the server.
+    }
+  }
+
+  function failedHop(role: string, reason: string): ToolResult {
+    return toolResult(
+      JSON.stringify({ error: "the Agent's run failed", role, reason, next: HAND_OFF_FAILED_NEXT }),
+      true,
+    );
+  }
+
+  async function runChild(hop: HopShape, signal: AbortSignal): Promise<string> {
+    const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
+    const toolsFile = join(dir, "tools.json");
+    writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
+    const args = [selfFile, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile];
+    for (const id of vaults) args.push("--vault", id);
+    if (profile) args.push("--profile", profile);
+    if (claudeBin !== "claude") args.push("--claude", claudeBin);
+    const mcp = { mcpServers: { gilb: { command: process.execPath, args } } };
+    const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID()), {
+      cwd: dir,
+      env: childEnv(env),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    children.add(child);
+    const stdin = child.stdin;
+    const stdout = child.stdout;
+    const stderrStream = child.stderr;
+    if (!stdin || !stdout || !stderrStream) {
+      children.delete(child);
+      child.kill("SIGTERM");
+      rmSync(dir, { recursive: true, force: true });
+      throw new Error("Could not start Claude Code: pipes were not available.");
+    }
+    let buf = "";
+    let stderr = "";
+    let initOk = false;
+    let refused = false;
+    let resultText: string | null = null;
+    let resultError: string | null = null;
+    const onAbort = () => child.kill("SIGTERM");
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+    stderrStream.on("data", (chunk: Buffer | string) => {
+      stderr = (stderr + chunk).slice(-2000);
+    });
+    stdout.on("data", (chunk: Buffer | string) => {
+      buf += chunk;
+      let index = buf.indexOf("\n");
+      while (index >= 0) {
+        const line = buf.slice(0, index).trim();
+        buf = buf.slice(index + 1);
+        index = buf.indexOf("\n");
+        if (!line) continue;
+        let event: { type?: string; subtype?: string; apiKeySource?: unknown; is_error?: boolean; result?: unknown };
+        try {
+          event = JSON.parse(line) as typeof event;
+        } catch {
+          continue;
+        }
+        if (event.type === "system" && event.subtype === "init") {
+          if (event.apiKeySource === "none") initOk = true;
+          else {
+            refused = true;
+            child.kill("SIGTERM");
+          }
+        } else if (event.type === "result") {
+          if (event.is_error) resultError = `Claude Code: ${String(event.result ?? "the turn failed").slice(0, 500)}`;
+          else resultText = String(event.result ?? "");
+        }
+      }
+    });
+    return await new Promise<string>((resolve, reject) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        children.delete(child);
+        rmSync(dir, { recursive: true, force: true });
+        fn();
+      };
+      timer = setTimeout(() => {
+        child.kill("SIGTERM");
+        finish(() => reject(new Error("The hand-off took too long and was stopped.")));
+      }, hopMaxMs);
+      // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
+      timer.unref();
+      child.on("error", (err) => finish(() => reject(new Error(`Could not start Claude Code: ${err.message}`))));
+      child.on("close", () => {
+        if (signal.aborted) finish(() => reject(new DOMException("The operation was aborted.", "AbortError")));
+        else if (refused || !initOk) {
+          finish(() => reject(new Error("Claude Code did not confirm that this run uses your Claude subscription, so the hand-off was stopped.")));
+        } else if (resultError !== null) {
+          const reason = resultError;
+          finish(() => reject(new Error(reason)));
+        } else if (resultText === null) finish(() => reject(new Error(`Claude Code stopped without an answer.${safeTail(stderr)}`)));
+        else {
+          const text = resultText;
+          finish(() => resolve(text));
+        }
+      });
+      stdin.on("error", () => undefined);
+      stdin.end(hop.task);
+    });
+  }
+
+  async function runHop(hop: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
+    if (!validHop(hop)) {
+      return toolResult(JSON.stringify({ error: "The hand-off returned an unexpected answer.", next: HAND_OFF_FAILED_NEXT }), true);
+    }
+    const shaped: HopShape = { ...hop, role: hopRole(hop), answer: hopAnswer(hop) };
+    if (hopMode) {
+      await closeHop(shaped.id);
+      return failedHop(shaped.role, "A hand-off cannot hand off again.");
+    }
+    if (!turnId) {
+      await closeHop(shaped.id);
+      return failedHop(shaped.role, "The hand-off could not be linked to its turn.");
+    }
+    if (hopsRunning >= maxHops) {
+      await closeHop(shaped.id);
+      return toolResult(
+        JSON.stringify({
+          error: "the Agent's run failed",
+          role: shaped.role,
+          reason: `Too many hand-offs are running at once (${maxHops}). Wait for one to finish.`,
+          next: "Wait for a hand-off that is already running to finish, then try again.",
+        }),
+        true,
+      );
+    }
+    hopsRunning += 1;
+    try {
+      const content = await runChild(shaped, signal);
+      if (signal.aborted) return CANCELLED;
+      await closeHop(shaped.id);
+      return toolResult(JSON.stringify({ ...shaped.answer, content }), false);
+    } catch (err) {
+      await closeHop(shaped.id);
+      if (signal.aborted) return CANCELLED;
+      const reason = err instanceof Error ? err.message : "the hand-off could not run";
+      return failedHop(shaped.role, reason);
+    } finally {
+      hopsRunning -= 1;
+    }
+  }
+
+  async function callPlatformTool(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
+    const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
+    if (signal.aborted) return CANCELLED;
+    if (res.status < 200 || res.status >= 300) {
+      return toolResult(JSON.stringify({ error: errorText(res.status, res.body, `${name} could not run`) }), true);
+    }
+    const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown; hop?: unknown }) : {};
+    if (body.hop && typeof body.hop === "object") return runHop(body.hop, signal);
+    const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+    return toolResult(result, toolAnswerIsError(result));
+  }
+
+  async function onToolCall(params: unknown, id: unknown): Promise<ToolResult | typeof CANCELLED> {
+    const name = params && typeof params === "object" ? (params as { name?: unknown }).name : undefined;
+    const args = params && typeof params === "object" ? (params as { arguments?: unknown }).arguments : undefined;
+    if (typeof name !== "string" || name === "") {
+      return toolResult(JSON.stringify({ error: "Tool name is missing." }), true);
+    }
+    const ac = new AbortController();
+    if (id !== undefined && id !== null) calls.set(String(id), ac);
+    const stopProgress = startProgress(params);
+    try {
+      await credential();
+      if (ac.signal.aborted) return CANCELLED;
+      if (!hopMode && name === "gilb_task") return onTask(args);
+      if (!hopMode && name === "gilb_agent") return await onAgent(args);
+      if (hopMode && !hopTools.some((tool) => tool.name === name)) {
+        return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
+      }
+      return await callPlatformTool(name, args, ac.signal);
+    } catch (err) {
+      if (ac.signal.aborted || (err instanceof Error && err.name === "AbortError")) return CANCELLED;
+      if (err instanceof NotConnected) return toolResult(err.message, true);
+      const message = err instanceof Error ? err.message : `${name} could not run`;
+      return toolResult(JSON.stringify({ error: message }), true);
+    } finally {
+      stopProgress();
+      if (id !== undefined && id !== null) calls.delete(String(id));
+    }
+  }
+
+  function onTask(args: unknown): ToolResult {
+    const text = fieldString(args, "text");
+    if (!text) return toolResult(JSON.stringify({ error: "Write what the person is asking." }), true);
+    if (text.length > USER_TEXT_MAX) return toolResult(JSON.stringify({ error: "That request is too long." }), true);
+    userText = text;
+    cache = null;
+    return toolResult("The person's request is set.", false);
+  }
+
+  async function onAgent(args: unknown): Promise<ToolResult> {
+    const next = fieldString(args, "agent");
+    if (!next || next.length > 64) return toolResult(JSON.stringify({ error: "Name an agent, for example Kai-Zen or Agent.Jackfruit." }), true);
+    const ctx = await fetchContext(next);
+    agent = next;
+    cache = { agent, userText, ctx };
+    emit({ jsonrpc: "2.0", method: "notifications/tools/list_changed", params: {} });
+    return toolResult(ctx.system, false);
+  }
+
+  function startProgress(params: unknown): () => void {
+    const meta = params && typeof params === "object" ? (params as { _meta?: { progressToken?: unknown } })._meta : undefined;
+    const token = meta?.progressToken;
+    if (token === undefined || token === null) return () => undefined;
+    let n = 0;
+    const timer = setInterval(() => {
+      n += 1;
+      emit({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: token, progress: n, message: "still working" } });
+    }, progressEveryMs);
+    timer.unref();
+    return () => clearInterval(timer);
+  }
+
+  async function onListTools(): Promise<{ tools: McpTool[] }> {
+    if (hopMode) return { tools: hopTools.map(mcpTool) };
+    try {
+      const ctx = await loadContext(false);
+      return { tools: [...ctx.tools.map(mcpTool), mcpTool(GILB_AGENT), mcpTool(GILB_TASK)] };
+    } catch (err) {
+      if (err instanceof NotConnected) return { tools: [mcpTool(GILB_AGENT), mcpTool(GILB_TASK)] };
+      throw err;
+    }
+  }
+
+  async function onGetPrompt(params: unknown): Promise<{ description: string; messages: { role: "user"; content: { type: "text"; text: string } }[] }> {
+    const args = params && typeof params === "object" ? (params as { name?: unknown; arguments?: unknown }).arguments : undefined;
+    const askedRaw = args && typeof args === "object" ? (args as { name?: unknown }).name : undefined;
+    const asked = typeof askedRaw === "string" && askedRaw.trim() ? askedRaw.trim() : agent;
+    const promptName = params && typeof params === "object" ? (params as { name?: unknown }).name : undefined;
+    if (promptName !== "agent") throw new PlatformError(404, "Unknown prompt.");
+    const ctx = asked === agent ? await loadContext(false) : await fetchContext(asked);
+    return {
+      description: `Standing instructions for ${asked}.`,
+      messages: [{ role: "user", content: { type: "text", text: ctx.system } }],
+    };
+  }
+
+  async function dispatch(method: string, params: unknown, id: unknown): Promise<unknown> {
+    if (method === "initialize") {
+      const version = params && typeof params === "object" && typeof (params as { protocolVersion?: unknown }).protocolVersion === "string"
+        ? (params as { protocolVersion: string }).protocolVersion
+        : "2025-06-18";
+      return {
+        protocolVersion: version,
+        capabilities: hopMode ? { tools: {} } : { tools: { listChanged: true }, prompts: {} },
+        serverInfo: { name: "gilb", version: CONNECTOR_VERSION },
+        instructions: hopMode
+          ? "Tools for one GilbPlatform hand-off."
+          : "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions.",
+      };
+    }
+    if (method === "ping") return {};
+    if (method === "tools/list") return onListTools();
+    if (method === "tools/call") {
+      const result = await onToolCall(params, id);
+      if (result === CANCELLED) return CANCELLED;
+      return result;
+    }
+    if (method === "prompts/list") return { prompts: hopMode ? [] : [AGENT_PROMPT] };
+    if (method === "prompts/get") return onGetPrompt(params);
+    throw new PlatformError(-32601, `Method not found: ${method}`);
+  }
+
+  function track(work: Promise<void>): void {
+    pending += 1;
+    void work.finally(() => {
+      pending -= 1;
+      checkDone();
+    });
+  }
+
+  async function handle(msg: unknown): Promise<void> {
+    if (!msg || typeof msg !== "object" || Array.isArray(msg)) {
+      await emit({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request" } });
+      return;
+    }
+    const row = msg as JsonMsg;
+    if (typeof row.method !== "string") {
+      if (row.id !== undefined) await emit({ jsonrpc: "2.0", id: row.id, error: { code: -32600, message: "Invalid request" } });
+      return;
+    }
+    if (row.id === undefined) {
+      if (row.method === "notifications/cancelled") {
+        const requestId = row.params && typeof row.params === "object" ? (row.params as { requestId?: unknown }).requestId : undefined;
+        if (requestId !== undefined && requestId !== null) calls.get(String(requestId))?.abort();
+      }
+      return;
+    }
+    try {
+      const result = await dispatch(row.method, row.params, row.id);
+      if (result === CANCELLED) return;
+      await emit({ jsonrpc: "2.0", id: row.id, result });
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      const message = err instanceof NotConnected ? err.message : err instanceof Error ? err.message : "The request failed.";
+      const code = err instanceof PlatformError && err.status === -32601 ? -32601 : -32000;
+      await emit({ jsonrpc: "2.0", id: row.id, error: { code, message } });
+    }
+  }
+
+  let buf = "";
+  input.setEncoding("utf8");
+  input.on("data", (chunk) => {
+    buf += chunk;
+    if (buf.length > 8_000_000) {
+      buf = "";
+      void emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+      return;
+    }
+    let index = buf.indexOf("\n");
+    while (index >= 0) {
+      const line = buf.slice(0, index).replace(/\r$/, "");
+      buf = buf.slice(index + 1);
+      index = buf.indexOf("\n");
+      if (!line.trim()) continue;
+      let msg: unknown;
+      try {
+        msg = JSON.parse(line) as unknown;
+      } catch {
+        void emit({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+        continue;
+      }
+      track(handle(msg));
+    }
+  });
+  input.on("end", () => {
+    inputEnded = true;
+    checkDone();
+  });
+  input.on("error", () => {
+    stopped = true;
+    checkDone();
+  });
+  input.resume();
+
+  return {
+    done,
+    turnId,
+    close() {
+      if (stopped) return;
+      stopped = true;
+      inputEnded = true;
+      for (const child of children) child.kill("SIGTERM");
+      for (const ac of calls.values()) ac.abort();
+      checkDone();
+    },
+  };
+}
+
+function readHopSpec(file: string): { tools: ToolSpec[]; userText: string | undefined } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8")) as unknown;
+  } catch {
+    throw new CliError("Could not read the hand-off's tools.");
+  }
+  if (Array.isArray(raw)) {
+    const tools = asTools(raw);
+    if (!tools) throw new CliError("Could not read the hand-off's tools.");
+    return { tools, userText: undefined };
+  }
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { tools?: unknown }).tools)) {
+    throw new CliError("Could not read the hand-off's tools.");
+  }
+  const tools = asTools((raw as { tools: unknown }).tools);
+  if (!tools) throw new CliError("Could not read the hand-off's tools.");
+  const userText = (raw as { userText?: unknown }).userText;
+  return { tools, userText: typeof userText === "string" ? userText : undefined };
+}
+
+async function main(): Promise<void> {
+  let cli: CliOptions;
+  try {
+    cli = parseCli(process.argv.slice(2), process.env);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not read the options.";
+    process.stderr.write(message + "\n");
+    process.exit(2);
+  }
+  if (cli.help) {
+    process.stderr.write(helpText() + "\n");
+    return;
+  }
+  let hopTools: ToolSpec[] | undefined;
+  let hopUserText: string | undefined;
+  if (cli.hopToolsPath !== undefined) {
+    try {
+      const spec = readHopSpec(cli.hopToolsPath);
+      hopTools = spec.tools;
+      hopUserText = spec.userText;
+    } catch (err) {
+      process.stderr.write((err instanceof Error ? err.message : "Could not read the hand-off's tools.") + "\n");
+      process.exit(2);
+    }
+  }
+  const session = startConnector({
+    input: process.stdin,
+    output: process.stdout,
+    agent: cli.agent,
+    origin: cli.origin,
+    vaults: cli.vaults,
+    claudeBin: cli.claudeBin,
+    progressEveryMs: cli.progressEveryMs,
+    env: process.env,
+    selfFile: fileURLToPath(import.meta.url),
+    ...(cli.profile !== undefined ? { profile: cli.profile } : {}),
+    ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
+    ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
+    ...(hopTools !== undefined ? { hopTools } : {}),
+    ...(hopUserText !== undefined ? { userText: hopUserText } : {}),
+  });
+  const stop = () => session.close();
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+  await session.done;
+  process.exit(0);
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : "The connector stopped.";
+    process.stderr.write(message + "\n");
+    process.exit(1);
+  });
+}
