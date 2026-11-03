@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BUDGET_SPENT_CONTINUE,
   ClaudeCodeBridgeError,
   ClaudeCodePlatformError,
   createClaudeCodeClient,
@@ -369,6 +370,7 @@ describe("sendClaudeCodeTurn", () => {
     });
     const reply = await client.sendTurn([{ role: "user", content: "x" }], { thread: "Jackfruit" });
     expect(reply.content).toBe("I could not.");
+    expect(reply).not.toHaveProperty("budgetSpent");
     expect(back).toHaveLength(1);
     expect(back[0]).toMatchObject({ isError: true });
     expect(String((back[0] as { result: string }).result)).toContain("No write grant");
@@ -810,6 +812,63 @@ describe("sendClaudeCodeTurn", () => {
     expect(mem.size).toBe(1);
     expect(localStorage.length).toBe(0);
     expect(c.load()?.secret).toBe("inj");
+  });
+
+  describe("a turn that used up its tool rounds", () => {
+    function rig(events: [string, unknown][], toolResult?: unknown) {
+      client.save("s3cret");
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === AI_CLAUDE_CODE_CONTEXT_URL) return json(200, CONTEXT);
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/turn`) return sse(events);
+        if (url === AI_CLAUDE_CODE_TOOL_URL) return json(200, { result: toolResult ?? "{}" });
+        if (url === `${CLAUDE_CODE_BRIDGE_URL}/v1/tool-result`) return json(200, { ok: true });
+        throw new Error(`unexpected ${url}`);
+      });
+    }
+    const send = () => client.sendTurn([{ role: "user", content: "x" }], { thread: "J" });
+
+    it("a budget_spent event marks the reply", async () => {
+      rig([
+        ["start", { turnId: "t1" }],
+        ["budget_spent", { type: "budget_spent", maxToolCalls: 240 }],
+        ["message", { role: "assistant", content: "I stopped here.", model: "m" }],
+      ]);
+      const reply = await send();
+      expect(reply.budgetSpent).toBe(true);
+      expect(reply).toMatchObject({ role: "assistant", content: "I stopped here.", model: "m", payer: "person-claude-code" });
+      expect(BUDGET_SPENT_CONTINUE).toBe("continue");
+    });
+
+    it("a final message with budgetSpent marks the reply", async () => {
+      rig([
+        ["start", { turnId: "t1" }],
+        ["message", { role: "assistant", content: "I stopped here.", model: "m", budgetSpent: true }],
+      ]);
+      expect((await send()).budgetSpent).toBe(true);
+    });
+
+    it("a platform tool answer that says the turn used all its rounds marks the reply", async () => {
+      rig(
+        [
+          ["start", { turnId: "t1" }],
+          ["tool_request", { id: "c1", name: "list_vaults", arguments: "{}" }],
+          ["message", { role: "assistant", content: "I stopped here.", model: "m" }],
+        ],
+        JSON.stringify({ error: "this turn has used all its tool rounds" }),
+      );
+      expect((await send()).budgetSpent).toBe(true);
+    });
+
+    it("a normal turn leaves budgetSpent off the reply", async () => {
+      rig([
+        ["start", { turnId: "t1" }],
+        ["tool_request", { id: "c1", name: "list_vaults", arguments: "{}" }],
+        ["message", { role: "assistant", content: "You have 1 vault.", model: "m" }],
+      ]);
+      const reply = await send();
+      expect(reply).toEqual({ role: "assistant", content: "You have 1 vault.", model: "m", payer: "person-claude-code" });
+      expect(reply).not.toHaveProperty("budgetSpent");
+    });
   });
 
   it("a GilbPlatform refusal of the context (NotYourAgent) keeps its code for the pane", async () => {

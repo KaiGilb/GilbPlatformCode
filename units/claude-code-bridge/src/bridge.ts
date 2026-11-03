@@ -27,7 +27,8 @@
 //     opens it with `parentTurnId` (and `parentCallId` when it knows which call asked); it gets its own `claude -p` and
 //     its own MCP tool set, the same environment stripping, the same subscription check. One level only (a hand-off
 //     cannot hand off). Up to MAX_HANDOFFS_AT_ONCE run at once. The turn and its hand-offs share one budget of tool
-//     calls (TURN_MAX_TOOL_CALLS) and each hand-off has a time limit (HOP_MAX_MS).
+//     calls (TURN_MAX_TOOL_CALLS) and each hand-off has a time limit (HOP_MAX_MS). The first time that budget is
+//     spent, the person's turn gets one `budget_spent` event and its final message carries `budgetSpent: true`.
 //
 // Zero dependencies. Node 18 or newer.
 
@@ -72,6 +73,8 @@ interface Turn {
   /** The last ids of calls that were cancelled, so a late result for one is told "ignored", not "no such call". */
   cancelled: Set<string>;
   root: { calls: number };
+  /** Set on the person's turn (never on `root`, the shared counter) the first time a relayed call is refused for the budget. */
+  budgetSpent: boolean;
 }
 /** A JSON-RPC message from the local claude process. */
 interface McpMsg { id?: unknown; method?: string; params?: { _meta?: { progressToken?: unknown }; protocolVersion?: string; name?: unknown; arguments?: unknown; requestId?: unknown } }
@@ -110,7 +113,7 @@ export interface ServiceDeps {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.1.5";
+export const BRIDGE_BUILD = "0.1.6";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -540,12 +543,25 @@ export function createBridge(opts: BridgeOptions = {}) {
     turn.send("tool_cancelled", { type: "tool_cancelled", id });
   }
 
+  /** The person's turn. A hand-off reaches it through `parent`; `parent === null` is that turn. */
+  function personTurn(turn: Turn): Turn {
+    let t = turn;
+    while (t.parent) t = t.parent;
+    return t;
+  }
+
   function relayToolCall(turn: Turn, name: string, args: unknown, rpcId?: unknown): Promise<ToolResult> {
     return new Promise((resolve, reject) => {
       if (turn.closed) return reject(new Error("The app page left; the turn was cancelled."));
       // One budget for the turn and its hand-offs: past it nothing more is relayed, and the model is told so.
+      // The first refusal marks the person's turn and tells its stream once; the final message repeats the mark.
       turn.root.calls += 1;
       if (turn.root.calls > maxToolCalls) {
+        const root = personTurn(turn);
+        if (!root.budgetSpent) {
+          root.budgetSpent = true;
+          root.send("budget_spent", { type: "budget_spent", maxToolCalls });
+        }
         return reject(new Error("This turn has used all its tool rounds. Tell the person what you did, and stop."));
       }
       const id = crypto.randomBytes(8).toString("hex");
@@ -802,6 +818,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       parentCallId,
       cancelled: new Set(),
       root: parent ? parent.root : { calls: 0 },
+      budgetSpent: false,
     };
     if (parent) parent.handoffs.add(turn);
     turns.set(turn.id, turn);
@@ -876,6 +893,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           model: out.model,
           payer: "person-claude-code",
           sessionId: out.sessionId,
+          // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
+          ...(turn.budgetSpent ? { budgetSpent: true } : {}),
         });
       }
     } catch (e) {

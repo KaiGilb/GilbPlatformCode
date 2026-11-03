@@ -13,6 +13,7 @@ A small Node program, run by the person on their own computer and accepting conn
 - It listens on `127.0.0.1` only (default port 47821), refuses a request whose `Host` is not loopback, answers only browser origins on its allow-list, and needs a pairing secret that is first handed over by a short code printed in the person's terminal. Pairings are kept as hashes for 30 days, sliding.
 - Tools of the host app reach Claude Code as an MCP server the bridge hosts for the length of one turn. A tool call is relayed to the app's page and run from there, so no token of the host reaches this process. Claude Code's built-in tools (shell, files, web) are switched off for these turns.
 - A hand-off to another agent runs as a nested turn of the same kind, one level, up to four at a time, sharing the turn's budget of tool calls. `GET /v1/hello` also reports `build`, the package version of this bridge.
+- The first time that budget is spent, the person's turn is sent one `budget_spent` event (`{ type: "budget_spent", maxToolCalls }`) and its final `message` carries `budgetSpent: true`.
 - Commands the person runs: `--install` (macOS login item), `--uninstall`, `--status`, `--code`, `--unpair-all`, `--allow-origin <origin>` (repeatable), `--port`, `--claude`, `--state-dir`, `--label`.
 - `bridge/vite-plugin.mjs` is `claudeCodeBridgeFile({ defaultAllowedOrigins })`: it serves `<base>claude-code-bridge.mjs` in dev and emits it into the build, with the host's origins written into the one `DEFAULT_ALLOWED_ORIGINS` line.
 

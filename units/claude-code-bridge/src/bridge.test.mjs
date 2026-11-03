@@ -697,6 +697,46 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
   });
 });
 
+describe("the page is told when the tool-call budget is spent", () => {
+  it("a turn whose tool calls exceed a small budget gets one budget_spent event, and its final message carries budgetSpent", async () => {
+    await bridge.close();
+    await start({ bridgeOpts: { maxToolCalls: 0 } });
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "CALLTOOL" });
+    const spent = t.events.filter((e) => e[0] === "budget_spent");
+    expect(spent).toHaveLength(1);
+    expect(spent[0][1]).toEqual({ type: "budget_spent", maxToolCalls: 0 });
+    expect(t.events.find((e) => e[0] === "message")[1]).toMatchObject({ budgetSpent: true, payer: "person-claude-code" });
+  });
+
+  it("a nested hand-off that spends the budget tells the root turn once, and only the root message is marked", async () => {
+    await bridge.close();
+    await start({ bridgeOpts: { maxToolCalls: 1 } });
+    const { body } = await pair();
+    const nested = [];
+    const t = await turn(body.secret, { prompt: "CALLTOOL" }, async (_req, turnId) => {
+      for (const label of ["first", "second"]) nested.push(await hop(body.secret, turnId, { prompt: `CALLTOOL ${label}` }));
+      return { result: "{}", isError: false };
+    });
+    const spent = t.events.filter((e) => e[0] === "budget_spent");
+    expect(spent).toHaveLength(1);
+    expect(spent[0][1]).toEqual({ type: "budget_spent", maxToolCalls: 1 });
+    expect(t.events.find((e) => e[0] === "message")[1].budgetSpent).toBe(true);
+    expect(nested).toHaveLength(2);
+    for (const h of nested) {
+      expect(h.events.filter((e) => e[0] === "budget_spent")).toHaveLength(0);
+      expect(h.events.find((e) => e[0] === "message")[1]).not.toHaveProperty("budgetSpent");
+    }
+  });
+
+  it("a normal turn's final message has no budgetSpent key", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "hello" });
+    expect(t.events.find((e) => e[0] === "message")[1]).not.toHaveProperty("budgetSpent");
+    expect(t.events.some((e) => e[0] === "budget_spent")).toBe(false);
+  });
+});
+
 describe("the Claude CLI waits as long as the bridge allows (MCP_TOOL_TIMEOUT)", () => {
   it("the constant is the hand-off limit plus a minute, in milliseconds", () => {
     expect(MCP_TOOL_TIMEOUT_MS).toBe(HOP_MAX_MS + 60000);
@@ -1199,7 +1239,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.5", billing: "claude-subscription" });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.6", billing: "claude-subscription" });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });
