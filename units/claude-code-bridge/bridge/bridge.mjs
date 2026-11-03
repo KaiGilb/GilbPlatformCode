@@ -24,9 +24,10 @@
 //     GilbPlatform token ever reaches this process.
 //   * Claude Code's built-in tools (shell, files, web) are switched off for these turns.
 //   * A hand-off to another agent (run_named_role, ask_agent_concept) runs as a NESTED turn of the same kind: the page
-//     opens it with `parentTurnId`; it gets its own `claude -p` and its own MCP tool set, the same environment stripping,
-//     the same subscription check. One level only (a hand-off cannot hand off), one at a time, and the turn and its
-//     hand-off share one budget of tool calls (TURN_MAX_TOOL_CALLS) and the hand-off a time limit (HOP_MAX_MS).
+//     opens it with `parentTurnId` (and `parentCallId` when it knows which call asked); it gets its own `claude -p` and
+//     its own MCP tool set, the same environment stripping, the same subscription check. One level only (a hand-off
+//     cannot hand off). Up to MAX_HANDOFFS_AT_ONCE run at once. The turn and its hand-offs share one budget of tool
+//     calls (TURN_MAX_TOOL_CALLS) and each hand-off has a time limit (HOP_MAX_MS).
 //
 // Zero dependencies. Node 18 or newer.
 import http from "node:http";
@@ -37,6 +38,8 @@ import path from "node:path";
 import { spawn, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const BRIDGE_VERSION = "1";
+/** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
+export const BRIDGE_BUILD = "0.1.5";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -193,6 +196,10 @@ export function checkSubscriptionLogin(claudeBin = "claude", env = process.env) 
 const MAX_BODY = 2 * 1024 * 1024;
 const TOOL_WAIT_MS = 15 * 60 * 1000;
 const MAX_TURNS_AT_ONCE = 4;
+/** How many nested hand-offs one turn may have running at once. */
+export const MAX_HANDOFFS_AT_ONCE = 4;
+/** `parentCallId` on a nested turn: the bridge's own id for the relayed call that asked. */
+const PARENT_CALL_ID = /^[0-9a-f]{16}$/;
 // A person turn and every hand-off it opens (a nested `claude -p`) draw on ONE budget of tool calls, as /base/ai/chat's
 // turn and its hops draw on one round ceiling (TURN_MAX_MODEL_ROUNDS = 240 on the server, which refuses past it too).
 export const TURN_MAX_TOOL_CALLS = 240;
@@ -417,24 +424,43 @@ export function createBridge(opts = {}) {
         return bad(-32601, `Method not found: ${method}`);
     }
     /**
+     * Stops the nested turn that is answering the pending call `callId`, if one can be picked out.
+     * A nested turn that named this call is that one. An older page that sent no id is stopped only when it is the only
+     * such hand-off still running, and only when this call is itself a hand-off. Anything else is left running.
+     */
+    function stopHandoffFor(turn, callId) {
+        const stop = (h) => {
+            h.closed = true;
+            h.child?.kill("SIGTERM");
+            turn.handoffs.delete(h);
+        };
+        for (const h of turn.handoffs) {
+            if (h.parentCallId === callId) {
+                stop(h);
+                return;
+            }
+        }
+        const p = turn.pending.get(callId);
+        if (!p || !HAND_OFF_TOOLS.has(p.name))
+            return;
+        const unnamed = [...turn.handoffs].filter((h) => h.parentCallId === "");
+        if (unnamed.length === 1)
+            stop(unnamed[0]);
+    }
+    /**
      * The CLI abandoned (or its process ended with) a pending call. Settle it; if it was the call that a hand-off runs for,
-     * stop the nested claude and free the turn for the next hand-off; and tell the page so it stops working on it.
+     * stop that nested claude; and tell the page so it stops working on it.
      */
     function cancelCall(turn, id) {
         const p = turn.pending.get(id);
         if (!p)
             return;
+        stopHandoffFor(turn, id);
         turn.pending.delete(id);
         turn.cancelled.add(id);
         if (turn.cancelled.size > MAX_CANCELLED_KEPT)
             turn.cancelled.delete(turn.cancelled.values().next().value);
         p.resolve({ text: "This call was cancelled.", isError: true });
-        const nested = turn.handoff;
-        if (nested && HAND_OFF_TOOLS.has(p.name)) {
-            turn.handoff = null;
-            nested.closed = true;
-            nested.child?.kill("SIGTERM");
-        }
         turn.send("tool_cancelled", { type: "tool_cancelled", id });
     }
     function relayToolCall(turn, name, args, rpcId) {
@@ -447,22 +473,33 @@ export function createBridge(opts = {}) {
                 return reject(new Error("This turn has used all its tool rounds. Tell the person what you did, and stop."));
             }
             const id = crypto.randomBytes(8).toString("hex");
-            const timer = setTimeout(() => {
-                turn.pending.delete(id);
-                reject(new Error("The app did not answer the tool call in time."));
+            let settled = false;
+            let timer;
+            const fulfill = (r) => {
+                if (settled)
+                    return;
+                settled = true;
+                if (timer !== undefined)
+                    clearTimeout(timer);
+                resolve(r);
+            };
+            const fail = (e) => {
+                if (settled)
+                    return;
+                settled = true;
+                if (timer !== undefined)
+                    clearTimeout(timer);
+                reject(e);
+            };
+            // The page never answered. Reject with the timeout sentence (once), and still stop the hand-off and tell the page,
+            // the same as a cancel. cancelCall then resolves the pending entry; fulfill ignores that second settlement.
+            timer = setTimeout(() => {
+                if (settled)
+                    return;
+                fail(new Error("The app did not answer the tool call in time."));
+                cancelCall(turn, id);
             }, TOOL_WAIT_MS);
-            turn.pending.set(id, {
-                resolve: (r) => {
-                    clearTimeout(timer);
-                    resolve(r);
-                },
-                reject: (e) => {
-                    clearTimeout(timer);
-                    reject(e);
-                },
-                name,
-                rpcId,
-            });
+            turn.pending.set(id, { resolve: fulfill, reject: fail, name, rpcId });
             turn.send("tool_request", { id, name, arguments: args });
         });
     }
@@ -493,21 +530,37 @@ export function createBridge(opts = {}) {
         if (!batch && only?.method === "tools/call" && only.id !== undefined && ptoken !== undefined && ptoken !== null &&
             String(req.headers.accept ?? "").includes("text/event-stream")) {
             res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache", connection: "keep-alive" });
-            const write = (m) => { if (!res.writableEnded)
-                res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`); };
+            const write = (m) => {
+                if (res.writableEnded || res.destroyed)
+                    return;
+                res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`);
+            };
             let n = 0;
             const timer = setInterval(() => {
                 n += 1;
                 write({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken: ptoken, progress: n, message: "still working" } });
             }, progressEveryMs);
-            res.on("close", () => clearInterval(timer));
+            // The CLI gave up by closing this request before any reply was written: drop the pending call (and its hand-off).
+            // A close after the reply (the normal end of the stream) does nothing more.
+            let replied = false;
+            res.on("close", () => {
+                clearInterval(timer);
+                if (replied || !only)
+                    return;
+                for (const [pid, p] of [...turn.pending])
+                    if (String(p.rpcId) === String(only.id))
+                        cancelCall(turn, pid);
+            });
             try {
                 write(await mcpReply(turn, only));
+                replied = true;
             }
             finally {
                 clearInterval(timer);
             }
-            return res.end();
+            if (!res.writableEnded && !res.destroyed)
+                res.end();
+            return;
         }
         const replies = [];
         for (const m of msgs) {
@@ -649,17 +702,28 @@ export function createBridge(opts = {}) {
             return json(res, e.status ?? 400, { error: e.message });
         }
         // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
-        // that asked. One level only, one at a time, on the parent's budget, and it never resumes or reads a session.
+        // that asked and, when it knows it, the call that asked. One level only, up to MAX_HANDOFFS_AT_ONCE at once, on the
+        // parent's budget, and it never resumes or reads a session.
         const parentId = typeof body.parentTurnId === "string" ? body.parentTurnId : "";
         let parent = null;
+        let parentCallId = "";
         if (parentId) {
             parent = turns.get(parentId) ?? null;
             if (!parent || parent.closed)
                 return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
             if (parent.parent)
                 return json(res, 400, { error: "A hand-off cannot hand off again." });
-            if (parent.handoff)
-                return json(res, 429, { error: "A hand-off is already running for this turn." });
+            if (body.parentCallId !== undefined) {
+                const raw = body.parentCallId;
+                const pending = typeof raw === "string" ? parent.pending.get(raw) : undefined;
+                if (typeof raw !== "string" || !PARENT_CALL_ID.test(raw) || !pending || !HAND_OFF_TOOLS.has(pending.name)) {
+                    return json(res, 409, { error: "The call that asked for this hand-off is no longer waiting." });
+                }
+                parentCallId = raw;
+            }
+            if (parent.handoffs.size >= MAX_HANDOFFS_AT_ONCE) {
+                return json(res, 429, { error: `Too many hand-offs are running for this turn at once (${MAX_HANDOFFS_AT_ONCE}). Wait for one to answer.` });
+            }
         }
         else if ([...turns.values()].filter((t) => !t.parent).length >= MAX_TURNS_AT_ONCE) {
             return json(res, 429, { error: "Too many turns at once." });
@@ -684,12 +748,13 @@ export function createBridge(opts = {}) {
             child: null,
             send: () => { },
             parent,
-            handoff: null,
+            handoffs: new Set(),
+            parentCallId,
             cancelled: new Set(),
             root: parent ? parent.root : { calls: 0 },
         };
         if (parent)
-            parent.handoff = turn;
+            parent.handoffs.add(turn);
         turns.set(turn.id, turn);
         res.writeHead(200, {
             "content-type": "text/event-stream",
@@ -715,17 +780,22 @@ export function createBridge(opts = {}) {
                 finish();
             }, hopMaxMs)
             : null;
+        let finished = false;
         const finish = () => {
+            if (finished)
+                return;
+            finished = true;
             clearInterval(beat);
             if (hopTimer)
                 clearTimeout(hopTimer);
-            if (parent && parent.handoff === turn)
-                parent.handoff = null;
-            // A turn that ends takes its hand-off with it.
-            if (turn.handoff) {
-                turn.handoff.child?.kill("SIGTERM");
-                turn.handoff.closed = true;
+            if (parent)
+                parent.handoffs.delete(turn);
+            // A turn that ends takes every hand-off it still has with it.
+            for (const h of [...turn.handoffs]) {
+                h.closed = true;
+                h.child?.kill("SIGTERM");
             }
+            turn.handoffs.clear();
             turn.closed = true;
             for (const p of turn.pending.values())
                 p.reject(new Error("The turn ended."));
@@ -806,7 +876,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, billing: "claude-subscription" });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription" });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
