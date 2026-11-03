@@ -71,6 +71,20 @@ describe("probe and pair", () => {
     expect(JSON.parse(String(init.body))).toEqual({ code: "K7F-29Q", principalHash: expect.stringMatching(/^[0-9a-f]{64}$/) });
   });
 
+  it("bridgeInfo reports the build when hello has one, and null when it does not", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.1.5" }));
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.5" });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge" }));
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: 15 }));
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null });
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    expect(await client.bridgeInfo()).toEqual({ reachable: false, build: null });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${CLAUDE_CODE_BRIDGE_URL}/v1/hello`);
+    expect(init.method).toBe("GET");
+  });
+
   it("a wrong code surfaces the bridge's own sentence", async () => {
     fetchMock.mockResolvedValue(json(401, { error: "That code is not right." }));
     await expect(client.requestSecret("AAA-AAA")).rejects.toMatchObject({ status: 401, message: "That code is not right." });
@@ -239,7 +253,7 @@ describe("sendClaudeCodeTurn", () => {
       const turnCalls = calls.filter((c) => c.url === `${CLAUDE_CODE_BRIDGE_URL}/v1/turn`);
       expect(turnCalls).toHaveLength(2);
       // The nested turn: the hand-off's own prompt and tools, under the asking turn, no thread, no session.
-      expect(turnCalls[1]!.body).toEqual({ prompt: "write the thing", system: HOP.system, tools: HOP.tools, parentTurnId: "t1" });
+      expect(turnCalls[1]!.body).toEqual({ prompt: "write the thing", system: HOP.system, tools: HOP.tools, parentTurnId: "t1", parentCallId: "c1" });
       // Its tool call went to GilbPlatform with the hop id and the person turn's id; the plain turn's call carries no hop.
       const toolCalls = calls.filter((c) => c.url === AI_CLAUDE_CODE_TOOL_URL);
       expect(toolCalls[0]!.body.hop).toBeUndefined();

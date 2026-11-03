@@ -135,6 +135,8 @@ export interface ClaudeCodeClient {
   readonly bridgeUrl: string;
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
+  /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
   pair(code: string): Promise<ClaudeCodeReadback>;
   /** Trades the code for a secret and returns it WITHOUT keeping it (for an app that stores it itself). */
@@ -358,7 +360,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
      */
     async function streamBridgeTurn(
       body: Record<string, unknown>,
-      onTool: (name: string, args: string, bridgeTurnId: string, sig: AbortSignal) => Promise<{ result: string; isError: boolean }>,
+      onTool: (name: string, args: string, bridgeTurnId: string, sig: AbortSignal, callId: string) => Promise<{ result: string; isError: boolean }>,
       announceStart: boolean,
       onStatus?: (data: { apiKeySource: string | null; model: string }) => void,
       turnSignal: AbortSignal = signal,
@@ -417,7 +419,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             }
             running += 1;
             try {
-              const answer = await onTool(name, args, forTurn, ctl.signal);
+              const answer = await onTool(name, args, forTurn, ctl.signal, id);
               // Cancelled (the bridge's call was abandoned) or the turn is over: nothing to answer.
               if (ctl.signal.aborted) return;
               const back = await bridgeFetch("/v1/tool-result", {
@@ -510,6 +512,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       hopId: string | undefined,
       bridgeTurnId: string,
       sig: AbortSignal,
+      callId: string,
     ): Promise<{ result: string; isError: boolean }> => {
       let result: string;
       let isError = false;
@@ -523,7 +526,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           const b = body && typeof body === "object" ? (body as { result?: unknown; hop?: unknown }) : {};
           if (b.hop && typeof b.hop === "object" && !hopId) {
             // A hand-off: GilbPlatform prepared it; the model runs here, on the person's own Claude Code.
-            const done = await runHop(b.hop as ClaudeCodeHop, bridgeTurnId, sig);
+            const done = await runHop(b.hop as ClaudeCodeHop, bridgeTurnId, sig, callId);
             result = done.result;
             isError = done.isError;
           } else {
@@ -541,7 +544,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     };
 
     /** Runs a hand-off as a nested turn and answers the tool call that asked for it. */
-    const runHop = async (hop: ClaudeCodeHop, parentTurnId: string, sig: AbortSignal): Promise<{ result: string; isError: boolean }> => {
+    const runHop = async (hop: ClaudeCodeHop, parentTurnId: string, sig: AbortSignal, callId: string): Promise<{ result: string; isError: boolean }> => {
       if (typeof hop.id !== "string" || typeof hop.system !== "string" || typeof hop.task !== "string" || !Array.isArray(hop.tools)) {
         return { result: JSON.stringify({ error: "The hand-off returned an unexpected answer.", next: HAND_OFF_FAILED_NEXT }), isError: true };
       }
@@ -559,9 +562,11 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         return { result: JSON.stringify({ error: "The hand-off could not be linked to its turn.", next: HAND_OFF_FAILED_NEXT }), isError: true };
       }
       try {
+        const nestedBody: Record<string, unknown> = { prompt: hop.task, system: hop.system, tools: hop.tools, parentTurnId };
+        if (typeof callId === "string" && callId !== "") nestedBody.parentCallId = callId;
         const done = await streamBridgeTurn(
-          { prompt: hop.task, system: hop.system, tools: hop.tools, parentTurnId },
-          (name, args, _turn, toolSig) => callTool(name, args, hop.id, "", toolSig),
+          nestedBody,
+          (name, args, _turn, toolSig, nestedCallId) => callTool(name, args, hop.id, "", toolSig, nestedCallId),
           false,
           (d) => opts.onBridgeStatus?.({ nested: true, ...d }),
           sig,
@@ -600,7 +605,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
       },
-      (name, args, bridgeTurnId, toolSig) => callTool(name, args, undefined, bridgeTurnId, toolSig),
+      (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
       (d) => opts.onBridgeStatus?.({ nested: false, ...d }),
     );
@@ -626,6 +631,20 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         return body.bridge === BRIDGE_NAME;
       } catch {
         return false;
+      }
+    },
+
+    async bridgeInfo() {
+      try {
+        const res = await fetch(`${bridgeUrl}/v1/hello`, { method: "GET" });
+        if (!res.ok) return { reachable: false, build: null };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown };
+        return {
+          reachable: body.bridge === BRIDGE_NAME,
+          build: typeof body.build === "string" ? body.build : null,
+        };
+      } catch {
+        return { reachable: false, build: null };
       }
     },
 
