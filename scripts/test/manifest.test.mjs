@@ -37,6 +37,12 @@ test("provenance text stops at the next heading", () => {
   assert.equal(provenanceOf("## Where it came from\n\nabc\n\n## Do not\n\nxyz\n").trim(), "abc");
 });
 
+test("provenance reads a '## Source' section (web units) and still the old heading", () => {
+  const sha = "0123456789abcdef0123456789abcdef01234567";
+  assert.equal(provenanceOf(`## Source\n\nFrom repo at ${sha}\n\n## Do not\n\nxyz\n`).trim(), `From repo at ${sha}`);
+  assert.equal(provenanceOf("## Where it came from\n\nabc\n").trim(), "abc");
+});
+
 const failures = [
   ["bad-json", /does not parse/],
   ["bad-schema", /schema is 2/],
