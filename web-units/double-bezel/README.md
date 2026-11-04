@@ -69,7 +69,7 @@ import { DeviceFrame } from '@kaigilb/gilbwebsitecode-device-frame'
 | Prop | Meaning |
 |---|---|
 | `tint?` | Any CSS colour laid over the outer shell at `tintAlpha`. Empty (the default) for none. |
-| `tintAlpha?` | 0 to 1, default `0.16`. |
+| `tintAlpha?` | 0 to 1, default `0.16`. With `onDark` the tint is a fixed 10 %, as in the source, and `tintAlpha` has no effect. |
 | `onDark?` | Lines and highlight for a dark section. Default `false`. |
 | default slot | The picture: an `<img>`, a `device-frame`, or any visual. |
 

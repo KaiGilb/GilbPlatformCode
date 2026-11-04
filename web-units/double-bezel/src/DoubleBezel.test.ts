@@ -147,3 +147,12 @@ test("axe finds no violations", async () => {
   const results = await axe.run(document.body);
   expect(results.violations).toEqual([]);
 });
+
+test("whole-style: the style block is exactly the rules this file means", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "DoubleBezel.vue"), "utf8");
+  const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+  const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+  expect(normalized).toBe(
+    ".bz { padding: 0.375rem; border-radius: 2rem; background: linear-gradient(color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent), color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent)), color-mix(in srgb, var(--site-block-bg, #ffffff) 78%, white); border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent); box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(28 28 20 / 0.12)); } .bz-core { overflow: hidden; border-radius: 1.625rem; background-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 86%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 6%, transparent); } .bz-core :deep(.df-browser) { border: 0; border-radius: 0; box-shadow: none; } .bz--dark { background: linear-gradient(color-mix(in srgb, var(--bz-tint) 10%, transparent), color-mix(in srgb, var(--bz-tint) 10%, transparent)), color-mix(in srgb, var(--site-block-fg, #1a1a1a) 86%, white); border-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 16%, transparent); } .bz--dark .bz-core { background-color: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 92%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px color-mix(in srgb, var(--site-block-bg, #ffffff) 10%, transparent); }",
+  );
+});
