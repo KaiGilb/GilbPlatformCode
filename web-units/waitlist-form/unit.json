@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "unit": "web-units/waitlist-form",
+  "package": "@kaigilb/gilbwebsitecode-waitlist-form",
+  "version": "0.1.0",
+  "purpose": "`<WaitlistForm>` draws a `<form method=\"post\">` whose `action` is `actionUrl` (default `/api/waitlist`).",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",
+    "files": [
+      {
+        "path": "components/WaitlistForm.vue",
+        "lines": null,
+        "to": "src/WaitlistForm.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The field rules (lengths, allowed answers, the email shape, the notice stored word for word) are read from `workers/waitlist-fields.ts` at the same commit and written as `src/fields.ts`, with a neutral default field list in different lengths and choice values; the host passes `fields` and its server validates that same list.",
+    "Ids are per instance from Vue's `useId` (`wl-email-<id>`); the source used fixed `wl-*` ids.",
+    "The source's sentences are not in the unit: labels, help, options, notice, button and thank-you are `fields`, `labels` and `notice`, with neutral English defaults.",
+    "The source's dev-build skip of the request (`import.meta.dev`) is not here; pass `send` for a preview.",
+    "Tailwind is written out as plain CSS; no utility class and no `@apply`.",
+    "The button is disabled while sending; the source left it focusable with `aria-disabled`.",
+    "The token wait is `tokenWaitMs`, default 8 seconds; the source waited 15.",
+    "The source's phone question, \"which AI\" question and honeypot are not in the default list; the body holds only declared fields plus `page`, `notice` and `turnstileToken`."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/fields.ts",
+    "src/send.ts",
+    "src/turnstile.ts",
+    "src/WaitlistForm.test.ts",
+    "src/fields.test.ts",
+    "src/turnstile.test.ts",
+    "src/hostAgnostic.test.ts"
+  ],
+  "host": [
+    {
+      "member": "turnstileSiteKey prop",
+      "replaces": "useRuntimeConfig().public.turnstileSiteKey"
+    },
+    {
+      "member": "actionUrl and send props",
+      "replaces": "$fetch('/api/waitlist')"
+    },
+    {
+      "member": "fields prop",
+      "replaces": "the field rules of workers/waitlist-fields.ts"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
