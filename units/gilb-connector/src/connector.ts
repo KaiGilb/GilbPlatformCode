@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.2.0";
+export const CONNECTOR_VERSION = "0.2.1";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -532,6 +532,25 @@ function toolAnswerIsError(result: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Live door, exact prefixes. A 200 tool result that starts with either one means this AI has no reach. */
+const NO_READ_REACH = "vault target denied: the principal holds no read reach";
+const NO_WRITE_REACH = "vault target denied: the principal holds no write reach";
+
+function deniesVaultReach(body: unknown): boolean {
+  if (!body || typeof body !== "object") return false;
+  const result = (body as { result?: unknown }).result;
+  if (typeof result !== "string") return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result) as unknown;
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const error = (parsed as { error?: unknown }).error;
+  return typeof error === "string" && (error.startsWith(NO_READ_REACH) || error.startsWith(NO_WRITE_REACH));
 }
 
 function toolResult(text: string, isError: boolean): ToolResult {
@@ -1134,8 +1153,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   let cache: { agent: string; userText: string; ctx: Ctx } | null = null;
 
-  function aiRefusal(status: number): boolean {
-    return asMode === "ai" && status === 404;
+  function aiRefusal(status: number, body?: unknown): boolean {
+    if (asMode !== "ai") return false;
+    if (status === 404) return true;
+    // Authenticated and unbound is not a 404. The tool answer is 200 and the refusal is in `result`.
+    return status === 200 && deniesVaultReach(body);
   }
 
   function whoamiText(): string {
@@ -1153,7 +1175,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   async function fetchContext(forAgent: string): Promise<Ctx> {
     const res = await postPlatform(contextUrl, turnFields(forAgent));
-    if (aiRefusal(res.status)) {
+    if (aiRefusal(res.status, res.body)) {
       const sentence = aiNotConnected(aiClientId);
       say(sentence);
       throw new NotConnected(sentence);
@@ -1341,7 +1363,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
     const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
     if (signal.aborted) return CANCELLED;
-    if (aiRefusal(res.status)) {
+    if (aiRefusal(res.status, res.body)) {
       const sentence = aiNotConnected(aiClientId);
       say(sentence);
       return toolResult(sentence, true);

@@ -473,6 +473,105 @@ describe("Connected AI", () => {
     assertClean(box.stdout(), secrets, "stdout");
   });
 
+  it("answers a 200 no-read-reach tool with the exact sentence, says it once, and still answers whoami", async () => {
+    const home = scratch();
+    const stderr = captureStderr();
+    const reach = JSON.stringify({
+      error: "vault target denied: the principal holds no read reach on vault https://c3-unbound.example/base",
+    });
+    const { handler, secrets } = door({
+      onTool: () => ({ status: 200, body: { result: reach } }),
+    });
+    const platform = await listen(handler);
+    const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
+    const box = connect({ origin: platform.origin, env });
+    const sentence = SENTENCE(CLIENT_ID);
+
+    const whoFirst = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    expect(whoFirst.result.isError).toBe(false);
+    expect(toolText(whoFirst)).toBe(`mode: ai\nclient id: ${CLIENT_ID}`);
+    expect(stderr.text()).not.toContain(sentence);
+
+    const listed = await box.request("tools/list", {});
+    expect(listed.result.tools.some((tool) => tool.name === "list_vaults")).toBe(true);
+    expect(stderr.text()).not.toContain(sentence);
+    expect(platform.requests.some((rec) => rec.url.endsWith("/tool"))).toBe(false);
+
+    const call = await box.request("tools/call", {
+      name: "list_records",
+      arguments: { vaultId: "https://c3-unbound.example/base", type: "Note" },
+    });
+    expect(call.result.isError).toBe(true);
+    expect(toolText(call)).toBe(sentence);
+    expect(platform.requests.filter((rec) => rec.url.endsWith("/context")).length).toBeGreaterThan(0);
+    expect(platform.requests.filter((rec) => rec.url.endsWith("/tool")).map((rec) => rec.body.name)).toEqual(["list_records"]);
+    expect(stderr.text().split(sentence).length - 1).toBe(1);
+
+    const again = await box.request("tools/call", { name: "list_vaults", arguments: {} });
+    expect(again.result.isError).toBe(true);
+    expect(toolText(again)).toBe(sentence);
+    expect(stderr.text().split(sentence).length - 1).toBe(1);
+
+    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    expect(who.result.isError).toBe(false);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: https://example.test/base`);
+    secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
+    assertClean(stderr.text(), secrets, "stderr");
+    assertClean(box.stdout(), secrets, "stdout");
+  });
+
+  it("answers a 200 no-write-reach tool with the same sentence", async () => {
+    const home = scratch();
+    const stderr = captureStderr();
+    const reach = JSON.stringify({
+      error: "vault target denied: the principal holds no write reach on vault https://c3-unbound.example/base",
+    });
+    const { handler, secrets } = door({
+      onTool: () => ({ status: 200, body: { result: reach } }),
+    });
+    const platform = await listen(handler);
+    const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
+    const box = connect({ origin: platform.origin, env });
+    const sentence = SENTENCE(CLIENT_ID);
+    const call = await box.request("tools/call", { name: "create_record", arguments: { vaultId: "https://c3-unbound.example/base" } });
+    expect(call.result.isError).toBe(true);
+    expect(toolText(call)).toBe(sentence);
+    expect(stderr.text().split(sentence).length - 1).toBe(1);
+    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    expect(who.result.isError).toBe(false);
+    expect(toolText(who)).toContain(`client id: ${CLIENT_ID}`);
+    expect(toolText(who)).not.toBe(sentence);
+    secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
+    assertClean(stderr.text(), secrets, "stderr");
+    assertClean(box.stdout(), secrets, "stdout");
+  });
+
+  it("passes a 200 tool error that is not a reach refusal through unchanged", async () => {
+    const home = scratch();
+    const stderr = captureStderr();
+    const other = JSON.stringify({ error: "this turn has used all its tool rounds", next: "tell the person what you did, and stop" });
+    const near = JSON.stringify({
+      error: "tool failed: vault target denied: the principal holds no read reach on vault https://c3-unbound.example/base",
+    });
+    const answers = [other, near];
+    const { handler, secrets } = door({
+      onTool: () => ({ status: 200, body: { result: answers.shift() ?? other } }),
+    });
+    const platform = await listen(handler);
+    const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
+    const box = connect({ origin: platform.origin, env });
+    const first = await box.request("tools/call", { name: "list_records", arguments: {} });
+    expect(first.result.isError).toBe(true);
+    expect(toolText(first)).toBe(other);
+    const second = await box.request("tools/call", { name: "list_records", arguments: {} });
+    expect(second.result.isError).toBe(true);
+    expect(toolText(second)).toBe(near);
+    expect(stderr.text()).not.toContain(SENTENCE(CLIENT_ID));
+    secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
+    assertClean(stderr.text(), secrets, "stderr");
+    assertClean(box.stdout(), secrets, "stdout");
+  });
+
   it("answers a granted-then-refused tool with the same sentence", async () => {
     const home = scratch();
     const stderr = captureStderr();
