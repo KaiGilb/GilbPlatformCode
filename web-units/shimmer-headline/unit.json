@@ -16,7 +16,7 @@
     ]
   },
   "namedChanges": [
-    "The site's `--brand-fg`, `--brand-bg` and `--palette-goldBright` are the library's `--site-block-fg`, `--site-block-bg` and the new `--site-block-shimmer` (fallback the source's `#e7b339`).",
+    "The site's `--brand-fg`, `--brand-bg` and `--palette-goldBright` are the library's `--site-block-fg`, `--site-block-bg` and the new `--site-block-shimmer` (fallback the library accent, `--site-block-accent`, then `#2563eb`); the source's gold `#e7b339` is what its site maps `--site-block-shimmer` to.",
     "Classes and keyframes are `sh`, `sh--dark`, `sh--sweeping` and `sh-sweep` (the source: `mj-shimmer`, `is-dark`, `is-sweeping`, `mj-shimmer-sweep`); the `animationend` filter matches `sh-sweep` by part, as the source did for its name.",
     "Props are declared inline with `withDefaults` (same names and defaults)."
   ],

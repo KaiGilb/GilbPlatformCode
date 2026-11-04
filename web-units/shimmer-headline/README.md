@@ -66,7 +66,12 @@ import { ShimmerHeadline } from '@kaigilb/gilbwebsitecode-shimmer-headline'
 
 ## Host must supply
 
-`--site-block-fg` (the band's ground on a light section), `--site-block-bg` (on a dark section), `--site-block-shimmer` (the highlight, fallback the source's gold `#e7b339`). The heading's own font, size and colour come from the host's classes.
+- `--site-block-fg` the band's ground on a light section
+- `--site-block-bg` on a dark section
+- `--site-block-shimmer` the highlight. Its fallback is `--site-block-accent` (then `#2563eb`), and the source site maps it to its gold `#e7b339`.
+- `--site-block-accent` the highlight when `--site-block-shimmer` is unset
+
+The heading's own font, size and colour come from the host's classes.
 
 No Tailwind is needed: the styles ship in the component, scoped to it.
 
@@ -82,7 +87,7 @@ Nothing changes size or place: only the paint of the glyphs changes during the p
 
 ## Wrong readings
 
-- The site's `--brand-fg`, `--brand-bg` and `--palette-goldBright` are the library's `--site-block-fg`, `--site-block-bg` and the new `--site-block-shimmer` (fallback the source's `#e7b339`).
+- The site's `--brand-fg`, `--brand-bg` and `--palette-goldBright` are the library's `--site-block-fg`, `--site-block-bg` and the new `--site-block-shimmer` (fallback the library accent, `--site-block-accent`, then `#2563eb`); the source's gold `#e7b339` is what its site maps `--site-block-shimmer` to.
 - Classes and keyframes are `sh`, `sh--dark`, `sh--sweeping` and `sh-sweep` (the source: `mj-shimmer`, `is-dark`, `is-sweeping`, `mj-shimmer-sweep`); the `animationend` filter matches `sh-sweep` by part, as the source did for its name.
 - Props are declared inline with `withDefaults` (same names and defaults).
 

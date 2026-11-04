@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
       100deg,
       var(--site-block-fg, #1a1a1a) 0%,
       var(--site-block-fg, #1a1a1a) 40%,
-      var(--site-block-shimmer, #e7b339) 50%,
+      var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%,
       var(--site-block-fg, #1a1a1a) 60%,
       var(--site-block-fg, #1a1a1a) 100%
     );
@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
       100deg,
       var(--site-block-bg, #ffffff) 0%,
       var(--site-block-bg, #ffffff) 40%,
-      var(--site-block-shimmer, #e7b339) 50%,
+      var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%,
       var(--site-block-bg, #ffffff) 60%,
       var(--site-block-bg, #ffffff) 100%
     );

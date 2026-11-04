@@ -14,7 +14,7 @@ const SWEEP_CSS = `
       100deg,
       var(--site-block-fg, #1a1a1a) 0%,
       var(--site-block-fg, #1a1a1a) 40%,
-      var(--site-block-shimmer, #e7b339) 50%,
+      var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%,
       var(--site-block-fg, #1a1a1a) 60%,
       var(--site-block-fg, #1a1a1a) 100%
     );
@@ -31,7 +31,7 @@ const SWEEP_CSS = `
       100deg,
       var(--site-block-bg, #ffffff) 0%,
       var(--site-block-bg, #ffffff) 40%,
-      var(--site-block-shimmer, #e7b339) 50%,
+      var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%,
       var(--site-block-bg, #ffffff) 60%,
       var(--site-block-bg, #ffffff) 100%
     );
@@ -302,8 +302,37 @@ test("whole-style: the style block is exactly the rules this file means", () => 
   const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
   const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
   expect(normalized).toBe(
-    "@media (prefers-reduced-motion: no-preference) { .sh.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-fg, #1a1a1a) 0%, var(--site-block-fg, #1a1a1a) 40%, var(--site-block-shimmer, #e7b339) 50%, var(--site-block-fg, #1a1a1a) 60%, var(--site-block-fg, #1a1a1a) 100% ); background-size: 300% 100%; background-repeat: no-repeat; -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; animation: sh-sweep 3.2s ease-in-out both; } .sh.sh--dark.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-bg, #ffffff) 0%, var(--site-block-bg, #ffffff) 40%, var(--site-block-shimmer, #e7b339) 50%, var(--site-block-bg, #ffffff) 60%, var(--site-block-bg, #ffffff) 100% ); } } @keyframes sh-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }",
+    "@media (prefers-reduced-motion: no-preference) { .sh.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-fg, #1a1a1a) 0%, var(--site-block-fg, #1a1a1a) 40%, var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%, var(--site-block-fg, #1a1a1a) 60%, var(--site-block-fg, #1a1a1a) 100% ); background-size: 300% 100%; background-repeat: no-repeat; -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; animation: sh-sweep 3.2s ease-in-out both; } .sh.sh--dark.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-bg, #ffffff) 0%, var(--site-block-bg, #ffffff) 40%, var(--site-block-shimmer, var(--site-block-accent, #2563eb)) 50%, var(--site-block-bg, #ffffff) 60%, var(--site-block-bg, #ffffff) 100% ); } } @keyframes sh-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }",
   );
+});
+
+test("README Host must supply lists exactly the variables the style reads", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "ShimmerHeadline.vue"), "utf8");
+  const css = ((sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+  expect(readme.includes("## Host must supply")).toBe(true);
+  const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
+  const listed = [
+    ...new Set(
+      section
+        .split("\n")
+        .filter((line) => line.trimStart().startsWith("- "))
+        .flatMap((line) => {
+          let rest = line.trimStart().slice(2);
+          const names: string[] = [];
+          for (;;) {
+            const found = rest.match(/^`(--site-block-[a-z-]+)`/);
+            if (!found?.[1]) break;
+            names.push(found[1]);
+            rest = rest.slice(found[0].length).replace(/^[\s,]+/, "");
+          }
+          if (names.length === 0) throw new Error(`bullet does not start with a variable: ${line}`);
+          return names;
+        }),
+    ),
+  ].sort();
+  expect(listed).toEqual(inStyle);
 });
 
 test("axe finds no violations", async () => {
