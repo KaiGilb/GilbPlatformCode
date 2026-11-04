@@ -339,6 +339,8 @@ describe("WaitlistForm announces and clears", () => {
     await setEmail(wrapper);
     await wrapper.find("form").trigger("submit");
     expect(live.textContent!.trim()).toBe("Working");
+    // The sending word is screen-reader only, so the region keeps no margin and the button stays put.
+    expect(live.classList.contains("wl-live--shown")).toBe(false);
     release(false);
     await flushPromises();
     expect(live.textContent).not.toContain("Working");
@@ -628,6 +630,29 @@ describe("WaitlistForm style", () => {
 
   test("the field border is the muted colour at 65 percent", () => {
     expect(style).toMatch(/\.wl-field \{[^}]*border: 1px solid color-mix\(in srgb, var\(--site-block-muted, #4b5563\) 65%, transparent\);/);
+  });
+
+  test("the live region takes space only when its line is shown (failed), not while sending", () => {
+    expect(style).toMatch(/\.wl-form > \.wl-live:not\(\.wl-live--shown\) \{ margin-top: 0; \}/);
+    expect(SFC).toContain(":class=\"{ 'wl-live--shown': status === 'failed' }\"");
+  });
+
+  test("the thank-you wrapper draws no outline on a mouse click: it has no :focus rule, only the shared :focus-visible", () => {
+    expect(style).not.toMatch(/\.wl-sent:focus\b/);
+    expect(style).toMatch(/\.wl :focus-visible,\s*\.wl-sent-heading:focus \{/);
+  });
+
+  test("option ids keep a separator between the field and the value: field a + value bc and field ab + value c differ", () => {
+    const fields: WaitlistField[] = [
+      { name: "email", kind: "email", label: "Email", required: true },
+      { name: "a", kind: "choice", label: "A", options: [{ value: "bc", label: "BC" }] },
+      { name: "ab", kind: "choice", label: "AB", options: [{ value: "c", label: "C" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const ids = [...document.querySelectorAll('input[type="radio"]')].map((el) => el.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    wrapper.unmount();
   });
 
   test("the widget's box is reserved at 65px", () => {

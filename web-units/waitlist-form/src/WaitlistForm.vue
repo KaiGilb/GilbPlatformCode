@@ -347,7 +347,7 @@ async function onSubmit(): Promise<void> {
       <p v-if="notice" class="wl-notice">{{ notice.text }}<template v-if="notice.linkHref && notice.linkLabel">{{ " " }}<a :href="notice.linkHref">{{ notice.linkLabel }}</a></template></p>
 
       <!-- Always in the form, so a screen reader hears the error when it appears. Empty, it takes no space. -->
-      <div class="wl-live" role="status" aria-live="polite">
+      <div class="wl-live" :class="{ 'wl-live--shown': status === 'failed' }" role="status" aria-live="polite">
         <p v-if="status === 'failed'" class="wl-fail">{{ words().failed }}</p>
         <span v-else-if="status === 'sending'" class="wl-sr">{{ words().sending }}</span>
       </div>
@@ -445,7 +445,9 @@ async function onSubmit(): Promise<void> {
   color: var(--site-block-danger, #b91c1c);
 }
 .wl-live { position: relative; }
-.wl-live:empty { margin: 0; }
+/* Only a visible line takes space: empty, or holding the screen-reader-only sending word, the
+   region has no margin, so the button does not move when a send starts. */
+.wl-form > .wl-live:not(.wl-live--shown) { margin-top: 0; }
 /* Read by a screen reader, not drawn. */
 .wl-sr {
   position: absolute;
@@ -479,8 +481,7 @@ async function onSubmit(): Promise<void> {
 .wl-button:hover { opacity: 0.9; }
 .wl-button:disabled { opacity: 0.5; cursor: default; }
 .wl :focus-visible,
-.wl-sent-heading:focus,
-.wl-sent:focus {
+.wl-sent-heading:focus {
   outline: 2px solid var(--site-block-accent, #2563eb);
   outline-offset: 2px;
 }
