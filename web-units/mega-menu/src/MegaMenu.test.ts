@@ -116,7 +116,7 @@ describe("closed", () => {
 });
 
 describe("open sheet", () => {
-  test("a dialog and a nav share the label, with one heading and list per group", async () => {
+  test("a dialog and a nav have their own names, with one heading and list per group", async () => {
     await mountOpen();
     const dialog = document.querySelector("[role=dialog]");
     expect(dialog).not.toBeNull();
@@ -124,7 +124,7 @@ describe("open sheet", () => {
     expect(dialog!.getAttribute("aria-label")).toBe("Site menu");
     expect(dialog!.id).not.toBe("");
     const nav = document.querySelector("nav");
-    expect(nav!.getAttribute("aria-label")).toBe("Site menu");
+    expect(nav!.getAttribute("aria-label")).toBe("Main");
     const headings = [...document.querySelectorAll(".mm-label")].map((el) => el.textContent);
     expect(headings).toEqual(["Product", "Who it is for", "Apps"]);
     const lists = [...document.querySelectorAll(".mm-list")];
@@ -143,9 +143,9 @@ describe("open sheet", () => {
   });
 
   test("the label, the close word and the overlay props are the host's", async () => {
-    await mountOpen({ label: "Main menu", closeLabel: "Dismiss", zIndex: 45, sheetHeight: "70dvh", maxWidth: "60rem" });
+    await mountOpen({ label: "Main menu", navLabel: "Pages", closeLabel: "Dismiss", zIndex: 45, sheetHeight: "70dvh", maxWidth: "60rem" });
     expect(document.querySelector("[role=dialog]")!.getAttribute("aria-label")).toBe("Main menu");
-    expect(document.querySelector("nav")!.getAttribute("aria-label")).toBe("Main menu");
+    expect(document.querySelector("nav")!.getAttribute("aria-label")).toBe("Pages");
     expect(document.querySelector(".mm-close")!.textContent).toContain("Dismiss");
     const root = document.querySelector(".mm") as HTMLElement;
     expect(root.style.zIndex).toBe("45");
@@ -261,6 +261,25 @@ describe("keyboard", () => {
     const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  test("Escape still closes after the sheet was closed and opened again", async () => {
+    const w = await mountOpen();
+    await w.setProps({ open: false });
+    await w.setProps({ open: true });
+    await nextTick();
+    key("Escape");
+    expect(w.emitted("close")).toEqual([["esc"]]);
+  });
+
+  test("Tab at the last destination wraps to the first and is default-prevented", async () => {
+    await mountOpen();
+    const els = destinations();
+    els[els.length - 1]!.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    window.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(els[0]);
   });
 
   test("Tab and Shift+Tab from a control outside the sheet both move to the first destination", async () => {
@@ -379,10 +398,39 @@ describe("events", () => {
 
   test("pointer enter and leave are reported from the sheet", async () => {
     const w = await mountOpen();
-    await w.get(".mm-sheet").trigger("pointerenter");
-    await w.get(".mm-sheet").trigger("pointerleave");
+    await w.get(".mm-sheet").trigger("mouseenter");
+    await w.get(".mm-sheet").trigger("mouseleave");
     expect(w.emitted("pointer-enter")).toHaveLength(1);
     expect(w.emitted("pointer-leave")).toHaveLength(1);
+  });
+
+  test("pointerenter and pointerleave alone do not report (a touch lift fires pointerleave)", async () => {
+    const w = await mountOpen();
+    await w.get(".mm-sheet").trigger("pointerenter");
+    await w.get(".mm-sheet").trigger("pointerleave");
+    expect(w.emitted("pointer-enter")).toBeUndefined();
+    expect(w.emitted("pointer-leave")).toBeUndefined();
+  });
+
+  test("a click on empty space in the sheet, the nav or the body wrapper closes it; a click on a link's child does not", async () => {
+    const w = await mountOpen();
+    for (const selector of [".mm-sheet", ".mm-nav", ".mm-body"]) {
+      await w.get(selector).trigger("click");
+    }
+    expect(w.emitted("close")).toEqual([["outside"], ["outside"], ["outside"]]);
+    await w.get(".mm-item-label").trigger("click");
+    // The label sits inside a link, so the click bubbles to the link: 'link', never 'outside'.
+    expect(w.emitted("close")).toEqual([["outside"], ["outside"], ["outside"], ["link"]]);
+    await w.get(".mm-grid").trigger("click");
+    await w.get(".mm-group").trigger("click");
+    expect(w.emitted("close")).toHaveLength(4);
+  });
+
+  test("the Close button is type=button, and the Close svg and the catcher are aria-hidden", async () => {
+    await mountOpen();
+    expect(document.querySelector(".mm-close")!.getAttribute("type")).toBe("button");
+    expect(document.querySelector(".mm-close svg")!.getAttribute("aria-hidden")).toBe("true");
+    expect(document.querySelector(".mm-catcher")!.getAttribute("aria-hidden")).toBe("true");
   });
 });
 
@@ -414,6 +462,41 @@ describe("link component", () => {
       "https://example.test/out",
       "https://example.test/away",
     ]);
+  });
+});
+
+describe("rows and spans", () => {
+  test("a static row draws its sub line", async () => {
+    await mountOpen({ groups: [{ heading: "A", items: [{ label: "Plain", sub: "the promise" }] }] });
+    expect(document.querySelector(".mm-static .mm-sub")?.textContent).toBe("the promise");
+  });
+
+  test.each([
+    [1, "12"],
+    [2, "6"],
+    [3, "4"],
+    [5, "2"],
+  ])("with %i group(s) the default span is floor(12 / count) = %s", async (count, span) => {
+    const groups: MenuGroup[] = Array.from({ length: count }, (_, i) => ({ heading: `G${i}`, items: [{ label: `L${i}`, href: `/${i}` }] }));
+    await mountOpen({ groups });
+    const spans = [...document.querySelectorAll<HTMLElement>(".mm-group")].map((el) => el.style.getPropertyValue("--mm-span"));
+    expect(spans).toEqual(Array(count).fill(span));
+  });
+});
+
+describe("fade", () => {
+  test("opening and closing run a Transition (the real one, not the test stub)", async () => {
+    wrapper = mount(MegaMenu, {
+      props: { open: false, groups: GROUPS },
+      attachTo: document.body,
+      global: { stubs: { transition: false } },
+    });
+    await wrapper.setProps({ open: true });
+    expect(document.querySelector(".mm")!.classList.contains("mm-fade-enter-active")).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    await wrapper.setProps({ open: false });
+    // Still in the document during the leave.
+    expect(document.querySelector(".mm")!.classList.contains("mm-fade-leave-active")).toBe(true);
   });
 });
 
@@ -522,6 +605,13 @@ describe("the unit's style", () => {
       /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-item \{\s*animation: mm-in var\(--site-block-motion, 240ms\) ease both;\s*animation-delay: calc\(min\(var\(--i\), 10\) \* 40ms\);/,
     );
     expect(style).not.toMatch(/@apply|theme\(/);
+  });
+
+  test("the fade is opacity only, 150ms in, --site-block-motion (150ms) out, and only without reduced motion", () => {
+    expect(style).toMatch(
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-fade-enter-active \{ transition: opacity 150ms ease; \}\s*\.mm-fade-leave-active \{ transition: opacity var\(--site-block-motion, 150ms\) ease; \}\s*\.mm-fade-enter-from, \.mm-fade-leave-to \{ opacity: 0; \}\s*\}/,
+    );
+    expect(SFC).toContain('<Transition name="mm-fade">');
   });
 
   test("the component names no site menu and imports nothing but vue and its own files", () => {

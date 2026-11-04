@@ -8,7 +8,7 @@
  *
  * An item with no href is static text: no link, no tab stop, no hover change.
  * Close reasons: 'esc' (Escape), 'outside' (the catcher, or a click on the sheet
- * padding), 'link' (any link), 'button' (the bottom Close control).
+ * padding, or any empty space in it), 'link' (any link), 'button' (the bottom Close control).
  *
  * `document` and `window` are read only inside the handlers below, never at
  * module load and never in the setup body, so a server render does not touch them.
@@ -23,8 +23,10 @@ const props = withDefaults(
     open: boolean;
     /** The regions of the sheet. Nothing here is a page of any one site. */
     groups: MenuGroup[];
-    /** Accessible name of the dialog and the nav. */
+    /** Accessible name of the dialog. */
     label?: string;
+    /** Accessible name of the nav inside the dialog. */
+    navLabel?: string;
     /** The bottom-edge Close control. */
     closeLabel?: string;
     /**
@@ -46,6 +48,7 @@ const props = withDefaults(
   }>(),
   {
     label: "Site menu",
+    navLabel: "Main",
     closeLabel: "Close",
     linkComponent: "a",
     zIndex: 40,
@@ -153,7 +156,7 @@ function onKeydown(event: KeyboardEvent): void {
   // A slot control inside the sheet (focused, but not a destination) keeps the browser's Tab.
   // It has to return here: a negative index is also an edge, and would otherwise be trapped.
   if (inside && current < 0) return;
-  const atEdge = !inside || current < 0 || (event.shiftKey ? current === 0 : current === els.length - 1);
+  const atEdge = !inside || (event.shiftKey ? current === 0 : current === els.length - 1);
   if (!atEdge) return;
   // Outside the sheet, both Tab and Shift+Tab enter at the first destination:
   // nextFocusIndex sends every outside index to the first item.
@@ -207,6 +210,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <Transition name="mm-fade">
   <div
     v-if="open"
     class="mm"
@@ -220,10 +224,11 @@ onBeforeUnmount(() => {
       aria-modal="true"
       :aria-label="label"
       @click.self="emit('close', 'outside')"
-      @pointerenter="emit('pointer-enter')"
-      @pointerleave="emit('pointer-leave')"
+      @mouseenter="emit('pointer-enter')"
+      @mouseleave="emit('pointer-leave')"
     >
-      <nav class="mm-nav" :aria-label="label">
+      <nav class="mm-nav" :aria-label="navLabel" @click.self="emit('close', 'outside')">
+        <div class="mm-body" @click.self="emit('close', 'outside')">
         <div class="mm-grid">
           <div
             v-for="group in drawn"
@@ -266,6 +271,7 @@ onBeforeUnmount(() => {
             </ul>
           </div>
         </div>
+        </div>
       </nav>
 
       <div v-if="$slots.footer" class="mm-footer">
@@ -283,6 +289,7 @@ onBeforeUnmount(() => {
     <!-- Not a tab stop. The Close control and Esc are the keyboard path. -->
     <div class="mm-catcher" aria-hidden="true" @click="emit('close', 'outside')" />
   </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -478,6 +485,13 @@ onBeforeUnmount(() => {
   .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; }
   .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .mm-group { grid-column: span var(--mm-span, 12); }
+}
+
+/* The sheet fades in and out: opacity only. With reduced motion there is no transition. */
+@media (prefers-reduced-motion: no-preference) {
+  .mm-fade-enter-active { transition: opacity 150ms ease; }
+  .mm-fade-leave-active { transition: opacity var(--site-block-motion, 150ms) ease; }
+  .mm-fade-enter-from, .mm-fade-leave-to { opacity: 0; }
 }
 
 /* Reduced motion: the sheet is complete at once. No stagger, no colour transition. */
