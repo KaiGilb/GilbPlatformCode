@@ -144,6 +144,28 @@ describe("SiteLogo", () => {
     expect(document.querySelector("img")!.getAttribute("loading")).toBe("eager");
   });
 
+  test("a decorative image has width and height 32 by default, and decoding async", () => {
+    mountLogo({ name: "Acme", logoSrc: "/logo.svg", decorative: true });
+    const img = document.querySelector("img")!;
+    expect(img.getAttribute("width")).toBe("32");
+    expect(img.getAttribute("height")).toBe("32");
+    expect(img.getAttribute("decoding")).toBe("async");
+  });
+
+  test("a decorative image takes logoWidth and logoHeight", () => {
+    mountLogo({ name: "Acme", logoSrc: "/logo.svg", decorative: true, logoWidth: 120, logoHeight: 40 });
+    const img = document.querySelector("img")!;
+    expect(img.getAttribute("width")).toBe("120");
+    expect(img.getAttribute("height")).toBe("40");
+  });
+
+  test("a linked image has width and height 32 by default", () => {
+    mountLogo({ name: "Acme", logoSrc: "/logo.svg" });
+    const img = document.querySelector("img")!;
+    expect(img.getAttribute("width")).toBe("32");
+    expect(img.getAttribute("height")).toBe("32");
+  });
+
   test("decorative with an empty logoSrc renders nothing", () => {
     mountLogo({ name: "Acme", logoSrc: "", decorative: true });
     expect(document.querySelector("a, img, span")).toBeNull();

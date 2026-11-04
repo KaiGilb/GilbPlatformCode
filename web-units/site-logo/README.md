@@ -83,7 +83,7 @@ const NuxtImg = resolveComponent('NuxtImg')
 | `external?` | the address is outside this site's router (default `false`). Forces a plain `<a href>` even when `linkComponent` is set |
 | `logoSrc?` | the logo file's address. Empty (the default) draws no image |
 | `logoAlt?` | alt used only when the wordmark is hidden. Empty uses `name` |
-| `logoWidth?`, `logoHeight?` | the image's `width` and `height` attributes, in pixels (default 32 and 32). Always set |
+| `logoWidth?`, `logoHeight?` | the image's `width` and `height` attributes, in pixels (default 32 and 32). Always set. The image is drawn 2rem high; these two set its aspect ratio (so the layout does not shift), not its drawn size, so pass the logo's own ratio |
 | `wordmark?` | `always` (default: the name is always shown), `when-no-logo` (the name is shown only when there is no image), or `never` (the name is hidden when there is an image). `never` with no image still shows the name |
 | `linkComponent?` | the component that links a route, given `to` (Nuxt: `resolveComponent('NuxtLink')`). The string `a` (the default) is a plain `<a href>` |
 | `imageComponent?` | the component that draws the logo, given `src`, `alt`, `width`, `height`, `decoding` and `loading` (Nuxt: `resolveComponent('NuxtImg')`). Default `<img>` |
