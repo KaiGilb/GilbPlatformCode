@@ -476,6 +476,7 @@ describe("rows and spans", () => {
     [2, "6"],
     [3, "4"],
     [5, "2"],
+    [7, "1"],
   ])("with %i group(s) the default span is floor(12 / count) = %s", async (count, span) => {
     const groups: MenuGroup[] = Array.from({ length: count }, (_, i) => ({ heading: `G${i}`, items: [{ label: `L${i}`, href: `/${i}` }] }));
     await mountOpen({ groups });
@@ -602,9 +603,20 @@ describe("the unit's style", () => {
     expect(style).toContain("var(--site-block-radius, 0.5rem)");
     expect(style).toMatch(/\.mm-static:hover[^{]*\{[^}]*cursor:\s*default/);
     expect(style).toMatch(
-      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-item \{\s*animation: mm-in var\(--site-block-motion, 240ms\) ease both;\s*animation-delay: calc\(min\(var\(--i\), 10\) \* 40ms\);/,
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-item \{\s*animation: mm-in var\(--site-block-motion-rise, 0\.55s\) cubic-bezier\(0\.25, 0\.05, 0\.3, 0\.7\) both;\s*animation-delay: calc\(min\(var\(--i\), 10\) \* 40ms\);/,
     );
     expect(style).not.toMatch(/@apply|theme\(/);
+  });
+
+  test("rows rise as in the source: --site-block-motion-rise (0.55s), the source's curve, 18px; links colour over --site-block-motion (180ms)", () => {
+    expect(SFC).toContain("animation: mm-in var(--site-block-motion-rise, 0.55s) cubic-bezier(0.25, 0.05, 0.3, 0.7) both;");
+    expect(SFC).toContain("from { opacity: 0; transform: translateY(18px); }");
+    expect(SFC).toMatch(/\.mm-link \{[^}]*transition: color var\(--site-block-motion, 180ms\) ease;/);
+  });
+
+  test("the grid is centred in the sheet's free height, as the source's wrapper did", () => {
+    expect(SFC).toContain(".mm-body { display: flex; flex: 1 0 auto; flex-direction: column; justify-content: center; }");
+    expect(SFC).toContain(".mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; }");
   });
 
   test("the fade is opacity only, --site-block-motion-enter (240ms) in, --site-block-motion (180ms) out, and only without reduced motion", () => {

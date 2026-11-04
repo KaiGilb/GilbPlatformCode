@@ -6,7 +6,7 @@ An 80dvh sheet across the top of the page, and a transparent band across the res
 
 A mega menu for a website: a full-width drop-down sheet of grouped links that the site header opens, with focus kept inside and Esc to close.
 
-`<MegaMenu :open :groups>` draws a full-width sheet (default `80dvh`) and a transparent click-catcher over whatever viewport is left under it (the bottom `20dvh` at that default). The sheet is a dialog. Each group is a heading and a list. An item with an `href` is a link. An item without one is plain text: no link, no tab stop, no hover change, the ordinary cursor. A group's call to action is the last row of that list. While the sheet is open the page body does not scroll, Tab stays on the links and buttons inside it, Escape asks the host to close, and the first link (or the Close button, if there is no link) is focused. The sheet fades in and out (opacity). Rows rise in 40ms steps, and the delay stops growing after the tenth. Reduced motion shows the finished sheet at once, with no fade.
+`<MegaMenu :open :groups>` draws a full-width sheet (default `80dvh`) and a transparent click-catcher over whatever viewport is left under it (the bottom `20dvh` at that default). The sheet is a dialog. Each group is a heading and a list. An item with an `href` is a link. An item without one is plain text: no link, no tab stop, no hover change, the ordinary cursor. A group's call to action is the last row of that list. While the sheet is open the page body does not scroll, Tab stays on the links and buttons inside it, Escape asks the host to close, and the first link (or the Close button, if there is no link) is focused. The sheet fades in and out (opacity). Rows rise 18px over 0.55s in 40ms steps, and the delay stops growing after the tenth. Reduced motion shows the finished sheet at once, with no fade.
 
 The host owns whether it is open. This component only reports what happened.
 
@@ -133,7 +133,7 @@ For a route link instead of a plain anchor, pass the host's component (`linkComp
 
 Events:
 
-- `close(reason)`: `'esc'` (Escape), `'outside'` (the catcher, or a click on empty space in the sheet), `'link'` (any link, including a call to action), `'button'` (the Close control). The host sets `open` to false. Restore focus only for `'esc'`.
+- `close(reason)`: `'esc'` (Escape), `'outside'` (the catcher, or a click on the sheet's own padding, the nav or the centring wrapper; a click in the gaps between groups or rows does not close it, as in the source), `'link'` (any link, including a call to action), `'button'` (the Close control). The host sets `open` to false. Restore focus only for `'esc'`.
 - `pointer-enter`: the pointer entered the sheet. Cancel the header's close timer.
 - `pointer-leave`: the pointer left the sheet. Start that timer, if the header has one.
 
@@ -149,7 +149,8 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-accent` link hover, the focus outline, and the call-to-action fill
 - `--site-block-on-accent` the call-to-action text
 - `--site-block-radius` the call-to-action corners and the sheet's bottom corners (fallback `0.5rem`)
-- `--site-block-motion` the stagger duration and the link colour transition (fallback `240ms`), and the fade-out when the sheet closes (fallback `180ms`)
+- `--site-block-motion` the link colour transition and the fade-out when the sheet closes (fallback `180ms`, the source's fast time). A host value sets both
+- `--site-block-motion-rise` each row's rise (fallback `0.55s`, the source's time; the curve is fixed)
 - `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit). `--site-block-motion` also times the fade-out (default here `180ms`)
 
 Also:

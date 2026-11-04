@@ -8,7 +8,7 @@
  *
  * An item with no href is static text: no link, no tab stop, no hover change.
  * Close reasons: 'esc' (Escape), 'outside' (the catcher, or a click on the sheet
- * padding, or any empty space in it), 'link' (any link), 'button' (the bottom Close control).
+ * padding, the nav or the centring wrapper; not the gaps between groups), 'link' (any link), 'button' (the bottom Close control).
  *
  * `document` and `window` are read only inside the handlers below, never at
  * module load and never in the setup body, so a server render does not touch them.
@@ -153,9 +153,8 @@ function onKeydown(event: KeyboardEvent): void {
   const active = document.activeElement;
   const inside = active instanceof HTMLElement && panel.contains(active);
   const current = active instanceof HTMLElement ? els.indexOf(active) : -1;
-  // A slot control inside the sheet (focused, but not a destination) keeps the browser's Tab.
-  // It has to return here: a negative index is also an edge, and would otherwise be trapped.
-  if (inside && current < 0) return;
+  // Inside the sheet only the first and last destinations are edges. A slot control that is
+  // not a destination (index -1) is never an edge, so it keeps the browser's Tab.
   const atEdge = !inside || (event.shiftKey ? current === 0 : current === els.length - 1);
   if (!atEdge) return;
   // Outside the sheet, both Tab and Shift+Tab enter at the first destination:
@@ -326,7 +325,10 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.mm-nav { flex: 1 0 auto; }
+.mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; }
+
+/* The source's centring wrapper: the grid sits in the middle of the sheet's free height. */
+.mm-body { display: flex; flex: 1 0 auto; flex-direction: column; justify-content: center; }
 
 .mm-grid {
   display: grid;
@@ -374,7 +376,7 @@ onBeforeUnmount(() => {
   font: inherit;
   text-decoration: none;
   cursor: pointer;
-  transition: color var(--site-block-motion, 240ms) ease;
+  transition: color var(--site-block-motion, 180ms) ease;
 }
 
 .mm-item-label {
@@ -501,13 +503,13 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: no-preference) {
   .mm-item {
-    animation: mm-in var(--site-block-motion, 240ms) ease both;
+    animation: mm-in var(--site-block-motion-rise, 0.55s) cubic-bezier(0.25, 0.05, 0.3, 0.7) both;
     animation-delay: calc(min(var(--i), 10) * 40ms);
   }
 }
 
 @keyframes mm-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: none; }
 }
 </style>
