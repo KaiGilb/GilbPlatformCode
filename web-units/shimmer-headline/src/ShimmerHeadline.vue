@@ -23,11 +23,11 @@ let onSweepEnd: ((event: AnimationEvent) => void) | null = null
 onMounted(() => {
   const headline = el.value
   if (!headline || typeof window === 'undefined') return
-  // Reduced motion: static ink, no sweep, no observer (spec impl 3).
+  // Reduced motion: plain text, no sweep, no observer.
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
   if (!('IntersectionObserver' in window)) return
 
-  // Settle: drop the clip so the headline is ordinary ink text again.
+  // Settle: drop the clip so the headline is ordinary text again.
   const settle = () => {
     if (settleTimer !== undefined) window.clearTimeout(settleTimer)
     settleTimer = undefined
@@ -56,14 +56,13 @@ onMounted(() => {
           headline.addEventListener('animationend', onSweepEnd!)
           headline.classList.add('sh--sweeping')
           // Readability net: if animationend never arrives (throttled tab,
-          // interrupted animation), settle to ink shortly after the pass
-          // should have finished. The final state must always be plain ink.
+          // interrupted animation), settle shortly after the pass should have
+          // finished. The final state is always plain text.
           settleTimer = window.setTimeout(settle, 3800)
         }, 220)
       }
     },
-    // Same reveal line the text-reveal system releases at, so the two gestures
-    // fire together (useReveal geometry, assets/css/main.css).
+    // The same reveal line as the library's scroll-frame reveal, so a rise and the sweep can start together.
     { rootMargin: '0px 0px -8% 0px', threshold: 0.05 },
   )
   observer.observe(headline)

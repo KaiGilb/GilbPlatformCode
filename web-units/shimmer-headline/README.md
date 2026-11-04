@@ -1,6 +1,6 @@
 # web shimmer-headline
 
-A headline that a single gold highlight sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ShimmerHeadline.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
+A headline that a single highlight band sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ShimmerHeadline.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
 
 ## What this is
 

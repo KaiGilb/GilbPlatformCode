@@ -31,7 +31,7 @@
   ],
   "host": [
     {
-      "member": "--site-block-fg, --site-block-bg, --site-block-shimmer",
+      "member": "--site-block-fg, --site-block-bg, --site-block-shimmer, --site-block-accent",
       "replaces": "--brand-fg, --brand-bg, --palette-goldBright"
     }
   ],

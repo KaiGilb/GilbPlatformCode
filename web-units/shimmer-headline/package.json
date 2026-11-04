@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A headline that a single gold highlight sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3.",
+  "description": "A headline that a single highlight band sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3.",
   "exports": {
     ".": "./src/index.ts"
   },

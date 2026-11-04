@@ -243,11 +243,13 @@ test("no IntersectionObserver in window: nothing is armed and the text stays pla
 });
 
 test("unmount before the start timer fires: nothing sweeps, the observer is disconnected and no listener is left", () => {
+  // vue-test-utils removes its own animationend listener on unmount. Count the unit's function, not the event type.
+  const add = vi.spyOn(HTMLElement.prototype, "addEventListener");
+  const remove = vi.spyOn(HTMLElement.prototype, "removeEventListener");
   const el = mountHeadline();
   const inst = observer();
-  const add = vi.spyOn(el, "addEventListener");
-  const remove = vi.spyOn(el, "removeEventListener");
   const addClass = vi.spyOn(el.classList, "add");
+  const libraryFns = add.mock.calls.filter((c) => c[0] === "animationend").map((c) => c[1]);
   inst.fire([{ isIntersecting: true, target: el }]);
   expect(inst.disconnectCalls).toBe(1);
   wrapper?.unmount();
@@ -256,15 +258,69 @@ test("unmount before the start timer fires: nothing sweeps, the observer is disc
   expect(addClass.mock.calls.some((call) => (call as string[]).includes("sh--sweeping"))).toBe(false);
   expect(el.classList.contains("sh--sweeping")).toBe(false);
   const trace = [
-    ...add.mock.invocationCallOrder.map((order, i) => ({ order, type: add.mock.calls[i]?.[0], kind: "add" as const })),
-    ...remove.mock.invocationCallOrder.map((order, i) => ({ order, type: remove.mock.calls[i]?.[0], kind: "remove" as const })),
+    ...add.mock.invocationCallOrder.map((order, i) => ({ order, type: add.mock.calls[i]?.[0], fn: add.mock.calls[i]?.[1], kind: "add" as const })),
+    ...remove.mock.invocationCallOrder.map((order, i) => ({ order, type: remove.mock.calls[i]?.[0], fn: remove.mock.calls[i]?.[1], kind: "remove" as const })),
   ]
-    .filter((event) => event.type === "animationend")
+    .filter((event) => event.type === "animationend" && event.fn !== undefined && !libraryFns.some((fn) => fn === event.fn))
     .sort((a, b) => a.order - b.order);
   let left = 0;
   for (const event of trace) left = event.kind === "add" ? left + 1 : Math.max(0, left - 1);
   expect(left).toBe(0);
   expect(trace.some((event) => event.kind === "remove")).toBe(true);
+});
+
+test("unmount before the heading is ever seen disconnects the observer", () => {
+  mountHeadline();
+  const inst = observer();
+  expect(inst.disconnectCalls).toBe(0);
+  wrapper?.unmount();
+  wrapper = undefined;
+  expect(inst.disconnectCalls).toBe(1);
+});
+
+test("an animationend whose name holds sh but is not the sweep does not settle it", () => {
+  const el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+  for (const name of ["flash", "shake-data-v-1", "fade-sh"]) el.dispatchEvent(animationEnd(name));
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+});
+
+test("settle and an unmount mid-sweep each remove the listener the unit added", () => {
+  const add = vi.spyOn(HTMLElement.prototype, "addEventListener");
+  const rem = vi.spyOn(HTMLElement.prototype, "removeEventListener");
+  const own = () => add.mock.calls.filter((c) => c[0] === "animationend").map((c) => c[1]);
+  const removed = () => rem.mock.calls.filter((c) => c[0] === "animationend").map((c) => c[1]);
+  let el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  const fn1 = own().at(-1);
+  expect(fn1).toBeTypeOf("function");
+  el.dispatchEvent(animationEnd("sh-sweep-x"));
+  expect(removed()).toContain(fn1);
+  add.mockClear();
+  rem.mockClear();
+  el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(1000);
+  const fn2 = own().at(-1);
+  expect(fn2).toBeTypeOf("function");
+  wrapper?.unmount();
+  wrapper = undefined;
+  expect(removed()).toContain(fn2);
+});
+
+test("the heading template has no inline style and no wrapper around the slot", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "ShimmerHeadline.vue"), "utf8");
+  const tpl = (sfc.split("<template>")[1] ?? "").split("</template>")[0] ?? "";
+  expect(tpl.replace(/\s+/g, " ").trim()).toBe(
+    `<component :is="tag" ref="el" class="sh" :class="{ 'sh--dark': onDark }"><slot /></component>`,
+  );
+  const el = mountHeadline(undefined, "T");
+  expect(el.getAttribute("style")).toBeNull();
+  expect(el.children.length).toBe(0);
+  expect(el.textContent).toBe("T");
 });
 
 test("server-rendered HTML is the plain heading", async () => {
