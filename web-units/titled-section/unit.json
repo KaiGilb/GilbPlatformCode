@@ -20,7 +20,8 @@
     "The default heading level is `h2`, not the source's `h1`; `headingLevel` also allows `h3` (the source allowed only `h1` or `h2`).",
     "The ornament address is the `ornamentSrc` prop, default empty; the source hard-coded `/icon-mark.svg` behind an `ornament` boolean that defaulted to true.",
     "Tailwind is written out as scoped CSS on `--site-block-*` variables; no `@apply`, no `theme()`, no utility classes.",
-    "The measured numbers are kept as defaults of props (`rule`, `align`, `maxWidth`, ornament sizes); heading weight is `--site-block-section-title-weight` with fallback 400; the slot wrapper is rendered only when the default slot is given."
+    "The measured numbers are kept as defaults of props (`rule`, `align`, `maxWidth`, ornament sizes); heading weight is `--site-block-section-title-weight` with fallback 400; the slot wrapper is rendered only when the default slot is given.",
+    "The `<section>` is labelled by its heading (`aria-labelledby`), so it is a region landmark; the source had no label."
   ],
   "newFiles": [
     "src/types.ts",

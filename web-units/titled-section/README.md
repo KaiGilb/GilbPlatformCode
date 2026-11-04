@@ -121,6 +121,7 @@ The ornament's `width` and `height` attributes (25 and 29 unless you pass others
 - The ornament address is the `ornamentSrc` prop, default empty. The source hard-coded `/icon-mark.svg` behind an `ornament` boolean that defaulted to true.
 - Tailwind is written out as scoped CSS. No `@apply`, no `theme()`, no utility classes. Colours and the heading's type go through `--site-block-*`.
 - The measured numbers are kept as the defaults: ornament gap 6px (the live net of a 20px widget gap and a −14px pull, not the −14px alone), heading line-height 1.3, heading size 39px at every breakpoint, rule 3px by 100px, padding `lg` 50px and 100px from 768px, padding `sm` 70px always, inner width 1140px, ornament 25 by 29, slot wrapper top margin 3rem (the source's `mt-12`) and only when the default slot is used. `rule`, `align`, `maxWidth` and the ornament sizes are props whose defaults are those hard-coded values. Heading weight is `--site-block-section-title-weight` with fallback 400, because the source relied on Tailwind's preflight (headings inherit) and a bare `h2` would otherwise be bold.
+- The `<section>` is labelled by its heading (`aria-labelledby`), so it is a region landmark; the source had no label.
 
 ## Source
 
