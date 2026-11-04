@@ -3,8 +3,9 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useScrollFrame } from "./useScrollFrame";
 
 /**
- * A parallax plane: its content drifts at a small rate against the scroll, on one
- * shared frame bus. The outer element is the measuring box; only the inner is
+ * A parallax plane: its content drifts at a small rate against the scroll, on
+ * its own frame bus (one passive scroll and resize listener pair, rAF-throttled).
+ * The outer element is the measuring box; only the inner is
  * transformed, so the measurement never chases its own transform. Offset = distance
  * of the layer's centre from the viewport centre × `rate`, written as `translate3d`,
  * transform only. Off-screen layers by more than 200px do no work. Reduced motion:

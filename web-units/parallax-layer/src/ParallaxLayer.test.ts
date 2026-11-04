@@ -10,6 +10,7 @@ import ParallaxLayer from "./ParallaxLayer.vue";
 let reduced = false;
 let wrapper: VueWrapper | undefined;
 let rafQueue: FrameRequestCallback[] = [];
+let mediaQueries: string[] = [];
 
 const saved = {
   matchMedia: window.matchMedia,
@@ -59,13 +60,18 @@ function frameAt(top: number, height: number, props?: Record<string, unknown>) {
 beforeEach(() => {
   reduced = false;
   rafQueue = [];
+  mediaQueries = [];
   window.innerHeight = 800;
-  window.matchMedia = ((query: string) => ({
-    matches: reduced,
-    media: query,
-    addEventListener() {},
-    removeEventListener() {},
-  })) as unknown as typeof window.matchMedia;
+  window.matchMedia = ((query: string) => {
+    mediaQueries.push(query);
+    return {
+      // True only for the exact reduce query, so a flipped word is not "reduced".
+      matches: reduced && query === "(prefers-reduced-motion: reduce)",
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+  }) as unknown as typeof window.matchMedia;
   window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
     rafQueue.push(cb);
     return rafQueue.length;
@@ -195,4 +201,38 @@ test("the inert class turns pointer events off", () => {
   const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
   const stripped = style.replace(/\/\*[\s\S]*?\*\//g, "");
   expect(stripped.replace(/\s+/g, " ").trim()).toBe(".pl-inert { pointer-events: none; }");
+});
+
+test("the layer listens to scroll and resize, passive, not once", () => {
+  const add = vi.spyOn(window, "addEventListener");
+  wrapper = mount(ParallaxLayer, { attachTo: document.body });
+  const scroll = add.mock.calls.filter((c) => c[0] === "scroll");
+  const resize = add.mock.calls.filter((c) => c[0] === "resize");
+  expect(scroll).toHaveLength(1);
+  expect(resize).toHaveLength(1);
+  expect(scroll[0]?.[2]).toEqual({ passive: true });
+  expect(resize[0]?.[2]).toEqual({ passive: true });
+});
+
+test("two scrolls in one frame do the work once", () => {
+  wrapper = mount(ParallaxLayer, { attachTo: document.body });
+  const rect = vi.spyOn(wrapper.element, "getBoundingClientRect").mockReturnValue(box(100, 200));
+  flushFrames();
+  rect.mockClear();
+  window.dispatchEvent(new Event("scroll"));
+  window.dispatchEvent(new Event("scroll"));
+  flushFrames();
+  expect(rect).toHaveBeenCalledTimes(1);
+});
+
+test("reduced motion is read from exactly the reduce query", () => {
+  wrapper = mount(ParallaxLayer, { attachTo: document.body });
+  expect(mediaQueries).toEqual(["(prefers-reduced-motion: reduce)"]);
+});
+
+test("whole-style: the style block is exactly the rules this file means", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "ParallaxLayer.vue"), "utf8");
+  const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+  const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+  expect(normalized).toBe(".pl-inert { pointer-events: none; }");
 });

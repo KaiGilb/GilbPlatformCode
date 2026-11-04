@@ -1,10 +1,10 @@
 # web parallax-layer
 
-A parallax plane: its content drifts at a small rate against the scroll, on one shared frame bus, static with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ParallaxLayer.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
+A parallax plane: its content drifts at a small rate against the scroll, on requestAnimationFrame, static with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ParallaxLayer.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
 
 ## What this is
 
-A parallax plane for a website section: its content drifts at a slightly different rate from the scroll, so the page reads with quiet depth. With no script and with reduced motion the content sits in place, static, as server-rendered; with a script it moves on the first frame to its offset for the current scroll (a mid-page reload does not wait for a scroll), then follows the scroll; one shared passive scroll and resize listener per component, on `requestAnimationFrame`.
+A parallax plane for a website section: its content drifts at a slightly different rate from the scroll, so the page reads with quiet depth. With no script and with reduced motion the content sits in place, static, as server-rendered; with a script it moves on the first frame to its offset for the current scroll (a mid-page reload does not wait for a scroll), then follows the scroll; each layer adds one passive scroll and one passive resize listener (removed on unmount) and does its work in `requestAnimationFrame`, at most once a frame.
 
 ## What this is not
 
@@ -74,6 +74,8 @@ import { ParallaxLayer } from '@kaigilb/gilbwebsitecode-parallax-layer'
 | `tag` | `string` | `"div"` | the outer element |
 | `innerClass` | `string` | `""` | classes for the moving element: layout that must ride the transform (a height chain, flex alignment) goes here, not on the outer |
 
+The package also exports `useScrollFrame`, the library `scroll-frame` unit's frame bus (the same file), for a host that already imports this unit; a host that needs only the bus takes `scroll-frame`.
+
 ## Host must supply
 
 No `--site-block-*` variable. A parent that clips overflow (`overflow: hidden`), so the offset never leaves the section.
@@ -82,7 +84,7 @@ No Tailwind is needed: the inert class ships in the component, scoped to it.
 
 ## Layout stability
 
-The outer box keeps the content's size; only the inner element is transformed, and a transform moves nothing around it. On the first frame the inner element moves from 0 to its offset (up to `rate` × half the viewport); in a clipped parent nothing else moves.
+The outer box keeps the content's size; only the inner element is transformed, and a transform moves nothing around it. On the first frame the inner element moves from 0 to its offset (the distance of the layer's centre from the viewport's centre, times `rate`; for a layer far from the centre, or a tall one, that can be more than half the viewport times `rate`); in a clipped parent nothing else moves.
 
 ## Do not
 

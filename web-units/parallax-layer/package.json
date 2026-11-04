@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A parallax plane: its content drifts at a small rate against the scroll, on one shared frame bus, static with reduced motion. Vue 3 / Nuxt 3.",
+  "description": "A parallax plane: its content drifts at a small rate against the scroll, on requestAnimationFrame, static with reduced motion. Vue 3 / Nuxt 3.",
   "exports": {
     ".": "./src/index.ts"
   },
