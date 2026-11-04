@@ -16,7 +16,7 @@ const RULES = [
     linear-gradient(color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent), color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent)),
     color-mix(in srgb, var(--site-block-bg, #ffffff) 78%, white);
   border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent);
-  box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(28 28 20 / 0.12));
+  box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(0 0 0 / 0.12));
 }`,
   `.bz-core {
   overflow: hidden;
@@ -148,11 +148,40 @@ test("axe finds no violations", async () => {
   expect(results.violations).toEqual([]);
 });
 
+test("README Host must supply lists exactly the variables the style reads", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "DoubleBezel.vue"), "utf8");
+  const css = ((sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+  expect(readme.includes("## Host must supply")).toBe(true);
+  const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
+  const listed = [
+    ...new Set(
+      section
+        .split("\n")
+        .filter((line) => line.trimStart().startsWith("- "))
+        .flatMap((line) => {
+          let rest = line.trimStart().slice(2);
+          const names: string[] = [];
+          for (;;) {
+            const found = rest.match(/^`(--site-block-[a-z-]+)`/);
+            if (!found?.[1]) break;
+            names.push(found[1]);
+            rest = rest.slice(found[0].length).replace(/^[\s,]+/, "");
+          }
+          if (names.length === 0) throw new Error(`bullet does not start with a variable: ${line}`);
+          return names;
+        }),
+    ),
+  ].sort();
+  expect(listed).toEqual(inStyle);
+});
+
 test("whole-style: the style block is exactly the rules this file means", () => {
   const sfc = readFileSync(join(process.cwd(), "src", "DoubleBezel.vue"), "utf8");
   const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
   const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
   expect(normalized).toBe(
-    ".bz { padding: 0.375rem; border-radius: 2rem; background: linear-gradient(color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent), color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent)), color-mix(in srgb, var(--site-block-bg, #ffffff) 78%, white); border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent); box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(28 28 20 / 0.12)); } .bz-core { overflow: hidden; border-radius: 1.625rem; background-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 86%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 6%, transparent); } .bz-core :deep(.df-browser) { border: 0; border-radius: 0; box-shadow: none; } .bz--dark { background: linear-gradient(color-mix(in srgb, var(--bz-tint) 10%, transparent), color-mix(in srgb, var(--bz-tint) 10%, transparent)), color-mix(in srgb, var(--site-block-fg, #1a1a1a) 86%, white); border-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 16%, transparent); } .bz--dark .bz-core { background-color: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 92%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px color-mix(in srgb, var(--site-block-bg, #ffffff) 10%, transparent); }",
+    ".bz { padding: 0.375rem; border-radius: 2rem; background: linear-gradient(color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent), color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent)), color-mix(in srgb, var(--site-block-bg, #ffffff) 78%, white); border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent); box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(0 0 0 / 0.12)); } .bz-core { overflow: hidden; border-radius: 1.625rem; background-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 86%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 6%, transparent); } .bz-core :deep(.df-browser) { border: 0; border-radius: 0; box-shadow: none; } .bz--dark { background: linear-gradient(color-mix(in srgb, var(--bz-tint) 10%, transparent), color-mix(in srgb, var(--bz-tint) 10%, transparent)), color-mix(in srgb, var(--site-block-fg, #1a1a1a) 86%, white); border-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 16%, transparent); } .bz--dark .bz-core { background-color: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 92%, white); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), inset 0 0 0 1px color-mix(in srgb, var(--site-block-bg, #ffffff) 10%, transparent); }",
   );
 });

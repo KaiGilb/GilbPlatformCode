@@ -75,7 +75,9 @@ import { DeviceFrame } from '@kaigilb/gilbwebsitecode-device-frame'
 
 ## Host must supply
 
-`--site-block-bg` (the shell and window faces, mixed with white), `--site-block-fg` (the hairlines and the dark faces), and optionally `--site-block-shadow-lg` (fallback the source's `0 16px 40px -8px rgb(28 28 20 / 0.12)`).
+- `--site-block-bg` the shell and window faces, mixed with white
+- `--site-block-fg` the hairlines and the dark faces
+- `--site-block-shadow-lg` neutral fallback `0 16px 40px -8px rgb(0 0 0 / 0.12)`. The source site's value is `0 16px 40px -8px rgb(28 28 20 / 0.12)`.
 
 No Tailwind is needed: the styles ship in the component, scoped to it.
 
@@ -93,7 +95,7 @@ The frame adds a fixed 0.375rem + 1px around the slot; it has no size of its own
 
 - `tint` is any CSS colour, default none (`transparent`); the source took a name from its own palette (validated), default `pith` (`#e5d0b1`).
 - The site's `--brand-bg` and `--brand-fg` RGB channels are the library's `--site-block-bg` and `--site-block-fg` colours; `rgb(x / a)` is written `color-mix(in srgb, x a%, transparent)`, the same colour.
-- `theme('boxShadow.lg')` is `var(--site-block-shadow-lg, 0 16px 40px -8px rgb(28 28 20 / 0.12))`, the source's token as the fallback.
+- `theme('boxShadow.lg')` is `var(--site-block-shadow-lg, 0 16px 40px -8px rgb(0 0 0 / 0.12))`: the source's offsets and blur with a neutral black; the source site maps the variable to its own `0 16px 40px -8px rgb(28 28 20 / 0.12)`.
 - The inner frame it neutralises is the library `device-frame` browser frame (`.df-browser`), not the site's `.mj-frame`.
 - Classes are `bz`, `bz-core` and `bz--dark` (the source: `mj-bezel`, `mj-bezel-core`, `is-dark`); props are declared inline with `withDefaults`.
 

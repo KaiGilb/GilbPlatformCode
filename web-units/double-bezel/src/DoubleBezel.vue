@@ -37,7 +37,7 @@ const shellStyle = computed(() => ({
     linear-gradient(color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent), color-mix(in srgb, var(--bz-tint) calc(var(--bz-tint-a) * 100%), transparent)),
     color-mix(in srgb, var(--site-block-bg, #ffffff) 78%, white);
   border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent);
-  box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(28 28 20 / 0.12));
+  box-shadow: var(--site-block-shadow-lg, 0 16px 40px -8px rgb(0 0 0 / 0.12));
 }
 
 /* Inner window: clipped, with a soft top highlight. */
