@@ -134,8 +134,10 @@ afterEach(() => {
   wrapper?.unmount();
   wrapper = undefined;
   document.body.innerHTML = "";
-  vi.useRealTimers();
+  // Restore spies before the fake clock uninstalls. A spy on setTimeout hides the
+  // flag the clock uses to put the real timer back, so a later real-timer test hangs.
   vi.restoreAllMocks();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   reduced = false;
 });
@@ -278,6 +280,30 @@ test("server-rendered HTML is the plain heading", async () => {
 
 test("the sweep styles are the source's, on the site-block variables", () => {
   expect(flat(styleText())).toBe(flat(SWEEP_CSS));
+});
+
+test("unmount during the sweep clears the settle net", () => {
+  const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+  const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+  const el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+  const settleIndex = setTimeoutSpy.mock.calls.findIndex((call) => call[1] === 3800);
+  expect(settleIndex).toBeGreaterThanOrEqual(0);
+  const settleId = setTimeoutSpy.mock.results[settleIndex]?.value;
+  wrapper?.unmount();
+  wrapper = undefined;
+  expect(clearTimeoutSpy).toHaveBeenCalledWith(settleId);
+});
+
+test("whole-style: the style block is exactly the rules this file means", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "ShimmerHeadline.vue"), "utf8");
+  const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+  const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+  expect(normalized).toBe(
+    "@media (prefers-reduced-motion: no-preference) { .sh.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-fg, #1a1a1a) 0%, var(--site-block-fg, #1a1a1a) 40%, var(--site-block-shimmer, #e7b339) 50%, var(--site-block-fg, #1a1a1a) 60%, var(--site-block-fg, #1a1a1a) 100% ); background-size: 300% 100%; background-repeat: no-repeat; -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; animation: sh-sweep 3.2s ease-in-out both; } .sh.sh--dark.sh--sweeping { background-image: linear-gradient( 100deg, var(--site-block-bg, #ffffff) 0%, var(--site-block-bg, #ffffff) 40%, var(--site-block-shimmer, #e7b339) 50%, var(--site-block-bg, #ffffff) 60%, var(--site-block-bg, #ffffff) 100% ); } } @keyframes sh-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }",
+  );
 });
 
 test("axe finds no violations", async () => {
