@@ -1,29 +1,47 @@
 #!/usr/bin/env node
-// gilb-connector: Claude Code and Claudian, as a GilbPlatform agent, on this computer.
+// gilb-connector: Claude Code and Claudian, as a GilbPlatform agent.
 //
 // A stdio MCP server. stdout is protocol only (one JSON-RPC message per line). Logs go to stderr.
-// Each process signs in once as this computer and keeps one platform turn. Tool calls go to
-// POST /base/ai/claude-code/tool. A hand-off comes back as { hop } and runs as a nested `claude -p`
-// whose own MCP server is this file in hop mode. A hop cannot hop. Up to MAX_HOPS_AT_ONCE run at once,
-// each for at most HOP_MAX_MS.
+// By default the process signs in as its own Connected AI (a key under ~/.gilb-connector).
+// `--as me` signs in as this computer and keeps that path unchanged. Each process keeps one
+// platform turn. Tool calls go to POST /base/ai/claude-code/tool. A hand-off comes back as { hop }
+// and runs as a nested `claude -p` whose own MCP server is this file in hop mode. A hop cannot hop.
+// Up to MAX_HOPS_AT_ONCE run at once, each for at most HOP_MAX_MS.
 //
 // Zero runtime dependencies. Node 18 or newer.
 import { spawn } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign as cryptoSign, } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.1.0";
+export const CONNECTOR_VERSION = "0.2.0";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
 export const DEFAULT_USER_TEXT = "Work with the person in Claude Code.";
+/** Profile directory under the connector home when `--profile` is omitted for an AI. */
+export const DEFAULT_AI_PROFILE = "default";
+/** Label stored at registration. Not a browser origin, so it cannot be admitted by accident. */
+export const AI_DECLARED_ORIGIN = "cli:gilb-connector";
 /** What a tool answers when this computer has no GilbPlatform credential. */
 export const NOT_CONNECTED = "This computer is not connected to GilbPlatform yet. Run: gilb-computer add — approve it once in GilbApp — then restart Claude Code.";
+/** What a tool answers when this AI has no vault, or no grant into the vault it asked about. */
+export function aiNotConnected(clientId) {
+    return `This AI is not connected to a vault yet. In GilbApp: open your vault → Connect AI → Mint AI vault (any name) → paste this Agent client id: ${clientId} → Bind AI. Then grant the AI vault Read and Write on the vaults it should work in. Then call any tool again.`;
+}
 /** What the model is told when a hand-off it asked for could not finish. Same sentence as the page client. */
 export const HAND_OFF_FAILED_NEXT = "Do not call this hand-off again with the same Agent. Tell the person which Agent could not take the work, and why.";
 const SIGN_IN_FAILED = "This computer could not sign in to GilbPlatform.";
+const AI_SIGN_IN_FAILED = "This AI could not sign in to GilbPlatform.";
+const WRITE_SCOPE_REFUSED = "The platform refused scope base.write, so this AI is using base.read. Writes will be refused until the platform accepts base.write.";
+/** Renew a machine session once it has less than this long to live. Matches the proof freshness window. */
+const RENEW_WITHIN_MS = 60_000;
+const MACHINE_TOKEN_FALLBACK_TTL_SEC = 300;
+const ASSERTION_LIFETIME_SEC = 60;
+const CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
+const PRIVATE_KEY_FILE = "private.pem";
+const CLIENT_ID_FILE = "client-id";
 /** How long one hand-off may run. The page client's bridge uses the same limit. */
 export const HOP_MAX_MS = 15 * 60 * 1000;
 /** How many hand-offs may run at once. */
@@ -107,6 +125,11 @@ class NotConnected extends Error {
         this.name = "NotConnected";
     }
 }
+const GILB_WHOAMI = {
+    name: "gilb_whoami",
+    description: "Report this connector's sign-in: the mode, the Agent client id, and the principal the door has reported.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+};
 const GILB_AGENT = {
     name: "gilb_agent",
     description: "Switch the GilbPlatform agent for this session (for example Kai-Zen or Agent.Jackfruit) and return that agent's standing instructions.",
@@ -202,6 +225,114 @@ function computerTransport(origin) {
         const res = await fetch(url, req);
         return { status: res.status, json: () => res.json(), headers: res.headers };
     };
+}
+function b64urlJson(value) {
+    return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+function signEs256(header, payload, key) {
+    const encoded = `${b64urlJson(header)}.${b64urlJson(payload)}`;
+    const sig = cryptoSign("sha256", Buffer.from(encoded), { key, dsaEncoding: "ieee-p1363" });
+    return `${encoded}.${sig.toString("base64url")}`;
+}
+/**
+ * The door builds `https://<host><path>` and compares `aud` and `htu` to that, including when the
+ * client fetched the same path over http. Query and fragment are not part of the comparison.
+ */
+function httpsHtu(fetchUrl) {
+    const url = new URL(fetchUrl);
+    return `https://${url.host}${url.pathname}`;
+}
+function publicJwkOf(privateKey) {
+    const exported = createPublicKey(privateKey).export({ format: "jwk" });
+    if (exported.kty !== "EC" || exported.crv !== "P-256" || typeof exported.x !== "string" || typeof exported.y !== "string") {
+        throw new Error("The AI key is not P-256.");
+    }
+    return { kty: "EC", crv: "P-256", x: exported.x, y: exported.y };
+}
+function accessHash(accessToken) {
+    return createHash("sha256").update(accessToken).digest("base64url");
+}
+function dpopProof(method, fetchUrl, privateKey, publicJwk, accessToken) {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+        htm: method.toUpperCase(),
+        htu: httpsHtu(fetchUrl),
+        iat: now,
+        jti: randomUUID(),
+    };
+    if (accessToken !== undefined)
+        payload.ath = accessHash(accessToken);
+    return signEs256({ alg: "ES256", typ: "dpop+jwt", jwk: publicJwk }, payload, privateKey);
+}
+function clientAssertion(clientId, tokenUrl, privateKey) {
+    const now = Math.floor(Date.now() / 1000);
+    return signEs256({ alg: "ES256", typ: "JWT" }, {
+        iss: clientId,
+        sub: clientId,
+        aud: httpsHtu(tokenUrl),
+        iat: now,
+        exp: now + ASSERTION_LIFETIME_SEC,
+        jti: randomUUID(),
+    }, privateKey);
+}
+function connectorRoot(env) {
+    const fromEnv = env.GILB_CONNECTOR_HOME;
+    if (typeof fromEnv === "string" && fromEnv.trim() !== "")
+        return fromEnv;
+    // A caller that passes its own env must name the home. Tests must not write into a real home.
+    if (env !== process.env)
+        return null;
+    return join(homedir(), ".gilb-connector");
+}
+function ensurePrivateDir(dir) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    chmodSync(dir, 0o700);
+}
+function writePrivateFile(file, data) {
+    writeFileSync(file, data, { mode: 0o600, flag: "wx" });
+    chmodSync(file, 0o600);
+}
+function tightenPrivateFile(file) {
+    if (existsSync(file))
+        chmodSync(file, 0o600);
+}
+function aiDisplayName(name) {
+    const trimmed = name?.trim();
+    if (trimmed)
+        return trimmed.slice(0, 256);
+    const host = hostname().trim() || "this computer";
+    return `Claude Code on ${host}`.slice(0, 256);
+}
+function safeProfileName(name) {
+    if (!PROFILE_NAME.test(name) || name === "." || name === "..")
+        throw new Error("The profile name is not valid.");
+    return name;
+}
+/** A platform error string safe to show. A key or a compact JWT is never quoted back. */
+function safeQuote(text) {
+    const flat = text.replace(/\s+/g, " ").trim();
+    if (flat === "" || /PRIVATE KEY/.test(flat))
+        return "";
+    if (/^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/.test(flat))
+        return "";
+    return flat.slice(0, 300);
+}
+function quotedFailure(body) {
+    if (!body || typeof body !== "object")
+        return "";
+    const row = body;
+    const error = typeof row.error === "string" ? safeQuote(row.error) : "";
+    const desc = typeof row.error_description === "string" ? safeQuote(row.error_description) : typeof row.message === "string" ? safeQuote(row.message) : "";
+    return [error, desc].filter((part) => part !== "").join(": ");
+}
+function registrationMessage(body) {
+    const detail = quotedFailure(body);
+    return detail ? `Registration failed: ${detail}` : "Registration failed.";
+}
+function principalFromSystem(system) {
+    const match = /That person is identified as: (.+?)\. /.exec(system);
+    const found = match?.[1]?.trim();
+    return found ? found : undefined;
 }
 function isMissingComputer(err) {
     if (!err || typeof err !== "object")
@@ -328,6 +459,8 @@ const KNOWN_FLAGS = new Set([
     "--turn",
     "--hop-tools",
     "--progress-ms",
+    "--as",
+    "--name",
     "--help",
     "-h",
 ]);
@@ -338,6 +471,8 @@ export function parseCli(argv, env = process.env) {
             origin: DEFAULT_ORIGIN,
             vaults: [],
             profile: undefined,
+            as: "ai",
+            name: undefined,
             claudeBin: "claude",
             hopId: undefined,
             turnId: undefined,
@@ -356,9 +491,20 @@ export function parseCli(argv, env = process.env) {
     const fromFlags = flagValues(argv, "--vault");
     const fromEnv = (env.GILB_CONNECTOR_VAULT ?? "").split(",").map((item) => item.trim()).filter(Boolean);
     const vaults = fromFlags.length > 0 ? fromFlags : fromEnv;
-    const profileRaw = oneFlag(argv, "--profile") ?? env.GILB_CONNECTOR_PROFILE ?? env.GILB_COMPUTER_PROFILE ?? diskProfile(env);
+    const asRaw = (oneFlag(argv, "--as") ?? env.GILB_CONNECTOR_AS ?? "ai").trim().toLowerCase();
+    if (asRaw !== "ai" && asRaw !== "me")
+        throw new CliError("--as must be ai or me.");
+    const asMode = asRaw;
+    // `--as me` keeps today's profile lookup. An AI does not read the computer profile; it defaults to `default`.
+    const profileRaw = asMode === "me"
+        ? oneFlag(argv, "--profile") ?? env.GILB_CONNECTOR_PROFILE ?? env.GILB_COMPUTER_PROFILE ?? diskProfile(env)
+        : oneFlag(argv, "--profile") ?? env.GILB_CONNECTOR_PROFILE ?? DEFAULT_AI_PROFILE;
     if (profileRaw !== undefined && !PROFILE_NAME.test(profileRaw))
         throw new CliError("The computer profile name is not valid.");
+    const nameRaw = oneFlag(argv, "--name") ?? env.GILB_CONNECTOR_NAME;
+    if (nameRaw !== undefined && (nameRaw.trim() === "" || nameRaw.trim().length > 256)) {
+        throw new CliError("--name must be 1 to 256 characters.");
+    }
     const claudeBin = oneFlag(argv, "--claude") ?? env.GILB_CONNECTOR_CLAUDE ?? "claude";
     const hopId = oneFlag(argv, "--hop") ?? (env.GILB_CONNECTOR_HOP || undefined);
     const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
@@ -384,6 +530,8 @@ export function parseCli(argv, env = process.env) {
         origin,
         vaults,
         profile: profileRaw,
+        as: asMode,
+        name: nameRaw?.trim(),
         claudeBin,
         hopId,
         turnId,
@@ -393,9 +541,11 @@ export function parseCli(argv, env = process.env) {
     };
 }
 function helpText() {
-    return `Usage: node gilb-connector.mjs [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH]
-       node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --agent NAME --origin URL
+    return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH]
+       node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --as ai|me [--profile NAME] --agent NAME --origin URL
 
+Default: sign in as a Connected AI (--as ai).
+--as me signs in as this computer.
 Default agent: ${DEFAULT_AGENT}
 Default origin: ${DEFAULT_ORIGIN}`;
 }
@@ -454,7 +604,9 @@ export function startConnector(opts) {
     let agent = opts.agent?.trim() || DEFAULT_AGENT;
     const origin = (opts.origin ?? DEFAULT_ORIGIN).replace(/\/+$/, "");
     const vaults = [...(opts.vaults ?? [])];
-    const profile = opts.profile;
+    const asMode = opts.as === "me" ? "me" : "ai";
+    const displayName = opts.name;
+    const profile = asMode === "ai" ? safeProfileName(opts.profile ?? DEFAULT_AI_PROFILE) : opts.profile;
     const claudeBin = opts.claudeBin ?? "claude";
     const hopId = opts.hopId;
     const hopMode = hopId !== undefined && hopId !== "";
@@ -479,6 +631,9 @@ export function startConnector(opts) {
     let inputEnded = false;
     let stopped = false;
     let saidSignIn = false;
+    let aiClientId = "";
+    let reportedPrincipal = "";
+    let sawContext = false;
     let resolveDone = () => { };
     const done = new Promise((resolve) => {
         resolveDone = resolve;
@@ -527,6 +682,11 @@ export function startConnector(opts) {
         return opening;
     }
     async function openCredential() {
+        if (asMode === "ai")
+            return openAiCredential();
+        return openComputer();
+    }
+    async function openComputer() {
         const modulePath = computerModulePath(env);
         if (!modulePath) {
             say(NOT_CONNECTED);
@@ -571,6 +731,203 @@ export function startConnector(opts) {
             throw new NotConnected(SIGN_IN_FAILED);
         }
     }
+    async function openAiCredential() {
+        const root = connectorRoot(env);
+        if (!root || profile === undefined) {
+            say(AI_SIGN_IN_FAILED);
+            throw new NotConnected(AI_SIGN_IN_FAILED);
+        }
+        const dir = join(root, profile);
+        let privateKey;
+        let publicJwk;
+        let clientId;
+        try {
+            ensurePrivateDir(root);
+            ensurePrivateDir(dir);
+            const pemFile = join(dir, PRIVATE_KEY_FILE);
+            const idFile = join(dir, CLIENT_ID_FILE);
+            if (existsSync(pemFile)) {
+                privateKey = createPrivateKey(readFileSync(pemFile, "utf8"));
+                publicJwk = publicJwkOf(privateKey);
+                tightenPrivateFile(pemFile);
+            }
+            else {
+                const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+                privateKey = pair.privateKey;
+                const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+                if (typeof pem !== "string" || !pem.includes("PRIVATE KEY"))
+                    throw new Error("The AI key could not be stored.");
+                writePrivateFile(pemFile, pem);
+                publicJwk = publicJwkOf(privateKey);
+            }
+            const existingId = existsSync(idFile) ? readFileSync(idFile, "utf8").trim() : "";
+            if (existingId) {
+                clientId = existingId;
+                tightenPrivateFile(idFile);
+            }
+            else {
+                clientId = await registerAi(publicJwk);
+                writePrivateFile(idFile, `${clientId}\n`);
+                process.stderr.write(`Agent client id: ${clientId}\n`);
+            }
+        }
+        catch (err) {
+            if (err instanceof NotConnected)
+                throw err;
+            say(AI_SIGN_IN_FAILED);
+            throw new NotConnected(AI_SIGN_IN_FAILED);
+        }
+        aiClientId = clientId;
+        let held = null;
+        let heldGen = 0;
+        let mintQueue = Promise.resolve();
+        let saidScope = false;
+        async function registerAi(jwk) {
+            const url = `${origin}/base/client/register`;
+            const body = {
+                clientPublicKey: jwk,
+                declaredOrigin: AI_DECLARED_ORIGIN,
+                clientDisplayName: aiDisplayName(displayName),
+            };
+            let res;
+            try {
+                res = await fetch(url, {
+                    method: "POST",
+                    redirect: "manual",
+                    headers: { "content-type": "application/json", accept: "application/json" },
+                    body: JSON.stringify(body),
+                });
+            }
+            catch {
+                const message = "Registration failed: GilbPlatform could not be reached.";
+                say(message);
+                throw new NotConnected(message);
+            }
+            const parsed = readJsonText(await res.text());
+            if (res.status < 200 || res.status >= 300) {
+                const message = registrationMessage(parsed);
+                say(message);
+                throw new NotConnected(message);
+            }
+            const id = parsed && typeof parsed === "object" ? parsed.clientId : undefined;
+            if (typeof id !== "string" || id.trim() === "" || /\s/.test(id) || id.trim().length > 512) {
+                const message = "Registration failed: the platform did not return a client id.";
+                say(message);
+                throw new NotConnected(message);
+            }
+            return id.trim();
+        }
+        async function requestMachineToken(scope, allowFallback) {
+            const tokenUrl = `${origin}/base/oauth/token`;
+            const assertion = clientAssertion(clientId, tokenUrl, privateKey);
+            const proof = dpopProof("POST", tokenUrl, privateKey, publicJwk);
+            const form = new URLSearchParams({
+                grant_type: "client_credentials",
+                client_assertion_type: CLIENT_ASSERTION_TYPE,
+                client_assertion: assertion,
+                scope,
+            });
+            let res;
+            try {
+                res = await fetch(tokenUrl, {
+                    method: "POST",
+                    redirect: "manual",
+                    headers: {
+                        "content-type": "application/x-www-form-urlencoded",
+                        accept: "application/json",
+                        dpop: proof,
+                    },
+                    body: form.toString(),
+                });
+            }
+            catch {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+            const parsed = readJsonText(await res.text());
+            const errorCode = parsed && typeof parsed === "object" ? parsed.error : undefined;
+            if (allowFallback && scope === "base.write" && res.status === 400 && errorCode === "invalid_scope") {
+                if (!saidScope) {
+                    saidScope = true;
+                    process.stderr.write(WRITE_SCOPE_REFUSED + "\n");
+                }
+                return requestMachineToken("base.read", false);
+            }
+            if (res.status < 200 || res.status >= 300) {
+                const code = typeof errorCode === "string" ? safeQuote(errorCode) : "";
+                const message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+                say(message);
+                throw new NotConnected(message);
+            }
+            const row = parsed && typeof parsed === "object" ? parsed : {};
+            if (typeof row.access_token !== "string" || row.access_token === "") {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+            const expiresIn = typeof row.expires_in === "number" && Number.isFinite(row.expires_in) ? row.expires_in : MACHINE_TOKEN_FALLBACK_TTL_SEC;
+            const granted = typeof row.scope === "string" && row.scope !== "" ? row.scope : scope;
+            return { accessToken: row.access_token, expiresAt: Date.now() + expiresIn * 1000, scope: granted };
+        }
+        function dropAccess() {
+            heldGen += 1;
+            held = null;
+        }
+        function ensureToken() {
+            const run = mintQueue.then(async () => {
+                if (held && held.expiresAt - Date.now() >= RENEW_WITHIN_MS)
+                    return;
+                const gen = heldGen;
+                const next = await requestMachineToken("base.write", true);
+                if (gen !== heldGen)
+                    return;
+                held = next;
+            });
+            mintQueue = run.then(() => undefined, () => undefined);
+            return run;
+        }
+        async function authHeaders(method, url) {
+            await ensureToken();
+            if (!held)
+                await ensureToken();
+            const current = held;
+            if (!current) {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+            return {
+                authorization: `DPoP ${current.accessToken}`,
+                dpop: dpopProof(method, url, privateKey, publicJwk, current.accessToken),
+            };
+        }
+        async function firstUse() {
+            const url = `${origin}/base/e/first-use`;
+            const once = async () => {
+                const headers = await authHeaders("GET", url);
+                headers.accept = "application/json";
+                let res;
+                try {
+                    res = await fetch(url, { method: "GET", headers, redirect: "manual" });
+                }
+                catch {
+                    say("GilbPlatform could not be reached.");
+                    throw new NotConnected("GilbPlatform could not be reached.");
+                }
+                await res.text();
+                return res.status;
+            };
+            let status = await once();
+            if (status === 401) {
+                dropAccess();
+                status = await once();
+            }
+            if (status === 401 || (status !== 404 && (status < 200 || status >= 300))) {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+        }
+        await firstUse();
+        return { authHeaders, dropAccess };
+    }
     function turnFields(forAgent = agent) {
         const body = { userText, turnId, agent: forAgent };
         const ids = vaults.map((id) => id.trim()).filter((id) => id.startsWith("http"));
@@ -592,9 +949,11 @@ export function startConnector(opts) {
                 };
             }
             catch (err) {
+                if (err instanceof NotConnected)
+                    throw err;
                 if (isMissingComputer(err))
                     throw new NotConnected();
-                throw new NotConnected(SIGN_IN_FAILED);
+                throw new NotConnected(asMode === "ai" ? AI_SIGN_IN_FAILED : SIGN_IN_FAILED);
             }
             let res;
             try {
@@ -602,6 +961,7 @@ export function startConnector(opts) {
                     method: "POST",
                     headers,
                     body: JSON.stringify(payload),
+                    redirect: asMode === "ai" ? "manual" : "follow",
                     ...(signal ? { signal } : {}),
                 });
             }
@@ -613,15 +973,39 @@ export function startConnector(opts) {
             return { status: res.status, body: readJsonText(await res.text()) };
         };
         let res = await send();
-        if (res.status === 401 && !signal?.aborted)
+        if (res.status === 401 && !signal?.aborted) {
+            const cred = await credential();
+            cred.dropAccess?.();
             res = await send();
+        }
         if (res.status === 401)
             throw new PlatformError(401, "Your session needs to re-authorize — try again.");
         return res;
     }
     let cache = null;
+    function aiRefusal(status) {
+        return asMode === "ai" && status === 404;
+    }
+    function whoamiText() {
+        const lines = [`mode: ${asMode}`];
+        if (asMode === "ai" && aiClientId)
+            lines.push(`client id: ${aiClientId}`);
+        if (reportedPrincipal)
+            lines.push(`principal: ${reportedPrincipal}`);
+        return lines.join("\n");
+    }
+    function localTools() {
+        return asMode === "ai"
+            ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK)]
+            : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK)];
+    }
     async function fetchContext(forAgent) {
         const res = await postPlatform(contextUrl, turnFields(forAgent));
+        if (aiRefusal(res.status)) {
+            const sentence = aiNotConnected(aiClientId);
+            say(sentence);
+            throw new NotConnected(sentence);
+        }
         if (res.status < 200 || res.status >= 300) {
             throw new PlatformError(res.status, errorText(res.status, res.body, "The agent could not answer"));
         }
@@ -635,6 +1019,10 @@ export function startConnector(opts) {
             if (tool)
                 tools.push(tool);
         }
+        const found = principalFromSystem(body.system);
+        if (found)
+            reportedPrincipal = found;
+        sawContext = true;
         return { system: body.system, tools };
     }
     async function loadContext(force) {
@@ -659,7 +1047,7 @@ export function startConnector(opts) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
         writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
-        const args = [selfFile, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile];
+        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile];
         for (const id of vaults)
             args.push("--vault", id);
         if (profile)
@@ -815,6 +1203,11 @@ export function startConnector(opts) {
         const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
         if (signal.aborted)
             return CANCELLED;
+        if (aiRefusal(res.status)) {
+            const sentence = aiNotConnected(aiClientId);
+            say(sentence);
+            return toolResult(sentence, true);
+        }
         if (res.status < 200 || res.status >= 300) {
             return toolResult(JSON.stringify({ error: errorText(res.status, res.body, `${name} could not run`) }), true);
         }
@@ -835,9 +1228,23 @@ export function startConnector(opts) {
             calls.set(String(id), ac);
         const stopProgress = startProgress(params);
         try {
+            if (!hopMode && name === "gilb_whoami") {
+                try {
+                    await credential();
+                }
+                catch (err) {
+                    if (asMode === "ai" && aiClientId)
+                        return toolResult(whoamiText(), false);
+                    throw err;
+                }
+                return toolResult(whoamiText(), false);
+            }
             await credential();
             if (ac.signal.aborted)
                 return CANCELLED;
+            // Until a context call has succeeded, every tool (not whoami) learns whether this AI is bound.
+            if (!hopMode && asMode === "ai" && !sawContext)
+                await loadContext(false);
             if (!hopMode && name === "gilb_task")
                 return onTask(args);
             if (!hopMode && name === "gilb_agent")
@@ -899,11 +1306,11 @@ export function startConnector(opts) {
             return { tools: hopTools.map(mcpTool) };
         try {
             const ctx = await loadContext(false);
-            return { tools: [...ctx.tools.map(mcpTool), mcpTool(GILB_AGENT), mcpTool(GILB_TASK)] };
+            return { tools: [...ctx.tools.map(mcpTool), ...localTools()] };
         }
         catch (err) {
             if (err instanceof NotConnected)
-                return { tools: [mcpTool(GILB_AGENT), mcpTool(GILB_TASK)] };
+                return { tools: localTools() };
             throw err;
         }
     }
@@ -931,7 +1338,9 @@ export function startConnector(opts) {
                 serverInfo: { name: "gilb", version: CONNECTOR_VERSION },
                 instructions: hopMode
                     ? "Tools for one GilbPlatform hand-off."
-                    : "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions.",
+                    : asMode === "me"
+                        ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
+                        : "GilbPlatform tools for this Connected AI. gilb_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions.",
             };
         }
         if (method === "ping")
@@ -1102,6 +1511,8 @@ async function main() {
         progressEveryMs: cli.progressEveryMs,
         env: process.env,
         selfFile: fileURLToPath(import.meta.url),
+        as: cli.as,
+        ...(cli.name !== undefined ? { name: cli.name } : {}),
         ...(cli.profile !== undefined ? { profile: cli.profile } : {}),
         ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
         ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
