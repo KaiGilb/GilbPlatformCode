@@ -18,8 +18,27 @@ const FAKE_CLAUDE = join(HERE, "fake-claude.mjs");
 const TURN = "turn-ai-1104";
 const HOP_A = "0123456789abcdef01234567";
 const CLIENT_ID = "agent-client-fixed";
-const SENTENCE = (id) =>
-  `This AI is not connected to a vault yet. In GilbApp: open your vault → Connect AI → Mint AI vault (any name) → paste this Agent client id: ${id} → Bind AI. Then grant the AI vault Read and Write on the vaults it should work in. Then call any tool again.`;
+const BOUND_PRINCIPAL = "https://example.test/base";
+const UNBOUND_VAULT = "https://c3-unbound.example/base";
+
+function aiNotBound(clientId) {
+  return [
+    "This AI is not bound to an AI vault yet.",
+    "Agent client id:",
+    clientId,
+    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Agent client id, and press Bind AI.",
+  ].join("\n");
+}
+
+function aiNoGrant(vault, principal) {
+  const host = new URL(principal).host;
+  if (!vault) {
+    return `This AI acts as ${principal}. It has no Read or Write on any vault yet. In GilbApp, open the vault it should work in › Grant Access, and grant the AI vault ${host} Read and Write.`;
+  }
+  return `This AI acts as ${principal}. It has no Read or Write on ${vault} yet. In GilbApp, open that vault › Grant Access, and grant the AI vault ${host} Read and Write.`;
+}
+
+const SENTENCE = (id) => aiNotBound(id);
 const SCOPE_LINE =
   "The platform refused scope base.write, so this AI is using base.read. Writes will be refused until the platform accepts base.write.";
 const COMPUTER_SENTENCE =
@@ -329,9 +348,9 @@ describe("Connected AI", () => {
     const platform = await listen(handler);
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const first = connect({ origin: platform.origin, env, name: "Desk AI", profile: "desk" });
-    const who = await first.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const who = await first.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
     const dir = join(home, "desk");
     const pemFile = join(dir, "private.pem");
     const idFile = join(dir, "client-id");
@@ -353,7 +372,7 @@ describe("Connected AI", () => {
     assertClean(first.stdout(), secrets, "stdout");
 
     const second = connect({ origin: platform.origin, env, name: "Desk AI", profile: "desk" });
-    const again = await second.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const again = await second.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(toolText(again)).toContain(`client id: ${CLIENT_ID}`);
     expect(platform.requests.filter((rec) => rec.url.endsWith("/base/client/register"))).toHaveLength(1);
     expect(readFileSync(pemFile, "utf8")).toBe(pem);
@@ -369,7 +388,7 @@ describe("Connected AI", () => {
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env, profile: "default" });
     const listed = await box.request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilb_whoami", "gilb_agent", "gilb_task"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task"]);
     const key = publicKeyFrom(platform.requests);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     const tokenPosts = platform.requests.filter((rec) => rec.url.endsWith("/base/oauth/token"));
@@ -454,14 +473,14 @@ describe("Connected AI", () => {
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env });
     const sentence = SENTENCE(CLIENT_ID);
-    for (const name of ["gilb_task", "gilb_agent", "list_vaults"]) {
+    for (const name of ["gilbplatform_task", "gilbplatform_agent", "list_vaults"]) {
       const msg = await box.request("tools/call", { name, arguments: { text: "hi", agent: "Kai-Zen" } });
       expect(msg.result.isError).toBe(true);
       expect(toolText(msg)).toBe(sentence);
     }
-    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nstate: not bound\n\n${sentence}`);
     expect(stderr.text()).toContain(sentence);
     expect(stderr.text().split(sentence).length - 1).toBe(1);
     const firstUseAt = platform.requests.findIndex((rec) => rec.url.endsWith("/base/e/first-use"));
@@ -485,11 +504,11 @@ describe("Connected AI", () => {
     const platform = await listen(handler);
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env });
-    const sentence = SENTENCE(CLIENT_ID);
+    const sentence = aiNoGrant(UNBOUND_VAULT, BOUND_PRINCIPAL);
 
-    const whoFirst = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const whoFirst = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(whoFirst.result.isError).toBe(false);
-    expect(toolText(whoFirst)).toBe(`mode: ai\nclient id: ${CLIENT_ID}`);
+    expect(toolText(whoFirst)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
     expect(stderr.text()).not.toContain(sentence);
 
     const listed = await box.request("tools/list", {});
@@ -512,9 +531,9 @@ describe("Connected AI", () => {
     expect(toolText(again)).toBe(sentence);
     expect(stderr.text().split(sentence).length - 1).toBe(1);
 
-    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: https://example.test/base`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(box.stdout(), secrets, "stdout");
@@ -532,12 +551,12 @@ describe("Connected AI", () => {
     const platform = await listen(handler);
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env });
-    const sentence = SENTENCE(CLIENT_ID);
+    const sentence = aiNoGrant(UNBOUND_VAULT, BOUND_PRINCIPAL);
     const call = await box.request("tools/call", { name: "create_record", arguments: { vaultId: "https://c3-unbound.example/base" } });
     expect(call.result.isError).toBe(true);
     expect(toolText(call)).toBe(sentence);
     expect(stderr.text().split(sentence).length - 1).toBe(1);
-    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
     expect(toolText(who)).toContain(`client id: ${CLIENT_ID}`);
     expect(toolText(who)).not.toBe(sentence);
@@ -582,9 +601,9 @@ describe("Connected AI", () => {
     await box.request("tools/list", {});
     const call = await box.request("tools/call", { name: "list_vaults", arguments: {} });
     expect(call.result.isError).toBe(true);
-    expect(toolText(call)).toBe(SENTENCE(CLIENT_ID));
-    const who = await box.request("tools/call", { name: "gilb_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: https://example.test/base`);
+    expect(toolText(call)).toBe(aiNoGrant(undefined, BOUND_PRINCIPAL));
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(box.stdout(), secrets, "stdout");
@@ -633,13 +652,13 @@ describe("Connected AI", () => {
     expect(JSON.parse(toolText(call)).content).toBe("two records");
     const log = readFileSync(logFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
-    expect(mcp.mcpServers.gilb.args).toEqual(expect.arrayContaining(["--as", "ai", "--profile", "hopai"]));
+    expect(mcp.mcpServers.GilbPlatform.args).toEqual(expect.arrayContaining(["--as", "ai", "--profile", "hopai"]));
     expect(platform.requests.filter((rec) => rec.url.endsWith("/base/client/register"))).toHaveLength(1);
     expect(existsSync(markerFile)).toBe(false);
     secrets.pem = readFileSync(join(home, "hopai", "private.pem"), "utf8");
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(box.stdout(), secrets, "stdout");
-    assertClean(JSON.stringify(mcp.mcpServers.gilb.args), secrets, "hop args");
+    assertClean(JSON.stringify(mcp.mcpServers.GilbPlatform.args), secrets, "hop args");
   }, 15000);
 
   it("does not import the computer module or use the computer profile when --as is omitted", async () => {
@@ -681,7 +700,12 @@ describe("Connected AI", () => {
     expect(existsSync(markerFile)).toBe(false);
     expect(existsSync(join(home, "from-disk", "private.pem"))).toBe(false);
     expect(existsSync(join(home, "default", "private.pem"))).toBe(true);
-    expect(stdout).toContain(SENTENCE(CLIENT_ID));
+    const answered = stdout
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line))
+      .find((msg) => msg.id === 2);
+    expect(answered.result.content[0].text).toBe(SENTENCE(CLIENT_ID));
     expect(stderr).toContain(SENTENCE(CLIENT_ID));
     expect(stderr).toContain("Agent client id: " + CLIENT_ID);
     const pem = readFileSync(join(home, "default", "private.pem"), "utf8");

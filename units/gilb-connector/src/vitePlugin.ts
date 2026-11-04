@@ -60,6 +60,6 @@ export function connectorInstallCommands(fileUrl: string): { download: string; a
   }
   return {
     download: `curl -fsSL '${fileUrl}' -o ~/.gilb-connector.mjs`,
-    add: "claude mcp add gilb -- node ~/.gilb-connector.mjs",
+    add: "claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs",
   };
 }
