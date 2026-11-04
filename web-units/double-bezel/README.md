@@ -78,6 +78,8 @@ import { DeviceFrame } from '@kaigilb/gilbwebsitecode-device-frame'
 - `--site-block-bg` the shell and window faces, mixed with white
 - `--site-block-fg` the hairlines and the dark faces
 - `--site-block-shadow-lg` neutral fallback `0 16px 40px -8px rgb(0 0 0 / 0.12)`. The source site's value is `0 16px 40px -8px rgb(28 28 20 / 0.12)`.
+- `--site-block-bezel-highlight` the inner window's top highlight (`inset 0 1px 0`). Fallback `rgb(255 255 255 / 0.55)`.
+- `--site-block-bezel-highlight-dark` the dark window's top highlight (`inset 0 1px 0`). Fallback `rgb(255 255 255 / 0.14)`.
 
 No Tailwind is needed: the styles ship in the component, scoped to it.
 

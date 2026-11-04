@@ -46,7 +46,7 @@ const shellStyle = computed(() => ({
   border-radius: 1.625rem;
   background-color: color-mix(in srgb, var(--site-block-bg, #ffffff) 86%, white);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.55),
+    inset 0 1px 0 var(--site-block-bezel-highlight, rgb(255 255 255 / 0.55)),
     inset 0 0 0 1px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 6%, transparent);
 }
 
@@ -69,7 +69,7 @@ const shellStyle = computed(() => ({
 .bz--dark .bz-core {
   background-color: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 92%, white);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 1px 0 var(--site-block-bezel-highlight-dark, rgb(255 255 255 / 0.14)),
     inset 0 0 0 1px color-mix(in srgb, var(--site-block-bg, #ffffff) 10%, transparent);
 }
 </style>
