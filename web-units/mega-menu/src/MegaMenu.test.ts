@@ -619,6 +619,12 @@ describe("the unit's style", () => {
     expect(SFC).toContain(".mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; }");
   });
 
+  test("with reduced motion the link, call-to-action and Close colour transitions are off", () => {
+    expect(style).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.mm-link, \.mm-cta, \.mm-close \{ transition: none; \}\s*\}/,
+    );
+  });
+
   test("the fade is opacity only, --site-block-motion-enter (240ms) in, --site-block-motion (180ms) out, and only without reduced motion", () => {
     expect(style).toMatch(
       /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-fade-enter-active \{ transition: opacity var\(--site-block-motion-enter, 240ms\) ease; \}\s*\.mm-fade-leave-active \{ transition: opacity var\(--site-block-motion, 180ms\) ease; \}\s*\.mm-fade-enter-from, \.mm-fade-leave-to \{ opacity: 0; \}\s*\}/,

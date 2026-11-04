@@ -151,7 +151,7 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-radius` the call-to-action corners and the sheet's bottom corners (fallback `0.5rem`)
 - `--site-block-motion` the link colour transition and the fade-out when the sheet closes (fallback `180ms`, the source's fast time). A host value sets both
 - `--site-block-motion-rise` each row's rise (fallback `0.55s`, the source's time; the curve is fixed)
-- `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit). `--site-block-motion` also times the fade-out (default here `180ms`)
+- `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit).
 
 Also:
 
