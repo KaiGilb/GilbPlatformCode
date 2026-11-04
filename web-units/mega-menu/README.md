@@ -4,6 +4,8 @@ An 80dvh sheet across the top of the page, and a transparent band across the res
 
 ## What this is
 
+A mega menu for a website: a full-width drop-down sheet of grouped links that the site header opens, with focus kept inside and Esc to close.
+
 `<MegaMenu :open :groups>` draws a full-width sheet (default `80dvh`) and a transparent click-catcher over whatever viewport is left under it (the bottom `20dvh` at that default). The sheet is a dialog. Each group is a heading and a list. An item with an `href` is a link. An item without one is plain text: no link, no tab stop, no hover change, the ordinary cursor. A group's call to action is the last row of that list. While the sheet is open the page body does not scroll, Tab stays on the links and buttons inside it, Escape asks the host to close, and the first link (or the Close button, if there is no link) is focused. Rows rise in 40ms steps, and the delay stops growing after the tenth. Reduced motion shows the finished sheet at once.
 
 The host owns whether it is open. This component only reports what happened.

@@ -4,6 +4,8 @@ One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved
 
 ## What this is
 
+The site logo for a website header or footer: one home link with the logo image, the site name as a wordmark, or both, spoken once.
+
 `<SiteLogo name>` draws one link (to `/` unless `href` says otherwise). Inside it, a logo image when `logoSrc` is set, and the site name as a wordmark unless `wordmark` hides it. The name is spoken once: from the wordmark when it is shown, otherwise from the image's alt. A host that uses a router passes its link component; a host that optimises images passes its image component. `decorative` draws only the image, for a place beside a sibling that is already the link. It is a plain link in the server's HTML, so it works before the script runs and with no script at all.
 
 ## What this is not

@@ -3,7 +3,7 @@
   "unit": "web-units/site-logo",
   "package": "@kaigilb/gilbwebsitecode-site-logo",
   "version": "0.1.0",
-  "purpose": "`<SiteLogo name>` draws one link (to `/` unless `href` says otherwise).",
+  "purpose": "The site logo for a website header or footer: one home link with the logo image, the site name as a wordmark, or both, spoken once.",
   "source": {
     "repo": "KaiGilb/website-engine-a",
     "commit": "81362f4fdc0bd59d390e4285855c04c019f1e7b9",

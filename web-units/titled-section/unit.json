@@ -3,7 +3,7 @@
   "unit": "web-units/titled-section",
   "package": "@kaigilb/gilbwebsitecode-titled-section",
   "version": "0.1.0",
-  "purpose": "`<TitledSection :title>` draws a `<section>` band with an optional ornament, a heading, a short rule under it, and the band's content.",
+  "purpose": "A titled section band for a website page: optional ornament, heading, short rule, then the section's content.",
   "source": {
     "repo": "KaiGilb/triangula-web",
     "commit": "a01a155af3b9550b5f5d2f8b5d9d69fd3675a486",

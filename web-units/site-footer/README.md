@@ -4,6 +4,8 @@ The site's footer: the brand, an optional tagline, an optional list of links, an
 
 ## What this is
 
+The site footer for a website: brand, optional tagline, a row of footer links and the copyright line.
+
 `<SiteFooter>` draws the site's footer as a `<footer data-site-footer>`: the brand, an optional tagline, an optional list of links, and a copyright line. It is in the server's HTML before any script runs, and it needs no script at all. In detail:
 
 - a top band with the brand name and, when given, a tagline at most 48 characters wide. From 768 px the brand sits on the left and the links on the right; below that, one column;

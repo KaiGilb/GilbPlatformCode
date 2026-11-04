@@ -4,6 +4,8 @@ A waiting-list form: labelled questions, email required and the rest optional, c
 
 ## What this is
 
+A waitlist signup form for a website: only the email is required, the other questions are optional, and it still posts with no script.
+
 `<WaitlistForm>` draws a `<form method="post">` whose `action` is `actionUrl` (default `/api/waitlist`). Each question comes from `fields` (default `defaultWaitlistFields`): a text, email, tel or textarea control, or a choice drawn as a `<fieldset>` with a `<legend>` and one radio per answer. A choice answer may carry one line of help under its label. Only a field with `required` carries the `required` attribute; every other label ends with the muted `optional` word (default `(optional)`). In the default list that field is email.
 
 The default order puts the personal questions first: name, email and what the person wants to build come before company and team size, so someone on their own is not asked about a company first. That is why the source form was ordered that way. Experience opens on `not-yet` ("Not yet"), so the selected answer is a welcome rather than the bottom of a scale. A host passes `fields` in any order; the component does not reorder them.

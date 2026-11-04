@@ -3,7 +3,7 @@
   "unit": "web-units/waitlist-form",
   "package": "@kaigilb/gilbwebsitecode-waitlist-form",
   "version": "0.1.0",
-  "purpose": "`<WaitlistForm>` draws a `<form method=\"post\">` whose `action` is `actionUrl` (default `/api/waitlist`).",
+  "purpose": "A waitlist signup form for a website: only the email is required, the other questions are optional, and it still posts with no script.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",
     "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",

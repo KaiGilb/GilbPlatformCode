@@ -3,7 +3,7 @@
   "unit": "web-units/site-footer",
   "package": "@kaigilb/gilbwebsitecode-site-footer",
   "version": "0.1.0",
-  "purpose": "`<SiteFooter>` draws the site's footer as a `<footer data-site-footer>`: the brand, an optional tagline, an optional list of links, and a copyright line.",
+  "purpose": "The site footer for a website: brand, optional tagline, a row of footer links and the copyright line.",
   "source": {
     "repo": "KaiGilb/gilb-web",
     "commit": "a3be1bce783d9b34c4c2f40c2cbc0886c28c5daa",

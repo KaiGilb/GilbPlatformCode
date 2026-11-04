@@ -4,6 +4,8 @@ A section band: an optional ornament, a heading, a short rule under it, then the
 
 ## What this is
 
+A titled section band for a website page: optional ornament, heading, short rule, then the section's content.
+
 `<TitledSection :title>` draws a `<section>` band with an optional ornament, a heading, a short rule under it, and the band's content. It is static HTML in the server's page, so it is complete before any script runs and with no script at all. In detail:
 
 - an ornament image, only when `ornamentSrc` is set;

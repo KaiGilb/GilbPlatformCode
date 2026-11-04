@@ -3,7 +3,7 @@
   "unit": "web-units/mega-menu",
   "package": "@kaigilb/gilbwebsitecode-mega-menu",
   "version": "0.1.0",
-  "purpose": "`<MegaMenu :open :groups>` draws a full-width sheet (default `80dvh`) and a transparent click-catcher over whatever viewport is left under it (the bottom `20dvh` at that default).",
+  "purpose": "A mega menu for a website: a full-width drop-down sheet of grouped links that the site header opens, with focus kept inside and Esc to close.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",
     "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",
