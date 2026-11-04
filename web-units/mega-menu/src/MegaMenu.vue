@@ -79,7 +79,9 @@ interface DrawnGroup {
   heading: string;
   id: string;
   columns: 1 | 2;
-  tone: "link" | "quiet";
+  tone: "link" | "quiet" | "card";
+  /** Quiet group whose rows have no sub line: the source's use-case rhythm. */
+  plain: boolean;
   entries: DrawnItem[];
 }
 
@@ -102,11 +104,17 @@ const drawn = computed<DrawnCell[]>(() => {
   const drawGroup = (group: MenuGroup, id: string): DrawnGroup => {
     const entries: DrawnItem[] = group.items.map((item) => ({ kind: "item", item, i: n++ }));
     if (group.cta) entries.push({ kind: "cta", cta: group.cta, i: n++ });
+    // Static-only groups are the source's audience cards unless the host asked for "link" or "quiet".
+    const card =
+      group.tone === "card" ||
+      (group.tone !== "link" && group.tone !== "quiet" && group.items.length > 0 && group.items.every((item) => !item.href));
+    const tone = group.tone === "quiet" ? "quiet" : card ? "card" : "link";
     return {
       heading: group.heading,
       id,
       columns: group.columns === 2 ? 2 : 1,
-      tone: group.tone === "quiet" ? "quiet" : "link",
+      tone,
+      plain: tone === "quiet" && group.items.every((item) => !item.sub),
       entries,
     };
   };
@@ -121,6 +129,12 @@ const drawn = computed<DrawnCell[]>(() => {
     };
   });
 });
+
+function labelClass(tone: DrawnGroup["tone"]): string {
+  if (tone === "quiet") return "mm-quiet";
+  if (tone === "link") return "mm-item-label mm-display";
+  return "mm-item-label";
+}
 
 function linkIs(external?: boolean): string | Component {
   if (external) return "a";
@@ -246,6 +260,7 @@ onBeforeUnmount(() => {
       @mouseenter="emit('pointer-enter')"
       @mouseleave="emit('pointer-leave')"
     >
+      <div class="mm-ground" aria-hidden="true" />
       <nav class="mm-nav" :aria-label="navLabel" @click.self="emit('close', 'outside')">
         <div class="mm-body" @click.self="emit('close', 'outside')">
         <div class="mm-grid">
@@ -259,7 +274,16 @@ onBeforeUnmount(() => {
             <div :class="{ 'mm-stack-inner': cell.stack }">
               <div v-for="group in cell.groups" :key="group.id">
                 <p :id="group.id" class="mm-label">{{ group.heading }}</p>
-                <ul class="mm-list" :class="{ 'mm-cols-2': group.columns === 2 }" :aria-labelledby="group.id">
+                <ul
+                  class="mm-list"
+                  :class="{
+                    'mm-cols-2': group.columns === 2,
+                    'mm-list-card': group.tone === 'card',
+                    'mm-list-quiet': group.tone === 'quiet',
+                    'mm-list-plain': group.plain,
+                  }"
+                  :aria-labelledby="group.id"
+                >
                   <li
                     v-for="entry in group.entries"
                     :key="entry.i"
@@ -274,11 +298,11 @@ onBeforeUnmount(() => {
                         class="mm-link"
                         @click="emit('close', 'link')"
                       >
-                        <span :class="group.tone === 'quiet' ? 'mm-quiet' : 'mm-item-label'">{{ entry.item.label }}</span>
+                        <span :class="labelClass(group.tone)">{{ entry.item.label }}</span>
                         <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
                       </component>
                       <div v-else class="mm-static">
-                        <span :class="group.tone === 'quiet' ? 'mm-quiet' : 'mm-item-label'">{{ entry.item.label }}</span>
+                        <span :class="labelClass(group.tone)">{{ entry.item.label }}</span>
                         <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
                       </div>
                     </template>
@@ -296,18 +320,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
         </div>
+
+        <div v-if="$slots.footer" class="mm-footer">
+          <slot name="footer" />
+        </div>
+
+        <button type="button" class="mm-close" @click="emit('close', 'button')">
+          <span>{{ closeLabel }}</span>
+          <svg class="mm-close-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+            <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
       </nav>
-
-      <div v-if="$slots.footer" class="mm-footer">
-        <slot name="footer" />
-      </div>
-
-      <button type="button" class="mm-close" @click="emit('close', 'button')">
-        <span>{{ closeLabel }}</span>
-        <svg class="mm-close-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
     </div>
 
     <!-- Not a tab stop. The Close control and Esc are the keyboard path. -->
@@ -323,7 +347,7 @@ onBeforeUnmount(() => {
 .mm { position: fixed; inset: 0; }
 
 .mm-sheet {
-  position: absolute;
+  position: fixed;
   top: 0;
   right: 0;
   left: 0;
@@ -331,13 +355,21 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: var(--mm-sheet, 80dvh);
   overflow-y: auto;
-  padding: 5rem 1.25rem 0.5rem;
-  background: var(--site-block-bg, #ffffff);
-  background-image: var(--site-block-sheet-wash, none);
   color: var(--site-block-fg, #1a1a1a);
-  box-shadow: 0 24px 48px -24px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 25%, transparent);
+  /* Legacy rgba(), not color-mix: the same channels in color() rasterise a row off. */
+  box-shadow: 0 4px 12px -2px var(--site-block-shadow, rgba(28, 28, 20, 0.08));
   border-bottom-right-radius: var(--site-block-radius, 0.5rem);
   border-bottom-left-radius: var(--site-block-radius, 0.5rem);
+}
+
+/* Full-bleed ground, the same box as the source's absolute wash (the sheet itself has no padding). */
+.mm-ground {
+  position: absolute;
+  inset: 0;
+  background: var(--site-block-bg, #ffffff);
+  background-image: var(--site-block-sheet-wash, none);
+  border-bottom-right-radius: inherit;
+  border-bottom-left-radius: inherit;
 }
 
 /* Default sheet 80dvh, so this band is the transparent bottom 20dvh.
@@ -351,7 +383,15 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; }
+.mm-nav {
+  position: relative;
+  display: flex;
+  flex: 1 1 0%;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  padding: 5rem 1.25rem 0.5rem;
+}
 
 /* The source's centring wrapper: the grid sits in the middle of the sheet's free height. */
 .mm-body { display: flex; flex: 1 0 auto; flex-direction: column; justify-content: center; }
@@ -359,8 +399,8 @@ onBeforeUnmount(() => {
 .mm-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 2.5rem 2rem;
-  align-items: start;
+  gap: 3rem;
+  align-content: start;
   width: 100%;
   max-width: var(--mm-max, 80rem);
   margin-inline: auto;
@@ -380,32 +420,40 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   color: var(--site-block-muted, #4b5563);
 }
 
+/* Product column: mt-3, space-y-2. Cards and quiet lists override. */
 .mm-list {
   list-style: none;
   display: grid;
-  gap: 0.35rem 1.5rem;
+  gap: 0.5rem;
   margin: 0.75rem 0 0;
   padding: 0;
 }
+
+.mm-list-card {
+  gap: 0.5rem 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.mm-list-quiet {
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.mm-list-plain { gap: 0.625rem; }
 
 .mm-item { margin: 0; padding: 0; min-width: 0; }
 
 .mm-link, .mm-cta, .mm-close { min-height: 44px; }
 
 .mm-link {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  display: block;
   width: 100%;
-  padding: 0.15rem 0;
-  border-radius: var(--site-block-radius, 0.5rem);
+  padding: 0;
   color: var(--site-block-fg, #1a1a1a);
   font: inherit;
   text-decoration: none;
@@ -413,15 +461,26 @@ onBeforeUnmount(() => {
   transition: color var(--site-block-motion, 180ms) ease;
 }
 
+/* Audience cards: 1.1rem semibold, snug leading. The display class overrides this on product links. */
 .mm-item-label {
+  display: block;
   font-size: 1.1rem;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.375;
+  color: var(--site-block-fg, #1a1a1a);
+}
+
+.mm-display {
+  display: inline-block;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  font-size: clamp(1.7rem, 3.2vw, 2.4rem);
   color: var(--site-block-fg, #1a1a1a);
 }
 
 .mm-link:hover .mm-item-label,
-.mm-link:focus-visible .mm-item-label {
+.mm-link:hover .mm-display {
   color: var(--site-block-accent, #b45309);
 }
 
@@ -436,19 +495,20 @@ onBeforeUnmount(() => {
 }
 
 .mm-quiet:hover,
-.mm-link:hover .mm-quiet,
-.mm-link:focus-visible .mm-quiet {
+.mm-link:hover .mm-quiet {
   color: var(--site-block-accent, #b45309);
 }
 
 .mm-sub {
   display: block;
-  margin-top: 0.15rem;
-  font-size: 0.875rem;
+  margin-top: 0;
+  font-size: 0.9rem;
   font-weight: 400;
   line-height: 1.45;
   color: var(--site-block-muted, #4b5563);
 }
+
+.mm-list-card .mm-sub { margin-top: 0.25rem; }
 
 /* Static rows (no href): the same type, and nothing on them reacts to the pointer. */
 .mm-static {
@@ -460,6 +520,20 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: default;
 }
+
+/* Audience card chrome. Horizontal margin and padding cancel, so the words stay aligned with the label. */
+.mm-list-card .mm-static,
+.mm-list-card .mm-link:not(.mm-cta) {
+  display: block;
+  width: auto;
+  margin: 0 -0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 8px;
+  min-height: 0;
+}
+
+/* Use-case rows are the quiet line itself: the wrapper must not add a box. */
+.mm-list-plain .mm-static { display: contents; }
 
 .mm-static,
 .mm-static:hover,
@@ -478,14 +552,14 @@ onBeforeUnmount(() => {
   align-items: center;
   align-self: flex-start;
   width: auto;
-  margin-top: 0.5rem;
-  padding: 0.55rem 1.25rem;
+  margin-top: 0;
+  padding: 0.75rem 1.75rem;
   border-radius: var(--site-block-cta-radius, var(--site-block-radius, 0.5rem));
   background: var(--site-block-cta, var(--site-block-accent, #b45309));
   color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff));
   font-size: 1rem;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1.5;
 }
 
 .mm-cta:hover,
@@ -497,8 +571,10 @@ onBeforeUnmount(() => {
 .mm-cta:focus-visible,
 .mm-close:focus-visible {
   outline: 2px solid var(--site-block-accent, #b45309);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
+
+.mm-link:not(.mm-cta):focus-visible { border-radius: 2px; }
 
 .mm-footer { margin-top: 1.25rem; color: var(--site-block-fg, #1a1a1a); }
 
@@ -515,7 +591,7 @@ onBeforeUnmount(() => {
   padding: 0.85rem 0.5rem 0.65rem;
   border: 0;
   background-color: transparent;
-  background-image: linear-gradient(180deg, transparent 0%, var(--site-block-bg, #ffffff) 36%);
+  background-image: linear-gradient(180deg, var(--site-block-bg-fade, rgba(247, 244, 237, 0)) 0%, var(--site-block-bg, #ffffff) 36%);
   color: var(--site-block-muted, #4b5563);
   font: inherit;
   font-size: 0.9rem;
@@ -527,18 +603,18 @@ onBeforeUnmount(() => {
 .mm-close-icon { display: block; }
 
 @media (min-width: 640px) {
-  .mm-sheet { padding-right: 2rem; padding-left: 2rem; }
+  .mm-nav { padding-right: 2rem; padding-left: 2rem; }
   .mm-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mm-stack-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 768px) {
-  .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem 2.5rem; }
   .mm-stack { grid-column: span 2; }
 }
 
 @media (min-width: 1024px) {
-  .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; }
+  .mm-nav { padding-right: 2.5rem; padding-left: 2.5rem; }
   .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .mm-group { grid-column: span var(--mm-span, 12); }
   .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 2.25rem; }

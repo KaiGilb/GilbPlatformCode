@@ -19,7 +19,10 @@ export interface MenuCta {
  * `columns` 2 lays the rows in two columns from 640px up.
  * `span` is how many of the 12 columns the region takes at ≥1024px
  * (default `floor(12 / groups.length)`; a stack counts as one).
- * `tone` `"quiet"` draws the group's links in the quieter type. Default `"link"`.
+ * `tone` `"quiet"` draws the group's links in the quieter type.
+ * `tone` `"card"` draws the audience cards (1.1rem label, padded row, sub tucked under it).
+ * Default `"link"` draws the large display links. A group with no tone whose items are all
+ * static resolves to `"card"` (the source's static column); pass `"link"` to keep the display type.
  */
 export interface MenuGroup {
   heading: string;
@@ -27,7 +30,7 @@ export interface MenuGroup {
   columns?: 1 | 2;
   cta?: MenuCta;
   span?: number;
-  tone?: "link" | "quiet";
+  tone?: "link" | "quiet" | "card";
 }
 
 export interface MenuStack {

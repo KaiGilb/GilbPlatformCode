@@ -116,11 +116,11 @@ For a route link instead of a plain anchor, pass the host's component (`linkComp
 | Prop or slot | Meaning |
 |---|---|
 | `open` | whether the sheet is up. Required. The host owns it. While false, nothing is rendered: no listener, no scroll lock |
-| `groups` | `(MenuGroup \| MenuStack)[]`. Required. A group is `{ heading, items, columns?, cta?, span?, tone? }`. A `MenuStack` is `{ stack: MenuGroup[], span? }`: one cell holding those groups, side by side from 640px and one above the other from 1024px |
+| `groups` | `(MenuGroup \| MenuStack)[]`. Required. A group is `{ heading, items, columns?, cta?, span?, tone? }`. A `MenuStack` is `{ stack: MenuGroup[], span? }`: one cell holding those groups, side by side from 640px and one above the other from 1024px. A quiet group whose rows have no sub line uses the tighter use-case gap (0.625rem); one with subs uses 0.75rem |
 | `items[]` | `MenuItem`: `{ label, sub?, href?, external? }`. No `href` means static text |
 | `cta?` | `MenuCta`: `{ label, href, external? }`, drawn as the last row of that group, in the same stagger count |
 | `columns?` | `1` or `2`. `2` is two columns from 640px up, one column below |
-| `tone?` | `"link"` (default) or `"quiet"`. `"quiet"` draws that group's links in the quieter type (the source's side-column links) |
+| `tone?` | `"link"` (default), `"quiet"`, or `"card"`. `"link"` draws the large display links (weight 650, `clamp(1.7rem, 3.2vw, 2.4rem)`, tight leading). `"quiet"` draws the side-column links. `"card"` draws the audience cards: a 1.1rem semibold label, 0.7rem vertical padding, and 0.25rem between the label and the sub. A group with no tone whose items are all static is drawn as `"card"`; pass `"link"` to keep the display type on static rows |
 | `span?` | how many of the 12 columns the cell takes at ≥1024px. When omitted, `floor(12 / groups.length)`. A stack counts as one cell in that length |
 | `label?` | accessible name of the dialog (default "Site menu") |
 | `navLabel?` | accessible name of the nav inside the dialog (default "Main") |
@@ -144,9 +144,11 @@ Events:
 
 The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
-- `--site-block-bg` the sheet colour (fallback `#ffffff`) and the fade behind Close
-- `--site-block-sheet-wash` the sheet's background image, over that colour on `.mm-sheet` (fallback `none`)
-- `--site-block-fg` link and static text (fallback `#1a1a1a`). The shadow mixes 25% of it
+- `--site-block-bg` the sheet colour (fallback `#ffffff`) and the opaque end of the fade behind Close
+- `--site-block-bg-fade` the transparent end of that fade (fallback `rgba(247, 244, 237, 0)`, this source's cream at alpha 0). A host that remaps `--site-block-bg` should set this to the same colour at alpha 0; a relative-colour alpha does not rasterise the same
+- `--site-block-sheet-wash` the ground's background image, over `--site-block-bg` on `.mm-ground` (fallback `none`)
+- `--site-block-fg` link and static text (fallback `#1a1a1a`)
+- `--site-block-shadow` the sheet's shadow colour (fallback `rgba(28, 28, 20, 0.08)`). The offset stays `0 4px 12px -2px`. `color-mix` and `rgb(from … / 0.08)` rasterise a different shadow than this `rgba()` form
 - `--site-block-muted` the group label, the sub line, and Close
 - `--site-block-accent` link hover and the focus outline (fallback `#b45309`). It is also the fallback inside the call-to-action fill and its hover
 - `--site-block-cta` the call-to-action fill (fallback `var(--site-block-accent, #b45309)`)
@@ -195,6 +197,7 @@ While the sheet is open, `document.body.style.overflow` is `hidden`. On close, a
 - The cream ground and the pith tint are not here. Colour comes from `--site-block-*`.
 - The source was Tailwind, `theme()` and `NuxtLink`. Those are written out: scoped CSS, and `linkComponent` (a plain `<a href>` unless the host passes its own link).
 - A side column that holds two headed lists is a `MenuStack` (side by side from 640px, stacked from 1024px), and a group's `tone: "quiet"` draws the source's quieter links; the call to action and the sheet's wash take their own variables (`--site-block-cta*`, `--site-block-sheet-wash`).
+- The product links are the large display type and the audience rows are cards (`tone: "card"`, also the default for a group of only static rows). The source's link colour changes on hover, not on focus; the focus ring is the outline.
 
 ## Source
 
