@@ -25,6 +25,8 @@ export interface WaitlistExtra {
   notice?: string;
   /** Included when the form has a Turnstile key, once the widget has answered. */
   turnstileToken?: string;
+  /** Included under `name` even when `value` is empty. Omitted when absent. */
+  honeypot?: { name: string; value: string };
 }
 
 export type WaitlistValues = Record<string, string>;
@@ -69,12 +71,13 @@ export function validate(fields: readonly WaitlistField[], values: WaitlistValue
 }
 
 /**
- * The JSON body: trimmed field values, empty ones left out, then `page`, `notice` and `turnstileToken` from `extra`.
+ * The JSON body: trimmed field values, empty ones left out, then `page`, `notice`, `turnstileToken`
+ * and, when given, the honeypot from `extra`.
  * Call `validate` first; this does not drop an answer that fails a rule.
  *
  * @param fields - the questions the form showed
  * @param values - raw answers, keyed by field name
- * @param extra - page, notice text, and the Turnstile token
+ * @param extra - page, notice text, the Turnstile token, and the honeypot
  */
 export function buildBody(
   fields: readonly WaitlistField[],
@@ -90,5 +93,6 @@ export function buildBody(
   if (extra.page !== undefined) body.page = extra.page;
   if (extra.notice !== undefined && extra.notice !== "") body.notice = extra.notice;
   if (extra.turnstileToken !== undefined) body.turnstileToken = extra.turnstileToken;
+  if (extra.honeypot !== undefined) body[extra.honeypot.name] = extra.honeypot.value;
   return body;
 }

@@ -15,10 +15,11 @@
  * when that is set. With a Turnstile key such a post carries no token.
  *
  * Props: `fields?`, `actionUrl?`, `noScriptAction?`, `turnstileSiteKey?`, `turnstileScriptUrl?`, `page?`, `labels?`,
- * `notice?`, `send?`, `tokenWaitMs?`.
+ * `notice?`, `linkComponent?`, `honeypot?`, `send?`, `tokenWaitMs?`.
  * Slot: `sent` replaces the thank-you block. Events: `sent(body)`, `failed(error)`.
  */
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
+import type { Component } from "vue";
 import { buildBody, validate, type FieldError } from "./fields";
 import { postJson } from "./send";
 import { createTurnstile, DEFAULT_TURNSTILE_SCRIPT_URL, type TurnstileController } from "./turnstile";
@@ -42,6 +43,10 @@ const props = withDefaults(
     page?: string;
     labels?: Partial<WaitlistLabels>;
     notice?: WaitlistNotice | null;
+    /** The host's route link (NuxtLink), given `to`. A plain `<a href>` when this is `"a"`. */
+    linkComponent?: string | Component;
+    /** Off-screen field. When set, its name is always in the body (empty when untouched). Null draws none. */
+    honeypot?: { name: string; label: string } | null;
     send?: (body: Record<string, string>) => Promise<unknown>;
     tokenWaitMs?: number;
   }>(),
@@ -54,6 +59,8 @@ const props = withDefaults(
     page: "",
     labels: () => ({}),
     notice: null,
+    linkComponent: "a",
+    honeypot: null,
     tokenWaitMs: 8000,
   },
 );
@@ -67,6 +74,7 @@ const words = () => ({ ...DEFAULT_WAITLIST_LABELS, ...props.labels });
 // useId is the same on the server and in the browser, and different for each form on a page.
 const uid = useId();
 const status = ref<"idle" | "sending" | "sent" | "failed">("idle");
+const trapValue = ref("");
 const fieldErrors = ref<FieldError[]>([]);
 const lastBody = ref<Record<string, string>>({});
 const formEl = ref<HTMLFormElement | null>(null);
@@ -169,10 +177,15 @@ function inputType(field: WaitlistField): "text" | "email" | "tel" {
   return "text";
 }
 
-/** The notice's words as drawn: the sentence, then the link's words when the link is shown. */
+/** The notice's words as drawn: the sentence, the link's words when the link is shown, then `after`. */
 function shownNotice(notice: WaitlistNotice): string {
-  if (notice.linkHref && notice.linkLabel) return `${notice.text} ${notice.linkLabel}`;
-  return notice.text;
+  const link = notice.linkHref && notice.linkLabel ? ` ${notice.linkLabel}` : "";
+  return `${notice.text}${link}${notice.after ?? ""}`;
+}
+
+/** The plain-anchor default takes `href`. A route component takes `to`. */
+function noticeUsesAnchor(): boolean {
+  return props.linkComponent === "a";
 }
 
 function focusField(name: string): void {
@@ -234,6 +247,7 @@ async function onSubmit(): Promise<void> {
       page: props.page,
       ...(props.notice ? { notice: shownNotice(props.notice) } : {}),
       ...(token ? { turnstileToken: token } : {}),
+      ...(props.honeypot ? { honeypot: { name: props.honeypot.name, value: trapValue.value } } : {}),
     });
     const answer = await (props.send ?? ((payload) => postJson(props.actionUrl, payload)))(body);
     if (!alive) return;
@@ -350,11 +364,13 @@ async function onSubmit(): Promise<void> {
         </template>
       </div>
 
+      <div v-if="honeypot" class="wl-trap" aria-hidden="true"><label :for="`${uid}-trap`">{{ honeypot.label }}</label><input :id="`${uid}-trap`" :name="honeypot.name" type="text" tabindex="-1" autocomplete="off" :value="trapValue" @input="trapValue = ($event.target as HTMLInputElement).value" /></div>
+
       <!-- Turnstile draws its widget here after the script loads. No key: no box and no script. -->
       <div v-if="turnstileSiteKey" ref="turnstileBox" class="wl-turnstile" />
 
       <div class="wl-actions">
-        <p v-if="notice" class="wl-notice">{{ notice.text }}<template v-if="notice.linkHref && notice.linkLabel">{{ " " }}<a :href="notice.linkHref">{{ notice.linkLabel }}</a></template></p>
+        <p v-if="notice" class="wl-notice">{{ notice.text }}<template v-if="notice.linkHref && notice.linkLabel">{{ " " }}<a v-if="noticeUsesAnchor()" :href="notice.linkHref">{{ notice.linkLabel }}</a><component v-else :is="linkComponent" :to="notice.linkHref">{{ notice.linkLabel }}</component></template>{{ notice.after ?? "" }}</p>
 
         <!-- Always in the form, so a screen reader hears the error when it appears. Empty, it takes no height; the gaps around it stay. -->
         <div class="wl-live" role="status" aria-live="polite">
@@ -392,6 +408,8 @@ async function onSubmit(): Promise<void> {
    live region and the button (gap-4). A gap stays beside an empty region, so nothing moves
    when a send starts. */
 .wl-form { display: flex; flex-direction: column; gap: 2.25rem; }
+/* Off screen (not display:none) and out of this flex flow, so it adds no gap. */
+.wl-trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 .wl-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
 .wl-row { display: flex; flex-direction: column; gap: 0.5rem; }
 .wl-label, .wl-legend {

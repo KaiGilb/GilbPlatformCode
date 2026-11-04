@@ -77,13 +77,15 @@ export const DEFAULT_WAITLIST_LABELS: WaitlistLabels = {
 
 /**
  * The collection notice above the button. Not a checkbox.
- * `text` is the sentence; the optional link is an anchor after it.
- * The body stores the words that were shown (the sentence, and the link's words when the link is drawn).
+ * `text` is the sentence; the optional link is an anchor after it; `after` follows the link with no space.
+ * The body stores the words that were shown (the sentence, the link's words when the link is drawn, then `after`).
  */
 export interface WaitlistNotice {
   text: string;
   linkLabel?: string;
   linkHref?: string;
+  /** Text right after the link, with no space before it (for example "."). Also sent in the body's notice. */
+  after?: string;
 }
 
 /**

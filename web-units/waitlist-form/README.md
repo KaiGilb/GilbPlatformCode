@@ -10,7 +10,7 @@ A waitlist signup form for a website: only the email is required, the other ques
 
 The default order puts the personal questions first: name, email and what the person wants to build come before company and team size, so someone on their own is not asked about a company first. That is why the source form was ordered that way. "Not yet" is the first experience answer, worded as a welcome; as in the source, no answer is chosen until the person chooses one, so a body carries only what was answered. A host passes `fields` in any order; the component does not reorder them.
 
-Above the button, `notice` (default none) is a sentence, with an optional link. It is not a checkbox. The body's `notice` is the words that were shown: `notice.text`, and when the link is drawn, a space and `notice.linkLabel`.
+Above the button, `notice` (default none) is a sentence, with an optional link and optional text right after it (`after`, no space before it, for example a full stop). It is not a checkbox. The body's `notice` is the words that were shown: `notice.text`, then when the link is drawn a space and `notice.linkLabel`, then `after`. The notice link is a plain anchor unless `linkComponent` is the site's route link, which receives `to`. `honeypot` (default none) draws an off-screen field; when set, its name is always in the body, empty when untouched, and a no-script post carries it because the input is in the form.
 
 `page` is sent with the body so the record can say where the person signed up. It is not a field the person types.
 
@@ -96,7 +96,7 @@ const fields: WaitlistField[] = [
     action-url="/api/waitlist"
     :turnstile-site-key="siteKey"
     :fields="fields"
-    :notice="{ text: 'We use these details only to manage your place on the list.', linkLabel: 'Privacy', linkHref: '/privacy' }"
+    :notice="{ text: 'We use these details only to manage your place on the list.', linkLabel: 'Privacy', linkHref: '/privacy', after: '.' }"
   />
 </template>
 ```
@@ -123,7 +123,9 @@ if (errors.length) return new Response('no', { status: 422 })
 | `turnstileScriptUrl?` | the script address, default `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit` |
 | `page?` | sent as `page`, including when it is `""` (the default) |
 | `labels?` | any of `submit` (`Join the waiting list`), `sending` (`Sending…`), `optional` (`(optional)`), `sentHeading` (`You're on the list.`), `sentBody` (`We will write when there is room.`), `failed` (`That did not go through. Your answers are kept; please try again.`), `invalidEmail` (`Enter an email address like name@example.com.`), `required` (`This one is needed.`), `tooLong` (`This is longer than {max} characters.`) |
-| `notice?` | `{ text, linkLabel?, linkHref? }` or `null` (the default). Not a checkbox. The body's `notice` is the sentence as shown |
+| `notice?` | `{ text, linkLabel?, linkHref?, after? }` or `null` (the default). Not a checkbox. `after` is the text right after the link, with no space before it (for example "."). The body's `notice` is the sentence as shown, including `after` |
+| `linkComponent?` | the component that links the notice's route, given `to` (Nuxt: `resolveComponent('NuxtLink')`). The string `a` (the default) is a plain `<a href>` |
+| `honeypot?` | `{ name, label }` or `null` (the default, none drawn). When set, an off-screen field (`tabindex="-1"`, hidden from assistive tech) whose `name` is always in the body, `""` when untouched. A no-script post carries it too, because the input is in the form |
 | `send?` | replaces the default sender: `(body) => Promise`. A truthy answer is sent. A falsy answer is not sent. A throw is a failure |
 | `tokenWaitMs?` | how long a send waits for the Turnstile token, default `8000` |
 
@@ -131,7 +133,7 @@ Slot: `sent` replaces the thank-you block. Its slot prop `body` is the object th
 
 Events: `sent(body)` after a truthy answer; `failed(error)` after a throw or a falsy answer.
 
-`validate` returns `{ name, code, max? }[]` in field order. `code` is `required`, `invalidEmail`, `tooLong` (then `max` is the limit) or `invalidChoice`. Empty means the answers pass. Length and the email shape are judged after trimming. `buildBody` trims, omits empty values, and adds `page`, `notice` and `turnstileToken` from its third argument when those are given (`page` even when `""`; `notice` only when it is a non-empty string).
+`validate` returns `{ name, code, max? }[]` in field order. `code` is `required`, `invalidEmail`, `tooLong` (then `max` is the limit) or `invalidChoice`. Empty means the answers pass. Length and the email shape are judged after trimming. `buildBody` trims, omits empty values, and adds `page`, `notice` and `turnstileToken` from its third argument when those are given (`page` even when `""`; `notice` only when it is a non-empty string). When `honeypot` is given (`{ name, value }`), that name is included even when `value` is `""`.
 
 ## Host must supply
 
@@ -181,7 +183,7 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 - `noScriptAction` is new and empty by default. The source form had `method="post"` and no `action`, so with no script it posted to the current page; so does this one. `actionUrl` is only where the script sends the JSON (the source called `/api/waitlist` itself). With a Turnstile key set, a no-script post has no token, and a server that checks Turnstile refuses it.
 - If the `sent` slot has no heading or `tabindex="-1"` element, focus goes to the wrapper (`tabindex="-1"`). The source had no slot.
 - When `fields` changes after mount, a new choice opens on its `defaultValue`.
-- The source's phone question, "which AI" question and honeypot are not in the default list. Add a `tel` or `choice` field for a question you want. The body contains only declared fields, plus `page`, `notice` and `turnstileToken`.
+- The source's phone question and "which AI" question are not in the default list; add a `tel` or `choice` field for them. The source's honeypot is the `honeypot` prop, off by default (the source always drew its `website` trap). The body holds only declared fields, plus `page`, `notice`, `turnstileToken` and the honeypot when set.
 - A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.
 - An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.
 - The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block.
