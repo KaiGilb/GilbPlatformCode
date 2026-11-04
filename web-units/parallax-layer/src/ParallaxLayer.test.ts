@@ -136,6 +136,12 @@ test("will-change is transform on the inner element once it animates", () => {
   expect(inner.style.willChange).toBe("transform");
 });
 
+test("the moving element carries no transition, so it follows the scroll at once", () => {
+  const { inner } = frameAt(100, 200);
+  expect(inner.style.transform).not.toBe("");
+  expect(inner.style.transition).toBe("");
+});
+
 test("a layer more than 200px off screen does no work", () => {
   expect(frameAt(1001, 100).inner.style.transform).toBe("");
   expect(frameAt(1000, 100).inner.style.transform).not.toBe("");
