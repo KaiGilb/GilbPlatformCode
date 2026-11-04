@@ -28,7 +28,9 @@
     "When the `sent` slot holds no `h1`, `h2`, `h3` or `[tabindex=\"-1\"]` element, focus goes to the sent wrapper itself (`tabindex=\"-1\"`); the source had no slot.",
     "When `fields` changes after mount, a new choice field opens on its `defaultValue`.",
     "The source's phone question, \"which AI\" question and honeypot are not in the default list; the body holds only declared fields plus `page`, `notice` and `turnstileToken`.",
-    "A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one."
+    "A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.",
+    "An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.",
+    "The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face at 44.8px. The `sent` slot replaces the block."
   ],
   "newFiles": [
     "src/types.ts",

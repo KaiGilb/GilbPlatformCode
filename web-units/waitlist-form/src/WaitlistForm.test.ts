@@ -34,12 +34,16 @@ async function setEmail(w: VueWrapper, value = "ada@example.test"): Promise<void
 }
 
 describe("WaitlistForm defaults", () => {
-  test("only email is required; every other label ends with the muted optional word; experience opens on not-yet", () => {
+  test("only email is required; every other label ends with the muted optional word; no experience answer is chosen at first", async () => {
     wrapper = mount(WaitlistForm, { attachTo: document.body });
     const controls = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")];
     expect(controls.filter((el) => el.required).map((el) => el.name)).toEqual(["email"]);
     const optional = [...document.querySelectorAll(".wl-opt")].map((el) => el.textContent?.trim());
     expect(optional).toEqual(["(optional)", "(optional)", "(optional)", "(optional)", "(optional)"]);
+    for (const el of document.querySelectorAll(".wl-opt")) {
+      // The space is U+0020 inside the span, so it stays in the accessible name.
+      expect(el.textContent).toBe(" (optional)");
+    }
     for (const el of document.querySelectorAll("label.wl-label, legend.wl-legend")) {
       if (!el.querySelector(".wl-opt")) continue;
       expect(el.textContent!.replace(/\s+/g, " ").trim().endsWith(" (optional)")).toBe(true);
@@ -49,17 +53,6 @@ describe("WaitlistForm defaults", () => {
       (label) => label.htmlFor === nameInput.id,
     );
     expect(nameLabel?.textContent?.replace(/\s+/g, " ").trim()).toBe("Name (optional)");
-    // The space before "(optional)" is U+0020, not a non-breaking space. Skip Vue's comment anchors.
-    const spaceBeforeOpt = (span: Element): string | null => {
-      let node: ChildNode | null = span.previousSibling;
-      while (node && node.nodeType === Node.COMMENT_NODE) node = node.previousSibling;
-      return node?.nodeValue ?? null;
-    };
-    expect(spaceBeforeOpt(nameLabel!.querySelector(".wl-opt")!)).toBe(" ");
-    const teamSizeLegend = [...document.querySelectorAll("legend.wl-legend")].find((legend) =>
-      legend.textContent?.includes("Team size"),
-    )!;
-    expect(spaceBeforeOpt(teamSizeLegend.querySelector(".wl-opt")!)).toBe(" ");
     const email = document.querySelector<HTMLInputElement>('input[type="email"]')!;
     const emailLabel = [...document.querySelectorAll("label")].find((label) => label.htmlFor === email.id);
     expect(emailLabel?.textContent).toContain("Email");
@@ -69,7 +62,7 @@ describe("WaitlistForm defaults", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="name"]')!.maxLength).toBe(80);
     const experience = [...document.querySelectorAll<HTMLInputElement>('input[name="experience"]')];
     expect(experience.map((el) => el.value)).toEqual(["not-yet", "a-little", "with-ai", "i-code"]);
-    expect(experience.find((el) => el.checked)?.value).toBe("not-yet");
+    expect(experience.some((el) => el.checked)).toBe(false);
     expect(document.querySelector('input[name="teamSize"]:checked')).toBeNull();
     expect([...document.querySelectorAll<HTMLInputElement>('input[name="teamSize"]')].map((el) => el.value)).toEqual([
       "just-me",
@@ -77,12 +70,21 @@ describe("WaitlistForm defaults", () => {
       "11-50",
       "50-plus",
     ]);
+    const send = vi.fn(async (_body: Record<string, string>) => true);
+    wrapper.unmount();
+    wrapper = mount(WaitlistForm, { props: { send }, attachTo: document.body });
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    const body = send.mock.calls[0]![0]!;
+    expect(body.email).toBe("ada@example.test");
+    // buildBody omits an empty answer, so the key is absent, not "".
+    expect(body).not.toHaveProperty("experience");
   });
 
   test("server-rendered labels keep the space before the optional word", async () => {
     const html = await renderToString(createSSRApp(WaitlistForm));
-    // Vue marks the v-if template with <!--[-->; the space is the text node after that marker.
-    expect(html.replace(/<!--[\s\S]*?-->/g, "")).toMatch(/Name <span[^>]*class="wl-opt"/);
+    expect(html).toMatch(/Name<span[^>]*class="wl-opt"[^>]*> \(optional\)<\/span>/);
   });
 
   test("two forms on one page do not share an id", () => {
@@ -164,7 +166,6 @@ describe("WaitlistForm submit", () => {
     expect(body).toEqual({
       name: "Ada",
       email: "ada@example.test",
-      experience: "not-yet",
       page: "pricing",
       notice: `${notice.text} ${notice.linkLabel}`,
     });
@@ -220,7 +221,7 @@ describe("WaitlistForm submit", () => {
     expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
     const body = JSON.parse(String(init.body));
     expect(body.email).toBe("ada@example.test");
-    expect(body.experience).toBe("not-yet");
+    expect(body).not.toHaveProperty("experience");
     expect(body.page).toBe("home");
     expect(body.turnstileToken).toBeUndefined();
     expect(document.querySelector('[aria-live="polite"]')!.textContent).toContain("did not go through");
@@ -287,10 +288,10 @@ describe("WaitlistForm Turnstile token", () => {
     expect(send).toHaveBeenCalledOnce();
     expect(send.mock.calls[0]![0]).toMatchObject({
       email: "ada@example.test",
-      experience: "not-yet",
       page: "home",
       turnstileToken: "tok-1",
     });
+    expect(send.mock.calls[0]![0]).not.toHaveProperty("experience");
   });
 
   test("when the token does not arrive, the error shows and the answers stay", async () => {
@@ -633,6 +634,18 @@ describe("WaitlistForm control attributes", () => {
     }
   });
 
+  test("a placeholder is passed through, and absent when not given", () => {
+    const fields: WaitlistField[] = [
+      { name: "name", kind: "text", label: "Name", placeholder: "Your name" },
+      { name: "idea", kind: "textarea", label: "Idea", placeholder: "An example sentence" },
+      { name: "email", kind: "email", label: "Email", required: true },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    expect(document.querySelector<HTMLInputElement>('input[name="name"]')!.getAttribute("placeholder")).toBe("Your name");
+    expect(document.querySelector("textarea")!.getAttribute("placeholder")).toBe("An example sentence");
+    expect(document.querySelector('input[name="email"]')!.hasAttribute("placeholder")).toBe(false);
+  });
+
   test("the textarea takes rows (default 4); the email field is not auto-capitalised or spell-checked; autocomplete is passed", () => {
     const fields: WaitlistField[] = [
       { name: "email", kind: "email", label: "E", required: true, autocomplete: "email" },
@@ -700,6 +713,26 @@ describe("WaitlistForm choices", () => {
       expect(tile?.querySelector("span.wl-dot")?.getAttribute("aria-hidden")).toBe("true");
       expect(tile?.querySelector(".wl-option-text > .wl-option-label")).not.toBeNull();
     }
+  });
+
+  test("a pill does not draw an answer's help, and an unknown look draws one-column tiles", () => {
+    const pills: WaitlistField[] = [
+      { name: "p", kind: "choice", label: "P", look: "pills", options: [{ value: "a", label: "A", help: "HELP-A" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields: pills }, attachTo: document.body });
+    expect(document.querySelector(".wl-pill")!.textContent).toBe("A");
+    expect(document.querySelector(".wl-option-help")).toBeNull();
+    expect(document.body.textContent).not.toContain("HELP-A");
+    wrapper.unmount();
+    const unknown: WaitlistField[] = [
+      { name: "p", kind: "choice", label: "P", look: "Pills" as "pills", options: [{ value: "a", label: "A" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields: unknown }, attachTo: document.body });
+    const options = document.querySelector(".wl-options")!;
+    expect(options.classList.contains("wl-options--tiles")).toBe(true);
+    expect(options.classList.contains("wl-options--two")).toBe(false);
+    expect(options.classList.contains("wl-options--pills")).toBe(false);
+    expect(document.querySelector(".wl-option-help")).toBeNull();
   });
 
   test("tiles default to one column, and an option help line is drawn under its label", () => {
@@ -804,10 +837,10 @@ describe("WaitlistForm style", () => {
       ".wl-legend { margin-bottom: 0.75rem; }",
       ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
       ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
-      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
-      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-cta, var(--site-block-accent, #2563eb)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); }",
     ];
     for (const rule of rules) expect(flat).toContain(rule);
   });
@@ -821,14 +854,16 @@ describe("WaitlistForm style", () => {
     ]);
     expect(rulesFor("wl-notice")).toEqual([
       ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
-      ".wl-notice a { color: var(--site-block-accent, #2563eb); text-underline-offset: 0.15em; }",
+      ".wl-notice a { font-weight: 600; color: var(--site-block-accent, #2563eb); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--site-block-accent, #2563eb) 45%, transparent); text-decoration-thickness: 1px; text-underline-offset: 3px; }",
+      ".wl-notice a:hover, .wl-notice a:focus-visible { text-decoration-color: var(--site-block-accent, #2563eb); text-decoration-thickness: 2px; }",
     ]);
     expect(rulesFor("wl-live")).toEqual([".wl-live { position: relative; }"]);
     expect(rulesFor("wl-button")).toEqual([
-      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
-      ".wl-button:hover { opacity: 0.9; }",
-      ".wl-button:disabled { opacity: 0.5; cursor: default; }",
-      "@media (prefers-reduced-motion: reduce) > .wl-button { transition: none; }",
+      "@media (prefers-reduced-motion: no-preference) > .wl-button { transition: background-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1), transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }",
+      "@media (prefers-reduced-motion: no-preference) > .wl-button:active:not(:disabled) { transform: scale(0.98); }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-cta, var(--site-block-accent, #2563eb)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); }",
+      ".wl-button:hover { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)); }",
+      ".wl-button:disabled { opacity: 0.7; cursor: progress; }",
     ]);
     expect(rulesFor("wl-fail")).toEqual([
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
@@ -856,10 +891,11 @@ describe("WaitlistForm style", () => {
       ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
     ]);
     expect(rulesFor("wl-field")).toEqual([
-      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }",
       '.wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }',
       "@media (prefers-reduced-motion: no-preference) > .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }",
+      ".wl-field::placeholder { color: color-mix(in srgb, var(--site-block-muted, #4b5563) 80%, transparent); opacity: 1; }",
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
@@ -868,6 +904,7 @@ describe("WaitlistForm style", () => {
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
     expect(rulesFor("wl-choice-group")).toEqual([
+      '.wl-choice-group[aria-invalid="true"] .wl-tile, .wl-choice-group[aria-invalid="true"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); }',
       ".wl-choice-group { margin: 0; padding: 0; border: 0; min-inline-size: 0; }",
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
@@ -893,6 +930,7 @@ describe("WaitlistForm style", () => {
       ".wl-options--pills { display: flex; flex-wrap: wrap; }",
     ]);
     expect(rulesFor("wl-choice")).toEqual([
+      '.wl-choice-group[aria-invalid="true"] .wl-tile, .wl-choice-group[aria-invalid="true"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); }',
       ".wl-choice-group { margin: 0; padding: 0; border: 0; min-inline-size: 0; }",
       ".wl-choice { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }",
       ".wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); }",
@@ -903,7 +941,8 @@ describe("WaitlistForm style", () => {
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
     expect(rulesFor("wl-tile")).toEqual([
-      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      '.wl-choice-group[aria-invalid="true"] .wl-tile, .wl-choice-group[aria-invalid="true"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); }',
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
       ".wl-tile { display: flex; align-items: flex-start; gap: 0.75rem; height: 100%; min-height: 48px; padding: 1rem; border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }",
       ".wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); }",
@@ -913,7 +952,8 @@ describe("WaitlistForm style", () => {
       "@media (prefers-reduced-motion: no-preference) > .wl-tile, .wl-pill { transition-duration: var(--site-block-motion, 180ms); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1); }",
     ]);
     expect(rulesFor("wl-pill")).toEqual([
-      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      '.wl-choice-group[aria-invalid="true"] .wl-tile, .wl-choice-group[aria-invalid="true"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); }',
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
       ".wl-pill { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font-weight: 500; }",
       ".wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }",
       ".wl-choice:checked + .wl-pill { border-color: var(--site-block-fg, #1a1a1a); background-color: var(--site-block-fg, #1a1a1a); color: var(--site-block-bg, #ffffff); }",
@@ -938,7 +978,7 @@ describe("WaitlistForm style", () => {
       ".wl-options--pills { display: flex; flex-wrap: wrap; }",
       ".wl-option { position: relative; display: block; margin: 0; cursor: pointer; }",
       ".wl-choice { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }",
-      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
       ".wl-tile { display: flex; align-items: flex-start; gap: 0.75rem; height: 100%; min-height: 48px; padding: 1rem; border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-pill { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font-weight: 500; }",
       ".wl-dot { position: relative; flex-shrink: 0; width: 18px; height: 18px; margin-top: 3px; border-radius: 999px; border: 2px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); }",
@@ -953,10 +993,10 @@ describe("WaitlistForm style", () => {
       ".wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }",
       ".wl-option-label { font-weight: 600; }",
       ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
-      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }",
-      "@media (prefers-reduced-motion: no-preference) { .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } }",
-      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+      "@media (prefers-reduced-motion: no-preference) { .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } .wl-button { transition: background-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1), transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } .wl-button:active:not(:disabled) { transform: scale(0.98); } }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-cta, var(--site-block-accent, #2563eb)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); }",
     ];
     for (const rule of rules) expect(flat).toContain(normCss(rule));
   });
@@ -1042,5 +1082,27 @@ describe("WaitlistForm style", () => {
     wrapper.unmount();
     wrapper = mount(WaitlistForm, { attachTo: document.body });
     expect(document.querySelector(".wl-turnstile")).toBeNull();
+  });
+  test("whole-style: the style block is exactly the rules this file means", () => {
+    const block = (SFC.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+    const flat = block.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+    expect(flat).toBe(".wl, .wl * { box-sizing: border-box; } .wl { max-width: 40rem; color: var(--site-block-fg, #1a1a1a); font-size: 1rem; line-height: 1.5; } .wl-form { display: flex; flex-direction: column; gap: 2.25rem; } .wl-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; } .wl-row { display: flex; flex-direction: column; gap: 0.5rem; } .wl-label, .wl-legend { display: block; margin: 0; padding: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 500; } .wl-legend { margin-bottom: 0.75rem; } .wl-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); } .wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); } .wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); } .wl-notice a { font-weight: 600; color: var(--site-block-accent, #2563eb); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--site-block-accent, #2563eb) 45%, transparent); text-decoration-thickness: 1px; text-underline-offset: 3px; } .wl-notice a:hover, .wl-notice a:focus-visible { text-decoration-color: var(--site-block-accent, #2563eb); text-decoration-thickness: 2px; } .wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); } .wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); } .wl-field[aria-invalid=\"true\"] { border-color: var(--site-block-danger, #b91c1c); } .wl-choice-group[aria-invalid=\"true\"] .wl-tile, .wl-choice-group[aria-invalid=\"true\"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); } @media (prefers-reduced-motion: no-preference) { .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } .wl-button { transition: background-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1), transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } .wl-button:active:not(:disabled) { transform: scale(0.98); } } .wl-area { resize: vertical; } .wl-field::placeholder { color: color-mix(in srgb, var(--site-block-muted, #4b5563) 80%, transparent); opacity: 1; } .wl-choice-group { margin: 0; padding: 0; border: 0; min-inline-size: 0; } .wl-options { gap: 0.75rem; } .wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); } @media (min-width: 640px) { .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); } } .wl-options--pills { display: flex; flex-wrap: wrap; } .wl-option { position: relative; display: block; margin: 0; cursor: pointer; } .wl-choice { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; } .wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: var(--site-block-field-bg, rgb(255 255 255 / 0.7)); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; } .wl-tile { display: flex; align-items: flex-start; gap: 0.75rem; height: 100%; min-height: 48px; padding: 1rem; border-radius: var(--site-block-radius, 0.375rem); } .wl-pill { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font-weight: 500; } .wl-dot { position: relative; flex-shrink: 0; width: 18px; height: 18px; margin-top: 3px; border-radius: 999px; border: 2px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); } .wl-dot::after { content: \"\"; position: absolute; inset: 3px; border-radius: 999px; background-color: var(--site-block-fg, #1a1a1a); transform: scale(0); } .wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); } .wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); } .wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); } .wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); } .wl-choice:checked + .wl-pill { border-color: var(--site-block-fg, #1a1a1a); background-color: var(--site-block-fg, #1a1a1a); color: var(--site-block-bg, #ffffff); } .wl-choice:focus-visible + .wl-tile, .wl-choice:focus-visible + .wl-pill { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; } @media (prefers-reduced-motion: no-preference) { .wl-tile, .wl-pill { transition-duration: var(--site-block-motion, 180ms); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1); } .wl-dot::after { transition: transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } } .wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; } .wl-option-label { font-weight: 600; } .wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); } .wl-choice-group .wl-field-error { margin-top: 0.5rem; } .wl-live { position: relative; } .wl-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; } .wl-turnstile { min-height: 65px; } .wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-cta, var(--site-block-accent, #2563eb)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); } .wl-button:hover { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)); } .wl-button:disabled { opacity: 0.7; cursor: progress; } .wl :focus-visible, .wl-sent-heading:focus { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; } .wl-sent-heading { margin: 0; font-size: 1.5rem; line-height: 2rem; font-weight: 600; color: var(--site-block-success, #15803d); } .wl-sent-body { margin: 0.75rem 0 0; }");
+  });
+
+  test("README Host must supply lists exactly the variables the style reads", () => {
+    const css = ((SFC.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+    const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+    const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
+    const listed = section
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .map((line) => {
+        const found = line.match(/^- `(--site-block-[a-z-]+)`/);
+        if (!found?.[1]) throw new Error(`bullet does not start with a variable: ${line}`);
+        return found[1];
+      })
+      .sort();
+    expect(listed).toEqual(inStyle);
   });
 });

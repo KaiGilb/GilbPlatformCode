@@ -281,7 +281,7 @@ async function onSubmit(): Promise<void> {
           :aria-describedby="describedBy(field) || undefined"
         >
           <legend class="wl-legend">
-            {{ field.label }}<template v-if="!field.required">{{ " " }}<span class="wl-opt">{{ words().optional }}</span></template>
+            {{ field.label }}<span v-if="!field.required" class="wl-opt">{{ " " + words().optional }}</span>
           </legend>
           <div class="wl-options" :class="field.look === 'pills' ? 'wl-options--pills' : field.columns === 2 ? 'wl-options--tiles wl-options--two' : 'wl-options--tiles'">
             <label v-for="option in field.options" :key="option.value" class="wl-option">
@@ -312,7 +312,7 @@ async function onSubmit(): Promise<void> {
 
         <template v-else>
           <label class="wl-label" :for="fieldId(field.name)">
-            {{ field.label }}<template v-if="!field.required">{{ " " }}<span class="wl-opt">{{ words().optional }}</span></template>
+            {{ field.label }}<span v-if="!field.required" class="wl-opt">{{ " " + words().optional }}</span>
           </label>
           <p v-if="helpOf(field)" :id="helpId(field.name)" class="wl-help">{{ helpOf(field) }}</p>
           <textarea
@@ -322,6 +322,7 @@ async function onSubmit(): Promise<void> {
             :name="field.name"
             :value="read(field.name)"
             :rows="rowsOf(field)"
+            :placeholder="field.placeholder || undefined"
             :required="field.required === true"
             :maxlength="maxOf(field)"
             :aria-invalid="errorFor(field.name) ? 'true' : undefined"
@@ -335,6 +336,7 @@ async function onSubmit(): Promise<void> {
             :type="inputType(field)"
             :name="field.name"
             :value="read(field.name)"
+            :placeholder="field.placeholder || undefined"
             :required="field.required === true"
             :maxlength="maxOf(field)"
             :autocomplete="autoOf(field)"
@@ -405,8 +407,16 @@ async function onSubmit(): Promise<void> {
 .wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }
 .wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }
 .wl-notice a {
+  font-weight: 600;
   color: var(--site-block-accent, #2563eb);
-  text-underline-offset: 0.15em;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--site-block-accent, #2563eb) 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.wl-notice a:hover, .wl-notice a:focus-visible {
+  text-decoration-color: var(--site-block-accent, #2563eb);
+  text-decoration-thickness: 2px;
 }
 .wl-field {
   display: block;
@@ -417,16 +427,20 @@ async function onSubmit(): Promise<void> {
   font: inherit;
   color: inherit;
   line-height: inherit;
-  background: rgb(255 255 255 / 0.7);
+  background: var(--site-block-field-bg, rgb(255 255 255 / 0.7));
   border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
   border-radius: var(--site-block-radius, 0.375rem);
 }
 .wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }
 .wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }
+.wl-choice-group[aria-invalid="true"] .wl-tile, .wl-choice-group[aria-invalid="true"] .wl-pill { border-color: var(--site-block-danger, #b91c1c); }
 @media (prefers-reduced-motion: no-preference) {
   .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
+  .wl-button { transition: background-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1), transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
+  .wl-button:active:not(:disabled) { transform: scale(0.98); }
 }
 .wl-area { resize: vertical; }
+.wl-field::placeholder { color: color-mix(in srgb, var(--site-block-muted, #4b5563) 80%, transparent); opacity: 1; }
 .wl-choice-group {
   margin: 0;
   padding: 0;
@@ -454,7 +468,7 @@ async function onSubmit(): Promise<void> {
 }
 .wl-tile, .wl-pill {
   border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
-  background: rgb(255 255 255 / 0.7);
+  background: var(--site-block-field-bg, rgb(255 255 255 / 0.7));
   color: var(--site-block-fg, #1a1a1a);
   transition-property: border-color, background-color, color, box-shadow;
 }
@@ -557,16 +571,15 @@ async function onSubmit(): Promise<void> {
   cursor: pointer;
   border: 0;
   border-radius: 999px;
-  background: var(--site-block-accent, #2563eb);
-  color: var(--site-block-on-accent, #ffffff);
-  transition: opacity var(--site-block-motion, 150ms);
+  background: var(--site-block-cta, var(--site-block-accent, #2563eb));
+  color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff));
 }
-.wl-button:hover { opacity: 0.9; }
-.wl-button:disabled { opacity: 0.5; cursor: default; }
+.wl-button:hover { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)); }
+.wl-button:disabled { opacity: 0.7; cursor: progress; }
 .wl :focus-visible,
 .wl-sent-heading:focus {
   outline: 2px solid var(--site-block-accent, #2563eb);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 .wl-sent-heading {
   margin: 0;
@@ -576,7 +589,4 @@ async function onSubmit(): Promise<void> {
   color: var(--site-block-success, #15803d);
 }
 .wl-sent-body { margin: 0.75rem 0 0; }
-@media (prefers-reduced-motion: reduce) {
-  .wl-button { transition: none; }
-}
 </style>

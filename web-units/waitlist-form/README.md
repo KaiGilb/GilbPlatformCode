@@ -8,7 +8,7 @@ A waitlist signup form for a website: only the email is required, the other ques
 
 `<WaitlistForm>` draws a `<form method="post">` with no `action` of its own (see `noScriptAction`); the script sends to `actionUrl` (default `/api/waitlist`). Each question comes from `fields` (default `defaultWaitlistFields`): a text, email, tel or textarea control, or a choice drawn as a `<fieldset>` with a `<legend>` and one radio per answer. A choice answer may carry one line of help under its label. Only a field with `required` carries the `required` attribute; every other label ends with the muted `optional` word (default `(optional)`). In the default list that field is email.
 
-The default order puts the personal questions first: name, email and what the person wants to build come before company and team size, so someone on their own is not asked about a company first. That is why the source form was ordered that way. Experience opens on `not-yet` ("Not yet"), so the selected answer is a welcome rather than the bottom of a scale. A host passes `fields` in any order; the component does not reorder them.
+The default order puts the personal questions first: name, email and what the person wants to build come before company and team size, so someone on their own is not asked about a company first. That is why the source form was ordered that way. "Not yet" is the first experience answer, worded as a welcome; as in the source, no answer is chosen until the person chooses one, so a body carries only what was answered. A host passes `fields` in any order; the component does not reorder them.
 
 Above the button, `notice` (default none) is a sentence, with an optional link. It is not a checkbox. The body's `notice` is the words that were shown: `notice.text`, and when the link is drawn, a space and `notice.linkLabel`.
 
@@ -116,7 +116,7 @@ if (errors.length) return new Response('no', { status: 422 })
 
 | Prop | Meaning |
 |---|---|
-| `fields?` | `WaitlistField[]`. Default `defaultWaitlistFields`: name (text, 80), email (email, required, 254), idea (textarea, 1000), company (text, 120), team size (`just-me`, `2-10`, `11-50`, `50-plus`), experience (`not-yet`, `a-little`, `with-ai`, `i-code`, default `not-yet`). A choice field's `look` is `"tiles"` (a card per answer, with its help line) or `"pills"` (a row of rounded buttons, label only); default `"tiles"`. A choice field's `columns` (tiles only) is `1` or `2`; `2` puts the tiles in two columns from 640px wide; default `1`. |
+| `fields?` | `WaitlistField[]`. Default `defaultWaitlistFields`: name (text, 80), email (email, required, 254), idea (textarea, 1000), company (text, 120), team size (`just-me`, `2-10`, `11-50`, `50-plus`), experience (`not-yet`, `a-little`, `with-ai`, `i-code`). A choice field's `look` is `"tiles"` (a card per answer, with its help line) or `"pills"` (a row of rounded buttons, label only); default `"tiles"`. A choice field's `columns` (tiles only) is `1` or `2`; `2` puts the tiles in two columns from 640px wide; default `1`. A text, email, tel or textarea field may carry `placeholder`. Any other `look` or `columns` value draws one-column tiles; a pill shows its label only, so an answer's `help` is not drawn on a pill. |
 | `actionUrl?` | where the script sends the JSON, default `/api/waitlist` |
 | `noScriptAction?` | the form's `action` attribute, used only with no script. Default empty: no `action` attribute, so the browser posts to the current page |
 | `turnstileSiteKey?` | the Turnstile site key (public). Empty (the default) draws no widget and loads no script |
@@ -141,15 +141,19 @@ When `turnstileSiteKey` is set, the page's Content-Security-Policy must allow th
 
 The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
-- `--site-block-muted` secondary text, the optional word, help, the notice, and field borders (the muted colour at 65%, as the source's `border-brand-muted/65`). Keep that border at 3:1 or better against the field background (`--site-block-bg`), WCAG 1.4.11
-- `--site-block-bg` the field background
-- `--site-block-fg` the text
-- `--site-block-accent` the button, links, the focus ring and the radio accent
-- `--site-block-on-accent` text on the accent
-- `--site-block-success` the thank-you heading
-- `--site-block-danger` the error line and an invalid field's border
-- `--site-block-radius` button and field corners (default `0.375rem`)
-- `--site-block-motion` the button's hover transition (default `150ms`)
+- `--site-block-fg` the text, a field's hover and focus border, the tile and pill label, the dot, the hover border, the chosen tile's border and inner ring, and the chosen pill's fill (fallback `#1a1a1a`)
+- `--site-block-muted` the optional word, help, the notice, an answer's help, the placeholder (muted at 80%), and the borders of a field, a tile, a pill and the dot (muted at 65%). Keep that border at 3:1 or better against the field background (`--site-block-field-bg`), WCAG 1.4.11 (fallback `#4b5563`)
+- `--site-block-field-bg` the field, tile and pill faces (fallback `rgb(255 255 255 / 0.7)`)
+- `--site-block-bg` the label of a chosen pill (fallback `#ffffff`)
+- `--site-block-accent` the notice link, the focus ring, and the fallback inside the button's fill and hover (fallback `#2563eb`)
+- `--site-block-cta` the button's fill (fallback `var(--site-block-accent, #2563eb)`)
+- `--site-block-on-cta` the button's label (fallback `var(--site-block-on-accent, #ffffff)`)
+- `--site-block-on-accent` the button's label when `--site-block-on-cta` is unset (fallback `#ffffff`)
+- `--site-block-cta-hover` the button's fill on hover (fallback `color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)`)
+- `--site-block-success` the thank-you heading (fallback `#15803d`)
+- `--site-block-danger` the error line, an invalid field's border, and the border of every answer of an invalid choice (fallback `#b91c1c`)
+- `--site-block-radius` field and tile corners (fallback `0.375rem`); the button and pills are fully round
+- `--site-block-motion` every transition: fields, tiles, pills, the dot, the button (fallback `180ms`, written with its unit)
 
 No Tailwind is needed: the styles ship in the component, scoped to it. They set their own margins, font sizes and box sizing (`border-box`) instead of relying on a CSS reset; text inherits the page's font.
 
@@ -179,6 +183,8 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 - When `fields` changes after mount, a new choice opens on its `defaultValue`.
 - The source's phone question, "which AI" question and honeypot are not in the default list. Add a `tel` or `choice` field for a question you want. The body contains only declared fields, plus `page`, `notice` and `turnstileToken`.
 - A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.
+- An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.
+- The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face at 44.8px. The `sent` slot replaces the block.
 
 ## Source
 

@@ -11,6 +11,8 @@ export type WaitlistField =
       required?: boolean;
       maxLength?: number;
       autocomplete?: string;
+      /** Hint text inside the empty control. */
+      placeholder?: string;
     }
   | {
       name: string;
@@ -20,6 +22,8 @@ export type WaitlistField =
       required?: boolean;
       maxLength?: number;
       rows?: number;
+      /** Hint text inside the empty control. */
+      placeholder?: string;
     }
   | {
       name: string;
@@ -84,7 +88,7 @@ export interface WaitlistNotice {
 
 /**
  * Name, email and the idea before company and team size: a person on their own meets
- * the personal questions first. Experience opens on "Not yet".
+ * the personal questions first. "Not yet" is the first experience answer; none is chosen until the person chooses one.
  * Lengths: name 80, email 254, idea 1000, company 120.
  */
 export const defaultWaitlistFields: WaitlistField[] = [
@@ -108,7 +112,6 @@ export const defaultWaitlistFields: WaitlistField[] = [
     name: "experience",
     kind: "choice",
     label: "Experience building apps",
-    defaultValue: "not-yet",
     look: "tiles",
     columns: 2,
     options: [
