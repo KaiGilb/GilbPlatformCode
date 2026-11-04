@@ -49,6 +49,17 @@ describe("WaitlistForm defaults", () => {
       (label) => label.htmlFor === nameInput.id,
     );
     expect(nameLabel?.textContent?.replace(/\s+/g, " ").trim()).toBe("Name (optional)");
+    // The space before "(optional)" is U+0020, not a non-breaking space. Skip Vue's comment anchors.
+    const spaceBeforeOpt = (span: Element): string | null => {
+      let node: ChildNode | null = span.previousSibling;
+      while (node && node.nodeType === Node.COMMENT_NODE) node = node.previousSibling;
+      return node?.nodeValue ?? null;
+    };
+    expect(spaceBeforeOpt(nameLabel!.querySelector(".wl-opt")!)).toBe(" ");
+    const teamSizeLegend = [...document.querySelectorAll("legend.wl-legend")].find((legend) =>
+      legend.textContent?.includes("Team size"),
+    )!;
+    expect(spaceBeforeOpt(teamSizeLegend.querySelector(".wl-opt")!)).toBe(" ");
     const email = document.querySelector<HTMLInputElement>('input[type="email"]')!;
     const emailLabel = [...document.querySelectorAll("label")].find((label) => label.htmlFor === email.id);
     expect(emailLabel?.textContent).toContain("Email");
@@ -737,6 +748,50 @@ describe("WaitlistForm style", () => {
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
     ]);
     expect(rulesFor("wl-turnstile")).toEqual([".wl-turnstile { min-height: 65px; }"]);
+    expect(rulesFor("wl-label")).toEqual([
+      ".wl-label, .wl-legend { display: block; margin: 0; padding: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 500; }",
+    ]);
+    expect(rulesFor("wl-legend")).toEqual([
+      ".wl-label, .wl-legend { display: block; margin: 0; padding: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 500; }",
+      ".wl-legend { margin-bottom: 0.75rem; }",
+    ]);
+    expect(rulesFor("wl-opt")).toEqual([
+      ".wl-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); }",
+      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
+      ".wl-option { display: flex; align-items: flex-start; gap: 0.75rem; min-height: 44px; margin: 0; padding: 0.5rem 0.25rem; cursor: pointer; }",
+      ".wl-option input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; accent-color: var(--site-block-accent, #2563eb); }",
+      ".wl-option-text { display: flex; flex-direction: column; }",
+      ".wl-option-label { font-weight: 500; }",
+    ]);
+    expect(rulesFor("wl-help")).toEqual([
+      ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
+    ]);
+    expect(rulesFor("wl-field")).toEqual([
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-bg, #ffffff); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      '.wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }',
+      ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
+      ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
+    ]);
+    expect(rulesFor("wl-field-error")).toEqual([
+      ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
+      ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
+    ]);
+    expect(rulesFor("wl-choice-group")).toEqual([
+      ".wl-choice-group { margin: 0; padding: 0; border: 0; min-inline-size: 0; }",
+      ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
+    ]);
+    expect(rulesFor("wl-option")).toEqual([
+      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
+      ".wl-option { display: flex; align-items: flex-start; gap: 0.75rem; min-height: 44px; margin: 0; padding: 0.5rem 0.25rem; cursor: pointer; }",
+      ".wl-option input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; accent-color: var(--site-block-accent, #2563eb); }",
+      ".wl-option-text { display: flex; flex-direction: column; }",
+      ".wl-option-label { font-weight: 500; }",
+    ]);
+    expect(rulesFor("wl-option-text")).toEqual([".wl-option-text { display: flex; flex-direction: column; }"]);
+    expect(rulesFor("wl-option-label")).toEqual([".wl-option-label { font-weight: 500; }"]);
+    expect(rulesFor("wl-option-help")).toEqual([
+      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
+    ]);
   });
 
   test("notice, live region and button are the three children of .wl-actions, in that order", async () => {
