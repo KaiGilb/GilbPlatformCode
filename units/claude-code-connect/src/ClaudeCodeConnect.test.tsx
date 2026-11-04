@@ -79,16 +79,17 @@ describe("<ClaudeCodeConnect>", () => {
     expect(writeText).toHaveBeenLastCalledWith(commands.install);
   });
 
-  it("with no bridge running it shows the command and can try again", async () => {
+  it("with no bridge running it shows the command, and Check again clears the hint once the bridge answers", async () => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     expect(await screen.findByTestId("claude-code-bridge-hint")).toHaveTextContent(commands.start);
     fetchMock.mockResolvedValue(json(200, { bridge: "gilb-claude-code-bridge" }));
-    await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByLabelText("Code from the bridge terminal")).toBeInTheDocument();
-    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("claude-code-recheck"));
+    await vi.waitFor(() => expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Code from the bridge terminal")).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-recheck")).not.toBeInTheDocument();
   });
 
   it("pairs once with the typed code, keeps the secret in localStorage and tells the app", async () => {
@@ -322,6 +323,106 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
     expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F");
     await user.click(tab("mac"));
     expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F");
+  });
+});
+
+// Spec: F.ClaudeCodeCodeFieldAlways (Kai, 2026-11-04) — in step 3 the code field and Pair are always there,
+// whatever the bridge check said; "Check again" looks again without losing what was typed.
+describe("<ClaudeCodeConnect> code field always shown", () => {
+  const hello = () => json(200, { bridge: "gilb-claude-code-bridge" });
+
+  it("when the bridge check says not reachable, the field, Pair and Check again are all there and the field takes typing", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    expect(await screen.findByTestId("claude-code-bridge-hint")).toBeInTheDocument();
+    const field = screen.getByLabelText("Code from the bridge terminal");
+    expect(field).toBeEnabled();
+    await user.type(field, "K7F-29Q");
+    expect(field).toHaveValue("K7F-29Q");
+    expect(screen.getByRole("button", { name: "Pair" })).toBeEnabled();
+    expect(screen.getByTestId("claude-code-recheck")).toHaveTextContent("Check again");
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("Check again keeps what the person typed", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await screen.findByTestId("claude-code-bridge-hint");
+    await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
+    await user.click(screen.getByTestId("claude-code-recheck"));
+    await vi.waitFor(() => expect(fetchMock.mock.calls.filter((x) => String(x[0]).endsWith("/v1/hello"))).toHaveLength(2));
+    expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F-29Q");
+    expect(screen.getByTestId("claude-code-bridge-hint")).toBeInTheDocument();
+    fetchMock.mockResolvedValue(hello());
+    await user.click(screen.getByTestId("claude-code-recheck"));
+    await vi.waitFor(() => expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F-29Q");
+  });
+
+  it("Pair still works after the first check said not reachable, and clears the hint", async () => {
+    const user = userEvent.setup();
+    const c = client();
+    const onConnected = vi.fn<(r: ClaudeCodeReadback) => void>();
+    let firstHello = true;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/v1/hello")) {
+        if (firstHello) {
+          firstHello = false;
+          throw new TypeError("Failed to fetch");
+        }
+        return hello();
+      }
+      return json(200, { secret: "sec" });
+    });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={onConnected} />);
+    await toCodeBox(user);
+    await screen.findByTestId("claude-code-bridge-hint");
+    await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
+    await user.click(screen.getByRole("button", { name: "Pair" }));
+    await vi.waitFor(() => expect(onConnected).toHaveBeenCalledTimes(1));
+    expect(c.load()?.secret).toBe("sec");
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+  });
+
+  it("while the first check is still running, the field takes typing", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const field = screen.getByLabelText("Code from the bridge terminal");
+    expect(field).toBeEnabled();
+    await user.type(field, "K7F");
+    expect(field).toHaveValue("K7F");
+    expect(screen.getByRole("button", { name: "Pair" })).toBeEnabled();
+  });
+
+  it("Pair is off while the field is empty", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await screen.findByTestId("claude-code-bridge-hint");
+    expect(screen.getByRole("button", { name: "Pair" })).toBeDisabled();
+  });
+
+  it("when the bridge is really down, Pair shows the error and the hint, and the field stays", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/v1/hello")) return hello();
+      throw new TypeError("Failed to fetch");
+    });
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
+    await user.click(screen.getByRole("button", { name: "Pair" }));
+    expect(await screen.findByTestId("claude-code-error")).toBeInTheDocument();
+    expect(screen.getByTestId("claude-code-bridge-hint")).toBeInTheDocument();
+    expect(screen.getByLabelText("Code from the bridge terminal")).toBeInTheDocument();
+    expect(screen.getByTestId("claude-code-recheck")).toBeInTheDocument();
   });
 });
 
