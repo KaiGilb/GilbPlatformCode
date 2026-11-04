@@ -76,6 +76,19 @@ test("the texture is the source's 180px fractal-noise tile", () => {
   expect(svg).toContain("feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'");
 });
 
+test("the inline style holds only z-index and the texture, so the tile draws at its own 180px", () => {
+  wrapper = mount(GrainOverlay, { attachTo: document.body });
+  const el = wrapper.element as HTMLElement;
+  // jsdom drops this data URI, so element.style.length is 1 (z-index only), not 2.
+  // The two inline declarations are the style object Vue bound onto the element.
+  const bound = wrapper.vm.$.subTree?.props?.style;
+  const declared =
+    bound !== null && typeof bound === "object" && !Array.isArray(bound) ? Object.keys(bound).sort() : [];
+  expect(declared).toEqual(["backgroundImage", "zIndex"]);
+  expect(declared).toHaveLength(2);
+  expect(el.style.backgroundSize).toBe("");
+});
+
 test("the style is fixed, full-page, inert, at 3 percent, repeated", () => {
   const SFC = readFileSync(join(process.cwd(), "src", "GrainOverlay.vue"), "utf8");
   const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
