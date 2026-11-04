@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "unit": "web-units/titled-section",
+  "package": "@kaigilb/gilbwebsitecode-titled-section",
+  "version": "0.1.0",
+  "purpose": "`<TitledSection :title>` draws a `<section>` band with an optional ornament, a heading, a short rule under it, and the band's content.",
+  "source": {
+    "repo": "KaiGilb/triangula-web",
+    "commit": "a01a155af3b9550b5f5d2f8b5d9d69fd3675a486",
+    "files": [
+      {
+        "path": "components/PageShell.vue",
+        "lines": null,
+        "to": "src/TitledSection.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Renamed from `PageShell` to `TitledSection`; the source file is a band (ornament, heading, rule, body), not a page shell.",
+    "The default heading level is `h2`, not the source's `h1`; `headingLevel` also allows `h3` (the source allowed only `h1` or `h2`).",
+    "The ornament address is the `ornamentSrc` prop, default empty; the source hard-coded `/icon-mark.svg` behind an `ornament` boolean that defaulted to true.",
+    "Tailwind is written out as scoped CSS on `--site-block-*` variables; no `@apply`, no `theme()`, no utility classes.",
+    "The measured numbers are kept as defaults of props (`rule`, `align`, `maxWidth`, ornament sizes); heading weight is `--site-block-section-title-weight` with fallback 400; the slot wrapper is rendered only when the default slot is given."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/TitledSection.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "ornamentSrc prop",
+      "replaces": "the hard-coded /icon-mark.svg"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
