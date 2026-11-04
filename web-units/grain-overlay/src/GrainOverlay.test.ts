@@ -76,7 +76,7 @@ test("the texture is the source's 180px fractal-noise tile", () => {
   expect(svg).toContain("feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'");
 });
 
-test("the inline style holds only z-index and the texture, so the tile draws at its own 180px", () => {
+test("the inline style holds only z-index and the texture; no background size is set", () => {
   wrapper = mount(GrainOverlay, { attachTo: document.body });
   const el = wrapper.element as HTMLElement;
   // jsdom drops this data URI, so element.style.length is 1 (z-index only), not 2.
@@ -108,4 +108,13 @@ test("axe finds no violations", async () => {
   wrapper = mount(GrainOverlay, { attachTo: document.body });
   const results = await axe.run(document.body);
   expect(results.violations).toEqual([]);
+});
+
+test("whole-style: the style block is exactly the rules this file means", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "GrainOverlay.vue"), "utf8");
+  const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+  const normalized = style.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+  expect(normalized).toBe(
+    ".go { position: fixed; inset: 0; pointer-events: none; opacity: 0.03; background-repeat: repeat; }",
+  );
 });
