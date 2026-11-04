@@ -79,7 +79,7 @@ describe("connectorInstallCommands", () => {
     const fileUrl = "https://" + HOST + "/app/gilb-connector.mjs";
     expect(connectorInstallCommands(fileUrl)).toEqual({
       download: "curl -fsSL '" + fileUrl + "' -o ~/.gilb-connector.mjs",
-      add: "claude mcp add gilb -- node ~/.gilb-connector.mjs",
+      add: "claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs",
     });
   });
 

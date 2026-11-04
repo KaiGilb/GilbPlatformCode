@@ -50,7 +50,7 @@ async function run() {
     model: "fake-model",
     apiKeySource,
     tools: [],
-    mcp_servers: [{ name: "gilb", status: "connected" }],
+    mcp_servers: [{ name: "GilbPlatform", status: "connected" }],
   });
   // A run that must not finish (or that is not the person's subscription) stays up until the parent stops it.
   // It does not start the hop connector, so nothing is left behind when this process exits.
@@ -60,7 +60,7 @@ async function run() {
   }
   let text = `echo: ${prompt.split("\n").slice(-1)[0] ?? ""}`;
   const mcp = JSON.parse(arg("--mcp-config") ?? "{}");
-  const server = mcp.mcpServers && mcp.mcpServers.gilb;
+  const server = mcp.mcpServers && mcp.mcpServers.GilbPlatform;
   if (server && server.command) {
     text = await callFirstTool(server);
   }

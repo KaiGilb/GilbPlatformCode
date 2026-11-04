@@ -15,22 +15,30 @@ curl -fsSL '<your app>/gilb-connector.mjs' -o ~/.gilb-connector.mjs
 Or copy `connector/gilb-connector.mjs` to `~/.gilb-connector.mjs`. Then:
 
 ```sh
-claude mcp add gilb -- node ~/.gilb-connector.mjs
+claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs
+```
+
+`--scope user` makes it work in every folder, also in Claudian.
+
+If you added it under the old name, remove that entry. The key and the binding are kept:
+
+```sh
+claude mcp remove gilb
 ```
 
 The first run creates this AI's key under `~/.gilb-connector/` (the directory is private to you, and the key file is readable only by you) and prints its Agent client id on stderr. Registration is not access. In GilbApp:
 
 1. Open your vault.
 2. Open **Connect AI**.
-3. **Mint AI vault** (any name).
+3. Name and mint an AI vault.
 4. Paste this Agent client id. **Bind AI**.
 5. Grant the AI vault **Read** and **Write** on the vaults it should work in.
 
-Call any tool again after that. Until the AI is bound and granted, every tool answers with those steps and the Agent client id. `gilb_whoami` reports the client id, the mode (`ai`), and the principal the door has reported.
+Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, and `state: not bound` or `state: bound`.
 
-Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). The connector keeps one platform turn for the life of the process. The AI's sign-in stays in memory and renews itself. It is not written to disk.
+Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). Once this AI is bound, the connector keeps one platform turn for the life of the process. Until then, each call asks the door again. The AI's sign-in stays in memory and renews itself. It is not written to disk.
 
-The server name is `gilb`, so Claude Code's slash command is `/mcp__gilb__agent`.
+The server name is `GilbPlatform`, so Claude Code's slash command is `/mcp__GilbPlatform__agent`.
 
 ## Serve it from your app
 
@@ -44,7 +52,7 @@ plugins: [gilbConnectorFile()]
 
 In dev it answers `<base>gilb-connector.mjs`. `<base>` is Vite's base. A build emits `gilb-connector.mjs` next to the other assets. The bytes are the connector file, unchanged.
 
-`connectorInstallCommands(url)` gives the two lines a guide shows: the curl download, and `claude mcp add gilb -- node ~/.gilb-connector.mjs`.
+`connectorInstallCommands(url)` gives the two lines a guide shows: the curl download, and `claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs`.
 
 ## Sign in as this computer
 
@@ -52,26 +60,26 @@ In dev it answers `<base>gilb-connector.mjs`. `<base>` is Vite's base. A build e
 
 ```sh
 gilb-computer add
-claude mcp add gilb -- node ~/.gilb-connector.mjs --as me --vault <your vault>
+claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs --as me --vault <your vault>
 ```
 
 `gilb-computer add` asks you to approve this computer once in GilbApp. Restart Claude Code after you approve it. Until then, every tool answers that this computer is not connected yet.
 
 ## Terminal
 
-Start `claude` in a terminal. The `gilb` server from `claude mcp add` is already there.
+Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is already there. Type `use GilbPlatform`.
 
-`/mcp__gilb__agent` starts the chat as Kai-Zen and gives Claude the agent's standing instructions. Ask it to work the plan in the vault you named.
+`/mcp__GilbPlatform__agent` starts the chat as Kai-Zen and gives Claude the agent's standing instructions. Ask it to work the plan in the vault you named.
 
-- `gilb_whoami` reports the Agent client id, the mode, and the principal the door has reported.
-- `gilb_agent` switches the agent (any tag the platform lists, for example `Agent.Jackfruit`) and returns that agent's standing, so the model can follow it.
-- `gilb_task` sets the person's request. The platform loads standing from that text.
+- `gilbplatform_whoami` reports the Agent client id, the mode, the principal, and whether this AI is bound.
+- `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Agent.Jackfruit`) and returns that agent's standing, so the model can follow it.
+- `gilbplatform_task` sets the person's request. The platform loads standing from that text.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
 
 ## Claudian
 
-Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so the `claude mcp add` line above is the Claudian install too. There is nothing else to add inside Obsidian. Open a Claudian chat and use `/mcp__gilb__agent` the same way.
+Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so the `claude mcp add` line above is the Claudian install too. There is nothing else to add inside Obsidian. Open a Claudian chat and use `/mcp__GilbPlatform__agent` the same way.
 
 ## What it can do
 

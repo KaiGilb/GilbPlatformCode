@@ -262,12 +262,12 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.3.0");
+    expect(CONNECTOR_VERSION).toBe("0.4.0");
   });
 });
 
 describe("MCP", () => {
-  it("initialize echoes the client's protocol and tools/list maps the door tools plus gilb_*", async () => {
+  it("initialize echoes the client's protocol and tools/list maps the door tools plus gilbplatform_*", async () => {
     const seen = [];
     const platform = await listen(async (rec) => {
       seen.push(rec);
@@ -297,12 +297,12 @@ describe("MCP", () => {
     expect(init.result).toMatchObject({
       protocolVersion: "2024-11-05",
       capabilities: { tools: { listChanged: true }, prompts: {} },
-      serverInfo: { name: "gilb", version: CONNECTOR_VERSION },
+      serverInfo: { name: "GilbPlatform", version: CONNECTOR_VERSION },
     });
     const listed = await request("tools/list", {});
     const tools = listed.result.tools;
     expect(tools.slice(0, 2)).toEqual(DOOR_TOOLS.map((tool) => ({ ...tool })));
-    expect(tools.map((tool) => tool.name)).toEqual(["list_vaults", "read_record", "gilb_agent", "gilb_task"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["list_vaults", "read_record", "gilbplatform_agent", "gilbplatform_task"]);
     expect(tools[2].inputSchema.required).toEqual(["agent"]);
     expect(tools[3].inputSchema.required).toEqual(["text"]);
     expect(seen.filter((rec) => rec.url.endsWith("/context"))).toHaveLength(1);
@@ -321,7 +321,7 @@ describe("MCP", () => {
       return { status: 404, body: { error: "no such door" } };
     });
     const { request, lines } = connect({ origin: platform.origin, agent: "Kai-Zen" });
-    const set = await request("tools/call", { name: "gilb_task", arguments: { text: "Plan the release." } });
+    const set = await request("tools/call", { name: "gilbplatform_task", arguments: { text: "Plan the release." } });
     expect(set.result.isError).toBe(false);
     expect(toolText(set)).toBe("The person's request is set.");
     const call = await request("tools/call", { name: "list_vaults", arguments: { q: "mine" } });
@@ -357,7 +357,7 @@ describe("MCP", () => {
     expect(toolText(ok)).toBe("error: not a json object");
   });
 
-  it("gilb_agent re-reads context, returns that standing, and emits tools/list_changed", async () => {
+  it("gilbplatform_agent re-reads context, returns that standing, and emits tools/list_changed", async () => {
     const seen = [];
     const platform = await listen(async (rec) => {
       seen.push(rec);
@@ -366,7 +366,7 @@ describe("MCP", () => {
     });
     const { request, lines } = connect({ origin: platform.origin });
     await request("tools/list", {});
-    const switched = await request("tools/call", { name: "gilb_agent", arguments: { agent: "Agent.Jackfruit" } });
+    const switched = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Agent.Jackfruit" } });
     expect(switched.result.isError).toBe(false);
     expect(toolText(switched)).toBe("STANDING-JACKFRUIT");
     const notes = lines.filter((line) => line.method === "notifications/tools/list_changed");
@@ -381,11 +381,11 @@ describe("MCP", () => {
     const contexts = seen.filter((rec) => rec.url.endsWith("/context"));
     expect(contexts.map((rec) => rec.body.agent)).toEqual(["Kai-Zen", "Agent.Jackfruit"]);
     const listed = await request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records", "gilb_agent", "gilb_task"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records", "gilbplatform_agent", "gilbplatform_task"]);
     expect(seen.filter((rec) => rec.url.endsWith("/context"))).toHaveLength(2);
   });
 
-  it("a failed gilb_agent does not switch and does not emit tools/list_changed", async () => {
+  it("a failed gilbplatform_agent does not switch and does not emit tools/list_changed", async () => {
     const seen = [];
     const platform = await listen(async (rec) => {
       seen.push(rec);
@@ -398,7 +398,7 @@ describe("MCP", () => {
     });
     const { request, lines } = connect({ origin: platform.origin });
     await request("tools/list", {});
-    const failed = await request("tools/call", { name: "gilb_agent", arguments: { agent: "Agent.Jackfruit" } });
+    const failed = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Agent.Jackfruit" } });
     expect(failed.result.isError).toBe(true);
     expect(JSON.parse(toolText(failed)).error).toBe("no such agent here");
     expect(lines.some((line) => line.method === "notifications/tools/list_changed")).toBe(false);
@@ -470,13 +470,13 @@ describe("MCP", () => {
       env: { PATH: process.env.PATH },
       profile: undefined,
     });
-    for (const name of ["gilb_task", "gilb_agent", "list_vaults"]) {
+    for (const name of ["gilbplatform_task", "gilbplatform_agent", "list_vaults"]) {
       const msg = await request("tools/call", { name, arguments: { text: "hi", agent: "Kai-Zen" } });
       expect(msg.result.isError).toBe(true);
       expect(toolText(msg)).toBe(SENTENCE);
     }
     const listed = await request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["gilb_agent", "gilb_task"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["gilbplatform_agent", "gilbplatform_task"]);
   });
 
   it("answers with the same sentence when the computer module reports the computer is missing", async () => {
@@ -524,7 +524,7 @@ describe("hand-off", () => {
       vaults: ["http://vault.example/v1", "not-a-url"],
       env: testEnv({ FAKE_CLAUDE_LOG: logFile, ANTHROPIC_API_KEY: "not-a-real-key" }),
     });
-    await request("tools/call", { name: "gilb_task", arguments: { text: "Plan the release." } });
+    await request("tools/call", { name: "gilbplatform_task", arguments: { text: "Plan the release." } });
     const call = await request("tools/call", { name: "run_named_role", arguments: { role: "Agent.Jackfruit" } });
     expect(call.result.isError).toBe(false);
     expect(JSON.parse(toolText(call))).toEqual({ role: "Agent.Jackfruit", summary: "handed", content: "two records" });
@@ -546,10 +546,10 @@ describe("hand-off", () => {
     expect(log[0].system).toBe("You are Jackfruit.");
     expect(log[0].prompt).toBe("Do the records.");
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
-    expect(mcp.mcpServers.gilb.command).toBe(process.execPath);
-    expect(mcp.mcpServers.gilb.args[0]).toBe(MJS);
-    expect(mcp.mcpServers.gilb.args).toEqual(expect.arrayContaining(["--hop", HOP_A, "--turn", TURN, "--agent", "Kai-Zen", "--origin", platform.origin]));
-    expect(JSON.stringify(mcp.mcpServers.gilb.args)).not.toMatch(/dpop|bearer|authorization/i);
+    expect(mcp.mcpServers.GilbPlatform.command).toBe(process.execPath);
+    expect(mcp.mcpServers.GilbPlatform.args[0]).toBe(MJS);
+    expect(mcp.mcpServers.GilbPlatform.args).toEqual(expect.arrayContaining(["--hop", HOP_A, "--turn", TURN, "--agent", "Kai-Zen", "--origin", platform.origin]));
+    expect(JSON.stringify(mcp.mcpServers.GilbPlatform.args)).not.toMatch(/dpop|bearer|authorization/i);
     expect(log[0].mcpToolTimeout).toBe(String(MCP_TOOL_TIMEOUT_MS));
   }, 15000);
 
@@ -615,7 +615,7 @@ describe("hand-off", () => {
     });
     const init = await nested.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
     expect(init.result.capabilities).toEqual({ tools: {} });
-    expect(init.result.serverInfo.name).toBe("gilb");
+    expect(init.result.serverInfo.name).toBe("GilbPlatform");
     const listed = await nested.request("tools/list", {});
     expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records"]);
     const again = await nested.request("tools/call", { name: "list_records", arguments: { q: "x" } });
@@ -754,7 +754,7 @@ describe("stdout", () => {
     const send = (msg) => child.stdin.write(JSON.stringify(msg) + "\n");
     send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
-    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "gilb_task", arguments: { text: "hello" } } });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "gilbplatform_task", arguments: { text: "hello" } } });
     send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "list_vaults", arguments: {} } });
     const done = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("connector did not exit")), 8000);
@@ -790,7 +790,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "gilb", version: "0.3.0" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.4.0" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

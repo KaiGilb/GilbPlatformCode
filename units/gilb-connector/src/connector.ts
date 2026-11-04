@@ -3,8 +3,9 @@
 //
 // A stdio MCP server. stdout is protocol only (one JSON-RPC message per line). Logs go to stderr.
 // By default the process signs in as its own Connected AI (a key under ~/.gilb-connector).
-// `--as me` signs in as this computer and keeps that path unchanged. Each process keeps one
-// platform turn. Tool calls go to POST /base/ai/claude-code/tool. A hand-off comes back as { hop }
+// `--as me` signs in as this computer and keeps that path unchanged. Once the AI is bound,
+// the process keeps one platform turn. Until then, each call asks again. Tool calls go to
+// POST /base/ai/claude-code/tool. A hand-off comes back as { hop }
 // and runs as a nested `claude -p` whose own MCP server is this file in hop mode. A hop cannot hop.
 // Up to MAX_HOPS_AT_ONCE run at once, each for at most HOP_MAX_MS.
 //
@@ -27,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.3.0";
+export const CONNECTOR_VERSION = "0.4.0";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -41,9 +42,40 @@ export const AI_DECLARED_ORIGIN = "cli:gilb-connector";
 export const NOT_CONNECTED =
   "This computer is not connected to GilbPlatform yet. Run: gilb-computer add — approve it once in GilbApp — then restart Claude Code.";
 
-/** What a tool answers when this AI has no vault, or no grant into the vault it asked about. */
-export function aiNotConnected(clientId: string): string {
-  return `This AI is not connected to a vault yet. In GilbApp: open your vault → Connect AI → Mint AI vault (any name) → paste this Agent client id: ${clientId} → Bind AI. Then grant the AI vault Read and Write on the vaults it should work in. Then call any tool again.`;
+/** What a tool answers when this AI's principal is not a vault namespace. The client id is alone on one line. */
+export function aiNotBound(clientId: string): string {
+  return [
+    "This AI is not bound to an AI vault yet.",
+    "Agent client id:",
+    clientId,
+    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Agent client id, and press Bind AI.",
+  ].join("\n");
+}
+
+/**
+ * A bound AI's principal is a vault namespace `https://<host>/base`.
+ * This unit has no vault-namespace test of its own, so the check is that shape.
+ */
+const VAULT_NAMESPACE = /^https:\/\/[^/]+\/base$/;
+
+function isVaultNamespace(principal: string): boolean {
+  return VAULT_NAMESPACE.test(principal);
+}
+
+function principalHost(principal: string): string {
+  try {
+    return new URL(principal).host;
+  } catch {
+    return principal;
+  }
+}
+
+/** What a tool answers when this AI is bound and the door gives it no reach. No vault name uses the unnamed form. */
+export function aiNoGrant(vault: string | undefined, principal: string): string {
+  const host = principalHost(principal);
+  const where = vault ? `on ${vault}` : "on any vault";
+  const open = vault ? "open that vault" : "open the vault it should work in";
+  return `This AI acts as ${principal}. It has no Read or Write ${where} yet. In GilbApp, ${open} › Grant Access, and grant the AI vault ${host} Read and Write.`;
 }
 
 /** What the model is told when a hand-off it asked for could not finish. Same sentence as the page client. */
@@ -277,13 +309,13 @@ class NotConnected extends Error {
 }
 
 const GILB_WHOAMI: ToolSpec = {
-  name: "gilb_whoami",
-  description: "Report this connector's sign-in: the mode, the Agent client id, and the principal the door has reported.",
+  name: "gilbplatform_whoami",
+  description: "Report this connector's sign-in: the mode, the Agent client id, the principal, and whether this AI is bound.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
 const GILB_AGENT: ToolSpec = {
-  name: "gilb_agent",
+  name: "gilbplatform_agent",
   description:
     "Switch the GilbPlatform agent for this session (for example Kai-Zen or Agent.Jackfruit) and return that agent's standing instructions.",
   inputSchema: {
@@ -297,7 +329,7 @@ const GILB_AGENT: ToolSpec = {
 };
 
 const GILB_TASK: ToolSpec = {
-  name: "gilb_task",
+  name: "gilbplatform_task",
   description: "Set the person's request. GilbPlatform loads the agent's standing from this text.",
   inputSchema: {
     type: "object",
@@ -538,19 +570,33 @@ function toolAnswerIsError(result: string): boolean {
 const NO_READ_REACH = "vault target denied: the principal holds no read reach";
 const NO_WRITE_REACH = "vault target denied: the principal holds no write reach";
 
-function deniesVaultReach(body: unknown): boolean {
-  if (!body || typeof body !== "object") return false;
+function reachError(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
   const result = (body as { result?: unknown }).result;
-  if (typeof result !== "string") return false;
+  if (typeof result !== "string") return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(result) as unknown;
   } catch {
-    return false;
+    return null;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const error = (parsed as { error?: unknown }).error;
-  return typeof error === "string" && (error.startsWith(NO_READ_REACH) || error.startsWith(NO_WRITE_REACH));
+  if (typeof error !== "string") return null;
+  if (error.startsWith(NO_READ_REACH) || error.startsWith(NO_WRITE_REACH)) return error;
+  return null;
+}
+
+function deniesVaultReach(body: unknown): boolean {
+  return reachError(body) !== null;
+}
+
+function vaultInReach(error: string): string | undefined {
+  const marker = " on vault ";
+  const at = error.lastIndexOf(marker);
+  if (at < 0) return undefined;
+  const vault = error.slice(at + marker.length).trim();
+  return vault === "" ? undefined : vault;
 }
 
 function toolResult(text: string, isError: boolean): ToolResult {
@@ -567,6 +613,27 @@ function fieldString(args: unknown, key: string): string {
   if (!args || typeof args !== "object") return "";
   const value = (args as Record<string, unknown>)[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function namedVault(args: unknown): string | undefined {
+  const id = fieldString(args, "vaultId") || fieldString(args, "vault");
+  return id === "" ? undefined : id;
+}
+
+/** A list_vaults answer with nothing in it is no reach. It is not remembered. */
+function listsNoVaults(name: string, result: string): boolean {
+  if (name !== "list_vaults") return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result) as unknown;
+  } catch {
+    return false;
+  }
+  if (Array.isArray(parsed)) return parsed.length === 0;
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { vaults?: unknown }).vaults)) {
+    return (parsed as { vaults: unknown[] }).vaults.length === 0;
+  }
+  return false;
 }
 
 function normalizeOrigin(input: string): string {
@@ -754,7 +821,7 @@ function claudeArgs(system: string, mcpConfig: string, sessionId: string): strin
     "--mcp-config",
     mcpConfig,
     "--allowedTools",
-    "mcp__gilb",
+    "mcp__GilbPlatform",
     "--permission-mode",
     "dontAsk",
     "--disable-slash-commands",
@@ -786,7 +853,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   const hopId = opts.hopId;
   const hopMode = hopId !== undefined && hopId !== "";
   const hopTools = [...(opts.hopTools ?? [])];
-  const turnId = opts.turnId ?? newTurnId();
+  let turnId = opts.turnId ?? newTurnId();
   if (!TURN_ID_RE.test(turnId)) throw new Error("turnId does not match the platform pattern.");
   let userText = opts.userText !== undefined && opts.userText.trim() !== "" ? opts.userText : DEFAULT_USER_TEXT;
   const progressEveryMs = opts.progressEveryMs !== undefined && opts.progressEveryMs >= 5 ? opts.progressEveryMs : PROGRESS_EVERY_MS;
@@ -808,7 +875,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let saidSignIn = false;
   let aiClientId = "";
   let reportedPrincipal = "";
-  let sawContext = false;
+  /** True once the principal is a vault namespace. Until then, each call drops the cached token, principal, context, and turn. */
+  let bound = false;
+  /** True after an unbound answer, so the next call does not reuse that token or turn. */
+  let knownUnbound = false;
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -1164,6 +1234,9 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const lines = [`mode: ${asMode}`];
     if (asMode === "ai" && aiClientId) lines.push(`client id: ${aiClientId}`);
     if (reportedPrincipal) lines.push(`principal: ${reportedPrincipal}`);
+    if (asMode !== "ai") return lines.join("\n");
+    lines.push(bound ? "state: bound" : "state: not bound");
+    if (!bound) return `${lines.join("\n")}\n\n${aiNotBound(aiClientId)}`;
     return lines.join("\n");
   }
 
@@ -1175,8 +1248,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   async function fetchContext(forAgent: string): Promise<Ctx> {
     const res = await postPlatform(contextUrl, turnFields(forAgent));
-    if (aiRefusal(res.status, res.body)) {
-      const sentence = aiNotConnected(aiClientId);
+    if (asMode === "ai" && res.status === 404) {
+      const sentence = isVaultNamespace(reportedPrincipal) ? aiNoGrant(undefined, reportedPrincipal) : aiNotBound(aiClientId);
       say(sentence);
       throw new NotConnected(sentence);
     }
@@ -1194,7 +1267,14 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     }
     const found = principalFromSystem(body.system);
     if (found) reportedPrincipal = found;
-    sawContext = true;
+    if (asMode === "ai" && !bound) {
+      if (isVaultNamespace(reportedPrincipal)) {
+        bound = true;
+        knownUnbound = false;
+      } else {
+        knownUnbound = true;
+      }
+    }
     return { system: body.system, tools };
   }
 
@@ -1203,6 +1283,31 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const ctx = await fetchContext(agent);
     cache = { agent, userText, ctx };
     return ctx;
+  }
+
+  /**
+   * Not bound yet: do not keep the token, principal, context, or turn from the last try.
+   * A Bind on the door is then visible on this call. Once bound, the cache stays.
+   */
+  async function refreshIdentity(): Promise<void> {
+    if (hopMode || asMode !== "ai" || bound) return;
+    if (knownUnbound) {
+      const cred = await credential();
+      cred.dropAccess?.();
+      cache = null;
+      reportedPrincipal = "";
+      turnId = newTurnId();
+    }
+    try {
+      await loadContext(true);
+    } catch (err) {
+      knownUnbound = true;
+      cache = null;
+      throw err;
+    }
+    if (bound) return;
+    knownUnbound = true;
+    cache = null;
   }
 
   async function closeHop(id: string): Promise<void> {
@@ -1228,7 +1333,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     for (const id of vaults) args.push("--vault", id);
     if (profile) args.push("--profile", profile);
     if (claudeBin !== "claude") args.push("--claude", claudeBin);
-    const mcp = { mcpServers: { gilb: { command: process.execPath, args } } };
+    const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args } } };
     const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID()), {
       cwd: dir,
       env: childEnv(env),
@@ -1363,8 +1468,15 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
     const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
     if (signal.aborted) return CANCELLED;
-    if (aiRefusal(res.status, res.body)) {
-      const sentence = aiNotConnected(aiClientId);
+    // Hop mode forwards the door's answer. A no-reach answer is not remembered: the next call tries again.
+    if (!hopMode && aiRefusal(res.status, res.body)) {
+      if (isVaultNamespace(reportedPrincipal)) {
+        const err = reachError(res.body);
+        const sentence = aiNoGrant(err ? vaultInReach(err) : namedVault(args), reportedPrincipal);
+        say(sentence);
+        return toolResult(sentence, true);
+      }
+      const sentence = aiNotBound(aiClientId);
       say(sentence);
       return toolResult(sentence, true);
     }
@@ -1374,6 +1486,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown; hop?: unknown }) : {};
     if (body.hop && typeof body.hop === "object") return runHop(body.hop, signal);
     const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+    if (!hopMode && isVaultNamespace(reportedPrincipal) && listsNoVaults(name, result)) {
+      const sentence = aiNoGrant(namedVault(args), reportedPrincipal);
+      say(sentence);
+      return toolResult(sentence, true);
+    }
     return toolResult(result, toolAnswerIsError(result));
   }
 
@@ -1387,9 +1504,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (id !== undefined && id !== null) calls.set(String(id), ac);
     const stopProgress = startProgress(params);
     try {
-      if (!hopMode && name === "gilb_whoami") {
+      if (!hopMode && name === GILB_WHOAMI.name) {
         try {
           await credential();
+          if (asMode === "ai" && !bound) await refreshIdentity();
         } catch (err) {
           if (asMode === "ai" && aiClientId) return toolResult(whoamiText(), false);
           throw err;
@@ -1398,10 +1516,21 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       }
       await credential();
       if (ac.signal.aborted) return CANCELLED;
-      // Until a context call has succeeded, every tool (not whoami) learns whether this AI is bound.
-      if (!hopMode && asMode === "ai" && !sawContext) await loadContext(false);
-      if (!hopMode && name === "gilb_task") return onTask(args);
-      if (!hopMode && name === "gilb_agent") return await onAgent(args);
+      if (!hopMode && asMode === "ai" && !bound) {
+        try {
+          await refreshIdentity();
+        } catch (err) {
+          if (err instanceof NotConnected) return toolResult(err.message, true);
+          throw err;
+        }
+        if (!bound) {
+          const sentence = aiNotBound(aiClientId);
+          say(sentence);
+          return toolResult(sentence, true);
+        }
+      }
+      if (!hopMode && name === GILB_TASK.name) return onTask(args);
+      if (!hopMode && name === GILB_AGENT.name) return await onAgent(args);
       if (hopMode && !hopTools.some((tool) => tool.name === name)) {
         return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
       }
@@ -1452,6 +1581,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   async function onListTools(): Promise<{ tools: McpTool[] }> {
     if (hopMode) return { tools: hopTools.map(mcpTool) };
     try {
+      if (asMode === "ai" && !bound) await refreshIdentity();
+      if (asMode === "ai" && !bound) return { tools: localTools() };
       const ctx = await loadContext(false);
       return { tools: [...ctx.tools.map(mcpTool), ...localTools()] };
     } catch (err) {
@@ -1466,6 +1597,19 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const asked = typeof askedRaw === "string" && askedRaw.trim() ? askedRaw.trim() : agent;
     const promptName = params && typeof params === "object" ? (params as { name?: unknown }).name : undefined;
     if (promptName !== "agent") throw new PlatformError(404, "Unknown prompt.");
+    if (!hopMode && asMode === "ai" && !bound) {
+      try {
+        await refreshIdentity();
+      } catch (err) {
+        if (!(err instanceof NotConnected)) throw err;
+      }
+      if (!bound) {
+        return {
+          description: `Standing instructions for ${asked}.`,
+          messages: [{ role: "user", content: { type: "text", text: aiNotBound(aiClientId) } }],
+        };
+      }
+    }
     const ctx = asked === agent ? await loadContext(false) : await fetchContext(asked);
     return {
       description: `Standing instructions for ${asked}.`,
@@ -1481,12 +1625,12 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       return {
         protocolVersion: version,
         capabilities: hopMode ? { tools: {} } : { tools: { listChanged: true }, prompts: {} },
-        serverInfo: { name: "gilb", version: CONNECTOR_VERSION },
+        serverInfo: { name: "GilbPlatform", version: CONNECTOR_VERSION },
         instructions: hopMode
           ? "Tools for one GilbPlatform hand-off."
           : asMode === "me"
             ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
-            : "GilbPlatform tools for this Connected AI. gilb_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions.",
+            : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions.",
       };
     }
     if (method === "ping") return {};
