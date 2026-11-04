@@ -62,6 +62,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
   const [bridgeUp, setBridgeUp] = useState<boolean | null>(null);
   const [pairCode, setPairCode] = useState("");
   const [pairing, setPairing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [ownError, setOwnError] = useState<string | null>(null);
   const [copiedAuth, setCopiedAuth] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -87,6 +88,19 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     setBridgeUp(await client.probe());
   }, [client, setError]);
 
+  // Looks for the bridge again WITHOUT clearing the typed code: the person may have the
+  // code already and only started the bridge late (Kai, 2026-11-04).
+  const recheck = useCallback(async () => {
+    setChecking(true);
+    try {
+      const up = await client.probe();
+      setBridgeUp(up);
+      if (up) setError(null);
+    } finally {
+      setChecking(false);
+    }
+  }, [client, setError]);
+
   const pair = useCallback(async () => {
     if (pairing || !pairCode.trim()) return;
     setError(null);
@@ -94,6 +108,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     try {
       const readback = await client.pair(pairCode);
       setPairCode("");
+      setBridgeUp(true);
       onConnected(readback);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Claude Code could not connect.");
@@ -162,40 +177,41 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
       <div data-testid="claude-code-connect">
         {bridgeUp === false ? (
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
-            Not reachable on this computer yet. Check the {T} window is still open, then try again. The command is:{" "}
+            Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
             <code className="gcc-mono gcc-break">{commands.start}</code>
           </p>
         ) : null}
+        {/* The field and Pair are always there, whatever the bridge check said: a check can run
+            before the bridge is up, and hiding the field then left the person stuck (Kai, 2026-11-04).
+            If the bridge really is down, Pair fails with status 0 and the hint comes back. */}
         <form
           className="gcc-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (bridgeUp === false) void enterCode();
-            else void pair();
+            void pair();
           }}
         >
+          <label className="gcc-sr-only" htmlFor={codeId}>
+            Code from the bridge terminal
+          </label>
+          <input
+            id={codeId}
+            className="gcc-input"
+            value={pairCode}
+            onChange={(e) => setPairCode(e.target.value)}
+            placeholder="Code from the terminal"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={pairing}
+          />
+          <Button type="submit" disabled={pairing || !pairCode.trim()}>
+            Pair
+          </Button>
           {bridgeUp === false ? (
-            <Button type="submit">Try again</Button>
-          ) : (
-            <>
-              <label className="gcc-sr-only" htmlFor={codeId}>
-                Code from the bridge terminal
-              </label>
-              <input
-                id={codeId}
-                className="gcc-input"
-                value={pairCode}
-                onChange={(e) => setPairCode(e.target.value)}
-                placeholder="Code from the terminal"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={bridgeUp === null || pairing}
-              />
-              <Button type="submit" disabled={bridgeUp === null || pairing || !pairCode.trim()}>
-                Pair
-              </Button>
-            </>
-          )}
+            <Button type="button" variant="ghost" onClick={() => void recheck()} disabled={checking} data-testid="claude-code-recheck">
+              Check again
+            </Button>
+          ) : null}
         </form>
       </div>
     );
