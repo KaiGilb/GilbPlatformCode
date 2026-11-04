@@ -6,7 +6,7 @@ The Connect-Claude-Code view for an app: a button that walks the person through 
 
 React components and one stylesheet. View only: it shows the steps and calls a client the host built; it writes nothing itself.
 
-- `ClaudeCodeConnect` takes `client`, `commands`, `onConnected`, and optionally `onError` and `Button`. It opens on the instruction step with the commands to paste in Terminal and a Copy button for each, checks for a bridge on the person's computer, asks for the code, and calls `onConnected(readback)` once after the right code is typed and the secret is kept.
+- `ClaudeCodeConnect` takes `client`, `commands`, `onConnected`, and optionally `onError` and `Button`. It opens on the instruction step with the commands to paste in Terminal and a Copy button for each, checks for a bridge on the person's computer, asks for the code, and calls `onConnected(readback)` once after the right code is typed and the secret is kept. The code field and Pair are always shown, whatever the bridge check said; when the check finds no bridge it also shows the start command and a Check again button that looks again without clearing what was typed.
 - `ClaudeCodeBadge` takes `onDisconnect`, and optionally `label` and `disconnectTestId`. It shows the provider name and a Disconnect button.
 - `claude-code.css` styles both through `--gcc-*` variables with plain fallbacks.
 - Exports: `ClaudeCodeConnect`, `ClaudeCodeConnectProps`, `ClaudeCodeButtonProps`, `ClaudeCodeBadge`, `ClaudeCodeBadgeProps`.
