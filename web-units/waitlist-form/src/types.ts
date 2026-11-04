@@ -29,6 +29,10 @@ export type WaitlistField =
       options: WaitlistChoiceOption[];
       /** Selected on first draw when it is one of `options`. */
       defaultValue?: string;
+      /** How the answers are drawn: "tiles" (a card per answer, with its help line) or "pills" (a row of rounded buttons, label only). Default "tiles". */
+      look?: "tiles" | "pills";
+      /** Tiles only: 2 puts the tiles in two columns from 640px wide. Default 1. */
+      columns?: 1 | 2;
     };
 
 /** One answer in a choice question. `help` is the one line under that answer. */
@@ -92,6 +96,7 @@ export const defaultWaitlistFields: WaitlistField[] = [
     name: "teamSize",
     kind: "choice",
     label: "Team size",
+    look: "pills",
     options: [
       { value: "just-me", label: "Just me" },
       { value: "2-10", label: "2 to 10" },
@@ -104,6 +109,8 @@ export const defaultWaitlistFields: WaitlistField[] = [
     kind: "choice",
     label: "Experience building apps",
     defaultValue: "not-yet",
+    look: "tiles",
+    columns: 2,
     options: [
       { value: "not-yet", label: "Not yet" },
       { value: "a-little", label: "A little" },

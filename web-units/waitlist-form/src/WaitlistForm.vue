@@ -283,23 +283,30 @@ async function onSubmit(): Promise<void> {
           <legend class="wl-legend">
             {{ field.label }}<template v-if="!field.required">{{ " " }}<span class="wl-opt">{{ words().optional }}</span></template>
           </legend>
-          <label v-for="option in field.options" :key="option.value" class="wl-option">
-            <input
-              :id="optionId(field.name, option.value)"
-              type="radio"
-              :name="field.name"
-              :value="option.value"
-              :checked="read(field.name) === option.value"
-              :required="field.required === true"
-              :aria-invalid="errorFor(field.name) ? 'true' : undefined"
-              :aria-describedby="describedBy(field) || undefined"
-              @change="onFieldInput(field.name, $event)"
-            />
-            <span class="wl-option-text">
-              <span class="wl-option-label">{{ option.label }}</span>
-              <span v-if="option.help" class="wl-option-help">{{ option.help }}</span>
-            </span>
-          </label>
+          <div class="wl-options" :class="field.look === 'pills' ? 'wl-options--pills' : field.columns === 2 ? 'wl-options--tiles wl-options--two' : 'wl-options--tiles'">
+            <label v-for="option in field.options" :key="option.value" class="wl-option">
+              <input
+                :id="optionId(field.name, option.value)"
+                type="radio"
+                :name="field.name"
+                :value="option.value"
+                :checked="read(field.name) === option.value"
+                :required="field.required === true"
+                :aria-invalid="errorFor(field.name) ? 'true' : undefined"
+                :aria-describedby="describedBy(field) || undefined"
+                class="wl-choice"
+                @change="onFieldInput(field.name, $event)"
+              />
+              <span v-if="field.look === 'pills'" class="wl-pill">{{ option.label }}</span>
+              <span v-else class="wl-tile">
+                <span class="wl-dot" aria-hidden="true" />
+                <span class="wl-option-text">
+                  <span class="wl-option-label">{{ option.label }}</span>
+                  <span v-if="option.help" class="wl-option-help">{{ option.help }}</span>
+                </span>
+              </span>
+            </label>
+          </div>
           <p v-if="errorFor(field.name)" :id="errorId(field.name)" class="wl-field-error">{{ errorText(field.name) }}</p>
         </fieldset>
 
@@ -396,7 +403,7 @@ async function onSubmit(): Promise<void> {
 .wl-legend { margin-bottom: 0.75rem; }
 .wl-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); }
 .wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }
-.wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }
+.wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }
 .wl-notice a {
   color: var(--site-block-accent, #2563eb);
   text-underline-offset: 0.15em;
@@ -410,11 +417,15 @@ async function onSubmit(): Promise<void> {
   font: inherit;
   color: inherit;
   line-height: inherit;
-  background: var(--site-block-bg, #ffffff);
+  background: rgb(255 255 255 / 0.7);
   border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
   border-radius: var(--site-block-radius, 0.375rem);
 }
+.wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }
 .wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }
+@media (prefers-reduced-motion: no-preference) {
+  .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
+}
 .wl-area { resize: vertical; }
 .wl-choice-group {
   margin: 0;
@@ -422,24 +433,95 @@ async function onSubmit(): Promise<void> {
   border: 0;
   min-inline-size: 0;
 }
-.wl-option {
+/* The answers, as the source draws them: tiles in a grid (one column, or two from 640px), or pills in
+   a wrapping row, 0.75rem apart. */
+.wl-options { gap: 0.75rem; }
+.wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.wl-options--pills { display: flex; flex-wrap: wrap; }
+.wl-option { position: relative; display: block; margin: 0; cursor: pointer; }
+/* The radio is visually hidden, still focusable and still the control; the tile or pill draws its state. */
+.wl-choice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.wl-tile, .wl-pill {
+  border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
+  background: rgb(255 255 255 / 0.7);
+  color: var(--site-block-fg, #1a1a1a);
+  transition-property: border-color, background-color, color, box-shadow;
+}
+.wl-tile {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  min-height: 44px;
-  margin: 0;
-  padding: 0.5rem 0.25rem;
-  cursor: pointer;
+  height: 100%;
+  min-height: 48px;
+  padding: 1rem;
+  border-radius: var(--site-block-radius, 0.375rem);
 }
-.wl-option input {
-  flex: none;
-  width: 1.25rem;
-  height: 1.25rem;
-  margin: 0.15rem 0 0;
-  accent-color: var(--site-block-accent, #2563eb);
+.wl-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 1.25rem;
+  border-radius: 999px;
+  font-weight: 500;
 }
-.wl-option-text { display: flex; flex-direction: column; }
-.wl-option-label { font-weight: 500; }
+/* The radio mark in a tile: an empty ring, filled when chosen. It is real state, not decoration. */
+.wl-dot {
+  position: relative;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
+}
+.wl-dot::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 999px;
+  background-color: var(--site-block-fg, #1a1a1a);
+  transform: scale(0);
+}
+.wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }
+/* Chosen tile: ink border, doubled inward so it reads without colour, and a filled mark. */
+.wl-choice:checked + .wl-tile {
+  border-color: var(--site-block-fg, #1a1a1a);
+  box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a);
+}
+.wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); }
+.wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); }
+/* Chosen pill: ink with the page colour as its label. */
+.wl-choice:checked + .wl-pill {
+  border-color: var(--site-block-fg, #1a1a1a);
+  background-color: var(--site-block-fg, #1a1a1a);
+  color: var(--site-block-bg, #ffffff);
+}
+/* The radio is hidden, so its keyboard focus is drawn on the tile or pill. */
+.wl-choice:focus-visible + .wl-tile,
+.wl-choice:focus-visible + .wl-pill {
+  outline: 2px solid var(--site-block-accent, #2563eb);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wl-tile, .wl-pill {
+    transition-duration: var(--site-block-motion, 180ms);
+    transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .wl-dot::after { transition: transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
+}
+.wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }
+.wl-option-label { font-weight: 600; }
 .wl-field-error, .wl-fail {
   margin: 0;
   font-size: 1rem;
@@ -474,7 +556,7 @@ async function onSubmit(): Promise<void> {
   line-height: inherit;
   cursor: pointer;
   border: 0;
-  border-radius: var(--site-block-radius, 0.375rem);
+  border-radius: 999px;
   background: var(--site-block-accent, #2563eb);
   color: var(--site-block-on-accent, #ffffff);
   transition: opacity var(--site-block-motion, 150ms);

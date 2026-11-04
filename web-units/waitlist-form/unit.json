@@ -27,7 +27,8 @@
     "New prop `noScriptAction` (default empty). With no script the form posts to the current page, as the source's `<form method=\"post\">` with no `action` did; with `noScriptAction` set, to that address. `actionUrl` is only where the script sends the JSON. With a Turnstile key set, a post with no script carries no token, so a server that checks Turnstile refuses it.",
     "When the `sent` slot holds no `h1`, `h2`, `h3` or `[tabindex=\"-1\"]` element, focus goes to the sent wrapper itself (`tabindex=\"-1\"`); the source had no slot.",
     "When `fields` changes after mount, a new choice field opens on its `defaultValue`.",
-    "The source's phone question, \"which AI\" question and honeypot are not in the default list; the body holds only declared fields plus `page`, `notice` and `turnstileToken`."
+    "The source's phone question, \"which AI\" question and honeypot are not in the default list; the body holds only declared fields plus `page`, `notice` and `turnstileToken`.",
+    "A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one."
   ],
   "newFiles": [
     "src/types.ts",

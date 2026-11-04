@@ -116,7 +116,7 @@ if (errors.length) return new Response('no', { status: 422 })
 
 | Prop | Meaning |
 |---|---|
-| `fields?` | `WaitlistField[]`. Default `defaultWaitlistFields`: name (text, 80), email (email, required, 254), idea (textarea, 1000), company (text, 120), team size (`just-me`, `2-10`, `11-50`, `50-plus`), experience (`not-yet`, `a-little`, `with-ai`, `i-code`, default `not-yet`) |
+| `fields?` | `WaitlistField[]`. Default `defaultWaitlistFields`: name (text, 80), email (email, required, 254), idea (textarea, 1000), company (text, 120), team size (`just-me`, `2-10`, `11-50`, `50-plus`), experience (`not-yet`, `a-little`, `with-ai`, `i-code`, default `not-yet`). A choice field's `look` is `"tiles"` (a card per answer, with its help line) or `"pills"` (a row of rounded buttons, label only); default `"tiles"`. A choice field's `columns` (tiles only) is `1` or `2`; `2` puts the tiles in two columns from 640px wide; default `1`. |
 | `actionUrl?` | where the script sends the JSON, default `/api/waitlist` |
 | `noScriptAction?` | the form's `action` attribute, used only with no script. Default empty: no `action` attribute, so the browser posts to the current page |
 | `turnstileSiteKey?` | the Turnstile site key (public). Empty (the default) draws no widget and loads no script |
@@ -155,7 +155,7 @@ No Tailwind is needed: the styles ship in the component, scoped to it. They set 
 
 ## Layout stability
 
-The fields are in the first HTML, at their size. Nothing below the form is held open for a later state. The thank-you block does not keep the form's height: it replaces the form, and it is shorter, so what follows the form moves up. With a Turnstile key, the widget's box is reserved at 65px (`min-height`, the source's reservation) from the first HTML, so when the script draws the widget the notice and the button do not move; without a key there is no box. As in the source, the form's parts are 36px apart, and the notice, the live region and the button are 16px apart. The gaps stay beside the empty region, so the button does not move when a send starts (the sending word is read by a screen reader only). The error line appears in the live region above the button and pushes the button down by that line's height only (1.5rem per line; a long message wraps on a narrow phone). Choice help, when a field has it, is in the first HTML and does not arrive later.
+The fields are in the first HTML, at their size. Nothing below the form is held open for a later state. The thank-you block does not keep the form's height: it replaces the form, and it is shorter, so what follows the form moves up. With a Turnstile key, the widget's box is reserved at 65px (`min-height`, the source's reservation) from the first HTML, so when the script draws the widget the notice and the button do not move; without a key there is no box. As in the source, the form's parts are 36px apart, and the notice, the live region and the button are 16px apart. The gaps stay beside the empty region, so the button does not move when a send starts (the sending word is read by a screen reader only). The error line appears in the live region above the button and pushes the button down by that line's height only (1.5rem per line; a long message wraps on a narrow phone). Choice help, when a field has it, is in the first HTML and does not arrive later. Choice answers are tiles in a grid or pills in a wrapping row, in the first HTML at their size; choosing one changes only colours and the tile's inner ring, so nothing moves.
 
 ## Do not
 
@@ -178,6 +178,7 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 - If the `sent` slot has no heading or `tabindex="-1"` element, focus goes to the wrapper (`tabindex="-1"`). The source had no slot.
 - When `fields` changes after mount, a new choice opens on its `defaultValue`.
 - The source's phone question, "which AI" question and honeypot are not in the default list. Add a `tel` or `choice` field for a question you want. The body contains only declared fields, plus `page`, `notice` and `turnstileToken`.
+- A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.
 
 ## Source
 

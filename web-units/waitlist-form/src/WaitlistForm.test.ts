@@ -654,6 +654,92 @@ describe("WaitlistForm control attributes", () => {
   });
 });
 
+describe("WaitlistForm choices", () => {
+  function fieldsetNamed(text: string): HTMLFieldSetElement {
+    const found = [...document.querySelectorAll("fieldset")].find((el) => el.querySelector("legend")?.textContent?.includes(text));
+    if (!found) throw new Error(`no fieldset for ${text}`);
+    return found;
+  }
+
+  test("pills: teamSize draws a wrapping row of pills, label only, each pill after its hidden radio", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    const fieldset = fieldsetNamed("Team size");
+    const options = fieldset.querySelector(".wl-options")!;
+    expect(options.classList.contains("wl-options")).toBe(true);
+    expect(options.classList.contains("wl-options--pills")).toBe(true);
+    const labels = [...fieldset.querySelectorAll("label.wl-option")];
+    expect(labels).toHaveLength(4);
+    const expected = ["Just me", "2 to 10", "11 to 50", "50 or more"];
+    labels.forEach((label, index) => {
+      const input = label.querySelector("input");
+      expect(input?.classList.contains("wl-choice")).toBe(true);
+      expect((input as HTMLInputElement).type).toBe("radio");
+      const pill = input?.nextElementSibling;
+      expect(pill?.tagName).toBe("SPAN");
+      expect(pill?.classList.contains("wl-pill")).toBe(true);
+      expect(pill?.textContent).toBe(expected[index]);
+      expect(label.querySelector(".wl-tile")).toBeNull();
+      expect(label.querySelector(".wl-option-help")).toBeNull();
+    });
+  });
+
+  test("tiles: experience draws a two-column tile grid with a dot and the option text", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    const fieldset = fieldsetNamed("Experience");
+    const options = fieldset.querySelector(".wl-options")!;
+    expect(options.classList.contains("wl-options--tiles")).toBe(true);
+    expect(options.classList.contains("wl-options--two")).toBe(true);
+    const labels = [...fieldset.querySelectorAll("label.wl-option")];
+    expect(labels).toHaveLength(4);
+    for (const label of labels) {
+      const input = label.querySelector("input");
+      expect(input?.classList.contains("wl-choice")).toBe(true);
+      const tile = input?.nextElementSibling;
+      expect(tile?.tagName).toBe("SPAN");
+      expect(tile?.classList.contains("wl-tile")).toBe(true);
+      expect(tile?.querySelector("span.wl-dot")?.getAttribute("aria-hidden")).toBe("true");
+      expect(tile?.querySelector(".wl-option-text > .wl-option-label")).not.toBeNull();
+    }
+  });
+
+  test("tiles default to one column, and an option help line is drawn under its label", () => {
+    const fields: WaitlistField[] = [
+      { name: "plan", kind: "choice", label: "Plan", options: [{ value: "a", label: "A", help: "h" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const options = document.querySelector(".wl-options")!;
+    expect(options.classList.contains("wl-options--tiles")).toBe(true);
+    expect(options.classList.contains("wl-options--two")).toBe(false);
+    expect(options.classList.contains("wl-options--pills")).toBe(false);
+    const help = document.querySelector(".wl-option-help")!;
+    expect(help.textContent).toBe("h");
+    expect(help.previousElementSibling?.classList.contains("wl-option-label")).toBe(true);
+  });
+
+  test("choosing an answer still works by click and by keyboard", async () => {
+    const send = vi.fn(async (_body: Record<string, string>) => true);
+    wrapper = mount(WaitlistForm, { props: { send }, attachTo: document.body });
+    const radio = document.querySelector<HTMLInputElement>('input[name="experience"][value="a-little"]')!;
+    radio.closest("label")!.click();
+    expect(radio.checked).toBe(true);
+    for (const fieldset of document.querySelectorAll("fieldset")) {
+      const radios = [...fieldset.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+      expect(radios.length).toBeGreaterThan(1);
+      const name = radios[0]!.name;
+      expect(name).not.toBe("");
+      for (const item of radios) {
+        expect(item.name).toBe(name);
+        expect(item.hasAttribute("tabindex")).toBe(false);
+      }
+    }
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]![0].experience).toBe("a-little");
+  });
+});
+
 describe("WaitlistForm style", () => {
   const SFC = readFileSync(join(process.cwd(), "src", "WaitlistForm.vue"), "utf8");
   const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -717,11 +803,11 @@ describe("WaitlistForm style", () => {
       ".wl-label, .wl-legend { display: block; margin: 0; padding: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 500; }",
       ".wl-legend { margin-bottom: 0.75rem; }",
       ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
-      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
-      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-bg, #ffffff); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
-      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: var(--site-block-radius, 0.375rem); background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
     ];
     for (const rule of rules) expect(flat).toContain(rule);
   });
@@ -739,7 +825,7 @@ describe("WaitlistForm style", () => {
     ]);
     expect(rulesFor("wl-live")).toEqual([".wl-live { position: relative; }"]);
     expect(rulesFor("wl-button")).toEqual([
-      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: var(--site-block-radius, 0.375rem); background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
       ".wl-button:hover { opacity: 0.9; }",
       ".wl-button:disabled { opacity: 0.5; cursor: default; }",
       "@media (prefers-reduced-motion: reduce) > .wl-button { transition: none; }",
@@ -757,18 +843,23 @@ describe("WaitlistForm style", () => {
     ]);
     expect(rulesFor("wl-opt")).toEqual([
       ".wl-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); }",
-      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
-      ".wl-option { display: flex; align-items: flex-start; gap: 0.75rem; min-height: 44px; margin: 0; padding: 0.5rem 0.25rem; cursor: pointer; }",
-      ".wl-option input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; accent-color: var(--site-block-accent, #2563eb); }",
-      ".wl-option-text { display: flex; flex-direction: column; }",
-      ".wl-option-label { font-weight: 500; }",
+      ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
+      ".wl-options { gap: 0.75rem; }",
+      ".wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); }",
+      "@media (min-width: 640px) > .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+      ".wl-options--pills { display: flex; flex-wrap: wrap; }",
+      ".wl-option { position: relative; display: block; margin: 0; cursor: pointer; }",
+      ".wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }",
+      ".wl-option-label { font-weight: 600; }",
     ]);
     expect(rulesFor("wl-help")).toEqual([
       ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
     ]);
     expect(rulesFor("wl-field")).toEqual([
-      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-bg, #ffffff); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }",
       '.wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }',
+      "@media (prefers-reduced-motion: no-preference) > .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }",
       ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
@@ -781,17 +872,100 @@ describe("WaitlistForm style", () => {
       ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
     ]);
     expect(rulesFor("wl-option")).toEqual([
-      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
-      ".wl-option { display: flex; align-items: flex-start; gap: 0.75rem; min-height: 44px; margin: 0; padding: 0.5rem 0.25rem; cursor: pointer; }",
-      ".wl-option input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; accent-color: var(--site-block-accent, #2563eb); }",
-      ".wl-option-text { display: flex; flex-direction: column; }",
-      ".wl-option-label { font-weight: 500; }",
+      ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
+      ".wl-options { gap: 0.75rem; }",
+      ".wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); }",
+      "@media (min-width: 640px) > .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+      ".wl-options--pills { display: flex; flex-wrap: wrap; }",
+      ".wl-option { position: relative; display: block; margin: 0; cursor: pointer; }",
+      ".wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }",
+      ".wl-option-label { font-weight: 600; }",
     ]);
-    expect(rulesFor("wl-option-text")).toEqual([".wl-option-text { display: flex; flex-direction: column; }"]);
-    expect(rulesFor("wl-option-label")).toEqual([".wl-option-label { font-weight: 500; }"]);
+    expect(rulesFor("wl-option-text")).toEqual([".wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }"]);
+    expect(rulesFor("wl-option-label")).toEqual([".wl-option-label { font-weight: 600; }"]);
     expect(rulesFor("wl-option-help")).toEqual([
-      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
+      ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
     ]);
+    expect(rulesFor("wl-options")).toEqual([
+      ".wl-options { gap: 0.75rem; }",
+      ".wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); }",
+      "@media (min-width: 640px) > .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }",
+      ".wl-options--pills { display: flex; flex-wrap: wrap; }",
+    ]);
+    expect(rulesFor("wl-choice")).toEqual([
+      ".wl-choice-group { margin: 0; padding: 0; border: 0; min-inline-size: 0; }",
+      ".wl-choice { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }",
+      ".wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); }",
+      ".wl-choice:checked + .wl-pill { border-color: var(--site-block-fg, #1a1a1a); background-color: var(--site-block-fg, #1a1a1a); color: var(--site-block-bg, #ffffff); }",
+      ".wl-choice:focus-visible + .wl-tile, .wl-choice:focus-visible + .wl-pill { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; }",
+      ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
+    ]);
+    expect(rulesFor("wl-tile")).toEqual([
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      ".wl-tile { display: flex; align-items: flex-start; gap: 0.75rem; height: 100%; min-height: 48px; padding: 1rem; border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); }",
+      ".wl-choice:focus-visible + .wl-tile, .wl-choice:focus-visible + .wl-pill { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; }",
+      "@media (prefers-reduced-motion: no-preference) > .wl-tile, .wl-pill { transition-duration: var(--site-block-motion, 180ms); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1); }",
+    ]);
+    expect(rulesFor("wl-pill")).toEqual([
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      ".wl-pill { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font-weight: 500; }",
+      ".wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-pill { border-color: var(--site-block-fg, #1a1a1a); background-color: var(--site-block-fg, #1a1a1a); color: var(--site-block-bg, #ffffff); }",
+      ".wl-choice:focus-visible + .wl-tile, .wl-choice:focus-visible + .wl-pill { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; }",
+      "@media (prefers-reduced-motion: no-preference) > .wl-tile, .wl-pill { transition-duration: var(--site-block-motion, 180ms); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1); }",
+    ]);
+    expect(rulesFor("wl-dot")).toEqual([
+      ".wl-dot { position: relative; flex-shrink: 0; width: 18px; height: 18px; margin-top: 3px; border-radius: 999px; border: 2px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); }",
+      '.wl-dot::after { content: ""; position: absolute; inset: 3px; border-radius: 999px; background-color: var(--site-block-fg, #1a1a1a); transform: scale(0); }',
+      ".wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); }",
+      "@media (prefers-reduced-motion: no-preference) > .wl-dot::after { transition: transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }",
+    ]);
+  });
+
+  test("the choice styles are the source's", () => {
+    const flat = normCss(style);
+    const rules = [
+      ".wl-options { gap: 0.75rem; }",
+      ".wl-options--tiles { display: grid; grid-template-columns: minmax(0, 1fr); }",
+      "@media (min-width: 640px) { .wl-options--two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }",
+      ".wl-options--pills { display: flex; flex-wrap: wrap; }",
+      ".wl-option { position: relative; display: block; margin: 0; cursor: pointer; }",
+      ".wl-choice { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }",
+      ".wl-tile, .wl-pill { border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); background: rgb(255 255 255 / 0.7); color: var(--site-block-fg, #1a1a1a); transition-property: border-color, background-color, color, box-shadow; }",
+      ".wl-tile { display: flex; align-items: flex-start; gap: 0.75rem; height: 100%; min-height: 48px; padding: 1rem; border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-pill { display: inline-flex; align-items: center; min-height: 48px; padding: 0 1.25rem; border-radius: 999px; font-weight: 500; }",
+      ".wl-dot { position: relative; flex-shrink: 0; width: 18px; height: 18px; margin-top: 3px; border-radius: 999px; border: 2px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); }",
+      '.wl-dot::after { content: ""; position: absolute; inset: 3px; border-radius: 999px; background-color: var(--site-block-fg, #1a1a1a); transform: scale(0); }',
+      ".wl-tile:hover, .wl-pill:hover { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile { border-color: var(--site-block-fg, #1a1a1a); box-shadow: inset 0 0 0 1px var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot { border-color: var(--site-block-fg, #1a1a1a); }",
+      ".wl-choice:checked + .wl-tile .wl-dot::after { transform: scale(1); }",
+      ".wl-choice:checked + .wl-pill { border-color: var(--site-block-fg, #1a1a1a); background-color: var(--site-block-fg, #1a1a1a); color: var(--site-block-bg, #ffffff); }",
+      ".wl-choice:focus-visible + .wl-tile, .wl-choice:focus-visible + .wl-pill { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 3px; }",
+      "@media (prefers-reduced-motion: no-preference) { .wl-tile, .wl-pill { transition-duration: var(--site-block-motion, 180ms); transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1); } .wl-dot::after { transition: transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } }",
+      ".wl-option-text { display: flex; flex-direction: column; gap: 0.25rem; }",
+      ".wl-option-label { font-weight: 600; }",
+      ".wl-option-help { margin: 0; font-size: 1rem; line-height: 1.375; color: var(--site-block-muted, #4b5563); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: rgb(255 255 255 / 0.7); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field:hover, .wl-field:focus { border-color: var(--site-block-fg, #1a1a1a); }",
+      "@media (prefers-reduced-motion: no-preference) { .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); } }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: 999px; background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+    ];
+    for (const rule of rules) expect(flat).toContain(normCss(rule));
+  });
+
+  test("an invalid field keeps the danger border on hover and focus", () => {
+    const hover = style.indexOf(".wl-field:hover, .wl-field:focus");
+    const invalid = style.indexOf('.wl-field[aria-invalid="true"]');
+    expect(hover).toBeGreaterThanOrEqual(0);
+    expect(invalid).toBeGreaterThan(hover);
   });
 
   test("notice, live region and button are the three children of .wl-actions, in that order", async () => {
