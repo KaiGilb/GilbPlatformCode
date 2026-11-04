@@ -10,9 +10,9 @@ import { CONNECTOR_VERSION } from "../connector/gilb-connector.mjs";
 const unit = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("built == committed", () => {
-  it("connector/gilb-connector.mjs equals a fresh build (run npm run build:connector)", () => {
+  it("connector/gilb-connector.mjs and connector/vite-plugin.mjs equal a fresh build (run npm run build:connector)", () => {
     const fresh = buildAll();
-    expect(Object.keys(fresh)).toEqual(["connector/gilb-connector.mjs"]);
+    expect(Object.keys(fresh).sort()).toEqual(["connector/gilb-connector.mjs", "connector/vite-plugin.mjs"]);
     for (const [file, text] of Object.entries(fresh)) {
       expect(fs.readFileSync(path.join(unit, file), "utf8") === text, `${file} differs from a fresh build`).toBe(true);
     }

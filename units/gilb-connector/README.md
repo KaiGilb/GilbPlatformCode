@@ -6,7 +6,13 @@ The file a person runs is `connector/gilb-connector.mjs`: one file, no npm depen
 
 ## Install
 
-Copy `connector/gilb-connector.mjs` to `~/.gilb-connector.mjs`. Then:
+Download the file from the app that serves it:
+
+```sh
+curl -fsSL '<your app>/gilb-connector.mjs' -o ~/.gilb-connector.mjs
+```
+
+Or copy `connector/gilb-connector.mjs` to `~/.gilb-connector.mjs`. Then:
 
 ```sh
 claude mcp add gilb -- node ~/.gilb-connector.mjs
@@ -25,6 +31,20 @@ Call any tool again after that. Until the AI is bound and granted, every tool an
 Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). The connector keeps one platform turn for the life of the process. The AI's sign-in stays in memory and renews itself. It is not written to disk.
 
 The server name is `gilb`, so Claude Code's slash command is `/mcp__gilb__agent`.
+
+## Serve it from your app
+
+```ts
+import { gilbConnectorFile, connectorInstallCommands } from "@kaigilb/gilbplatformcode-gilb-connector/vite";
+```
+
+```ts
+plugins: [gilbConnectorFile()]
+```
+
+In dev it answers `<base>gilb-connector.mjs`. `<base>` is Vite's base. A build emits `gilb-connector.mjs` next to the other assets. The bytes are the connector file, unchanged.
+
+`connectorInstallCommands(url)` gives the two lines a guide shows: the curl download, and `claude mcp add gilb -- node ~/.gilb-connector.mjs`.
 
 ## Sign in as this computer
 

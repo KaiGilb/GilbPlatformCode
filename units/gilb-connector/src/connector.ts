@@ -27,7 +27,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.2.1";
+export const CONNECTOR_VERSION = "0.3.0";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
