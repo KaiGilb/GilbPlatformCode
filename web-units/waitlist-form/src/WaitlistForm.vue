@@ -344,17 +344,19 @@ async function onSubmit(): Promise<void> {
       <!-- Turnstile draws its widget here after the script loads. No key: no box and no script. -->
       <div v-if="turnstileSiteKey" ref="turnstileBox" class="wl-turnstile" />
 
-      <p v-if="notice" class="wl-notice">{{ notice.text }}<template v-if="notice.linkHref && notice.linkLabel">{{ " " }}<a :href="notice.linkHref">{{ notice.linkLabel }}</a></template></p>
+      <div class="wl-actions">
+        <p v-if="notice" class="wl-notice">{{ notice.text }}<template v-if="notice.linkHref && notice.linkLabel">{{ " " }}<a :href="notice.linkHref">{{ notice.linkLabel }}</a></template></p>
 
-      <!-- Always in the form, so a screen reader hears the error when it appears. Empty, it takes no space. -->
-      <div class="wl-live" :class="{ 'wl-live--shown': status === 'failed' }" role="status" aria-live="polite">
-        <p v-if="status === 'failed'" class="wl-fail">{{ words().failed }}</p>
-        <span v-else-if="status === 'sending'" class="wl-sr">{{ words().sending }}</span>
+        <!-- Always in the form, so a screen reader hears the error when it appears. Empty, it takes no height; the gaps around it stay. -->
+        <div class="wl-live" role="status" aria-live="polite">
+          <p v-if="status === 'failed'" class="wl-fail">{{ words().failed }}</p>
+          <span v-else-if="status === 'sending'" class="wl-sr">{{ words().sending }}</span>
+        </div>
+
+        <button class="wl-button" type="submit" :disabled="status === 'sending'">
+          {{ status === "sending" ? words().sending : words().submit }}
+        </button>
       </div>
-
-      <button class="wl-button" type="submit" :disabled="status === 'sending'">
-        {{ status === "sending" ? words().sending : words().submit }}
-      </button>
     </form>
 
     <div v-else ref="sentRoot" class="wl-sent" tabindex="-1">
@@ -377,7 +379,11 @@ async function onSubmit(): Promise<void> {
   font-size: 1rem;
   line-height: 1.5;
 }
-.wl-form > * + * { margin-top: 1rem; }
+/* The source's layout: 36px between the form's parts (gap-9), 16px between the notice, the
+   live region and the button (gap-4). A gap stays beside an empty region, so nothing moves
+   when a send starts. */
+.wl-form { display: flex; flex-direction: column; gap: 2.25rem; }
+.wl-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
 .wl-label, .wl-legend {
   display: block;
   margin: 0 0 0.25rem;
@@ -444,10 +450,8 @@ async function onSubmit(): Promise<void> {
   line-height: 1.25rem;
   color: var(--site-block-danger, #b91c1c);
 }
+.wl-live .wl-fail { margin: 0; }
 .wl-live { position: relative; }
-/* Only a visible line takes space: empty, or holding the screen-reader-only sending word, the
-   region has no margin, so the button does not move when a send starts. */
-.wl-form > .wl-live:not(.wl-live--shown) { margin-top: 0; }
 /* Read by a screen reader, not drawn. */
 .wl-sr {
   position: absolute;

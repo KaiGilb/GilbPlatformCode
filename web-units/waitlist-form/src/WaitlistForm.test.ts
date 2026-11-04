@@ -339,8 +339,11 @@ describe("WaitlistForm announces and clears", () => {
     await setEmail(wrapper);
     await wrapper.find("form").trigger("submit");
     expect(live.textContent!.trim()).toBe("Working");
-    // The sending word is screen-reader only, so the region keeps no margin and the button stays put.
-    expect(live.classList.contains("wl-live--shown")).toBe(false);
+    // The sending word is screen-reader only; the region sits between two fixed gaps, so the button stays put.
+    expect(live.parentElement?.classList.contains("wl-actions")).toBe(true);
+    expect(live.children).toHaveLength(1);
+    expect(live.children[0]!.tagName).toBe("SPAN");
+    expect(live.children[0]!.className).toBe("wl-sr");
     release(false);
     await flushPromises();
     expect(live.textContent).not.toContain("Working");
@@ -452,7 +455,7 @@ describe("WaitlistForm ids and defaults", () => {
     }
   });
 
-  test("names that look like another part's id give no duplicate id: help-email, error-email, and a choice whose name and value join the same way", () => {
+  test("names that look like another part's id give no duplicate id: help-email, error-email, and choices a-b+c and a+b-c", () => {
     const fields: WaitlistField[] = [
       { name: "email", kind: "email", label: "E", required: true, help: "h" },
       { name: "help-email", kind: "text", label: "H" },
@@ -632,14 +635,62 @@ describe("WaitlistForm style", () => {
     expect(style).toMatch(/\.wl-field \{[^}]*border: 1px solid color-mix\(in srgb, var\(--site-block-muted, #4b5563\) 65%, transparent\);/);
   });
 
-  test("the live region takes space only when its line is shown (failed), not while sending", () => {
-    expect(style).toMatch(/\.wl-form > \.wl-live:not\(\.wl-live--shown\) \{ margin-top: 0; \}/);
-    expect(SFC).toContain(":class=\"{ 'wl-live--shown': status === 'failed' }\"");
+  test("the layout is the source's: 36px between parts, 16px between notice, live region and button", () => {
+    expect(style).toMatch(/\.wl-form \{ display: flex; flex-direction: column; gap: 2\.25rem; \}/);
+    expect(style).toMatch(/\.wl-actions \{ display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; \}/);
+    expect(style).toMatch(/\.wl-live \.wl-fail \{ margin: 0; \}/);
+    expect(style).not.toContain("* + *");
+    expect(SFC).not.toContain("wl-live--shown");
+  });
+
+  test("notice, live region and button are the three children of .wl-actions, in that order", async () => {
+    const childClasses = () =>
+      [...document.querySelector(".wl-actions")!.children].map((el) => [...el.classList]);
+    wrapper = mount(WaitlistForm, { props: { notice }, attachTo: document.body });
+    expect(childClasses()).toEqual([["wl-notice"], ["wl-live"], ["wl-button"]]);
+    wrapper.unmount();
+
+    const send = vi.fn(async () => {
+      throw new Error("down");
+    });
+    wrapper = mount(WaitlistForm, { props: { send }, attachTo: document.body });
+    expect(childClasses()).toEqual([["wl-live"], ["wl-button"]]);
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(childClasses()).toEqual([["wl-live"], ["wl-button"]]);
+    expect(document.querySelector(".wl-actions .wl-live > p.wl-fail")).not.toBeNull();
+  });
+
+  test("the sending word is screen-reader only (.wl-sr is absolute, 1px, clipped)", () => {
+    expect(style).toMatch(
+      /\.wl-sr \{[\s\S]*?position: absolute;[\s\S]*?width: 1px;[\s\S]*?height: 1px;[\s\S]*?overflow: hidden;[\s\S]*?clip: rect\(0, 0, 0, 0\);[\s\S]*?\}/,
+    );
   });
 
   test("the thank-you wrapper draws no outline on a mouse click: it has no :focus rule, only the shared :focus-visible", () => {
     expect(style).not.toMatch(/\.wl-sent:focus\b/);
     expect(style).toMatch(/\.wl :focus-visible,\s*\.wl-sent-heading:focus \{/);
+  });
+
+  test("two choice fields with the same value give different option ids, each carrying its field name", () => {
+    const fields: WaitlistField[] = [
+      { name: "plan", kind: "choice", label: "P", options: [{ value: "x", label: "X" }] },
+      { name: "tier", kind: "choice", label: "T", options: [{ value: "x", label: "X" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const radios = [...document.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    const ids = radios.map((el) => el.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids.some((id) => id.endsWith("-option-plan-x"))).toBe(true);
+    expect(ids.some((id) => id.endsWith("-option-tier-x"))).toBe(true);
+    for (const label of document.querySelectorAll("label[for]")) {
+      const named = label.getAttribute("for") ?? "";
+      if (!named.includes("-option-")) continue;
+      expect([...document.querySelectorAll("[id]")].filter((el) => el.id === named)).toHaveLength(1);
+    }
+    wrapper.unmount();
   });
 
   test("option ids keep a separator between the field and the value: field a + value bc and field ab + value c differ", () => {
