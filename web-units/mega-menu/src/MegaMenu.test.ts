@@ -570,6 +570,41 @@ describe("the unit's style", () => {
     return bodies;
   }
 
+  function normCss(value: string): string {
+    return value.replace(/\s+/g, " ").trim();
+  }
+
+  /** Rules in source order. A rule inside @media is recorded as `@media … > selector`. */
+  function styleRules(css: string): { selector: string; body: string }[] {
+    const rules: { selector: string; body: string }[] = [];
+    function walk(text: string, medias: string[]): void {
+      let i = 0;
+      while (i < text.length) {
+        while (i < text.length && /\s/.test(text.charAt(i))) i += 1;
+        if (i >= text.length) break;
+        const open = text.indexOf("{", i);
+        if (open < 0) break;
+        const prelude = text.slice(i, open).trim();
+        let depth = 1;
+        let j = open + 1;
+        while (j < text.length && depth > 0) {
+          const ch = text.charAt(j);
+          if (ch === "{") depth += 1;
+          else if (ch === "}") depth -= 1;
+          j += 1;
+        }
+        const inner = text.slice(open + 1, j - 1);
+        if (prelude.startsWith("@media")) walk(inner, [...medias, normCss(prelude)]);
+        else if (!prelude.startsWith("@") && prelude) {
+          rules.push({ selector: [...medias, normCss(prelude)].join(" > "), body: normCss(inner) });
+        }
+        i = j;
+      }
+    }
+    walk(css, []);
+    return rules;
+  }
+
   test("links and the call to action are at least 44px tall", () => {
     expect(ruleBodies(".mm-link").some((body) => /min-height:\s*44px/.test(body))).toBe(true);
     expect(ruleBodies(".mm-cta").some((body) => /min-height:\s*44px/.test(body))).toBe(true);
@@ -623,6 +658,20 @@ describe("the unit's style", () => {
     expect(style).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.mm-link, \.mm-cta, \.mm-close \{ transition: none; \}\s*\}/,
     );
+  });
+
+  test("rule inventory: transitions on links, the call-to-action and Close", () => {
+    const found = styleRules(style)
+      .filter(
+        (rule) =>
+          (rule.selector.includes("mm-link") || rule.selector.includes("mm-cta") || rule.selector.includes("mm-close")) &&
+          rule.body.includes("transition"),
+      )
+      .map((rule) => `${rule.selector} { ${rule.body} }`);
+    expect(found).toEqual([
+      ".mm-link { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 100%; padding: 0.15rem 0; border-radius: var(--site-block-radius, 0.5rem); color: var(--site-block-fg, #1a1a1a); font: inherit; text-decoration: none; cursor: pointer; transition: color var(--site-block-motion, 180ms) ease; }",
+      "@media (prefers-reduced-motion: reduce) > .mm-link, .mm-cta, .mm-close { transition: none; }",
+    ]);
   });
 
   test("the fade is opacity only, --site-block-motion-enter (240ms) in, --site-block-motion (180ms) out, and only without reduced motion", () => {
