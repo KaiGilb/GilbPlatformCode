@@ -130,6 +130,7 @@ The footer is in the server's HTML at its final size: no image and no web font o
 - The links are a `<ul>` of `<li>`, not the bare links the gilb-web file drew. A screen reader can say how many there are.
 - Each link is at least 44 px tall (`inline-flex`, items centred), from the myjackfruit footer's tap-target rule. The gilb-web links were the height of the text only.
 - `endLink` is the right-hand link from the mynet-web footer ("Built on Gilb" there). The gilb-web footer has no such link. Here it is a prop, and it is left out unless the host passes it. The mynet file has no nav; pass `links` as `[]` for that shape.
+- Top and bottom padding are gilb-web's (3.5rem on the top band, 1.5rem on the bottom); mynet-web's 3rem and 1.25rem are not used. The right-hand link is mynet-web's `text-xs`: 0.75rem on a 1rem line (and still 44 px tall).
 - The `brand` slot is new. Both source files wrote the brand name in a paragraph and had no slot.
 
 ## Source

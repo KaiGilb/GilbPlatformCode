@@ -147,6 +147,11 @@ function useAnchor(link: FooterLink): boolean {
   color: var(--site-block-muted, #6b7280);
   text-decoration: none;
 }
+/* The right-hand link is mynet-web's text-xs: 0.75rem. It stays 44px tall like the others. */
+.sf-end {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
 .sf-link:hover, .sf-end:hover { color: var(--site-block-fg, #1a1a1a); }
 .sf-link:focus-visible, .sf-end:focus-visible {
   color: var(--site-block-fg, #1a1a1a);

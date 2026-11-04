@@ -60,6 +60,16 @@ describe("SiteFooter", () => {
     expect([...nav.querySelectorAll("li")].map((li) => li.querySelector("a"))).toEqual(anchors);
   });
 
+  test("a footer with exactly one link still draws the nav", () => {
+    wrapper = mount(SiteFooter, { props: { brandName: "Acme", links: [LINKS[0]!] }, attachTo: document.body });
+    const nav = document.querySelector("nav");
+    expect(nav).not.toBeNull();
+    expect(nav!.querySelectorAll("a")).toHaveLength(1);
+    wrapper.unmount();
+    wrapper = mount(SiteFooter, { props: { brandName: "Acme", links: [] }, attachTo: document.body });
+    expect(document.querySelector("nav")).toBeNull();
+  });
+
   test("a custom navLabel is the nav's name", () => {
     wrapper = mount(SiteFooter, { props: { brandName: "Acme", links: LINKS, navLabel: "Company" }, attachTo: document.body });
     expect(document.querySelector("nav")!.getAttribute("aria-label")).toBe("Company");
@@ -214,6 +224,17 @@ describe("the unit's style", () => {
 
   test("the bottom row is spaced apart", () => {
     expect(ruleBodies(style, ".sf-bottom-inner").some((body) => /justify-content:\s*space-between/.test(body))).toBe(true);
+  });
+
+  test("the right-hand link is 0.75rem on a 1rem line (mynet-web's text-xs), still 44px tall", () => {
+    const withSize = ruleBodies(style, ".sf-end").filter((body) => /font-size:/.test(body));
+    // The last rule that sets it wins, so it is the last one that must say 0.75rem.
+    expect(withSize[withSize.length - 1]).toMatch(/font-size:\s*0\.75rem;\s*line-height:\s*1rem/);
+    expect(ruleBodies(style, ".sf-end").some((body) => /min-height:\s*44px/.test(body))).toBe(true);
+  });
+
+  test("the bottom band's padding is 1.5rem (gilb-web's py-6)", () => {
+    expect(ruleBodies(style, ".sf-bottom-inner").some((body) => /padding:\s*1\.5rem 1rem/.test(body))).toBe(true);
   });
 
   test("the top band's padding is 3.5rem", () => {
