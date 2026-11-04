@@ -6,7 +6,7 @@ A waiting-list form: labelled questions, email required and the rest optional, c
 
 A waitlist signup form for a website: only the email is required, the other questions are optional, and it still posts with no script.
 
-`<WaitlistForm>` draws a `<form method="post">` whose `action` is `actionUrl` (default `/api/waitlist`). Each question comes from `fields` (default `defaultWaitlistFields`): a text, email, tel or textarea control, or a choice drawn as a `<fieldset>` with a `<legend>` and one radio per answer. A choice answer may carry one line of help under its label. Only a field with `required` carries the `required` attribute; every other label ends with the muted `optional` word (default `(optional)`). In the default list that field is email.
+`<WaitlistForm>` draws a `<form method="post">` with no `action` of its own (see `noScriptAction`); the script sends to `actionUrl` (default `/api/waitlist`). Each question comes from `fields` (default `defaultWaitlistFields`): a text, email, tel or textarea control, or a choice drawn as a `<fieldset>` with a `<legend>` and one radio per answer. A choice answer may carry one line of help under its label. Only a field with `required` carries the `required` attribute; every other label ends with the muted `optional` word (default `(optional)`). In the default list that field is email.
 
 The default order puts the personal questions first: name, email and what the person wants to build come before company and team size, so someone on their own is not asked about a company first. That is why the source form was ordered that way. Experience opens on `not-yet` ("Not yet"), so the selected answer is a welcome rather than the bottom of a scale. A host passes `fields` in any order; the component does not reorder them.
 
@@ -14,11 +14,11 @@ Above the button, `notice` (default none) is a sentence, with an optional link. 
 
 `page` is sent with the body so the record can say where the person signed up. It is not a field the person types.
 
-On submit the form runs `validate`. A problem marks the control `aria-invalid`, points `aria-describedby` at the error text, and moves focus to the first invalid control. Nothing is sent. A clean submit posts JSON. While it sends, the button is disabled and reads "Sending…". A truthy answer replaces the form with the thank-you block (a heading with `tabindex="-1"`, then one line) and moves focus to that heading. The `sent` slot replaces that block. A throw, or a falsy answer (`false`, `0`, `null`, `""`), shows the error line and keeps every answer. The line sits in an `aria-live="polite"` region that is in the form from the start. `sent(body)` and `failed(error)` fire for those two endings.
+On submit the form runs `validate`. A problem marks the control `aria-invalid`, points `aria-describedby` at the error text, and moves focus to the first invalid control. Nothing is sent. A problem clears as soon as that field's answer passes (on every field, that field only). A clean submit posts JSON. While it sends, the button is disabled and reads "Sending…", and the live region holds the same word, so a screen reader hears it. A truthy answer replaces the form with the thank-you block (a heading with `tabindex="-1"`, then one line) and moves focus to that heading. The `sent` slot replaces that block: it should hold a heading (`h1`, `h2`, `h3`, or an element with `tabindex="-1"`), which takes the focus. With none, focus goes to the wrapper around the slot (`tabindex="-1"`), so it never falls to the page body. A throw, or a falsy answer (`false`, `0`, `null`, `""`), shows the error line and keeps every answer. The line sits in an `aria-live="polite"` region that is in the form from the start. `sent(body)` and `failed(error)` fire for those two endings.
 
 With `turnstileSiteKey` the component loads Turnstile itself, and not before it has to: when the form comes within one viewport (an `IntersectionObserver` with `rootMargin` `100% 0px`) or when anything inside the form takes focus, whichever is first. Where there is no `IntersectionObserver`, it loads on mount. The script address is `turnstileScriptUrl` (default `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`). After it loads, the component calls `turnstile.render` on its own box. A send that happens before the token arrives waits up to `tokenWaitMs` (default 8000) and then shows the error line with the answers kept. No key means no script, no box and no token.
 
-Without script the browser still posts the named fields to `actionUrl` (a normal form body, not JSON). `page`, `notice` and the token are added by the script.
+With no script the browser posts the named fields, form-encoded (not JSON), to the current page, because the form has no `action`; or to `noScriptAction` when you set it. `page`, `notice` and the token are added by the script. With a Turnstile key set, such a post carries no token, and a server that checks Turnstile will refuse it: a keyed form cannot be submitted without script.
 
 Also exported: `validate(fields, values)`, `buildBody(fields, values, extra)`, `postJson(url, body)` (the default sender: 2xx resolves `true`, anything else throws), `defaultWaitlistFields`, `DEFAULT_WAITLIST_LABELS` and `DEFAULT_TURNSTILE_SCRIPT_URL`.
 
@@ -117,7 +117,8 @@ if (errors.length) return new Response('no', { status: 422 })
 | Prop | Meaning |
 |---|---|
 | `fields?` | `WaitlistField[]`. Default `defaultWaitlistFields`: name (text, 80), email (email, required, 254), idea (textarea, 1000), company (text, 120), team size (`just-me`, `2-10`, `11-50`, `50-plus`), experience (`not-yet`, `a-little`, `with-ai`, `i-code`, default `not-yet`) |
-| `actionUrl?` | where the form posts, default `/api/waitlist` |
+| `actionUrl?` | where the script sends the JSON, default `/api/waitlist` |
+| `noScriptAction?` | the form's `action` attribute, used only with no script. Default empty: no `action` attribute, so the browser posts to the current page |
 | `turnstileSiteKey?` | the Turnstile site key (public). Empty (the default) draws no widget and loads no script |
 | `turnstileScriptUrl?` | the script address, default `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit` |
 | `page?` | sent as `page`, including when it is `""` (the default) |
@@ -126,7 +127,7 @@ if (errors.length) return new Response('no', { status: 422 })
 | `send?` | replaces the default sender: `(body) => Promise`. A truthy answer is sent. A falsy answer is not sent. A throw is a failure |
 | `tokenWaitMs?` | how long a send waits for the Turnstile token, default `8000` |
 
-Slot: `sent` replaces the thank-you block. Its slot prop `body` is the object that was sent.
+Slot: `sent` replaces the thank-you block. Its slot prop `body` is the object that was sent. Put a heading in it: that is where focus goes.
 
 Events: `sent(body)` after a truthy answer; `failed(error)` after a throw or a falsy answer.
 
@@ -134,13 +135,13 @@ Events: `sent(body)` after a truthy answer; `failed(error)` after a throw or a f
 
 ## Host must supply
 
-The endpoint `actionUrl` points at. With script the body is JSON (`content-type: application/json`). Without script it is a normal form post of the named fields, so the endpoint should not put those answers in a query string; it can refuse a body that is not JSON. Either way the server checks the answers with `validate` and the same `fields`, and checks `page`, the notice and the Turnstile token itself. The Turnstile secret stays on the server.
+The endpoint `actionUrl` points at. With script the body is JSON (`content-type: application/json`). Without script it is a normal form post of the named fields to the current page (or `noScriptAction`), so a page that takes it must handle a form-encoded POST; the endpoint should not put those answers in a query string. A server that checks Turnstile refuses the no-script post, which has no token. Either way the server checks the answers with `validate` and the same `fields`, and checks `page`, the notice and the Turnstile token itself. The Turnstile secret stays on the server.
 
 When `turnstileSiteKey` is set, the page's Content-Security-Policy must allow the script and the widget's frame: `script-src` and `frame-src` for `https://challenges.cloudflare.com`. The component loads the script; the host does not add a second tag.
 
 The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
-- `--site-block-muted` secondary text, the optional word, help, the notice, and field borders
+- `--site-block-muted` secondary text, the optional word, help, the notice, and field borders (the muted colour at 65%, as the source's `border-brand-muted/65`). Keep that border at 3:1 or better against the field background (`--site-block-bg`), WCAG 1.4.11
 - `--site-block-bg` the field background
 - `--site-block-fg` the text
 - `--site-block-accent` the button, links, the focus ring and the radio accent
@@ -154,7 +155,7 @@ No Tailwind is needed: the styles ship in the component, scoped to it. They set 
 
 ## Layout stability
 
-The fields are in the first HTML, at their size. Nothing below the form is held open for a later state. The thank-you block does not keep the form's height: it replaces the form, and it is shorter, so what follows the form moves up. With a Turnstile key, the widget is drawn into an empty box when the script arrives and pushes the notice and the button down; without a key there is no box. The error line appears in the live region above the button and pushes the button down by one line. Choice help, when a field has it, is in the first HTML and does not arrive later.
+The fields are in the first HTML, at their size. Nothing below the form is held open for a later state. The thank-you block does not keep the form's height: it replaces the form, and it is shorter, so what follows the form moves up. With a Turnstile key, the widget's box is reserved at 65px (`min-height`, the source's reservation) from the first HTML, so when the script draws the widget the notice and the button do not move; without a key there is no box. The error line appears in the live region above the button and pushes the button down by one line. Choice help, when a field has it, is in the first HTML and does not arrive later.
 
 ## Do not
 
@@ -166,12 +167,16 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 
 ## Wrong readings
 
-- Ids are per instance, from Vue's `useId` (`wl-email-<id>` and so on). The source used fixed `wl-*` ids and said never to put two forms on one page. Two forms on one page do not share ids. The radio `name` is the field name, so a group stays a group; names may repeat across two forms because each is its own form.
+- Ids are per instance, from Vue's `useId`: `<id>-field-<name>`, `<id>-help-<name>`, `<id>-error-<name>` and `<id>-option-<name>-<value>`. Any character in a name or value other than a letter or digit is written `_<hex>_`, so a field called `email-help` cannot take the id of `email`'s help. The source used fixed `wl-*` ids and said never to put two forms on one page. Two forms on one page do not share ids. The radio `name` is the field name, so a group stays a group; names may repeat across two forms because each is its own form.
 - The source's sentences are not in this unit. Labels, help, the options, the notice, the button and the thank-you are `fields`, `labels` and `notice`. The default words are neutral English, not that site's copy.
 - The source skipped the request in a dev build (`import.meta.dev`) and showed a preview line. That skip is not here. Pass `send` when a preview should show the thank-you without a request.
 - Tailwind is written out as plain CSS. There is no utility class and no `@apply`.
 - The source left the button focusable while sending (`aria-disabled`). This unit disables the button, as the other forms in this library do.
 - The source waited 15 seconds for a token. This unit waits `tokenWaitMs`, default 8 seconds.
+- An error clears when the answer passes, for every field. The source did this for the email only.
+- `noScriptAction` is new and empty by default. The source form had `method="post"` and no `action`, so with no script it posted to the current page; so does this one. `actionUrl` is only where the script sends the JSON (the source called `/api/waitlist` itself). With a Turnstile key set, a no-script post has no token, and a server that checks Turnstile refuses it.
+- If the `sent` slot has no heading or `tabindex="-1"` element, focus goes to the wrapper (`tabindex="-1"`). The source had no slot.
+- When `fields` changes after mount, a new choice opens on its `defaultValue`.
 - The source's phone question, "which AI" question and honeypot are not in the default list. Add a `tel` or `choice` field for a question you want. The body contains only declared fields, plus `page`, `notice` and `turnstileToken`.
 
 ## Source

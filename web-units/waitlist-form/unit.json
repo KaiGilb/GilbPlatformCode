@@ -17,12 +17,16 @@
   },
   "namedChanges": [
     "The field rules (lengths, allowed answers, the email shape, the notice stored word for word) are read from `workers/waitlist-fields.ts` at the same commit and written as `src/fields.ts`, with a neutral default field list in different lengths and choice values; the host passes `fields` and its server validates that same list.",
-    "Ids are per instance from Vue's `useId` (`wl-email-<id>`); the source used fixed `wl-*` ids.",
+    "Ids are per instance from Vue's `useId`, built as `<id>-field-<name>`, `<id>-help-<name>`, `<id>-error-<name>` and `<id>-option-<name>-<value>`, with every character in a name or value other than a letter or digit written as `_<hex>_` so two names can never give one id; the source used fixed `wl-*` ids.",
     "The source's sentences are not in the unit: labels, help, options, notice, button and thank-you are `fields`, `labels` and `notice`, with neutral English defaults.",
     "The source's dev-build skip of the request (`import.meta.dev`) is not here; pass `send` for a preview.",
     "Tailwind is written out as plain CSS; no utility class and no `@apply`.",
     "The button is disabled while sending; the source left it focusable with `aria-disabled`.",
     "The token wait is `tokenWaitMs`, default 8 seconds; the source waited 15.",
+    "An error clears as soon as that field's answer is valid, on every field (on `input` or `change`, that field only). The source did this for the email field only. A new error is never added while typing.",
+    "New prop `noScriptAction` (default empty). With no script the form posts to the current page, as the source's `<form method=\"post\">` with no `action` did; with `noScriptAction` set, to that address. `actionUrl` is only where the script sends the JSON. With a Turnstile key set, a post with no script carries no token, so a server that checks Turnstile refuses it.",
+    "When the `sent` slot holds no `h1`, `h2`, `h3` or `[tabindex=\"-1\"]` element, focus goes to the sent wrapper itself (`tabindex=\"-1\"`); the source had no slot.",
+    "When `fields` changes after mount, a new choice field opens on its `defaultValue`.",
     "The source's phone question, \"which AI\" question and honeypot are not in the default list; the body holds only declared fields plus `page`, `notice` and `turnstileToken`."
   ],
   "newFiles": [

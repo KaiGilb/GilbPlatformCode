@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { h } from "vue";
 import axe from "axe-core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import WaitlistForm from "./WaitlistForm.vue";
 import { TURNSTILE_POLL_MS } from "./turnstile";
 import type { WaitlistField } from "./types";
@@ -199,12 +201,28 @@ describe("WaitlistForm submit", () => {
 });
 
 describe("WaitlistForm no-JS shape", () => {
-  test("the form posts to actionUrl and every control has a name", () => {
-    const actionUrl = "/elsewhere/join";
-    wrapper = mount(WaitlistForm, { props: { actionUrl }, attachTo: document.body });
+  test("the form has no action by default (it posts to the current page), and the given noScriptAction when set", () => {
+    wrapper = mount(WaitlistForm, { props: { actionUrl: "/elsewhere/join" }, attachTo: document.body });
+    expect(document.querySelector("form")!.hasAttribute("action")).toBe(false);
+    wrapper.unmount();
+    wrapper = mount(WaitlistForm, { props: { actionUrl: "/elsewhere/join", noScriptAction: "/join-plain" }, attachTo: document.body });
+    expect(document.querySelector("form")!.getAttribute("action")).toBe("/join-plain");
+  });
+
+  test("the script path sends to actionUrl, not to noScriptAction", async () => {
+    const fetchMock = vi.fn(async () => new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    wrapper = mount(WaitlistForm, { props: { actionUrl: "/api/join", noScriptAction: "/join-plain" }, attachTo: document.body });
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe("/api/join");
+  });
+
+  test("the form is a post form and every control has a name", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
     const form = document.querySelector("form")!;
     expect(form.getAttribute("method")).toBe("post");
-    expect(form.getAttribute("action")).toBe(actionUrl);
     const controls = [...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")];
     expect(controls.length).toBeGreaterThan(0);
     for (const control of controls) expect(control.getAttribute("name")).toBeTruthy();
@@ -263,7 +281,8 @@ describe("WaitlistForm Turnstile token", () => {
     await vi.advanceTimersByTimeAsync(7999);
     await flushPromises();
     expect(send).not.toHaveBeenCalled();
-    expect(document.querySelector('[aria-live="polite"]')!.textContent!.trim()).toBe("");
+    // While it waits, the live region says it is sending (it is not an error yet).
+    expect(document.querySelector('[aria-live="polite"]')!.textContent!.trim()).toBe("Sending…");
     await vi.advanceTimersByTimeAsync(1);
     await flushPromises();
     expect(send).not.toHaveBeenCalled();
@@ -288,5 +307,338 @@ describe("WaitlistForm axe", () => {
     await flushPromises();
     expect(document.querySelector(".wl-fail")).not.toBeNull();
     expect(await axeIds()).toEqual([]);
+  });
+});
+
+// ---- QA round 2 ----
+
+interface FakeApi {
+  render: ReturnType<typeof vi.fn>;
+  getResponse: ReturnType<typeof vi.fn>;
+  reset: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+}
+function fakeApi(): FakeApi {
+  return { render: vi.fn(() => "w"), getResponse: vi.fn(() => ""), reset: vi.fn(), remove: vi.fn() };
+}
+async function submit(w: VueWrapper): Promise<void> {
+  await w.find("form").trigger("submit");
+  await flushPromises();
+}
+const emailOnly: WaitlistField[] = [{ name: "email", kind: "email", label: "Email", required: true }];
+
+describe("WaitlistForm announces and clears", () => {
+  test("while sending, the live region holds the sending word; it is empty before and after a failure ends it", async () => {
+    let release!: (value: unknown) => void;
+    wrapper = mount(WaitlistForm, {
+      props: { send: () => new Promise((ok) => { release = ok; }), labels: { sending: "Working" } },
+      attachTo: document.body,
+    });
+    const live = document.querySelector('[role="status"]')!;
+    expect(live.textContent!.trim()).toBe("");
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    expect(live.textContent!.trim()).toBe("Working");
+    release(false);
+    await flushPromises();
+    expect(live.textContent).not.toContain("Working");
+    expect(live.textContent).toContain("did not go through");
+  });
+
+  test("the live region is role=status and aria-live=polite", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    const live = document.querySelector(".wl-live")!;
+    expect(live.getAttribute("role")).toBe("status");
+    expect(live.getAttribute("aria-live")).toBe("polite");
+  });
+
+  test("an email error goes as soon as the address is valid, with its aria-invalid", async () => {
+    wrapper = mount(WaitlistForm, { props: { send: async () => true }, attachTo: document.body });
+    const email = wrapper.find('input[type="email"]');
+    await email.setValue("bad");
+    await submit(wrapper);
+    expect(email.attributes("aria-invalid")).toBe("true");
+    expect(wrapper.find(".wl-field-error").exists()).toBe(true);
+    await email.setValue("still bad");
+    expect(email.attributes("aria-invalid")).toBe("true");
+    await email.setValue("good@example.test");
+    expect(email.attributes("aria-invalid")).toBeUndefined();
+    expect(email.attributes("aria-describedby")).toBeUndefined();
+    expect(wrapper.find(".wl-field-error").exists()).toBe(false);
+  });
+
+  test("the same holds for a text field and a choice: only the field fixed is cleared", async () => {
+    const fields: WaitlistField[] = [
+      { name: "email", kind: "email", label: "Email", required: true },
+      { name: "city", kind: "text", label: "City", required: true },
+      { name: "size", kind: "choice", label: "Size", required: true, options: [{ value: "s", label: "S" }, { value: "l", label: "L" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    await submit(wrapper);
+    expect(wrapper.findAll(".wl-field-error")).toHaveLength(3);
+    await wrapper.find('input[name="city"]').setValue("Oslo");
+    expect(wrapper.find('input[name="city"]').attributes("aria-invalid")).toBeUndefined();
+    expect(wrapper.findAll(".wl-field-error")).toHaveLength(2);
+    expect(wrapper.find('input[type="email"]').attributes("aria-invalid")).toBe("true");
+    await wrapper.find('input[name="size"][value="l"]').setValue(true);
+    expect(wrapper.find("fieldset").attributes("aria-invalid")).toBeUndefined();
+    expect(wrapper.findAll(".wl-field-error")).toHaveLength(1);
+    expect(wrapper.find('input[type="email"]').attributes("aria-invalid")).toBe("true");
+  });
+
+  test("typing never adds an error to a field that had none", async () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    await wrapper.find('input[type="email"]').setValue("bad");
+    expect(wrapper.find(".wl-field-error").exists()).toBe(false);
+  });
+});
+
+describe("WaitlistForm focus after sent", () => {
+  test("a sent slot with no heading: focus lands on the wrapper, not the body", async () => {
+    wrapper = mount(WaitlistForm, { props: { send: async () => true }, slots: { sent: "<p>Thanks</p>" }, attachTo: document.body });
+    await setEmail(wrapper);
+    await submit(wrapper);
+    const root = document.querySelector<HTMLElement>(".wl-sent")!;
+    expect(root.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(root);
+  });
+
+  test("a sent slot with a heading: focus lands on that heading", async () => {
+    wrapper = mount(WaitlistForm, {
+      props: { send: async () => true },
+      slots: { sent: '<h3 id="mine" tabindex="-1">Mine</h3>' },
+      attachTo: document.body,
+    });
+    await setEmail(wrapper);
+    await submit(wrapper);
+    expect(document.activeElement).toBe(document.getElementById("mine"));
+  });
+
+  test("the sent slot is used and gets the body that was sent", async () => {
+    wrapper = mount(WaitlistForm, {
+      props: { send: async () => true },
+      slots: { sent: '<template #sent="{ body }"><h3 id="mine" tabindex="-1">{{ body.email }}</h3></template>' },
+      attachTo: document.body,
+    });
+    await setEmail(wrapper, "a@b.co");
+    await submit(wrapper);
+    expect(document.getElementById("mine")?.textContent).toBe("a@b.co");
+    expect(document.querySelector(".wl-sent-heading")).toBeNull();
+  });
+});
+
+describe("WaitlistForm ids and defaults", () => {
+  test("fields named email and email-help (with help) give no duplicate id", () => {
+    const fields: WaitlistField[] = [
+      { name: "email-help", kind: "text", label: "X", help: "h1" },
+      { name: "email", kind: "email", label: "E", required: true, help: "h2" },
+      { name: "a b", kind: "text", label: "AB", help: "h3" },
+      { name: "ab", kind: "text", label: "AB2", help: "h4" },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const ids = [...document.querySelectorAll<HTMLElement>("[id]")].map((el) => el.id);
+    expect(ids).toHaveLength(8);
+    expect(new Set(ids).size).toBe(ids.length);
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]')!;
+    expect(email.id).toMatch(/-field-email$/);
+    expect(email.getAttribute("aria-describedby")).toMatch(/-help-email$/);
+    for (const input of document.querySelectorAll("input")) {
+      const label = document.querySelector(`label[for="${input.id}"]`);
+      expect(label).not.toBeNull();
+      const help = document.getElementById(input.getAttribute("aria-describedby") ?? "");
+      expect(help?.tagName).toBe("P");
+    }
+  });
+
+  test("names that look like another part's id give no duplicate id: help-email, error-email, and a choice whose name and value join the same way", () => {
+    const fields: WaitlistField[] = [
+      { name: "email", kind: "email", label: "E", required: true, help: "h" },
+      { name: "help-email", kind: "text", label: "H" },
+      { name: "error-email", kind: "text", label: "R" },
+      { name: "a-b", kind: "choice", label: "AB", options: [{ value: "c", label: "C" }] },
+      { name: "a", kind: "choice", label: "A", options: [{ value: "b-c", label: "BC" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const ids = [...document.querySelectorAll<HTMLElement>("[id]")].map((el) => el.id);
+    expect(ids).toHaveLength(6);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("a choice added after mount opens on its defaultValue", async () => {
+    wrapper = mount(WaitlistForm, { props: { fields: emailOnly }, attachTo: document.body });
+    await wrapper.setProps({
+      fields: [
+        ...emailOnly,
+        { name: "z", kind: "choice", label: "Z", defaultValue: "b", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+      ],
+    });
+    expect(document.querySelector<HTMLInputElement>('input[name="z"]:checked')?.value).toBe("b");
+  });
+});
+
+describe("WaitlistForm wiring (QA gaps)", () => {
+  test("a second form mounted after the script has loaded still draws its widget", async () => {
+    const api = fakeApi();
+    wrapper = mount(WaitlistForm, { props: { turnstileSiteKey: "k" }, attachTo: document.body });
+    document.querySelector("script")!.dispatchEvent(new Event("load"));
+    (window as unknown as { turnstile: FakeApi }).turnstile = api;
+    await flushPromises();
+    wrapper.unmount();
+    wrapper = mount(WaitlistForm, { props: { turnstileSiteKey: "k" }, attachTo: document.body });
+    await flushPromises();
+    expect(api.render).toHaveBeenCalledTimes(2);
+  });
+
+  test("unmounting removes the widget", async () => {
+    const api = fakeApi();
+    (window as unknown as { turnstile: FakeApi }).turnstile = api;
+    wrapper = mount(WaitlistForm, { props: { turnstileSiteKey: "k" }, attachTo: document.body });
+    await flushPromises();
+    wrapper.unmount();
+    wrapper = undefined;
+    expect(api.remove).toHaveBeenCalledWith("w");
+  });
+
+  test("a second submit event while sending sends once", async () => {
+    const send = vi.fn(() => new Promise(() => {}));
+    wrapper = mount(WaitlistForm, { props: { send }, attachTo: document.body });
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await wrapper.find("form").trigger("submit");
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test("a textarea field is a textarea, a choice is radios, and the form is novalidate", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    expect(document.querySelectorAll("textarea")).toHaveLength(1);
+    expect(document.querySelectorAll('input[type="radio"]')).toHaveLength(8);
+    expect(document.querySelector("form")!.noValidate).toBe(true);
+  });
+
+  test("a notice with a label but no href stores what was shown: the sentence, without the label", async () => {
+    const send = vi.fn(async (_body: Record<string, string>) => true);
+    wrapper = mount(WaitlistForm, { props: { send, notice: { text: "N", linkLabel: "L" } }, attachTo: document.body });
+    await setEmail(wrapper);
+    await submit(wrapper);
+    expect(send.mock.calls[0]![0].notice).toBe("N");
+    expect(document.querySelector(".wl-notice")).toBeNull();
+  });
+
+  test("the notice shows while idle with that wording, and not as a link without an href", () => {
+    wrapper = mount(WaitlistForm, { props: { notice: { text: "N", linkLabel: "L" } }, attachTo: document.body });
+    expect(document.querySelector(".wl-notice")!.textContent).toBe("N");
+    expect(document.querySelector(".wl-notice a")).toBeNull();
+  });
+
+  test("a too-long answer shows the tooLong message with its maximum", async () => {
+    const fields: WaitlistField[] = [...emailOnly, { name: "t", kind: "text", label: "T", maxLength: 3 }];
+    wrapper = mount(WaitlistForm, { props: { fields, send: async () => true }, attachTo: document.body });
+    await setEmail(wrapper);
+    await wrapper.find('input[name="t"]').setValue("abcdef");
+    await submit(wrapper);
+    expect(wrapper.find(".wl-field-error").text()).toBe("This is longer than 3 characters.");
+  });
+
+  test("a required choice has no optional word and shows its error line inside the fieldset", async () => {
+    const fields: WaitlistField[] = [
+      ...emailOnly,
+      { name: "c", kind: "choice", label: "Pick", required: true, options: [{ value: "a", label: "A" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    expect(wrapper.find("legend").text()).not.toContain("optional");
+    await setEmail(wrapper);
+    await submit(wrapper);
+    const error = wrapper.find("fieldset .wl-field-error");
+    expect(error.exists()).toBe(true);
+    expect(wrapper.find("fieldset").attributes("aria-describedby")).toBe(error.attributes("id"));
+  });
+
+  test("an optional choice reads optional in its legend", () => {
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    expect(wrapper.find("legend").text()).toContain("(optional)");
+  });
+
+  test("a focus inside the form loads the script (no IntersectionObserver)", async () => {
+    vi.stubGlobal("IntersectionObserver", class { observe(): void {} disconnect(): void {} });
+    wrapper = mount(WaitlistForm, { props: { turnstileSiteKey: "k" }, attachTo: document.body });
+    expect(document.scripts).toHaveLength(0);
+    await wrapper.find('input[name="name"]').trigger("focusin");
+    expect(document.scripts).toHaveLength(1);
+  });
+
+  test("a field's help text is drawn and described by", () => {
+    const fields: WaitlistField[] = [{ name: "email", kind: "email", label: "E", required: true, help: "HELPTEXT" }];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const help = [...document.querySelectorAll("p")].find((p) => p.textContent === "HELPTEXT")!;
+    expect(help).toBeTruthy();
+    expect(document.querySelector("input")!.getAttribute("aria-describedby")).toBe(help.id);
+  });
+});
+
+describe("WaitlistForm control attributes", () => {
+  test("an invalid textarea, radio and fieldset are marked and described by their error", async () => {
+    const fields: WaitlistField[] = [
+      { name: "email", kind: "email", label: "E", required: true },
+      { name: "idea", kind: "textarea", label: "Idea", required: true, help: "Say it", rows: 6 },
+      { name: "c", kind: "choice", label: "Pick", required: true, options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    await submit(wrapper);
+    const area = document.querySelector("textarea")!;
+    expect(area.getAttribute("aria-invalid")).toBe("true");
+    const areaIds = area.getAttribute("aria-describedby")!.split(" ");
+    expect(areaIds).toHaveLength(2);
+    expect(document.getElementById(areaIds[0]!)!.textContent).toBe("Say it");
+    expect(document.getElementById(areaIds[1]!)!.className).toContain("wl-field-error");
+    const fieldset = document.querySelector("fieldset")!;
+    const errorId = document.querySelector("fieldset .wl-field-error")!.id;
+    expect(fieldset.getAttribute("aria-invalid")).toBe("true");
+    expect(fieldset.getAttribute("aria-describedby")).toBe(errorId);
+    for (const radio of document.querySelectorAll('input[type="radio"]')) {
+      expect(radio.getAttribute("aria-invalid")).toBe("true");
+      expect(radio.getAttribute("aria-describedby")).toBe(errorId);
+      expect((radio as HTMLInputElement).required).toBe(true);
+    }
+  });
+
+  test("the textarea takes rows (default 4); the email field is not auto-capitalised or spell-checked; autocomplete is passed", () => {
+    const fields: WaitlistField[] = [
+      { name: "email", kind: "email", label: "E", required: true, autocomplete: "email" },
+      { name: "a", kind: "textarea", label: "A", rows: 7 },
+      { name: "b", kind: "textarea", label: "B" },
+      { name: "t", kind: "text", label: "T", autocomplete: "name" },
+    ];
+    wrapper = mount(WaitlistForm, { props: { fields }, attachTo: document.body });
+    const areas = [...document.querySelectorAll("textarea")];
+    expect(areas.map((a) => a.rows)).toEqual([7, 4]);
+    const email = document.querySelector<HTMLInputElement>('input[type="email"]')!;
+    expect(email.getAttribute("autocapitalize")).toBe("none");
+    expect(email.getAttribute("spellcheck")).toBe("false");
+    expect(email.getAttribute("autocomplete")).toBe("email");
+    const text = document.querySelector<HTMLInputElement>('input[name="t"]')!;
+    expect(text.getAttribute("autocapitalize")).toBeNull();
+    expect(text.getAttribute("spellcheck")).toBeNull();
+    expect(text.getAttribute("autocomplete")).toBe("name");
+  });
+});
+
+describe("WaitlistForm style", () => {
+  const SFC = readFileSync(join(process.cwd(), "src", "WaitlistForm.vue"), "utf8");
+  const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  test("the field border is the muted colour at 65 percent", () => {
+    expect(style).toMatch(/\.wl-field \{[^}]*border: 1px solid color-mix\(in srgb, var\(--site-block-muted, #4b5563\) 65%, transparent\);/);
+  });
+
+  test("the widget's box is reserved at 65px", () => {
+    expect(style).toMatch(/\.wl-turnstile \{ min-height: 65px; \}/);
+  });
+
+  test("the box exists with a key and is absent without one", () => {
+    wrapper = mount(WaitlistForm, { props: { turnstileSiteKey: "k" }, attachTo: document.body });
+    expect(document.querySelector(".wl-turnstile")).not.toBeNull();
+    wrapper.unmount();
+    wrapper = mount(WaitlistForm, { attachTo: document.body });
+    expect(document.querySelector(".wl-turnstile")).toBeNull();
   });
 });

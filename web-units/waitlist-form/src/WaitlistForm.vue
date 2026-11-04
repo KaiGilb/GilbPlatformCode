@@ -11,13 +11,14 @@
  *
  * With `turnstileSiteKey` the Turnstile script loads late (near the viewport, or on the first focus)
  * and a send waits up to `tokenWaitMs` for the token. The form is a real `method="post"` form, so
- * without script the named fields still post to `actionUrl`.
+ * without script the named fields post (form-encoded) to the current page, or to `noScriptAction`
+ * when that is set. With a Turnstile key such a post carries no token.
  *
- * Props: `fields?`, `actionUrl?`, `turnstileSiteKey?`, `turnstileScriptUrl?`, `page?`, `labels?`,
+ * Props: `fields?`, `actionUrl?`, `noScriptAction?`, `turnstileSiteKey?`, `turnstileScriptUrl?`, `page?`, `labels?`,
  * `notice?`, `send?`, `tokenWaitMs?`.
  * Slot: `sent` replaces the thank-you block. Events: `sent(body)`, `failed(error)`.
  */
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, useId } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
 import { buildBody, validate, type FieldError } from "./fields";
 import { postJson } from "./send";
 import { createTurnstile, DEFAULT_TURNSTILE_SCRIPT_URL, type TurnstileController } from "./turnstile";
@@ -32,7 +33,10 @@ import {
 const props = withDefaults(
   defineProps<{
     fields?: WaitlistField[];
+    /** Where the script sends the JSON. */
     actionUrl?: string;
+    /** The form's own `action`, used only with no script. Empty: no `action` attribute, so the browser posts to the current page. */
+    noScriptAction?: string;
     turnstileSiteKey?: string;
     turnstileScriptUrl?: string;
     page?: string;
@@ -44,6 +48,7 @@ const props = withDefaults(
   {
     fields: () => defaultWaitlistFields,
     actionUrl: "/api/waitlist",
+    noScriptAction: "",
     turnstileSiteKey: "",
     turnstileScriptUrl: DEFAULT_TURNSTILE_SCRIPT_URL,
     page: "",
@@ -71,22 +76,27 @@ const sentHeading = ref<HTMLElement | null>(null);
 let controller: TurnstileController | null = null;
 let alive = true;
 
+/**
+ * A name or value as an id part. Every character but a letter or digit becomes `_<hex>_`, so
+ * the `-` the ids use between parts never appears inside a part, and two different names
+ * never give the same part.
+ */
 function idPart(value: string): string {
-  if (/^[A-Za-z0-9_-]+$/.test(value)) return value;
-  const slug = value.replace(/[^A-Za-z0-9_-]+/g, "");
-  return slug ? `f${slug}` : "f";
+  return value.replace(/[^A-Za-z0-9]/g, (c) => `_${(c.codePointAt(0) ?? 0).toString(16)}_`);
 }
+// The kind word (`field`, `help`, `error`, `option`) sits before the name, so a field called
+// `email-help` can never take the id of the help text of a field called `email`.
 function fieldId(name: string): string {
-  return `wl-${idPart(name)}-${uid}`;
+  return `${uid}-field-${idPart(name)}`;
 }
 function helpId(name: string): string {
-  return `wl-${idPart(name)}-help-${uid}`;
+  return `${uid}-help-${idPart(name)}`;
 }
 function errorId(name: string): string {
-  return `wl-${idPart(name)}-error-${uid}`;
+  return `${uid}-error-${idPart(name)}`;
 }
 function optionId(name: string, value: string): string {
-  return `wl-${idPart(name)}-${idPart(value)}-${uid}`;
+  return `${uid}-option-${idPart(name)}-${idPart(value)}`;
 }
 
 function initialValue(field: WaitlistField): string {
@@ -96,6 +106,16 @@ function initialValue(field: WaitlistField): string {
 
 const values = reactive<Record<string, string>>({});
 for (const field of props.fields) values[field.name] = initialValue(field);
+
+// A field added after mount starts with its own default, a choice's `defaultValue` included.
+watch(
+  () => props.fields,
+  (fields) => {
+    for (const field of fields) {
+      if (!Object.prototype.hasOwnProperty.call(values, field.name)) values[field.name] = initialValue(field);
+    }
+  },
+);
 
 function read(name: string): string {
   return values[name] ?? "";
@@ -109,6 +129,11 @@ function onFieldInput(name: string, event: Event): void {
   const target = event.target;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
   values[name] = target.value;
+  // Fixed: the message goes as soon as this answer passes. A new message is never added while typing.
+  const field = props.fields.find((item) => item.name === name);
+  if (field && errorFor(name) && validate([field], { [name]: target.value }).length === 0) {
+    fieldErrors.value = fieldErrors.value.filter((error) => error.name !== name);
+  }
 }
 
 function errorFor(name: string): FieldError | undefined {
@@ -224,7 +249,8 @@ async function onSubmit(): Promise<void> {
     controller = null;
     emit("sent", body);
     await nextTick();
-    const target = sentHeading.value ?? sentRoot.value?.querySelector<HTMLElement>("h1, h2, h3, [tabindex='-1']");
+    const target =
+      sentHeading.value ?? sentRoot.value?.querySelector<HTMLElement>("h1, h2, h3, [tabindex='-1']") ?? sentRoot.value;
     target?.focus();
   } catch (error) {
     if (!alive) return;
@@ -242,7 +268,7 @@ async function onSubmit(): Promise<void> {
       ref="formEl"
       class="wl-form"
       method="post"
-      :action="actionUrl"
+      :action="noScriptAction || undefined"
       novalidate
       @submit.prevent="onSubmit"
       @focusin="onFocusIn"
@@ -323,6 +349,7 @@ async function onSubmit(): Promise<void> {
       <!-- Always in the form, so a screen reader hears the error when it appears. Empty, it takes no space. -->
       <div class="wl-live" role="status" aria-live="polite">
         <p v-if="status === 'failed'" class="wl-fail">{{ words().failed }}</p>
+        <span v-else-if="status === 'sending'" class="wl-sr">{{ words().sending }}</span>
       </div>
 
       <button class="wl-button" type="submit" :disabled="status === 'sending'">
@@ -330,7 +357,7 @@ async function onSubmit(): Promise<void> {
       </button>
     </form>
 
-    <div v-else ref="sentRoot" class="wl-sent">
+    <div v-else ref="sentRoot" class="wl-sent" tabindex="-1">
       <slot name="sent" :body="lastBody">
         <h2 ref="sentHeading" tabindex="-1" class="wl-sent-heading">{{ words().sentHeading }}</h2>
         <p class="wl-sent-body">{{ words().sentBody }}</p>
@@ -381,7 +408,7 @@ async function onSubmit(): Promise<void> {
   color: inherit;
   line-height: inherit;
   background: var(--site-block-bg, #ffffff);
-  border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent);
   border-radius: var(--site-block-radius, 0.375rem);
 }
 .wl-field[aria-invalid="true"] { border-color: var(--site-block-danger, #b91c1c); }
@@ -417,7 +444,22 @@ async function onSubmit(): Promise<void> {
   line-height: 1.25rem;
   color: var(--site-block-danger, #b91c1c);
 }
+.wl-live { position: relative; }
 .wl-live:empty { margin: 0; }
+/* Read by a screen reader, not drawn. */
+.wl-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* The widget's box is reserved at the source's 65px, so it does not push the button when it draws. */
+.wl-turnstile { min-height: 65px; }
 .wl-button {
   display: inline-flex;
   align-items: center;
@@ -437,7 +479,8 @@ async function onSubmit(): Promise<void> {
 .wl-button:hover { opacity: 0.9; }
 .wl-button:disabled { opacity: 0.5; cursor: default; }
 .wl :focus-visible,
-.wl-sent-heading:focus {
+.wl-sent-heading:focus,
+.wl-sent:focus {
   outline: 2px solid var(--site-block-accent, #2563eb);
   outline-offset: 2px;
 }
