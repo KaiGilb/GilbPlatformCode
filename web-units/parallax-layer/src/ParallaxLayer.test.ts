@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { createSSRApp, h } from "vue";
@@ -186,4 +188,11 @@ test("axe finds no violations", async () => {
   });
   const results = await axe.run(document.body);
   expect(results.violations).toEqual([]);
+});
+
+test("the inert class turns pointer events off", () => {
+  const sfc = readFileSync(join(process.cwd(), "src", "ParallaxLayer.vue"), "utf8");
+  const style = (sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+  const stripped = style.replace(/\/\*[\s\S]*?\*\//g, "");
+  expect(stripped.replace(/\s+/g, " ").trim()).toBe(".pl-inert { pointer-events: none; }");
 });
