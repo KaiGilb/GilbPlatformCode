@@ -664,6 +664,24 @@ describe("WaitlistForm wiring (QA gaps)", () => {
     expect(send.mock.calls[0]![0].website).toBe("http://spam.test");
   });
 
+  test("the honeypot input carries the host's name, with no script and in the sent body", async () => {
+    const honeypot = { name: "hp_field", label: "Leave empty" };
+    const send = vi.fn(async (_body: Record<string, string>) => true);
+    wrapper = mount(WaitlistForm, { props: { send, honeypot }, attachTo: document.body });
+    const trap = document.querySelector(".wl-trap")!;
+    const input = trap.querySelector("input")!;
+    expect(input.getAttribute("name")).toBe("hp_field");
+    expect(trap.querySelector("label")!.textContent).toBe("Leave empty");
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    const body = send.mock.calls[0]![0]!;
+    expect(body).toHaveProperty("hp_field");
+    expect(body).not.toHaveProperty("website");
+    const html = await renderToString(createSSRApp(WaitlistForm, { honeypot }));
+    expect(html).toContain('name="hp_field"');
+  });
+
   test("a too-long answer shows the tooLong message with its maximum", async () => {
     const fields: WaitlistField[] = [...emailOnly, { name: "t", kind: "text", label: "T", maxLength: 3 }];
     wrapper = mount(WaitlistForm, { props: { fields, send: async () => true }, attachTo: document.body });
