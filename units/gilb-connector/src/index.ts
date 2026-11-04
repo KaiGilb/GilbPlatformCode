@@ -1,6 +1,8 @@
 export {
+  AI_DECLARED_ORIGIN,
   CONNECTOR_VERSION,
   DEFAULT_AGENT,
+  DEFAULT_AI_PROFILE,
   DEFAULT_ORIGIN,
   DEFAULT_USER_TEXT,
   HAND_OFF_FAILED_NEXT,
@@ -8,6 +10,7 @@ export {
   MAX_HOPS_AT_ONCE,
   NOT_CONNECTED,
   PROGRESS_EVERY_MS,
+  aiNotConnected,
   childEnv,
   parseCli,
   startConnector,

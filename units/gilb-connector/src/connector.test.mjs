@@ -161,6 +161,8 @@ function connect(opts) {
     turnId: TURN,
     env: testEnv(),
     claudeBin: FAKE_CLAUDE,
+    // These cases are the computer sign-in. The product default is the AI.
+    as: "me",
     ...opts,
   });
   const box = { session, input, output };
@@ -260,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.1.0");
+    expect(CONNECTOR_VERSION).toBe("0.2.1");
   });
 });
 
@@ -729,7 +731,7 @@ describe("stdout", () => {
   it("a spawned connector writes only JSON-RPC lines, and a missing module is the exact sentence", async () => {
     const dir = mkdtempSync(join(tmpdir(), "gilb-connector-"));
     dirs.push(dir);
-    const child = spawn(process.execPath, [MJS, "--agent", "Kai-Zen"], {
+    const child = spawn(process.execPath, [MJS, "--as", "me", "--agent", "Kai-Zen"], {
       env: {
         PATH: process.env.PATH,
         HOME: process.env.HOME,
@@ -788,7 +790,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "gilb", version: "0.1.0" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "gilb", version: "0.2.1" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);
