@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "unit": "web-units/parallax-layer",
+  "package": "@kaigilb/gilbwebsitecode-parallax-layer",
+  "version": "0.1.0",
+  "purpose": "A parallax plane for a website section: its content drifts at a slightly different rate from the scroll, so the page reads with quiet depth.",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "9dc8c8d3d12c6e6327e77484fe45753011669d99",
+    "files": [
+      {
+        "path": "components/motion/ParallaxLayer.vue",
+        "lines": null,
+        "to": "src/ParallaxLayer.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`useScrollFrame` is inlined as `src/useScrollFrame.ts`, the library `scroll-frame` unit's file, in place of the site's auto-imported `~/composables/useScrollFrame`; it behaves the same for `subscribe` and `reduced`, and has no `request()`, which this component never called.",
+    "The Tailwind class `pointer-events-none` on a decorative layer is the scoped class `pl-inert`.",
+    "Props are declared inline with `withDefaults` (same names and defaults); the source used runtime `defineProps({ … })`."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/useScrollFrame.ts",
+    "src/ParallaxLayer.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "src/useScrollFrame.ts (inlined frame bus)",
+      "replaces": "the site's ~/composables/useScrollFrame (Nuxt auto-import)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
