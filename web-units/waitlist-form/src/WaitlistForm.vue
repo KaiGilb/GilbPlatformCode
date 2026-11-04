@@ -414,10 +414,8 @@ async function onSubmit(): Promise<void> {
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
-.wl-notice a:hover, .wl-notice a:focus-visible {
-  text-decoration-color: var(--site-block-accent, #2563eb);
-  text-decoration-thickness: 2px;
-}
+.wl-notice a:hover { text-decoration-color: var(--site-block-accent, #2563eb); text-decoration-thickness: 2px; }
+.wl-notice a:focus-visible { text-decoration-thickness: 2px; }
 .wl-field {
   display: block;
   width: 100%;
@@ -437,7 +435,6 @@ async function onSubmit(): Promise<void> {
 @media (prefers-reduced-motion: no-preference) {
   .wl-field { transition: border-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
   .wl-button { transition: background-color var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1), transform var(--site-block-motion, 180ms) cubic-bezier(0.32, 0.72, 0, 1); }
-  .wl-button:active:not(:disabled) { transform: scale(0.98); }
 }
 .wl-area { resize: vertical; }
 .wl-field::placeholder { color: color-mix(in srgb, var(--site-block-muted, #4b5563) 80%, transparent); opacity: 1; }
@@ -576,6 +573,7 @@ async function onSubmit(): Promise<void> {
 }
 .wl-button:hover { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)); }
 .wl-button:disabled { opacity: 0.7; cursor: progress; }
+.wl-button:active:not(:disabled) { transform: scale(0.98); }
 .wl :focus-visible,
 .wl-sent-heading:focus {
   outline: 2px solid var(--site-block-accent, #2563eb);

@@ -184,7 +184,7 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 - The source's phone question, "which AI" question and honeypot are not in the default list. Add a `tel` or `choice` field for a question you want. The body contains only declared fields, plus `page`, `notice` and `turnstileToken`.
 - A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.
 - An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.
-- The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face at 44.8px. The `sent` slot replaces the block.
+- The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block.
 
 ## Source
 
