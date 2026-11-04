@@ -145,10 +145,10 @@ Events:
 The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
 - `--site-block-bg` the sheet colour (fallback `#ffffff`) and the opaque end of the fade behind Close
-- `--site-block-bg-fade` the transparent end of that fade (fallback `rgba(247, 244, 237, 0)`, this source's cream at alpha 0). A host that remaps `--site-block-bg` should set this to the same colour at alpha 0; a relative-colour alpha does not rasterise the same
+- `--site-block-bg-fade` the transparent end of that fade (fallback `rgba(255, 255, 255, 0)`, the transparent end of the white `--site-block-bg` fallback). The source site sets its cream at alpha 0. A host that remaps `--site-block-bg` should set this to the same colour at alpha 0; a relative-colour alpha does not rasterise the same
 - `--site-block-sheet-wash` the ground's background image, over `--site-block-bg` on `.mm-ground` (fallback `none`)
 - `--site-block-fg` link and static text (fallback `#1a1a1a`)
-- `--site-block-shadow` the sheet's shadow colour (fallback `rgba(28, 28, 20, 0.08)`). The offset stays `0 4px 12px -2px`. `color-mix` and `rgb(from … / 0.08)` rasterise a different shadow than this `rgba()` form
+- `--site-block-shadow` the sheet's shadow colour (fallback `rgba(0, 0, 0, 0.08)`). The source site sets `rgba(28, 28, 20, 0.08)`. The offset stays `0 4px 12px -2px`. `color-mix` and `rgb(from … / 0.08)` rasterise a different shadow than this `rgba()` form
 - `--site-block-muted` the group label, the sub line, and Close
 - `--site-block-accent` link hover and the focus outline (fallback `#b45309`). It is also the fallback inside the call-to-action fill and its hover
 - `--site-block-cta` the call-to-action fill (fallback `var(--site-block-accent, #b45309)`)

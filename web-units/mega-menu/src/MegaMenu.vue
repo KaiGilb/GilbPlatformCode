@@ -357,7 +357,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   color: var(--site-block-fg, #1a1a1a);
   /* Legacy rgba(), not color-mix: the same channels in color() rasterise a row off. */
-  box-shadow: 0 4px 12px -2px var(--site-block-shadow, rgba(28, 28, 20, 0.08));
+  box-shadow: 0 4px 12px -2px var(--site-block-shadow, rgba(0, 0, 0, 0.08));
   border-bottom-right-radius: var(--site-block-radius, 0.5rem);
   border-bottom-left-radius: var(--site-block-radius, 0.5rem);
 }
@@ -591,7 +591,7 @@ onBeforeUnmount(() => {
   padding: 0.85rem 0.5rem 0.65rem;
   border: 0;
   background-color: transparent;
-  background-image: linear-gradient(180deg, var(--site-block-bg-fade, rgba(247, 244, 237, 0)) 0%, var(--site-block-bg, #ffffff) 36%);
+  background-image: linear-gradient(180deg, var(--site-block-bg-fade, rgba(255, 255, 255, 0)) 0%, var(--site-block-bg, #ffffff) 36%);
   color: var(--site-block-muted, #4b5563);
   font: inherit;
   font-size: 0.9rem;
