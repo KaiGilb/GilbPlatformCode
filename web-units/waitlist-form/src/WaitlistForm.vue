@@ -281,7 +281,7 @@ async function onSubmit(): Promise<void> {
           :aria-describedby="describedBy(field) || undefined"
         >
           <legend class="wl-legend">
-            {{ field.label }}<span v-if="!field.required" class="wl-opt"> {{ words().optional }}</span>
+            {{ field.label }}<template v-if="!field.required">{{ " " }}<span class="wl-opt">{{ words().optional }}</span></template>
           </legend>
           <label v-for="option in field.options" :key="option.value" class="wl-option">
             <input
@@ -305,7 +305,7 @@ async function onSubmit(): Promise<void> {
 
         <template v-else>
           <label class="wl-label" :for="fieldId(field.name)">
-            {{ field.label }}<span v-if="!field.required" class="wl-opt"> {{ words().optional }}</span>
+            {{ field.label }}<template v-if="!field.required">{{ " " }}<span class="wl-opt">{{ words().optional }}</span></template>
           </label>
           <p v-if="helpOf(field)" :id="helpId(field.name)" class="wl-help">{{ helpOf(field) }}</p>
           <textarea
@@ -384,22 +384,19 @@ async function onSubmit(): Promise<void> {
    when a send starts. */
 .wl-form { display: flex; flex-direction: column; gap: 2.25rem; }
 .wl-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
+.wl-row { display: flex; flex-direction: column; gap: 0.5rem; }
 .wl-label, .wl-legend {
   display: block;
-  margin: 0 0 0.25rem;
+  margin: 0;
   padding: 0;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 1.125rem;
+  line-height: 1.375;
   font-weight: 500;
 }
+.wl-legend { margin-bottom: 0.75rem; }
 .wl-opt { font-weight: 400; color: var(--site-block-muted, #4b5563); }
-.wl-help, .wl-option-help, .wl-notice {
-  margin: 0 0 0.25rem;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--site-block-muted, #4b5563);
-}
-.wl-notice { margin: 0; }
+.wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }
+.wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }
 .wl-notice a {
   color: var(--site-block-accent, #2563eb);
   text-underline-offset: 0.15em;
@@ -407,9 +404,9 @@ async function onSubmit(): Promise<void> {
 .wl-field {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: 48px;
   margin: 0;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   font: inherit;
   color: inherit;
   line-height: inherit;
@@ -443,14 +440,14 @@ async function onSubmit(): Promise<void> {
 }
 .wl-option-text { display: flex; flex-direction: column; }
 .wl-option-label { font-weight: 500; }
-.wl-option-help { margin: 0; }
 .wl-field-error, .wl-fail {
-  margin: 0.25rem 0 0;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  font-weight: 500;
   color: var(--site-block-danger, #b91c1c);
 }
-.wl-live .wl-fail { margin: 0; }
+.wl-choice-group .wl-field-error { margin-top: 0.5rem; }
 .wl-live { position: relative; }
 /* Read by a screen reader, not drawn. */
 .wl-sr {
@@ -469,9 +466,9 @@ async function onSubmit(): Promise<void> {
 .wl-button {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  min-height: 48px;
   margin: 0;
-  padding: 0.5rem 1.25rem;
+  padding: 0.75rem 1.75rem;
   font: inherit;
   font-weight: 500;
   line-height: inherit;

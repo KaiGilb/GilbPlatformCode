@@ -1,7 +1,8 @@
 // Behaviour tests for the waiting-list form. New for this unit; the source had none of these.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
-import { h } from "vue";
+import { createSSRApp, h } from "vue";
+import { renderToString } from "vue/server-renderer";
 import axe from "axe-core";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -39,6 +40,15 @@ describe("WaitlistForm defaults", () => {
     expect(controls.filter((el) => el.required).map((el) => el.name)).toEqual(["email"]);
     const optional = [...document.querySelectorAll(".wl-opt")].map((el) => el.textContent?.trim());
     expect(optional).toEqual(["(optional)", "(optional)", "(optional)", "(optional)", "(optional)"]);
+    for (const el of document.querySelectorAll("label.wl-label, legend.wl-legend")) {
+      if (!el.querySelector(".wl-opt")) continue;
+      expect(el.textContent!.replace(/\s+/g, " ").trim().endsWith(" (optional)")).toBe(true);
+    }
+    const nameInput = document.querySelector<HTMLInputElement>('input[name="name"]')!;
+    const nameLabel = [...document.querySelectorAll<HTMLLabelElement>("label.wl-label")].find(
+      (label) => label.htmlFor === nameInput.id,
+    );
+    expect(nameLabel?.textContent?.replace(/\s+/g, " ").trim()).toBe("Name (optional)");
     const email = document.querySelector<HTMLInputElement>('input[type="email"]')!;
     const emailLabel = [...document.querySelectorAll("label")].find((label) => label.htmlFor === email.id);
     expect(emailLabel?.textContent).toContain("Email");
@@ -56,6 +66,12 @@ describe("WaitlistForm defaults", () => {
       "11-50",
       "50-plus",
     ]);
+  });
+
+  test("server-rendered labels keep the space before the optional word", async () => {
+    const html = await renderToString(createSSRApp(WaitlistForm));
+    // Vue marks the v-if template with <!--[-->; the space is the text node after that marker.
+    expect(html.replace(/<!--[\s\S]*?-->/g, "")).toMatch(/Name <span[^>]*class="wl-opt"/);
   });
 
   test("two forms on one page do not share an id", () => {
@@ -631,6 +647,47 @@ describe("WaitlistForm style", () => {
   const SFC = readFileSync(join(process.cwd(), "src", "WaitlistForm.vue"), "utf8");
   const style = (SFC.split("<style scoped>")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
 
+  function normCss(value: string): string {
+    return value.replace(/\s+/g, " ").trim();
+  }
+
+  /** Rules in source order. A rule inside @media is recorded as `@media … > selector`. */
+  function styleRules(css: string): { selector: string; body: string }[] {
+    const rules: { selector: string; body: string }[] = [];
+    function walk(text: string, medias: string[]): void {
+      let i = 0;
+      while (i < text.length) {
+        while (i < text.length && /\s/.test(text.charAt(i))) i += 1;
+        if (i >= text.length) break;
+        const open = text.indexOf("{", i);
+        if (open < 0) break;
+        const prelude = text.slice(i, open).trim();
+        let depth = 1;
+        let j = open + 1;
+        while (j < text.length && depth > 0) {
+          const ch = text.charAt(j);
+          if (ch === "{") depth += 1;
+          else if (ch === "}") depth -= 1;
+          j += 1;
+        }
+        const inner = text.slice(open + 1, j - 1);
+        if (prelude.startsWith("@media")) walk(inner, [...medias, normCss(prelude)]);
+        else if (!prelude.startsWith("@") && prelude) {
+          rules.push({ selector: [...medias, normCss(prelude)].join(" > "), body: normCss(inner) });
+        }
+        i = j;
+      }
+    }
+    walk(css, []);
+    return rules;
+  }
+
+  function rulesFor(className: string): string[] {
+    return styleRules(style)
+      .filter((rule) => rule.selector.includes(className))
+      .map((rule) => `${rule.selector} { ${rule.body} }`);
+  }
+
   test("the field border is the muted colour at 65 percent", () => {
     expect(style).toMatch(/\.wl-field \{[^}]*border: 1px solid color-mix\(in srgb, var\(--site-block-muted, #4b5563\) 65%, transparent\);/);
   });
@@ -638,9 +695,48 @@ describe("WaitlistForm style", () => {
   test("the layout is the source's: 36px between parts, 16px between notice, live region and button", () => {
     expect(style).toMatch(/\.wl-form \{ display: flex; flex-direction: column; gap: 2\.25rem; \}/);
     expect(style).toMatch(/\.wl-actions \{ display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; \}/);
-    expect(style).toMatch(/\.wl-live \.wl-fail \{ margin: 0; \}/);
     expect(style).not.toContain("* + *");
     expect(SFC).not.toContain("wl-live--shown");
+  });
+
+  test("the field rows are the source's: 0.5rem gap, 1.125rem labels, 1rem help and errors at weight 500, 48px controls", () => {
+    const flat = normCss(style);
+    const rules = [
+      ".wl-row { display: flex; flex-direction: column; gap: 0.5rem; }",
+      ".wl-label, .wl-legend { display: block; margin: 0; padding: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 500; }",
+      ".wl-legend { margin-bottom: 0.75rem; }",
+      ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
+      ".wl-option-help { margin: 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-muted, #4b5563); }",
+      ".wl-field { display: block; width: 100%; min-height: 48px; margin: 0; padding: 0.75rem 1rem; font: inherit; color: inherit; line-height: inherit; background: var(--site-block-bg, #ffffff); border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 65%, transparent); border-radius: var(--site-block-radius, 0.375rem); }",
+      ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
+      ".wl-choice-group .wl-field-error { margin-top: 0.5rem; }",
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: var(--site-block-radius, 0.375rem); background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+    ];
+    for (const rule of rules) expect(flat).toContain(rule);
+  });
+
+  // jsdom does no layout, so this guards the cascade: a later rule cannot beat the layout without changing this list.
+  test("rule inventory: every rule that styles the form's layout is the one this file means", () => {
+    expect(rulesFor("wl-form")).toEqual([".wl-form { display: flex; flex-direction: column; gap: 2.25rem; }"]);
+    expect(rulesFor("wl-row")).toEqual([".wl-row { display: flex; flex-direction: column; gap: 0.5rem; }"]);
+    expect(rulesFor("wl-actions")).toEqual([
+      ".wl-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }",
+    ]);
+    expect(rulesFor("wl-notice")).toEqual([
+      ".wl-help, .wl-notice { margin: 0; font-size: 1rem; line-height: 1.5; color: var(--site-block-muted, #4b5563); }",
+      ".wl-notice a { color: var(--site-block-accent, #2563eb); text-underline-offset: 0.15em; }",
+    ]);
+    expect(rulesFor("wl-live")).toEqual([".wl-live { position: relative; }"]);
+    expect(rulesFor("wl-button")).toEqual([
+      ".wl-button { display: inline-flex; align-items: center; min-height: 48px; margin: 0; padding: 0.75rem 1.75rem; font: inherit; font-weight: 500; line-height: inherit; cursor: pointer; border: 0; border-radius: var(--site-block-radius, 0.375rem); background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff); transition: opacity var(--site-block-motion, 150ms); }",
+      ".wl-button:hover { opacity: 0.9; }",
+      ".wl-button:disabled { opacity: 0.5; cursor: default; }",
+      "@media (prefers-reduced-motion: reduce) > .wl-button { transition: none; }",
+    ]);
+    expect(rulesFor("wl-fail")).toEqual([
+      ".wl-field-error, .wl-fail { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 500; color: var(--site-block-danger, #b91c1c); }",
+    ]);
+    expect(rulesFor("wl-turnstile")).toEqual([".wl-turnstile { min-height: 65px; }"]);
   });
 
   test("notice, live region and button are the three children of .wl-actions, in that order", async () => {
@@ -685,10 +781,11 @@ describe("WaitlistForm style", () => {
     expect(new Set(ids).size).toBe(2);
     expect(ids.some((id) => id.endsWith("-option-plan-x"))).toBe(true);
     expect(ids.some((id) => id.endsWith("-option-tier-x"))).toBe(true);
-    for (const label of document.querySelectorAll("label[for]")) {
-      const named = label.getAttribute("for") ?? "";
-      if (!named.includes("-option-")) continue;
-      expect([...document.querySelectorAll("[id]")].filter((el) => el.id === named)).toHaveLength(1);
+    for (const radio of radios) {
+      expect(radio.closest("label.wl-option")).not.toBeNull();
+    }
+    for (const label of document.querySelectorAll("label.wl-option")) {
+      expect(label.hasAttribute("for")).toBe(false);
     }
     wrapper.unmount();
   });
