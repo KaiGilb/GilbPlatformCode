@@ -350,7 +350,7 @@ describe("Connected AI", () => {
     const first = connect({ origin: platform.origin, env, name: "Desk AI", profile: "desk" });
     const who = await first.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound\nvaults: none`);
     const dir = join(home, "desk");
     const pemFile = join(dir, "private.pem");
     const idFile = join(dir, "client-id");
@@ -388,7 +388,7 @@ describe("Connected AI", () => {
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env, profile: "default" });
     const listed = await box.request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
     const key = publicKeyFrom(platform.requests);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     const tokenPosts = platform.requests.filter((rec) => rec.url.endsWith("/base/oauth/token"));
@@ -480,7 +480,7 @@ describe("Connected AI", () => {
     }
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nstate: not bound\n\n${sentence}`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nstate: not bound\nvaults: none\n\n${sentence}`);
     expect(stderr.text()).toContain(sentence);
     expect(stderr.text().split(sentence).length - 1).toBe(1);
     const firstUseAt = platform.requests.findIndex((rec) => rec.url.endsWith("/base/e/first-use"));
@@ -508,7 +508,7 @@ describe("Connected AI", () => {
 
     const whoFirst = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(whoFirst.result.isError).toBe(false);
-    expect(toolText(whoFirst)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
+    expect(toolText(whoFirst)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound\nvaults: none`);
     expect(stderr.text()).not.toContain(sentence);
 
     const listed = await box.request("tools/list", {});
@@ -533,7 +533,7 @@ describe("Connected AI", () => {
 
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound\nvaults: none`);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(box.stdout(), secrets, "stdout");
@@ -603,7 +603,7 @@ describe("Connected AI", () => {
     expect(call.result.isError).toBe(true);
     expect(toolText(call)).toBe(aiNoGrant(undefined, BOUND_PRINCIPAL));
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound`);
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${BOUND_PRINCIPAL}\nstate: bound\nvaults: none`);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(box.stdout(), secrets, "stdout");

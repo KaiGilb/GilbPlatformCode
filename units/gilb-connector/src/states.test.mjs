@@ -207,7 +207,7 @@ describe("AI states", () => {
     expect(init.result.serverInfo.name).toBe("GilbPlatform");
     const listed = await box.request("tools/list", {});
     const names = listed.result.tools.map((tool) => tool.name);
-    expect(names).toEqual(["list_vaults", "read_record", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task"]);
+    expect(names).toEqual(["list_vaults", "read_record", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
     expect(names.some((name) => name.startsWith("gilb_"))).toBe(false);
   });
 
@@ -226,7 +226,7 @@ describe("AI states", () => {
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
     expect(toolText(who)).toBe(
-      `mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${PERSON}\nstate: not bound\n\n${aiNotBound(CLIENT_ID)}`,
+      `mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${PERSON}\nstate: not bound\nvaults: none\n\n${aiNotBound(CLIENT_ID)}`,
     );
   });
 
