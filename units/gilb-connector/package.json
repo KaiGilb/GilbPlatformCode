@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-gilb-connector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A stdio MCP server that lets Claude Code and Claudian use Kai-Zen and the other GilbPlatform agents on the person's vaults, signed in as this computer.",
+  "bin": {
+    "gilb-connector": "./connector/gilb-connector.mjs"
+  },
+  "exports": {
+    ".": "./connector/gilb-connector.mjs",
+    "./fake-claude.mjs": "./src/fake-claude.mjs"
+  },
+  "files": ["src", "connector"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build:connector": "node ./scripts/build-connector.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
