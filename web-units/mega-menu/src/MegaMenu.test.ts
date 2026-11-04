@@ -607,9 +607,9 @@ describe("the unit's style", () => {
     expect(style).not.toMatch(/@apply|theme\(/);
   });
 
-  test("the fade is opacity only, 150ms in, --site-block-motion (150ms) out, and only without reduced motion", () => {
+  test("the fade is opacity only, --site-block-motion-enter (240ms) in, --site-block-motion (180ms) out, and only without reduced motion", () => {
     expect(style).toMatch(
-      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-fade-enter-active \{ transition: opacity 150ms ease; \}\s*\.mm-fade-leave-active \{ transition: opacity var\(--site-block-motion, 150ms\) ease; \}\s*\.mm-fade-enter-from, \.mm-fade-leave-to \{ opacity: 0; \}\s*\}/,
+      /@media \(prefers-reduced-motion: no-preference\) \{\s*\.mm-fade-enter-active \{ transition: opacity var\(--site-block-motion-enter, 240ms\) ease; \}\s*\.mm-fade-leave-active \{ transition: opacity var\(--site-block-motion, 180ms\) ease; \}\s*\.mm-fade-enter-from, \.mm-fade-leave-to \{ opacity: 0; \}\s*\}/,
     );
     expect(SFC).toContain('<Transition name="mm-fade">');
   });

@@ -489,8 +489,8 @@ onBeforeUnmount(() => {
 
 /* The sheet fades in and out: opacity only. With reduced motion there is no transition. */
 @media (prefers-reduced-motion: no-preference) {
-  .mm-fade-enter-active { transition: opacity 150ms ease; }
-  .mm-fade-leave-active { transition: opacity var(--site-block-motion, 150ms) ease; }
+  .mm-fade-enter-active { transition: opacity var(--site-block-motion-enter, 240ms) ease; }
+  .mm-fade-leave-active { transition: opacity var(--site-block-motion, 180ms) ease; }
   .mm-fade-enter-from, .mm-fade-leave-to { opacity: 0; }
 }
 

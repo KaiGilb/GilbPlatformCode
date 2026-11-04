@@ -149,7 +149,8 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-accent` link hover, the focus outline, and the call-to-action fill
 - `--site-block-on-accent` the call-to-action text
 - `--site-block-radius` the call-to-action corners and the sheet's bottom corners (fallback `0.5rem`)
-- `--site-block-motion` the stagger duration and the link colour transition (fallback `240ms`), and the fade-out when the sheet closes (fallback `150ms`). The fade-in is a fixed `150ms`
+- `--site-block-motion` the stagger duration and the link colour transition (fallback `240ms`), and the fade-out when the sheet closes (fallback `180ms`)
+- `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit). `--site-block-motion` also times the fade-out (default here `180ms`)
 
 Also:
 
