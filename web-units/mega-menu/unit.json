@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "unit": "web-units/mega-menu",
+  "package": "@kaigilb/gilbwebsitecode-mega-menu",
+  "version": "0.1.0",
+  "purpose": "`<MegaMenu :open :groups>` draws a full-width sheet (default `80dvh`) and a transparent click-catcher over whatever viewport is left under it (the bottom `20dvh` at that default).",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",
+    "files": [
+      {
+        "path": "components/MegaMenu.vue",
+        "lines": null,
+        "to": "src/MegaMenu.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The words are not in the unit: \"Build on MyJackfruit\", the audiences, the apps, the use cases and the waiting-list line moved to the `groups` prop.",
+    "The bottom Close control emits `close('button')`; the source emitted `close('esc')` for it. `'esc'` is now only the Escape key.",
+    "A row with no `href` is plain text: no `<a>`, no tab stop, no hover change, the default cursor.",
+    "The cream ground and the pith tint are not in the unit; colour comes from `--site-block-*`.",
+    "Tailwind, `theme()` and `NuxtLink` are written out as scoped CSS and a `linkComponent` prop (a plain `<a href>` by default).",
+    "The overlay z-index is the `zIndex` prop (default 40, the value of `Z_PLANES.overlay` in utils/zPlanes.ts at the same commit); the import of that module is not kept."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/focusTrap.ts",
+    "src/focusTrap.test.ts",
+    "src/MegaMenu.test.ts",
+    "src/hostAgnostic.test.ts"
+  ],
+  "host": [
+    {
+      "member": "groups prop",
+      "replaces": "the hard-coded BUILD, AUDIENCES, APPS and USE_CASES lists"
+    },
+    {
+      "member": "zIndex prop",
+      "replaces": "Z_PLANES.overlay from ~/utils/zPlanes"
+    },
+    {
+      "member": "linkComponent prop",
+      "replaces": "NuxtLink"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
