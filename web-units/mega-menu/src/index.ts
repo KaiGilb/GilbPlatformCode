@@ -3,4 +3,4 @@
  */
 export { default as MegaMenu } from "./MegaMenu.vue";
 export { FOCUSABLE_SELECTOR, nextFocusIndex } from "./focusTrap";
-export type { MenuCta, MenuGroup, MenuItem } from "./types";
+export type { MenuCta, MenuGroup, MenuItem, MenuStack } from "./types";

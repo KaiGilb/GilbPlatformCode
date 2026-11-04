@@ -15,14 +15,14 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, useId, watch, type Component } from "vue";
 import { FOCUSABLE_SELECTOR, nextFocusIndex } from "./focusTrap";
-import type { MenuCta, MenuGroup, MenuItem } from "./types";
+import type { MenuCta, MenuGroup, MenuItem, MenuStack } from "./types";
 
 const props = withDefaults(
   defineProps<{
     /** The host owns this. When false the sheet is not in the document. */
     open: boolean;
-    /** The regions of the sheet. Nothing here is a page of any one site. */
-    groups: MenuGroup[];
+    /** The regions of the sheet. A `MenuStack` is one cell holding several groups. Nothing here is a page of any one site. */
+    groups: (MenuGroup | MenuStack)[];
     /** Accessible name of the dialog. */
     label?: string;
     /** Accessible name of the nav inside the dialog. */
@@ -78,26 +78,46 @@ type DrawnItem =
 interface DrawnGroup {
   heading: string;
   id: string;
-  span: number;
   columns: 1 | 2;
+  tone: "link" | "quiet";
   entries: DrawnItem[];
 }
 
-/** Groups in order, with one stagger index across the whole sheet (the CTA takes the next number). */
-const drawn = computed<DrawnGroup[]>(() => {
+interface DrawnCell {
+  id: string;
+  span: number;
+  stack: boolean;
+  groups: DrawnGroup[];
+}
+
+function isMenuStack(entry: MenuGroup | MenuStack): entry is MenuStack {
+  return "stack" in entry;
+}
+
+/** Cells in order. A stack is one cell. One stagger index runs across every row, including rows inside a stack (the CTA takes the next number). */
+const drawn = computed<DrawnCell[]>(() => {
   const count = props.groups.length;
   const fallback = count > 0 ? Math.floor(12 / count) : 12;
   let n = 0;
-  return props.groups.map((group, index) => {
+  const drawGroup = (group: MenuGroup, id: string): DrawnGroup => {
     const entries: DrawnItem[] = group.items.map((item) => ({ kind: "item", item, i: n++ }));
     if (group.cta) entries.push({ kind: "cta", cta: group.cta, i: n++ });
-    const columns: 1 | 2 = group.columns === 2 ? 2 : 1;
     return {
       heading: group.heading,
-      id: `${uid}-g${index}`,
-      span: group.span ?? fallback,
-      columns,
+      id,
+      columns: group.columns === 2 ? 2 : 1,
+      tone: group.tone === "quiet" ? "quiet" : "link",
       entries,
+    };
+  };
+  return props.groups.map((entry, index) => {
+    const stack = isMenuStack(entry);
+    const groups = stack ? entry.stack : [entry];
+    return {
+      id: `${uid}-c${index}`,
+      span: entry.span ?? fallback,
+      stack,
+      groups: groups.map((group, gi) => drawGroup(group, `${uid}-g${index}-${gi}`)),
     };
   });
 });
@@ -230,44 +250,49 @@ onBeforeUnmount(() => {
         <div class="mm-body" @click.self="emit('close', 'outside')">
         <div class="mm-grid">
           <div
-            v-for="group in drawn"
-            :key="group.id"
+            v-for="cell in drawn"
+            :key="cell.id"
             class="mm-group"
-            :style="{ '--mm-span': String(group.span) }"
+            :class="{ 'mm-stack': cell.stack }"
+            :style="{ '--mm-span': String(cell.span) }"
           >
-            <p :id="group.id" class="mm-label">{{ group.heading }}</p>
-            <ul class="mm-list" :class="{ 'mm-cols-2': group.columns === 2 }" :aria-labelledby="group.id">
-              <li
-                v-for="entry in group.entries"
-                :key="entry.i"
-                class="mm-item"
-                :style="{ '--i': String(entry.i) }"
-              >
-                <template v-if="entry.kind === 'item'">
-                  <component
-                    :is="linkIs(entry.item.external)"
-                    v-if="entry.item.href"
-                    v-bind="linkBind(entry.item.href, entry.item.external)"
-                    class="mm-link"
-                    @click="emit('close', 'link')"
+            <div :class="{ 'mm-stack-inner': cell.stack }">
+              <div v-for="group in cell.groups" :key="group.id">
+                <p :id="group.id" class="mm-label">{{ group.heading }}</p>
+                <ul class="mm-list" :class="{ 'mm-cols-2': group.columns === 2 }" :aria-labelledby="group.id">
+                  <li
+                    v-for="entry in group.entries"
+                    :key="entry.i"
+                    class="mm-item"
+                    :style="{ '--i': String(entry.i) }"
                   >
-                    <span class="mm-item-label">{{ entry.item.label }}</span>
-                    <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
-                  </component>
-                  <div v-else class="mm-static">
-                    <span class="mm-item-label">{{ entry.item.label }}</span>
-                    <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
-                  </div>
-                </template>
-                <component
-                  :is="linkIs(entry.cta.external)"
-                  v-else
-                  v-bind="linkBind(entry.cta.href, entry.cta.external)"
-                  class="mm-link mm-cta"
-                  @click="emit('close', 'link')"
-                >{{ entry.cta.label }}</component>
-              </li>
-            </ul>
+                    <template v-if="entry.kind === 'item'">
+                      <component
+                        :is="linkIs(entry.item.external)"
+                        v-if="entry.item.href"
+                        v-bind="linkBind(entry.item.href, entry.item.external)"
+                        class="mm-link"
+                        @click="emit('close', 'link')"
+                      >
+                        <span :class="group.tone === 'quiet' ? 'mm-quiet' : 'mm-item-label'">{{ entry.item.label }}</span>
+                        <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
+                      </component>
+                      <div v-else class="mm-static">
+                        <span :class="group.tone === 'quiet' ? 'mm-quiet' : 'mm-item-label'">{{ entry.item.label }}</span>
+                        <span v-if="entry.item.sub" class="mm-sub">{{ entry.item.sub }}</span>
+                      </div>
+                    </template>
+                    <component
+                      :is="linkIs(entry.cta.external)"
+                      v-else
+                      v-bind="linkBind(entry.cta.href, entry.cta.external)"
+                      class="mm-link mm-cta"
+                      @click="emit('close', 'link')"
+                    >{{ entry.cta.label }}</component>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
         </div>
@@ -308,6 +333,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   padding: 5rem 1.25rem 0.5rem;
   background: var(--site-block-bg, #ffffff);
+  background-image: var(--site-block-sheet-wash, none);
   color: var(--site-block-fg, #1a1a1a);
   box-shadow: 0 24px 48px -24px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 25%, transparent);
   border-bottom-right-radius: var(--site-block-radius, 0.5rem);
@@ -341,6 +367,14 @@ onBeforeUnmount(() => {
 }
 
 .mm-group { min-width: 0; }
+
+/* One cell, several headed lists. Below 640px they sit in one column. */
+.mm-stack-inner {
+  display: grid;
+  gap: 2.5rem;
+}
+
+.mm-stack-inner > * { min-width: 0; }
 
 .mm-label {
   margin: 0;
@@ -391,6 +425,22 @@ onBeforeUnmount(() => {
   color: var(--site-block-accent, #b45309);
 }
 
+/* Quieter links (source .mj-menu-quiet): medium weight, the label inside the 44px link. */
+.mm-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 1.02rem;
+  font-weight: 500;
+  color: var(--site-block-fg, #1a1a1a);
+}
+
+.mm-quiet:hover,
+.mm-link:hover .mm-quiet,
+.mm-link:focus-visible .mm-quiet {
+  color: var(--site-block-accent, #b45309);
+}
+
 .mm-sub {
   display: block;
   margin-top: 0.15rem;
@@ -414,7 +464,9 @@ onBeforeUnmount(() => {
 .mm-static,
 .mm-static:hover,
 .mm-static:hover .mm-item-label,
-.mm-static .mm-item-label {
+.mm-static .mm-item-label,
+.mm-static:hover .mm-quiet,
+.mm-static .mm-quiet {
   color: var(--site-block-fg, #1a1a1a);
   background: transparent;
   cursor: default;
@@ -428,9 +480,9 @@ onBeforeUnmount(() => {
   width: auto;
   margin-top: 0.5rem;
   padding: 0.55rem 1.25rem;
-  border-radius: var(--site-block-radius, 0.5rem);
-  background: var(--site-block-accent, #b45309);
-  color: var(--site-block-on-accent, #ffffff);
+  border-radius: var(--site-block-cta-radius, var(--site-block-radius, 0.5rem));
+  background: var(--site-block-cta, var(--site-block-accent, #b45309));
+  color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff));
   font-size: 1rem;
   font-weight: 500;
   line-height: 1.2;
@@ -438,7 +490,7 @@ onBeforeUnmount(() => {
 
 .mm-cta:hover,
 .mm-cta:focus-visible {
-  color: var(--site-block-on-accent, #ffffff);
+  background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black));
 }
 
 .mm-link:focus-visible,
@@ -477,16 +529,19 @@ onBeforeUnmount(() => {
 @media (min-width: 640px) {
   .mm-sheet { padding-right: 2rem; padding-left: 2rem; }
   .mm-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mm-stack-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 768px) {
   .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mm-stack { grid-column: span 2; }
 }
 
 @media (min-width: 1024px) {
   .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; }
   .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .mm-group { grid-column: span var(--mm-span, 12); }
+  .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 2.25rem; }
 }
 
 /* The sheet fades in and out: opacity only. With reduced motion there is no transition. */

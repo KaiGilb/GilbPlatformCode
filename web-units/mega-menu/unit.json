@@ -23,7 +23,8 @@
     "Tailwind, `theme()` and `NuxtLink` are written out as scoped CSS and a `linkComponent` prop (a plain `<a href>` by default).",
     "The overlay z-index is the `zIndex` prop (default 40, the value of `Z_PLANES.overlay` in utils/zPlanes.ts at the same commit); the import of that module is not kept.",
     "The dialog and the nav have their own names: the dialog's `label` (default \"Site menu\") and the nav's `navLabel` (default \"Main\"). Dropped: a site screenshot-tool hook (the source's `data-menu-panel` attribute).",
-    "When mounted already open, it locks scroll and takes focus at mount; the source did so only when `open` changed."
+    "When mounted already open, it locks scroll and takes focus at mount; the source did so only when `open` changed.",
+    "A side column that holds two headed lists is a `MenuStack` (side by side from 640px, stacked from 1024px), and a group's `tone: \"quiet\"` draws the source's quieter links; the call to action and the sheet's wash take their own variables (`--site-block-cta*`, `--site-block-sheet-wash`)."
   ],
   "newFiles": [
     "src/types.ts",

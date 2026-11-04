@@ -8,7 +8,7 @@ import { join } from "node:path";
 import axe from "axe-core";
 import MegaMenu from "./MegaMenu.vue";
 import { FOCUSABLE_SELECTOR } from "./focusTrap";
-import type { MenuGroup } from "./types";
+import type { MenuGroup, MenuStack } from "./types";
 
 let wrapper: VueWrapper | undefined;
 
@@ -516,6 +516,95 @@ describe("stagger", () => {
   });
 });
 
+describe("stack and quiet links", () => {
+  test("a stack draws one cell holding each stacked group with its own heading and items", async () => {
+    const groups: (MenuGroup | MenuStack)[] = [
+      { heading: "Build", items: [{ label: "Pricing", href: "/pricing" }] },
+      {
+        stack: [
+          {
+            heading: "Apps",
+            items: [
+              { label: "Ledger", href: "/ledger" },
+              { label: "Notes", href: "/notes" },
+            ],
+            cta: { label: "See apps", href: "/apps" },
+          },
+          { heading: "Use cases", items: [{ label: "Teams", sub: "Share the thing." }] },
+        ],
+      },
+    ];
+    await mountOpen({ groups });
+    const cells = [...document.querySelectorAll<HTMLElement>(".mm-group")];
+    expect(cells).toHaveLength(2);
+    const stacks = cells.filter((el) => el.classList.contains("mm-stack"));
+    expect(stacks).toHaveLength(1);
+    const stack = stacks[0]!;
+    expect(stack.firstElementChild?.classList.contains("mm-stack-inner")).toBe(true);
+    expect(stack.firstElementChild?.children).toHaveLength(2);
+    expect([...stack.querySelectorAll(".mm-label")].map((el) => el.textContent)).toEqual(["Apps", "Use cases"]);
+    expect(stack.querySelectorAll(".mm-list")).toHaveLength(2);
+    expect(stack.textContent).toContain("Ledger");
+    expect(stack.textContent).toContain("Notes");
+    expect(stack.textContent).toContain("Teams");
+    expect(stack.textContent).toContain("Share the thing.");
+    expect(stack.querySelector(".mm-cta")?.textContent).toContain("See apps");
+    expect(stack.querySelectorAll(".mm-group")).toHaveLength(0);
+    expect(cells[0]!.classList.contains("mm-stack")).toBe(false);
+    expect(cells[0]!.querySelector(".mm-label")?.textContent).toBe("Build");
+  });
+
+  test("a stack counts as one cell for the default span, and its stagger continues across its groups", async () => {
+    const groups: (MenuGroup | MenuStack)[] = [
+      { heading: "Build", items: [{ label: "One", href: "/one" }] },
+      { heading: "Who", items: [{ label: "Two", href: "/two" }, { label: "Three", href: "/three" }] },
+      {
+        stack: [
+          { heading: "Apps", items: [{ label: "App", href: "/app" }] },
+          { heading: "Use cases", items: [{ label: "Case", href: "/case" }, { label: "Other", href: "/other" }] },
+        ],
+      },
+    ];
+    await mountOpen({ groups });
+    const cells = [...document.querySelectorAll<HTMLElement>(".mm-group")];
+    expect(cells).toHaveLength(3);
+    expect(cells.map((el) => el.style.getPropertyValue("--mm-span"))).toEqual(["4", "4", "4"]);
+    const stack = cells[2]!;
+    expect(stack.classList.contains("mm-stack")).toBe(true);
+    const inStack = [...stack.querySelectorAll<HTMLElement>(".mm-item")].map((el) => Number(el.style.getPropertyValue("--i")));
+    expect(inStack).toEqual([3, 4, 5]);
+    const all = [...document.querySelectorAll<HTMLElement>(".mm-item")].map((el) => Number(el.style.getPropertyValue("--i")));
+    expect(all).toEqual([0, 1, 2, 3, 4, 5]);
+    for (let i = 1; i < inStack.length; i += 1) expect(inStack[i]!).toBeGreaterThan(inStack[i - 1]!);
+  });
+
+  test("a quiet group draws its links with the quiet class; a group without tone draws the link class", async () => {
+    const groups: MenuGroup[] = [
+      { heading: "Product", items: [{ label: "Pricing", href: "/pricing" }] },
+      { heading: "Apps", tone: "quiet", items: [{ label: "Ledger", sub: "The books.", href: "/ledger" }, { label: "Teams" }] },
+    ];
+    await mountOpen({ groups });
+    const pricing = document.querySelector("a[href='/pricing']");
+    expect(pricing).not.toBeNull();
+    expect(pricing!.classList.contains("mm-link")).toBe(true);
+    expect(pricing!.classList.contains("mm-quiet")).toBe(false);
+    expect(pricing!.querySelector(".mm-quiet")).toBeNull();
+    expect(pricing!.querySelector(".mm-item-label")?.textContent).toBe("Pricing");
+
+    const ledger = document.querySelector("a[href='/ledger']");
+    expect(ledger).not.toBeNull();
+    expect(ledger!.classList.contains("mm-link")).toBe(true);
+    const quiet = ledger!.querySelector(".mm-quiet");
+    expect(quiet).not.toBeNull();
+    expect(quiet!.textContent).toBe("Ledger");
+    expect(ledger!.querySelector(".mm-item-label")).toBeNull();
+
+    const teams = [...document.querySelectorAll(".mm-static")].find((el) => el.textContent?.includes("Teams"));
+    expect(teams?.querySelector(".mm-quiet")?.textContent).toBe("Teams");
+    expect(teams?.querySelector(".mm-item-label")).toBeNull();
+  });
+});
+
 describe("axe", () => {
   test("no violations when the sheet is open", async () => {
     await mountOpen({}, { footer: "<p>A note under the lists.</p>" });
@@ -610,13 +699,14 @@ describe("the unit's style", () => {
     expect(ruleBodies(".mm-cta").some((body) => /min-height:\s*44px/.test(body))).toBe(true);
   });
 
-  test("the call to action colour is the on-accent variable", () => {
-    expect(ruleBodies(".mm-cta").some((body) => /color:\s*var\(\s*--site-block-on-accent\b/.test(body))).toBe(true);
+  test("the call to action colour is the on-cta variable, falling back to on-accent", () => {
+    expect(ruleBodies(".mm-cta").some((body) => /color:\s*var\(\s*--site-block-on-cta,\s*var\(\s*--site-block-on-accent\b/.test(body))).toBe(true);
   });
 
-  test("every colour literal sits inside a var(--site-block-*, ...) fallback", () => {
+  test("every colour literal sits inside a var(--site-block-*, ...) fallback, except the call-to-action hover mix's black", () => {
     const bad = [...style.matchAll(/#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\b(white|black|gray|grey)\b(?!-)/g)]
       .filter((m) => !/var\(--site-block-[a-z-]+,\s*$/.test(style.slice(Math.max(0, m.index! - 80), m.index)))
+      .filter((m) => !(m[0] === "black" && /88%,\s*$/.test(style.slice(Math.max(0, m.index! - 8), m.index))))
       .map((m) => style.slice(Math.max(0, m.index! - 40), m.index! + 10).replace(/\s+/g, " "));
     expect(bad).toEqual([]);
   });
@@ -697,11 +787,42 @@ describe("the unit's style", () => {
     const styleAttrs = [...template.matchAll(/:?style="[^"]*"/g)].map((m) => m[0]);
     expect(styleAttrs).toEqual([
       `:style="{ zIndex, '--mm-sheet': sheetHeight, '--mm-max': maxWidth }"`,
-      `:style="{ '--mm-span': String(group.span) }"`,
+      `:style="{ '--mm-span': String(cell.span) }"`,
       `:style="{ '--i': String(entry.i) }"`,
     ]);
     const block = (SFC.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
     const flat = block.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
-    expect(flat).toBe(".mm, .mm * { box-sizing: border-box; } .mm { position: fixed; inset: 0; } .mm-sheet { position: absolute; top: 0; right: 0; left: 0; display: flex; flex-direction: column; height: var(--mm-sheet, 80dvh); overflow-y: auto; padding: 5rem 1.25rem 0.5rem; background: var(--site-block-bg, #ffffff); color: var(--site-block-fg, #1a1a1a); box-shadow: 0 24px 48px -24px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 25%, transparent); border-bottom-right-radius: var(--site-block-radius, 0.5rem); border-bottom-left-radius: var(--site-block-radius, 0.5rem); } .mm-catcher { position: absolute; right: 0; bottom: 0; left: 0; top: var(--mm-sheet, 80dvh); cursor: pointer; } .mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; } .mm-body { display: flex; flex: 1 0 auto; flex-direction: column; justify-content: center; } .mm-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.5rem 2rem; align-items: start; width: 100%; max-width: var(--mm-max, 80rem); margin-inline: auto; } .mm-group { min-width: 0; } .mm-label { margin: 0; font-size: 0.75rem; font-weight: 600; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.12em; color: var(--site-block-muted, #4b5563); } .mm-list { list-style: none; display: grid; gap: 0.35rem 1.5rem; margin: 0.75rem 0 0; padding: 0; } .mm-item { margin: 0; padding: 0; min-width: 0; } .mm-link, .mm-cta, .mm-close { min-height: 44px; } .mm-link { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 100%; padding: 0.15rem 0; border-radius: var(--site-block-radius, 0.5rem); color: var(--site-block-fg, #1a1a1a); font: inherit; text-decoration: none; cursor: pointer; transition: color var(--site-block-motion, 180ms) ease; } .mm-item-label { font-size: 1.1rem; font-weight: 600; line-height: 1.3; color: var(--site-block-fg, #1a1a1a); } .mm-link:hover .mm-item-label, .mm-link:focus-visible .mm-item-label { color: var(--site-block-accent, #b45309); } .mm-sub { display: block; margin-top: 0.15rem; font-size: 0.875rem; font-weight: 400; line-height: 1.45; color: var(--site-block-muted, #4b5563); } .mm-static { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 44px; background: transparent; cursor: default; } .mm-static, .mm-static:hover, .mm-static:hover .mm-item-label, .mm-static .mm-item-label { color: var(--site-block-fg, #1a1a1a); background: transparent; cursor: default; } .mm-cta { display: inline-flex; flex-direction: row; align-items: center; align-self: flex-start; width: auto; margin-top: 0.5rem; padding: 0.55rem 1.25rem; border-radius: var(--site-block-radius, 0.5rem); background: var(--site-block-accent, #b45309); color: var(--site-block-on-accent, #ffffff); font-size: 1rem; font-weight: 500; line-height: 1.2; } .mm-cta:hover, .mm-cta:focus-visible { color: var(--site-block-on-accent, #ffffff); } .mm-link:focus-visible, .mm-cta:focus-visible, .mm-close:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; } .mm-footer { margin-top: 1.25rem; color: var(--site-block-fg, #1a1a1a); } .mm-close { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 0.4rem; width: 100%; margin-top: auto; padding: 0.85rem 0.5rem 0.65rem; border: 0; background-color: transparent; background-image: linear-gradient(180deg, transparent 0%, var(--site-block-bg, #ffffff) 36%); color: var(--site-block-muted, #4b5563); font: inherit; font-size: 0.9rem; font-weight: 500; cursor: pointer; } .mm-close:hover { color: var(--site-block-fg, #1a1a1a); } .mm-close-icon { display: block; } @media (min-width: 640px) { .mm-sheet { padding-right: 2rem; padding-left: 2rem; } .mm-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (min-width: 768px) { .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (min-width: 1024px) { .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; } .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); } .mm-group { grid-column: span var(--mm-span, 12); } } @media (prefers-reduced-motion: no-preference) { .mm-fade-enter-active { transition: opacity var(--site-block-motion-enter, 240ms) ease; } .mm-fade-leave-active { transition: opacity var(--site-block-motion, 180ms) ease; } .mm-fade-enter-from, .mm-fade-leave-to { opacity: 0; } } @media (prefers-reduced-motion: reduce) { .mm-link, .mm-cta, .mm-close { transition: none; } } @media (prefers-reduced-motion: no-preference) { .mm-item { animation: mm-in var(--site-block-motion-rise, 0.55s) cubic-bezier(0.25, 0.05, 0.3, 0.7) both; animation-delay: calc(min(var(--i), 10) * 40ms); } } @keyframes mm-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }");
+    expect(flat).toBe(".mm, .mm * { box-sizing: border-box; } .mm { position: fixed; inset: 0; } .mm-sheet { position: absolute; top: 0; right: 0; left: 0; display: flex; flex-direction: column; height: var(--mm-sheet, 80dvh); overflow-y: auto; padding: 5rem 1.25rem 0.5rem; background: var(--site-block-bg, #ffffff); background-image: var(--site-block-sheet-wash, none); color: var(--site-block-fg, #1a1a1a); box-shadow: 0 24px 48px -24px color-mix(in srgb, var(--site-block-fg, #1a1a1a) 25%, transparent); border-bottom-right-radius: var(--site-block-radius, 0.5rem); border-bottom-left-radius: var(--site-block-radius, 0.5rem); } .mm-catcher { position: absolute; right: 0; bottom: 0; left: 0; top: var(--mm-sheet, 80dvh); cursor: pointer; } .mm-nav { display: flex; flex: 1 0 auto; flex-direction: column; } .mm-body { display: flex; flex: 1 0 auto; flex-direction: column; justify-content: center; } .mm-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.5rem 2rem; align-items: start; width: 100%; max-width: var(--mm-max, 80rem); margin-inline: auto; } .mm-group { min-width: 0; } .mm-stack-inner { display: grid; gap: 2.5rem; } .mm-stack-inner > * { min-width: 0; } .mm-label { margin: 0; font-size: 0.75rem; font-weight: 600; line-height: 1.2; text-transform: uppercase; letter-spacing: 0.12em; color: var(--site-block-muted, #4b5563); } .mm-list { list-style: none; display: grid; gap: 0.35rem 1.5rem; margin: 0.75rem 0 0; padding: 0; } .mm-item { margin: 0; padding: 0; min-width: 0; } .mm-link, .mm-cta, .mm-close { min-height: 44px; } .mm-link { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 100%; padding: 0.15rem 0; border-radius: var(--site-block-radius, 0.5rem); color: var(--site-block-fg, #1a1a1a); font: inherit; text-decoration: none; cursor: pointer; transition: color var(--site-block-motion, 180ms) ease; } .mm-item-label { font-size: 1.1rem; font-weight: 600; line-height: 1.3; color: var(--site-block-fg, #1a1a1a); } .mm-link:hover .mm-item-label, .mm-link:focus-visible .mm-item-label { color: var(--site-block-accent, #b45309); } .mm-quiet { display: inline-flex; align-items: center; min-height: 32px; font-size: 1.02rem; font-weight: 500; color: var(--site-block-fg, #1a1a1a); } .mm-quiet:hover, .mm-link:hover .mm-quiet, .mm-link:focus-visible .mm-quiet { color: var(--site-block-accent, #b45309); } .mm-sub { display: block; margin-top: 0.15rem; font-size: 0.875rem; font-weight: 400; line-height: 1.45; color: var(--site-block-muted, #4b5563); } .mm-static { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 44px; background: transparent; cursor: default; } .mm-static, .mm-static:hover, .mm-static:hover .mm-item-label, .mm-static .mm-item-label, .mm-static:hover .mm-quiet, .mm-static .mm-quiet { color: var(--site-block-fg, #1a1a1a); background: transparent; cursor: default; } .mm-cta { display: inline-flex; flex-direction: row; align-items: center; align-self: flex-start; width: auto; margin-top: 0.5rem; padding: 0.55rem 1.25rem; border-radius: var(--site-block-cta-radius, var(--site-block-radius, 0.5rem)); background: var(--site-block-cta, var(--site-block-accent, #b45309)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); font-size: 1rem; font-weight: 500; line-height: 1.2; } .mm-cta:hover, .mm-cta:focus-visible { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black)); } .mm-link:focus-visible, .mm-cta:focus-visible, .mm-close:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; } .mm-footer { margin-top: 1.25rem; color: var(--site-block-fg, #1a1a1a); } .mm-close { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 0.4rem; width: 100%; margin-top: auto; padding: 0.85rem 0.5rem 0.65rem; border: 0; background-color: transparent; background-image: linear-gradient(180deg, transparent 0%, var(--site-block-bg, #ffffff) 36%); color: var(--site-block-muted, #4b5563); font: inherit; font-size: 0.9rem; font-weight: 500; cursor: pointer; } .mm-close:hover { color: var(--site-block-fg, #1a1a1a); } .mm-close-icon { display: block; } @media (min-width: 640px) { .mm-sheet { padding-right: 2rem; padding-left: 2rem; } .mm-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mm-stack-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (min-width: 768px) { .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mm-stack { grid-column: span 2; } } @media (min-width: 1024px) { .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; } .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); } .mm-group { grid-column: span var(--mm-span, 12); } .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 2.25rem; } } @media (prefers-reduced-motion: no-preference) { .mm-fade-enter-active { transition: opacity var(--site-block-motion-enter, 240ms) ease; } .mm-fade-leave-active { transition: opacity var(--site-block-motion, 180ms) ease; } .mm-fade-enter-from, .mm-fade-leave-to { opacity: 0; } } @media (prefers-reduced-motion: reduce) { .mm-link, .mm-cta, .mm-close { transition: none; } } @media (prefers-reduced-motion: no-preference) { .mm-item { animation: mm-in var(--site-block-motion-rise, 0.55s) cubic-bezier(0.25, 0.05, 0.3, 0.7) both; animation-delay: calc(min(var(--i), 10) * 40ms); } } @keyframes mm-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }");
+  });
+
+  test("the stack, quiet, call-to-action and wash rules are as written", () => {
+    const block = (SFC.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "";
+    const css = block.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+    expect(css).toContain(".mm-stack-inner { display: grid; gap: 2.5rem; }");
+    expect(css).toContain("@media (min-width: 640px) { .mm-sheet { padding-right: 2rem; padding-left: 2rem; } .mm-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mm-stack-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); } }");
+    expect(css).toContain("@media (min-width: 768px) { .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mm-stack { grid-column: span 2; } }");
+    expect(css).toContain("@media (min-width: 1024px) { .mm-sheet { padding-right: 2.5rem; padding-left: 2.5rem; } .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); } .mm-group { grid-column: span var(--mm-span, 12); } .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 2.25rem; } }");
+    expect(css).toContain(".mm-quiet { display: inline-flex; align-items: center; min-height: 32px; font-size: 1.02rem; font-weight: 500; color: var(--site-block-fg, #1a1a1a); }");
+    expect(css).toContain(".mm-quiet:hover, .mm-link:hover .mm-quiet, .mm-link:focus-visible .mm-quiet { color: var(--site-block-accent, #b45309); }");
+    expect(css).toContain(".mm-cta { display: inline-flex; flex-direction: row; align-items: center; align-self: flex-start; width: auto; margin-top: 0.5rem; padding: 0.55rem 1.25rem; border-radius: var(--site-block-cta-radius, var(--site-block-radius, 0.5rem)); background: var(--site-block-cta, var(--site-block-accent, #b45309)); color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff)); font-size: 1rem; font-weight: 500; line-height: 1.2; }");
+    expect(css).toContain(".mm-cta:hover, .mm-cta:focus-visible { background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black)); }");
+    expect(css).toContain("background: var(--site-block-bg, #ffffff); background-image: var(--site-block-sheet-wash, none);");
+  });
+
+  test("README Host must supply lists exactly the variables the style reads", () => {
+    const css = ((SFC.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+    const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+    const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
+    const listed = section
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .map((line) => {
+        const found = line.match(/^- `(--site-block-[a-z-]+)`/);
+        if (!found?.[1]) throw new Error(`bullet does not start with a variable: ${line}`);
+        return found[1];
+      })
+      .sort();
+    expect(listed).toEqual(inStyle);
   });
 });

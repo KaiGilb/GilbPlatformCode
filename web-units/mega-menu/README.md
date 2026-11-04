@@ -116,11 +116,12 @@ For a route link instead of a plain anchor, pass the host's component (`linkComp
 | Prop or slot | Meaning |
 |---|---|
 | `open` | whether the sheet is up. Required. The host owns it. While false, nothing is rendered: no listener, no scroll lock |
-| `groups` | `MenuGroup[]`. Required. `{ heading, items, columns?, cta?, span? }` |
+| `groups` | `(MenuGroup \| MenuStack)[]`. Required. A group is `{ heading, items, columns?, cta?, span?, tone? }`. A `MenuStack` is `{ stack: MenuGroup[], span? }`: one cell holding those groups, side by side from 640px and one above the other from 1024px |
 | `items[]` | `MenuItem`: `{ label, sub?, href?, external? }`. No `href` means static text |
 | `cta?` | `MenuCta`: `{ label, href, external? }`, drawn as the last row of that group, in the same stagger count |
 | `columns?` | `1` or `2`. `2` is two columns from 640px up, one column below |
-| `span?` | how many of the 12 columns the group takes at ≥1024px. When omitted, `floor(12 / groups.length)` |
+| `tone?` | `"link"` (default) or `"quiet"`. `"quiet"` draws that group's links in the quieter type (the source's side-column links) |
+| `span?` | how many of the 12 columns the cell takes at ≥1024px. When omitted, `floor(12 / groups.length)`. A stack counts as one cell in that length |
 | `label?` | accessible name of the dialog (default "Site menu") |
 | `navLabel?` | accessible name of the nav inside the dialog (default "Main") |
 | `closeLabel?` | the bottom Close control (default "Close") |
@@ -143,28 +144,36 @@ Events:
 
 The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
-- `--site-block-bg` the sheet background (fallback `#ffffff`) and the fade behind Close
+- `--site-block-bg` the sheet colour (fallback `#ffffff`) and the fade behind Close
+- `--site-block-sheet-wash` the sheet's background image, over that colour on `.mm-sheet` (fallback `none`)
 - `--site-block-fg` link and static text (fallback `#1a1a1a`). The shadow mixes 25% of it
 - `--site-block-muted` the group label, the sub line, and Close
-- `--site-block-accent` link hover, the focus outline, and the call-to-action fill
-- `--site-block-on-accent` the call-to-action text
-- `--site-block-radius` the call-to-action corners and the sheet's bottom corners (fallback `0.5rem`)
+- `--site-block-accent` link hover and the focus outline (fallback `#b45309`). It is also the fallback inside the call-to-action fill and its hover
+- `--site-block-cta` the call-to-action fill (fallback `var(--site-block-accent, #b45309)`)
+- `--site-block-on-cta` the call-to-action text (fallback `var(--site-block-on-accent, #ffffff)`)
+- `--site-block-on-accent` the call-to-action text when `--site-block-on-cta` is unset (fallback `#ffffff`)
+- `--site-block-cta-hover` the call-to-action fill on hover and focus (fallback `color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black)`)
+- `--site-block-cta-radius` the call-to-action corners (fallback `var(--site-block-radius, 0.5rem)`)
+- `--site-block-radius` the link corners and the sheet's bottom corners, and the fallback for the call-to-action corners (fallback `0.5rem`)
 - `--site-block-motion` the link colour transition and the fade-out when the sheet closes (fallback `180ms`, the source's fast time). A host value sets both
 - `--site-block-motion-rise` each row's rise (fallback `0.55s`, the source's time; the curve is fixed)
 - `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit).
 
 Also:
 
-- **Open state.** Pass `open`, and set it false when `close` fires. This component will not keep that state for you.
-- **Focus restore.** On `close('esc')`, put focus back on the button that opened the sheet. Do not do that for `'link'`, `'outside'` or `'button'`.
-- **Hover intent.** If the menu opens on hover, start and cancel the close timer from `pointer-leave` and `pointer-enter`. There is no timer in here.
-- **A header above the sheet** if the trigger must stay clickable. The overlay defaults to 40, the source's overlay plane (`Z_PLANES.overlay`). The source header sat at 50. `hide-on-scroll-header` defaults to the same 40 (`--site-block-header-z`), so set that variable above 40 or the sheet paints over the button.
+**Open state.** Pass `open`, and set it false when `close` fires. This component will not keep that state for you.
+
+**Focus restore.** On `close('esc')`, put focus back on the button that opened the sheet. Do not do that for `'link'`, `'outside'` or `'button'`.
+
+**Hover intent.** If the menu opens on hover, start and cancel the close timer from `pointer-leave` and `pointer-enter`. There is no timer in here.
+
+**A header above the sheet** if the trigger must stay clickable. The overlay defaults to 40, the source's overlay plane (`Z_PLANES.overlay`). The source header sat at 50. `hide-on-scroll-header` defaults to the same 40 (`--site-block-header-z`), so set that variable above 40 or the sheet paints over the button.
 
 No Tailwind is needed: the styles ship in the component, scoped to it. They set their own margins, font sizes and box sizing (`border-box`) instead of relying on a CSS reset; text inherits the page's font.
 
 ## Layout stability
 
-The sheet is `position: fixed`. It is not in the page flow, so opening it does not push the page down. The group grid is one column, two columns from 768px, and twelve columns from 1024px. Side padding is `1.25rem`, `2rem` from 640px, and `2.5rem` from 1024px. The top padding stays `5rem`, which leaves room for a header sitting above the overlay.
+The sheet is `position: fixed`. It is not in the page flow, so opening it does not push the page down. The group grid is one column, two columns from 768px, and twelve columns from 1024px. A stack is one cell of that grid: it spans both columns from 768px, and from 1024px it takes its span (the same default as a group). Inside the cell, the groups sit side by side from 640px and one above the other from 1024px. Side padding is `1.25rem`, `2rem` from 640px, and `2.5rem` from 1024px. The top padding stays `5rem`, which leaves room for a header sitting above the overlay.
 
 While the sheet is open, `document.body.style.overflow` is `hidden`. On close, and on unmount while it is still open, that inline value is put back to whatever it was before (including an empty string, if the host had not set one). Hiding overflow removes the scrollbar, and the page can shift sideways by the scrollbar's width. This unit does not pad the body to cover that shift. If the shift matters, set `scrollbar-gutter: stable` on the root.
 
@@ -185,6 +194,7 @@ While the sheet is open, `document.body.style.overflow` is `hidden`. On close, a
 - A row with no `href` stays plain text, as the source's batch 5 left "Who it's for" and the use cases: no `<a>`, no tab stop, no hover change, the default cursor.
 - The cream ground and the pith tint are not here. Colour comes from `--site-block-*`.
 - The source was Tailwind, `theme()` and `NuxtLink`. Those are written out: scoped CSS, and `linkComponent` (a plain `<a href>` unless the host passes its own link).
+- A side column that holds two headed lists is a `MenuStack` (side by side from 640px, stacked from 1024px), and a group's `tone: "quiet"` draws the source's quieter links; the call to action and the sheet's wash take their own variables (`--site-block-cta*`, `--site-block-sheet-wash`).
 
 ## Source
 
