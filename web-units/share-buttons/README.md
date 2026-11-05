@@ -1,6 +1,6 @@
 # web share-buttons
 
-A row of share links (X, Facebook, WhatsApp, Reddit, email) and a copy-link button with a polite "copied" status. Vue 3 / Nuxt 3. Moved from the Skalden site's blog (KaiGilb/skalden-web, `components/ShareButtons.vue`, branch `ws7-website-fork` d8a416328d69c404f44082453a2ed000eebe18e3).
+A row of share links (X, Facebook, WhatsApp, Reddit, email) and a copy-link button with a polite "copied" status. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 

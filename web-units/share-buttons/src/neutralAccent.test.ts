@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const SRC = join(process.cwd(), "src");
-const css = readdirSync(SRC)
+const vueFiles = readdirSync(SRC)
   .filter((f) => f.endsWith(".vue"))
-  .map((f) => readFileSync(join(SRC, f), "utf8"))
+  .map((f) => readFileSync(join(SRC, f), "utf8"));
+// The whole file, comments and template included, for the brand-colour scan.
+const whole = vueFiles.join("\n").toLowerCase();
+const css = vueFiles
   .map((s) => (s.split("<style")[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, ""))
   .join("\n");
 const OLD = ["1d4ed8", "b45309", "f5b942"].map((h) => "#" + h);
@@ -18,7 +21,7 @@ describe("neutral accent fallback", () => {
     expect(new Set(fallbacks)).toEqual(new Set(["#2563eb"]));
   });
 
-  test("no source-site brand colour is left in the styles", () => {
-    for (const old of OLD) expect(css.toLowerCase()).not.toContain(old);
+  test("no source-site brand colour is left anywhere in a .vue file, comments included", () => {
+    for (const old of OLD) expect(whole).not.toContain(old);
   });
 });
