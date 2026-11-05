@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-image-lightbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A full-screen picture viewer: click a picture to open it; one picture, every picture in an article, or a Nuxt Content ProseImg. Focus trap, keys, swipe, pinch zoom. Vue 3 / Nuxt 3.",
