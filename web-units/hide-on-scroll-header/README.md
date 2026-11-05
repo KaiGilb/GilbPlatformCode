@@ -1,6 +1,6 @@
 # web hide-on-scroll-header
 
-A fixed site header that is clear over the top of the page, solid after it, slides away while the visitor scrolls down but keeps its call-to-action in place, and comes back on any scroll up. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing layout (Jairam-Gilb/gilb-websites-web, `layouts/landing.vue`, header part, branch `redesign-scrollcraft` b78b1f9).
+A fixed site header that is clear over the top of the page, solid after it, slides away while the visitor scrolls down but keeps its call-to-action in place, and comes back on any scroll up. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
