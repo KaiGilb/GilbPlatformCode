@@ -1,6 +1,6 @@
 # web testimonial
 
-One quoted statement by a named person, with the person's name, an optional role and an optional small round picture beside the name. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+One quoted statement by a named person, with the person's name, an optional role and an optional small round picture beside the name. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
