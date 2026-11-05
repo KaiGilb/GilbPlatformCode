@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/titled-section",
   "package": "@kaigilb/gilbwebsitecode-titled-section",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A titled section band for a website page: optional ornament, heading, short rule, then the section's content.",
   "source": {
     "repo": "KaiGilb/triangula-web",
@@ -21,7 +21,8 @@
     "The ornament address is the `ornamentSrc` prop, default empty; the source hard-coded `/icon-mark.svg` behind an `ornament` boolean that defaulted to true.",
     "Tailwind is written out as scoped CSS on `--site-block-*` variables; no `@apply`, no `theme()`, no utility classes.",
     "The measured numbers are kept as defaults of props (`rule`, `align`, `maxWidth`, ornament sizes); heading weight is `--site-block-section-title-weight` with fallback 400; the slot wrapper is rendered only when the default slot is given.",
-    "The `<section>` is labelled by its heading (`aria-labelledby`), so it is a region landmark; the source had no label."
+    "The `<section>` is labelled by its heading (`aria-labelledby`), so it is a region landmark; the source had no label.",
+    "Colour fallbacks are neutral (the rule falls back to `#2563eb`); the source's navy is what its site maps `--site-block-accent` to."
   ],
   "newFiles": [
     "src/types.ts",

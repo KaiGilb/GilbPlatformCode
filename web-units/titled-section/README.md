@@ -33,10 +33,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-titled-section
 cd web-units/titled-section && npm pack --pack-destination <site>/vendor/gilbwebsitecode-titled-section
 echo <commit> > <site>/vendor/gilbwebsitecode-titled-section/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-titled-section/kaigilb-gilbwebsitecode-titled-section-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-titled-section/kaigilb-gilbwebsitecode-titled-section-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-titled-section/kaigilb-gilbwebsitecode-titled-section-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-titled-section/kaigilb-gilbwebsitecode-titled-section-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -93,7 +93,7 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-bg` — background of a `bg` band (fallback `transparent`, so the page shows through)
 - `--site-block-surface-alt` — background of an `alt` band (fallback `#e5e5e5`, the source's alternating grey)
 - `--site-block-fg` — the heading's colour (fallback `#1a1a1a`)
-- `--site-block-accent` — the rule's colour (fallback `#0c447c`). That navy is the source's section rule, not the hero's bright blue. On the alternating band `#e5e5e5`, `#0c447c` is 7.81:1 and the hero blue `#2494ec` is 2.56:1, under the 3:1 floor for a graphic. The hero draws its own rule; this band does not
+- `--site-block-accent` — the rule's colour (fallback `#2563eb`). Keep it at 3:1 or better against the band, WCAG 1.4.11.
 - `--site-block-section-title-size` — the heading's font size at every breakpoint (fallback `39px`)
 - `--site-block-section-title-weight` — the heading's font weight (fallback `400`)
 - `--site-block-display-font` — the heading's font family (fallback `inherit`). Everything else inherits the page's font
@@ -122,6 +122,7 @@ The ornament's `width` and `height` attributes (25 and 29 unless you pass others
 - Tailwind is written out as scoped CSS. No `@apply`, no `theme()`, no utility classes. Colours and the heading's type go through `--site-block-*`.
 - The measured numbers are kept as the defaults: ornament gap 6px (the live net of a 20px widget gap and a −14px pull, not the −14px alone), heading line-height 1.3, heading size 39px at every breakpoint, rule 3px by 100px, padding `lg` 50px and 100px from 768px, padding `sm` 70px always, inner width 1140px, ornament 25 by 29, slot wrapper top margin 3rem (the source's `mt-12`) and only when the default slot is used. `rule`, `align`, `maxWidth` and the ornament sizes are props whose defaults are those hard-coded values. Heading weight is `--site-block-section-title-weight` with fallback 400, because the source relied on Tailwind's preflight (headings inherit) and a bare `h2` would otherwise be bold.
 - The `<section>` is labelled by its heading (`aria-labelledby`), so it is a region landmark; the source had no label.
+- Colour fallbacks are neutral (the rule falls back to `#2563eb`); the source's navy is what its site maps `--site-block-accent` to.
 
 ## Source
 
