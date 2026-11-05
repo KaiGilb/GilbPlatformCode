@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-testimonial",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's testimonial: one quoted statement with the person's name, an optional role and an optional picture. Vue 3 / Nuxt 3.",
