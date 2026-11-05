@@ -1,6 +1,6 @@
 # web score-scale-card
 
-Stat cards with an optional scale that marks where a typical result and ours sit, in a responsive grid. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (Jairam-Gilb/gilb-websites-web, `pages/index.vue`, section "What we give you", branch `redesign-scrollcraft` b78b1f9).
+Stat cards with an optional scale that marks where a typical result and ours sit, in a responsive grid. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
