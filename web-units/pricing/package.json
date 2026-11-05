@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-pricing",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's pricing table: plans side by side with price, period, what each includes and a button; one may be featured. Vue 3 / Nuxt 3.",
