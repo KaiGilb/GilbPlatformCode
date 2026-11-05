@@ -1,6 +1,6 @@
 # web cta-section
 
-A full-width band in the site's accent colour, with one heading, an optional line and one link to the step the site wants the visitor to take next. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+A full-width band in the site's accent colour, with one heading, an optional line and one link to the step the site wants the visitor to take next. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
