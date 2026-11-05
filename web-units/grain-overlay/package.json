@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-grain-overlay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A fixed film-grain texture over the whole page: one inert element at 3 % opacity. Vue 3 / Nuxt 3.",

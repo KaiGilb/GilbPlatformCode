@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/grain-overlay",
   "package": "@kaigilb/gilbwebsitecode-grain-overlay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A film-grain texture for a website: one fixed, inert element that lays a faint paper grain over the whole page.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",
