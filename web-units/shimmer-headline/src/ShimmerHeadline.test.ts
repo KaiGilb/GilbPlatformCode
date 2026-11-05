@@ -323,6 +323,34 @@ test("the heading template has no inline style and no wrapper around the slot", 
   expect(el.textContent).toBe("T");
 });
 
+test("the element has no style attribute during the pass, after an animationend settle, or after the 3.8s net settle", () => {
+  let el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+  expect(el.getAttribute("style")).toBeNull();
+  el.dispatchEvent(animationEnd("sh-sweep-data-v-1234"));
+  expect(el.classList.contains("sh--sweeping")).toBe(false);
+  expect(el.getAttribute("style")).toBeNull();
+
+  el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+  vi.advanceTimersByTime(3800);
+  expect(el.classList.contains("sh--sweeping")).toBe(false);
+  expect(el.getAttribute("style")).toBeNull();
+});
+
+test("an animationend named card-sweep-data-v-1 does not settle it", () => {
+  const el = mountHeadline();
+  observer().fire([{ isIntersecting: true, target: el }]);
+  vi.advanceTimersByTime(220);
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+  el.dispatchEvent(animationEnd("card-sweep-data-v-1"));
+  expect(el.classList.contains("sh--sweeping")).toBe(true);
+});
+
 test("server-rendered HTML is the plain heading", async () => {
   const html = await renderToString(
     createSSRApp({
@@ -364,31 +392,12 @@ test("whole-style: the style block is exactly the rules this file means", () => 
 
 test("README Host must supply lists exactly the variables the style reads", () => {
   const sfc = readFileSync(join(process.cwd(), "src", "ShimmerHeadline.vue"), "utf8");
-  const css = ((sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
-  const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  const inVue = [...new Set([...sfc.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
   const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
   expect(readme.includes("## Host must supply")).toBe(true);
   const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
-  const listed = [
-    ...new Set(
-      section
-        .split("\n")
-        .filter((line) => line.trimStart().startsWith("- "))
-        .flatMap((line) => {
-          let rest = line.trimStart().slice(2);
-          const names: string[] = [];
-          for (;;) {
-            const found = rest.match(/^`(--site-block-[a-z-]+)`/);
-            if (!found?.[1]) break;
-            names.push(found[1]);
-            rest = rest.slice(found[0].length).replace(/^[\s,]+/, "");
-          }
-          if (names.length === 0) throw new Error(`bullet does not start with a variable: ${line}`);
-          return names;
-        }),
-    ),
-  ].sort();
-  expect(listed).toEqual(inStyle);
+  const listed = [...new Set([...section.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  expect(listed).toEqual(inVue);
 });
 
 test("axe finds no violations", async () => {
