@@ -1,6 +1,6 @@
 # web contact-form
 
-A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from the website starter's `components/ContactForm.vue` (website-engine-a 80ad391), the one block that was not in `components/catalog/` but was listed in its `catalog.json`.
+A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -28,10 +28,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-contact-form
 cd web-units/contact-form && npm pack --pack-destination <site>/vendor/gilbwebsitecode-contact-form
 echo <commit> > <site>/vendor/gilbwebsitecode-contact-form/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
