@@ -1,6 +1,6 @@
 # web section-heading
 
-A section heading: a pill label, a two-line headline whose second line brightens on scroll, and a paragraph offset to the right. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (`components/scrollcraft/SectionHeader.vue`, branch `redesign-scrollcraft` b78b1f9).
+A section heading: a pill label, a two-line headline whose second line brightens on scroll, and a paragraph offset to the right. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
