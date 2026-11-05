@@ -208,13 +208,13 @@ test("every --site-block-shadow-lg value the README states under Host must suppl
   expect(source).toBe(neutral?.replace("rgb(0 0 0 /", "rgb(28 28 20 /"));
 });
 
-test("every --site-block-* name the component reads is a unit.json host member", () => {
+test("the --site-block-* names the component reads and the unit.json host members are the same set", () => {
   const sfc = readFileSync(join(process.cwd(), "src", "DoubleBezel.vue"), "utf8");
   const inVue = [...new Set([...sfc.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
   const unit = JSON.parse(readFileSync(join(process.cwd(), "unit.json"), "utf8"));
-  const members = unit.host.flatMap((entry: { member: string }) => entry.member.split(",").map((part) => part.trim()));
+  const members = [...new Set(unit.host.flatMap((entry: { member: string }) => [...entry.member.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0])))].sort();
   expect(inVue.length).toBeGreaterThan(0);
-  for (const name of inVue) expect(members).toContain(name);
+  expect(members).toEqual(inVue);
 });
 
 test("whole-style: the style block is exactly the rules this file means", () => {
