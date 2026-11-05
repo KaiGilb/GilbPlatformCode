@@ -1,6 +1,6 @@
 # web sticky-card-deck
 
-A deck of cards that pin and stack as the page scrolls, scaling back as the next one covers them, with a step rail; a static list under reduced motion. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (`components/scrollcraft/StickyStack.vue`, branch `redesign-scrollcraft` b78b1f9).
+A deck of cards that pin and stack as the page scrolls, scaling back as the next one covers them, with a step rail; a static list under reduced motion. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
