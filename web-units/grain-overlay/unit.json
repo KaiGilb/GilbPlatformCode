@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "unit": "web-units/grain-overlay",
+  "package": "@kaigilb/gilbwebsitecode-grain-overlay",
+  "version": "0.1.0",
+  "purpose": "A film-grain texture for a website: one fixed, inert element that lays a faint paper grain over the whole page.",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "9dc8c8d3d12c6e6327e77484fe45753011669d99",
+    "files": [
+      {
+        "path": "components/GrainOverlay.vue",
+        "lines": null,
+        "to": "src/GrainOverlay.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The `zIndex` prop (default 30) replaces `Z_PLANES.grain` from the site's `~/utils/zPlanes`.",
+    "The source's Tailwind classes (`pointer-events-none fixed inset-0`) and its inline opacity and repeat are written as scoped CSS; only `z-index` and the texture stay inline."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/GrainOverlay.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "zIndex prop",
+      "replaces": "Z_PLANES.grain from ~/utils/zPlanes"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

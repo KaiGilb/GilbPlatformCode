@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "unit": "web-units/double-bezel",
+  "package": "@kaigilb/gilbwebsitecode-double-bezel",
+  "version": "0.1.0",
+  "purpose": "A double-bezel frame for a website picture: a tinted outer shell with a hairline ring around an inner window with a soft top highlight, so a screenshot reads as mounted.",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "9dc8c8d3d12c6e6327e77484fe45753011669d99",
+    "files": [
+      {
+        "path": "components/landing/DoubleBezel.vue",
+        "lines": null,
+        "to": "src/DoubleBezel.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "`tint` is any CSS colour, default none (`transparent`); the source took a name from its own palette (validated), default `pith` (`#e5d0b1`).",
+    "The site's `--brand-bg` and `--brand-fg` RGB channels are the library's `--site-block-bg` and `--site-block-fg` colours; `rgb(x / a)` is written `color-mix(in srgb, x a%, transparent)`, the same colour.",
+    "`theme('boxShadow.lg')` is `var(--site-block-shadow-lg, 0 16px 40px -8px rgb(0 0 0 / 0.12))`: the source's offsets and blur with a neutral black; the source site maps the variable to its own `0 16px 40px -8px rgb(28 28 20 / 0.12)`.",
+    "The inner frame it neutralises is the library `device-frame` browser frame (`.df-browser`), not the site's `.mj-frame`.",
+    "Classes are `bz`, `bz-core` and `bz--dark` (the source: `mj-bezel`, `mj-bezel-core`, `is-dark`); props are declared inline with `withDefaults`."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/DoubleBezel.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "tint prop",
+      "replaces": "the site palette name (var(--palette-<name>))"
+    },
+    {
+      "member": "--site-block-bg, --site-block-fg, --site-block-shadow-lg, --site-block-bezel-highlight, --site-block-bezel-highlight-dark",
+      "replaces": "--brand-bg, --brand-fg, theme('boxShadow.lg'), rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.14)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

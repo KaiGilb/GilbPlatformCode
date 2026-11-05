@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "web-units/shimmer-headline",
+  "package": "@kaigilb/gilbwebsitecode-shimmer-headline",
+  "version": "0.1.0",
+  "purpose": "A shimmer headline for a website: a single highlight band sweeps across the heading once, when it first scrolls into view, and then it is plain text again.",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "9dc8c8d3d12c6e6327e77484fe45753011669d99",
+    "files": [
+      {
+        "path": "components/motion/ShimmerHeadline.vue",
+        "lines": null,
+        "to": "src/ShimmerHeadline.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The site's `--brand-fg`, `--brand-bg` and `--palette-goldBright` are the library's `--site-block-fg`, `--site-block-bg` and the new `--site-block-shimmer` (fallback the library accent, `--site-block-accent`, then `#2563eb`); the source's gold `#e7b339` is what its site maps `--site-block-shimmer` to.",
+    "Classes and keyframes are `sh`, `sh--dark`, `sh--sweeping` and `sh-sweep` (the source: `mj-shimmer`, `is-dark`, `is-sweeping`, `mj-shimmer-sweep`); the `animationend` filter matches `sh-sweep` by part, as the source did for its name.",
+    "Props are declared inline with `withDefaults` (same names and defaults)."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/ShimmerHeadline.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "--site-block-fg, --site-block-bg, --site-block-shimmer, --site-block-accent",
+      "replaces": "--brand-fg, --brand-bg, --palette-goldBright"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
