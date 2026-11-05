@@ -1,6 +1,6 @@
 # web newsletter-signup
 
-A newsletter signup band: one labelled email field and a button. It sends the address to the site's subscribe address and answers in place. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+A newsletter signup band: one labelled email field and a button. It sends the address to the site's subscribe address and answers in place. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
