@@ -1,6 +1,6 @@
 # web site-logo
 
-One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from KaiGilb/website-engine-a `components/SiteLogo.vue` at `81362f4fdc0bd59d390e4285855c04c019f1e7b9` and KaiGilb/gilb-websites-web `components/SiteLogo.vue` at `49ce2795ab54a1bda798f5cc745406020e8460d8`.
+One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
