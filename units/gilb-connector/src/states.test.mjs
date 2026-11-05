@@ -287,7 +287,8 @@ describe("AI states", () => {
     const allowed = await box.request("tools/call", { name: "list_vaults", arguments: {} });
     expect(allowed.result.isError).toBe(false);
     expect(toolText(allowed)).toBe("granted-ok");
-    expect(platform.requests.filter((rec) => rec.url.endsWith("/tool"))).toHaveLength(2);
+    // The first call also asks list_vaults once, to see if there is a single work vault to select.
+    expect(platform.requests.filter((rec) => rec.url.endsWith("/tool"))).toHaveLength(3);
   });
 
   it("s5 the hop names the server GilbPlatform and allows mcp__GilbPlatform", async () => {

@@ -31,6 +31,10 @@ const INSTRUCTIONS_FIRST =
   "When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault.";
 const INSTRUCTIONS_SECOND =
   "Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
+const AUTO_SELECT_SENTENCE =
+  "If this AI can reach exactly one vault besides its own, that vault is selected automatically.";
+const AUTO_VAULTS_NOTE = "(selected automatically: the only vault this AI can reach)";
+const ONLY = "https://only.example.test/base";
 
 const PLATFORM_TOOLS = [
   { name: "list_vaults", description: "List.", inputSchema: { type: "object", properties: {} } },
@@ -399,11 +403,162 @@ describe("gilbplatform_use_vault", () => {
     const init = await box.request("initialize", { protocolVersion: "2025-06-18", capabilities: {} });
     expect(init.result.instructions).toContain(INSTRUCTIONS_FIRST);
     expect(init.result.instructions).toContain(INSTRUCTIONS_SECOND);
+    expect(init.result.instructions).toContain(AUTO_SELECT_SENTENCE);
     const listed = await box.request("tools/list", {});
     const tool = listed.result.tools.find((item) => item.name === USE_VAULT);
     expect(tool).toBeTruthy();
     expect(tool.description).toBe(USE_VAULT_DESCRIPTION);
     expect(tool.inputSchema.required).toEqual(["vault"]);
     expect(tool.inputSchema.properties.vault.type).toBe("string");
+  });
+
+  it("a1 the only work vault is selected before the first tool call", async () => {
+    const { platform, box } = await boundBox([AI_VAULT, ONLY]);
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["list_vaults", "read_record"]);
+    expect(posts[0].body.contentVaultIds).toBeUndefined();
+    expect(posts[1].body.contentVaultIds).toEqual([ONLY]);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toBe(
+      `mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${ONLY} ${AUTO_VAULTS_NOTE}`,
+    );
+    const listed = await box.request("tools/list", {});
+    expect(listed.result.tools.map((tool) => tool.name)).toContain("read_record");
+    const contexts = platform.requests.filter((rec) => rec.url.endsWith("/context"));
+    expect(contexts.length).toBeGreaterThanOrEqual(2);
+    expect(contexts[contexts.length - 1].body.contentVaultIds).toEqual([ONLY]);
+  });
+
+  it("a2 two work vaults selects nothing", async () => {
+    const { platform, box } = await boundBox([AI_VAULT, NS, OTHER]);
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["list_vaults", "read_record"]);
+    expect(posts[0].body.contentVaultIds).toBeUndefined();
+    expect(posts[1].body.contentVaultIds).toBeUndefined();
+    const again = await box.request("tools/call", { name: "read_record", arguments: { id: "2" } });
+    expect(toolText(again)).toBe("tool-ok");
+    const later = toolPosts(platform.requests);
+    expect(later.filter((rec) => rec.body.name === "list_vaults")).toHaveLength(1);
+    expect(later[later.length - 1].body.contentVaultIds).toBeUndefined();
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
+    expect(toolText(who)).not.toContain("selected automatically");
+  });
+
+  it("a3 only the AI's own vault selects nothing", async () => {
+    const { platform, box } = await boundBox([AI_VAULT]);
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["list_vaults", "read_record"]);
+    expect(posts[1].body.contentVaultIds).toBeUndefined();
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain("vaults: none");
+    expect(toolText(who)).not.toContain("selected automatically");
+  });
+
+  it("a4 --vault is kept and list_vaults is not called to auto-select", async () => {
+    const { platform, box } = await boundBox([AI_VAULT, ONLY], { vaults: [ALREADY] });
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["read_record"]);
+    expect(posts[0].body.contentVaultIds).toEqual([ALREADY]);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain(`vaults: ${ALREADY}`);
+    expect(toolText(who)).not.toContain("selected automatically");
+    expect(toolText(who)).not.toContain(ONLY);
+  });
+
+  it("a5 a vault picked with gilbplatform_use_vault is not replaced", async () => {
+    const ids = [AI_VAULT, OTHER, NS];
+    const { platform, box } = await boundBox(ids);
+    const selected = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "testcarwashcouponapp" } });
+    expect(selected.result.isError).toBe(false);
+    expect(toolText(selected)).toBe(using(NS, [NS]));
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toBe(`mode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
+    expect(toolText(who)).not.toContain("selected automatically");
+    const listsAfterPick = toolPosts(platform.requests).filter((rec) => rec.body.name === "list_vaults").length;
+    ids.splice(0, ids.length, AI_VAULT, ONLY);
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    const read = posts.find((rec) => rec.body.name === "read_record");
+    expect(read.body.contentVaultIds).toEqual([NS]);
+    expect(posts.filter((rec) => rec.body.name === "list_vaults")).toHaveLength(listsAfterPick);
+  });
+
+  it("a6 not bound does not auto-select", async () => {
+    const home = scratch();
+    const state = {
+      principal: PERSON,
+      onTool: (rec) => {
+        if (rec.body.name === "list_vaults") return vaultList([AI_VAULT, ONLY]);
+        return { body: { result: "should-not-run" } };
+      },
+    };
+    const { handler } = door(state);
+    const platform = await listen(handler);
+    const box = connect({ origin: platform.origin, env: aiEnv(home) });
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(true);
+    expect(toolText(call)).toBe(aiNotBound(CLIENT_ID));
+    expect(toolPosts(platform.requests)).toHaveLength(0);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain("state: not bound");
+    expect(toolText(who)).toContain("vaults: none");
+    expect(toolText(who)).not.toContain("selected automatically");
+    expect(toolText(who)).not.toContain(ONLY);
+  });
+
+  it("a7 --as me does not auto-select", async () => {
+    const { platform, box } = await boundBox([ONLY], { as: "me", env: meEnv() });
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["read_record"]);
+    expect(posts[0].body.contentVaultIds).toBeUndefined();
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).not.toContain("selected automatically");
+    expect(toolText(who)).toContain("vaults: none");
+  });
+
+  it("a8 after not bound becomes bound, the only vault is selected on the next tool call", async () => {
+    const home = scratch();
+    const state = {
+      principal: PERSON,
+      onTool: (rec) => {
+        if (rec.body.name === "list_vaults") return vaultList([AI_VAULT, ONLY]);
+        return { body: { result: "tool-ok" } };
+      },
+    };
+    const { handler } = door(state);
+    const platform = await listen(handler);
+    const box = connect({ origin: platform.origin, env: aiEnv(home) });
+    const early = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(early.result.isError).toBe(true);
+    expect(toolText(early)).toBe(aiNotBound(CLIENT_ID));
+    expect(toolPosts(platform.requests)).toHaveLength(0);
+
+    state.principal = AI_VAULT;
+    const call = await box.request("tools/call", { name: "read_record", arguments: { id: "2" } });
+    expect(call.result.isError).toBe(false);
+    expect(toolText(call)).toBe("tool-ok");
+    const posts = toolPosts(platform.requests);
+    expect(posts.map((rec) => rec.body.name)).toEqual(["list_vaults", "read_record"]);
+    expect(posts[0].body.contentVaultIds).toBeUndefined();
+    expect(posts[1].body.contentVaultIds).toEqual([ONLY]);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain(`vaults: ${ONLY} ${AUTO_VAULTS_NOTE}`);
   });
 });

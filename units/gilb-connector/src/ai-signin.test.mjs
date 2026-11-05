@@ -523,7 +523,7 @@ describe("Connected AI", () => {
     expect(call.result.isError).toBe(true);
     expect(toolText(call)).toBe(sentence);
     expect(platform.requests.filter((rec) => rec.url.endsWith("/context")).length).toBeGreaterThan(0);
-    expect(platform.requests.filter((rec) => rec.url.endsWith("/tool")).map((rec) => rec.body.name)).toEqual(["list_records"]);
+    expect(platform.requests.filter((rec) => rec.url.endsWith("/tool")).map((rec) => rec.body.name)).toEqual(["list_vaults", "list_records"]);
     expect(stderr.text().split(sentence).length - 1).toBe(1);
 
     const again = await box.request("tools/call", { name: "list_vaults", arguments: {} });
@@ -574,7 +574,11 @@ describe("Connected AI", () => {
     });
     const answers = [other, near];
     const { handler, secrets } = door({
-      onTool: () => ({ status: 200, body: { result: answers.shift() ?? other } }),
+      onTool: (rec) => {
+        // The first platform tool looks up vaults once before the call the test made.
+        if (rec.body.name === "list_vaults") return { status: 200, body: { result: "not-a-vault-list" } };
+        return { status: 200, body: { result: answers.shift() ?? other } };
+      },
     });
     const platform = await listen(handler);
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };

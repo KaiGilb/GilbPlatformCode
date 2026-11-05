@@ -34,7 +34,7 @@ The first run creates this AI's key under `~/.gilb-connector/` (the directory is
 4. Paste this Agent client id. **Bind AI**.
 5. Grant the AI vault **Read** and **Write** on the vaults it should work in.
 
-Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, `state: not bound` or `state: bound`, and `vaults:` (the selected vaults, or `none`). Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.
+Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, `state: not bound` or `state: bound`, and `vaults:` (the selected vaults, or `none`). Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
 
 Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). Once this AI is bound, the connector keeps one platform turn for the life of the process. Until then, each call asks the door again. The AI's sign-in stays in memory and renews itself. It is not written to disk.
 
@@ -76,7 +76,7 @@ Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is
 - `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Agent.Jackfruit`) and returns that agent's standing, so the model can follow it.
 - `gilbplatform_task` sets the person's request. The platform loads standing from that text.
 
-When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.
+When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
 

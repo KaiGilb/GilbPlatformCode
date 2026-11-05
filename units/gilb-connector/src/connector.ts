@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.0";
+export const CONNECTOR_VERSION = "0.5.1";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -359,6 +359,10 @@ const GILB_USE_VAULT: ToolSpec = {
 /** Told to the model on initialize, and in the README. A vault switch stays the person's decision. */
 const USE_VAULT_INSTRUCTIONS =
   "When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
+
+/** Told to the model on initialize, and in the README. One work vault is not a choice. */
+const AUTO_SELECT_INSTRUCTIONS =
+  "If this AI can reach exactly one vault besides its own, that vault is selected automatically.";
 
 const AGENT_PROMPT = {
   name: "agent",
@@ -1025,6 +1029,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let bound = false;
   /** True after an unbound answer, so the next call does not reuse that token or turn. */
   let knownUnbound = false;
+  /** The current vault list was chosen because it was the only work vault. whoami says so. */
+  let selectedAutomatically = false;
+  /** list_vaults already ran once for auto-select in this bound stretch. It does not run again. */
+  let autoSelectAttempted = false;
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -1378,7 +1386,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   function vaultsLine(): string {
     const selected = vaults.map((id) => id.trim()).filter((id) => id !== "");
-    return `vaults: ${selected.length > 0 ? selected.join(", ") : "none"}`;
+    if (selected.length === 0) return "vaults: none";
+    const list = selected.join(", ");
+    if (selectedAutomatically) return `vaults: ${list} (selected automatically: the only vault this AI can reach)`;
+    return `vaults: ${list}`;
   }
 
   function whoamiText(): string {
@@ -1427,6 +1438,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (isVaultNamespace(reportedPrincipal)) {
         bound = true;
         knownUnbound = false;
+        // A later tool call may be the first one that can see a vault list.
+        autoSelectAttempted = false;
       } else {
         knownUnbound = true;
       }
@@ -1678,9 +1691,51 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     }
     const namespace = matched[0];
     if (!namespace) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
+    // The person's allow replaces an automatic choice. It is not overwritten later.
+    selectedAutomatically = false;
     if (!vaults.some((id) => id.toLowerCase() === namespace.toLowerCase())) vaults.push(namespace);
     cache = null;
     return toolResult(`Using vault ${namespace} for this session. Selected vaults: ${vaults.join(", ")}.`, false);
+  }
+
+  /**
+   * Bound, and nothing selected yet: look once. The AI's own vault is not a work vault.
+   * Exactly one vault left is selected the same way gilbplatform_use_vault selects one.
+   * Zero or two or more leaves the list empty. A person-approved vault is never replaced.
+   */
+  async function maybeAutoSelect(signal: AbortSignal): Promise<void> {
+    if (hopMode || asMode !== "ai" || !bound) return;
+    if (vaults.some((id) => id.trim() !== "")) return;
+    if (autoSelectAttempted) return;
+    autoSelectAttempted = true;
+    let res: { status: number; body: unknown };
+    try {
+      res = await postPlatform(toolUrl, { ...turnFields(), name: "list_vaults", arguments: "{}" }, signal);
+    } catch (err) {
+      if (signal.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
+      return;
+    }
+    if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    if (res.status < 200 || res.status >= 300) return;
+    const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown }) : {};
+    if (typeof body.result !== "string") return;
+    const ids = vaultIdsFromListResult(body.result);
+    if (!ids) return;
+    const own = reportedPrincipal.trim().toLowerCase();
+    const work: string[] = [];
+    for (const id of ids) {
+      const trimmed = id.trim();
+      if (trimmed === "") continue;
+      if (own !== "" && trimmed.toLowerCase() === own) continue;
+      if (work.some((have) => have.toLowerCase() === trimmed.toLowerCase())) continue;
+      work.push(trimmed);
+    }
+    if (work.length !== 1) return;
+    const namespace = work[0];
+    if (!namespace) return;
+    vaults.push(namespace);
+    selectedAutomatically = true;
+    cache = null;
   }
 
   async function onToolCall(params: unknown, id: unknown): Promise<ToolResult | typeof CANCELLED> {
@@ -1724,6 +1779,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (hopMode && !hopTools.some((tool) => tool.name === name)) {
         return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
       }
+      if (!hopMode) await maybeAutoSelect(ac.signal);
       return await callPlatformTool(name, args, ac.signal);
     } catch (err) {
       if (ac.signal.aborted || (err instanceof Error && err.name === "AbortError")) return CANCELLED;
@@ -1822,7 +1878,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
               asMode === "me"
                 ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
                 : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions."
-            } ${USE_VAULT_INSTRUCTIONS}`,
+            } ${USE_VAULT_INSTRUCTIONS}${asMode === "ai" ? ` ${AUTO_SELECT_INSTRUCTIONS}` : ""}`,
       };
     }
     if (method === "ping") return {};
