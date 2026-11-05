@@ -1,6 +1,6 @@
 # web faq
 
-Questions a site's visitors often ask, each opening its answer in place below it, on native `<details>` and `<summary>`. Vue 3 / Nuxt 3. Moved from the website starter's `components/catalog/FAQ.vue` (website-engine-a 80ad391).
+Questions a site's visitors often ask, each opening its answer in place below it, on native `<details>` and `<summary>`. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -23,10 +23,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-faq
 cd web-units/faq && npm pack --pack-destination <site>/vendor/gilbwebsitecode-faq
 echo <commit> > <site>/vendor/gilbwebsitecode-faq/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-faq/kaigilb-gilbwebsitecode-faq-0.2.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -93,7 +93,7 @@ An answer opens only when the visitor asks for it, and pushes what is below it d
 ## Wrong readings (0.2.0)
 
 - With both new props off the unit draws exactly what 0.1.0 drew. No visible change by default.
-- `plus-minus` is not the Gilb Websites page's whole FAQ look: the page's frosted card, per-row reveal and the amber icon colour are the page's own. The unit's bars take `currentColor`.
+- `plus-minus` is not the source page's whole FAQ look: the page's frosted card, per-row reveal and its own icon colour are the page's own. The unit's bars take `currentColor`.
 - `scrollMarginTop` only matters for keyboard focus and in-page links; it moves nothing on load.
 
 ## Source
