@@ -12,6 +12,8 @@ const HOST = "https://appbuilder.gilb.com";
 const VAULT = `${HOST}/base`;
 const CREATE = `${HOST}/lws/vault/${encodeURIComponent(VAULT)}/c`;
 const LIB = `${HOST}/base/e/gilbplatformcode-library-06gjdp49a9sm10t4hgdme4agwm`;
+const WEB_LIB = `${HOST}/base/e/gilbwebsitecode-library-06gn66j0enwkqfhm364trebtkm`;
+const libOf = (u) => (u.tree === "web-units" ? WEB_LIB : LIB); // the library of the unit's track
 const LICENCE = "https://jackfruit.gilb.com/base/e/06gj9wh899wc7cbn72ek2q8pgc";
 const PUBLIC = "https://veda.gilb.com/base/t/PublicGrantee";
 const arg = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : ""; };
@@ -63,7 +65,7 @@ function docFacts(u) {
     "a:unitTag": u.tag, "a:appliesTo": u.note,
     "a:attribution": notice, "a:license": "GilbPlatform.Licence",
     "a:handsOffTo": { "@id": LICENCE },
-    "a:partOf": { "@id": LIB },
+    "a:partOf": { "@id": libOf(u) },
     "a:directReader": PUBLIC,
   };
 }
@@ -152,6 +154,7 @@ for (const u of units) {
   if (bare && existing.has(bare)) console.log(`info: a document with the bare type tag ${bare} exists (${existing.get(bare).id}); creating ${u.tag} regardless`);
   const hit = existing.has(u.tag) ? [u.tag] : [];
   if (hit.length) {
+    // The listing is vault-wide, so it sees both libraries; a tag in either one is never re-created.
     state(u.tag + " doc", "not-created", { reason: "tag already present: " + hit.join(","), entity: existing.get(hit[0]).id });
     state(u.tag + " exhibit", "not-created", { reason: "document already present; not overwritten" });
     failed = true; continue;
@@ -203,7 +206,7 @@ if (made.length) {
     const line1 = String(exRows[0]?.referenceExhibit ?? exRows[0]?.["a:referenceExhibit"] ?? "").split("\n")[0];
     const mine = (byTag.get(u.tag) || []).find((x) => tailOf(x.id) === tailOf(docId));
     const partOf = [...partOfIds(mine?.d?.partOf ?? mine?.d?.["a:partOf"]), ...partOfIds(exs.json?.reference?.partOf)];
-    const partOfOk = partOf.length > 0 && partOf.every((p) => p === idCore(LIB));
+    const partOfOk = partOf.length > 0 && partOf.every((p) => p === idCore(libOf(u)));
     const ok = match.length === 1 && !!mine && exRows.length === 1 && line1.startsWith("**What it does:**") && partOfOk;
     state(u.tag + " doc", ok ? "created" : "unknown", { status: m.postStatus, entity: docId, readback: { tagMatches: match.length, exhibits: exRows.length, line1: line1.slice(0, 40), partOf: JSON.stringify(partOf), partOfIsLibrary: partOfOk } });
     if (!ok) failed = true;

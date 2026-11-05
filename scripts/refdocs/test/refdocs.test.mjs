@@ -190,3 +190,105 @@ test("T11 piped mock run prints a whole receipt and deletes the key, 5 times", (
     }
   } finally { s.clean(); }
 });
+
+// ---- website units (web-units/ -> GilbWebsiteCode Library) --------------------------------------------------------
+const WEB_LIB = "https://appbuilder.gilb.com/base/e/gilbwebsitecode-library-06gn66j0enwkqfhm364trebtkm";
+const PLAT_LIB = "https://appbuilder.gilb.com/base/e/gilbplatformcode-library-06gjdp49a9sm10t4hgdme4agwm";
+// A throwaway repo with one unit in each tree (and, on request, one folder name in both), pinned with --main HEAD.
+function tinyRepo(name, { both = false } = {}) {
+  const s = sandbox(name);
+  const repo = join(s.dir, "repo");
+  const git = (...a) => { const r = spawnSync("git", ["-C", repo, ...a], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); return r.stdout; };
+  mkdirSync(repo, { recursive: true });
+  git("init", "-q");
+  const unit = (tree, folder, pkg) => {
+    mkdirSync(join(repo, tree, folder), { recursive: true });
+    writeFileSync(join(repo, tree, folder, "package.json"), JSON.stringify({ name: pkg }));
+    writeFileSync(join(repo, tree, folder, "README.md"), `# ${folder}\n\n## What this is\n\nDoes the ${folder} thing. More words.\n`);
+  };
+  unit("units", "alpha", "@kaigilb/gilbplatformcode-alpha");
+  unit("web-units", "beta", "@kaigilb/gilbwebsitecode-beta");
+  if (both) { unit("units", "beta", "@kaigilb/gilbplatformcode-beta"); }
+  git("add", "-A"); git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "t");
+  const lib = join(s.dir, "library.json");
+  writeFileSync(lib, JSON.stringify({
+    alpha: { tag: "t:Alpha.view", title: "Alpha", note: "Not beta." },
+    beta: { tree: "web-units", tag: "t:Beta.web", title: "Beta (website)", note: "Not alpha." },
+  }));
+  const build = () => run([BUILD, "--no-fetch", "--repo", repo, "--main", "HEAD", "--library", lib, "--out", join(s.dir, "built")]);
+  return { ...s, repo, lib, build };
+}
+
+test("T12 a web-units entry is pinned under web-units/ and a units/ entry is unchanged", () => {
+  const s = tinyRepo("t12");
+  try {
+    const r = s.build();
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const { units } = JSON.parse(readFileSync(join(s.dir, "built", "refdocs-input.json"), "utf8"));
+    const [alpha, beta] = units;
+    assert.deepEqual(Object.keys(alpha), ["folder", "tag", "title", "note", "exhibit"], "a units/ entry gains no key");
+    assert.match(alpha.exhibit, /\nGitHub folder: units\/alpha\nCommit: [0-9a-f]{40}\nPackage: @kaigilb\/gilbplatformcode-alpha\n/);
+    assert.equal(beta.tree, "web-units");
+    assert.match(beta.exhibit, /\nGitHub folder: web-units\/beta\nCommit: [0-9a-f]{40}\nPackage: @kaigilb\/gilbwebsitecode-beta\n/);
+  } finally { s.clean(); }
+});
+
+test("T13 web dry run: partOf is the website library, units/ stays on the platform library, check passes", () => {
+  const s = tinyRepo("t13");
+  try {
+    assert.equal(s.build().status, 0);
+    const input = join(s.dir, "built", "refdocs-input.json");
+    const r = run([W, "--dry-run", "--input", input]);
+    assert.equal(r.status, 0);
+    const dryOut = join(s.dir, "dry-run.out");
+    writeFileSync(dryOut, r.stdout);
+    const bodies = [...r.stdout.matchAll(/^\{\n[\s\S]*?\n\}$/gm)].map((m) => JSON.parse(m[0]));
+    assert.equal(bodies[0].body.facts["a:partOf"]["@id"], PLAT_LIB);
+    assert.equal(bodies[2].body.facts["a:partOf"]["@id"], WEB_LIB);
+    const c = run([CHECK, "--input", input, "--dry-out", dryOut]);
+    assert.equal(c.status, 0, c.stdout);
+    assert.match(c.stdout, /ALL PASS/);
+  } finally { s.clean(); }
+});
+
+test("T14 a folder name in both trees fails loudly and writes no input", () => {
+  const s = tinyRepo("t14", { both: true });
+  try {
+    const r = s.build();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /'beta' exists in both units\/ and web-units\//);
+    assert.ok(!existsSync(join(s.dir, "built", "refdocs-input.json")));
+  } finally { s.clean(); }
+});
+
+test("T15 mock run: a web entry is created in the website library; an existing web tag is skipped, not re-created", () => {
+  const s = tinyRepo("t15");
+  try {
+    assert.equal(s.build().status, 0);
+    const input = join(s.dir, "built", "refdocs-input.json");
+    const j = JSON.parse(readFileSync(input, "utf8"));
+    j.units[1].tag = "t:Value.graph"; // the mock vault already holds this tag
+    writeFileSync(input, JSON.stringify(j));
+    writeFileSync(s.tok, TOKEN);
+    const r = run(["--import", MOCK, W, "--token-file", s.tok, "--input", input]);
+    assert.equal(r.status, 1, r.stdout.slice(-500));
+    const rc = receiptOf(r.stdout);
+    assert.deepEqual(rc.counts, { created: 2, "not-created": 2, unknown: 0, "never-sent": 0 });
+    assert.equal(rc.items["t:Alpha.view doc"].state, "created");
+    assert.equal(rc.items["t:Value.graph doc"].state, "not-created");
+    assert.ok(!existsSync(s.tok));
+  } finally { s.clean(); }
+});
+
+test("T16 mock run: a created web entry reads back with the website library as partOf", () => {
+  const s = tinyRepo("t16");
+  try {
+    assert.equal(s.build().status, 0);
+    writeFileSync(s.tok, TOKEN);
+    const r = run(["--import", MOCK, W, "--token-file", s.tok, "--input", join(s.dir, "built", "refdocs-input.json")]);
+    assert.equal(r.status, 0, r.stdout.slice(-500));
+    const rc = receiptOf(r.stdout);
+    assert.equal(rc.items["t:Beta.web doc"].state, "created");
+    assert.equal(rc.items["t:Beta.web doc"].readback.partOfIsLibrary, true);
+  } finally { s.clean(); }
+});
