@@ -4,7 +4,7 @@
  *
  * @param top the line's top, px from the viewport's top
  * @param vh the viewport height, px
- * @param startAt fraction of `vh` where it starts (0.78 on the Gilb Websites page)
+ * @param startAt fraction of `vh` where it starts (0.78 on the source page)
  * @param window fraction of `vh` over which it goes from 0 to 1 (0.13)
  * @returns a number from 0 to 1
  */

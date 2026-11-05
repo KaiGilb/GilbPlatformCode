@@ -17,7 +17,7 @@ const axeIds = async () => (await axe.run(document.body, { rules: { "color-contr
 const viewer = () => document.querySelector<HTMLElement>("[data-lightbox-viewer]");
 const key = (k: string, init: KeyboardEventInit = {}) => document.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...init }));
 const tick = async () => { await nextTick(); await nextTick(); };
-const PROPS = { src: "/a.jpg", alt: "A jackfruit on a tree", width: 1200, height: 800 };
+const PROPS = { src: "/a.jpg", alt: "A tree in a field", width: 1200, height: 800 };
 
 const Article = defineComponent({
   components: { LightboxScope },
@@ -37,7 +37,7 @@ describe("ImageLightbox: the picture", () => {
     wrapper = mount(ImageLightbox, { props: PROPS, attrs: { class: "hero", loading: "eager", fetchpriority: "high", sizes: "100vw" }, attachTo: document.body });
     const img = document.querySelector("img")!;
     expect(img.getAttribute("src")).toBe("/a.jpg");
-    expect(img.getAttribute("alt")).toBe("A jackfruit on a tree");
+    expect(img.getAttribute("alt")).toBe("A tree in a field");
     expect([img.getAttribute("width"), img.getAttribute("height")]).toEqual(["1200", "800"]);
     expect(img.className).toContain("hero");
     expect([img.getAttribute("loading"), img.getAttribute("fetchpriority"), img.getAttribute("sizes")]).toEqual(["eager", "high", "100vw"]);
@@ -102,8 +102,8 @@ describe("ImageLightbox: opening and closing", () => {
     expect(v.getAttribute("aria-label")).toBe("Image viewer");
     expect(v.parentElement).toBe(document.body);
     const big = v.querySelector("img")!;
-    expect([big.getAttribute("src"), big.getAttribute("alt")]).toEqual(["/a.jpg", "A jackfruit on a tree"]);
-    expect(v.querySelector(".ilb-caption")!.textContent!.trim()).toBe("A jackfruit on a tree");
+    expect([big.getAttribute("src"), big.getAttribute("alt")]).toEqual(["/a.jpg", "A tree in a field"]);
+    expect(v.querySelector(".ilb-caption")!.textContent!.trim()).toBe("A tree in a field");
     expect(v.querySelector(".ilb-caption")!.getAttribute("aria-hidden")).toBe("true");
     expect(v.querySelector(".ilb-close")!.getAttribute("aria-label")).toBe("Close image viewer");
   });

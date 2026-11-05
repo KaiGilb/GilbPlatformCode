@@ -73,7 +73,7 @@ const cellStyle = (i: number) => {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Gilb Websites landing page's former Tailwind classes written out. */
+   Sizes are the source landing page's former Tailwind classes written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .ssc, .ssc * { box-sizing: border-box; }
 .ssc {
@@ -89,7 +89,7 @@ const cellStyle = (i: number) => {
 }
 .ssc-value {
   margin: 0; font-size: 2.25rem; font-weight: 650; letter-spacing: -0.035em; line-height: 1.02;
-  text-wrap: balance; color: var(--site-block-accent, #b45309);
+  text-wrap: balance; color: var(--site-block-accent, #2563eb);
 }
 .ssc-title { margin: 0.75rem 0 0; font-size: 1rem; line-height: 1.5; font-weight: 600; color: var(--site-block-fg, #1a1a1a); }
 .ssc-what { margin: 0.5rem 0 0; font-size: 0.875rem; line-height: 1.6; color: var(--site-block-muted, #4b5563); }
@@ -105,8 +105,8 @@ const cellStyle = (i: number) => {
 }
 .ssc-ours {
   position: absolute; top: 50%; width: 0.75rem; height: 0.75rem; transform: translate(-50%, -50%);
-  border-radius: 999px; background: var(--site-block-accent, #b45309);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--site-block-accent, #b45309) 20%, transparent);
+  border-radius: 999px; background: var(--site-block-accent, #2563eb);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--site-block-accent, #2563eb) 20%, transparent);
 }
 .ssc-ends {
   display: flex; justify-content: space-between; gap: 0.75rem; margin: 0.625rem 0.375rem 0;
@@ -122,7 +122,7 @@ const cellStyle = (i: number) => {
 .ssc-legend-ours { font-weight: 500; color: var(--site-block-fg, #1a1a1a); }
 .ssc-swatch { display: flex; align-items: center; justify-content: center; flex: none; width: 0.75rem; height: 1.375em; }
 .ssc-swatch-typical { width: 3px; height: 0.875rem; border-radius: 999px; background: var(--site-block-muted, #4b5563); }
-.ssc-swatch-ours { width: 0.625rem; height: 0.625rem; border-radius: 999px; background: var(--site-block-accent, #b45309); }
+.ssc-swatch-ours { width: 0.625rem; height: 0.625rem; border-radius: 999px; background: var(--site-block-accent, #2563eb); }
 .ssc-legend-text { min-width: 0; }
 .ssc-sr {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;

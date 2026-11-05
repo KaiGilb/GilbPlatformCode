@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-app-store-button",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A 'Get the app' store link that draws nothing without an address and tells the host when it is clicked. Vue 3 / Nuxt 3.",

@@ -29,7 +29,7 @@
  * Content is data (`menu`); nothing here is a page of any one site. Theme: the `--section-menu-*`
  * CSS variables, which the site maps to its own tokens.
  *
- * Source: myjackfruit-web components/MegaMenu.vue + SiteHeader.vue (Nuxt 3), brought to the app
+ * Source: the source site's components/MegaMenu.vue + SiteHeader.vue (Nuxt 3), brought to the app
  * menu's behaviour (GilbApp src/components/menu/SectionMenu.tsx at 0f0f1b7).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type Component } from "vue";

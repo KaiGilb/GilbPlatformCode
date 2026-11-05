@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-site-footer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The site's footer: a brand, an optional tagline and link list, and a copyright line. Words are props. Vue 3 / Nuxt 3.",

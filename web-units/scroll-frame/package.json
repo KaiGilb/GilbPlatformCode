@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-scroll-frame",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Scroll helpers: one rAF-throttled scroll and resize bus, and a fade-up reveal for elements entering the viewport. Vue 3 / Nuxt 3.",

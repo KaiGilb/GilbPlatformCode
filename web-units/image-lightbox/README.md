@@ -1,6 +1,6 @@
 # web image-lightbox
 
-A full-screen picture viewer: click a picture and it opens over the page; one picture, every picture in an article, or a Nuxt Content `ProseImg`. Vue 3 / Nuxt 3. A fresh unit, written after the Skalden blog's `components/LightboxImage.vue` (see "Source").
+A full-screen picture viewer: click a picture and it opens over the page; one picture, every picture in an article, or a Nuxt Content `ProseImg`. Vue 3 / Nuxt 3. A fresh unit, written after a production site's lightbox (see "Source").
 
 ## What this is
 
@@ -31,10 +31,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-image-lightbox
 cd web-units/image-lightbox && npm pack --pack-destination <site>/vendor/gilbwebsitecode-image-lightbox
 echo <commit> > <site>/vendor/gilbwebsitecode-image-lightbox/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-image-lightbox/kaigilb-gilbwebsitecode-image-lightbox-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-image-lightbox/kaigilb-gilbwebsitecode-image-lightbox-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-image-lightbox/kaigilb-gilbwebsitecode-image-lightbox-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-image-lightbox/kaigilb-gilbwebsitecode-image-lightbox-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -62,7 +62,7 @@ import { ImageLightbox } from '@kaigilb/gilbwebsitecode-image-lightbox'
 </script>
 
 <template>
-  <ImageLightbox src="/blog/hero.jpg" alt="A jackfruit tree in July" :width="1360" :height="768"
+  <ImageLightbox src="/blog/hero.jpg" alt="A tree in a field" :width="1360" :height="768"
     :image-component="NuxtImg" loading="eager" fetchpriority="high" class="rounded-lg" />
 </template>
 ```
@@ -120,7 +120,7 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 
 - `--site-block-overlay` the dark behind the picture (default black, 94 % opaque)
 - `--site-block-on-overlay` the text and buttons over it (default white)
-- `--site-block-accent` the focus ring (default amber)
+- `--site-block-accent` the focus ring (fallback `#2563eb`)
 - `--site-block-radius` the buttons' corner (default `0.5rem`)
 - `--site-block-motion` the fade and zoom glide time (default `150ms`)
 - `--site-block-z-overlay` the viewer's stacking level (default `1000`)

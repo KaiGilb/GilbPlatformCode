@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/site-footer",
   "package": "@kaigilb/gilbwebsitecode-site-footer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The site footer for a website: brand, optional tagline, a row of footer links and the copyright line.",
   "source": {
     "repo": "KaiGilb/gilb-web",

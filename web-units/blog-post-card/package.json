@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-blog-post-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's blog post card: a linked card with a post's title, optional date, excerpt and cover picture. Vue 3 / Nuxt 3.",

@@ -27,7 +27,7 @@ describe("shareHref", () => {
       "https://e.test/?u=https%3A%2F%2Fa.test%2Fp%3Fq%3D1&t=A%20B&x=A%20B%20https%3A%2F%2Fa.test%2Fp%3Fq%3D1",
     );
   });
-  test("the default links are the ones the Skalden site built", () => {
+  test("the default links are the ones the library ships", () => {
     const [u, t] = ["https://a.test/p", "T"];
     const href = Object.fromEntries(defaultShareTargets.map((d) => [d.id, shareHref(d.href, u, t)]));
     expect(href).toEqual({

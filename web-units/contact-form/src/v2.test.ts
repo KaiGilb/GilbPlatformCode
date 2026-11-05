@@ -1,5 +1,5 @@
 // Spec: Kai-Zen decision 2026-10-20 (contact-form 0.2.0: token reset after send, optional fields, compact variant).
-// Behaviour read from the site's ContactForm.vue (Jairam-Gilb/gilb-websites-web redesign-scrollcraft b78b1f9). Tests written new.
+// Behaviour read from the source site's ContactForm.vue. Tests written new.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import axe from "axe-core";

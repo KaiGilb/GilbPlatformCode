@@ -2,7 +2,7 @@
  * The scroll behaviour of the hide-on-scroll header, as a controller that touches no DOM. The browser (window,
  * clock, animation frames, timers) is passed in as `env`, so the tests drive it with a fake clock.
  *
- * Moved without change in behaviour from the Gilb Websites landing layout (layouts/landing.vue, the
+ * Moved without change in behaviour from the source landing layout (layouts/landing.vue, the
  * `readScrollDirection`, `settleAfterMount`, `noteInput` and `onScroll` functions; see README "Source").
  * It took three QA rounds to get right; every rule below has a reason from those rounds:
  *

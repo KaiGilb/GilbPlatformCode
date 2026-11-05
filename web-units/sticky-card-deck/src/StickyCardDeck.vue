@@ -78,8 +78,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the Gilb Websites page's former Tailwind and
-   scrollcraft classes written out. */
+/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the source page's former Tailwind and
+   scroll-effect classes written out. */
 .sd, .sd * { box-sizing: border-box; }
 .sd { position: relative; }
 .sd-card {
@@ -98,16 +98,16 @@ onMounted(() => {
   border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent);
   background: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 4%, transparent);
 }
-.sd-dot { flex: none; width: 0.4rem; height: 0.4rem; border-radius: 999px; background: var(--site-block-accent, #b45309); }
+.sd-dot { flex: none; width: 0.4rem; height: 0.4rem; border-radius: 999px; background: var(--site-block-accent, #2563eb); }
 .sd-head { display: flex; align-items: baseline; gap: 1rem; }
 .sd-num {
   font-size: clamp(2.4rem, 6vw, 4.5rem); font-weight: 650; letter-spacing: -0.035em; line-height: 1.02;
-  color: var(--site-block-accent, #b45309);
+  color: var(--site-block-accent, #2563eb);
 }
 .sd-title { margin: 0; font-size: clamp(1.4rem, 3vw, 2.2rem); font-weight: 650; letter-spacing: -0.035em; line-height: 1.02; text-wrap: balance; }
 .sd-keyline {
   width: 3.5rem; height: 2px; margin-top: 1rem; border-radius: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--site-block-accent, #b45309) 85%, transparent), transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--site-block-accent, #2563eb) 85%, transparent), transparent);
 }
 .sd-body { margin: 1.25rem 0 0; max-width: 42rem; font-size: 1rem; line-height: 1.6; color: var(--site-block-muted, #4b5563); }
 .sd-veil { position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none; background: var(--site-block-bg, #ffffff); }
@@ -131,7 +131,7 @@ onMounted(() => {
     content: ""; position: absolute; left: 50%; top: calc(100% + 0.2rem); width: 1px; height: 0.7rem;
     background: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 10%, transparent);
   }
-  .sd-tick.is-active { color: var(--site-block-accent, #b45309); }
+  .sd-tick.is-active { color: var(--site-block-accent, #2563eb); }
 }
 @media (prefers-reduced-motion: reduce) {
   .sd-card { position: static; transform: none !important; min-height: 0; }

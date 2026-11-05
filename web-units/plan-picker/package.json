@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-plan-picker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Plans as cards you pick (a radio group that works with no script), with an optional collapsed list of one-off price extras. Vue 3 / Nuxt 3.",

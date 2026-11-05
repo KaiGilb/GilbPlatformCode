@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-feature-grid",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's feature grid: equal bordered tiles, each a short title, a line or two and an optional icon. Vue 3 / Nuxt 3.",

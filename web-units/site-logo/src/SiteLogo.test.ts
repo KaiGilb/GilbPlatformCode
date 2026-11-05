@@ -1,5 +1,5 @@
 // Tests written new for this unit. The sources named the link with aria-label and again with the image alt
-// (and, in website-engine-a, a third time with the visible wordmark). These tests lock the fix.
+// (and, in one source, a third time with the visible wordmark). These tests lock the fix.
 import { afterEach, describe, expect, test } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { defineComponent, h, markRaw } from "vue";

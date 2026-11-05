@@ -1,4 +1,4 @@
-// Tests written new for this unit. The gilb-web and mynet-web footers had none.
+// Tests written new for this unit. The source footers had none.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { defineComponent, h, markRaw } from "vue";
@@ -226,14 +226,14 @@ describe("the unit's style", () => {
     expect(ruleBodies(style, ".sf-bottom-inner").some((body) => /justify-content:\s*space-between/.test(body))).toBe(true);
   });
 
-  test("the right-hand link is 0.75rem on a 1rem line (mynet-web's text-xs), still 44px tall", () => {
+  test("the right-hand link is 0.75rem on a 1rem line (the measured text-xs size), still 44px tall", () => {
     const withSize = ruleBodies(style, ".sf-end").filter((body) => /font-size:/.test(body));
     // The last rule that sets it wins, so it is the last one that must say 0.75rem.
     expect(withSize[withSize.length - 1]).toMatch(/font-size:\s*0\.75rem;\s*line-height:\s*1rem/);
     expect(ruleBodies(style, ".sf-end").some((body) => /min-height:\s*44px/.test(body))).toBe(true);
   });
 
-  test("the bottom band's padding is 1.5rem (gilb-web's py-6)", () => {
+  test("the bottom band's padding is 1.5rem (the measured py-6 value)", () => {
     expect(ruleBodies(style, ".sf-bottom-inner").some((body) => /padding:\s*1\.5rem 1rem/.test(body))).toBe(true);
   });
 

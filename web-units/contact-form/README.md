@@ -1,6 +1,6 @@
 # web contact-form
 
-A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from the website starter's `components/ContactForm.vue` (website-engine-a 80ad391), the one block that was not in `components/catalog/` but was listed in its `catalog.json`.
+A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
@@ -28,10 +28,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-contact-form
 cd web-units/contact-form && npm pack --pack-destination <site>/vendor/gilbwebsitecode-contact-form
 echo <commit> > <site>/vendor/gilbwebsitecode-contact-form/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-contact-form/kaigilb-gilbwebsitecode-contact-form-0.2.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -111,7 +111,7 @@ Before submit, the fields have their size from the start. With a Turnstile key, 
 
 ## Source
 
-The website starter's `components/ContactForm.vue` (website-engine-a 80ad391), written out without Tailwind: the same sizes and colours. The site key is a prop instead of the starter's runtime config, the Turnstile token is read inside the form instead of the whole page, and its `$fetch` call is now the unit's own `postJson`. Added: the live region, the per-instance ids (the fields' ids are now `cf-name-<useId>` and so on, not the starter's fixed `cf-name`), the replaceable words and sender.
+The website starter's `components/ContactForm.vue` (website-engine-a 80ad391), the one block that was not in `components/catalog/` but was listed in the starter's `catalog.json`, written out without Tailwind: the same sizes and colours. The site key is a prop instead of the starter's runtime config, the Turnstile token is read inside the form instead of the whole page, and its `$fetch` call is now the unit's own `postJson`. Added: the live region, the per-instance ids (the fields' ids are now `cf-name-<useId>` and so on, not the starter's fixed `cf-name`), the replaceable words and sender.
 
 Version 0.2.0 (token reset, `showCompany`, `requireName`, `requireMessage`, `compact`): behaviour read from `Jairam-Gilb/gilb-websites-web`, `components/ContactForm.vue` at `b78b1f9e247d23823ddf75c41c46d252adc393e8`, rewritten for this unit's markup and tests (new, in `src/v2.test.ts`).
 

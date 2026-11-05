@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-newsletter-signup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's newsletter signup: one email field that posts to the site's subscribe address and answers in place. Vue 3 / Nuxt 3.",

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/titled-section",
   "package": "@kaigilb/gilbwebsitecode-titled-section",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "A titled section band for a website page: optional ornament, heading, short rule, then the section's content.",
   "source": {
     "repo": "KaiGilb/triangula-web",

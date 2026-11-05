@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-comparison-list",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A two-column comparison, one row per topic: what is typical against what we do. A semantic list, three columns wide and one card per row on phones. Vue 3 / Nuxt 3.",

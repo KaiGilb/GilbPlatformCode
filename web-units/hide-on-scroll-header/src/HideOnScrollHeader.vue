@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Gilb Websites landing layout's former Tailwind classes and rules written out. */
+   Sizes are the source landing layout's former Tailwind classes and rules written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .hsh-root, .hsh-root * { box-sizing: border-box; }
 .hsh-root { display: contents; }
@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
 .hsh-skip:focus {
   position: absolute; z-index: 50; left: 1rem; top: 1rem; width: auto; height: auto; margin: 0;
   padding: 0.5rem 1rem; overflow: visible; clip: auto; white-space: normal; border-radius: 0.375rem;
-  background: var(--site-block-accent, #b45309); color: var(--site-block-on-accent, #ffffff);
+  background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff);
 }
 
 .hsh-sentinel { position: absolute; top: 0; width: 1px; height: 3rem; pointer-events: none; }
@@ -112,8 +112,8 @@ onBeforeUnmount(() => {
 .hsh-cta-link {
   display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 1.25rem;
   border-radius: 999px; font-size: 0.875rem; font-weight: 600; white-space: nowrap; text-decoration: none;
-  background: var(--site-block-accent, #b45309); color: var(--site-block-on-accent, #ffffff);
-  box-shadow: 0 8px 24px -6px color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent);
+  background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff);
+  box-shadow: 0 8px 24px -6px color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent);
 }
 
 /* The bar's background lives on its own layer (::before) so it can slide away while the call-to-action stays put.
@@ -163,7 +163,7 @@ onBeforeUnmount(() => {
 .hsh-hidden:not(:has(:focus-visible)):not(:has([aria-expanded="true"])) .hsh-cta-link,
 .hsh-hidden:not(:has(:focus-visible)):not(:has([aria-expanded="true"])) .hsh-cta :slotted(*) {
   box-shadow:
-    0 8px 24px -6px color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent),
+    0 8px 24px -6px color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent),
     0 12px 32px -8px var(--site-block-header-lift, rgb(0 0 0 / 0.7));
 }
 

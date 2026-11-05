@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/shimmer-headline",
   "package": "@kaigilb/gilbwebsitecode-shimmer-headline",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A shimmer headline for a website: a single highlight band sweeps across the heading once, when it first scrolls into view, and then it is plain text again.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",

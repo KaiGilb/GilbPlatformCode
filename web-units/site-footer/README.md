@@ -1,6 +1,6 @@
 # web site-footer
 
-The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from KaiGilb/gilb-web `components/site/SiteFooter.vue` at `a3be1bce783d9b34c4c2f40c2cbc0886c28c5daa`, with the right-hand link from KaiGilb/mynet-web `components/site/SiteFooter.vue` at `ca601b9f188343e5075057907678dad64324269e`.
+The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from two production sites; see Source.
 
 ## What this is
 
@@ -32,10 +32,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-site-footer
 cd web-units/site-footer && npm pack --pack-destination <site>/vendor/gilbwebsitecode-site-footer
 echo <commit> > <site>/vendor/gilbwebsitecode-site-footer/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-site-footer/kaigilb-gilbwebsitecode-site-footer-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-site-footer/kaigilb-gilbwebsitecode-site-footer-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-site-footer/kaigilb-gilbwebsitecode-site-footer-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-site-footer/kaigilb-gilbwebsitecode-site-footer-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 

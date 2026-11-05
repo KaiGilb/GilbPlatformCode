@@ -1,6 +1,6 @@
 # web mega-menu
 
-An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from MyJackfruit (KaiGilb/myjackfruit-web, `components/MegaMenu.vue`, `842177b038fe8062d3bed8409c01a07ae86d6581` on main).
+An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -30,10 +30,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-mega-menu
 cd web-units/mega-menu && npm pack --pack-destination <site>/vendor/gilbwebsitecode-mega-menu
 echo <commit> > <site>/vendor/gilbwebsitecode-mega-menu/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.1.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.2.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.2.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -150,11 +150,11 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-fg` link and static text (fallback `#1a1a1a`)
 - `--site-block-shadow` the sheet's shadow colour (fallback `rgba(0, 0, 0, 0.08)`). The source site sets `rgba(28, 28, 20, 0.08)`. The offset stays `0 4px 12px -2px`. `color-mix` and `rgb(from … / 0.08)` rasterise a different shadow than this `rgba()` form
 - `--site-block-muted` the group label, the sub line, and Close
-- `--site-block-accent` link hover and the focus outline (fallback `#b45309`). It is also the fallback inside the call-to-action fill and its hover
-- `--site-block-cta` the call-to-action fill (fallback `var(--site-block-accent, #b45309)`)
+- `--site-block-accent` link hover and the focus outline (fallback `#2563eb`). It is also the fallback inside the call-to-action fill and its hover
+- `--site-block-cta` the call-to-action fill (fallback `var(--site-block-accent, #2563eb)`)
 - `--site-block-on-cta` the call-to-action text (fallback `var(--site-block-on-accent, #ffffff)`)
 - `--site-block-on-accent` the call-to-action text when `--site-block-on-cta` is unset (fallback `#ffffff`)
-- `--site-block-cta-hover` the call-to-action fill on hover and focus (fallback `color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black)`)
+- `--site-block-cta-hover` the call-to-action fill on hover and focus (fallback `color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black)`)
 - `--site-block-cta-radius` the call-to-action corners (fallback `var(--site-block-radius, 0.5rem)`)
 - `--site-block-radius` the sheet's bottom corners, and the fallback for the call-to-action corners (fallback `0.5rem`)
 - `--site-block-motion` the link colour transition and the fade-out when the sheet closes (fallback `180ms`, the source's fast time). A host value sets both
@@ -191,10 +191,10 @@ While the sheet is open, `document.body.style.overflow` is `hidden`. On close, a
 
 - The dialog and the nav have separate names (`label` and `navLabel`). The source's `data-menu-panel` attribute, a hook for a site screenshot tool, is dropped.
 - When it is mounted with `open` already true, it locks scroll and takes focus at mount, so a server-rendered open sheet behaves like one opened later. The source did so only when `open` changed.
-- The words are not in this unit. "Build on MyJackfruit", the audiences, the apps, the use cases and the waiting-list line moved to the `groups` you pass.
+- The words are not in this unit. The site's tagline, the audiences, the apps, the use cases and the waiting-list line moved to the `groups` you pass.
 - The bottom Close control emits `close('button')`. The source emitted `close('esc')` for that same control. `'esc'` is only the Escape key now, so the host can put focus back for the key and not for the button. `'button'` is the reason added here.
 - A row with no `href` stays plain text, as the source's batch 5 left "Who it's for" and the use cases: no `<a>`, no tab stop, no hover change, the default cursor.
-- The cream ground and the pith tint are not here. Colour comes from `--site-block-*`.
+- The ground colour and the tint are not here. Colour comes from `--site-block-*`.
 - The source was Tailwind, `theme()` and `NuxtLink`. Those are written out: scoped CSS, and `linkComponent` (a plain `<a href>` unless the host passes its own link).
 - A side column that holds two headed lists is a `MenuStack` (side by side from 640px, stacked from 1024px), and a group's `tone: "quiet"` draws the source's quieter links; the call to action and the sheet's wash take their own variables (`--site-block-cta*`, `--site-block-sheet-wash`).
 - The product links are the large display type and the audience rows are cards (`tone: "card"`, also the default for a group of only static rows). The source's link colour changes on hover, not on focus; the focus ring is the outline.

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/double-bezel",
   "package": "@kaigilb/gilbwebsitecode-double-bezel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A double-bezel frame for a website picture: a tinted outer shell with a hairline ring around an inner window with a soft top highlight, so a screenshot reads as mounted.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",

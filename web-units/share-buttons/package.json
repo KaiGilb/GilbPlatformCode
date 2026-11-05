@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-share-buttons",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A row of share links (X, Facebook, WhatsApp, Reddit, email) and a copy-link button with a polite status. Words and targets are props. Vue 3 / Nuxt 3.",

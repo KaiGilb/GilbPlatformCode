@@ -93,7 +93,7 @@ function useAnchor(link: FooterLink): boolean {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral
-   fallbacks. Sizes are the gilb-web footer's former Tailwind classes written out, plus a 44px link
+   fallbacks. Sizes are the source footer's former Tailwind classes written out, plus a 44px link
    target. The colour transition runs only when the visitor has not asked for reduced motion. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .sf, .sf * { box-sizing: border-box; }
@@ -147,7 +147,7 @@ function useAnchor(link: FooterLink): boolean {
   color: var(--site-block-muted, #6b7280);
   text-decoration: none;
 }
-/* The right-hand link is mynet-web's text-xs: 0.75rem. It stays 44px tall like the others. */
+/* The right-hand link is the source footer's text-xs: 0.75rem. It stays 44px tall like the others. */
 .sf-end {
   font-size: 0.75rem;
   line-height: 1rem;
@@ -155,7 +155,7 @@ function useAnchor(link: FooterLink): boolean {
 .sf-link:hover, .sf-end:hover { color: var(--site-block-fg, #1a1a1a); }
 .sf-link:focus-visible, .sf-end:focus-visible {
   color: var(--site-block-fg, #1a1a1a);
-  outline: 2px solid var(--site-block-accent, #1d4ed8);
+  outline: 2px solid var(--site-block-accent, #2563eb);
   outline-offset: 2px;
 }
 .sf-bottom {

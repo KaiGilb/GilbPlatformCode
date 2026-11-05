@@ -1,6 +1,6 @@
 # web app-store-button
 
-A "Get the app" store link that draws nothing without an address and tells the host when it is clicked. Vue 3 / Nuxt 3. Moved from the Skalden site (KaiGilb/skalden-web, `components/AppStoreButton.vue`, branch `ws7-website-fork` d8a416328d69c404f44082453a2ed000eebe18e3); the same file is also in the website starter and in myjackfruit-web.
+A "Get the app" store link that draws nothing without an address and tells the host when it is clicked. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -24,10 +24,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-app-store-button
 cd web-units/app-store-button && npm pack --pack-destination <site>/vendor/gilbwebsitecode-app-store-button
 echo <commit> > <site>/vendor/gilbwebsitecode-app-store-button/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-app-store-button/kaigilb-gilbwebsitecode-app-store-button-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-app-store-button/kaigilb-gilbwebsitecode-app-store-button-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-app-store-button/kaigilb-gilbwebsitecode-app-store-button-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-app-store-button/kaigilb-gilbwebsitecode-app-store-button-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 

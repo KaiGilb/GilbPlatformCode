@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-double-bezel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A two-shell frame for a picture, a screenshot or a device frame: a tinted outer shell with a hairline ring, and an inner window with a top highlight. Vue 3 / Nuxt 3.",

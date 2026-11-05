@@ -1,6 +1,6 @@
 # web site-logo
 
-One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from KaiGilb/website-engine-a `components/SiteLogo.vue` at `81362f4fdc0bd59d390e4285855c04c019f1e7b9` and KaiGilb/gilb-websites-web `components/SiteLogo.vue` at `49ce2795ab54a1bda798f5cc745406020e8460d8`.
+One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from the website starter and a production site; see Source.
 
 ## What this is
 
@@ -26,10 +26,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-site-logo
 cd web-units/site-logo && npm pack --pack-destination <site>/vendor/gilbwebsitecode-site-logo
 echo <commit> > <site>/vendor/gilbwebsitecode-site-logo/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-site-logo/kaigilb-gilbwebsitecode-site-logo-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-site-logo/kaigilb-gilbwebsitecode-site-logo-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-site-logo/kaigilb-gilbwebsitecode-site-logo-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-site-logo/kaigilb-gilbwebsitecode-site-logo-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -93,7 +93,7 @@ const NuxtImg = resolveComponent('NuxtImg')
 
 The accent, as one CSS variable on `:root` (a blue fallback otherwise). Every website block in this library reads the same `--site-block-*` set, so a site maps it once:
 
-- `--site-block-accent` the link colour and the focus outline (fallback `#1d4ed8`)
+- `--site-block-accent` the link colour and the focus outline (fallback `#2563eb`)
 
 The logo file itself, served at the address passed as `logoSrc`. This package ships no image.
 

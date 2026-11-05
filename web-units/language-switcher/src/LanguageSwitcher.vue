@@ -153,7 +153,7 @@ function onKeydown(e: KeyboardEvent): void {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Skalden site's former Tailwind classes written out. */
+   Sizes are the source site's former Tailwind classes written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .ls, .ls * { box-sizing: border-box; }
 .ls { position: relative; display: inline-block; }
@@ -163,7 +163,7 @@ function onKeydown(e: KeyboardEvent): void {
   transition: opacity var(--site-block-motion, 150ms);
 }
 .ls-button:hover { opacity: 0.8; }
-.ls-button:focus-visible, .ls-item:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; }
+.ls-button:focus-visible, .ls-item:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .ls-caret { transition: transform var(--site-block-motion, 150ms); }
 .ls-caret-open { transform: rotate(180deg); }
 .ls-list {

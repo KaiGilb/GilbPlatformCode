@@ -1,6 +1,6 @@
 # web hide-on-scroll-header
 
-A fixed site header that is clear over the top of the page, solid after it, slides away while the visitor scrolls down but keeps its call-to-action in place, and comes back on any scroll up. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing layout (Jairam-Gilb/gilb-websites-web, `layouts/landing.vue`, header part, branch `redesign-scrollcraft` b78b1f9).
+A fixed site header that is clear over the top of the page, solid after it, slides away while the visitor scrolls down but keeps its call-to-action in place, and comes back on any scroll up. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -27,10 +27,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-hide-on-scroll-header
 cd web-units/hide-on-scroll-header && npm pack --pack-destination <site>/vendor/gilbwebsitecode-hide-on-scroll-header
 echo <commit> > <site>/vendor/gilbwebsitecode-hide-on-scroll-header/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-hide-on-scroll-header/kaigilb-gilbwebsitecode-hide-on-scroll-header-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-hide-on-scroll-header/kaigilb-gilbwebsitecode-hide-on-scroll-header-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-hide-on-scroll-header/kaigilb-gilbwebsitecode-hide-on-scroll-header-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-hide-on-scroll-header/kaigilb-gilbwebsitecode-hide-on-scroll-header-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 

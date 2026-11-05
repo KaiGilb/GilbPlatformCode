@@ -1,5 +1,5 @@
 // Spec: Kai-Zen decision 2026-10-20 (faq 0.2.0: plus-minus icon and scroll margin as opt-ins). Behaviour read from the
-// Gilb Websites page (Jairam-Gilb/gilb-websites-web redesign-scrollcraft b78b1f9, pages/index.vue and main.css sc-faq*). Tests written new.
+// source page (pages/index.vue and main.css sc-faq*). Tests written new.
 import { afterEach, describe, expect, test } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { readFileSync } from "node:fs";

@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
 }
 .ilb-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--site-block-on-overlay, #ffffff) 28%, var(--site-block-overlay, #000000)); }
 .ilb-btn:disabled { cursor: default; color: color-mix(in srgb, var(--site-block-on-overlay, #ffffff) 55%, var(--site-block-overlay, #000000)); }
-.ilb-btn:focus-visible { outline: 2px solid var(--site-block-accent, #f5b942); outline-offset: 2px; }
+.ilb-btn:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .ilb-close { position: absolute; top: max(env(safe-area-inset-top), 1rem); right: 1rem; }
 .ilb-prev, .ilb-next { position: absolute; top: 50%; transform: translateY(-50%); }
 .ilb-prev { left: 0.5rem; }

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/parallax-layer",
   "package": "@kaigilb/gilbwebsitecode-parallax-layer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A parallax plane for a website section: its content drifts at a slightly different rate from the scroll, so the page reads with quiet depth.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",

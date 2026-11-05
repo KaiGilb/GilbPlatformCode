@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-waitlist-form",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A waiting-list form: email required, the other questions optional, choice questions as radio groups, an optional collection notice, and a late-loaded Turnstile check. Vue 3 / Nuxt 3.",

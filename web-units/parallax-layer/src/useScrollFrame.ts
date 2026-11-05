@@ -1,5 +1,5 @@
 /**
- * A rAF-throttled scroll and resize frame bus, as the Gilb Websites landing page's `useScrollFrame` (see README
+ * A rAF-throttled scroll and resize frame bus, as the source landing page's `useScrollFrame` (see README
  * "Source"). Inlined in this unit because a packed copy cannot depend on another unit; the same file is in
  * `scroll-frame`. One passive scroll and one resize listener feed every subscriber on the next animation frame;
  * subscribers write transform and opacity directly, so scrolling never re-renders Vue.

@@ -1,5 +1,5 @@
 /**
- * Which plan is picked, as the browser holds it. Moved from the Gilb Websites landing page
+ * Which plan is picked, as the browser holds it. Moved from the source landing page
  * (composables/usePlanPick.ts `bindPlanPick`, without Nuxt's useState: the unit reports the pick as an event).
  */
 import type { PlanPick } from "./types";
