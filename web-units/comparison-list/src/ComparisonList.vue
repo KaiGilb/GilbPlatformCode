@@ -87,10 +87,10 @@ const heading = computed(() => `h${props.headingLevel}`);
 }
 .cmp-short { font-weight: 600; }
 .cmp-short-them { margin-right: 0.25rem; }
-.cmp-short-us { margin-right: 0.375rem; color: var(--site-block-accent, #b45309); }
+.cmp-short-us { margin-right: 0.375rem; color: var(--site-block-accent, #2563eb); }
 .cmp-check {
   display: inline-block; width: 0.85em; height: 0.85em; margin-right: 0.5rem; transform: translateY(-1px);
-  color: var(--site-block-accent, #b45309);
+  color: var(--site-block-accent, #2563eb);
 }
 .cmp-sr {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
@@ -105,10 +105,10 @@ const heading = computed(() => `h${props.headingLevel}`);
   }
   .cmp-head-us {
     padding: 1.5rem 1.25rem 1.25rem; font-size: 0.75rem; line-height: 1rem; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.08em; color: var(--site-block-accent, #b45309);
-    border: 1px solid color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent); border-bottom: 0;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--site-block-accent, #2563eb);
+    border: 1px solid color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent); border-bottom: 0;
     border-radius: 1.25rem 1.25rem 0 0;
-    background: color-mix(in srgb, var(--site-block-accent, #b45309) 8%, transparent);
+    background: color-mix(in srgb, var(--site-block-accent, #2563eb) 8%, transparent);
   }
   .cmp-rows { display: block; }
   .cmp-row { padding: 0; border: 0; border-radius: 0; background: transparent; }
@@ -119,13 +119,13 @@ const heading = computed(() => `h${props.headingLevel}`);
   .cmp-them { font-size: 1rem; line-height: 1.5rem; }
   .cmp-us {
     font-weight: 400;
-    border-left: 1px solid color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent);
-    border-right: 1px solid color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent);
-    background: color-mix(in srgb, var(--site-block-accent, #b45309) 8%, transparent);
+    border-left: 1px solid color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent);
+    border-right: 1px solid color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent);
+    background: color-mix(in srgb, var(--site-block-accent, #2563eb) 8%, transparent);
   }
   .cmp-row:first-child > * { border-top-width: 0; }
   .cmp-row:last-child .cmp-us {
-    border-bottom: 1px solid color-mix(in srgb, var(--site-block-accent, #b45309) 35%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--site-block-accent, #2563eb) 35%, transparent);
     border-radius: 0 0 1.25rem 1.25rem;
   }
   .cmp-short { display: none; }
