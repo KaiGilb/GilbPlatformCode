@@ -1,6 +1,6 @@
 # web hero
 
-The hero section that opens a web page: the headline in large type, an optional line under it, an optional picture beside it and an optional button to the page's one main next step. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+The hero section that opens a web page: the headline in large type, an optional line under it, an optional picture beside it and an optional button to the page's one main next step. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
