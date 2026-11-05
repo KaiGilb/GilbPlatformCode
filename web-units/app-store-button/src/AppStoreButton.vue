@@ -52,7 +52,7 @@ function onClick(): void {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Skalden site's former Tailwind and theme-function values written out. */
+   Sizes are the source site's former Tailwind and theme-function values written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .asb, .asb * { box-sizing: border-box; }
 .asb {
