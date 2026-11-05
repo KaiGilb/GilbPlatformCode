@@ -1,6 +1,6 @@
 # web site-footer
 
-The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from two production sites; see Source.
 
 ## What this is
 
