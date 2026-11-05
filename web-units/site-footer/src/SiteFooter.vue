@@ -155,7 +155,7 @@ function useAnchor(link: FooterLink): boolean {
 .sf-link:hover, .sf-end:hover { color: var(--site-block-fg, #1a1a1a); }
 .sf-link:focus-visible, .sf-end:focus-visible {
   color: var(--site-block-fg, #1a1a1a);
-  outline: 2px solid var(--site-block-accent, #1d4ed8);
+  outline: 2px solid var(--site-block-accent, #2563eb);
   outline-offset: 2px;
 }
 .sf-bottom {
