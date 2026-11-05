@@ -58,7 +58,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the Gilb Websites page's former Tailwind and
+/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the source page's former Tailwind and
    display-type classes written out. No CSS transition on the bright copy: its opacity follows the scroll. */
 .sh, .sh * { box-sizing: border-box; }
 .sh-pill {

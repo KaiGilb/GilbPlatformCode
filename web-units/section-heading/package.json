@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-section-heading",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A section heading: a pill label, a two-line headline whose second line brightens on scroll, and a paragraph offset to the right. Vue 3 / Nuxt 3.",

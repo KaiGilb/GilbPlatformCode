@@ -24,10 +24,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-section-heading
 cd web-units/section-heading && npm pack --pack-destination <site>/vendor/gilbwebsitecode-section-heading
 echo <commit> > <site>/vendor/gilbwebsitecode-section-heading/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-section-heading/kaigilb-gilbwebsitecode-section-heading-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-section-heading/kaigilb-gilbwebsitecode-section-heading-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-section-heading/kaigilb-gilbwebsitecode-section-heading-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-section-heading/kaigilb-gilbwebsitecode-section-heading-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
