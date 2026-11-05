@@ -1,4 +1,4 @@
-// Tests written new for this unit. The gilb-web and mynet-web footers had none.
+// Tests written new for this unit. The source footers had none.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { defineComponent, h, markRaw } from "vue";
