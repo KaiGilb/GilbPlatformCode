@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-hero",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A website's hero section: the page's headline in large type, an optional line, picture and button to the page's main next step. Vue 3 / Nuxt 3.",
