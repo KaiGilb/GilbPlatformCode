@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "unit": "web-units/site-footer",
+  "package": "@kaigilb/gilbwebsitecode-site-footer",
+  "version": "0.1.0",
+  "purpose": "The site footer for a website: brand, optional tagline, a row of footer links and the copyright line.",
+  "source": {
+    "repo": "KaiGilb/gilb-web",
+    "commit": "a3be1bce783d9b34c4c2f40c2cbc0886c28c5daa",
+    "files": [
+      {
+        "path": "components/site/SiteFooter.vue",
+        "lines": null,
+        "to": "src/SiteFooter.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "Words come from props, not from `useAppConfig` (brand), `data/site` (tagline, nav) or `useI18n` (link words); the unit imports none of those.",
+    "The links are a `<ul>` of `<li>`, not the bare links the gilb-web file drew.",
+    "Each link is at least 44 px tall (the myjackfruit footer's tap-target rule); the gilb-web links were the height of the text only.",
+    "`endLink` is the right-hand link from the variant source KaiGilb/mynet-web `components/site/SiteFooter.vue` at ca601b9f188343e5075057907678dad64324269e (\"Built on Gilb\" there); here it is a prop, left out unless the host passes it.",
+    "The `brand` slot is new; both source files wrote the brand name in a paragraph and had no slot.",
+    "Styles are written out without Tailwind, `@apply` or `theme()`, on the `--site-block-*` CSS variables.",
+    "Top and bottom padding are gilb-web's (3.5rem, 1.5rem); mynet-web's 3rem and 1.25rem are not used."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/SiteFooter.test.ts",
+    "src/hostAgnostic.test.ts"
+  ],
+  "host": [
+    {
+      "member": "brandName, tagline, links props",
+      "replaces": "useAppConfig().brand, useI18n, data/site (navItems, purposeOffer)"
+    },
+    {
+      "member": "linkComponent prop",
+      "replaces": "NuxtLink"
+    },
+    {
+      "member": "endLink prop",
+      "replaces": "mynet-web's hard-coded gilbOrigin \"Built on Gilb\" link"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

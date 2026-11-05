@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "unit": "web-units/site-logo",
+  "package": "@kaigilb/gilbwebsitecode-site-logo",
+  "version": "0.1.0",
+  "purpose": "The site logo for a website header or footer: one home link with the logo image, the site name as a wordmark, or both, spoken once.",
+  "source": {
+    "repo": "KaiGilb/website-engine-a",
+    "commit": "81362f4fdc0bd59d390e4285855c04c019f1e7b9",
+    "files": [
+      {
+        "path": "components/SiteLogo.vue",
+        "lines": null,
+        "to": "src/SiteLogo.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The accessible name: no `aria-label` on the link; the image alt is `\"\"` when the wordmark is shown, else `logoAlt`, or `name` when `logoAlt` is empty (both sources set `aria-label` and repeated the name).",
+    "Props replace `useAppConfig().brand`; the variant KaiGilb/gilb-websites-web `components/SiteLogo.vue` at 49ce2795ab54a1bda798f5cc745406020e8460d8 also used `useI18n`, `useRoute` and a scroll-to-top click handler, none of which is in the unit; its wordmark-hidden-when-logo-set default is the `wordmark=\"when-no-logo\"` option.",
+    "`wordmark=\"never\"` with no image still renders the name, so the link is never empty.",
+    "New `decorative` prop: draws only the image with `alt=\"\"` and `aria-hidden=\"true\"`, for a logo beside a control that is already the link.",
+    "One `imageComponent` (default `<img>`) for every file; website-engine-a used a raw `<img>` for SVG and `NuxtImg` for raster and rounded the raster; the gilb-websites-web coded wordmark is not included.",
+    "Added: 44px minimum height, `width` and `height` on every image, `decoding=\"async\"`, `loading=\"eager\"` on every image, and the focus outline; styles on `--site-block-*` variables without Tailwind."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/SiteLogo.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/noTypescriptBuild.test.ts",
+    "src/propsMatch.test.ts"
+  ],
+  "host": [
+    {
+      "member": "name, logoSrc, logoAlt props",
+      "replaces": "useAppConfig().brand"
+    },
+    {
+      "member": "linkComponent prop",
+      "replaces": "NuxtLink"
+    },
+    {
+      "member": "imageComponent prop",
+      "replaces": "NuxtImg"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

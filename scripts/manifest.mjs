@@ -33,7 +33,7 @@ export function purposeOf(readme) {
 /** The text of the README's "## Where it came from" section ("" when absent). */
 export function provenanceOf(readme) {
   const lines = String(readme).split(/\r?\n/);
-  const at = lines.findIndex((l) => /^##\s+Where it came from\s*$/.test(l));
+  const at = lines.findIndex((l) => /^##\s+(Where it came from|Source)\s*$/.test(l));
   if (at < 0) return "";
   const out = [];
   for (let i = at + 1; i < lines.length; i++) {

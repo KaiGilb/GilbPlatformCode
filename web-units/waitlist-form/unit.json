@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "unit": "web-units/waitlist-form",
+  "package": "@kaigilb/gilbwebsitecode-waitlist-form",
+  "version": "0.1.0",
+  "purpose": "A waitlist signup form for a website: only the email is required, the other questions are optional, and it still posts with no script.",
+  "source": {
+    "repo": "KaiGilb/myjackfruit-web",
+    "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",
+    "files": [
+      {
+        "path": "components/WaitlistForm.vue",
+        "lines": null,
+        "to": "src/WaitlistForm.vue"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The field rules (lengths, allowed answers, the email shape, the notice stored word for word) are read from `workers/waitlist-fields.ts` at the same commit and written as `src/fields.ts`, with a neutral default field list in different lengths and choice values; the host passes `fields` and its server validates that same list.",
+    "Ids are per instance from Vue's `useId`, built as `<id>-field-<name>`, `<id>-help-<name>`, `<id>-error-<name>` and `<id>-option-<name>-<value>`, with every character in a name or value other than a letter or digit written as `_<hex>_` so two names can never give one id; the source used fixed `wl-*` ids.",
+    "The source's sentences are not in the unit: labels, help, options, notice, button and thank-you are `fields`, `labels` and `notice`, with neutral English defaults.",
+    "The source's dev-build skip of the request (`import.meta.dev`) is not here; pass `send` for a preview.",
+    "Tailwind is written out as plain CSS; no utility class and no `@apply`.",
+    "The button is disabled while sending; the source left it focusable with `aria-disabled`.",
+    "The token wait is `tokenWaitMs`, default 8 seconds; the source waited 15.",
+    "An error clears as soon as that field's answer is valid, on every field (on `input` or `change`, that field only). The source did this for the email field only. A new error is never added while typing.",
+    "New prop `noScriptAction` (default empty). With no script the form posts to the current page, as the source's `<form method=\"post\">` with no `action` did; with `noScriptAction` set, to that address. `actionUrl` is only where the script sends the JSON. With a Turnstile key set, a post with no script carries no token, so a server that checks Turnstile refuses it.",
+    "When the `sent` slot holds no `h1`, `h2`, `h3` or `[tabindex=\"-1\"]` element, focus goes to the sent wrapper itself (`tabindex=\"-1\"`); the source had no slot.",
+    "When `fields` changes after mount, a new choice field opens on its `defaultValue`.",
+    "The source's phone question and \"which AI\" question are not in the default list; add a `tel` or `choice` field for them. The source's honeypot is the `honeypot` prop, off by default (the source always drew its `website` trap). The body holds only declared fields, plus `page`, `notice`, `turnstileToken` and the honeypot when set (not when its name clashes with a field or one of those keys).",
+    "A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.",
+    "An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.",
+    "The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block.",
+    "The form's root is capped at `maxWidth` (default `40rem`); the source form had no cap. Pass `max-width=\"none\"` for the source's width."
+  ],
+  "newFiles": [
+    "src/types.ts",
+    "src/index.ts",
+    "src/shims-vue.d.ts",
+    "src/fields.ts",
+    "src/send.ts",
+    "src/turnstile.ts",
+    "src/WaitlistForm.test.ts",
+    "src/fields.test.ts",
+    "src/turnstile.test.ts",
+    "src/hostAgnostic.test.ts"
+  ],
+  "host": [
+    {
+      "member": "turnstileSiteKey prop",
+      "replaces": "useRuntimeConfig().public.turnstileSiteKey"
+    },
+    {
+      "member": "actionUrl and send props",
+      "replaces": "$fetch('/api/waitlist')"
+    },
+    {
+      "member": "fields prop",
+      "replaces": "the field rules of workers/waitlist-fields.ts"
+    },
+    {
+      "member": "linkComponent prop",
+      "replaces": "NuxtLink for the notice link"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
