@@ -1,6 +1,6 @@
 /**
  * The pure parts of the score-scale cards: the grid rule, the marker position and the sentence a screen
- * reader hears for a scale. Moved without change in behaviour from the Gilb Websites landing page
+ * reader hears for a scale. Moved without change in behaviour from the source landing page
  * (pages/index.vue `statGrid`, `scaleSentence`, `pct`; see README "Source").
  */
 import type { ScoreScale, ScoreStat, StatGrid } from "./types";

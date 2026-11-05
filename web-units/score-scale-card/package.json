@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-score-scale-card",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Stat cards, each with an optional scale that marks where a typical result and ours sit, in a responsive grid. Vue 3 / Nuxt 3.",
