@@ -1,6 +1,6 @@
 # web app-store-button
 
-A "Get the app" store link that draws nothing without an address and tells the host when it is clicked. Vue 3 / Nuxt 3. Moved from the Skalden site (KaiGilb/skalden-web, `components/AppStoreButton.vue`, branch `ws7-website-fork` d8a416328d69c404f44082453a2ed000eebe18e3); the same file is also in the website starter and in myjackfruit-web.
+A "Get the app" store link that draws nothing without an address and tells the host when it is clicked. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
