@@ -16,7 +16,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.2";
+export const CONNECTOR_VERSION = "0.5.3";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -37,10 +37,10 @@ export function aiNotBound(clientId) {
     ].join("\n");
 }
 /**
- * A bound AI's principal is a vault namespace `https://<host>/base`.
- * This unit has no vault-namespace test of its own, so the check is that shape.
+ * A bound AI's principal is a vault namespace `https://<host>/base` or `https://<host>/vault` (the platform's two
+ * spellings of one vault).
  */
-const VAULT_NAMESPACE = /^https:\/\/[^/]+\/base$/;
+const VAULT_NAMESPACE = /^https:\/\/[^/\s]+\/(?:base|vault)$/;
 function isVaultNamespace(principal) {
     return VAULT_NAMESPACE.test(principal);
 }
@@ -621,6 +621,14 @@ function hostOfVault(value) {
         return null;
     }
 }
+/** Same vault when both ids have a host and those hosts match. A non-address falls back to the whole id, lowercased. */
+function sameVault(a, b) {
+    const left = hostOfVault(a);
+    const right = hostOfVault(b);
+    if (left !== null && right !== null)
+        return left === right;
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
 function firstHostLabel(host) {
     return (host.split(".")[0] ?? "").toLowerCase();
 }
@@ -649,7 +657,7 @@ function matchingVaults(ids, query) {
     for (const id of ids) {
         if (!listedVaultMatches(id, query))
             continue;
-        if (matched.some((have) => have.toLowerCase() === id.toLowerCase()))
+        if (matched.some((have) => sameVault(have, id)))
             continue;
         matched.push(id);
     }
@@ -1571,7 +1579,7 @@ export function startConnector(opts) {
     }
     function selectVault(namespace) {
         selectedAutomatically = false;
-        if (!vaults.some((id) => id.toLowerCase() === namespace.toLowerCase()))
+        if (!vaults.some((id) => sameVault(id, namespace)))
             vaults.push(namespace);
         cache = null;
     }
@@ -1643,15 +1651,15 @@ export function startConnector(opts) {
         const ids = vaultIdsFromListResult(body.result);
         if (!ids)
             return;
-        const own = reportedPrincipal.trim().toLowerCase();
+        const own = reportedPrincipal.trim();
         const work = [];
         for (const id of ids) {
             const trimmed = id.trim();
             if (trimmed === "")
                 continue;
-            if (own !== "" && trimmed.toLowerCase() === own)
+            if (own !== "" && sameVault(trimmed, own))
                 continue;
-            if (work.some((have) => have.toLowerCase() === trimmed.toLowerCase()))
+            if (work.some((have) => sameVault(have, trimmed)))
                 continue;
             work.push(trimmed);
         }
