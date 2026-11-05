@@ -62,7 +62,7 @@ import { ImageLightbox } from '@kaigilb/gilbwebsitecode-image-lightbox'
 </script>
 
 <template>
-  <ImageLightbox src="/blog/hero.jpg" alt="A jackfruit tree in July" :width="1360" :height="768"
+  <ImageLightbox src="/blog/hero.jpg" alt="A tree in a field" :width="1360" :height="768"
     :image-component="NuxtImg" loading="eager" fetchpriority="high" class="rounded-lg" />
 </template>
 ```
