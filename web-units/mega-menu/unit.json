@@ -2,11 +2,11 @@
   "schema": 1,
   "unit": "web-units/mega-menu",
   "package": "@kaigilb/gilbwebsitecode-mega-menu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A mega menu for a website: a full-width drop-down sheet of grouped links that the site header opens, with focus kept inside and Esc to close.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",
-    "commit": "aafbf4a10613fefee69ff8b12d4f71ffc9807c60",
+    "commit": "842177b038fe8062d3bed8409c01a07ae86d6581",
     "files": [
       {
         "path": "components/MegaMenu.vue",
