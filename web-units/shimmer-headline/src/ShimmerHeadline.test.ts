@@ -436,13 +436,13 @@ test("the shimmer fallback the README states under Host must supply is the var()
   for (const m of pairs) expect(sfc).toContain(`var(${m[1]}, var(${m[2]}, ${m[3]}))`);
 });
 
-test("every --site-block-* name the component reads is a unit.json host member", () => {
+test("the --site-block-* names the component reads and the unit.json host members are the same set", () => {
   const sfc = readFileSync(join(process.cwd(), "src", "ShimmerHeadline.vue"), "utf8");
   const inVue = [...new Set([...sfc.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
   const unit = JSON.parse(readFileSync(join(process.cwd(), "unit.json"), "utf8"));
-  const members = unit.host.flatMap((entry: { member: string }) => entry.member.split(",").map((part) => part.trim()));
+  const members = [...new Set(unit.host.flatMap((entry: { member: string }) => [...entry.member.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0])))].sort();
   expect(inVue.length).toBeGreaterThan(0);
-  for (const name of inVue) expect(members).toContain(name);
+  expect(members).toEqual(inVue);
 });
 
 test("axe finds no violations", async () => {
