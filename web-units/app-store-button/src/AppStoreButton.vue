@@ -59,11 +59,11 @@ function onClick(): void {
   display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; padding: 0.5rem 1.1rem;
   font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1.2; white-space: nowrap;
   border-radius: var(--site-block-radius, 1rem); text-decoration: none;
-  background: var(--site-block-accent, #b45309); color: var(--site-block-on-accent, #ffffff);
+  background: var(--site-block-accent, #2563eb); color: var(--site-block-on-accent, #ffffff);
   transition: opacity var(--site-block-motion, 150ms) ease;
 }
 .asb:hover, .asb:focus { opacity: 0.9; text-decoration: none; }
-.asb:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; }
+.asb:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .asb-glyph { flex-shrink: 0; }
 .asb-inline { padding: 0.7rem 1.4rem; font-size: 1.05rem; }
 @media (prefers-reduced-motion: reduce) { .asb { transition: none; } }
