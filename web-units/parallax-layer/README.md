@@ -1,6 +1,6 @@
 # web parallax-layer
 
-A parallax plane: its content drifts at a small rate against the scroll, on requestAnimationFrame, static with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ParallaxLayer.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
+A parallax plane: its content drifts at a small rate against the scroll, on requestAnimationFrame, static with reduced motion. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
