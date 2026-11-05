@@ -1,6 +1,6 @@
 # web image-lightbox
 
-A full-screen picture viewer: click a picture and it opens over the page; one picture, every picture in an article, or a Nuxt Content `ProseImg`. Vue 3 / Nuxt 3. A fresh unit, written after the Skalden blog's `components/LightboxImage.vue` (see "Source").
+A full-screen picture viewer: click a picture and it opens over the page; one picture, every picture in an article, or a Nuxt Content `ProseImg`. Vue 3 / Nuxt 3. A fresh unit, written after a production site's lightbox (see "Source").
 
 ## What this is
 
@@ -120,7 +120,7 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 
 - `--site-block-overlay` the dark behind the picture (default black, 94 % opaque)
 - `--site-block-on-overlay` the text and buttons over it (default white)
-- `--site-block-accent` the focus ring (default amber)
+- `--site-block-accent` the focus ring (fallback `#2563eb`)
 - `--site-block-radius` the buttons' corner (default `0.5rem`)
 - `--site-block-motion` the fade and zoom glide time (default `150ms`)
 - `--site-block-z-overlay` the viewer's stacking level (default `1000`)
