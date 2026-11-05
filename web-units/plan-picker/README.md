@@ -1,6 +1,6 @@
 # web plan-picker
 
-Plans as cards a visitor picks, with an optional collapsed list of one-off price extras. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (Jairam-Gilb/gilb-websites-web, `pages/index.vue` pricing section and `composables/usePlanPick.ts`, branch `redesign-scrollcraft` b78b1f9).
+Plans as cards a visitor picks, with an optional collapsed list of one-off price extras. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
