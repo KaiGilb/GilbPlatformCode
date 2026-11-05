@@ -19,7 +19,7 @@ useReveal(root);
 
 <style>
 /* Not scoped, on purpose: the classes land on the host's own elements inside the slot. Names are prefixed `sf-`.
-   Distance, time and curve are the Gilb Websites page's measured values: translateY(24px), 1 s,
+   Distance, time and curve are the source page's measured values: translateY(24px), 1 s,
    cubic-bezier(0.25, 0.05, 0.3, 0.7), and `--sf-delay` for the stagger. Gated by `html.sf-motion` (set after
    mount, when motion is allowed) and by the reduced-motion query. */
 @media (prefers-reduced-motion: no-preference) {

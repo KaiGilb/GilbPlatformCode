@@ -1,6 +1,6 @@
 /**
  * Fade-up on enter for the elements marked `data-reveal` inside a container, driven by an IntersectionObserver.
- * As the Gilb Websites landing page's `useReveal` (see README "Source"), with its class and variable names
+ * As the source landing page's `useReveal` (see README "Source"), with its class and variable names
  * prefixed `sf-`.
  *
  * Safe for a prerendered page: the server's HTML shows every element. Only after mount, only when motion is
