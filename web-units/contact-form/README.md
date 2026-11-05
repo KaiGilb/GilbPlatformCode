@@ -1,6 +1,6 @@
 # web contact-form
 
-A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+A contact form: labelled Name, Email and Message fields and a send button, optionally guarded by Cloudflare Turnstile. It sends the message to the site's message address and answers in place. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
@@ -111,7 +111,7 @@ Before submit, the fields have their size from the start. With a Turnstile key, 
 
 ## Source
 
-The website starter's `components/ContactForm.vue` (website-engine-a 80ad391), written out without Tailwind: the same sizes and colours. The site key is a prop instead of the starter's runtime config, the Turnstile token is read inside the form instead of the whole page, and its `$fetch` call is now the unit's own `postJson`. Added: the live region, the per-instance ids (the fields' ids are now `cf-name-<useId>` and so on, not the starter's fixed `cf-name`), the replaceable words and sender.
+The website starter's `components/ContactForm.vue` (website-engine-a 80ad391), the one block that was not in `components/catalog/` but was listed in the starter's `catalog.json`, written out without Tailwind: the same sizes and colours. The site key is a prop instead of the starter's runtime config, the Turnstile token is read inside the form instead of the whole page, and its `$fetch` call is now the unit's own `postJson`. Added: the live region, the per-instance ids (the fields' ids are now `cf-name-<useId>` and so on, not the starter's fixed `cf-name`), the replaceable words and sender.
 
 Version 0.2.0 (token reset, `showCompany`, `requireName`, `requireMessage`, `compact`): behaviour read from `Jairam-Gilb/gilb-websites-web`, `components/ContactForm.vue` at `b78b1f9e247d23823ddf75c41c46d252adc393e8`, rewritten for this unit's markup and tests (new, in `src/v2.test.ts`).
 
