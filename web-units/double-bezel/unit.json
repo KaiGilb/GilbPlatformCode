@@ -37,8 +37,8 @@
       "replaces": "the site palette name (var(--palette-<name>))"
     },
     {
-      "member": "--site-block-bg, --site-block-fg, --site-block-shadow-lg",
-      "replaces": "--brand-bg, --brand-fg, theme('boxShadow.lg')"
+      "member": "--site-block-bg, --site-block-fg, --site-block-shadow-lg, --site-block-bezel-highlight, --site-block-bezel-highlight-dark",
+      "replaces": "--brand-bg, --brand-fg, theme('boxShadow.lg'), rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.14)"
     }
   ],
   "library": {
