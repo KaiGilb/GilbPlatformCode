@@ -62,7 +62,7 @@ const heading = computed(() => `h${props.headingLevel}`);
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Gilb Websites landing page's former Tailwind classes written out. */
+   Sizes are the source landing page's former Tailwind classes written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .cmp, .cmp * { box-sizing: border-box; }
 .cmp { color: var(--site-block-fg, #1a1a1a); }
