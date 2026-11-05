@@ -1,6 +1,6 @@
 /**
  * The default share targets and the template filler. The targets are data, so a host can drop, add or reorder them
- * by passing its own list. Moved from the Skalden site's ShareButtons.vue (see README "Source").
+ * by passing its own list. Moved from the source site's ShareButtons.vue (see README "Source").
  */
 import type { ShareTarget } from "./types";
 

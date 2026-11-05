@@ -113,7 +113,7 @@ onBeforeUnmount(() => clearTimeout(timer));
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Skalden site's former Tailwind classes written out. */
+   Sizes are the source site's former Tailwind classes written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .sb, .sb * { box-sizing: border-box; }
 .sb { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
