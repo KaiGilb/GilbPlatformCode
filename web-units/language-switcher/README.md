@@ -1,6 +1,6 @@
 # web language-switcher
 
-A flag button that opens a short list of the other languages. Vue 3 / Nuxt 3. Moved from the Skalden site (KaiGilb/skalden-web, `components/LanguageSwitcher.vue` and `FlagIcon.vue`, branch `ws7-website-fork` d8a416328d69c404f44082453a2ed000eebe18e3).
+A flag button that opens a short list of the other languages. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
