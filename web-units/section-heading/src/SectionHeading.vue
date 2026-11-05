@@ -67,7 +67,7 @@ onMounted(() => {
   border: 1px solid color-mix(in srgb, var(--site-block-fg, #1a1a1a) 8%, transparent);
   background: color-mix(in srgb, var(--site-block-fg, #1a1a1a) 4%, transparent);
 }
-.sh-dot { flex: none; width: 0.4rem; height: 0.4rem; border-radius: 999px; background: var(--site-block-accent, #b45309); }
+.sh-dot { flex: none; width: 0.4rem; height: 0.4rem; border-radius: 999px; background: var(--site-block-accent, #2563eb); }
 .sh-title {
   margin: 1.5rem 0 0; font-size: clamp(2.1rem, 5.5vw, 3.9rem); font-weight: 650; letter-spacing: -0.035em;
   line-height: 1.02; text-wrap: balance; color: var(--site-block-fg, #1a1a1a);
