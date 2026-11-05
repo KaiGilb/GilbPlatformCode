@@ -34,7 +34,7 @@ The first run creates this AI's key under `~/.gilb-connector/` (the directory is
 4. Paste this Agent client id. **Bind AI**.
 5. Grant the AI vault **Read** and **Write** on the vaults it should work in.
 
-Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, and `state: not bound` or `state: bound`.
+Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, `state: not bound` or `state: bound`, and `vaults:` (the selected vaults, or `none`). Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
 
 Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). Once this AI is bound, the connector keeps one platform turn for the life of the process. Until then, each call asks the door again. The AI's sign-in stays in memory and renews itself. It is not written to disk.
 
@@ -71,9 +71,12 @@ Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is
 
 `/mcp__GilbPlatform__agent` starts the chat as Kai-Zen and gives Claude the agent's standing instructions. Ask it to work the plan in the vault you named.
 
-- `gilbplatform_whoami` reports the Agent client id, the mode, the principal, and whether this AI is bound.
+- `gilbplatform_whoami` reports the Agent client id, the mode, the principal, whether this AI is bound, and the selected vaults.
+- `gilbplatform_use_vault` selects a vault the person named. Claude Code asks the person to allow that call; their yes is what selects it.
 - `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Agent.Jackfruit`) and returns that agent's standing, so the model can follow it.
 - `gilbplatform_task` sets the person's request. The platform loads standing from that text.
+
+When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
 
@@ -89,7 +92,7 @@ Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so t
 
 ## What it cannot do
 
-- It cannot create a vault yet — a person will be able to grant an AI vault the right to create vaults. Until then, create the vault in GilbApp and pass its id with `--vault`.
+- It cannot create a vault yet — a person will be able to grant an AI vault the right to create vaults. Until then, create the vault in GilbApp, grant the AI vault, and select it with `gilbplatform_use_vault` (or pass its id with `--vault`).
 - It cannot reach a vault the AI vault was not granted. Grant the AI vault Read and Write on that vault in GilbApp (the vault chip, not the person chip).
 - With `--as me`, it cannot sign in if this computer was never approved. Run `gilb-computer add`, approve it in GilbApp, and restart Claude Code.
 - It will not run a hand-off on an API key. Those variables are removed from the nested Claude Code process, and a run that is not your Claude subscription is stopped.

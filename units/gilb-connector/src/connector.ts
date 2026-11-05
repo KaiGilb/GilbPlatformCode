@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.4.0";
+export const CONNECTOR_VERSION = "0.5.1";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -310,7 +310,8 @@ class NotConnected extends Error {
 
 const GILB_WHOAMI: ToolSpec = {
   name: "gilbplatform_whoami",
-  description: "Report this connector's sign-in: the mode, the Agent client id, the principal, and whether this AI is bound.",
+  description:
+    "Report this connector's sign-in: the mode, the Agent client id, the principal, whether this AI is bound, and the selected vaults.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
@@ -340,6 +341,28 @@ const GILB_TASK: ToolSpec = {
     additionalProperties: false,
   },
 };
+
+const GILB_USE_VAULT: ToolSpec = {
+  name: "gilbplatform_use_vault",
+  description:
+    "Select a vault the person named, for this session. Claude Code asks the person to allow it; their yes is what selects it. Pass the vault as the person said it: its name (for example testcarwashcouponapp), its host, or its address.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      vault: { type: "string", description: "The vault as the person said it: its name, its host, or its address." },
+    },
+    required: ["vault"],
+    additionalProperties: false,
+  },
+};
+
+/** Told to the model on initialize, and in the README. A vault switch stays the person's decision. */
+const USE_VAULT_INSTRUCTIONS =
+  "When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
+
+/** Told to the model on initialize, and in the README. One work vault is not a choice. */
+const AUTO_SELECT_INSTRUCTIONS =
+  "If this AI can reach exactly one vault besides its own, that vault is selected automatically.";
 
 const AGENT_PROMPT = {
   name: "agent",
@@ -636,6 +659,133 @@ function listsNoVaults(name: string, result: string): boolean {
   return false;
 }
 
+/**
+ * `list_vaults` answers `{ vaults: [...] }` (or the array itself).
+ * A string entry is the vault id. An object entry's id is `vaultId`.
+ */
+function vaultIdsFromListResult(result: string): string[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result) as unknown;
+  } catch {
+    return null;
+  }
+  let rows: unknown[] | null = null;
+  if (Array.isArray(parsed)) rows = parsed;
+  else if (parsed && typeof parsed === "object" && Array.isArray((parsed as { vaults?: unknown }).vaults)) {
+    rows = (parsed as { vaults: unknown[] }).vaults;
+  }
+  if (!rows) return null;
+  const ids: string[] = [];
+  for (const row of rows) {
+    const id = vaultIdOfListed(row);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+function vaultIdOfListed(row: unknown): string | null {
+  if (typeof row === "string") {
+    const id = row.trim();
+    return id === "" ? null : id;
+  }
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const vaultId = (row as { vaultId?: unknown }).vaultId;
+  if (typeof vaultId !== "string") return null;
+  const id = vaultId.trim();
+  return id === "" ? null : id;
+}
+
+/** Quotes, brackets, and punctuation the person may wrap around a name. The middle is kept. */
+const VAULT_TOKEN_EDGE = /^[\s"'`“”‘’\[\](){}<>.,;:!?]+|[\s"'`“”‘’\[\](){}<>.,;:!?]+$/u;
+
+function cleanVaultToken(input: string): string {
+  let text = input.trim().toLowerCase();
+  let previous = "";
+  while (text !== previous) {
+    previous = text;
+    text = text.replace(VAULT_TOKEN_EDGE, "").trim();
+  }
+  return text;
+}
+
+/** `https://<host>/base` when the person pasted an address. Other paths are not a vault address. */
+function namespaceFromAddress(input: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.host === "") return null;
+  let path = url.pathname;
+  if (path.length > 1 && path.endsWith("/")) path = path.replace(/\/+$/, "");
+  const lower = path.toLowerCase();
+  const accepted =
+    lower === "" ||
+    lower === "/" ||
+    lower === "/base" ||
+    lower === "/vault" ||
+    lower === "/base/e" ||
+    lower === "/vault/e" ||
+    lower.startsWith("/base/e/") ||
+    lower.startsWith("/vault/e/");
+  if (!accepted) return null;
+  return `https://${url.host}/base`;
+}
+
+interface VaultQuery {
+  address: string | null;
+  name: string | null;
+}
+
+function vaultQuery(raw: string): VaultQuery {
+  const lead = raw.trim();
+  if (lead.toLowerCase().startsWith("http")) return { address: namespaceFromAddress(lead), name: null };
+  const name = cleanVaultToken(lead);
+  return { address: null, name: name === "" ? null : name };
+}
+
+function hostOfVault(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.host === "") return null;
+    return url.host.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function firstHostLabel(host: string): string {
+  return (host.split(".")[0] ?? "").toLowerCase();
+}
+
+function listedVaultMatches(id: string, query: VaultQuery): boolean {
+  const lower = id.trim().toLowerCase();
+  if (query.address) {
+    if (lower === query.address.toLowerCase()) return true;
+    const host = hostOfVault(id);
+    const wanted = hostOfVault(query.address);
+    return host !== null && wanted !== null && host === wanted;
+  }
+  if (!query.name) return false;
+  if (lower === query.name) return true;
+  const host = hostOfVault(id);
+  if (!host) return false;
+  if (host === query.name) return true;
+  return firstHostLabel(host) === query.name;
+}
+
+function matchingVaults(ids: readonly string[], query: VaultQuery): string[] {
+  const matched: string[] = [];
+  for (const id of ids) {
+    if (!listedVaultMatches(id, query)) continue;
+    if (matched.some((have) => have.toLowerCase() === id.toLowerCase())) continue;
+    matched.push(id);
+  }
+  return matched;
+}
+
 function normalizeOrigin(input: string): string {
   let url: URL;
   try {
@@ -879,6 +1029,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let bound = false;
   /** True after an unbound answer, so the next call does not reuse that token or turn. */
   let knownUnbound = false;
+  /** The current vault list was chosen because it was the only work vault. whoami says so. */
+  let selectedAutomatically = false;
+  /** list_vaults already ran once for auto-select in this bound stretch. It does not run again. */
+  let autoSelectAttempted = false;
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -1230,20 +1384,33 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     return status === 200 && deniesVaultReach(body);
   }
 
+  function vaultsLine(): string {
+    const selected = vaults.map((id) => id.trim()).filter((id) => id !== "");
+    if (selected.length === 0) return "vaults: none";
+    const list = selected.join(", ");
+    if (selectedAutomatically) return `vaults: ${list} (selected automatically: the only vault this AI can reach)`;
+    return `vaults: ${list}`;
+  }
+
   function whoamiText(): string {
     const lines = [`mode: ${asMode}`];
     if (asMode === "ai" && aiClientId) lines.push(`client id: ${aiClientId}`);
     if (reportedPrincipal) lines.push(`principal: ${reportedPrincipal}`);
-    if (asMode !== "ai") return lines.join("\n");
+    if (asMode !== "ai") {
+      lines.push(vaultsLine());
+      return lines.join("\n");
+    }
     lines.push(bound ? "state: bound" : "state: not bound");
+    lines.push(vaultsLine());
     if (!bound) return `${lines.join("\n")}\n\n${aiNotBound(aiClientId)}`;
     return lines.join("\n");
   }
 
   function localTools(): McpTool[] {
+    const useVault = mcpTool(GILB_USE_VAULT);
     return asMode === "ai"
-      ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK)]
-      : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK)];
+      ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault]
+      : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault];
   }
 
   async function fetchContext(forAgent: string): Promise<Ctx> {
@@ -1271,6 +1438,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (isVaultNamespace(reportedPrincipal)) {
         bound = true;
         knownUnbound = false;
+        // A later tool call may be the first one that can see a vault list.
+        autoSelectAttempted = false;
       } else {
         knownUnbound = true;
       }
@@ -1330,6 +1499,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const toolsFile = join(dir, "tools.json");
     writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
     const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile];
+    // The live list, not a copy taken at startup, so a vault selected later is passed on.
     for (const id of vaults) args.push("--vault", id);
     if (profile) args.push("--profile", profile);
     if (claudeBin !== "claude") args.push("--claude", claudeBin);
@@ -1494,6 +1664,80 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     return toolResult(result, toolAnswerIsError(result));
   }
 
+  async function onUseVault(args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
+    const raw = fieldString(args, "vault");
+    if (!raw) return toolResult(JSON.stringify({ error: "Name the vault the person said." }), true);
+    const query = vaultQuery(raw);
+    const listed = await callPlatformTool("list_vaults", {}, signal);
+    if (listed === CANCELLED) return listed;
+    if (listed.isError) return listed;
+    const text = listed.content[0].text;
+    const ids = vaultIdsFromListResult(text);
+    if (!ids) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
+    if (ids.length === 0) {
+      if (isVaultNamespace(reportedPrincipal)) {
+        const sentence = aiNoGrant(undefined, reportedPrincipal);
+        say(sentence);
+        return toolResult(sentence, true);
+      }
+      return toolResult(`No vault this AI can reach is called ${raw}. It can reach: .`, false);
+    }
+    const matched = matchingVaults(ids, query);
+    if (matched.length === 0) {
+      return toolResult(`No vault this AI can reach is called ${raw}. It can reach: ${ids.join(", ")}.`, false);
+    }
+    if (matched.length > 1) {
+      return toolResult(`More than one vault matches ${raw}: ${matched.join(", ")}. Say which one.`, false);
+    }
+    const namespace = matched[0];
+    if (!namespace) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
+    // The person's allow replaces an automatic choice. It is not overwritten later.
+    selectedAutomatically = false;
+    if (!vaults.some((id) => id.toLowerCase() === namespace.toLowerCase())) vaults.push(namespace);
+    cache = null;
+    return toolResult(`Using vault ${namespace} for this session. Selected vaults: ${vaults.join(", ")}.`, false);
+  }
+
+  /**
+   * Bound, and nothing selected yet: look once. The AI's own vault is not a work vault.
+   * Exactly one vault left is selected the same way gilbplatform_use_vault selects one.
+   * Zero or two or more leaves the list empty. A person-approved vault is never replaced.
+   */
+  async function maybeAutoSelect(signal: AbortSignal): Promise<void> {
+    if (hopMode || asMode !== "ai" || !bound) return;
+    if (vaults.some((id) => id.trim() !== "")) return;
+    if (autoSelectAttempted) return;
+    autoSelectAttempted = true;
+    let res: { status: number; body: unknown };
+    try {
+      res = await postPlatform(toolUrl, { ...turnFields(), name: "list_vaults", arguments: "{}" }, signal);
+    } catch (err) {
+      if (signal.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
+      return;
+    }
+    if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    if (res.status < 200 || res.status >= 300) return;
+    const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown }) : {};
+    if (typeof body.result !== "string") return;
+    const ids = vaultIdsFromListResult(body.result);
+    if (!ids) return;
+    const own = reportedPrincipal.trim().toLowerCase();
+    const work: string[] = [];
+    for (const id of ids) {
+      const trimmed = id.trim();
+      if (trimmed === "") continue;
+      if (own !== "" && trimmed.toLowerCase() === own) continue;
+      if (work.some((have) => have.toLowerCase() === trimmed.toLowerCase())) continue;
+      work.push(trimmed);
+    }
+    if (work.length !== 1) return;
+    const namespace = work[0];
+    if (!namespace) return;
+    vaults.push(namespace);
+    selectedAutomatically = true;
+    cache = null;
+  }
+
   async function onToolCall(params: unknown, id: unknown): Promise<ToolResult | typeof CANCELLED> {
     const name = params && typeof params === "object" ? (params as { name?: unknown }).name : undefined;
     const args = params && typeof params === "object" ? (params as { arguments?: unknown }).arguments : undefined;
@@ -1531,9 +1775,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       }
       if (!hopMode && name === GILB_TASK.name) return onTask(args);
       if (!hopMode && name === GILB_AGENT.name) return await onAgent(args);
+      if (!hopMode && name === GILB_USE_VAULT.name) return await onUseVault(args, ac.signal);
       if (hopMode && !hopTools.some((tool) => tool.name === name)) {
         return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
       }
+      if (!hopMode) await maybeAutoSelect(ac.signal);
       return await callPlatformTool(name, args, ac.signal);
     } catch (err) {
       if (ac.signal.aborted || (err instanceof Error && err.name === "AbortError")) return CANCELLED;
@@ -1628,9 +1874,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         serverInfo: { name: "GilbPlatform", version: CONNECTOR_VERSION },
         instructions: hopMode
           ? "Tools for one GilbPlatform hand-off."
-          : asMode === "me"
-            ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
-            : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions.",
+          : `${
+              asMode === "me"
+                ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
+                : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions."
+            } ${USE_VAULT_INSTRUCTIONS}${asMode === "ai" ? ` ${AUTO_SELECT_INSTRUCTIONS}` : ""}`,
       };
     }
     if (method === "ping") return {};
