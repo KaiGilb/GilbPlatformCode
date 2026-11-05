@@ -1,6 +1,6 @@
 # web faq
 
-Questions a site's visitors often ask, each opening its answer in place below it, on native `<details>` and `<summary>`. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+Questions a site's visitors often ask, each opening its answer in place below it, on native `<details>` and `<summary>`. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
