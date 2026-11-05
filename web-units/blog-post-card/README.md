@@ -1,6 +1,6 @@
 # web blog-post-card
 
-One post of a site's blog in a list: a bordered card that is a link to the post, with an optional cover picture, an optional date, the title and an optional excerpt. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+One post of a site's blog in a list: a bordered card that is a link to the post, with an optional cover picture, an optional date, the title and an optional excerpt. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
