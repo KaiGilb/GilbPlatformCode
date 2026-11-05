@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Gilb Websites landing layout's former Tailwind classes and rules written out. */
+   Sizes are the source landing layout's former Tailwind classes and rules written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .hsh-root, .hsh-root * { box-sizing: border-box; }
 .hsh-root { display: contents; }

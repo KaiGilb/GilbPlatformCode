@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-hide-on-scroll-header",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A fixed site header that is clear over the hero, solid after it, slides away on scroll down but keeps its call-to-action in place, and returns on scroll up. Vue 3 / Nuxt 3.",
