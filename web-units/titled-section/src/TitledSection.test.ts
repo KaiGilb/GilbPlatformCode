@@ -1,4 +1,4 @@
-// Tests written new for this unit. The source band is triangula-web components/PageShell.vue
+// Tests written new for this unit. The source band is components/PageShell.vue
 // at a01a155af3b9550b5f5d2f8b5d9d69fd3675a486. jsdom does not apply the scoped style, so the
 // measured sizes are asserted against the component source.
 import { afterEach, describe, expect, test } from "vitest";
@@ -17,10 +17,10 @@ const style = SFC.split("<style scoped>")[1] ?? "";
 
 describe("TitledSection", () => {
   test("default renders a section, an h2 of the title, labelled by that heading, no ornament, and a hidden rule", () => {
-    wrapper = mount(TitledSection, { props: { title: "About Pietari" }, attachTo: document.body });
+    wrapper = mount(TitledSection, { props: { title: "About" }, attachTo: document.body });
     const section = document.querySelector("section")!;
     const heading = section.querySelector("h2")!;
-    expect(heading.textContent).toBe("About Pietari");
+    expect(heading.textContent).toBe("About");
     expect(section.querySelector("h1")).toBeNull();
     expect(heading.id).not.toBe("");
     expect(section.getAttribute("aria-labelledby")).toBe(heading.id);
@@ -153,11 +153,17 @@ describe("TitledSection measured styles", () => {
     expect(style).toContain("height: 3px");
     expect(style).toContain("margin: 1.25rem auto 0");
     expect(style).toContain("margin: 1.25rem 0 0");
-    expect(style).toContain("var(--site-block-accent, #0c447c)");
+    expect(style).toContain("var(--site-block-accent, #2563eb)");
     expect(style).toContain("margin-top: 3rem");
     expect(style).toContain("box-sizing: border-box");
     expect(style.match(/font-size:/g)).toHaveLength(1);
     const medias = [...style.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((m) => m[1] ?? "");
     expect(medias.join("\n")).not.toContain("font-size");
+  });
+
+  test("the rule's fallback is the neutral accent, not a source brand colour", () => {
+    const stripped = style.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(stripped).toContain("var(--site-block-accent, #2563eb)");
+    expect(stripped).not.toContain("#" + "0c447c");
   });
 });

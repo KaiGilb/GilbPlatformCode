@@ -94,8 +94,7 @@ const headingId = computed(() => (props.id ? `${props.id}-title` : autoId));
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
    Sizes are the source band's measured values, written out (no Tailwind).
-   The heading stays 39px at every breakpoint: there is no mobile step-down.
-   The rule is navy #0c447c, not the hero's bright blue: 7.81:1 on the alt band #e5e5e5, where #2494ec is 2.56:1. */
+   The heading stays the same size at every breakpoint: there is no mobile step-down. The rule takes --site-block-accent; keep it at 3:1 or better against the band (WCAG 1.4.11). */
 .ts, .ts * { box-sizing: border-box; }
 .ts {
   padding-inline: 1rem;
@@ -121,7 +120,7 @@ const headingId = computed(() => (props.id ? `${props.id}-title` : autoId));
   font-weight: var(--site-block-section-title-weight, 400);
   color: var(--site-block-fg, #1a1a1a);
 }
-.ts-rule { width: 100px; height: 3px; margin: 1.25rem auto 0; background: var(--site-block-accent, #0c447c); }
+.ts-rule { width: 100px; height: 3px; margin: 1.25rem auto 0; background: var(--site-block-accent, #2563eb); }
 .ts--start .ts-rule { margin: 1.25rem 0 0; }
 .ts-body { margin-top: 3rem; font-family: inherit; }
 </style>
