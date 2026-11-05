@@ -1,6 +1,6 @@
 # web comparison-list
 
-A comparison of a typical result against ours, one row per topic, as a semantic list. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (Jairam-Gilb/gilb-websites-web, `pages/index.vue`, the "typical agency against us" rows, branch `redesign-scrollcraft` b78b1f9).
+A comparison of a typical result against ours, one row per topic, as a semantic list. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
