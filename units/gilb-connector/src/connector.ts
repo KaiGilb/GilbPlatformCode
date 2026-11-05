@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.1";
+export const CONNECTOR_VERSION = "0.5.2";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -255,7 +255,7 @@ interface JsonMsg {
 }
 
 interface ToolResult {
-  content: [{ type: "text"; text: string }];
+  content: [{ type: "text"; text: string }, ...{ type: "text"; text: string }[]];
   isError: boolean;
 }
 
@@ -359,6 +359,10 @@ const GILB_USE_VAULT: ToolSpec = {
 /** Told to the model on initialize, and in the README. A vault switch stays the person's decision. */
 const USE_VAULT_INSTRUCTIONS =
   "When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
+
+/** Told to the model on initialize, and in the README. Creating a vault approves it for this session. */
+const CREATE_VAULT_INSTRUCTIONS =
+  "A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.";
 
 /** Told to the model on initialize, and in the README. One work vault is not a choice. */
 const AUTO_SELECT_INSTRUCTIONS =
@@ -622,8 +626,12 @@ function vaultInReach(error: string): string | undefined {
   return vault === "" ? undefined : vault;
 }
 
-function toolResult(text: string, isError: boolean): ToolResult {
-  return { content: [{ type: "text", text }], isError };
+function toolResult(text: string, isError: boolean, extraTexts?: readonly string[]): ToolResult {
+  const content: ToolResult["content"] = [{ type: "text", text }];
+  if (extraTexts) {
+    for (const extra of extraTexts) content.push({ type: "text", text: extra });
+  }
+  return { content, isError };
 }
 
 function argumentString(args: unknown): string {
@@ -657,6 +665,25 @@ function listsNoVaults(name: string, result: string): boolean {
     return (parsed as { vaults: unknown[] }).vaults.length === 0;
   }
   return false;
+}
+
+/**
+ * The namespace a successful create_vault answer names.
+ * An error, created false without existing, a missing or non-namespace vaultId, or text that is not a JSON object names nothing.
+ */
+function createdVaultNamespace(result: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result) as unknown;
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if ("error" in parsed) return null;
+  const record = parsed as { created?: unknown; existing?: unknown; vaultId?: unknown };
+  if (record.created !== true && record.existing !== true) return null;
+  if (typeof record.vaultId !== "string" || !isVaultNamespace(record.vaultId)) return null;
+  return record.vaultId;
 }
 
 /**
@@ -1661,7 +1688,21 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       say(sentence);
       return toolResult(sentence, true);
     }
+    // A hop is a nested run. It keeps the vault list the parent started it with, so a create_vault inside it selects nothing.
+    if (!hopMode && name === "create_vault") {
+      const namespace = createdVaultNamespace(result);
+      if (namespace) {
+        selectVault(namespace);
+        return toolResult(result, false, [`Selected for this session: ${namespace}. Selected vaults: ${vaults.join(", ")}.`]);
+      }
+    }
     return toolResult(result, toolAnswerIsError(result));
+  }
+
+  function selectVault(namespace: string): void {
+    selectedAutomatically = false;
+    if (!vaults.some((id) => id.toLowerCase() === namespace.toLowerCase())) vaults.push(namespace);
+    cache = null;
   }
 
   async function onUseVault(args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
@@ -1692,9 +1733,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const namespace = matched[0];
     if (!namespace) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
     // The person's allow replaces an automatic choice. It is not overwritten later.
-    selectedAutomatically = false;
-    if (!vaults.some((id) => id.toLowerCase() === namespace.toLowerCase())) vaults.push(namespace);
-    cache = null;
+    selectVault(namespace);
     return toolResult(`Using vault ${namespace} for this session. Selected vaults: ${vaults.join(", ")}.`, false);
   }
 
@@ -1878,7 +1917,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
               asMode === "me"
                 ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
                 : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions."
-            } ${USE_VAULT_INSTRUCTIONS}${asMode === "ai" ? ` ${AUTO_SELECT_INSTRUCTIONS}` : ""}`,
+            } ${USE_VAULT_INSTRUCTIONS} ${CREATE_VAULT_INSTRUCTIONS}${asMode === "ai" ? ` ${AUTO_SELECT_INSTRUCTIONS}` : ""}`,
       };
     }
     if (method === "ping") return {};
