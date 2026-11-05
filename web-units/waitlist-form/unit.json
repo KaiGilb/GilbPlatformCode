@@ -30,7 +30,8 @@
     "The source's phone question and \"which AI\" question are not in the default list; add a `tel` or `choice` field for them. The source's honeypot is the `honeypot` prop, off by default (the source always drew its `website` trap). The body holds only declared fields, plus `page`, `notice`, `turnstileToken` and the honeypot when set.",
     "A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.",
     "An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.",
-    "The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block."
+    "The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block.",
+    "The form's root is capped at `maxWidth` (default `40rem`); the source form had no cap. Pass `max-width=\"none\"` for the source's width."
   ],
   "newFiles": [
     "src/types.ts",

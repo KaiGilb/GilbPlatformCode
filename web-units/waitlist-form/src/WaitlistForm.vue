@@ -18,7 +18,7 @@
  * `notice?`, `linkComponent?`, `honeypot?`, `send?`, `tokenWaitMs?`, `maxWidth?`.
  * Slot: `sent` replaces the thank-you block. Events: `sent(body)`, `failed(error)`.
  */
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
 import type { Component } from "vue";
 import { buildBody, validate, type FieldError } from "./fields";
 import { postJson } from "./send";
@@ -45,7 +45,11 @@ const props = withDefaults(
     notice?: WaitlistNotice | null;
     /** The host's route link (NuxtLink), given `to`. A plain `<a href>` when this is `"a"`. */
     linkComponent?: string | Component;
-    /** Off-screen field. When set, its name is always in the body (empty when untouched). Null draws none. */
+    /**
+     * Off-screen field. When set, its name is in the body (empty when untouched), unless that name
+     * is a field or `page`, `notice` or `turnstileToken`: then none is drawn or sent, and the console warns once.
+     * Null draws none.
+     */
     honeypot?: { name: string; label: string } | null;
     send?: (body: Record<string, string>) => Promise<unknown>;
     tokenWaitMs?: number;
@@ -78,6 +82,33 @@ const words = () => ({ ...DEFAULT_WAITLIST_LABELS, ...props.labels });
 const uid = useId();
 const status = ref<"idle" | "sending" | "sent" | "failed">("idle");
 const trapValue = ref("");
+
+/** These keys are written by the form itself. A honeypot of the same name would overwrite one. */
+const RESERVED_BODY_KEYS = new Set(["page", "notice", "turnstileToken"]);
+
+function honeypotClashes(name: string): boolean {
+  return props.fields.some((field) => field.name === name) || RESERVED_BODY_KEYS.has(name);
+}
+
+/** The honeypot to draw and send. A clashing name is dropped so it cannot overwrite a real key. */
+const drawnHoneypot = computed(() => {
+  const hp = props.honeypot;
+  if (!hp || honeypotClashes(hp.name)) return null;
+  return hp;
+});
+
+const warnedHoneypotNames = new Set<string>();
+watch(
+  () => (props.honeypot && honeypotClashes(props.honeypot.name) ? props.honeypot.name : ""),
+  (name) => {
+    if (!name || warnedHoneypotNames.has(name)) return;
+    warnedHoneypotNames.add(name);
+    console.warn(
+      `[waitlist-form] honeypot name "${name}" clashes with a field or a reserved key; it is not drawn or sent`,
+    );
+  },
+  { immediate: true },
+);
 const fieldErrors = ref<FieldError[]>([]);
 const lastBody = ref<Record<string, string>>({});
 const formEl = ref<HTMLFormElement | null>(null);
@@ -250,7 +281,7 @@ async function onSubmit(): Promise<void> {
       page: props.page,
       ...(props.notice ? { notice: shownNotice(props.notice) } : {}),
       ...(token ? { turnstileToken: token } : {}),
-      ...(props.honeypot ? { honeypot: { name: props.honeypot.name, value: trapValue.value } } : {}),
+      ...(drawnHoneypot.value ? { honeypot: { name: drawnHoneypot.value.name, value: trapValue.value } } : {}),
     });
     const answer = await (props.send ?? ((payload) => postJson(props.actionUrl, payload)))(body);
     if (!alive) return;
@@ -367,7 +398,7 @@ async function onSubmit(): Promise<void> {
         </template>
       </div>
 
-      <div v-if="honeypot" class="wl-trap" aria-hidden="true"><label :for="`${uid}-trap`">{{ honeypot.label }}</label><input :id="`${uid}-trap`" :name="honeypot.name" type="text" tabindex="-1" autocomplete="off" :value="trapValue" @input="trapValue = ($event.target as HTMLInputElement).value" /></div>
+      <div v-if="drawnHoneypot" class="wl-trap" aria-hidden="true"><label :for="`${uid}-trap`">{{ drawnHoneypot.label }}</label><input :id="`${uid}-trap`" :name="drawnHoneypot.name" type="text" tabindex="-1" autocomplete="off" :value="trapValue" @input="trapValue = ($event.target as HTMLInputElement).value" /></div>
 
       <!-- Turnstile draws its widget here after the script loads. No key: no box and no script. -->
       <div v-if="turnstileSiteKey" ref="turnstileBox" class="wl-turnstile" />

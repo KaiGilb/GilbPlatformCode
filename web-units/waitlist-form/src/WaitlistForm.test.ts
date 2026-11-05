@@ -588,6 +588,19 @@ describe("WaitlistForm wiring (QA gaps)", () => {
     expect(send.mock.calls[0]![0].notice).toBe("Lead Privacy policy.");
   });
 
+  test("notice text after, with no link, follows the text directly", async () => {
+    const send = vi.fn(async (_body: Record<string, string>) => true);
+    wrapper = mount(WaitlistForm, {
+      props: { send, notice: { text: "Lead", after: "." } },
+      attachTo: document.body,
+    });
+    expect(document.querySelector(".wl-notice")!.textContent).toBe("Lead.");
+    await setEmail(wrapper);
+    await wrapper.find("form").trigger("submit");
+    await flushPromises();
+    expect(send.mock.calls[0]![0].notice).toBe("Lead.");
+  });
+
   test("a link component gets the notice link's address as to", () => {
     noticeLinkTos.length = 0;
     wrapper = mount(WaitlistForm, {
@@ -680,6 +693,43 @@ describe("WaitlistForm wiring (QA gaps)", () => {
     expect(body).not.toHaveProperty("website");
     const html = await renderToString(createSSRApp(WaitlistForm, { honeypot }));
     expect(html).toContain('name="hp_field"');
+  });
+
+  test("a honeypot named like a field or a reserved key is not drawn or sent, and warns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const send = vi.fn(async (_body: Record<string, string>) => true);
+      wrapper = mount(WaitlistForm, {
+        props: { send, honeypot: { name: "email", label: "Email" } },
+        attachTo: document.body,
+      });
+      expect(document.querySelector(".wl-trap")).toBeNull();
+      await setEmail(wrapper);
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      expect(send.mock.calls[0]![0].email).toBe("ada@example.test");
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('honeypot name "email"');
+
+      warn.mockClear();
+      wrapper.unmount();
+      const sendPage = vi.fn(async (_body: Record<string, string>) => true);
+      wrapper = mount(WaitlistForm, {
+        props: { send: sendPage, page: "waitlist", honeypot: { name: "page", label: "Page" } },
+        attachTo: document.body,
+      });
+      expect(document.querySelector(".wl-trap")).toBeNull();
+      await setEmail(wrapper);
+      await wrapper.find("form").trigger("submit");
+      await flushPromises();
+      const pageBody = sendPage.mock.calls[0]![0]!;
+      expect(pageBody.page).toBe("waitlist");
+      expect(pageBody.email).toBe("ada@example.test");
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('honeypot name "page"');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test("a too-long answer shows the tooLong message with its maximum", async () => {

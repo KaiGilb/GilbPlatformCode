@@ -125,10 +125,10 @@ if (errors.length) return new Response('no', { status: 422 })
 | `labels?` | any of `submit` (`Join the waiting list`), `sending` (`Sending…`), `optional` (`(optional)`), `sentHeading` (`You're on the list.`), `sentBody` (`We will write when there is room.`), `failed` (`That did not go through. Your answers are kept; please try again.`), `invalidEmail` (`Enter an email address like name@example.com.`), `required` (`This one is needed.`), `tooLong` (`This is longer than {max} characters.`) |
 | `notice?` | `{ text, linkLabel?, linkHref?, after? }` or `null` (the default). Not a checkbox. `after` is the text right after the link, with no space before it (for example "."). The body's `notice` is the sentence as shown, including `after` |
 | `linkComponent?` | the component that links the notice's route, given `to` (Nuxt: `resolveComponent('NuxtLink')`). The string `a` (the default) is a plain `<a href>` |
-| `honeypot?` | `{ name, label }` or `null` (the default, none drawn). When set, an off-screen field (`tabindex="-1"`, hidden from assistive tech) whose `name` is always in the body, `""` when untouched. A no-script post carries it too, because the input is in the form |
+| `honeypot?` | `{ name, label }` or `null` (the default, none drawn). When set, an off-screen field (`tabindex="-1"`, hidden from assistive tech) whose `name` is always in the body, `""` when untouched. A no-script post carries it too, because the input is in the form. A name equal to a field name, or to `page`, `notice` or `turnstileToken`, is not drawn and not sent, and the component warns once, naming the clash. |
 | `send?` | replaces the default sender: `(body) => Promise`. A truthy answer is sent. A falsy answer is not sent. A throw is a failure |
 | `tokenWaitMs?` | how long a send waits for the Turnstile token, default `8000` |
-| `maxWidth?` | the form's max width (default `'40rem'`), set as the CSS variable `--_max` on the root. `'none'` removes the cap |
+| `maxWidth?` | a CSS length (or `none`) for the form's max width (default `'40rem'`), set as the CSS variable `--_max` on the root. The host passes trusted values. `'none'` removes the cap. An empty string removes the cap |
 
 Slot: `sent` replaces the thank-you block. Its slot prop `body` is the object that was sent. Put a heading in it: that is where focus goes.
 
@@ -188,6 +188,7 @@ The fields are in the first HTML, at their size. Nothing below the form is held 
 - A choice field's `look` (`tiles` or `pills`) and `columns` (1 or 2) say how its answers are drawn; the source hard-coded tiles for two questions and pills for one.
 - An invalid field, and every answer of an invalid choice, has the danger border as well as its message; the source showed the message only.
 - The default thank-you block is a plain heading and line in the page's font (24px/32px weight 600 in `--site-block-success`, then the body); the source used its display face, clamped from 2rem to 2.8rem (44.8px on a wide screen). The `sent` slot replaces the block.
+- The form's root is capped at `maxWidth` (default `40rem`); the source form had no cap. Pass `max-width="none"` for the source's width.
 
 ## Source
 
