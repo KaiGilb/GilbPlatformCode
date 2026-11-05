@@ -16,10 +16,10 @@
     ]
   },
   "namedChanges": [
-    "The words are not in the unit: \"Build on MyJackfruit\", the audiences, the apps, the use cases and the waiting-list line moved to the `groups` prop.",
+    "The words are not in the unit: the site's tagline, the audiences, the apps, the use cases and the waiting-list line moved to the `groups` prop.",
     "The bottom Close control emits `close('button')`; the source emitted `close('esc')` for it. `'esc'` is now only the Escape key.",
     "A row with no `href` is plain text: no `<a>`, no tab stop, no hover change, the default cursor.",
-    "The cream ground and the pith tint are not in the unit; colour comes from `--site-block-*`.",
+    "The ground colour and the tint are not in the unit; colour comes from `--site-block-*`.",
     "Tailwind, `theme()` and `NuxtLink` are written out as scoped CSS and a `linkComponent` prop (a plain `<a href>` by default).",
     "The overlay z-index is the `zIndex` prop (default 40, the value of `Z_PLANES.overlay` in utils/zPlanes.ts at the same commit); the import of that module is not kept.",
     "The dialog and the nav have their own names: the dialog's `label` (default \"Site menu\") and the nav's `navLabel` (default \"Main\"). Dropped: a site screenshot-tool hook (the source's `data-menu-panel` attribute).",

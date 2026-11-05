@@ -1,6 +1,6 @@
 # web mega-menu
 
-An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from MyJackfruit (KaiGilb/myjackfruit-web, `components/MegaMenu.vue`, `842177b038fe8062d3bed8409c01a07ae86d6581` on main).
+An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -191,10 +191,10 @@ While the sheet is open, `document.body.style.overflow` is `hidden`. On close, a
 
 - The dialog and the nav have separate names (`label` and `navLabel`). The source's `data-menu-panel` attribute, a hook for a site screenshot tool, is dropped.
 - When it is mounted with `open` already true, it locks scroll and takes focus at mount, so a server-rendered open sheet behaves like one opened later. The source did so only when `open` changed.
-- The words are not in this unit. "Build on MyJackfruit", the audiences, the apps, the use cases and the waiting-list line moved to the `groups` you pass.
+- The words are not in this unit. The site's tagline, the audiences, the apps, the use cases and the waiting-list line moved to the `groups` you pass.
 - The bottom Close control emits `close('button')`. The source emitted `close('esc')` for that same control. `'esc'` is only the Escape key now, so the host can put focus back for the key and not for the button. `'button'` is the reason added here.
 - A row with no `href` stays plain text, as the source's batch 5 left "Who it's for" and the use cases: no `<a>`, no tab stop, no hover change, the default cursor.
-- The cream ground and the pith tint are not here. Colour comes from `--site-block-*`.
+- The ground colour and the tint are not here. Colour comes from `--site-block-*`.
 - The source was Tailwind, `theme()` and `NuxtLink`. Those are written out: scoped CSS, and `linkComponent` (a plain `<a href>` unless the host passes its own link).
 - A side column that holds two headed lists is a `MenuStack` (side by side from 640px, stacked from 1024px), and a group's `tone: "quiet"` draws the source's quieter links; the call to action and the sheet's wash take their own variables (`--site-block-cta*`, `--site-block-sheet-wash`).
 - The product links are the large display type and the audience rows are cards (`tone: "card"`, also the default for a group of only static rows). The source's link colour changes on hover, not on focus; the focus ring is the outline.

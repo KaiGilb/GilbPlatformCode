@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
   color: var(--site-block-accent, #2563eb);
 }
 
-/* Quieter links (source .mj-menu-quiet): medium weight, the label inside the 44px link. */
+/* Quieter links: medium weight, the label inside the 44px link. */
 .mm-quiet {
   display: inline-flex;
   align-items: center;
