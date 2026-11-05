@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/mega-menu",
   "package": "@kaigilb/gilbwebsitecode-mega-menu",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "A mega menu for a website: a full-width drop-down sheet of grouped links that the site header opens, with focus kept inside and Esc to close.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",

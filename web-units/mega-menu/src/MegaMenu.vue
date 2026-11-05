@@ -484,7 +484,7 @@ onBeforeUnmount(() => {
 
 .mm-link:hover .mm-item-label,
 .mm-link:hover .mm-display {
-  color: var(--site-block-accent, #b45309);
+  color: var(--site-block-accent, #2563eb);
 }
 
 /* Quieter links (source .mj-menu-quiet): medium weight, the label inside the 44px link. */
@@ -499,7 +499,7 @@ onBeforeUnmount(() => {
 
 .mm-quiet:hover,
 .mm-link:hover .mm-quiet {
-  color: var(--site-block-accent, #b45309);
+  color: var(--site-block-accent, #2563eb);
 }
 
 .mm-sub {
@@ -558,7 +558,7 @@ onBeforeUnmount(() => {
   margin-top: 0;
   padding: 0.75rem 1.75rem;
   border-radius: var(--site-block-cta-radius, var(--site-block-radius, 0.5rem));
-  background: var(--site-block-cta, var(--site-block-accent, #b45309));
+  background: var(--site-block-cta, var(--site-block-accent, #2563eb));
   color: var(--site-block-on-cta, var(--site-block-on-accent, #ffffff));
   font-size: 1rem;
   font-weight: 500;
@@ -567,13 +567,13 @@ onBeforeUnmount(() => {
 
 .mm-cta:hover,
 .mm-cta:focus-visible {
-  background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black));
+  background: var(--site-block-cta-hover, color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #2563eb)) 88%, black));
 }
 
 .mm-link:focus-visible,
 .mm-cta:focus-visible,
 .mm-close:focus-visible {
-  outline: 2px solid var(--site-block-accent, #b45309);
+  outline: 2px solid var(--site-block-accent, #2563eb);
   outline-offset: 3px;
 }
 
