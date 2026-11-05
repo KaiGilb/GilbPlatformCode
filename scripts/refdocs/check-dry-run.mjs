@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB = "https://appbuilder.gilb.com/base/e/gilbplatformcode-library-06gjdp49a9sm10t4hgdme4agwm";
+const WEB_LIB = "https://appbuilder.gilb.com/base/e/gilbwebsitecode-library-06gn66j0enwkqfhm364trebtkm";
 const argv = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : ""; };
 const input = JSON.parse(readFileSync(argv("--input") || join(HERE, "out", "refdocs-input.json"), "utf8"));
 const oldNotice = readFileSync(join(HERE, "notice.txt"), "utf8").trim();
@@ -26,15 +27,16 @@ input.units.forEach((u, i) => {
   if (f?.["a:attribution"] !== input.notice) w("a:attribution is not the notice");
   if (f?.["a:license"] !== "GilbPlatform.Licence") w("a:license");
   if (!f?.["a:handsOffTo"]?.["@id"]) w("a:handsOffTo");
-  if (f?.["a:partOf"]?.["@id"] !== LIB) w("a:partOf is not the library");
+  const web = u.tree === "web-units", tree = web ? "web-units" : "units";
+  if (f?.["a:partOf"]?.["@id"] !== (web ? WEB_LIB : LIB)) w("a:partOf is not the library of the unit's tree");
   if (e?.body?.type !== "t:ReferenceExhibit") w("exhibit type");
   if (!g?.["a:referenceOf"]) w("a:referenceOf");
   if (g?.["a:referenceOrder"] !== 1) w("a:referenceOrder");
   const x = g?.["a:referenceExhibit"] || "";
   if (x !== u.exhibit) w("exhibit differs from input");
   const L = x.split("\n");
-  const ok6 = L.length === 6 && L[0].startsWith("**What it does:** ") && L[1] === "" && L[2] === `GitHub folder: units/${u.folder}` &&
-    /^Commit: [0-9a-f]{40}$/.test(L[3]) && /^Package: @kaigilb\/gilbplatformcode-[a-z0-9-]+$/.test(L[4]) && L[5] === "Clone: https://github.com/KaiGilb/GilbPlatformCode.git";
+  const ok6 = L.length === 6 && L[0].startsWith("**What it does:** ") && L[1] === "" && L[2] === `GitHub folder: ${tree}/${u.folder}` &&
+    /^Commit: [0-9a-f]{40}$/.test(L[3]) && new RegExp(`^Package: @kaigilb/${web ? "gilbwebsitecode" : "gilbplatformcode"}-[a-z0-9-]+$`).test(L[4]) && L[5] === "Clone: https://github.com/KaiGilb/GilbPlatformCode.git";
   if (!ok6) w("exhibit lines: not 'What it does' / blank / folder / commit / package / clone");
 });
 // the dry-run must not have read a key or sent anything

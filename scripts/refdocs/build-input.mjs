@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds refdocs-input.json for write-refdocs.mjs from docs.json (tag, title, note per folder)
 // and the merged GilbPlatformCode repo (origin/main). Read-only: it fetches, it never writes to the repo or the vault.
-// Usage: node build-input.mjs [--no-fetch] [--repo <path>] [--main <ref>]   (--main defaults to origin/main)
+// Usage: node build-input.mjs [--no-fetch] [--repo <path>] [--main <ref>] [--library <file>] [--out <dir>]   (--main defaults to origin/main)
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -16,7 +16,7 @@ const git = (...args) => execFileSync("git", ["-C", REPO, ...args], { encoding: 
 // Same as git(), but a non-zero exit is an answer ("no"), not a crash.
 const gitTry = (...args) => { try { return { ok: true, out: git(...args) }; } catch (e) { return { ok: false, out: "", err: String(e.stderr || e.message).trim().split("\n")[0] }; } };
 
-const docs = JSON.parse(readFileSync(join(HERE, "library.json"), "utf8"));
+const docs = JSON.parse(readFileSync(argv("--library") ? resolve(argv("--library")) : join(HERE, "library.json"), "utf8"));
 const notice = readFileSync(join(HERE, "notice.txt"), "utf8").trim();
 if (!notice || typeof notice !== "string") throw new Error("notice.txt is empty");
 
@@ -52,14 +52,19 @@ for (const [folder, d] of Object.entries(docs)) {
   if (!d.title.trim() || !d.note.trim() || /[\r\n]/.test(d.title + d.note)) { out("title or note is empty or not one line"); continue; }
   if (tagCount.get(d.tag) > 1) { out(`tag ${d.tag} is used by more than one folder in docs.json (RuleGpcrefOnePerTag)`); continue; }
 
-  const path = `units/${folder}`;
+  if (d.tree !== undefined && d.tree !== "web-units") { out(`tree '${d.tree}' is not absent or 'web-units'`); continue; }
+  // A folder name in both trees is ambiguous: stop the whole run, do not guess (the library is chosen by the tree).
+  const inUnits = git("ls-tree", MAIN, `units/${folder}`).trim(), inWeb = git("ls-tree", MAIN, `web-units/${folder}`).trim();
+  if (inUnits && inWeb) { console.error(`FAIL: folder '${folder}' exists in both units/ and web-units/ on ${MAIN}; refusing to choose a library`); process.exit(1); }
+  const tree = d.tree === "web-units" ? "web-units" : "units";
+  const path = `${tree}/${folder}`;
   const onMain = git("ls-tree", MAIN, path).trim();
   if (!onMain) { out("not on main yet"); continue; }
 
   const pin = git("log", "-1", "--format=%H", MAIN, "--", path).trim();
   if (!/^[0-9a-f]{40}$/.test(pin)) { out(`no 40-hex pin from git log (got '${pin}')`); continue; }
-  const tree = gitTry("ls-tree", pin, path);
-  if (!tree.ok || !tree.out.includes(`\t${path}`)) { out(`RuleGpcrefCommit: git ls-tree ${pin.slice(0, 10)} does not list ${path}`); continue; }
+  const pinTree = gitTry("ls-tree", pin, path);
+  if (!pinTree.ok || !pinTree.out.includes(`\t${path}`)) { out(`RuleGpcrefCommit: git ls-tree ${pin.slice(0, 10)} does not list ${path}`); continue; }
   const anc = gitTry("merge-base", "--is-ancestor", pin, MAIN);
   if (!anc.ok) { out(`RuleGpcrefCommit: ${pin.slice(0, 10)} is not an ancestor of ${MAIN}`); continue; }
 
@@ -75,11 +80,12 @@ for (const [folder, d] of Object.entries(docs)) {
   if (/[\r\n]/.test(w.text) || !w.text.trim()) { out("What-it-does sentence is empty"); continue; }
 
   const exhibit = `**What it does:** ${w.text}\n\nGitHub folder: ${path}\nCommit: ${pin}\nPackage: ${pkg}\nClone: ${CLONE}`;
-  included.push({ folder, tag: d.tag, title: d.title, note: d.note, exhibit, _pin: pin, _pkg: pkg, _what: w.text });
+  included.push({ folder, ...(tree === "web-units" ? { tree } : {}), tag: d.tag, title: d.title, note: d.note, exhibit, _pin: pin, _pkg: pkg, _what: w.text });
 }
 
-mkdirSync(join(HERE, "out"), { recursive: true });
-writeFileSync(join(HERE, "out", "refdocs-input.json"), JSON.stringify({ notice, units: included.map(({ _pin, _pkg, _what, ...u }) => u) }, null, 1) + "\n");
+const OUTDIR = argv("--out") ? resolve(argv("--out")) : join(HERE, "out");
+mkdirSync(OUTDIR, { recursive: true });
+writeFileSync(join(OUTDIR, "refdocs-input.json"), JSON.stringify({ notice, units: included.map(({ _pin, _pkg, _what, ...u }) => u) }, null, 1) + "\n");
 
 console.log(`\nINCLUDED (${included.length}):`);
 for (const u of included) console.log(`  ${u.folder} | ${u.tag} | ${u._pin} | ${u._pkg}\n      ${u._what}`);
