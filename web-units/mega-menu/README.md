@@ -1,6 +1,6 @@
 # web mega-menu
 
-An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from MyJackfruit (KaiGilb/myjackfruit-web, `components/MegaMenu.vue`, `aafbf4a10613fefee69ff8b12d4f71ffc9807c60` on main).
+An 80dvh sheet across the top of the page, and a transparent band across the rest, for a site menu the host opens and closes. Vue 3 / Nuxt 3. Moved from MyJackfruit (KaiGilb/myjackfruit-web, `components/MegaMenu.vue`, `842177b038fe8062d3bed8409c01a07ae86d6581` on main).
 
 ## What this is
 
@@ -30,10 +30,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-mega-menu
 cd web-units/mega-menu && npm pack --pack-destination <site>/vendor/gilbwebsitecode-mega-menu
 echo <commit> > <site>/vendor/gilbwebsitecode-mega-menu/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-mega-menu/kaigilb-gilbwebsitecode-mega-menu-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
@@ -201,4 +201,4 @@ While the sheet is open, `document.body.style.overflow` is `hidden`. On close, a
 
 ## Source
 
-Code: `KaiGilb/myjackfruit-web`, `components/MegaMenu.vue`, commit `aafbf4a10613fefee69ff8b12d4f71ffc9807c60` on `main`. The overlay z-index 40 is `Z_PLANES.overlay` in `utils/zPlanes.ts` at that same commit. The import of that module is not kept; `40` is the default of `zIndex`. The unit's tests are new.
+Code: `KaiGilb/myjackfruit-web`, `components/MegaMenu.vue`, commit `842177b038fe8062d3bed8409c01a07ae86d6581` on `main`. The overlay z-index 40 is `Z_PLANES.overlay` in `utils/zPlanes.ts` at that same commit. The import of that module is not kept; `40` is the default of `zIndex`. The unit's tests are new.

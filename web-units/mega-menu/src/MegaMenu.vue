@@ -356,6 +356,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: var(--mm-sheet, 80dvh);
   overflow-y: auto;
+  /* A focused row stays clear of the sticky Close bar (WCAG 2.4.11). */
+  scroll-padding-bottom: 4rem;
   color: var(--site-block-fg, #1a1a1a);
   /* Legacy rgba(), not color-mix: the same channels in color() rasterise a row off. */
   box-shadow: 0 4px 12px -2px var(--site-block-shadow, rgba(0, 0, 0, 0.08));
@@ -610,15 +612,20 @@ onBeforeUnmount(() => {
 }
 
 @media (min-width: 768px) {
-  .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem 2.5rem; }
+  .mm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 2.5rem; }
   .mm-stack { grid-column: span 2; }
+  /* Stack only. A quiet list outside a stack keeps the base gap and margin. */
+  .mm-stack .mm-list-quiet:not(.mm-list-plain) { margin-top: 0.25rem; gap: 0.25rem; }
+  .mm-stack .mm-list-plain { margin-top: 0.75rem; }
 }
 
 @media (min-width: 1024px) {
   .mm-nav { padding-right: 2.5rem; padding-left: 2.5rem; }
   .mm-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .mm-group { grid-column: span var(--mm-span, 12); }
-  .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 2.25rem; }
+  .mm-stack-inner { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 1.25rem; }
+  .mm-stack .mm-list-quiet:not(.mm-list-plain) { margin-top: 0.75rem; gap: 0.5rem; }
+  .mm-stack .mm-list-plain { gap: 0; }
 }
 
 /* The sheet fades in and out: opacity only. With reduced motion there is no transition. */

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-mega-menu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "An 80dvh site-menu sheet: groups of links, static lines and a call to action. The host owns open state. Vue 3 / Nuxt 3.",
