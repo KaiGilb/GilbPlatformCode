@@ -1,6 +1,6 @@
 /**
  * The opacity of one line from where its top is: dim while its top is below `fadeStart` of the viewport height,
- * lit once it is above `fadeEnd`, a smoothstep between. As the Gilb Websites landing page's ScrubLines.
+ * lit once it is above `fadeEnd`, a smoothstep between. As the source landing page's ScrubLines.
  *
  * @param top the line's top, px from the viewport's top
  * @param vh the viewport height, px

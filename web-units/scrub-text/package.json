@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-scrub-text",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Lines of text that brighten one after another as the page scrolls; fully lit with no script or reduced motion. Vue 3 / Nuxt 3.",
