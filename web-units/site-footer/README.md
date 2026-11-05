@@ -1,6 +1,6 @@
 # web site-footer
 
-The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from KaiGilb/gilb-web `components/site/SiteFooter.vue` at `a3be1bce783d9b34c4c2f40c2cbc0886c28c5daa`, with the right-hand link from KaiGilb/mynet-web `components/site/SiteFooter.vue` at `ca601b9f188343e5075057907678dad64324269e`.
+The site's footer: the brand, an optional tagline, an optional list of links, and a copyright line. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
