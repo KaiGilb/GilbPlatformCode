@@ -1,6 +1,6 @@
 # web scroll-frame
 
-Scroll helpers: a rAF-throttled scroll and resize feed, and a fade-up reveal for elements entering the view. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (`composables/useScrollFrame.ts`, `useReveal.ts`, branch `redesign-scrollcraft` b78b1f9).
+Scroll helpers: a rAF-throttled scroll and resize feed, and a fade-up reveal for elements entering the view. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
