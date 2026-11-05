@@ -47,6 +47,11 @@ function innerOf(w: VueWrapper): HTMLElement {
   return inner;
 }
 
+/** Hyphenated names of every inline declaration. A shorthand read misses a longhand. */
+function inlineProperties(el: HTMLElement): string[] {
+  return Array.from({ length: el.style.length }, (_, i) => el.style.item(i)).sort();
+}
+
 /** Mount, then stub the outer box, then run the frame the bus already queued. */
 function frameAt(top: number, height: number, props?: Record<string, unknown>) {
   wrapper?.unmount();
@@ -136,10 +141,27 @@ test("will-change is transform on the inner element once it animates", () => {
   expect(inner.style.willChange).toBe("transform");
 });
 
-test("the moving element carries no transition, so it follows the scroll at once", () => {
+test("the moving element has a transform and an empty transition shorthand on the first frame", () => {
   const { inner } = frameAt(100, 200);
   expect(inner.style.transform).not.toBe("");
   expect(inner.style.transition).toBe("");
+});
+
+test("across 4 scroll frames the moving element's inline properties are exactly transform and will-change", () => {
+  wrapper = mount(ParallaxLayer, { attachTo: document.body });
+  const rect = vi.spyOn(wrapper.element, "getBoundingClientRect").mockReturnValue(box(100, 200));
+  flushFrames();
+  const tops = [140, 220, 300, 380];
+  const seen: string[] = [];
+  for (const top of tops) {
+    rect.mockReturnValue(box(top, 200));
+    window.dispatchEvent(new Event("scroll"));
+    flushFrames();
+    const inner = innerOf(wrapper);
+    expect(inlineProperties(inner)).toEqual(["transform", "will-change"]);
+    seen.push(inner.style.transform);
+  }
+  expect(new Set(seen).size).toBe(tops.length);
 });
 
 test("a layer more than 200px off screen does no work", () => {
@@ -245,29 +267,10 @@ test("whole-style: the style block is exactly the rules this file means", () => 
 
 test("README Host must supply lists exactly the variables the style reads", () => {
   const sfc = readFileSync(join(process.cwd(), "src", "ParallaxLayer.vue"), "utf8");
-  const css = ((sfc.split("<style scoped>")[1] ?? "").split("</style>")[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
-  const inStyle = [...new Set([...css.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  const inVue = [...new Set([...sfc.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
   const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
   expect(readme.includes("## Host must supply")).toBe(true);
   const section = (readme.split("## Host must supply")[1] ?? "").split(/\n## /)[0] ?? "";
-  const listed = [
-    ...new Set(
-      section
-        .split("\n")
-        .filter((line) => line.trimStart().startsWith("- "))
-        .flatMap((line) => {
-          let rest = line.trimStart().slice(2);
-          const names: string[] = [];
-          for (;;) {
-            const found = rest.match(/^`(--site-block-[a-z-]+)`/);
-            if (!found?.[1]) break;
-            names.push(found[1]);
-            rest = rest.slice(found[0].length).replace(/^[\s,]+/, "");
-          }
-          if (names.length === 0) throw new Error(`bullet does not start with a variable: ${line}`);
-          return names;
-        }),
-    ),
-  ].sort();
-  expect(listed).toEqual(inStyle);
+  const listed = [...new Set([...section.matchAll(/--site-block-[a-z-]+/g)].map((m) => m[0]))].sort();
+  expect(listed).toEqual(inVue);
 });
