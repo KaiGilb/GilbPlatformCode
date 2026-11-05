@@ -128,6 +128,7 @@ if (errors.length) return new Response('no', { status: 422 })
 | `honeypot?` | `{ name, label }` or `null` (the default, none drawn). When set, an off-screen field (`tabindex="-1"`, hidden from assistive tech) whose `name` is always in the body, `""` when untouched. A no-script post carries it too, because the input is in the form |
 | `send?` | replaces the default sender: `(body) => Promise`. A truthy answer is sent. A falsy answer is not sent. A throw is a failure |
 | `tokenWaitMs?` | how long a send waits for the Turnstile token, default `8000` |
+| `maxWidth?` | the form's max width (default `'40rem'`), set as the CSS variable `--_max` on the root. `'none'` removes the cap |
 
 Slot: `sent` replaces the thank-you block. Its slot prop `body` is the object that was sent. Put a heading in it: that is where focus goes.
 

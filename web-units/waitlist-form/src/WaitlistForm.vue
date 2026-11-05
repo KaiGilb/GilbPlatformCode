@@ -15,7 +15,7 @@
  * when that is set. With a Turnstile key such a post carries no token.
  *
  * Props: `fields?`, `actionUrl?`, `noScriptAction?`, `turnstileSiteKey?`, `turnstileScriptUrl?`, `page?`, `labels?`,
- * `notice?`, `linkComponent?`, `honeypot?`, `send?`, `tokenWaitMs?`.
+ * `notice?`, `linkComponent?`, `honeypot?`, `send?`, `tokenWaitMs?`, `maxWidth?`.
  * Slot: `sent` replaces the thank-you block. Events: `sent(body)`, `failed(error)`.
  */
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch } from "vue";
@@ -49,6 +49,8 @@ const props = withDefaults(
     honeypot?: { name: string; label: string } | null;
     send?: (body: Record<string, string>) => Promise<unknown>;
     tokenWaitMs?: number;
+    /** The form's max width, a CSS length. `"none"` removes the cap. */
+    maxWidth?: string;
   }>(),
   {
     fields: () => defaultWaitlistFields,
@@ -62,6 +64,7 @@ const props = withDefaults(
     linkComponent: "a",
     honeypot: null,
     tokenWaitMs: 8000,
+    maxWidth: "40rem",
   },
 );
 
@@ -276,7 +279,7 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="wl">
+  <div class="wl" :style="{ '--_max': maxWidth }">
     <form
       v-if="status !== 'sent'"
       ref="formEl"
@@ -399,7 +402,7 @@ async function onSubmit(): Promise<void> {
    instead of relying on a CSS reset. Text inherits the page's font. */
 .wl, .wl * { box-sizing: border-box; }
 .wl {
-  max-width: 40rem;
+  max-width: var(--_max, 40rem);
   color: var(--site-block-fg, #1a1a1a);
   font-size: 1rem;
   line-height: 1.5;
