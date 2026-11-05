@@ -102,7 +102,7 @@ The closed switcher is one fixed-size button (the flag is 22 by 16 px) in the se
 ## Wrong readings
 
 - Version 0.1.1: a language name that holds `$&`, `$'`, `` $` `` or `$$` is shown and named as typed (0.1.0 turned those into pieces of the label).
-- Version 0.1.2: comments in the source name no source site; no change in behaviour.
+- Version 0.1.2: comments name no source site; the accent fallback is the neutral `#2563eb`.
 
 - **Deliberate change from Skalden:** the old list was `role="listbox"` made of buttons with `role="option"`, which is not the listbox pattern (options should be reached with arrow keys inside one tab stop). It is now a disclosure: `aria-expanded` and `aria-controls` on the button, a list of ordinary buttons or links reached with Tab. The arrow keys, Home and End also move between the items, and ArrowDown or ArrowUp on the button opens the list and focuses the first or last item. What the visitor does (open, pick, close) is the same.
 - **Deliberate change:** the old full-screen invisible click-away button is gone. A press outside, or focus moving outside, closes the list; Escape closes it and returns focus to the button, even when focus was still on the page (Safari does not focus a button on a click).
