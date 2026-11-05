@@ -1,6 +1,6 @@
 # web shimmer-headline
 
-A headline that a single highlight band sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/motion/ShimmerHeadline.vue` at `9dc8c8d3d12c6e6327e77484fe45753011669d99`.
+A headline that a single highlight band sweeps across once, when it first scrolls into view; plain text before, after, with no script and with reduced motion. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -24,10 +24,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-shimmer-headline
 cd web-units/shimmer-headline && npm pack --pack-destination <site>/vendor/gilbwebsitecode-shimmer-headline
 echo <commit> > <site>/vendor/gilbwebsitecode-shimmer-headline/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-shimmer-headline/kaigilb-gilbwebsitecode-shimmer-headline-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-shimmer-headline/kaigilb-gilbwebsitecode-shimmer-headline-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-shimmer-headline/kaigilb-gilbwebsitecode-shimmer-headline-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-shimmer-headline/kaigilb-gilbwebsitecode-shimmer-headline-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 
