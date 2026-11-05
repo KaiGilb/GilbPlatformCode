@@ -92,8 +92,9 @@ interface DrawnCell {
   groups: DrawnGroup[];
 }
 
+/** A stack holds an array of groups. A group that only carries a non-array `stack` key (a spread) stays a group. */
 function isMenuStack(entry: MenuGroup | MenuStack): entry is MenuStack {
-  return "stack" in entry;
+  return Array.isArray((entry as MenuStack).stack);
 }
 
 /** Cells in order. A stack is one cell. One stagger index runs across every row, including rows inside a stack (the CTA takes the next number). */

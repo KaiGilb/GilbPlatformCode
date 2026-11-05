@@ -156,7 +156,7 @@ The theme, as CSS variables on `:root` (neutral fallbacks otherwise). Every webs
 - `--site-block-on-accent` the call-to-action text when `--site-block-on-cta` is unset (fallback `#ffffff`)
 - `--site-block-cta-hover` the call-to-action fill on hover and focus (fallback `color-mix(in srgb, var(--site-block-cta, var(--site-block-accent, #b45309)) 88%, black)`)
 - `--site-block-cta-radius` the call-to-action corners (fallback `var(--site-block-radius, 0.5rem)`)
-- `--site-block-radius` the link corners and the sheet's bottom corners, and the fallback for the call-to-action corners (fallback `0.5rem`)
+- `--site-block-radius` the sheet's bottom corners, and the fallback for the call-to-action corners (fallback `0.5rem`)
 - `--site-block-motion` the link colour transition and the fade-out when the sheet closes (fallback `180ms`, the source's fast time). A host value sets both
 - `--site-block-motion-rise` each row's rise (fallback `0.55s`, the source's time; the curve is fixed)
 - `--site-block-motion-enter` the sheet's fade-in time (fallback `240ms`, written with its unit).

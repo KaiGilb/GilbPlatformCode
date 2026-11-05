@@ -638,6 +638,87 @@ describe("stack and quiet links", () => {
     expect(lists[1]!.classList.contains("mm-list-quiet")).toBe(true);
     expect(lists[1]!.classList.contains("mm-list-plain")).toBe(true);
   });
+
+  test("a stack's span sets its cell's --mm-span", async () => {
+    const groups: (MenuGroup | MenuStack)[] = [
+      { heading: "A", items: [{ label: "A one", href: "/A" }] },
+      {
+        stack: [
+          { heading: "B", items: [{ label: "B one", href: "/B" }] },
+          { heading: "C", items: [{ label: "C one", href: "/C" }] },
+        ],
+        span: 7,
+      },
+    ];
+    await mountOpen({ groups });
+    const cells = [...document.querySelectorAll<HTMLElement>(".mm-group")];
+    expect(cells[1]!.classList.contains("mm-stack")).toBe(true);
+    expect(cells[1]!.style.getPropertyValue("--mm-span")).toBe("7");
+  });
+
+  test("the ground is drawn inside the sheet and hidden from assistive tech", async () => {
+    await mountOpen({ groups: [{ heading: "A", items: [{ label: "A one", href: "/A" }] }] });
+    const ground = document.querySelector(".mm-sheet > .mm-ground");
+    expect(ground).not.toBeNull();
+    expect(ground!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  test("inside a stack every heading id is unique and each list is labelled by its own heading", async () => {
+    const groups: MenuStack[] = [
+      {
+        stack: [
+          { heading: "B", items: [{ label: "B one", href: "/B" }] },
+          { heading: "C", items: [{ label: "C one", href: "/C" }] },
+        ],
+      },
+    ];
+    await mountOpen({ groups });
+    const ids = [...document.querySelectorAll(".mm-label")].map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const ul of document.querySelectorAll("ul.mm-list")) {
+      const label = document.getElementById(ul.getAttribute("aria-labelledby")!)!;
+      expect(ul.parentElement!.contains(label)).toBe(true);
+    }
+  });
+
+  test("a group mixing static and linked rows keeps the link tone", async () => {
+    await mountOpen({
+      groups: [{ heading: "Mixed", items: [{ label: "Static" }, { label: "Linked", href: "/l" }] }],
+    });
+    const ul = document.querySelector("ul.mm-list")!;
+    expect(ul.classList.contains("mm-list-card")).toBe(false);
+    expect(ul.querySelectorAll(".mm-display")).toHaveLength(2);
+  });
+
+  test("a quiet group where only some rows have a sub is not plain", async () => {
+    await mountOpen({
+      groups: [{ heading: "Q", tone: "quiet", items: [{ label: "a", sub: "s", href: "/a" }, { label: "b", href: "/b" }] }],
+    });
+    expect(document.querySelector("ul.mm-list")!.classList.contains("mm-list-plain")).toBe(false);
+  });
+
+  test("a quiet list is not a card list", async () => {
+    await mountOpen({ groups: [{ heading: "Q", tone: "quiet", items: [{ label: "a", href: "/a" }] }] });
+    expect(document.querySelector("ul.mm-list")!.classList.contains("mm-list-card")).toBe(false);
+  });
+
+  test("a stack holding one group is still a stack", async () => {
+    const groups: (MenuGroup | MenuStack)[] = [
+      { heading: "A", items: [{ label: "A one", href: "/A" }] },
+      { stack: [{ heading: "B", items: [{ label: "B one", href: "/B" }] }] },
+    ];
+    await mountOpen({ groups });
+    expect(document.querySelectorAll(".mm-stack")).toHaveLength(1);
+    expect(document.querySelector(".mm-stack .mm-label")!.textContent).toBe("B");
+  });
+
+  test("a group whose stack key is not an array is drawn as a group", async () => {
+    const group = { heading: "Odd", items: [{ label: "One", href: "/one" }], stack: undefined };
+    await mountOpen({ groups: [group as MenuGroup] });
+    expect(document.querySelectorAll(".mm-stack")).toHaveLength(0);
+    expect(document.querySelector(".mm-label")?.textContent).toBe("Odd");
+    expect(document.querySelector("a[href='/one']")?.textContent).toContain("One");
+  });
 });
 
 describe("axe", () => {
