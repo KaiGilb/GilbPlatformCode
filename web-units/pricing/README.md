@@ -1,6 +1,6 @@
 # web pricing
 
-An offering's plans side by side: each column has the plan's name, its price, an optional period, the list of what it includes and an optional button to choose it; one plan may be featured. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+An offering's plans side by side: each column has the plan's name, its price, an optional period, the list of what it includes and an optional button to choose it; one plan may be featured. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
