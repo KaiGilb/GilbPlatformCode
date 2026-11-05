@@ -1,6 +1,6 @@
 # web image-gallery
 
-A set of pictures as a grid of equal tiles, each with its own text alternative and loaded lazily. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+A set of pictures as a grid of equal tiles, each with its own text alternative and loaded lazily. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
