@@ -110,9 +110,9 @@ const linkBind = computed(() => (plainAnchor.value ? { href: props.href } : { to
 .sl {
   display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px;
   font-family: inherit; font-weight: 600; font-size: 1.125rem; line-height: 1.75rem;
-  color: var(--site-block-accent, #1d4ed8); text-decoration: none;
+  color: var(--site-block-accent, #2563eb); text-decoration: none;
 }
-.sl:visited, .sl:hover { color: var(--site-block-accent, #1d4ed8); text-decoration: none; }
-.sl:focus-visible { outline: 2px solid var(--site-block-accent, #1d4ed8); outline-offset: 2px; }
+.sl:visited, .sl:hover { color: var(--site-block-accent, #2563eb); text-decoration: none; }
+.sl:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .sl-img { display: block; height: 2rem; width: auto; }
 </style>

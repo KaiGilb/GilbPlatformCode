@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/site-logo",
   "package": "@kaigilb/gilbwebsitecode-site-logo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The site logo for a website header or footer: one home link with the logo image, the site name as a wordmark, or both, spoken once.",
   "source": {
     "repo": "KaiGilb/website-engine-a",
