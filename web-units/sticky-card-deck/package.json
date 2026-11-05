@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbwebsitecode-sticky-card-deck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A deck of cards that pin and stack as the page scrolls, scaling back as the next covers them, with a step rail; a static list under reduced motion. Vue 3 / Nuxt 3.",

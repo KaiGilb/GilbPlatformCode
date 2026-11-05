@@ -78,8 +78,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the Gilb Websites page's former Tailwind and
-   scrollcraft classes written out. */
+/* Theme: the --site-block-* variables; neutral fallbacks. Sizes are the source page's former Tailwind and
+   scroll-effect classes written out. */
 .sd, .sd * { box-sizing: border-box; }
 .sd { position: relative; }
 .sd-card {
