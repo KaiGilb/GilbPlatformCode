@@ -1,6 +1,6 @@
 # gilb-connector
 
-A stdio MCP server. Claude Code — in a terminal, or inside Obsidian through Claudian — uses it to work as Kai-Zen, Agent Jackfruit, and the other GilbPlatform agents, on GilbPlatform vaults. By default it signs in as its own Connected AI. A person has a user vault. An AI has its own user vault. Permissions are granted to that AI vault.
+A stdio MCP server. Claude Code — in a terminal, or inside Obsidian through Claudian — uses it to work as Kai-Zen, Jackfruit, and the other GilbPlatform agents, on GilbPlatform vaults. By default it signs in as its own Connected AI. A person has a user vault. An AI has its own user vault. Permissions are granted to that AI vault.
 
 The file a person runs is `connector/gilb-connector.mjs`: one file, no npm dependencies, Node 18 or newer. stdout is protocol only. Logs go to stderr.
 
@@ -73,7 +73,7 @@ Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is
 
 - `gilbplatform_whoami` reports the Agent client id, the mode, the principal, whether this AI is bound, and the selected vaults.
 - `gilbplatform_use_vault` selects a vault the person named. Claude Code asks the person to allow that call; their yes is what selects it. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.
-- `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Agent.Jackfruit`) and returns that agent's standing, so the model can follow it.
+- `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Jackfruit`) and returns that agent's standing, so the model can follow it.
 - `gilbplatform_task` sets the person's request. The platform loads standing from that text.
 
 When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
@@ -86,7 +86,7 @@ Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so t
 
 ## What it can do
 
-- Work a Kai-Zen Planguage plan, or hand that work to Agent Jackfruit or another listed agent, in the vaults you named and granted to the AI vault.
+- Work a Kai-Zen Planguage plan, or hand that work to Jackfruit or another listed agent, in the vaults you named and granted to the AI vault.
 - Call the tools the platform gives that agent (the list it returns, unchanged — listing vaults, listing and reading records, running a named role, and the rest).
 - Run each hand-off as Claude Code on this computer, on your Claude subscription, not on an API key.
 
