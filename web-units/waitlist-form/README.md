@@ -1,6 +1,6 @@
 # web waitlist-form
 
-A waiting-list form: labelled questions, email required and the rest optional, choice questions as radio groups, an optional collection notice above the button, and a Cloudflare Turnstile check that loads only when it is needed. It posts JSON to the site's own address and answers in place. Vue 3 / Nuxt 3. Moved from KaiGilb/myjackfruit-web `components/WaitlistForm.vue` (main, `aafbf4a10613fefee69ff8b12d4f71ffc9807c60`); the field rules were read from `workers/waitlist-fields.ts` at the same commit.
+A waiting-list form: labelled questions, email required and the rest optional, choice questions as radio groups, an optional collection notice above the button, and a Cloudflare Turnstile check that loads only when it is needed. It posts JSON to the site's own address and answers in place. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
@@ -43,10 +43,10 @@ cd GilbPlatformCode && git checkout <commit>
 mkdir -p <site>/vendor/gilbwebsitecode-waitlist-form
 cd web-units/waitlist-form && npm pack --pack-destination <site>/vendor/gilbwebsitecode-waitlist-form
 echo <commit> > <site>/vendor/gilbwebsitecode-waitlist-form/SOURCE
-cd <site> && pnpm add ./vendor/gilbwebsitecode-waitlist-form/kaigilb-gilbwebsitecode-waitlist-form-0.1.0.tgz
+cd <site> && pnpm add ./vendor/gilbwebsitecode-waitlist-form/kaigilb-gilbwebsitecode-waitlist-form-0.1.1.tgz
 ```
 
-The dependency then reads `"file:vendor/gilbwebsitecode-waitlist-form/kaigilb-gilbwebsitecode-waitlist-form-0.1.0.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
+The dependency then reads `"file:vendor/gilbwebsitecode-waitlist-form/kaigilb-gilbwebsitecode-waitlist-form-0.1.1.tgz"`, and the lockfile holds its integrity. To take a newer commit, pack again and run the same `pnpm add ./vendor/…tgz`: a plain `pnpm install` keeps the old integrity in the lockfile (the file name has not changed), and a fresh install then refuses the new bytes.
 
 Under pnpm 11 the site's `pnpm-workspace.yaml` must name it, because this package is not on the npm registry and pnpm's `minimumReleaseAge` check would refuse it on a fresh machine:
 

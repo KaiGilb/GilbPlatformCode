@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "web-units/waitlist-form",
   "package": "@kaigilb/gilbwebsitecode-waitlist-form",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A waitlist signup form for a website: only the email is required, the other questions are optional, and it still posts with no script.",
   "source": {
     "repo": "KaiGilb/myjackfruit-web",
