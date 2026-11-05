@@ -1,6 +1,6 @@
 # web feature-grid
 
-A grid of equal bordered tiles, one per point an offering makes: a short title, a line or two and an optional icon. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+A grid of equal bordered tiles, one per point an offering makes: a short title, a line or two and an optional icon. Vue 3 / Nuxt 3. Moved from the website starter; see Source.
 
 ## What this is
 
