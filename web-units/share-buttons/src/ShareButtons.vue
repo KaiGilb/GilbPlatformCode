@@ -128,17 +128,17 @@ onBeforeUnmount(() => clearTimeout(timer));
   border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 30%, transparent);
   transition: color var(--site-block-motion, 150ms), border-color var(--site-block-motion, 150ms);
 }
-.sb-btn:hover, .sb-btn:focus-visible { color: var(--site-block-accent, #b45309); border-color: var(--site-block-accent, #b45309); }
-.sb-btn:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; }
+.sb-btn:hover, .sb-btn:focus-visible { color: var(--site-block-accent, #2563eb); border-color: var(--site-block-accent, #2563eb); }
+.sb-btn:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .sb-btn svg { width: 18px; height: 18px; fill: currentColor; }
-.sb-status { font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-accent, #b45309); }
+.sb-status { font-size: 0.875rem; line-height: 1.25rem; color: var(--site-block-accent, #2563eb); }
 .sb-failed { color: var(--site-block-fg, #1a1a1a); }
 .sb-field {
   flex: 1 1 100%; min-width: 0; padding: 0.5rem 0.75rem; font: inherit; font-size: 0.875rem; line-height: 1.25rem;
   color: var(--site-block-fg, #1a1a1a); background: var(--site-block-bg, #ffffff); border-radius: 0.375rem;
   border: 1px solid color-mix(in srgb, var(--site-block-muted, #4b5563) 50%, transparent);
 }
-.sb-field:focus-visible { outline: 2px solid var(--site-block-accent, #b45309); outline-offset: 2px; }
+.sb-field:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
 .sb-sr {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
   clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
