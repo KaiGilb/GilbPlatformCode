@@ -1,6 +1,6 @@
 # web site-logo
 
-One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from a production site; see Source.
+One link: an optional logo image and an optional wordmark. Vue 3 / Nuxt 3. Moved from the website starter and a production site; see Source.
 
 ## What this is
 
