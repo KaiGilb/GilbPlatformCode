@@ -125,7 +125,7 @@ onMounted(() => {
 
 <style scoped>
 /* Theme: the --site-block-* variables (one set for every website block in this library); neutral fallbacks.
-   Sizes are the Gilb Websites landing page's former Tailwind classes and main.css rules written out. */
+   Sizes are the source landing page's former Tailwind classes and main.css rules written out. */
 /* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
 .pp, .pp * { box-sizing: border-box; }
 .pp { color: var(--site-block-fg, #1a1a1a); }
