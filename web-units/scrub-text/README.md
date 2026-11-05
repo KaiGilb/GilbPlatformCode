@@ -1,6 +1,6 @@
 # web scrub-text
 
-Lines of text that brighten one after another as the page scrolls; fully lit with no script or reduced motion. Vue 3 / Nuxt 3. Moved from the Gilb Websites landing page (`components/scrollcraft/ScrubLines.vue`, branch `redesign-scrollcraft` b78b1f9).
+Lines of text that brighten one after another as the page scrolls; fully lit with no script or reduced motion. Vue 3 / Nuxt 3. Moved from a production site; see Source.
 
 ## What this is
 
