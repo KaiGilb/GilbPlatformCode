@@ -305,7 +305,7 @@ describe("AI states", () => {
               system: "You are Jackfruit.",
               task: "Do the records.",
               tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }],
-              role: "Agent.Jackfruit",
+              role: "Jackfruit",
               answer: { summary: "handed" },
             },
           },

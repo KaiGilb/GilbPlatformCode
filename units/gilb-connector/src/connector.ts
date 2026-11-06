@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.3";
+export const CONNECTOR_VERSION = "0.5.4";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -318,11 +318,11 @@ const GILB_WHOAMI: ToolSpec = {
 const GILB_AGENT: ToolSpec = {
   name: "gilbplatform_agent",
   description:
-    "Switch the GilbPlatform agent for this session (for example Kai-Zen or Agent.Jackfruit) and return that agent's standing instructions.",
+    "Switch the GilbPlatform agent for this session (for example Kai-Zen or Jackfruit) and return that agent's standing instructions.",
   inputSchema: {
     type: "object",
     properties: {
-      agent: { type: "string", description: "The agent tag, for example Kai-Zen or Agent.Jackfruit." },
+      agent: { type: "string", description: "The agent tag, for example Kai-Zen or Jackfruit." },
     },
     required: ["agent"],
     additionalProperties: false,
@@ -374,7 +374,7 @@ const AGENT_PROMPT = {
   arguments: [
     {
       name: "name",
-      description: "Agent tag, for example Kai-Zen or Agent.Jackfruit. Defaults to the current agent.",
+      description: "Agent tag, for example Kai-Zen or Jackfruit. Defaults to the current agent.",
       required: false,
     },
   ],
@@ -1850,7 +1850,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   async function onAgent(args: unknown): Promise<ToolResult> {
     const next = fieldString(args, "agent");
-    if (!next || next.length > 64) return toolResult(JSON.stringify({ error: "Name an agent, for example Kai-Zen or Agent.Jackfruit." }), true);
+    if (!next || next.length > 64) return toolResult(JSON.stringify({ error: "Name an agent, for example Kai-Zen or Jackfruit." }), true);
     const ctx = await fetchContext(next);
     agent = next;
     cache = { agent, userText, ctx };

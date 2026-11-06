@@ -187,7 +187,7 @@ function toolText(msg) {
 }
 
 function kaiContext(agent) {
-  if (agent === "Agent.Jackfruit") {
+  if (agent === "Jackfruit") {
     return {
       system: "STANDING-JACKFRUIT",
       tools: [{ name: "list_records", description: "Records.", inputSchema: { type: "object", properties: {} } }],
@@ -262,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.5.3");
+    expect(CONNECTOR_VERSION).toBe("0.5.4");
   });
 });
 
@@ -366,7 +366,7 @@ describe("MCP", () => {
     });
     const { request, lines } = connect({ origin: platform.origin });
     await request("tools/list", {});
-    const switched = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Agent.Jackfruit" } });
+    const switched = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Jackfruit" } });
     expect(switched.result.isError).toBe(false);
     expect(toolText(switched)).toBe("STANDING-JACKFRUIT");
     const notes = lines.filter((line) => line.method === "notifications/tools/list_changed");
@@ -379,7 +379,7 @@ describe("MCP", () => {
     expect(noteAt).toBeGreaterThanOrEqual(0);
     expect(noteAt).toBeLessThan(resultAt);
     const contexts = seen.filter((rec) => rec.url.endsWith("/context"));
-    expect(contexts.map((rec) => rec.body.agent)).toEqual(["Kai-Zen", "Agent.Jackfruit"]);
+    expect(contexts.map((rec) => rec.body.agent)).toEqual(["Kai-Zen", "Jackfruit"]);
     const listed = await request("tools/list", {});
     expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
     expect(seen.filter((rec) => rec.url.endsWith("/context"))).toHaveLength(2);
@@ -389,8 +389,33 @@ describe("MCP", () => {
     const seen = [];
     const platform = await listen(async (rec) => {
       seen.push(rec);
-      if (rec.url.endsWith("/context") && rec.body.agent === "Agent.Jackfruit") {
+      if (rec.url.endsWith("/context") && rec.body.agent === "Jackfruit") {
         return { status: 500, body: { error: "no such agent here" } };
+      }
+      if (rec.url.endsWith("/context")) return { body: kaiContext("Kai-Zen") };
+      if (rec.url.endsWith("/tool")) return { body: { result: "ok" } };
+      return { status: 404, body: { error: "no such door" } };
+    });
+    const { request, lines } = connect({ origin: platform.origin });
+    await request("tools/list", {});
+    const failed = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Jackfruit" } });
+    expect(failed.result.isError).toBe(true);
+    expect(JSON.parse(toolText(failed)).error).toBe("no such agent here");
+    expect(lines.some((line) => line.method === "notifications/tools/list_changed")).toBe(false);
+    const call = await request("tools/call", { name: "list_vaults", arguments: {} });
+    expect(call.result.isError).toBe(false);
+    const tool = seen.find((rec) => rec.url.endsWith("/tool"));
+    expect(tool.body.agent).toBe("Kai-Zen");
+  });
+
+  it("a name the platform refuses as not an agent (400 NotAPick) shows the person the platform's sentence, switches nothing, and the next tool call still sends the previous agent", async () => {
+    // The unlisted name here is the dotted one on purpose: the platform has no `Agent.Jackfruit`, the agent is `Jackfruit` (Kai, 2026-11-05).
+    const reason = "the agent asked for is not one of the picks the platform's agent list serves, so no standing was loaded for it. The agents are listed at GET /base/ai/agents.";
+    const seen = [];
+    const platform = await listen(async (rec) => {
+      seen.push(rec);
+      if (rec.url.endsWith("/context") && rec.body.agent === "Agent.Jackfruit") {
+        return { status: 400, body: { error: "NotAPick", message: reason } };
       }
       if (rec.url.endsWith("/context")) return { body: kaiContext("Kai-Zen") };
       if (rec.url.endsWith("/tool")) return { body: { result: "ok" } };
@@ -400,12 +425,15 @@ describe("MCP", () => {
     await request("tools/list", {});
     const failed = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Agent.Jackfruit" } });
     expect(failed.result.isError).toBe(true);
-    expect(JSON.parse(toolText(failed)).error).toBe("no such agent here");
+    expect(JSON.parse(toolText(failed)).error).toBe(reason);
+    expect(toolText(failed)).not.toMatch(/^\{"error":"The agent could not answer/);
     expect(lines.some((line) => line.method === "notifications/tools/list_changed")).toBe(false);
     const call = await request("tools/call", { name: "list_vaults", arguments: {} });
     expect(call.result.isError).toBe(false);
-    const tool = seen.find((rec) => rec.url.endsWith("/tool"));
-    expect(tool.body.agent).toBe("Kai-Zen");
+    expect(seen.find((rec) => rec.url.endsWith("/tool")).body.agent).toBe("Kai-Zen");
+    // and the person can still switch to the real name
+    const ok = await request("tools/call", { name: "gilbplatform_agent", arguments: { agent: "Jackfruit" } });
+    expect(ok.result.isError).toBe(false);
   });
 
   it("prompts/get returns the system text", async () => {
@@ -422,8 +450,8 @@ describe("MCP", () => {
     expect(listed.result.prompts[0].arguments[0].name).toBe("name");
     const current = await request("prompts/get", { name: "agent" });
     expect(current.result.messages).toEqual([{ role: "user", content: { type: "text", text: "STANDING-KAI" } }]);
-    const named = await request("prompts/get", { name: "agent", arguments: { name: "Agent.Jackfruit" } });
-    expect(named.result.description).toBe("Standing instructions for Agent.Jackfruit.");
+    const named = await request("prompts/get", { name: "agent", arguments: { name: "Jackfruit" } });
+    expect(named.result.description).toBe("Standing instructions for Jackfruit.");
     expect(named.result.messages[0].content.text).toBe("STANDING-JACKFRUIT");
     const call = await request("tools/call", { name: "list_vaults", arguments: {} });
     expect(toolText(call)).toBe("ok");
@@ -507,8 +535,8 @@ describe("hand-off", () => {
               system: "You are Jackfruit.",
               task: "Do the records.",
               tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: { q: { type: "string" } } } }],
-              role: "Agent.Jackfruit",
-              answer: { role: "Agent.Jackfruit", summary: "handed" },
+              role: "Jackfruit",
+              answer: { role: "Jackfruit", summary: "handed" },
             },
           },
         };
@@ -525,9 +553,9 @@ describe("hand-off", () => {
       env: testEnv({ FAKE_CLAUDE_LOG: logFile, ANTHROPIC_API_KEY: "not-a-real-key" }),
     });
     await request("tools/call", { name: "gilbplatform_task", arguments: { text: "Plan the release." } });
-    const call = await request("tools/call", { name: "run_named_role", arguments: { role: "Agent.Jackfruit" } });
+    const call = await request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit" } });
     expect(call.result.isError).toBe(false);
-    expect(JSON.parse(toolText(call))).toEqual({ role: "Agent.Jackfruit", summary: "handed", content: "two records" });
+    expect(JSON.parse(toolText(call))).toEqual({ role: "Jackfruit", summary: "handed", content: "two records" });
     const posts = seen.filter((rec) => rec.url.endsWith("/tool"));
     expect(posts.map((rec) => rec.body.name)).toEqual(["run_named_role", "list_records", "hop_done"]);
     for (const rec of posts) {
@@ -599,7 +627,7 @@ describe("hand-off", () => {
               system: "sys",
               task: "go",
               tools: [{ name: "list_records", description: "List", inputSchema: { type: "object" } }],
-              role: "Agent.Jackfruit",
+              role: "Jackfruit",
               answer: { summary: "x" },
             },
           },
@@ -633,7 +661,7 @@ describe("hand-off", () => {
     expect(failed.result.isError).toBe(true);
     const body = JSON.parse(toolText(failed));
     expect(body.error).toBe("the Agent's run failed");
-    expect(body.role).toBe("Agent.Jackfruit");
+    expect(body.role).toBe("Jackfruit");
     expect(body.reason).toMatch(/Could not start Claude Code/);
     expect(body.next).toBe(NEXT);
     expect(seen.some((rec) => rec.body.name === "hop_done" && rec.body.hop.id === HOP_A && rec.body.hop.done === true)).toBe(true);
@@ -653,7 +681,7 @@ describe("hand-off", () => {
               system: "sys",
               task: "go",
               tools: [{ name: "list_records", description: "List", inputSchema: { type: "object" } }],
-              role: "Agent.Jackfruit",
+              role: "Jackfruit",
               answer: {},
             },
           },
@@ -692,7 +720,7 @@ describe("hand-off", () => {
               system: "sys",
               task: hops === 1 ? "WAITFOREVER" : "quick",
               tools: [{ name: "list_records", description: "List", inputSchema: { type: "object" } }],
-              role: "Agent.Jackfruit",
+              role: "Jackfruit",
               answer: {},
             },
           },
@@ -717,7 +745,7 @@ describe("hand-off", () => {
     expect(second.result.isError).toBe(true);
     expect(JSON.parse(toolText(second))).toEqual({
       error: "the Agent's run failed",
-      role: "Agent.Jackfruit",
+      role: "Jackfruit",
       reason: "Too many hand-offs are running at once (1). Wait for one to finish.",
       next: "Wait for a hand-off that is already running to finish, then try again.",
     });
@@ -790,7 +818,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.3" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.4" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

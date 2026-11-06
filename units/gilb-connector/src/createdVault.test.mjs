@@ -396,8 +396,8 @@ describe("create_vault selects the vault", () => {
                 system: "You are Jackfruit.",
                 task: "Do the records.",
                 tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }],
-                role: "Agent.Jackfruit",
-                answer: { role: "Agent.Jackfruit", summary: "handed" },
+                role: "Jackfruit",
+                answer: { role: "Jackfruit", summary: "handed" },
               },
             },
           };
@@ -423,7 +423,7 @@ describe("create_vault selects the vault", () => {
     expect(selected.result.content).toHaveLength(2);
     expect(selected.result.content[0]).toEqual({ type: "text", text: doorJson });
     expect(selected.result.content[1]).toEqual({ type: "text", text: selectedFor(NS, [ALREADY, NS]) });
-    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Agent.Jackfruit" } });
+    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit" } });
     expect(hop.result.isError).toBe(false);
     const log = readFileSync(logFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);

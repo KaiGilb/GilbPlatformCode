@@ -333,8 +333,8 @@ describe("gilbplatform_use_vault", () => {
                 system: "You are Jackfruit.",
                 task: "Do the records.",
                 tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }],
-                role: "Agent.Jackfruit",
-                answer: { role: "Agent.Jackfruit", summary: "handed" },
+                role: "Jackfruit",
+                answer: { role: "Jackfruit", summary: "handed" },
               },
             },
           };
@@ -357,7 +357,7 @@ describe("gilbplatform_use_vault", () => {
     });
     const selected = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "testcarwashcouponapp" } });
     expect(toolText(selected)).toBe(using(NS, [ALREADY, NS]));
-    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Agent.Jackfruit" } });
+    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit" } });
     expect(hop.result.isError).toBe(false);
     const log = readFileSync(logFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
