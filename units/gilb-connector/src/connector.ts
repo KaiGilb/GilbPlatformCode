@@ -22,13 +22,13 @@ import {
   sign as cryptoSign,
   type KeyObject,
 } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.5";
+export const CONNECTOR_VERSION = "0.5.6";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -114,6 +114,14 @@ interface HeldAccess {
 export const HOP_MAX_MS = 15 * 60 * 1000;
 /** How many hand-offs may run at once. */
 export const MAX_HOPS_AT_ONCE = 4;
+/** How many times one process starts a fresh platform turn after the server refused a call at a turn limit. */
+export const MAX_TURN_ROLLS = 5;
+/** The two answers the server gives, before it runs anything, when a turn is out of room (POST /base/ai/claude-code/tool). */
+const TURN_LIMIT_NEXT = "tell the person what you did, and stop";
+const TURN_LIMIT_ROUNDS = "this turn has used all its tool rounds";
+const TURN_LIMIT_HOPS = "this turn has handed over as many times as one turn may";
+/** A hop model name: letters, digits, dot, dash; it starts with a letter or digit so it can never read as an option. */
+const HOP_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 /** A pending tools/call that asked for progress is told "still working" this often. */
 export const PROGRESS_EVERY_MS = 15 * 1000;
 /** How long the Claude CLI is told to wait for one MCP tool call: the longest hand-off, plus a minute. */
@@ -239,6 +247,12 @@ export interface StartOptions {
   maxHops?: number;
   env?: NodeJS.ProcessEnv;
   selfFile?: string;
+  /** Model name passed to a hand-off's `claude -p` as --model. Unset: no --model. */
+  hopModel?: string;
+  /** Extra folders gilbplatform_upload_file may read from, besides the working directory. */
+  uploadRoots?: readonly string[];
+  /** The working directory gilbplatform_upload_file reads from. Default: process.cwd(). */
+  cwd?: string;
 }
 
 export interface ConnectorSession {
@@ -288,6 +302,8 @@ export interface CliOptions {
   hopId: string | undefined;
   turnId: string | undefined;
   hopToolsPath: string | undefined;
+  uploadRoots: string[];
+  hopModel: string | undefined;
   progressEveryMs: number;
   help: boolean;
 }
@@ -352,6 +368,23 @@ const GILB_USE_VAULT: ToolSpec = {
       vault: { type: "string", description: "The vault as the person said it: its name, its host, or its address." },
     },
     required: ["vault"],
+    additionalProperties: false,
+  },
+};
+
+const GILB_UPLOAD_FILE: ToolSpec = {
+  name: "gilbplatform_upload_file",
+  description:
+    "Upload one file from this computer into a vault the person selected. Pictures (png, jpg, jpeg, webp, gif, svg), pdf, txt, md, csv and json only, up to 25 MB. The file must be inside the folder this connector runs in, or a folder the person gave it. Hidden folders and files, and names that look like keys or secrets, are refused. Select the vault first with gilbplatform_use_vault. Returns the file's address, its sha256 and its size.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "The file on this computer." },
+      vault: { type: "string", description: "The selected vault. Leave out when exactly one vault is selected." },
+      folder: { type: "string", description: "A folder path inside the vault to file it under, for example type-pictures." },
+      name: { type: "string", description: "The name to store it under. Default: the file's own name. Keep the same extension." },
+    },
+    required: ["path"],
     additionalProperties: false,
   },
 };
@@ -821,6 +854,112 @@ function matchingVaults(ids: readonly string[], query: VaultQuery): string[] {
   return matched;
 }
 
+/** What gilbplatform_upload_file may send, by extension. Anything else is refused. */
+const UPLOAD_TYPES: Readonly<Record<string, string>> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+  csv: "text/csv",
+  json: "application/json",
+};
+
+/**
+ * The largest file this tool sends. The door's own limit for a single request is higher (it has none for
+ * POST /lws/vault/:vaultId/files; the 400 MB cap is for the piece-by-piece door), so this one is the lower.
+ */
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+
+/** A path below a folder: the part after the folder, or null when it is the folder itself or outside it. */
+function belowFolder(folder: string, path: string): string | null {
+  const rel = relative(folder, path);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  return rel;
+}
+
+/** A name that looks like a key, a login or a secret. Checked on every segment below the folder. */
+function secretName(segment: string): boolean {
+  const lower = segment.toLowerCase();
+  return (
+    lower.endsWith(".pem") ||
+    lower.endsWith(".key") ||
+    lower.startsWith("id_rsa") ||
+    lower.startsWith("id_ed25519") ||
+    lower.includes("credentials") ||
+    lower.includes("token") ||
+    lower.includes("secret")
+  );
+}
+
+/** A reason to refuse a path below an allowed folder, or "" when its segments are fine. */
+function refusedSegments(rel: string): string {
+  const segments = rel.split(sep).filter((segment) => segment !== "");
+  if (segments.some((segment) => segment.startsWith("."))) return "A hidden file or folder (a name starting with a dot) is never uploaded.";
+  if (segments.some((segment) => segment.toLowerCase() === "confidential")) return "A file inside a folder called Confidential is never uploaded.";
+  if (segments.some(secretName)) return "A file whose name looks like a key, a login or a secret is never uploaded.";
+  return "";
+}
+
+type UploadPick = { ok: true; real: string; size: number; ext: string; base: string } | { ok: false; error: string };
+
+/**
+ * Decide, without opening the file, whether a path may be uploaded. Only realpath and stat are used.
+ * The rules, in order: inside the working directory or an allowed folder (a symlink out is refused),
+ * no dotted segment, no key or secret name, a regular file, an allowed extension, not empty, not over the limit.
+ */
+function pickUploadFile(raw: string, cwd: string, extraRoots: readonly string[]): UploadPick {
+  if (raw === "" || raw.includes("\0")) return { ok: false, error: "Give the path of the file to upload." };
+  const lexicalRoots = [resolve(cwd), ...extraRoots.map((dir) => resolve(cwd, dir))];
+  const realRoots: string[] = [];
+  for (const dir of lexicalRoots) {
+    try {
+      realRoots.push(realpathSync(dir));
+    } catch {
+      /* a folder that is not there allows nothing */
+    }
+  }
+  const lexical = resolve(cwd, raw);
+  // Hidden and key-like names are refused on the path as given, before anything is looked up.
+  const lexicalRel = [...lexicalRoots, ...realRoots].map((dir) => belowFolder(dir, lexical)).find((rel) => rel !== null);
+  if (lexicalRel) {
+    const why = refusedSegments(lexicalRel);
+    if (why) return { ok: false, error: why };
+  }
+  let real: string;
+  try {
+    real = realpathSync(lexical);
+  } catch {
+    return { ok: false, error: "That file is not there, or it is outside the folders this connector may read from." };
+  }
+  const realRel = realRoots.map((dir) => belowFolder(dir, real)).find((rel) => rel !== null);
+  if (!realRel) {
+    return { ok: false, error: "That file is outside the folder this connector runs in and the folders it was given with --upload-root. A link that leads out is refused too." };
+  }
+  const why = refusedSegments(realRel);
+  if (why) return { ok: false, error: why };
+  let st: ReturnType<typeof statSync>;
+  try {
+    st = statSync(real);
+  } catch {
+    return { ok: false, error: "That file could not be looked at." };
+  }
+  if (!st.isFile()) return { ok: false, error: "That is not a file." };
+  const ext = extname(real).slice(1).toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(UPLOAD_TYPES, ext)) {
+    return { ok: false, error: `Only ${Object.keys(UPLOAD_TYPES).join(", ")} files can be uploaded.` };
+  }
+  if (st.size === 0) return { ok: false, error: "That file is empty." };
+  if (st.size > UPLOAD_MAX_BYTES) {
+    return { ok: false, error: `That file is ${st.size} bytes. The most this tool sends is ${UPLOAD_MAX_BYTES} bytes (25 MB).` };
+  }
+  return { ok: true, real, size: st.size, ext, base: basename(real) };
+}
+
 function normalizeOrigin(input: string): string {
   let url: URL;
   try {
@@ -884,6 +1023,8 @@ const KNOWN_FLAGS = new Set([
   "--hop",
   "--turn",
   "--hop-tools",
+  "--upload-root",
+  "--hop-model",
   "--progress-ms",
   "--as",
   "--name",
@@ -904,6 +1045,8 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
       hopId: undefined,
       turnId: undefined,
       hopToolsPath: undefined,
+      uploadRoots: [],
+      hopModel: undefined,
       progressEveryMs: PROGRESS_EVERY_MS,
       help: true,
     };
@@ -938,6 +1081,10 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
   if (hopId !== undefined && (turnId === undefined || hopToolsPath === undefined)) {
     throw new CliError("Hop mode needs --turn and --hop-tools.");
   }
+  const hopModel = oneFlag(argv, "--hop-model") ?? (env.GILB_CONNECTOR_HOP_MODEL || undefined);
+  if (hopModel !== undefined && !HOP_MODEL_RE.test(hopModel)) {
+    throw new CliError("--hop-model must be 1 to 64 letters, digits, dots or dashes, starting with a letter or digit.");
+  }
   const progressRaw = oneFlag(argv, "--progress-ms") ?? env.GILB_CONNECTOR_PROGRESS_MS;
   let progressEveryMs = PROGRESS_EVERY_MS;
   if (progressRaw !== undefined && progressRaw !== "") {
@@ -958,17 +1105,21 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
     hopId,
     turnId,
     hopToolsPath,
+    uploadRoots: flagValues(argv, "--upload-root").map((dir) => dir.trim()).filter((dir) => dir !== ""),
+    hopModel,
     progressEveryMs,
     help: false,
   };
 }
 
 function helpText(): string {
-  return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH]
+  return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--upload-root DIR]... [--hop-model NAME]
        node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --as ai|me [--profile NAME] --agent NAME --origin URL
 
 Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
+--upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
+--hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
 Default agent: ${DEFAULT_AGENT}
 Default origin: ${DEFAULT_ORIGIN}`;
 }
@@ -994,8 +1145,8 @@ function hopAnswer(hop: HopShape): Record<string, unknown> {
   return hop.answer && typeof hop.answer === "object" && !Array.isArray(hop.answer) ? hop.answer : {};
 }
 
-function claudeArgs(system: string, mcpConfig: string, sessionId: string): string[] {
-  return [
+function claudeArgs(system: string, mcpConfig: string, sessionId: string, model?: string): string[] {
+  const args = [
     "-p",
     "--output-format",
     "stream-json",
@@ -1018,6 +1169,8 @@ function claudeArgs(system: string, mcpConfig: string, sessionId: string): strin
     "--session-id",
     sessionId,
   ];
+  if (model !== undefined) args.push("--model", model);
+  return args;
 }
 
 const CANCELLED = Symbol("cancelled");
@@ -1045,6 +1198,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
   const maxHops = opts.maxHops ?? MAX_HOPS_AT_ONCE;
   const selfFile = opts.selfFile ?? fileURLToPath(import.meta.url);
+  const hopModel = opts.hopModel !== undefined && HOP_MODEL_RE.test(opts.hopModel) ? opts.hopModel : undefined;
+  let turnRolls = 0;
+  let toolCallsSent = 0;
+  const uploadCwd = opts.cwd ?? process.cwd();
+  const uploadRoots = [...(opts.uploadRoots ?? [])];
   const contextUrl = `${origin}/base/ai/claude-code/context`;
   const toolUrl = `${origin}/base/ai/claude-code/tool`;
 
@@ -1443,9 +1601,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
 
   function localTools(): McpTool[] {
     const useVault = mcpTool(GILB_USE_VAULT);
+    const upload = mcpTool(GILB_UPLOAD_FILE);
     return asMode === "ai"
-      ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault]
-      : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault];
+      ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault, upload]
+      : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault, upload];
   }
 
   async function fetchContext(forAgent: string): Promise<Ctx> {
@@ -1544,7 +1703,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (profile) args.push("--profile", profile);
     if (claudeBin !== "claude") args.push("--claude", claudeBin);
     const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args } } };
-    const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID()), {
+    const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel), {
       cwd: dir,
       env: childEnv(env),
       stdio: ["pipe", "pipe", "pipe"],
@@ -1675,7 +1834,29 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     }
   }
 
-  async function callPlatformTool(name: string, args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
+  /** Which turn limit an answer is: only the server's two exact answers, error and next both. Anything else is none. */
+  function turnLimitOf(result: string): "rounds" | "hops" | null {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const row = parsed as { error?: unknown; next?: unknown };
+    if (row.next !== TURN_LIMIT_NEXT) return null;
+    if (row.error === TURN_LIMIT_ROUNDS) return "rounds";
+    if (row.error === TURN_LIMIT_HOPS) return "hops";
+    return null;
+  }
+
+  /** Agent.Concept, in any spelling that folds to it: its mint limits are per turn and stay a brake. */
+  function agentIsConcept(): boolean {
+    return agent.toLowerCase().replace(/[^a-z0-9]/g, "") === "agentconcept";
+  }
+
+  async function callPlatformTool(name: string, args: unknown, signal: AbortSignal, resent = false): Promise<ToolResult | typeof CANCELLED> {
+    if (!hopMode) toolCallsSent += 1;
     const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
     if (signal.aborted) return CANCELLED;
     // Hop mode forwards the door's answer. A no-reach answer is not remembered: the next call tries again.
@@ -1696,6 +1877,22 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown; hop?: unknown }) : {};
     if (body.hop && typeof body.hop === "object") return runHop(body.hop, signal);
     const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+    // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
+    // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
+    // Not in a hop, not for Agent.Concept or ask_agent_concept (their mint limits are per turn), and not twice in a row.
+    if (!hopMode && !resent && !agentIsConcept() && name !== "ask_agent_concept") {
+      const limit = turnLimitOf(result);
+      if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
+        if (turnRolls >= MAX_TURN_ROLLS) {
+          return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
+        }
+        turnRolls += 1;
+        turnId = newTurnId();
+        cache = null;
+        process.stderr.write(`gilb-connector: this chat reached a turn limit; started a new turn (${turnRolls} of ${MAX_TURN_ROLLS}).\n`);
+        return callPlatformTool(name, args, signal, true);
+      }
+    }
     if (!hopMode && isVaultNamespace(reportedPrincipal) && listsNoVaults(name, result)) {
       const sentence = aiNoGrant(namedVault(args), reportedPrincipal);
       say(sentence);
@@ -1828,6 +2025,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (!hopMode && name === GILB_TASK.name) return onTask(args);
       if (!hopMode && name === GILB_AGENT.name) return await onAgent(args);
       if (!hopMode && name === GILB_USE_VAULT.name) return await onUseVault(args, ac.signal);
+      if (!hopMode && name === GILB_UPLOAD_FILE.name) {
+        await maybeAutoSelect(ac.signal);
+        return await onUploadFile(args, ac.signal);
+      }
       if (hopMode && !hopTools.some((tool) => tool.name === name)) {
         return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
       }
@@ -1842,6 +2043,122 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       stopProgress();
       if (id !== undefined && id !== null) calls.delete(String(id));
     }
+  }
+
+  /** The vault's own door: its host, never the identity door. A call signed for another host answers 401. */
+  function vaultDoor(vault: string): { base: string; origin: string } | null {
+    let url: URL;
+    try {
+      url = new URL(vault);
+    } catch {
+      return null;
+    }
+    // https always. Plain http only when the person started the connector against a plain-http door (a local test door).
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && origin.startsWith("http:"))) return null;
+    const vaultOrigin = `${url.protocol}//${url.host}`;
+    return { base: `${vaultOrigin}/base`, origin: vaultOrigin };
+  }
+
+  async function onUploadFile(args: unknown, signal: AbortSignal): Promise<ToolResult | typeof CANCELLED> {
+    const refuse = (message: string): ToolResult => toolResult(JSON.stringify({ error: message }), true);
+    // 2. Only a vault the person selected. Their yes in gilbplatform_use_vault is the gate.
+    const selected = vaults.map((id) => id.trim()).filter((id) => id !== "");
+    const askedVault = fieldString(args, "vault");
+    let target: string;
+    if (askedVault !== "") {
+      const query = vaultQuery(askedVault);
+      const hits = selected.filter((id) => listedVaultMatches(id, query));
+      if (hits.length === 0) {
+        return refuse(
+          `${askedVault} is not a vault selected for this session. Call gilbplatform_use_vault with the name the person used first.${selected.length > 0 ? ` Selected: ${selected.join(", ")}.` : ""}`,
+        );
+      }
+      if (hits.length > 1) return refuse(`More than one selected vault matches ${askedVault}: ${hits.join(", ")}. Say which one.`);
+      target = hits[0] as string;
+    } else if (selected.length === 0) {
+      return refuse("No vault is selected. Call gilbplatform_use_vault with the name the person used, then upload.");
+    } else if (selected.length > 1) {
+      return refuse(`More than one vault is selected: ${selected.join(", ")}. Say which one in the vault field.`);
+    } else {
+      target = selected[0] as string;
+    }
+    const door = vaultDoor(target);
+    if (!door) return refuse("The selected vault has no https address to send to.");
+
+    // 3 and 4. The path rules run on the path and its stat. The file is not opened until they all pass.
+    const pathArg = fieldString(args, "path");
+    const pick = pickUploadFile(pathArg, uploadCwd, uploadRoots);
+    if (!pick.ok) return refuse(pick.error);
+    const nameArg = fieldString(args, "name");
+    const storedName = nameArg === "" ? pick.base : nameArg;
+    if (storedName.length > 200 || /[\\/\u0000-\u001f]/.test(storedName) || storedName.startsWith(".")) {
+      return refuse("The name must be a plain file name of at most 200 characters, with no slash and no leading dot.");
+    }
+    if (extname(storedName).slice(1).toLowerCase() !== pick.ext) {
+      return refuse(`The name must keep the file's extension (.${pick.ext}).`);
+    }
+    if (secretName(storedName)) return refuse("A file whose name looks like a key, a login or a secret is never uploaded.");
+    const folderArg = fieldString(args, "folder");
+    if (folderArg.length > 300) return refuse("The folder path is too long.");
+
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(pick.real);
+    } catch {
+      return refuse("That file could not be read.");
+    }
+    if (bytes.length === 0 || bytes.length > UPLOAD_MAX_BYTES) return refuse("That file changed while it was being read. Try again.");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+
+    const query = new URLSearchParams([["name", storedName]]);
+    if (folderArg !== "") query.append("folder", folderArg);
+    const url = `${door.origin}/lws/vault/${encodeURIComponent(door.base)}/files?${query.toString()}`;
+    const mime = UPLOAD_TYPES[pick.ext] as string;
+
+    // 5. One send, and one more only when the door says the session is gone (401, nothing stored). A repeat of anything else could store two files.
+    const send = async (): Promise<{ status: number; body: unknown }> => {
+      const cred = await credential();
+      if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+      let headers: Record<string, string>;
+      try {
+        headers = { ...(await cred.authHeaders("POST", url)), "content-type": mime, accept: "application/json" };
+      } catch (err) {
+        if (err instanceof NotConnected) throw err;
+        if (isMissingComputer(err)) throw new NotConnected();
+        throw new NotConnected(asMode === "ai" ? AI_SIGN_IN_FAILED : SIGN_IN_FAILED);
+      }
+      let res: Response;
+      try {
+        res = await fetch(url, { method: "POST", headers, body: bytes, redirect: "manual", signal });
+      } catch (err) {
+        if (signal.aborted) throw err;
+        throw new PlatformError(0, "The vault could not be reached. Nothing is known to be stored; check the vault before sending again.");
+      }
+      return { status: res.status, body: readJsonText(await res.text()) };
+    };
+    let res = await send();
+    if (res.status === 401 && !signal.aborted) {
+      const cred = await credential();
+      cred.dropAccess?.();
+      res = await send();
+    }
+    // 6. The answer carries the file's address, sha256 and size. No header or token is ever echoed.
+    if (res.status === 401) return refuse("The vault did not accept this sign-in. Try again.");
+    if (res.status !== 200 && res.status !== 201) {
+      const detail = quotedFailure(res.body);
+      const hint = res.status === 403 ? " This AI may not write to that vault; the person grants Write on it in GilbApp." : "";
+      return refuse(`The vault refused the upload (${res.status})${detail ? `: ${detail}` : ""}.${hint}`);
+    }
+    const row = res.body && typeof res.body === "object" ? (res.body as { entity?: unknown; contentHash?: unknown; byteSize?: unknown; created?: unknown }) : {};
+    if (typeof row.entity !== "string" || row.entity === "") return refuse("The vault answered, but gave no address for the file.");
+    const lines = [
+      `Uploaded ${storedName} to ${door.base}${res.status === 200 ? " (the same file was already there)" : ""}.`,
+      `address: ${safeQuote(row.entity)}`,
+      `sha256: ${sha256}`,
+      `size: ${bytes.length} bytes`,
+    ];
+    if (typeof row.byteSize === "number" && row.byteSize !== bytes.length) lines.push(`warning: the vault reports ${row.byteSize} bytes`);
+    return toolResult(lines.join("\n"), false);
   }
 
   function onTask(args: unknown): ToolResult {
@@ -2088,6 +2405,8 @@ async function main(): Promise<void> {
     env: process.env,
     selfFile: fileURLToPath(import.meta.url),
     as: cli.as,
+    uploadRoots: cli.uploadRoots,
+    ...(cli.hopModel !== undefined ? { hopModel: cli.hopModel } : {}),
     ...(cli.name !== undefined ? { name: cli.name } : {}),
     ...(cli.profile !== undefined ? { profile: cli.profile } : {}),
     ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),

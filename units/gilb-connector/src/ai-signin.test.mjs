@@ -388,7 +388,7 @@ describe("Connected AI", () => {
     const env = { PATH: process.env.PATH, HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home };
     const box = connect({ origin: platform.origin, env, profile: "default" });
     const listed = await box.request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_vaults", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"]);
     const key = publicKeyFrom(platform.requests);
     secrets.pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     const tokenPosts = platform.requests.filter((rec) => rec.url.endsWith("/base/oauth/token"));
@@ -568,7 +568,7 @@ describe("Connected AI", () => {
   it("passes a 200 tool error that is not a reach refusal through unchanged", async () => {
     const home = scratch();
     const stderr = captureStderr();
-    const other = JSON.stringify({ error: "this turn has used all its tool rounds", next: "tell the person what you did, and stop" });
+    const other = JSON.stringify({ error: "that tool is not offered to this turn", next: "pick one that is offered" });
     const near = JSON.stringify({
       error: "tool failed: vault target denied: the principal holds no read reach on vault https://c3-unbound.example/base",
     });

@@ -73,10 +73,13 @@ Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is
 
 - `gilbplatform_whoami` reports the Client ID, the mode, the principal, whether this AI is bound, and the selected vaults.
 - `gilbplatform_use_vault` selects a vault the person named. Claude Code asks the person to allow that call; their yes is what selects it. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.
+- `gilbplatform_upload_file` uploads one file from this computer into a selected vault and returns its address, sha256 and size. Inputs: `path` (required), `vault` (needed when more than one vault is selected), `folder`, `name`. The vault must be one the person selected with `gilbplatform_use_vault`; otherwise it refuses. The file must sit inside the folder the connector runs in, or a folder given with `--upload-root`. Hidden files and folders (a name starting with a dot), names that look like keys or secrets (`*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, `*credentials*`, `*token*`, `*secret*`), any file or folder named `Confidential` (any case) below the root, and links that lead outside are refused before the file is opened. Allowed: png, jpg, jpeg, webp, gif, svg, pdf, txt, md, csv, json; at most 25 MB. The upload is sent once to the vault's own host (a 401 is retried once; nothing else is, so a file is never stored twice). The AI vault needs Write on the vault. The server gives the uploading AI read access to its own file; whether the person can read it depends on their grants on that vault.
 - `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Jackfruit`) and returns that agent's standing, so the model can follow it.
 - `gilbplatform_task` sets the person's request. The platform loads standing from that text.
 
 When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
+
+A long run does not stop at the server's turn limits. When the server answers that a turn has used all its tool rounds, or has handed over as many times as one turn may, it has refused the call before running it. The connector then starts a fresh platform turn and sends the same call once more, and writes one line to stderr. It does this at most 5 times per process (after that the answer says to start a new chat), never for Agent.Concept (its mint limits are per turn and stay a brake), and never inside a hand-off. A hand-off that is already running keeps its own turn.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
 
@@ -109,6 +112,8 @@ Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so t
 | `--vault` | none | Vault id. Repeat the flag for more than one. |
 | `--profile` | `default` for an AI; this computer's profile for `--as me` | Which AI key to use, or which computer profile. |
 | `--claude` | `claude` | Claude Code CLI used for a hand-off |
+| `--upload-root` | the folder the connector runs in | Another folder `gilbplatform_upload_file` may read from. Repeat the flag for more than one. |
+| `--hop-model` | none | Model name for a hand-off's Claude Code, passed as `--model` (for example a faster one). 1 to 64 letters, digits, dots or dashes, starting with a letter or digit; anything else is refused at start. Unset: Claude Code's own default. Also `GILB_CONNECTOR_HOP_MODEL`. |
 
 The same settings can be given as `GILB_CONNECTOR_AS`, `GILB_CONNECTOR_NAME`, `GILB_CONNECTOR_AGENT`, `GILB_CONNECTOR_ORIGIN`, `GILB_CONNECTOR_VAULT` (comma-separated), `GILB_CONNECTOR_PROFILE`, and `GILB_CONNECTOR_CLAUDE`.
 
