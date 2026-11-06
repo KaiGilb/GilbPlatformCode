@@ -262,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.5.5");
+    expect(CONNECTOR_VERSION).toBe("0.5.6");
   });
 });
 
@@ -302,7 +302,7 @@ describe("MCP", () => {
     const listed = await request("tools/list", {});
     const tools = listed.result.tools;
     expect(tools.slice(0, 2)).toEqual(DOOR_TOOLS.map((tool) => ({ ...tool })));
-    expect(tools.map((tool) => tool.name)).toEqual(["list_vaults", "read_record", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["list_vaults", "read_record", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"]);
     expect(tools[2].inputSchema.required).toEqual(["agent"]);
     expect(tools[3].inputSchema.required).toEqual(["text"]);
     expect(seen.filter((rec) => rec.url.endsWith("/context"))).toHaveLength(1);
@@ -381,7 +381,7 @@ describe("MCP", () => {
     const contexts = seen.filter((rec) => rec.url.endsWith("/context"));
     expect(contexts.map((rec) => rec.body.agent)).toEqual(["Kai-Zen", "Jackfruit"]);
     const listed = await request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["list_records", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"]);
     expect(seen.filter((rec) => rec.url.endsWith("/context"))).toHaveLength(2);
   });
 
@@ -504,7 +504,7 @@ describe("MCP", () => {
       expect(toolText(msg)).toBe(SENTENCE);
     }
     const listed = await request("tools/list", {});
-    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
+    expect(listed.result.tools.map((tool) => tool.name)).toEqual(["gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"]);
   });
 
   it("answers with the same sentence when the computer module reports the computer is missing", async () => {
@@ -758,7 +758,7 @@ describe("hand-off", () => {
 const AI_CLIENT_ID = "agent-client-bind";
 const UNBOUND_PRINCIPAL = "https://id.example.test/base/p/abc";
 const BOUND_PRINCIPAL = "https://ai.example.test/base";
-const LOCAL_AI_TOOLS = ["gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"];
+const LOCAL_AI_TOOLS = ["gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"];
 const PLATFORM_AND_LOCAL = [...DOOR_TOOLS.map((tool) => tool.name), ...LOCAL_AI_TOOLS];
 
 function listChanged(lines) {
@@ -953,7 +953,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.5" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.6" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

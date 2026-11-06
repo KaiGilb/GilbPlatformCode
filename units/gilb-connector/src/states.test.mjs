@@ -207,7 +207,7 @@ describe("AI states", () => {
     expect(init.result.serverInfo.name).toBe("GilbPlatform");
     const listed = await box.request("tools/list", {});
     const names = listed.result.tools.map((tool) => tool.name);
-    expect(names).toEqual(["list_vaults", "read_record", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"]);
+    expect(names).toEqual(["list_vaults", "read_record", "gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault", "gilbplatform_upload_file"]);
     expect(names.some((name) => name.startsWith("gilb_"))).toBe(false);
   });
 
