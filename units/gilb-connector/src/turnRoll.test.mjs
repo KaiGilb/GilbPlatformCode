@@ -260,6 +260,55 @@ describe("a turn out of room", () => {
     }
   });
 
+  it("f9 run_named_role with a role that folds to Agent.Concept never rolls, whichever agent the connector is on", async () => {
+    const roles = ["Agent.Concept", "agent.concept", "AGENT_CONCEPT", " agent concept ", "Agent-Concept", "AgentConcept", "Agent.Concept.v2"];
+    for (const agent of ["Kai-Zen", "Jackfruit"]) {
+      for (const limit of [ROUNDS, HOPS]) {
+        for (const role of roles) {
+          const platform = await scripted([limit, "role-ok"]);
+          const box = connect({ origin: platform.origin, agent });
+          const res = await callTool(box, "run_named_role", { role, task: "x" });
+          expect(text(res), `${agent} ${role}`).toBe(limit);
+          expect(posts(platform), `${agent} ${role}`).toHaveLength(1);
+        }
+      }
+    }
+  });
+
+  it("f9 the role is read from arguments given as a JSON string too, and an unreadable role fails closed", async () => {
+    for (const args of [JSON.stringify({ role: "Agent.Concept", task: "x" }), "{not json", JSON.stringify({ task: "x" }), JSON.stringify({ role: 5 }), "null", JSON.stringify(["Agent.Concept"])]) {
+      const platform = await scripted([HOPS, "role-ok"]);
+      const box = connect({ origin: platform.origin });
+      const res = await callTool(box, "run_named_role", args);
+      expect(text(res), String(args)).toBe(HOPS);
+      expect(posts(platform), String(args)).toHaveLength(1);
+    }
+  });
+
+  it("f9 a role given as a record address (Agent.Concept's address, however spelled) never rolls", async () => {
+    // A fold of an address does not equal agentconcept (the slashes, dots and ids stay in it), so the fold alone would roll.
+    const address = "https://veda.example.test/base/e/06gf80rjtdw3h9q187p80kx00m";
+    const folded = address.toLowerCase().replace(/[^a-z0-9]/g, "");
+    expect(folded).not.toBe("agentconcept");
+    for (const role of [address, `${address}/`, "veda.example.test/base/e/06gf80rjtdw3h9q187p80kx00m", "t:AgentConcept/x", "https%3A%2F%2Fx"]) {
+      const platform = await scripted([HOPS, "role-ok"]);
+      const box = connect({ origin: platform.origin });
+      const res = await callTool(box, "run_named_role", { role, task: "x" });
+      expect(text(res), role).toBe(HOPS);
+      expect(posts(platform), role).toHaveLength(1);
+    }
+  });
+
+  it("f9 an ordinary role still rolls", async () => {
+    const platform = await scripted([HOPS, "role-ok"]);
+    const box = connect({ origin: platform.origin });
+    const res = await callTool(box, "run_named_role", { role: "Jackfruit", task: "x" });
+    expect(text(res)).toBe("role-ok");
+    const viaString = await scripted([HOPS, "role-ok"]);
+    const box2 = connect({ origin: viaString.origin });
+    expect(text(await callTool(box2, "run_named_role", JSON.stringify({ role: "Agent.Outcome", task: "x" })))).toBe("role-ok");
+  });
+
   it("f1 ask_agent_concept never rolls", async () => {
     const platform = await scripted([ROUNDS]);
     const box = connect({ origin: platform.origin });

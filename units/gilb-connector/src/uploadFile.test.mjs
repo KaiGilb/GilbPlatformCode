@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
-import { aiNotBound, startConnector } from "../connector/gilb-connector.mjs";
+import { aiNotBound, hostInOriginFamily, startConnector } from "../connector/gilb-connector.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const FAKE_CLAUDE = join(HERE, "fake-claude.mjs");
@@ -137,7 +137,10 @@ function door(state) {
     if (rec.url.endsWith("/context")) {
       return { body: { system: `STANDING-KAI That person is identified as: ${state.principal}. Tools follow.`, tools: [{ name: "list_vaults", description: "List.", inputSchema: { type: "object", properties: {} } }] } };
     }
-    if (rec.url.endsWith("/tool")) return { body: { result: JSON.stringify({ vaults: state.vaults ?? [] }) } };
+    if (rec.url.endsWith("/tool")) {
+      if (rec.body.name === "create_vault" && state.createdVault) return { body: { result: state.createdVault } };
+      return { body: { result: JSON.stringify({ vaults: state.vaults ?? [] }) } };
+    }
     return { status: 404, body: { error: "no such door" } };
   };
 }
@@ -145,12 +148,14 @@ function door(state) {
 const created = (n = "01abc") => ({ status: 201, body: { entity: `https://files.example.test/base/e/${n}`, contentHash: "sha256:x", byteSize: PNG.length, created: true } });
 
 /** A bound AI, one selected vault that is the fake vault door, and a working folder with files in it. */
-async function setup(vaultHandler = () => created(), { principal = AI_VAULT, select = true, extraVaults = [], boxOpts = {} } = {}) {
+async function setup(vaultHandler = () => created(), { principal = AI_VAULT, select = true, extraVaults = [], boxOpts = {}, listed = [], createdVault = null } = {}) {
   const home = scratch();
   const cwd = scratch();
-  const identity = await listen(door({ principal }));
+  const state = { principal, createdVault };
+  const identity = await listen(door(state));
   const vault = await listen(vaultHandler);
   const base = `${vault.origin}/base`;
+  state.vaults = listed.map((item) => (item === "self" ? base : item));
   const box = connect({
     origin: identity.origin,
     env: aiEnv(home),
@@ -497,5 +502,118 @@ describe("gilbplatform_upload_file", () => {
     writeFileSync(join(ctx.cwd, "pic.png"), PNG);
     const res = await call(ctx.box, { path: "pic.png" });
     expect(toolText(res)).not.toContain(jwt);
+  });
+
+  // ---- QA 2026-11-06 F7: attacks that were uploaded, now refused ----
+
+  const USE_SENTENCE = /gilbplatform_use_vault/;
+
+  it("q1 a vault that was only auto-selected because the list holds one is refused, before the file is opened", async () => {
+    const ctx = await setup(() => created(), { select: false, listed: ["self"] });
+    const file = join(ctx.cwd, "pic.png");
+    writeFileSync(file, PNG);
+    unreadable(file);
+    // Any other tool call makes the connector auto-select the only listed vault.
+    await ctx.box.request("tools/call", { name: "list_vaults", arguments: {} });
+    const who = await ctx.box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain("selected automatically");
+    await expectRefused(ctx, { path: "pic.png" }, USE_SENTENCE);
+    await expectRefused(ctx, { path: "pic.png", vault: ctx.vault.host }, USE_SENTENCE);
+  });
+
+  it("q1 the upload tool itself does not auto-select a vault", async () => {
+    const ctx = await setup(() => created(), { select: false, listed: ["self"] });
+    const file = join(ctx.cwd, "pic.png");
+    writeFileSync(file, PNG);
+    unreadable(file);
+    await expectRefused(ctx, { path: "pic.png" }, USE_SENTENCE);
+  });
+
+  it("q1 once the person selects that vault with gilbplatform_use_vault, it uploads", async () => {
+    const ctx = await setup(() => created(), { select: false, listed: ["self"] });
+    writeFileSync(join(ctx.cwd, "pic.png"), PNG);
+    await ctx.box.request("tools/call", { name: "list_vaults", arguments: {} });
+    const used = await ctx.box.request("tools/call", { name: "gilbplatform_use_vault", arguments: { vault: ctx.vault.host } });
+    expect(used.result.isError).toBe(false);
+    const res = await call(ctx.box, { path: "pic.png" });
+    expect(res.result.isError).toBe(false);
+    expect(ctx.vault.requests).toHaveLength(1);
+  });
+
+  it("q1 a vault made by create_vault in this process counts as chosen (not refused with the use_vault sentence)", async () => {
+    const made = JSON.stringify({ vault: "https://made.example.test/base/e/m", vaultId: "https://made.example.test/base", created: true });
+    const ctx = await setup(() => created(), { select: false, createdVault: made });
+    writeFileSync(join(ctx.cwd, "pic.png"), PNG);
+    await ctx.box.request("tools/call", { name: "create_vault", arguments: { name: "made" } });
+    const res = await call(ctx.box, { path: "pic.png" });
+    expect(res.result.isError).toBe(true);
+    expect(toolText(res)).not.toMatch(USE_SENTENCE);
+    expect(toolText(res)).toMatch(/not on this connector's domain/);
+    expect(ctx.vault.requests).toHaveLength(0);
+  });
+
+  it("q2 a vault on a foreign host is refused before any file is opened, whoever listed it", async () => {
+    const foreign = "https://evil.example.net/base";
+    const ctx = await setup(() => created(), { select: false, extraVaults: [foreign] });
+    const file = join(ctx.cwd, "pic.png");
+    writeFileSync(file, PNG);
+    unreadable(file);
+    const res = await expectRefused(ctx, { path: "pic.png" }, /not on this connector's domain/);
+    expect(toolText(res)).not.toMatch(/could not be read/);
+    // Chosen by use_vault from a list that holds the foreign host.
+    const ctx2 = await setup(() => created(), { select: false, listed: [foreign] });
+    const f2 = join(ctx2.cwd, "pic.png");
+    writeFileSync(f2, PNG);
+    unreadable(f2);
+    await ctx2.box.request("tools/call", { name: "gilbplatform_use_vault", arguments: { vault: "evil.example.net" } });
+    await expectRefused(ctx2, { path: "pic.png" }, /not on this connector's domain/);
+    // A look-alike host that merely ends with the same letters is foreign too.
+    const ctx3 = await setup(() => created(), { select: false, extraVaults: ["https://x.example.test.evil.net/base"] });
+    writeFileSync(join(ctx3.cwd, "pic.png"), PNG);
+    await expectRefused(ctx3, { path: "pic.png" }, /not on this connector's domain/);
+  });
+
+  it("q2 the family comes from the origin: its parent domain and below, nothing that only looks like it", () => {
+    const o = "https://id.example.org";
+    for (const ok of ["https://id.example.org/base", "https://example.org/base", "https://veda.example.org/base", "https://a.b.example.org:8443/base", "https://VEDA.Example.ORG/base"]) {
+      expect(hostInOriginFamily(o, ok), ok).toBe(true);
+    }
+    for (const bad of ["https://evilexample.org/base", "https://example.org.evil.net/base", "https://example.org@evil.net/base", "https://org/base", "https://other.test/base", "not a url", ""]) {
+      expect(hostInOriginFamily(o, bad), bad).toBe(false);
+    }
+    // Two labels or an address: only its own host and below.
+    expect(hostInOriginFamily("https://example.org", "https://x.example.org/base")).toBe(true);
+    expect(hostInOriginFamily("https://example.org", "https://other.org/base")).toBe(false);
+    expect(hostInOriginFamily("http://127.0.0.1:4000", "http://127.0.0.1:5000/base")).toBe(true);
+    expect(hostInOriginFamily("http://127.0.0.1:4000", "http://127.0.0.2/base")).toBe(false);
+    expect(hostInOriginFamily("http://127.0.0.1:4000", "http://0.0.1/base")).toBe(false);
+  });
+
+  it("q3 the ten names QA uploaded are all refused unread, and so are the wider secret names", async () => {
+    const ctx = await setup();
+    const names = [
+      "apikey.json", "private-key.json", "service-account.json", "passwords.csv", "wallet.json", "seed-phrase.txt", "api_keys.json", "password.txt", "ssh-private.txt", "aws-keys.csv",
+      "api-key.txt", "ServiceAccount.json", "my-passwd.txt", "backup.p12", "cert.pfx", "store.keystore", "app.jks", ".npmrc.txt", "x.netrc", "pub.asc", "mail.gpg", "id_dsa", "id_ecdsa", "ID_X", "PRIVATE.png", "Credential.md",
+    ];
+    for (const name of names) {
+      const file = join(ctx.cwd, name);
+      writeFileSync(file, "x");
+      unreadable(file);
+      await expectRefused(ctx, { path: name }, /never uploaded/);
+    }
+    // Same rule on a folder name below the root.
+    mkdirSync(join(ctx.cwd, "wallets"));
+    writeFileSync(join(ctx.cwd, "wallets", "p.png"), PNG);
+    unreadable(join(ctx.cwd, "wallets", "p.png"));
+    await expectRefused(ctx, { path: "wallets/p.png" }, /never uploaded/);
+  });
+
+  it("q3 ordinary names still upload", async () => {
+    const ctx = await setup();
+    for (const name of ["holiday.png", "id.png", "identity.png", "ideas.md", "id_card.png", "keynote.pdf", "monkey.png", "notes.asc.txt"]) {
+      writeFileSync(join(ctx.cwd, name), PNG);
+      const res = await call(ctx.box, { path: name });
+      expect(res.result.isError, name).toBe(false);
+    }
   });
 });

@@ -15,6 +15,7 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 export const CONNECTOR_VERSION = "0.5.6";
 export const DEFAULT_AGENT = "Kai-Zen";
@@ -626,6 +627,34 @@ function namespaceFromAddress(input) {
         return null;
     return `https://${url.host}/base`;
 }
+/**
+ * True when the vault's host is the origin's parent domain or a subdomain of it. For https://id.example.org that is
+ * example.org and anything under it. An origin with fewer than three labels, or an IP address, allows only its own host.
+ * Nothing is hard-coded: the family comes from the origin the connector was started with.
+ */
+export function hostInOriginFamily(originUrl, vaultUrl) {
+    let o;
+    let v;
+    try {
+        o = new URL(originUrl);
+        v = new URL(vaultUrl);
+    }
+    catch {
+        return false;
+    }
+    const strip = (host) => host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+    const originHost = strip(o.hostname);
+    const vaultHost = strip(v.hostname);
+    if (originHost === "" || vaultHost === "")
+        return false;
+    let family = originHost;
+    if (isIP(originHost) === 0) {
+        const labels = originHost.split(".");
+        if (labels.length >= 3)
+            family = labels.slice(1).join(".");
+    }
+    return vaultHost === family || vaultHost.endsWith(`.${family}`);
+}
 function vaultQuery(raw) {
     const lead = raw.trim();
     if (lead.toLowerCase().startsWith("http"))
@@ -712,16 +741,25 @@ function belowFolder(folder, path) {
         return null;
     return rel;
 }
+/** Words that make a name look like a secret. A segment containing any of them (any case) is never uploaded. */
+const SECRET_WORDS = [
+    "apikey", "api-key", "api_key", "password", "passwd", "secret", "credential", "token", "private",
+    "service-account", "serviceaccount", "wallet", "seed-phrase", "seedphrase", "seed_phrase", "mnemonic",
+    "aws-key", "aws_key", "awskey",
+];
+/** Endings that make a name a key store or a key. */
+const SECRET_ENDINGS = [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".npmrc", ".netrc", ".asc", ".gpg"];
 /** A name that looks like a key, a login or a secret. Checked on every segment below the folder. */
 function secretName(segment) {
     const lower = segment.toLowerCase();
-    return (lower.endsWith(".pem") ||
-        lower.endsWith(".key") ||
-        lower.startsWith("id_rsa") ||
-        lower.startsWith("id_ed25519") ||
-        lower.includes("credentials") ||
-        lower.includes("token") ||
-        lower.includes("secret"));
+    if (SECRET_ENDINGS.some((end) => lower.endsWith(end)))
+        return true;
+    if (SECRET_WORDS.some((word) => lower.includes(word)))
+        return true;
+    if (lower.startsWith("id_rsa") || lower.startsWith("id_ed25519"))
+        return true;
+    // id_dsa, id_ecdsa and the like: a key file named id_* with no extension.
+    return lower.startsWith("id_") && !lower.includes(".");
 }
 /** A reason to refuse a path below an allowed folder, or "" when its segments are fine. */
 function refusedSegments(rel) {
@@ -1062,6 +1100,8 @@ export function startConnector(opts) {
     let knownUnbound = false;
     /** The current vault list was chosen because it was the only work vault. whoami says so. */
     let selectedAutomatically = false;
+    /** The vault maybeAutoSelect chose only because the list held one. Not the person's choice, so no file goes there. */
+    let autoVault = null;
     /** list_vaults already ran once for auto-select in this bound stretch. It does not run again. */
     let autoSelectAttempted = false;
     let resolveDone = () => { };
@@ -1720,6 +1760,30 @@ export function startConnector(opts) {
     function agentIsConcept() {
         return agent.toLowerCase().replace(/[^a-z0-9]/g, "") === "agentconcept";
     }
+    /**
+     * Whether a run_named_role call may be re-sent on a fresh turn. Not when the role is Agent.Concept (whatever agent this
+     * connector is on), nor an address-like role (a record address, which a fold does not turn into "agentconcept"),
+     * nor when the role cannot be read: Agent.Concept's mint limits are per turn and must stay a brake.
+     */
+    function roleMayRoll(args) {
+        let parsed = args;
+        if (typeof args === "string") {
+            try {
+                parsed = JSON.parse(args);
+            }
+            catch {
+                return false;
+            }
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+            return false;
+        const role = parsed.role;
+        if (typeof role !== "string" || role.trim() === "")
+            return false;
+        if (/[/:%@\\]/.test(role))
+            return false;
+        return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("agentconcept");
+    }
     async function callPlatformTool(name, args, signal, resent = false) {
         if (!hopMode)
             toolCallsSent += 1;
@@ -1748,7 +1812,7 @@ export function startConnector(opts) {
         // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
         // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
         // Not in a hop, not for Agent.Concept or ask_agent_concept (their mint limits are per turn), and not twice in a row.
-        if (!hopMode && !resent && !agentIsConcept() && name !== "ask_agent_concept") {
+        if (!hopMode && !resent && !agentIsConcept() && name !== "ask_agent_concept" && (name !== "run_named_role" || roleMayRoll(args))) {
             const limit = turnLimitOf(result);
             if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
                 if (turnRolls >= MAX_TURN_ROLLS) {
@@ -1778,6 +1842,8 @@ export function startConnector(opts) {
     }
     function selectVault(namespace) {
         selectedAutomatically = false;
+        if (autoVault !== null && sameVault(autoVault, namespace))
+            autoVault = null;
         if (!vaults.some((id) => sameVault(id, namespace)))
             vaults.push(namespace);
         cache = null;
@@ -1868,6 +1934,7 @@ export function startConnector(opts) {
         if (!namespace)
             return;
         vaults.push(namespace);
+        autoVault = namespace;
         selectedAutomatically = true;
         cache = null;
     }
@@ -1919,10 +1986,8 @@ export function startConnector(opts) {
                 return await onAgent(args);
             if (!hopMode && name === GILB_USE_VAULT.name)
                 return await onUseVault(args, ac.signal);
-            if (!hopMode && name === GILB_UPLOAD_FILE.name) {
-                await maybeAutoSelect(ac.signal);
+            if (!hopMode && name === GILB_UPLOAD_FILE.name)
                 return await onUploadFile(args, ac.signal);
-            }
             if (hopMode && !hopTools.some((tool) => tool.name === name)) {
                 return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
             }
@@ -1962,7 +2027,8 @@ export function startConnector(opts) {
     async function onUploadFile(args, signal) {
         const refuse = (message) => toolResult(JSON.stringify({ error: message }), true);
         // 2. Only a vault the person selected. Their yes in gilbplatform_use_vault is the gate.
-        const selected = vaults.map((id) => id.trim()).filter((id) => id !== "");
+        // Only a vault the person chose: gilbplatform_use_vault, --vault, or create_vault. One picked only because the list held one is not.
+        const selected = vaults.map((id) => id.trim()).filter((id) => id !== "" && !(autoVault !== null && sameVault(autoVault, id)));
         const askedVault = fieldString(args, "vault");
         let target;
         if (askedVault !== "") {
@@ -1987,6 +2053,9 @@ export function startConnector(opts) {
         const door = vaultDoor(target);
         if (!door)
             return refuse("The selected vault has no https address to send to.");
+        if (!hostInOriginFamily(origin, door.base)) {
+            return refuse("That vault is not on this connector's domain, so no file is sent to it.");
+        }
         // 3 and 4. The path rules run on the path and its stat. The file is not opened until they all pass.
         const pathArg = fieldString(args, "path");
         const pick = pickUploadFile(pathArg, uploadCwd, uploadRoots);
