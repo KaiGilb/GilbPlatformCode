@@ -27,9 +27,9 @@ const PLATFORM_TOOLS = [
 function aiNotBound(clientId) {
   return [
     "This AI is not bound to an AI vault yet.",
-    "Agent client id:",
+    "Client ID:",
     clientId,
-    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Agent client id, and press Bind AI.",
+    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Client ID, and press Bind AI.",
   ].join("\n");
 }
 

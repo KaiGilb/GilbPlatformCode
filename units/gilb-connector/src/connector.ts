@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.4";
+export const CONNECTOR_VERSION = "0.5.5";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -46,9 +46,9 @@ export const NOT_CONNECTED =
 export function aiNotBound(clientId: string): string {
   return [
     "This AI is not bound to an AI vault yet.",
-    "Agent client id:",
+    "Client ID:",
     clientId,
-    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Agent client id, and press Bind AI.",
+    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Client ID, and press Bind AI.",
   ].join("\n");
 }
 
@@ -311,7 +311,7 @@ class NotConnected extends Error {
 const GILB_WHOAMI: ToolSpec = {
   name: "gilbplatform_whoami",
   description:
-    "Report this connector's sign-in: the mode, the Agent client id, the principal, whether this AI is bound, and the selected vaults.",
+    "Report this connector's sign-in: the mode, the Client ID, the principal, whether this AI is bound, and the selected vaults.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 
@@ -1198,7 +1198,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       } else {
         clientId = await registerAi(publicJwk);
         writePrivateFile(idFile, `${clientId}\n`);
-        process.stderr.write(`Agent client id: ${clientId}\n`);
+        process.stderr.write(`Client ID: ${clientId}\n`);
       }
     } catch (err) {
       if (err instanceof NotConnected) throw err;
@@ -1471,10 +1471,15 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (found) reportedPrincipal = found;
     if (asMode === "ai" && !bound) {
       if (isVaultNamespace(reportedPrincipal)) {
+        const wasUnbound = knownUnbound;
         bound = true;
         knownUnbound = false;
         // A later tool call may be the first one that can see a vault list.
         autoSelectAttempted = false;
+        // The client may already hold the local-only list. The first look, and a hop, are not a change.
+        if (wasUnbound && !hopMode) {
+          emit({ jsonrpc: "2.0", method: "notifications/tools/list_changed", params: {} });
+        }
       } else {
         knownUnbound = true;
       }
@@ -1924,7 +1929,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
           : `${
               asMode === "me"
                 ? "GilbPlatform tools for this computer. The agent prompt carries the current agent's standing instructions."
-                : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Agent client id. The agent prompt carries the current agent's standing instructions."
+                : "GilbPlatform tools for this Connected AI. gilbplatform_whoami reports the Client ID. The agent prompt carries the current agent's standing instructions."
             } ${USE_VAULT_INSTRUCTIONS} ${CREATE_VAULT_INSTRUCTIONS}${asMode === "ai" ? ` ${AUTO_SELECT_INSTRUCTIONS}` : ""}`,
       };
     }

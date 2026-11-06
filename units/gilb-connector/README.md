@@ -26,15 +26,15 @@ If you added it under the old name, remove that entry. The key and the binding a
 claude mcp remove gilb
 ```
 
-The first run creates this AI's key under `~/.gilb-connector/` (the directory is private to you, and the key file is readable only by you) and prints its Agent client id on stderr. Registration is not access. In GilbApp:
+The first run creates this AI's key under `~/.gilb-connector/` (the directory is private to you, and the key file is readable only by you) and prints its Client ID on stderr. Registration is not access. In GilbApp:
 
 1. Open your vault.
 2. Open **Connect AI**.
 3. Name and mint an AI vault.
-4. Paste this Agent client id. **Bind AI**.
+4. Paste this Client ID. **Bind AI**.
 5. Grant the AI vault **Read** and **Write** on the vaults it should work in.
 
-Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Agent client id is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, `state: not bound` or `state: bound`, and `vaults:` (the selected vaults, or `none`). Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
+Call any tool again after Bind, or after a grant. You do not have to restart Claude Code. Until this AI is bound, every tool except whoami tells you to bind it, and the Client ID is on its own line. After it is bound, a vault it cannot read or write is named, and the answer tells you to grant the AI vault. `gilbplatform_whoami` reports the client id, the mode (`ai`), the principal, `state: not bound` or `state: bound`, and `vaults:` (the selected vaults, or `none`). Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it. If this AI can reach exactly one vault besides its own, that vault is selected automatically.
 
 Repeat `--vault` for each vault the AI should start in. The id is that vault's address (it starts with `https`). Once this AI is bound, the connector keeps one platform turn for the life of the process. Until then, each call asks the door again. The AI's sign-in stays in memory and renews itself. It is not written to disk.
 
@@ -71,7 +71,7 @@ Start `claude` in a terminal. The `GilbPlatform` server from `claude mcp add` is
 
 `/mcp__GilbPlatform__agent` starts the chat as Kai-Zen and gives Claude the agent's standing instructions. Ask it to work the plan in the vault you named.
 
-- `gilbplatform_whoami` reports the Agent client id, the mode, the principal, whether this AI is bound, and the selected vaults.
+- `gilbplatform_whoami` reports the Client ID, the mode, the principal, whether this AI is bound, and the selected vaults.
 - `gilbplatform_use_vault` selects a vault the person named. Claude Code asks the person to allow that call; their yes is what selects it. A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.
 - `gilbplatform_agent` switches the agent (any tag the platform lists, for example `Jackfruit`) and returns that agent's standing, so the model can follow it.
 - `gilbplatform_task` sets the person's request. The platform loads standing from that text.
