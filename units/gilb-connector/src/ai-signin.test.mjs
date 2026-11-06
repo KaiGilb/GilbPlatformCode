@@ -24,9 +24,9 @@ const UNBOUND_VAULT = "https://c3-unbound.example/base";
 function aiNotBound(clientId) {
   return [
     "This AI is not bound to an AI vault yet.",
-    "Agent client id:",
+    "Client ID:",
     clientId,
-    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Agent client id, and press Bind AI.",
+    "In GilbApp: open your vault › Connect AI. Name and mint an AI vault, paste the client id above into Client ID, and press Bind AI.",
   ].join("\n");
 }
 
@@ -367,7 +367,7 @@ describe("Connected AI", () => {
     expect(registers).toHaveLength(1);
     expect(registers[0].body.clientDisplayName).toBe("Desk AI");
     expect(registers[0].body.clientPublicKey).toMatchObject({ kty: "EC", crv: "P-256" });
-    expect(stderr.text()).toContain(`Agent client id: ${CLIENT_ID}`);
+    expect(stderr.text()).toContain(`Client ID: ${CLIENT_ID}`);
     assertClean(stderr.text(), secrets, "stderr");
     assertClean(first.stdout(), secrets, "stdout");
 
@@ -711,7 +711,7 @@ describe("Connected AI", () => {
       .find((msg) => msg.id === 2);
     expect(answered.result.content[0].text).toBe(SENTENCE(CLIENT_ID));
     expect(stderr).toContain(SENTENCE(CLIENT_ID));
-    expect(stderr).toContain("Agent client id: " + CLIENT_ID);
+    expect(stderr).toContain("Client ID: " + CLIENT_ID);
     const pem = readFileSync(join(home, "default", "private.pem"), "utf8");
     const secrets = {
       pem,

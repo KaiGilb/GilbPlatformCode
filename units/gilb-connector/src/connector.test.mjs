@@ -262,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.5.4");
+    expect(CONNECTOR_VERSION).toBe("0.5.5");
   });
 });
 
@@ -755,6 +755,141 @@ describe("hand-off", () => {
   }, 15000);
 });
 
+const AI_CLIENT_ID = "agent-client-bind";
+const UNBOUND_PRINCIPAL = "https://id.example.test/base/p/abc";
+const BOUND_PRINCIPAL = "https://ai.example.test/base";
+const LOCAL_AI_TOOLS = ["gilbplatform_whoami", "gilbplatform_agent", "gilbplatform_task", "gilbplatform_use_vault"];
+const PLATFORM_AND_LOCAL = [...DOOR_TOOLS.map((tool) => tool.name), ...LOCAL_AI_TOOLS];
+
+function listChanged(lines) {
+  return lines.filter((line) => line.method === "notifications/tools/list_changed");
+}
+
+function toolNames(msg) {
+  return msg.result.tools.map((tool) => tool.name);
+}
+
+function aiHomeEnv() {
+  const home = mkdtempSync(join(tmpdir(), "gilb-connector-ai-"));
+  dirs.push(home);
+  return testEnv({ HOME: home, GILB_HOME: home, GILB_CONNECTOR_HOME: home });
+}
+
+function standingFor(principal) {
+  return `STANDING-KAI That person is identified as: ${principal}. Tools follow.`;
+}
+
+async function aiDoor(state) {
+  return listen(async (rec) => {
+    if (rec.url.endsWith("/base/client/register")) {
+      return { status: 200, body: { clientId: AI_CLIENT_ID, created: true, confersAuthority: false } };
+    }
+    if (rec.url.endsWith("/base/oauth/token")) {
+      return { status: 200, body: { access_token: "atk-bind-test", token_type: "DPoP", expires_in: 300, scope: "base.write" } };
+    }
+    if (rec.url.endsWith("/base/e/first-use")) return { status: 404, body: { error: "not_found" } };
+    if (rec.url.endsWith("/context")) {
+      return { body: { system: standingFor(state.principal), tools: DOOR_TOOLS } };
+    }
+    if (rec.url.endsWith("/tool")) return { body: { result: "tool-ok" } };
+    return { status: 404, body: { error: "no such door" } };
+  });
+}
+
+function connectAi(origin) {
+  return connect({ origin, as: "ai", env: aiHomeEnv() });
+}
+
+describe("tools after a bind", () => {
+  it("started not bound: tools/list is only the local tools, and whoami after the bind emits tools/list_changed once", async () => {
+    const state = { principal: UNBOUND_PRINCIPAL };
+    const platform = await aiDoor(state);
+    const { request, lines } = connectAi(platform.origin);
+    const first = await request("tools/list", {});
+    expect(toolNames(first)).toEqual(LOCAL_AI_TOOLS);
+    expect(listChanged(lines)).toHaveLength(0);
+
+    state.principal = BOUND_PRINCIPAL;
+    const who = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(who.result.isError).toBe(false);
+    expect(toolText(who)).toContain("state: bound");
+    const notes = listChanged(lines);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].jsonrpc).toBe("2.0");
+    expect(notes[0].id).toBeUndefined();
+    expect(notes[0].params).toEqual({});
+
+    const listed = await request("tools/list", {});
+    expect(toolNames(listed)).toEqual(PLATFORM_AND_LOCAL);
+    expect(listChanged(lines)).toHaveLength(1);
+  });
+
+  it("a second whoami, still bound, emits no second tools/list_changed", async () => {
+    const state = { principal: UNBOUND_PRINCIPAL };
+    const platform = await aiDoor(state);
+    const { request, lines } = connectAi(platform.origin);
+    await request("tools/list", {});
+    state.principal = BOUND_PRINCIPAL;
+    const first = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(first)).toContain("state: bound");
+    const afterFirst = listChanged(lines).length;
+    const second = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(second)).toContain("state: bound");
+    expect(listChanged(lines)).toHaveLength(afterFirst);
+  });
+
+  it("started bound: whoami emits no tools/list_changed", async () => {
+    const platform = await aiDoor({ principal: BOUND_PRINCIPAL });
+    const { request, lines } = connectAi(platform.origin);
+    const who = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(who.result.isError).toBe(false);
+    expect(toolText(who)).toContain("state: bound");
+    expect(listChanged(lines)).toHaveLength(0);
+  });
+
+  it("still not bound: whoami emits no tools/list_changed", async () => {
+    const platform = await aiDoor({ principal: UNBOUND_PRINCIPAL });
+    const { request, lines } = connectAi(platform.origin);
+    const who = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(who.result.isError).toBe(false);
+    expect(toolText(who)).toContain("state: not bound");
+    expect(listChanged(lines)).toHaveLength(0);
+  });
+
+  it("the not-bound message says Client ID and has no Agent client id", async () => {
+    const platform = await aiDoor({ principal: UNBOUND_PRINCIPAL });
+    const { request } = connectAi(platform.origin);
+    const listed = await request("tools/list", {});
+    const whoami = listed.result.tools.find((tool) => tool.name === "gilbplatform_whoami");
+    expect(whoami.description).toContain("Client ID");
+    expect(whoami.description).not.toContain("Agent client id");
+    const who = await request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    const text = toolText(who);
+    expect(text).toContain("state: not bound");
+    expect(text).toContain("Client ID");
+    expect(text).not.toContain("Agent client id");
+    expect(text).toContain(`\nClient ID:\n${AI_CLIENT_ID}\n`);
+  });
+
+  it("tools/list that discovers the bind returns the platform tools and emits tools/list_changed once", async () => {
+    const state = { principal: UNBOUND_PRINCIPAL };
+    const platform = await aiDoor(state);
+    const { request, lines } = connectAi(platform.origin);
+    const first = await request("tools/list", {});
+    expect(toolNames(first)).toEqual(LOCAL_AI_TOOLS);
+    expect(listChanged(lines)).toHaveLength(0);
+
+    state.principal = BOUND_PRINCIPAL;
+    const listed = await request("tools/list", {});
+    expect(toolNames(listed)).toEqual(PLATFORM_AND_LOCAL);
+    const notes = listChanged(lines);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].jsonrpc).toBe("2.0");
+    expect(notes[0].id).toBeUndefined();
+    expect(notes[0].params).toEqual({});
+  });
+});
+
 describe("stdout", () => {
   it("a spawned connector writes only JSON-RPC lines, and a missing module is the exact sentence", async () => {
     const dir = mkdtempSync(join(tmpdir(), "gilb-connector-"));
@@ -818,7 +953,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.4" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.5" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);
