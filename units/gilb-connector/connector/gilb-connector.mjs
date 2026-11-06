@@ -1782,7 +1782,7 @@ export function startConnector(opts) {
             return false;
         if (/[/:%@\\]/.test(role))
             return false;
-        return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("agentconcept");
+        return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
     }
     async function callPlatformTool(name, args, signal, resent = false) {
         if (!hopMode)

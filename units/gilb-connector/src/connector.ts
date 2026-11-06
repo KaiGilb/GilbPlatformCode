@@ -1907,7 +1907,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     const role = (parsed as { role?: unknown }).role;
     if (typeof role !== "string" || role.trim() === "") return false;
     if (/[/:%@\\]/.test(role)) return false;
-    return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("agentconcept");
+    return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
   }
 
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal, resent = false): Promise<ToolResult | typeof CANCELLED> {

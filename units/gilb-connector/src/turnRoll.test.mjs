@@ -275,6 +275,19 @@ describe("a turn out of room", () => {
     }
   });
 
+  it("n3 a bare Concept, or any role whose fold holds concept, never rolls", async () => {
+    // roleMatchKey is trim, lower-case, and drop dash, underscore and space; a role is matched to a title or unit tag by that key.
+    for (const role of ["Concept", "concept", "CONCEPT", " Concept ", "Con-cept", "con_cept", "the Concept agent", "Concept.v2", "Agent.Concept", "Concepts"]) {
+      for (const limit of [ROUNDS, HOPS]) {
+        const platform = await scripted([limit, "role-ok"]);
+        const box = connect({ origin: platform.origin });
+        const res = await callTool(box, "run_named_role", { role, task: "x" });
+        expect(text(res), role).toBe(limit);
+        expect(posts(platform), role).toHaveLength(1);
+      }
+    }
+  });
+
   it("f9 the role is read from arguments given as a JSON string too, and an unreadable role fails closed", async () => {
     for (const args of [JSON.stringify({ role: "Agent.Concept", task: "x" }), "{not json", JSON.stringify({ task: "x" }), JSON.stringify({ role: 5 }), "null", JSON.stringify(["Agent.Concept"])]) {
       const platform = await scripted([HOPS, "role-ok"]);
