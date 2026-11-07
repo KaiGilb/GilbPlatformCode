@@ -113,7 +113,7 @@ export interface ServiceDeps {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.1.6";
+export const BRIDGE_BUILD = "0.1.7";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -175,6 +175,93 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env) {
 // defaults apply. The source keeps this list EMPTY: the host app names its own origins, and the Vite plugin
 // (claudeCodeBridgeFile({ defaultAllowedOrigins })) writes them into this one line when it serves or emits the file.
 export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
+
+/**
+ * The relay window (for Safari). Safari blocks an https page's fetch to http://127.0.0.1 as mixed content, so the page opens
+ * this bridge-served window instead and talks to it by postMessage; this window's fetches are same-origin. One self-contained
+ * page, its script pinned by a sha256 in the Content-Security-Policy. The allow-list is embedded as JSON with `<`, `>`, `&`
+ * and the two line separators written as \u escapes, so an origin can never close the script tag.
+ */
+const RELAY_SCRIPT = `
+var ALLOW = __ALLOW__;
+var BUILD = __BUILD__;
+var peer = null;
+var aborts = {};
+var statusEl = document.getElementById("status");
+function post(msg, target) { try { window.opener.postMessage(msg, target); } catch (e) {} }
+// The opener's origin cannot be read up front, so say "ready" to each allowed origin; a wrong origin drops it.
+for (var i = 0; i < ALLOW.length; i++) post({ type: "gilb-bridge-ready", build: BUILD }, ALLOW[i]);
+setInterval(function () {
+  if (!window.opener || window.opener.closed) statusEl.textContent = "The page that opened this window has closed. You can close it.";
+}, 2000);
+var HEADERS = ["content-type", "x-bridge-secret", "accept"];
+addEventListener("message", function (ev) {
+  if (!window.opener || ev.source !== window.opener || ALLOW.indexOf(ev.origin) < 0) return;
+  var m = ev.data;
+  if (!m || typeof m !== "object" || typeof m.type !== "string") return;
+  if (m.type !== "gilb-bridge-req" && m.type !== "gilb-bridge-abort") return;
+  if (peer === null) peer = ev.origin;
+  else if (ev.origin !== peer) return;
+  statusEl.textContent = "Connected to " + peer;
+  var id = m.id;
+  if (typeof id !== "string" && typeof id !== "number") return;
+  var reply = function (o) { o.id = id; window.opener.postMessage(o, peer); };
+  if (m.type === "gilb-bridge-abort") {
+    var a = aborts[id];
+    if (a) a.abort();
+    return;
+  }
+  var u;
+  try { u = new URL(String(m.path), location.origin); } catch (e) { u = null; }
+  var method = m.method === undefined ? "GET" : m.method;
+  if (!u || u.origin !== location.origin || u.pathname.indexOf("/v1/") !== 0 || (method !== "GET" && method !== "POST")) {
+    return reply({ type: "gilb-bridge-err", message: "Not an allowed request." });
+  }
+  var headers = {};
+  var given = m.headers && typeof m.headers === "object" ? m.headers : {};
+  for (var k in given) {
+    var name = k.toLowerCase();
+    if (HEADERS.indexOf(name) >= 0 && typeof given[k] === "string") headers[name] = given[k];
+  }
+  headers["x-gilb-relay-origin"] = peer;
+  var ctl = new AbortController();
+  aborts[id] = ctl;
+  var init = { method: method, headers: headers, signal: ctl.signal, cache: "no-store" };
+  if (method === "POST" && typeof m.body === "string") init.body = m.body;
+  fetch(u.pathname + u.search, init).then(function (r) {
+    var ct = r.headers.get("content-type") || "";
+    if (ct.indexOf("text/event-stream") === 0 && r.body) {
+      var rd = r.body.getReader();
+      var dec = new TextDecoder();
+      var pump = function () {
+        return rd.read().then(function (x) {
+          if (x.done) { reply({ type: "gilb-bridge-end" }); return; }
+          reply({ type: "gilb-bridge-chunk", chunk: dec.decode(x.value, { stream: true }) });
+          return pump();
+        });
+      };
+      return pump();
+    }
+    return r.text().then(function (t) { reply({ type: "gilb-bridge-res", status: r.status, headers: { "content-type": ct }, body: t }); });
+  }).catch(function (e) {
+    reply({ type: "gilb-bridge-err", message: ctl.signal.aborted ? "aborted" : String(e && e.message ? e.message : e) });
+  }).then(function () { delete aborts[id]; });
+});
+`;
+
+/** Builds the relay page and its CSP header value for this allow-list. */
+export function relayPage(allowedOrigins: readonly string[]) {
+  const escJson = (v: unknown) =>
+    JSON.stringify(v).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  const script = RELAY_SCRIPT.replace("__ALLOW__", () => escJson(allowedOrigins)).replace("__BUILD__", () => escJson(BRIDGE_BUILD));
+  const hash = crypto.createHash("sha256").update(script, "utf8").digest("base64");
+  const html =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Claude Code bridge window</title></head>' +
+    '<body style="font:16px system-ui;padding:16px"><p>Claude Code bridge window \u2014 keep this open while you chat. You can minimise it.</p>' +
+    '<p id="status">Waiting for the page that opened this window.</p><script>' + script + "</script></body></html>";
+  const csp = `default-src 'none'; script-src 'sha256-${hash}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`;
+  return { html, csp };
+}
 
 /**
  * One browser origin the person is allowing, checked strictly: `https://host[:port]`, or `http://` for this computer only
@@ -403,8 +490,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     return h === `127.0.0.1:${port}` || h === `localhost:${port}`;
   };
 
-  function cors(req: IncomingMessage, res: ServerResponse) {
-    const origin = req.headers.origin;
+  function cors(origin: string | undefined, res: ServerResponse) {
     if (origin === undefined) return true; // not a browser (curl, the tests)
     if (!allowedOrigins.includes(origin)) return false;
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -415,6 +501,25 @@ export function createBridge(opts: BridgeOptions = {}) {
     res.setHeader("Access-Control-Allow-Private-Network", "true");
     res.setHeader("Access-Control-Max-Age", "600");
     return true;
+  }
+
+  /**
+   * Whose request this is. A relayed request (from this bridge's own relay window) carries Origin = the bridge's own origin and
+   * `x-gilb-relay-origin` = the page that opened the window, which must be on the allow-list; that page is then the origin for
+   * everything downstream. `x-gilb-relay-origin` from anywhere else is refused, so a website cannot use it.
+   * Returns { origin, relayed } or null (refuse).
+   */
+  function effectiveOrigin(req: IncomingMessage): { origin: string | undefined; relayed: boolean } | null {
+    const raw = req.headers.origin;
+    const relay = req.headers["x-gilb-relay-origin"];
+    if (raw !== undefined && raw === `http://${String(req.headers.host ?? "")}`) {
+      if (typeof relay !== "string" || !allowedOrigins.includes(relay)) return null;
+      return { origin: relay, relayed: true };
+    }
+    // A browser sends no Origin on a same-origin GET, so the relay window's hello arrives with the header and no Origin.
+    // /v1/hello needs no pairing and is answered to a caller with no Origin anyway, so that one request is let through as such.
+    if (relay !== undefined && !(raw === undefined && req.method === "GET" && req.url?.split("?")[0] === "/v1/hello")) return null;
+    return { origin: raw, relayed: false };
   }
 
   const json = (res: ServerResponse, status: number, body: unknown) => {
@@ -448,7 +553,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /** True when the request carries a live secret that was issued to THIS origin. Using it slides its expiry. */
-  const hasSecret = (req: IncomingMessage) => {
+  const hasSecret = (req: IncomingMessage, origin: string | undefined) => {
     const s = req.headers["x-bridge-secret"];
     if (typeof s !== "string" || !s) return false;
     const hash = sha(s).toString("hex");
@@ -460,7 +565,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       savePairings();
       return false;
     }
-    if (p.origin !== (req.headers.origin ?? null)) return false;
+    if (p.origin !== (origin ?? null)) return false;
     p.lastUsed = t;
     if (t - p.saved >= PERSIST_EVERY_MS) savePairings();
     return true;
@@ -928,13 +1033,27 @@ export function createBridge(opts: BridgeOptions = {}) {
       return json(res, 200, { code: pairingCode });
     }
 
-    if (!cors(req, res)) return json(res, 403, { error: "This origin is not allowed." });
+    if (req.method === "GET" && url.pathname === "/relay") {
+      const { html, csp } = relayPage(allowedOrigins);
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-frame-options": "DENY",
+        "content-security-policy": csp,
+      });
+      return res.end(html);
+    }
+
+    const who = effectiveOrigin(req);
+    if (!who || (!who.relayed && !cors(who.origin, res))) return json(res, 403, { error: "This origin is not allowed." });
+    const origin = who.origin;
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription" });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -947,7 +1066,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         const secret = crypto.randomBytes(32).toString("hex");
         const t = now();
         const ph = typeof body.principalHash === "string" && /^[0-9a-f]{64}$/.test(body.principalHash) ? body.principalHash : null;
-        pairings.set(sha(secret).toString("hex"), { origin: req.headers.origin ?? null, principalHash: ph, issued: t, lastUsed: t, saved: t });
+        pairings.set(sha(secret).toString("hex"), { origin: origin ?? null, principalHash: ph, issued: t, lastUsed: t, saved: t });
         while (pairings.size > maxPairings) dropOldest();
         savePairings();
         newPairing(); // single use: the next tab needs the next code
@@ -958,7 +1077,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return json(res, 401, { error: "That code is not right. Look at the code in the terminal where the bridge runs." });
     }
     if (url.pathname.startsWith("/v1/")) {
-      if (!hasSecret(req)) return json(res, 401, { error: "Pair first." });
+      if (!hasSecret(req, origin)) return json(res, 401, { error: "Pair first." });
       if (req.method === "POST" && url.pathname === "/v1/check") return json(res, 200, { ok: true });
       if (req.method === "POST" && url.pathname === "/v1/unpair") {
         pairings.delete(sha(String(req.headers["x-bridge-secret"])).toString("hex"));

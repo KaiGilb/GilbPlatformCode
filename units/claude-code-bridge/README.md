@@ -93,6 +93,19 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 - The page side that pairs with the bridge and relays tool calls. Not in this unit.
 - A person with Node 18 or newer and Claude Code logged in with a Claude subscription.
 
+## Relay window (for Safari)
+
+Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
+
+Origin rules for a relayed request:
+- The relay window sends `Origin` = the bridge's own origin plus `x-gilb-relay-origin` = the opener page. That header must be on the allow-list, else 403. Pairing secrets are then bound to that opener origin, as if the page had called directly.
+- `x-gilb-relay-origin` with any other `Origin` (a website calling directly) is 403. Own origin without the header is 403.
+- One exception: a same-origin GET carries no `Origin` in a browser, so `GET /v1/hello` with the header and no `Origin` is answered like any Origin-less call (it needs no pairing).
+- Relayed answers carry no CORS headers. `/control/*` and `/mcp/*` are unchanged.
+- The window only forwards paths under `/v1/`, methods GET and POST, and the headers `content-type`, `x-bridge-secret`, `accept`.
+
+Measured: working in Safari 26.5 with a spike on 2026-11-07 (open, request, streaming, also with the window minimised). The real bridge relay has not yet been tried by a person. Browser proof in WebKit (not part of `npm test`): `npm i --no-save playwright@1.60`, then `PLAYWRIGHT_BROWSERS_PATH=<browsers folder> node scripts/check-relay-browser.mjs`.
+
 ## Do not
 
 - Do not add a vault host, a person, a store, a key or a default origin to `src/`. `npm run check:host-agnostic` refuses `gilb.com`, `veda.` and `w3id.org` in `src/` and in the built `bridge/`. Pass origins through the plugin.
@@ -119,3 +132,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 ## Changes
 
 - 0.1.1: types tightened; no behaviour change (the built `bridge.mjs` is byte-identical to 0.1.0).
+- 0.1.7: relay window (`GET /relay`) for Safari; `/v1/hello` reports `relay: true`; relayed requests take the opener page as their origin.
