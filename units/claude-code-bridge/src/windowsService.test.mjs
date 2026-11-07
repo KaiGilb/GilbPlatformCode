@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EXIT_PORT_IN_USE, SUPERVISOR_DELAYS_MS, SUPERVISOR_STABLE_MS, DEFAULT_LABEL, WIN_RUN_KEY,
-  LABEL_RE, liveSupervisor, parseCli, runSupervisor, serviceInstall, serviceStatus, serviceUninstall, superviseLoop, winCommandLine, winQuoteArg,
+  LABEL_RE, fetchCode, unpairAll, liveSupervisor, parseCli, runSupervisor, serviceInstall, serviceStatus, serviceUninstall, superviseLoop, winCommandLine, winQuoteArg,
 } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -440,9 +440,10 @@ describe("install confirms the answering bridge is its own (4a)", () => {
 });
 
 describe("--label is checked in every command, and --uninstall removes only what the bridge made (4c)", () => {
-  const hostile = ["x\\..\\..\\victim", "..", "a b", "a/b", "", "a".repeat(65), "-x", 'x"y', "QaOtherApp\u0000"];
-  it("the pattern", () => {
-    for (const ok of ["a", "my.bridge", "com.gilb.claude-code-bridge", "A_b-1", "a".repeat(64)]) expect(LABEL_RE.test(ok)).toBe(true);
+  const hostile = ["x\\..\\..\\victim", "..", "a b", "a/b", "", "a".repeat(65), "-x", 'x"y', "QaOtherApp\u0000", "a.", "a-", "a_"];
+  it("the pattern, and the default label passes", () => {
+    expect(LABEL_RE.test(DEFAULT_LABEL)).toBe(true);
+    for (const ok of ["a", "a.b", "my.bridge", "com.gilb.claude-code-bridge", "A_b-1", "a".repeat(64)]) expect(LABEL_RE.test(ok)).toBe(true);
     for (const bad of hostile) expect(LABEL_RE.test(bad)).toBe(false);
   });
   it("install, uninstall and status refuse a hostile label and touch nothing", async () => {
@@ -450,7 +451,7 @@ describe("--label is checked in every command, and --uninstall removes only what
       const w = world();
       w.files.set(`${HOME}\\AppData\\Local\\victim.log`.toLowerCase(), "keep");
       w.reg.set("QaOtherApp", "C:\\Other\\app.exe");
-      for (const fn of [serviceInstall, serviceUninstall, serviceStatus]) {
+      for (const fn of [serviceInstall, serviceUninstall, serviceStatus, fetchCode, unpairAll]) {
         const out = await fn({ ...parseCli(["--install", "--claude", CLAUDE]), label }, w.deps);
         expect(out.ok).toBe(false);
         expect(out.message).toMatch(/--label may use letters/);

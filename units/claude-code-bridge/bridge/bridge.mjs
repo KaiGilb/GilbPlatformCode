@@ -1272,9 +1272,9 @@ export function createBridge(opts = {}) {
 // ---- always-on service (macOS LaunchAgent; Windows below) -----------------------------------------------------------------------------
 export const DEFAULT_LABEL = "com.gilb.claude-code-bridge";
 const defaultStateDir = (home = os.homedir()) => path.join(home, ".gilb-claude-code-bridge");
-/** A label becomes part of file names and a registry value name: letters, digits, dot, dash, underscore; 1 to 64 characters; starts with a letter or digit. */
-export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const LABEL_MESSAGE = "--label may use letters, digits, dot, dash and underscore only (1 to 64 characters, starting with a letter or digit).";
+/** A label becomes part of file names and a registry value name: letters, digits, dot, dash, underscore; 1 to 64 characters; starts and ends with a letter or digit (Windows drops a trailing dot from a folder name). */
+export const LABEL_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/;
+const LABEL_MESSAGE = "--label may use letters, digits, dot, dash and underscore only (1 to 64 characters, starting and ending with a letter or digit).";
 const badLabel = (opts) => (LABEL_RE.test(opts.label) ? null : { ok: false, message: LABEL_MESSAGE });
 /** Reads the command line into a plain object. Unknown flags are refused by main() before this is used. */
 export function parseCli(argv) {
