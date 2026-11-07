@@ -2,7 +2,9 @@
 /**
  * Windows Always On, end to end, on a real Windows machine (the GitHub windows-latest runner in CI). No browser.
  *
- *   node scripts/windows-service-e2e.mjs [--expect-standard-user]
+ *   node scripts/windows-service-e2e.mjs [--expect-standard-user] [--profile C:\Users\someone]
+ * --profile: run as if this were the user's profile folder (Start-Process -Credential keeps the caller's environment, so the CI job
+ * that starts this as a new standard user names that user's folder here).
  *
  * The REAL built bridge is installed with `--install` (a stand-in claude by path), then:
  *   hello answers within 20 s with no logout; --status says installed / running / build; the start-up entry holds exactly the
@@ -23,6 +25,13 @@ import { fileURLToPath } from "node:url";
 if (process.platform !== "win32") {
   console.log("Not Windows: nothing to do.");
   process.exit(0);
+}
+const profileAt = process.argv.indexOf("--profile");
+if (profileAt > 0) {
+  const prof = process.argv[profileAt + 1];
+  const tmp = path.join(prof, "AppData", "Local", "Temp");
+  fs.mkdirSync(tmp, { recursive: true });
+  Object.assign(process.env, { USERPROFILE: prof, HOME: prof, LOCALAPPDATA: path.join(prof, "AppData", "Local"), APPDATA: path.join(prof, "AppData", "Roaming"), TEMP: tmp, TMP: tmp });
 }
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE = path.join(HERE, "..", "bridge", "bridge.mjs");

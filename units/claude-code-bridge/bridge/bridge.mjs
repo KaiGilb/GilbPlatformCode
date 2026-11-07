@@ -1401,7 +1401,7 @@ export async function serviceInstall(opts, deps) {
     const port0 = opts.port ?? DEFAULT_PORT;
     if (!Number.isInteger(port0) || port0 < 1 || port0 > 65535)
         return { ok: false, message: "--port must be a number from 1 to 65535." };
-    const claudeBin = resolveBin(opts.claude ?? "claude", env, home, platform, deps.files);
+    const claudeBin = resolveBin(opts.claude ?? "claude", env, home, platform === "win32" ? "win32" : process.platform, deps.files);
     if (!claudeBin)
         return { ok: false, message: "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again." };
     const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);

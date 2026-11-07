@@ -80,7 +80,7 @@ jobs:
           $node = (Get-Command node).Source
           Write-Host "node: $node"
           $cred = New-Object System.Management.Automation.PSCredential('.\e2euser', $pw)
-          $p = Start-Process -FilePath $node -ArgumentList @("$root\scripts\windows-service-e2e.mjs", '--expect-standard-user') -Credential $cred -LoadUserProfile -WorkingDirectory $root -Wait -PassThru -RedirectStandardOutput "$root\out.txt" -RedirectStandardError "$root\err.txt"
+          $p = Start-Process -FilePath $node -ArgumentList @("$root\scripts\windows-service-e2e.mjs", '--expect-standard-user', '--profile', 'C:\Users\e2euser') -Credential $cred -LoadUserProfile -WorkingDirectory $root -Wait -PassThru -RedirectStandardOutput "$root\out.txt" -RedirectStandardError "$root\err.txt"
           Get-Content "$root\out.txt"
           Write-Host '--- stderr ---'
           Get-Content "$root\err.txt"
