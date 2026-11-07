@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "unit": "units/text-filter",
+  "package": "@kaigilb/gilbplatformcode-text-filter",
+  "version": "0.2.0",
+  "purpose": "Keeps a row when every word of the query appears in its fields, optionally ignoring accents, and keeps every row for an empty query.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/ui/match.ts", "lines": [4, 11], "to": "src/textFilter.ts" }
+    ]
+  },
+  "namedChanges": [
+    "T1. textHits gains an optional third parameter options: TextHitsOptions = {} with foldAccents (default off); the fold const is match.ts line 4; when foldAccents is true it runs match.ts lines 7-10 verbatim",
+    "the default path is the 0.1.0 body, byte for byte"
+  ],
+  "newFiles": [],
+  "host": [],
+  "library": { "admitted": false }
+}
