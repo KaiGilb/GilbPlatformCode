@@ -21,6 +21,14 @@ Finding:
 
 - `buildThumbMap(files)`: master id tail -> the smallest copy's address (as it was in the source app; kept as it is).
 - `buildCopyMap(files)`: id tail -> every stored copy of that picture, `{ uri, bytes }`, smallest first (a tie to the lower address as text). It reads the same facts, and groups a picture linked either way: the master-only shape (small copy -> master) and the root shape (master and small copy -> full copy). A file's root is found by following `transcodedFrom` at most two steps; the group is the root and every file that resolves to it, and the same list is stored under the id tail of each member, so the master's tail and the full copy's tail both find it. A file whose `transcodedFrom` names a file that is not in the list is in no group. A file with no `fileByteSize` is not offered as a copy.
+- Input of `buildThumbMap` and `buildCopyMap`: an array of `{ entityUri, body }`, one per file record. `entityUri` is the file's address (its id tail is what matters; `/base/e/` and `/vault/e/` spellings meet). `body` is the record's facts as an object. Only two keys of `body` are read, each by its bare name or its `a:` spelling (`a:` wins when both are there; `t:transcodedFrom` is NOT read):
+  - `fileByteSize`: a number, a numeric string such as `"4096"`, or a list whose first item is one of those. A file with none of these has no size and is not offered as a copy.
+  - `transcodedFrom`: a string address, an object `{ "@id": "<address>" }`, or a list whose first item is one of those. It names the file this one was made from.
+
+  One row: `{ entityUri: "https://vault.example/base/e/06abc", body: { fileByteSize: 4096, transcodedFrom: { "@id": "https://vault.example/base/e/06xyz" } } }`.
+- What the link PATCH sends: `uploadWithThumb` and `linkFullLater` link a file with `patchRecord(<id tail of the file>, { transcodedFrom: { "@id": <address of the file it was made from> } }, <the file's address>)` (`lws-records`). The body has that one key, spelled `transcodedFrom`, and the value is the object with `@id`. The made-from file is the full copy when there is one, else the master (small copy only).
+- A failed small copy, full copy or link is only a warning (one `console.warn`), and `uploadWithThumb` still answers the master's address. The caller tells what was reached from the progress it holds: `progress.thumbLinked` is true when the small copy is stored and linked, `progress.fullEntity` is set when the full copy is stored, and `progress.masterLinked` and `progress.thumbRelinked` are true when the master and the small copy are linked to it (this unit has no `fullLinked` field). A caller that needs the small copy or the full copy must check these and send again; nothing throws for them.
+- Listing: no unit lists a vault's picture files yet. `lws-vault-sets` 0.2.1 (on its way to main in another batch) makes a caller that asks for `File` get its file rows; until it is on main, the app brings the `{ entityUri, body }` rows itself.
 - `pickBySize(copies, minBytes)`: the smallest copy with `bytes >= minBytes`, else the largest; null for no copies. A viewer asks `pickBySize(copies, 0)` for the thumb and `pickBySize(copies, Infinity)` for the largest on a full screen.
 - `onCellular()`: true for `connection.type` `cellular` or `connection.saveData === true`; false for `wifi` or `ethernet`; null when the browser does not say. On iOS there is no connection object, so the app decides what null means: the plan's default is to send the full copy on Wi-Fi only, that is, to treat null as cellular.
 
@@ -108,6 +116,12 @@ Named changes, and only these:
 - C6. `onCellular` is new.
 
 `src/index.ts` is new. Blank lines were added between the cut ranges in `copies.ts`; the cut lines are otherwise as in the source.
+
+Changes in 0.1.1, and only these:
+
+- The peer range of `picture-upload` is `^0.1.0 || ^0.2.0` (main holds 0.2.0; `^0.1.0` stopped `npm install` with ERESOLVE).
+- `src/peerRanges.test.ts` is new: it checks that each `@kaigilb` peer range holds the version in `../<peer>/package.json`.
+- README additions only, no code change: the input shape of `buildThumbMap` and `buildCopyMap`, the body of the link PATCH, that a failed copy is a warning, and that no unit lists the picture files yet.
 
 ## Tests
 

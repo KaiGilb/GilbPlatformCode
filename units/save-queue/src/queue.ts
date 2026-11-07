@@ -15,6 +15,12 @@ export type PendingOp<T = unknown> = {
   masterEntity?: string;
   thumbEntity?: string;
   thumbLinked?: boolean;
+  /** The full-size copy waiting to be sent, and the steps already done for it. */
+  fullBlob?: Blob;
+  fullEntity?: string;
+ 
+  masterLinked?: boolean;
+  thumbRelinked?: boolean;
   /** ISO. For a create this is also the record's made-date, which is how a resend finds its own earlier success. */
   createdAt: string;
   tries: number;

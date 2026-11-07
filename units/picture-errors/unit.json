@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-errors",
   "package": "@kaigilb/gilbplatformcode-picture-errors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.1.1. peerDependencies picture-shrink and picture-upload are \"^0.1.0 || ^0.2.0\" (main holds 0.2.0 of both; \"^0.1.0\" stopped npm install with ERESOLVE); src/peerRanges.test.ts checks every @kaigilb peer range against the sibling unit's version",
     "New code, written for GitHubStandardPictures: pictureFailure(e, words?) with eleven kinds in a fixed order, DEFAULT_PICTURE_FAILURE_WORDS, and PictureFailureNote with pictureErrors.css"
   ],
   "newFiles": [
@@ -18,6 +19,7 @@
     "src/PictureFailureNote.tsx",
     "src/pictureErrors.css",
     "src/exports.test.ts",
+    "src/peerRanges.test.ts",
     "src/pictureFailure.test.ts",
     "src/PictureFailureNote.test.tsx",
     "src/hostAgnostic.test.ts",
