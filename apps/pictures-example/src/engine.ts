@@ -38,13 +38,8 @@ import {
 import { PICTURE_FOLDER } from "./setup";
 import type { EngineState, PrepareNote, Session, Tile } from "./types";
 
-/** A queued picture: the units' PendingOp, plus the full copy and the app's own marks. */
-export type PictureOp = PendingOp & {
-  fullBlob?: Blob;
-  fullEntity?: string;
-  masterLinked?: boolean;
-  thumbRelinked?: boolean;
-};
+/** A queued picture: save-queue 0.2.0's PendingOp already holds the full copy and its steps. */
+export type PictureOp = PendingOp;
 
 const TESTS: FailureTests = {
   refusedForGood: (e) => e instanceof NoAccessError || e instanceof RecordConflictError,
@@ -295,7 +290,7 @@ export class PictureEngine {
   private async send(op: PictureOp): Promise<boolean> {
     const wifi = onCellular() === false;
     const target = this.target();
-    const sink = progressForOp(op);
+    const sink = progressOf(op) as unknown as ProgressSink;
     const name = String(op.change.name ?? "picture").replace(/\.[^.]*$/, "") || "picture";
     if (!op.masterEntity || !op.thumbLinked) {
       const withFull = wifi && op.fullBlob ? op.fullBlob : undefined;
@@ -311,20 +306,6 @@ export class PictureEngine {
     }
     return !waitsForWifi(op);
   }
-}
-
-/**
- * The queue's progressOf keeps three steps (master, small copy, link). The full copy adds three more
- * (fullEntity, masterLinked, thumbRelinked); without them a retry would upload the full copy again.
- * This starts from progressOf and adds the three the op already holds (onProgress itself does write them onto the op).
- */
-export function progressForOp(op: PictureOp): ProgressSink {
-  const base = progressOf(op);
-  const progress: UploadProgress = { ...base.progress, fullEntity: op.fullEntity, masterLinked: op.masterLinked, thumbRelinked: op.thumbRelinked };
-  return {
-    progress,
-    onProgress: (p: UploadProgress) => base.onProgress(p),
-  };
 }
 
 /** Main steps done, a full copy exists and has not been sent: it waits for Wi-Fi. */
