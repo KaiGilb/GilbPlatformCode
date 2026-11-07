@@ -1,16 +1,18 @@
 # signed-picture
 
-Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out, lets only a few fetches run at once, and draws a React thumbnail that loads when it nears the screen.
+Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out (and, if asked, a copy on the device for each person), lets only a few fetches run at once (a number the app can set), and draws a React thumbnail that loads when it nears the screen.
 
 ## What this is
 
-Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out, lets only a few fetches run at once, and draws a React thumbnail that loads when it nears the screen.
+Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out (and, if asked, a copy on the device for each person), lets only a few fetches run at once (a number the app can set), and draws a React thumbnail that loads when it nears the screen.
 
 An `<img src>` cannot carry the request signature, so the picture is fetched with `fetch`, turned into an object URL and handed to the `<img>`.
 
 - `pictureObjectUrl(fileEntityUri, vaultOrigin)`: the picture as an object URL. The file id is `fileIdFromPhotoRef(address) ?? entityIdTail(address)` (peer `photo-ref`); the GET goes to `<vaultOrigin>/files/<encoded id>` with the headers of `dpopReadAuth("GET", url)` (peer `lws-session-bridge`) and `credentials: "omit"`. A refused read throws `The picture could not be read (HTTP <status>).`; an address with no id throws `This picture has no file address.` The promise is cached, so a second call for the same file gets the same promise and no second request. A failed fetch is removed from the cache, so the next call tries again.
-- `forgetPictures()`: revokes every cached object URL and empties the cache. Call it on sign-out.
-- `queuePicture(job)`: runs `job` when fewer than 4 are running, in the order asked; a job that rejects frees its slot.
+- `forgetPictures(options?)`: revokes every cached object URL and empties the cache. Call it on sign-out. `forgetPictures()` touches memory only; `forgetPictures({ device: true })` also deletes the device cache (below).
+- `enablePictureDeviceCache({ name })` / `disablePictureDeviceCache()`: off until you call it. When on, and where `caches` (Cache Storage) exists, `pictureObjectUrl` first looks in `caches.open(name)` for the request URL `<vaultOrigin>/files/<encoded id>`; a hit makes the object URL from the stored blob with no network call; a miss fetches as before and, when the read is ok, stores a copy (`cache.put(url, res.clone())`) before making the object URL. A storage failure (quota, private mode) is swallowed with one `console.warn` and the picture still shows. Without `caches`, enabling does nothing. `disablePictureDeviceCache()` stops using it but keeps the stored pictures. **`name` must be per person**, for example `signed-picture:<hash of the principal>`, so a second person on the same browser never sees the first one's pictures.
+- `queuePicture(job)`: runs `job` when fewer than the limit (4) are running, in the order asked; a job that rejects frees its slot.
+- `setPictureQueueLimit(n)`: sets the limit. `n` must be a whole number of at least 1, else `RangeError`. Raising it starts waiting jobs at once; lowering it lets the running ones finish. The plan's choice for apps is 6.
 - `SignedImage({ fileUri, vaultOrigin, previewUrl?, placeholder?, className?, alt? })`: a `div` (class `thumb` unless you give `className`) that fetches only when it is within 200 px of the screen (an `IntersectionObserver` with `rootMargin: "200px"`, or at once where there is none), through `queuePicture`. `previewUrl` (a local picture) wins and nothing is fetched. It shows `placeholder` until the picture arrives, then an `<img>` with `alt` (default empty).
 
 `SignedImage` marks its state on the `div`: `data-state="loading"` (nothing shown, no failure), `"shown"` or `"failed"`. When the fetch fails it draws the placeholder and, after it, `<span class="signed-image-failed">This picture could not be loaded.</span>`. Style these yourself.
@@ -71,9 +73,11 @@ Also: React 19; the peers `lws-session-bridge` (with its own peers, set up with 
 
 - "The cache knows the origin." It is keyed by the file address only. A second call with another `vaultOrigin` for the same address gets the first call's URL and sends no request.
 - "Object URLs go away by themselves." They live until `forgetPictures()`. Nothing frees one when a `SignedImage` unmounts.
-- "There is one queue per `SignedImage`." The queue (4 at once) is module state, one per page. Two installed copies of this package give two queues, two caches and so up to 8 fetches at once (RuleGhsSingletonPeer: install it once, as the peer rules above say).
+- "There is one queue per `SignedImage`." The queue (4 at once unless `setPictureQueueLimit` says otherwise) is module state, one per page. Two installed copies of this package give two queues, two caches and so up to 8 fetches at once (RuleGhsSingletonPeer: install it once, as the peer rules above say).
 - "`data-state` says the picture is on its way." A `SignedImage` with no `fileUri` and no `previewUrl`, or one that is far from the screen, also says `loading` and never fetches.
 - "A `SignedImage` that failed tries again." It does not: `failed` is not reset when `fileUri` changes, and a picture already shown for an earlier `fileUri` stays until the new one arrives (both as in the source, which kept `src` too).
+- "The device cache knows if a picture changed." It keys by file address only (the request URL). It assumes the vault never changes a file's bytes under the same address; a replaced picture gets a new address. A picture deleted in the vault stays in the device cache until `forgetPictures({ device: true })`.
+- "One cache name is enough." It is not: the name must differ per person, or a second person on the same browser is shown the first one's pictures.
 - "The `<img>` has no size." It has none; the host's CSS gives the tile its size.
 
 ## Where it came from
@@ -95,6 +99,15 @@ Named changes, and only these:
 
 `src/index.ts` is new.
 
+## Changes in 0.2.0
+
+Changes in 0.2.0, and only these (each is off until called; with none called the unit behaves as 0.1.0):
+
+- F1. `src/pictureQueue.ts`: `LIMIT` is `let limit`, default 4; new `setPictureQueueLimit(n)`.
+- F2. `src/pictureUrl.ts`: new `enablePictureDeviceCache`, `disablePictureDeviceCache`; `pictureObjectUrl` uses Cache Storage when enabled; `forgetPictures` takes an optional `{ device: true }`.
+- `src/index.ts` also exports `setPictureQueueLimit`, `enablePictureDeviceCache`, `disablePictureDeviceCache` and the types `PictureDeviceCacheOptions`, `ForgetPicturesOptions`.
+- New code written for GitHubStandardPictures (Pic.FetchQueue), not copied from the source app.
+
 ## Tests
 
-56 tests in 6 files. New, written for this unit (the source app's tests of these functions run on its own fake vault and are not ported: `test/plants.test.ts:264` is re-expressed here): the GET (address, headers, `credentials: "omit"`, encoded id, the given origin); a photo-ref address, a plain entity address and a record address (id tail); no file address; one promise and one fetch; the cache keyed by address only; a failed fetch forgotten; a refused read (HTTP 404); `forgetPictures`; the queue (never more than 4, in order, a rejection frees its slot); `SignedImage` (preview wins, shown, class and alt, placeholder while loading, failure, with and without `IntersectionObserver`, the 200 px margin and the 200 px edges, a late result for a file the component has left, unmount before the answer, the arguments given to `pictureObjectUrl`, a later `previewUrl`, five pictures through the queue of four). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory. `lws-session-bridge` is replaced by a fake in the tests; `photo-ref` is the real one.
+76 tests in 8 files (56 from 0.1.0, 20 new for 0.2.0 in `src/pictureQueueLimit.test.ts` and `src/pictureDeviceCache.test.ts`; the in-memory `caches` fake is `test/cachesFake.ts`; `src/exports.test.ts` lists the new exports). New, written for this unit (the source app's tests of these functions run on its own fake vault and are not ported: `test/plants.test.ts:264` is re-expressed here): the GET (address, headers, `credentials: "omit"`, encoded id, the given origin); a photo-ref address, a plain entity address and a record address (id tail); no file address; one promise and one fetch; the cache keyed by address only; a failed fetch forgotten; a refused read (HTTP 404); `forgetPictures`; the queue (never more than 4, in order, a rejection frees its slot); `SignedImage` (preview wins, shown, class and alt, placeholder while loading, failure, with and without `IntersectionObserver`, the 200 px margin and the 200 px edges, a late result for a file the component has left, unmount before the answer, the arguments given to `pictureObjectUrl`, a later `previewUrl`, five pictures through the queue of four). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory. `lws-session-bridge` is replaced by a fake in the tests; `photo-ref` is the real one.
