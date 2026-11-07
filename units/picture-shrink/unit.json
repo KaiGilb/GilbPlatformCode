@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "unit": "units/picture-shrink",
+  "package": "@kaigilb/gilbplatformcode-picture-shrink",
+  "version": "0.1.0",
+  "purpose": "Reads a picture file once and makes upright JPEG copies no larger than the sizes you ask for, a 1600 px master and a 320 px thumbnail by default, never enlarged or cropped.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/data/errors.ts", "lines": [29, 35], "to": "src/shrink.ts" },
+      { "path": "src/data/pictures.ts", "lines": [11, 80], "to": "src/shrink.ts" }
+    ]
+  },
+  "namedChanges": [
+    "K1. the imports of pictures.ts (1-9) are not taken; PictureUnreadableError is local; decode and encodeJpeg stay unexported"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}

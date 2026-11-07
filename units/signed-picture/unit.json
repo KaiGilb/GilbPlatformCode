@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "unit": "units/signed-picture",
+  "package": "@kaigilb/gilbplatformcode-signed-picture",
+  "version": "0.1.0",
+  "purpose": "Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out, lets only a few fetches run at once, and draws a React thumbnail that loads when it nears the screen.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/data/pictures.ts", "lines": [109, 136], "to": "src/pictureUrl.ts" },
+      { "path": "src/ui/pictureQueue.ts", "lines": [1, 23], "to": "src/pictureQueue.ts" },
+      { "path": "src/ui/Thumb.tsx", "lines": [14, 64], "to": "src/SignedImage.tsx" }
+    ]
+  },
+  "namedChanges": [
+    "G1. pictureObjectUrl takes vaultOrigin as a second parameter in place of VAULT_ORIGIN (pictures.ts:120); the cache stays keyed by fileEntityUri only",
+    "G2. the demo branch (pictures.ts:113-114) is deleted",
+    "G3. imports: dpopReadAuth from lws-session-bridge; entityIdTail and fileIdFromPhotoRef from photo-ref",
+    "G4. Thumb is SignedImage with props vaultOrigin, placeholder (default null, replaces LeafGlyph), className (default thumb), alt (default empty); vaultOrigin is in the effect's dependency list",
+    "G5. the fetch's rejection handler becomes live && setFailed(true); the div carries data-state loading, shown or failed and draws the sentence This picture could not be loaded. when failed"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    { "member": "vaultOrigin", "replaces": "VAULT_ORIGIN from the app's config, src/data/pictures.ts:120" },
+    { "member": "placeholder", "replaces": "<LeafGlyph />, src/ui/Thumb.tsx:61" },
+    { "member": "className", "replaces": "the literal thumb, src/ui/Thumb.tsx:60" },
+    { "member": "alt", "replaces": "the literal empty alt, src/ui/Thumb.tsx:61" }
+  ],
+  "library": { "admitted": false }
+}
