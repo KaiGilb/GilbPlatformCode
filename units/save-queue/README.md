@@ -8,7 +8,7 @@ An on-device queue of unsent writes, kept separate for each signed-in person, th
 
 Every add, edit and delete is written to the queue first and removed once the vault has it. The unit holds the queue's storage (IndexedDB, or memory where there is none) and the pure rules around it: how a failure is told apart, what an op looks like after one, how long to wait, and whose ops are whose. It sends nothing itself: the host's `send` does that, and the host's loop and timers call these functions.
 
-- `PendingOp<T = unknown>`: one queued write. `id`, `kind` (`create` / `update` / `delete`), `recordId?`, `etag?`, `record?: T` (the record as it was when an edit or delete began), `change: Record<string, unknown>`, `pictureBlob?`, `thumbBlob?`, `fullBlob?` (a full-size copy waiting to be sent), the upload steps done so far (`masterEntity?`, `thumbEntity?`, `thumbLinked?`, and for a full copy `fullEntity?`, `fullLinked?`, `masterLinked?`, `thumbRelinked?`), `createdAt` (ISO), `tries`, `principal` (who was signed in when it was written), and the failure counters `busyFails?`, `busySentence?`, `otherFails?`, `stuckSentence?`.
+- `PendingOp<T = unknown>`: one queued write. `id`, `kind` (`create` / `update` / `delete`), `recordId?`, `etag?`, `record?: T` (the record as it was when an edit or delete began), `change: Record<string, unknown>`, `pictureBlob?`, `thumbBlob?`, `fullBlob?` (a full-size copy waiting to be sent), the upload steps done so far (`masterEntity?`, `thumbEntity?`, `thumbLinked?`, and for a full copy `fullEntity?`, `masterLinked?`, `thumbRelinked?`), `createdAt` (ISO), `tries`, `principal` (who was signed in when it was written), and the failure counters `busyFails?`, `busySentence?`, `otherFails?`, `stuckSentence?`.
 - `QueueStore`, `memoryStore()`, `idbStore()`, `queueStore()`, `setQueueStore(store | null)`: the storage. `queueStore()` is IndexedDB when the browser has it, else memory. Tests (and nothing else) call `setQueueStore`.
 - `setQueueDbName(name)`: the IndexedDB database name. Call it once at start-up, before the first queue call. The object store is `pending`, version 1, key `id`.
 - `listOps()`: every op, every person's, oldest first. A store that fails to read answers `[]`. `saveOp(op)` and `dropOp(id)`: write and remove; a store failure is logged and they do not throw. Each store call gives up after 1500 ms.
@@ -21,7 +21,7 @@ Every add, edit and delete is written to the queue first and removed once the va
 - `opsFor(ops, principal)`, `listOpsFor(principal)`: only that person's ops; `null` (nobody signed in) gives none. `listOpsFor` is `opsFor(await listOps(), principal)`.
 - `stampOp(input, principal)`: puts the person on an op about to be queued; `null` or `""` gives `null` and nothing is to be queued.
 - `opStatus(op, sending)`: `"stuck"` when the op has a `stuckSentence`, else `"saving"` when it is being sent now, else `"failed"` (waiting for the next try).
-- `progressOf(op)`: `{ progress, onProgress }` for the host's `send`. `progress` holds the upload steps already done: any of `masterEntity`, `thumbEntity`, `thumbLinked`, `fullEntity`, `fullLinked`, `masterLinked`, `thumbRelinked` that is set on the op (a flag only when true); an op with only the first three gives exactly the 0.1.0 object. `onProgress` accepts the same seven; `onProgress(step)` writes a finished step onto the SAME op object and into the queue. The host's `send` skips a step whose entity is present in `progress`: that is how a finished upload step is never sent twice.
+- `progressOf(op)`: `{ progress, onProgress }` for the host's `send`. `progress` holds the upload steps already done: any of `masterEntity`, `thumbEntity`, `thumbLinked`, `fullEntity`, `masterLinked`, `thumbRelinked` that is set on the op (a flag only when true); an op with only the first three gives exactly the 0.1.0 object. `onProgress` accepts the same six; `onProgress(step)` writes a finished step onto the SAME op object and into the queue. The host's `send` skips a step whose entity is present in `progress`: that is how a finished upload step is never sent twice.
 
 One queue per person: one store, one table, every person's ops in it, each op carrying its `principal`. Nothing is deleted at sign-out. The cut is made when the app reads: through `listOpsFor(principal)`.
 
@@ -156,8 +156,8 @@ Named changes in `src/policy.ts` (new file, the pure pieces lifted):
 
 Changes in 0.2.0, and only these:
 
-- `src/queue.ts`: `PendingOp` gains the optional `fullBlob?: Blob`, `fullEntity?: string`, `fullLinked?: boolean`, `masterLinked?: boolean`, `thumbRelinked?: boolean`.
-- `src/policy.ts`: `progressOf(op).progress` also carries `fullEntity`, `fullLinked`, `masterLinked` and `thumbRelinked` when set, in the same spread form as the first three; `onProgress` accepts all seven steps. The type `UploadSteps` is exported. The `fullBlob` is not a step and is never in `progress`.
+- `src/queue.ts`: `PendingOp` gains the optional `fullBlob?: Blob`, `fullEntity?: string`, `masterLinked?: boolean`, `thumbRelinked?: boolean`.
+- `src/policy.ts`: `progressOf(op).progress` also carries `fullEntity`, `masterLinked` and `thumbRelinked` when set, in the same spread form as the first three; `onProgress` accepts all six steps. The type `UploadSteps` is exported. The `fullBlob` is not a step and is never in `progress`.
 - `package.json`: version 0.2.0. `unit.json` lists the change.
 
 The default behaviour is unchanged: an op that holds only the 0.1.0 fields gives the 0.1.0 progress object, byte for byte (a test compares it with a literal copy of the 0.1.0 function).

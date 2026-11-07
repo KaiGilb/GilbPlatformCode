@@ -21,8 +21,8 @@ export function classifyWith(e: unknown, tests: FailureTests): Failure {
   return "other";
 }
 
-/** The upload steps a queued op can hold. The last four belong to a full-size copy. */
-export type UploadSteps = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; fullLinked?: boolean; masterLinked?: boolean; thumbRelinked?: boolean };
+/** The upload steps a queued op can hold. The last three belong to a full-size copy. */
+export type UploadSteps = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; masterLinked?: boolean; thumbRelinked?: boolean };
 
 /** Upload steps done so far go onto the op itself and into the queue, so a retry resumes where this stopped. */
 export const progressOf = (op: PendingOp) => ({
@@ -31,7 +31,6 @@ export const progressOf = (op: PendingOp) => ({
     ...(op.thumbEntity ? { thumbEntity: op.thumbEntity } : {}),
     ...(op.thumbLinked ? { thumbLinked: true } : {}),
     ...(op.fullEntity ? { fullEntity: op.fullEntity } : {}),
-    ...(op.fullLinked ? { fullLinked: true } : {}),
     ...(op.masterLinked ? { masterLinked: true } : {}),
     ...(op.thumbRelinked ? { thumbRelinked: true } : {}),
   } as UploadSteps,

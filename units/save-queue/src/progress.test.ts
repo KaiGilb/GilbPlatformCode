@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
 import { listOps, memoryStore, progressOf, setQueueStore, type PendingOp } from "./index";
 
@@ -22,7 +24,7 @@ describe("progressOf, 0.1.0 fields", () => {
     }
   });
   test("a false or empty new field is left out", () => {
-    const o = op({ masterEntity: "m", fullEntity: "", fullLinked: false, masterLinked: false, thumbRelinked: false });
+    const o = op({ masterEntity: "m", fullEntity: "", masterLinked: false, thumbRelinked: false });
     expect(progressOf(o).progress).toStrictEqual({ masterEntity: "m" });
   });
   test("the full blob is not part of the progress", () => {
@@ -34,17 +36,15 @@ describe("progressOf, 0.1.0 fields", () => {
 describe("progressOf, the full-copy steps", () => {
   test("each new field set on the op is carried in progress", () => {
     expect(progressOf(op({ fullEntity: "f" })).progress).toStrictEqual({ fullEntity: "f" });
-    expect(progressOf(op({ fullLinked: true })).progress).toStrictEqual({ fullLinked: true });
     expect(progressOf(op({ masterLinked: true })).progress).toStrictEqual({ masterLinked: true });
     expect(progressOf(op({ thumbRelinked: true })).progress).toStrictEqual({ thumbRelinked: true });
   });
-  test("all seven together", () => {
-    const o = op({ masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", fullLinked: true, masterLinked: true, thumbRelinked: true });
-    expect(progressOf(o).progress).toStrictEqual({ masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", fullLinked: true, masterLinked: true, thumbRelinked: true });
+  test("all six together", () => {
+    const o = op({ masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", masterLinked: true, thumbRelinked: true });
+    expect(progressOf(o).progress).toStrictEqual({ masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", masterLinked: true, thumbRelinked: true });
   });
   test.each([
     ["fullEntity", { fullEntity: "f" }],
-    ["fullLinked", { fullLinked: true }],
     ["masterLinked", { masterLinked: true }],
     ["thumbRelinked", { thumbRelinked: true }],
   ] as const)("onProgress({ %s }) lands on the op and in the store, and the next progressOf carries it", async (_name, step) => {
@@ -54,9 +54,9 @@ describe("progressOf, the full-copy steps", () => {
     expect((await listOps()).find((x) => x.id === "r1")).toMatchObject(step);
     expect(progressOf(o).progress).toStrictEqual(step);
   });
-  test("onProgress takes all seven at once", async () => {
+  test("onProgress takes all six at once", async () => {
     const o = op({ id: "r2" });
-    const all = { masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", fullLinked: true, masterLinked: true, thumbRelinked: true };
+    const all = { masterEntity: "m", thumbEntity: "t", thumbLinked: true, fullEntity: "f", masterLinked: true, thumbRelinked: true };
     await progressOf(o).onProgress(all);
     expect((await listOps()).find((x) => x.id === "r2")).toMatchObject(all);
   });
@@ -66,5 +66,24 @@ describe("progressOf, the full-copy steps", () => {
     const back = (await listOps()).find((x) => x.id === "r3")!;
     expect(await new Response(back.fullBlob!).text()).toBe("full");
     expect(back.fullEntity).toBe("f");
+  });
+});
+
+describe("the steps carry exactly what picture-set reports", () => {
+  const keysOf = (src: string, typeName: string): string[] => {
+    const m = new RegExp(`export type ${typeName} = \\{([^}]*)\\}`).exec(src);
+    if (!m) throw new Error(`type ${typeName} not found`);
+    return [...m[1]!.matchAll(/(\w+)\??:/g)].map((k) => k[1]!).sort();
+  };
+  // Both read as source text; run from the unit's folder (npm test does), picture-set is ../picture-set.
+  const setKeys = keysOf(readFileSync(resolve(process.cwd(), "..", "picture-set", "src", "uploadSet.ts"), "utf8"), "UploadProgress");
+  const queueKeys = keysOf(readFileSync(resolve(process.cwd(), "src", "policy.ts"), "utf8"), "UploadSteps");
+  test("the UploadSteps keys equal picture-set's UploadProgress keys", () => {
+    expect(setKeys.length).toBeGreaterThan(0);
+    expect(queueKeys).toEqual(setKeys);
+  });
+  test("progressOf carries every one of those keys when set", () => {
+    const all = Object.fromEntries(setKeys.map((k) => [k, k.endsWith("Entity") ? "e" : true]));
+    expect(Object.keys(progressOf(op(all)).progress).sort()).toEqual(setKeys);
   });
 });

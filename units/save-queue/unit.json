@@ -31,7 +31,7 @@
     "P8. opsFor: the filter of GardenScreen.tsx 92; listOpsFor is new",
     "P9. stampOp: GardenScreen.tsx 284-289 without the banner; null when there is no person",
     "P10. opStatus: GardenScreen.tsx 155 with busy.has(op.id) replaced by the sending argument",
-    "0.2.0. PendingOp gains optional fullBlob, fullEntity, fullLinked, masterLinked, thumbRelinked; progressOf carries fullEntity, fullLinked, masterLinked, thumbRelinked when set (same spread form as the first three; an op with only the 0.1.0 fields gives the 0.1.0 progress object byte for byte) and onProgress accepts all seven steps; type UploadSteps is exported"
+    "0.2.0. PendingOp gains optional fullBlob, fullEntity, masterLinked, thumbRelinked; progressOf carries fullEntity, masterLinked, thumbRelinked when set (same spread form as the first three; an op with only the 0.1.0 fields gives the 0.1.0 progress object byte for byte) and onProgress accepts all six steps; type UploadSteps is exported"
   ],
   "newFiles": [
     "src/policy.ts",
