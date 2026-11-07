@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
-import { ClaudeCodeConnect, ClaudeCodeBadge, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
+import { ClaudeCodeConnect, ClaudeCodeBadge, ClaudeCodeRelayButton, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
 import { defaultSystem } from "./ClaudeCodeConnect";
 
 const PRINCIPAL = "https://pelle.example/base";
@@ -327,17 +327,18 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
 });
 
 // Supported browsers (Kai, 2026-11-07), from a measurement on a Mac, 2026-11-05, bridge 0.1.6:
-// Chrome and Edge pass, Safari and Brave fail. Mac tab only; Linux and Windows are not measured.
+// Chrome and Edge pass, Safari and Brave fail directly; Safari works through the bridge window. Mac tab only; Linux and Windows are not measured.
 describe("<ClaudeCodeConnect> supported browsers", () => {
   const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
   const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
+  const SAFARI = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it. ";
   const BROWSER_TEXT =
-    "Supported browsers: Chrome and Edge. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome or Edge. " + ALLOW_BEFORE;
+    "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
-    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge"]);
-    expect(NOT_YET_BROWSERS).toEqual(["Safari", "Brave"]);
+    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge", "Safari"]);
+    expect(NOT_YET_BROWSERS).toEqual(["Brave"]);
   });
 
   it("Mac: section 1 leads with a supported browser, and the browser item is first with exactly the text", () => {
@@ -347,7 +348,7 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(one).not.toHaveTextContent("You need two programs on your computer:");
     const item = screen.getByTestId("claude-code-supported-browsers");
     expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(BROWSER_TEXT);
-    expect(within(item).getByText("Supported browsers: Chrome and Edge.").tagName).toBe("STRONG");
+    expect(within(item).getByText("Supported browsers: Chrome, Edge and Safari.").tagName).toBe("STRONG");
     const items = one.querySelectorAll("ul.gcc-list > li");
     expect(items).toHaveLength(3);
     expect(items[0]).toBe(item);
@@ -362,20 +363,20 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
   it("an empty not-yet list drops the cannot-connect sentence", () => {
     render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={[]} />);
     const text = screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim();
-    expect(text).toBe("Supported browsers: Chrome and Edge. " + ALLOW_BEFORE);
+    expect(text).toBe("Supported browsers: Chrome, Edge and Safari. " + SAFARI + ALLOW_BEFORE);
     expect(text).not.toContain("cannot connect");
   });
 
   it("a one-item not-yet list reads 'it'", () => {
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Safari"]} />);
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Brave"]} />);
     expect(screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Supported browsers: Chrome and Edge. Safari cannot connect to Claude Code yet. If you are in it, open this page in Chrome or Edge. " + ALLOW_BEFORE,
+      "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE,
     );
   });
 
   it("the supported list can be passed in", () => {
     render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} />);
-    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent("Supported browsers: Chrome. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome.");
+    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent("Supported browsers: Chrome. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome.");
   });
 
   it("Linux: section 1 keeps the two-programs line and shows no browser item", async () => {
@@ -538,5 +539,199 @@ describe("<ClaudeCodeBadge>", () => {
     expect(group.children[1]).toHaveAccessibleName("Claude Code connected — disconnect");
     await user.click(screen.getByTestId("claude-code-connected"));
     expect(onDisconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+type RelayState = "closed" | "opening" | "open";
+/** A real client with the relay methods replaced by recorders. */
+function stubClient(over: { openRelay?: () => Promise<boolean>; directBlocked?: () => Promise<boolean>; probe?: () => Promise<boolean>; state?: RelayState } = {}) {
+  const c = client();
+  const listeners = new Set<(s: RelayState) => void>();
+  let state: RelayState = over.state ?? "closed";
+  const calls = { openRelay: 0, probe: 0, directBlocked: 0 };
+  c.openRelay = () => {
+    calls.openRelay++;
+    return over.openRelay ? over.openRelay() : Promise.resolve(true);
+  };
+  c.probe = async () => {
+    calls.probe++;
+    return over.probe ? over.probe() : false;
+  };
+  c.directBlocked = async () => {
+    calls.directBlocked++;
+    return over.directBlocked ? over.directBlocked() : true;
+  };
+  c.relayState = () => state;
+  c.onRelayChange = (cb) => {
+    listeners.add(cb);
+    return () => void listeners.delete(cb);
+  };
+  const fire = (s: RelayState) => {
+    state = s;
+    listeners.forEach((l) => l(s));
+  };
+  return { c, calls, fire, listeners };
+}
+
+const RELAY_OFFER_TEXT = "Using Safari? Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
+const RELAY_FAILED_TEXT =
+  "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
+
+describe("<ClaudeCodeConnect> bridge window block in step 3", () => {
+  it.each(["mac", "linux"] as const)("%s: absent before a failed check, present after, with exact text", async (sys) => {
+    const user = userEvent.setup();
+    const { c } = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await user.click(screen.getByTestId(`claude-code-tab-${sys}`));
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+    await toCodeBox(user);
+    const block = await screen.findByTestId("claude-code-relay");
+    expect(block).toHaveTextContent(RELAY_OFFER_TEXT);
+    expect(screen.getByTestId("claude-code-relay-open")).toHaveTextContent("Open bridge window");
+    expect(screen.queryByTestId("claude-code-relay-failed")).not.toBeInTheDocument();
+  });
+
+  it("absent when the bridge answers", async () => {
+    const user = userEvent.setup();
+    const { c } = stubClient({ probe: async () => true });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await screen.findByLabelText("Code from the bridge terminal");
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  });
+
+  it("Windows: no block", async () => {
+    const user = userEvent.setup();
+    const { c } = stubClient();
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await user.click(screen.getByTestId("claude-code-tab-windows"));
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  });
+
+  it("the click calls openRelay synchronously, before anything is awaited", async () => {
+    const user = userEvent.setup();
+    let probes = 0;
+    const { c, calls } = stubClient({ probe: async () => (++probes, false), openRelay: () => new Promise(() => {}) });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const btn = await screen.findByTestId("claude-code-relay-open");
+    expect(calls.openRelay).toBe(0);
+    fireEvent.click(btn);
+    expect(calls.openRelay).toBe(1); // no await between the click and the call
+  });
+
+  it("true: runs the check again, bridgeUp becomes true and the block goes", async () => {
+    const user = userEvent.setup();
+    let up = false;
+    const { c, calls } = stubClient({ probe: async () => up, openRelay: async () => ((up = true), true) });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await user.click(await screen.findByTestId("claude-code-relay-open"));
+    await waitFor(() => expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument());
+    expect(calls.probe).toBe(2);
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+  });
+
+  it("false: shows the failed text exactly, and the block stays", async () => {
+    const user = userEvent.setup();
+    const { c, calls } = stubClient({ probe: async () => false, openRelay: async () => false });
+    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await user.click(await screen.findByTestId("claude-code-relay-open"));
+    const failed = await screen.findByTestId("claude-code-relay-failed");
+    expect(failed.textContent).toBe(RELAY_FAILED_TEXT);
+    expect(calls.probe).toBe(1);
+    expect(screen.getByTestId("claude-code-relay")).toBeInTheDocument();
+  });
+
+  it("while opening the button is disabled and reads Opening…, and it unsubscribes on unmount", async () => {
+    const user = userEvent.setup();
+    const { c, fire, listeners } = stubClient({ probe: async () => false });
+    const view = render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const btn = await screen.findByTestId("claude-code-relay-open");
+    expect(btn).toBeEnabled();
+    act(() => fire("opening"));
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent("Opening…");
+    act(() => fire("closed"));
+    expect(btn).toBeEnabled();
+    expect(listeners.size).toBe(1);
+    view.unmount();
+    expect(listeners.size).toBe(0);
+  });
+});
+
+describe("<ClaudeCodeRelayButton>", () => {
+  it("renders nothing while the relay is open", async () => {
+    const { c, calls } = stubClient({ state: "open", directBlocked: async () => true });
+    const { container } = render(<ClaudeCodeRelayButton client={c} />);
+    await act(async () => {});
+    expect(container).toBeEmptyDOMElement();
+    expect(calls.directBlocked).toBeLessThanOrEqual(1);
+  });
+
+  it("renders nothing when direct calls are not blocked", async () => {
+    const { c, calls } = stubClient({ directBlocked: async () => false });
+    const { container } = render(<ClaudeCodeRelayButton client={c} />);
+    await act(async () => {});
+    expect(calls.directBlocked).toBe(1);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the block when blocked, with exact text", async () => {
+    const { c } = stubClient({ directBlocked: async () => true });
+    render(<ClaudeCodeRelayButton client={c} />);
+    const bar = await screen.findByTestId("claude-code-relay-bar");
+    expect(bar).toHaveTextContent("Safari needs the bridge window for Claude Code.");
+    expect(screen.getByTestId("claude-code-relay-bar-open")).toHaveTextContent("Open bridge window");
+  });
+
+  it("the click calls openRelay synchronously; true calls onOpened", async () => {
+    const onOpened = vi.fn();
+    const { c, calls } = stubClient({ openRelay: async () => true });
+    render(<ClaudeCodeRelayButton client={c} onOpened={onOpened} />);
+    const btn = await screen.findByTestId("claude-code-relay-bar-open");
+    fireEvent.click(btn);
+    expect(calls.openRelay).toBe(1);
+    await waitFor(() => expect(onOpened).toHaveBeenCalledTimes(1));
+  });
+
+  it("false: onFailed gets the failed text; without onFailed it shows inline", async () => {
+    const onFailed = vi.fn();
+    const a = stubClient({ openRelay: async () => false });
+    const first = render(<ClaudeCodeRelayButton client={a.c} onFailed={onFailed} />);
+    fireEvent.click(await screen.findByTestId("claude-code-relay-bar-open"));
+    await waitFor(() => expect(onFailed).toHaveBeenCalledWith(RELAY_FAILED_TEXT));
+    expect(screen.queryByTestId("claude-code-relay-bar-failed")).not.toBeInTheDocument();
+    first.unmount();
+    const b = stubClient({ openRelay: async () => false });
+    render(<ClaudeCodeRelayButton client={b.c} />);
+    fireEvent.click(await screen.findByTestId("claude-code-relay-bar-open"));
+    expect((await screen.findByTestId("claude-code-relay-bar-failed")).textContent).toBe(RELAY_FAILED_TEXT);
+  });
+
+  it("goes away when the relay opens, and comes back after it closes (re-checks directBlocked)", async () => {
+    const { c, calls, fire } = stubClient({ directBlocked: async () => true });
+    const { container } = render(<ClaudeCodeRelayButton client={c} />);
+    await screen.findByTestId("claude-code-relay-bar");
+    expect(calls.directBlocked).toBe(1);
+    act(() => fire("open"));
+    expect(container).toBeEmptyDOMElement();
+    act(() => fire("closed"));
+    await screen.findByTestId("claude-code-relay-bar");
+    expect(calls.directBlocked).toBe(2);
+  });
+
+  it("closing re-check can hide it when direct calls now work; unsubscribes on unmount", async () => {
+    let blocked = true;
+    const { c, fire, listeners } = stubClient({ directBlocked: async () => blocked });
+    const view = render(<ClaudeCodeRelayButton client={c} />);
+    await screen.findByTestId("claude-code-relay-bar");
+    blocked = false;
+    act(() => fire("closed"));
+    await waitFor(() => expect(screen.queryByTestId("claude-code-relay-bar")).not.toBeInTheDocument());
+    view.unmount();
+    expect(listeners.size).toBe(0);
   });
 });

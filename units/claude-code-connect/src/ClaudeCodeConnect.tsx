@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ComponentType, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ComponentType, type ReactElement, type ReactNode } from "react";
 import { ClaudeCodeBridgeError, type ClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import type { BridgeCommands } from "@kaigilb/gilbplatformcode-claude-code-client";
 
@@ -31,11 +31,18 @@ function detectSystem(): ClaudeCodeSystem {
 
 /**
  * Browsers that pair with Claude Code, shown on the Mac tab. Measured on a Mac, 2026-11-05, bridge 0.1.6:
- * Chrome and Edge pass, Safari and Brave fail. Nothing else is measured; add a browser here only after it passes.
+ * Chrome and Edge pass, Safari and Brave fail directly. Safari works through the bridge window (real Safari 26.5 spike,
+ * 2026-11-07). Nothing else is measured; add a browser here only after it passes.
  */
-export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge"];
+export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"];
 /** Browsers measured to fail (same measurement). */
-export const NOT_YET_BROWSERS: readonly string[] = ["Safari", "Brave"];
+export const NOT_YET_BROWSERS: readonly string[] = ["Brave"];
+
+const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
+export const RELAY_OFFER = "Using Safari? Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
+export const RELAY_BAR_TEXT = "Safari needs the bridge window for Claude Code.";
+export const RELAY_FAILED =
+  "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
 
 /** "A", "A and B", "A, B and C". */
 function listWords(words: readonly string[]): string {
@@ -94,6 +101,8 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
   const [copiedAuth, setCopiedAuth] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedNode, setCopiedNode] = useState(false);
+  const [relay, setRelay] = useState<"closed" | "opening" | "open">(() => client.relayState());
+  const [relayFailed, setRelayFailed] = useState(false);
   const [system, setSystem] = useState<ClaudeCodeSystem>(detectSystem);
   const tabRefs = useRef<Partial<Record<ClaudeCodeSystem, HTMLButtonElement | null>>>({});
   const codeId = useId();
@@ -127,6 +136,24 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
       setChecking(false);
     }
   }, [client, setError]);
+
+  useEffect(() => {
+    setRelay(client.relayState());
+    return client.onRelayChange(setRelay);
+  }, [client]);
+
+  const openWindow = () => {
+    // First statement, no await before it: the pop-up is only allowed inside the click.
+    const opened = client.openRelay();
+    setRelayFailed(false);
+    void (async () => {
+      if (await opened) {
+        await recheck();
+      } else {
+        setRelayFailed(true);
+      }
+    })();
+  };
 
   const pair = useCallback(async () => {
     if (pairing || !pairCode.trim()) return;
@@ -209,6 +236,19 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>
           </p>
         ) : null}
+        {bridgeUp === false ? (
+          <div className="gcc-note" data-testid="claude-code-relay">
+            <p className="gcc-text">{RELAY_OFFER}</p>
+            <Button type="button" variant="ghost" onClick={openWindow} disabled={relay === "opening"} data-testid="claude-code-relay-open">
+              {relay === "opening" ? "Opening…" : "Open bridge window"}
+            </Button>
+            {relayFailed ? (
+              <p className="gcc-error" role="alert" data-testid="claude-code-relay-failed">
+                {RELAY_FAILED}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {/* The field and Pair are always there, whatever the bridge check said: a check can run
             before the bridge is up, and hiding the field then left the person stuck (Kai, 2026-11-04).
             If the bridge really is down, Pair fails with status 0 and the hint comes back. */}
@@ -281,7 +321,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
               {notYetBrowsers.length > 0
                 ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
                 : ""}{" "}
-              {ALLOW_BEFORE_PAIR}
+              {SAFARI_WINDOW_SENTENCE} {ALLOW_BEFORE_PAIR}
             </p>
           </li>
         ) : null}

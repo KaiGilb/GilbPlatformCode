@@ -22,6 +22,7 @@
   border-left: 3px solid var(--gcc-focus, #0969da); background: var(--gcc-surface, #fff);
   border-radius: 0 var(--gcc-radius, 8px) var(--gcc-radius, 8px) 0;
 }
+div.gcc-note { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .gcc-choices { display: grid; grid-template-columns: 1fr; gap: 16px; }
 @media (min-width: 640px) { .gcc-choices { grid-template-columns: 1fr 1fr; } }
 .gcc-choice {
