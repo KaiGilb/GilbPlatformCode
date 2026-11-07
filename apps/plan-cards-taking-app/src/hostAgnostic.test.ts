@@ -47,6 +47,10 @@ describe("host-agnostic check", () => {
     expect(r.status, r.stdout).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
   });
+  test("a host in config.ts, the one file a host may live in, passes; an import there still fails", () => {
+    expect(runWithPlant("config.ts", `export const SIGNIN_ORIGIN = "https://id.gilb.com";`).status).toBe(0);
+    expect(runWithPlant("config.ts", `import { x } from "some-package";`).status).toBe(1);
+  });
   test("an empty src is an error, not a pass", () => {
     const dir = scratch();
     try {
