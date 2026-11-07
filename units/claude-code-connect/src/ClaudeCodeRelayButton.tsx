@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactElement } from "react";
 import type { ClaudeCodeClient } from "@kaigilb/gilbplatformcode-claude-code-client";
 import type { ClaudeCodeButtonProps } from "./ClaudeCodeConnect";
-import { RELAY_BAR_TEXT, RELAY_FAILED } from "./ClaudeCodeConnect";
+import { RELAY_BAR_TEXT, RELAY_FAILED, detectRelayBrowser } from "./ClaudeCodeConnect";
 
 export interface ClaudeCodeRelayButtonProps {
   client: ClaudeCodeClient;
@@ -11,6 +11,8 @@ export interface ClaudeCodeRelayButtonProps {
   onOpened?: () => void;
   /** Called with the failure text when the window did not open. When omitted the text is shown inline. */
   onFailed?: (message: string) => void;
+  /** Whether this browser needs the bridge window (Safari). Optional; default is read from the user agent. Other browsers render nothing and never call `directBlocked()`. */
+  relayBrowser?: boolean;
 }
 
 function PlainButton({ variant = "primary", className, ...rest }: ClaudeCodeButtonProps): ReactElement {
@@ -19,9 +21,10 @@ function PlainButton({ variant = "primary", className, ...rest }: ClaudeCodeButt
 
 /**
  * For the chat header, after pairing. Renders nothing while the bridge window is open, and nothing unless the
- * browser blocks direct calls to the bridge (Safari). When the person closes the window it checks again.
+ * browser is Safari-family and blocks direct calls to the bridge (Safari). When the person closes the window it checks again.
  */
-export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, onFailed }: ClaudeCodeRelayButtonProps): ReactElement | null {
+export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, onFailed, relayBrowser }: ClaudeCodeRelayButtonProps): ReactElement | null {
+  const isRelay = relayBrowser ?? detectRelayBrowser();
   const [relay, setRelay] = useState<"closed" | "opening" | "open">(() => client.relayState());
   const [blocked, setBlocked] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -42,6 +45,7 @@ export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, 
   }, [client]);
 
   useEffect(() => {
+    if (!isRelay) return;
     let cancel = check();
     setRelay(client.relayState());
     const off = client.onRelayChange((s) => {
@@ -55,9 +59,9 @@ export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, 
       off();
       cancel();
     };
-  }, [client, check]);
+  }, [client, check, isRelay]);
 
-  if (relay === "open" || !blocked) return null;
+  if (!isRelay || relay === "open" || !blocked) return null;
 
   const openWindow = () => {
     // First statement, no await before it: the pop-up is only allowed inside the click.

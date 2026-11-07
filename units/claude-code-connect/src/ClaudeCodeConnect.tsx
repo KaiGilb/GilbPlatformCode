@@ -30,6 +30,24 @@ function detectSystem(): ClaudeCodeSystem {
 }
 
 /**
+ * True only for Safari-family WebKit (Safari on Mac, Safari and every browser on iOS that reports no other name).
+ * Those browsers reach the bridge only through the bridge window. This is a display hint from the user-agent
+ * string, not security: the bridge and client decide what is allowed.
+ */
+export function isRelayBrowser(userAgent: string): boolean {
+  return /AppleWebKit\//.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg|EdgiOS|Firefox|FxiOS|OPR|Opera|Brave|Vivaldi|Arc)\//.test(userAgent);
+}
+
+/** Reads the user agent at render time. Default false when it cannot be read. */
+export function detectRelayBrowser(): boolean {
+  try {
+    return isRelayBrowser(navigator.userAgent || "");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Browsers that pair with Claude Code, shown on the Mac tab. Measured on a Mac, 2026-11-05, bridge 0.1.6:
  * Chrome and Edge pass, Safari and Brave fail directly. Safari works through the bridge window (real Safari 26.5 spike,
  * 2026-11-07). Nothing else is measured; add a browser here only after it passes.
@@ -39,7 +57,7 @@ export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"
 export const NOT_YET_BROWSERS: readonly string[] = ["Brave"];
 
 const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
-export const RELAY_OFFER = "Using Safari? Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
+export const RELAY_OFFER = "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
 export const RELAY_BAR_TEXT = "Safari needs the bridge window for Claude Code.";
 export const RELAY_FAILED =
   "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
@@ -81,6 +99,8 @@ export interface ClaudeCodeConnectProps {
   notYetBrowsers?: readonly string[];
   /** Your own button component (same props as a `<button>` plus `variant`). Default: a plain button styled by claude-code.css. */
   Button?: ComponentType<ClaudeCodeButtonProps>;
+  /** Whether this browser needs the bridge window (Safari). Optional; default is read from the user agent. For tests and hosts. */
+  relayBrowser?: boolean;
 }
 
 /**
@@ -89,7 +109,8 @@ export interface ClaudeCodeConnectProps {
  *   2. the code box: it looks for the bridge on this computer, then trades the typed code for the secret.
  * Rendering it IS choosing Claude Code, so mount it when the person picks that provider and unmount it on Cancel.
  */
-export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton }: ClaudeCodeConnectProps): ReactElement {
+export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton, relayBrowser }: ClaudeCodeConnectProps): ReactElement {
+  const isRelay = relayBrowser ?? detectRelayBrowser();
   const [stage, setStage] = useState<"steps" | "code">("steps");
   const [copied, setCopied] = useState(false);
   const [copiedAlways, setCopiedAlways] = useState(false);
@@ -236,7 +257,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>
           </p>
         ) : null}
-        {bridgeUp === false ? (
+        {bridgeUp === false && isRelay ? (
           <div className="gcc-note" data-testid="claude-code-relay">
             <p className="gcc-text">{RELAY_OFFER}</p>
             <Button type="button" variant="ghost" onClick={openWindow} disabled={relay === "opening"} data-testid="claude-code-relay-open">
