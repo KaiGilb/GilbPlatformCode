@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-set",
   "package": "@kaigilb/gilbplatformcode-picture-set",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -16,6 +16,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. peerDependencies picture-upload is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE); src/peerRanges.test.ts checks every @kaigilb peer range against the sibling unit's version; README only otherwise (record shapes, link body, warnings, listing)",
     "C1. baseName falls back to picture, not plant (both places)",
     "C2. uploadWithThumb(master, thumb, sink, target): uploadPicture(x, name) becomes uploadPicture(x, name, target); patchRecord from lws-records, entityIdTail from photo-ref; uploadWithThumb, UploadProgress and ProgressSink are exported",
     "C3. the file extension follows the blob: ext(b) is .webp for image/webp, else .jpg, for the master and the 320 copy",
@@ -26,6 +27,7 @@
   "newFiles": [
     "src/index.ts",
     "src/exports.test.ts",
+    "src/peerRanges.test.ts",
     "src/uploadSet.test.ts",
     "src/copies.test.ts",
     "src/hostAgnostic.test.ts",

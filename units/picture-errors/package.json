@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-errors",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.",
@@ -42,8 +42,8 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
-    "@kaigilb/gilbplatformcode-picture-shrink": "^0.1.0",
-    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-shrink": "^0.1.0 || ^0.2.0",
+    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0 || ^0.2.0",
     "@kaigilb/gilbplatformcode-refusal-detail": "^0.1.0",
     "react": "^19.0.0"
   }

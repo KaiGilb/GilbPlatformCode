@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-set",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
@@ -36,6 +36,6 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-photo-ref": "^0.1.0",
-    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0"
+    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0 || ^0.2.0"
   }
 }
