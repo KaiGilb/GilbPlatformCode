@@ -79,7 +79,22 @@ console.log(`shell: ${EXE}   server: ${origin}\ninstall: ${good.install}\nstart:
 
 const encoded = (cmd) => Buffer.from(cmd, "utf16le").toString("base64");
 const shellArgs = (cmd) => ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded(cmd)];
-const run = (cmd) => spawnSync(EXE, shellArgs(cmd), { env, encoding: "utf8", windowsHide: true, timeout: 120000 });
+// Asynchronous on purpose: the download is answered by the server in THIS process, which a blocking spawnSync would freeze.
+const run = (cmd) =>
+  new Promise((resolve) => {
+    const c = spawn(EXE, shellArgs(cmd), { env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    c.stdout.on("data", (d) => (stdout += d));
+    c.stderr.on("data", (d) => (stderr += d));
+    const timer = setTimeout(() => {
+      killTree(c.pid);
+    }, 120000);
+    c.on("close", (status) => {
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr });
+    });
+  });
 const hello = async () => {
   try {
     const r = await fetch("http://127.0.0.1:47821/v1/hello", { signal: AbortSignal.timeout(2000) });
@@ -106,27 +121,29 @@ async function noHelloFor(ms) {
   return true;
 }
 const bridgePath = path.join(os.homedir(), ".gilb-claude-code-bridge.mjs");
-const killTree = (pid) => spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+function killTree(pid) {
+  return spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true });
+}
 const out = (r) => `${r.stdout ?? ""}${r.stderr ?? ""}`;
 
 try {
   // which shell are we really in
-  const ver = run("$PSVersionTable.PSVersion.Major");
+  const ver = await run("$PSVersionTable.PSVersion.Major");
   check(ver.status === 0 && Number(ver.stdout.trim()) === (SHELL === "powershell" ? 5 : 7), `the shell is PowerShell ${SHELL === "powershell" ? 5 : 7} (major version printed: ${ver.stdout.trim()})`);
 
   // 1. Always On: the exact install string, hello within 20 s, the exact code string, then uninstall
   fs.rmSync(bridgePath, { force: true });
   const t0 = Date.now();
-  const inst = run(good.install);
+  const inst = await run(good.install);
   console.log(`--- install, exit ${inst.status}, ${((Date.now() - t0) / 1000).toFixed(1)} s\n${out(inst)}`);
   check(inst.status === 0, "the install string exits 0");
   check(fs.existsSync(bridgePath), "the download wrote the bridge file under $HOME");
   const h = await helloWithin(20000);
   check(h?.bridge === "gilb-claude-code-bridge", `/v1/hello answers within 20 s of the install string (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
-  const code = run(good.code);
+  const code = await run(good.code);
   console.log(`--- code, exit ${code.status}\n${out(code)}`);
   check(code.status === 0 && /Pairing code: [A-Z0-9]{3}-[A-Z0-9]{3}/.test(code.stdout), "the code string prints a pairing code");
-  const un = run('node "$HOME\\.gilb-claude-code-bridge.mjs" --uninstall');
+  const un = await run('node "$HOME\\.gilb-claude-code-bridge.mjs" --uninstall');
   console.log(`--- uninstall, exit ${un.status}\n${out(un)}`);
   check(un.status === 0, "--uninstall exits 0");
   check(await noHelloFor(3000), "after --uninstall the bridge no longer answers");
@@ -140,7 +157,7 @@ try {
   const h2 = await helloWithin(30000);
   check(h2?.bridge === "gilb-claude-code-bridge", "start string: /v1/hello answers while the session runs");
   check(/Pairing code: [A-Z0-9]{3}-[A-Z0-9]{3}/.test(log), "start string: the window shows a pairing code");
-  const code2 = run(good.code);
+  const code2 = await run(good.code);
   check(code2.status === 0 && /Pairing code: [A-Z0-9]{3}-[A-Z0-9]{3}/.test(code2.stdout), "start string: the code string prints the same running bridge's code");
   killTree(child.pid);
   check(await noHelloFor(3000), "start string: after stopping the session the bridge no longer answers");
@@ -148,15 +165,15 @@ try {
 
   // 3. A failed download must not run node: an OLD bridge file is in place, the URL is a 404
   fs.writeFileSync(bridgePath, bridgeText);
-  const t404 = run(missing.start);
+  const t404 = await run(missing.start);
   console.log(`--- 404 start, exit ${t404.status}\n${out(t404)}`);
   check(await noHelloFor(5000), "404 download: node did not run (no bridge answers although an old bridge file is in place)");
-  check(t404.status !== 0 || /22|404/.test(out(t404)), `404 download: the shell reports the failure (exit ${t404.status})`);
-  const t404i = run(missing.install);
+  check(/404/.test(out(t404)), `404 download: curl.exe reports the 404 (shell exit ${t404.status})`);
+  const t404i = await run(missing.install);
   check(await noHelloFor(3000), "404 download: the install string did not run node either");
   console.log(`--- 404 install, exit ${t404i.status}\n${out(t404i)}`);
 } finally {
-  run('node "$HOME\\.gilb-claude-code-bridge.mjs" --uninstall');
+  await run('node "$HOME\\.gilb-claude-code-bridge.mjs" --uninstall');
   server.close();
 }
 console.log(failures ? `\nFAILED: ${failures} check(s)` : "\nALL PASS");
