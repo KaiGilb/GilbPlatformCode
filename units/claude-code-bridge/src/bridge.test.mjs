@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1239,7 +1240,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.6", billing: "claude-subscription" });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.7", billing: "claude-subscription", relay: true });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });
@@ -1251,5 +1252,122 @@ describe("the Claude CLI idle limit (CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT)", () => 
     expect(childEnv({ PATH: "/bin" }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(want);
     expect(childEnv({ CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: String(HOP_MAX_MS * 10) }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(String(HOP_MAX_MS * 10));
     expect(childEnv({ CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "1000" }).CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBe(want);
+  });
+});
+
+describe("relay window (for Safari)", () => {
+  const OWN = () => base; // http://127.0.0.1:<port>
+  const relayed = (p, origin, relayOrigin, extra = {}) =>
+    fetch(`${base}${p}`, {
+      method: extra.method ?? "GET",
+      headers: { ...(origin ? { origin } : {}), ...(relayOrigin ? { "x-gilb-relay-origin": relayOrigin } : {}), ...(extra.headers ?? {}) },
+      body: extra.body,
+    });
+
+  it("GET /relay serves the page with the pinned headers and no CORS", async () => {
+    const res = await fetch(`${base}/relay`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const csp = res.headers.get("content-security-policy");
+    expect(csp).toMatch(/^default-src 'none'; script-src 'sha256-[A-Za-z0-9+/=]+'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'$/);
+    const html = await res.text();
+    expect(html).toContain("Claude Code bridge window");
+    expect(html).toContain("keep this open while you chat. You can minimise it.");
+    expect(html).toContain("The page that opened this window has closed. You can close it.");
+    expect(html).toContain("Connected to ");
+    // the CSP hash is the hash of the one inline script
+    const script = /<script>([\s\S]*)<\/script>/.exec(html)[1];
+    const hash = (await import("node:crypto")).createHash("sha256").update(script, "utf8").digest("base64");
+    expect(csp).toContain(`'sha256-${hash}'`);
+  });
+
+  it("the relay script sends the head before any answer, then the body (res) or chunks + end (stream); abort replies err 'aborted'", async () => {
+    const html = await (await fetch(`${base}/relay`)).text();
+    const head = html.indexOf('type: "gilb-bridge-head", status: r.status, contentType: ct');
+    expect(head).toBeGreaterThan(0);
+    expect(head).toBeLessThan(html.indexOf('type: "gilb-bridge-chunk"'));
+    expect(head).toBeLessThan(html.indexOf('type: "gilb-bridge-res"'));
+    expect(html).toContain('type: "gilb-bridge-end"');
+    expect(html).toContain('ctl.signal.aborted ? "aborted"');
+  });
+
+  it("GET /relay embeds exactly the allow-list", async () => {
+    const html = await (await fetch(`${base}/relay`)).text();
+    expect(html).toContain(`var ALLOW = ${JSON.stringify([APP, "https://app.example.test"])};`);
+  });
+
+  it("GET /relay refuses a wrong Host", async () => {
+    const res = await new Promise((resolve, reject) => {
+      const r = http.request({ host: "127.0.0.1", port: bridge.port, path: "/relay", headers: { host: "evil.example" } }, (x) => {
+        x.resume();
+        resolve(x.statusCode);
+      });
+      r.on("error", reject);
+      r.end();
+    });
+    expect(res).toBe(403);
+  });
+
+  it("an allow-listed origin cannot break out of the inline script", async () => {
+    const evil = 'https://a.test"</script><script>alert(1)</script>\u2028';
+    const hostile = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [evil], workDir: path.join(dir, "work2") });
+    await hostile.start();
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${hostile.port}/relay`)).text();
+      expect(html.split("</script>").length).toBe(2); // only our own closing tag
+      expect(html).not.toContain("<script>alert");
+      expect(html).not.toContain("\u2028");
+      expect(html).toContain("\\u003c/script\\u003e");
+      const m = /var ALLOW = (.*);\n/.exec(html);
+      expect(JSON.parse(m[1])).toEqual([evil]); // still decodes to the exact origin
+    } finally {
+      await hostile.close();
+    }
+  });
+
+  it("a relayed request is treated as the page that opened the window: the pairing is bound to it", async () => {
+    const res = await fetch(`${base}/v1/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: OWN(), "x-gilb-relay-origin": APP },
+      body: JSON.stringify({ code: bridge.pairingCode }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    const { secret } = await res.json();
+    expect(secret).toMatch(/^[0-9a-f]{64}$/);
+    // later relayed for the same page: accepted
+    expect((await relayed("/v1/check", OWN(), APP, { method: "POST", headers: { "x-bridge-secret": secret } })).status).toBe(200);
+    // a direct request from that same origin: accepted
+    expect((await relayed("/v1/check", APP, null, { method: "POST", headers: { "x-bridge-secret": secret } })).status).toBe(200);
+    // relayed for a different allowed origin: refused
+    expect((await relayed("/v1/check", OWN(), "https://app.example.test", { method: "POST", headers: { "x-bridge-secret": secret } })).status).toBe(401);
+  });
+
+  it("refuses x-gilb-relay-origin unless Origin is the bridge's own origin, and refuses own Origin without a listed header", async () => {
+    expect((await relayed("/v1/hello", "https://evil.example", APP)).status).toBe(403);
+    expect((await relayed("/v1/hello", APP, APP)).status).toBe(403); // an allowed website cannot use it
+    expect((await relayed("/v1/check", null, APP, { method: "POST" })).status).toBe(403); // no Origin at all
+    // a same-origin GET carries no Origin in a browser: hello alone is let through as an Origin-less (non-browser) call
+    expect((await relayed("/v1/hello", null, APP)).status).toBe(200);
+    expect((await relayed("/v1/hello", null, APP)).headers.get("access-control-allow-origin")).toBeNull();
+    expect((await relayed("/v1/hello", OWN(), null)).status).toBe(403);
+    expect((await relayed("/v1/hello", OWN(), "https://evil.example")).status).toBe(403);
+    expect((await relayed("/v1/hello", OWN(), "http://localhost:1")).status).toBe(403);
+    expect((await relayed("/v1/hello", OWN(), APP)).status).toBe(200);
+    // own Origin spelled with the other loopback name does not match the Host
+    expect((await relayed("/v1/hello", `http://localhost:${bridge.port}`, APP)).status).toBe(403);
+  });
+
+  it("/control/* still refuses any Origin, relayed or not", async () => {
+    expect((await relayed("/control/code", OWN(), APP, { headers: { "x-bridge-control": "x" } })).status).toBe(403);
+  });
+
+  it("GET /v1/hello reports relay: true", async () => {
+    const body = await (await fetch(`${base}/v1/hello`)).json();
+    expect(body.relay).toBe(true);
   });
 });

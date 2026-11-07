@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-claude-code-connect",
-  "version": "0.1.4",
+  "version": "0.1.8",
   "private": true,
   "type": "module",
   "description": "The Connect-Claude-Code button and badge for an app: pairs the page with the person's own Claude Code through a client the host builds, and shows the connection state. View only.",
@@ -17,7 +17,7 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-claude-code-client": "^0.1.0",
+    "@kaigilb/gilbplatformcode-claude-code-client": "^0.1.5",
     "react": "^19.0.0"
   },
   "devDependencies": {

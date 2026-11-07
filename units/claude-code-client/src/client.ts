@@ -173,6 +173,29 @@ export interface ClaudeCodeClient {
   readConnected(): ClaudeCodeReadback | null;
   /** Forget the secret here and, best effort, ask the bridge to forget it too. */
   disconnect(): void;
+  /**
+   * Opens the bridge's relay window (`<bridge origin>/relay`), for a browser that blocks this page's direct fetch to the
+   * bridge (Safari: mixed content). While the window is open and ready, EVERY bridge call goes through it, by postMessage;
+   * while it is not, every call is a direct fetch. ⛔ Call it from a click handler: it calls `window.open` before anything
+   * else, because popup blockers only allow that inside the click. Resolves true when the window said it is ready (within
+   * 10 s); false when the popup was blocked, when nothing answered in time (an older bridge without /relay, which serves a
+   * 404 page; the window is then closed again), or when the window closed first. When it is already open it is focused
+   * and this resolves true. Nothing about the relay is kept: after a page reload the person opens it again with a click.
+   */
+  openRelay(): Promise<boolean>;
+  /** "closed" (no window, direct fetch), "opening" (window opened, waiting for its ready message), "open" (calls go through it). */
+  relayState(): "closed" | "opening" | "open";
+  /** Calls `cb` each time {@link relayState} changes. Returns the function that stops it. */
+  onRelayChange(cb: (state: "closed" | "opening" | "open") => void): () => void;
+  /** Closes the relay window if there is one, and fails every request still going through it. */
+  closeRelay(): void;
+  /**
+   * A cheap check: true when a direct `GET /v1/hello` throws a TypeError within 1.5 s while the relay is not open. That is
+   * what a browser that blocks the call looks like, but it is the same TypeError as "the bridge is not running", so this
+   * alone cannot tell the two apart; the Connect UI combines it with what else it knows. False when the relay is open,
+   * when the bridge answered, or when nothing came back in 1.5 s.
+   */
+  directBlocked(): Promise<boolean>;
   /** Sends the thread to the person's Claude Code and returns the assistant turn. */
   sendTurn(messages: ClaudeCodeTurn[], opts: SendClaudeCodeOpts): Promise<ClaudeCodeReply>;
 }
@@ -334,11 +357,208 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       : "The Claude Code bridge is not reachable on this computer. Start it with the command shown under Connect > Claude Code.";
   };
 
+  // ---- The transport: ONE function every bridge call goes through, with two routes. -------------------------------------
+  const bridgeOrigin = new URL(bridgeUrl).origin;
+  const RELAY_ALLOWED_HEADERS = ["content-type", "x-bridge-secret", "accept"];
+  const RELAY_HEAD_TIMEOUT_MS = 15000;
+  const RELAY_READY_TIMEOUT_MS = 10000;
+  const RELAY_POLL_MS = 1000;
+  const RELAY_CLOSED = "The Claude Code bridge window was closed. Open it again to go on.";
+  type RelayState = "closed" | "opening" | "open";
+  interface RelayedRequest {
+    /** Status 0 on the way in: before the head, a failure rejects; after it, the stream errors. */
+    onHead(status: number, contentType: string): void;
+    onChunk(text: string): void;
+    onEnd(): void;
+    onRes(status: number, contentType: string, body: string): void;
+    fail(err: Error): void;
+  }
+  let relayWindow: Window | null = null;
+  let relayStateNow: RelayState = "closed";
+  const relayListeners = new Set<(s: RelayState) => void>();
+  const relayed = new Map<string, RelayedRequest>();
+  let relayCounter = 0;
+  let relayPoll: ReturnType<typeof setInterval> | null = null;
+  let openWaiting: ((ok: boolean) => void)[] = [];
+  let openTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function setRelayState(next: RelayState) {
+    if (relayStateNow === next) return;
+    relayStateNow = next;
+    for (const cb of [...relayListeners]) {
+      try {
+        cb(next);
+      } catch {
+        /* a listener's error is its own */
+      }
+    }
+  }
+  function postRelay(msg: Record<string, unknown>) {
+    try {
+      relayWindow?.postMessage(msg, bridgeOrigin);
+    } catch {
+      /* the window is gone; the poll will notice */
+    }
+  }
+  /** The window is gone (closed, or closeRelay): forget it and fail every request still going through it. */
+  function relayGone() {
+    if (relayPoll !== null) clearInterval(relayPoll);
+    relayPoll = null;
+    if (openTimer !== null) clearTimeout(openTimer);
+    openTimer = null;
+    globalThis.removeEventListener?.("message", onRelayMessage as EventListener);
+    relayWindow = null;
+    const waiting = openWaiting;
+    openWaiting = [];
+    const open = [...relayed.values()];
+    relayed.clear();
+    for (const r of open) r.fail(new ClaudeCodeBridgeError(0, RELAY_CLOSED));
+    setRelayState("closed");
+    for (const w of waiting) w(false);
+  }
+  function onRelayMessage(ev: MessageEvent) {
+    // Only the window we opened, and only from the bridge's own origin. Anything else is ignored.
+    if (relayWindow === null || ev.source !== relayWindow || ev.origin !== bridgeOrigin) return;
+    const m = ev.data as Record<string, unknown> | null;
+    if (!m || typeof m !== "object" || typeof m.type !== "string") return;
+    if (m.type === "gilb-bridge-ready") {
+      if (relayStateNow === "opening") {
+        if (openTimer !== null) clearTimeout(openTimer);
+        openTimer = null;
+        setRelayState("open");
+        const waiting = openWaiting;
+        openWaiting = [];
+        for (const w of waiting) w(true);
+      }
+      return;
+    }
+    if (typeof m.id !== "string") return;
+    const r = relayed.get(m.id);
+    if (!r) return;
+    if (m.type === "gilb-bridge-head") r.onHead(Number(m.status), typeof m.contentType === "string" ? m.contentType : "");
+    else if (m.type === "gilb-bridge-chunk") r.onChunk(typeof m.chunk === "string" ? m.chunk : "");
+    else if (m.type === "gilb-bridge-end") r.onEnd();
+    else if (m.type === "gilb-bridge-res") {
+      const h = m.headers && typeof m.headers === "object" ? (m.headers as Record<string, unknown>) : {};
+      r.onRes(Number(m.status), typeof h["content-type"] === "string" ? h["content-type"] : "", typeof m.body === "string" ? m.body : "");
+    } else if (m.type === "gilb-bridge-err") {
+      r.fail(m.message === "aborted" ? new DOMException("aborted", "AbortError") : new ClaudeCodeBridgeError(0, notRunning()));
+    }
+  }
+
+  /** One request through the relay window. Resolves at the head with a Response whose body is fed by the window's messages. */
+  function relayRequest(path: string, init: RequestInit): Promise<Response> {
+    const signal = init.signal ?? undefined;
+    if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
+    const headers: Record<string, string> = {};
+    const given = (init.headers ?? {}) as Record<string, string>;
+    for (const k of Object.keys(given)) {
+      const name = k.toLowerCase();
+      if (RELAY_ALLOWED_HEADERS.includes(name) && typeof given[k] === "string") headers[name] = given[k];
+    }
+    const id = `r${++relayCounter}`;
+    return new Promise<Response>((resolve, reject) => {
+      let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+      let headSeen = false;
+      const enc = new TextEncoder();
+      const finish = () => {
+        relayed.delete(id);
+        clearTimeout(headTimer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const abortRemote = () => {
+        if (relayed.has(id)) postRelay({ type: "gilb-bridge-abort", id });
+      };
+      const fail = (err: Error) => {
+        finish();
+        if (!headSeen) reject(err);
+        else
+          try {
+            controller?.error(err);
+          } catch {
+            /* already closed */
+          }
+      };
+      const onAbort = () => {
+        abortRemote();
+        fail(signal?.reason instanceof Error ? signal.reason : new DOMException("aborted", "AbortError"));
+      };
+      const headTimer = setTimeout(() => {
+        abortRemote();
+        fail(new ClaudeCodeBridgeError(0, notRunning()));
+      }, RELAY_HEAD_TIMEOUT_MS);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const stream = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+        },
+        cancel() {
+          // The reader stopped (readBridgeSse does on Stop): tell the window to drop the request.
+          abortRemote();
+          finish();
+        },
+      });
+      relayed.set(id, {
+        onHead(status, contentType) {
+          if (headSeen) return;
+          clearTimeout(headTimer);
+          try {
+            const nullBody = status === 204 || status === 205 || status === 304;
+            resolve(new Response(nullBody ? null : stream, { status, headers: contentType ? { "content-type": contentType } : {} }));
+            headSeen = true;
+            if (nullBody) controller?.close();
+          } catch {
+            fail(new ClaudeCodeBridgeError(0, notRunning()));
+          }
+        },
+        onChunk(text) {
+          if (!headSeen) return;
+          try {
+            controller?.enqueue(enc.encode(text));
+          } catch {
+            /* cancelled */
+          }
+        },
+        onEnd() {
+          if (!headSeen) return;
+          finish();
+          try {
+            controller?.close();
+          } catch {
+            /* cancelled */
+          }
+        },
+        onRes(_status, _contentType, body) {
+          if (!headSeen) return;
+          finish();
+          try {
+            if (body) controller?.enqueue(enc.encode(body));
+            controller?.close();
+          } catch {
+            /* cancelled */
+          }
+        },
+        fail,
+      });
+      postRelay({ type: "gilb-bridge-req", id, path, method: init.method ?? "GET", headers, ...(typeof init.body === "string" ? { body: init.body } : {}) });
+    });
+  }
+
+  /**
+   * THE one way to reach the bridge. The relay window open: the request goes through it, never also direct. Otherwise it is a
+   * direct fetch. `keepalive` has no meaning through the relay (the window sends it), so it is dropped there.
+   */
+  function bridgeRequest(path: string, init: RequestInit): Promise<Response> {
+    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init);
+    return fetch(`${bridgeUrl}${path}`, init);
+  }
+
   async function bridgeFetch(path: string, init: RequestInit): Promise<Response> {
     try {
-      return await fetch(`${bridgeUrl}${path}`, init);
-    } catch {
+      return await bridgeRequest(path, init);
+    } catch (e) {
       if (init.signal?.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
+      if (e instanceof ClaudeCodeBridgeError) throw e;
       throw new ClaudeCodeBridgeError(0, notRunning());
     }
   }
@@ -692,7 +912,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
 
     async probe() {
       try {
-        const res = await fetch(`${bridgeUrl}/v1/hello`, { method: "GET" });
+        const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return false;
         const body = (await res.json()) as { bridge?: unknown };
         return body.bridge === BRIDGE_NAME;
@@ -703,7 +923,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
 
     async bridgeInfo() {
       try {
-        const res = await fetch(`${bridgeUrl}/v1/hello`, { method: "GET" });
+        const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return { reachable: false, build: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown };
         return {
@@ -786,11 +1006,87 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         /* ignore */
       }
       if (stored) {
-        void fetch(`${bridgeUrl}/v1/unpair`, {
+        // Direct: `keepalive`, so it is still sent if the page unloads right after Disconnect. Through the relay window there
+        // is no keepalive (the window sends it, and it may already be unreachable): it is sent and any failure is ignored.
+        void bridgeRequest("/v1/unpair", {
           method: "POST",
           headers: { "x-bridge-secret": stored.secret },
-          keepalive: true, // still sent if the page unloads right after Disconnect
-        }).catch(() => undefined);
+          keepalive: true,
+        }).then((r) => void r.body?.cancel().catch(() => undefined), () => undefined);
+      }
+    },
+
+    openRelay() {
+      // Already open: focus it. (Opening the same named window again would reload it and cut requests in flight.)
+      if (relayStateNow === "open" && relayWindow && !relayWindow.closed) {
+        try {
+          relayWindow.focus();
+        } catch {
+          /* ignore */
+        }
+        return Promise.resolve(true);
+      }
+      // window.open FIRST, with nothing awaited before it: a popup blocker only allows it inside the click.
+      const win = typeof window !== "undefined" ? window.open(`${bridgeOrigin}/relay`, "gilb-claude-code-bridge", "popup,width=460,height=240") : null;
+      if (!win) return Promise.resolve(false);
+      return new Promise<boolean>((resolve) => {
+        if (relayWindow !== null && relayWindow !== win) relayGone();
+        openWaiting.push(resolve);
+        if (relayWindow === win && relayStateNow === "opening") return; // the same window, still waiting
+        relayWindow = win;
+        globalThis.addEventListener?.("message", onRelayMessage as EventListener);
+        setRelayState("opening");
+        if (relayPoll === null) {
+          relayPoll = setInterval(() => {
+            if (relayWindow === null || relayWindow.closed) relayGone();
+          }, RELAY_POLL_MS);
+        }
+        if (openTimer !== null) clearTimeout(openTimer);
+        openTimer = setTimeout(() => {
+          // Nothing said ready (an older bridge serves a 404 page here): close the window and report it.
+          const w = relayWindow;
+          try {
+            w?.close();
+          } catch {
+            /* ignore */
+          }
+          relayGone();
+        }, RELAY_READY_TIMEOUT_MS);
+      });
+    },
+
+    relayState() {
+      return relayStateNow;
+    },
+
+    onRelayChange(cb) {
+      relayListeners.add(cb);
+      return () => void relayListeners.delete(cb);
+    },
+
+    closeRelay() {
+      const w = relayWindow;
+      if (w === null) return;
+      try {
+        w.close();
+      } catch {
+        /* ignore */
+      }
+      relayGone();
+    },
+
+    async directBlocked() {
+      if (relayStateNow === "open") return false;
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 1500);
+      try {
+        const r = await bridgeRequest("/v1/hello", { method: "GET", signal: ctl.signal });
+        void r.body?.cancel().catch(() => undefined);
+        return false;
+      } catch (e) {
+        return e instanceof TypeError;
+      } finally {
+        clearTimeout(t);
       }
     },
 
