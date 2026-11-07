@@ -97,6 +97,8 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 
 Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
 
+Messages: the page posts `gilb-bridge-req` (`id`, `path`, `method`, `headers`, `body`) and `gilb-bridge-abort` (`id`). The window answers every request first with `gilb-bridge-head` (`id`, `status`, `contentType`). A `text/event-stream` answer then follows as `gilb-bridge-chunk` messages and one `gilb-bridge-end`; any other answer follows as one `gilb-bridge-res` (`status`, `headers`, `body`). A failure, or an abort, is `gilb-bridge-err` (`message`, `"aborted"` after an abort).
+
 Origin rules for a relayed request:
 - The relay window sends `Origin` = the bridge's own origin plus `x-gilb-relay-origin` = the opener page. That header must be on the allow-list, else 403. Pairing secrets are then bound to that opener origin, as if the page had called directly.
 - `x-gilb-relay-origin` with any other `Origin` (a website calling directly) is 403. Own origin without the header is 403.

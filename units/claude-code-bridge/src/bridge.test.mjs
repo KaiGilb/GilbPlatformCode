@@ -1285,6 +1285,16 @@ describe("relay window (for Safari)", () => {
     expect(csp).toContain(`'sha256-${hash}'`);
   });
 
+  it("the relay script sends the head before any answer, then the body (res) or chunks + end (stream); abort replies err 'aborted'", async () => {
+    const html = await (await fetch(`${base}/relay`)).text();
+    const head = html.indexOf('type: "gilb-bridge-head", status: r.status, contentType: ct');
+    expect(head).toBeGreaterThan(0);
+    expect(head).toBeLessThan(html.indexOf('type: "gilb-bridge-chunk"'));
+    expect(head).toBeLessThan(html.indexOf('type: "gilb-bridge-res"'));
+    expect(html).toContain('type: "gilb-bridge-end"');
+    expect(html).toContain('ctl.signal.aborted ? "aborted"');
+  });
+
   it("GET /relay embeds exactly the allow-list", async () => {
     const html = await (await fetch(`${base}/relay`)).text();
     expect(html).toContain(`var ALLOW = ${JSON.stringify([APP, "https://app.example.test"])};`);

@@ -70,7 +70,7 @@ try {
           if (ev.source !== window.popup || ev.origin !== ${JSON.stringify(base)}) return;
           const m = ev.data || {};
           if (m.type === "gilb-bridge-ready") window.ready = m;
-          else if (waiters.has(m.id)) waiters.get(m.id)(m);
+          else if (m.type !== "gilb-bridge-head" && waiters.has(m.id)) waiters.get(m.id)(m); // the head comes first; wait for the res
         });
         document.getElementById("open").onclick = () => { window.popup = window.open(${JSON.stringify(base + "/relay")}, "gilb-bridge", "width=420,height=200"); };
         window.relay = (req) => new Promise((resolve, reject) => {

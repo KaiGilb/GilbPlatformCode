@@ -230,6 +230,8 @@ addEventListener("message", function (ev) {
   if (method === "POST" && typeof m.body === "string") init.body = m.body;
   fetch(u.pathname + u.search, init).then(function (r) {
     var ct = r.headers.get("content-type") || "";
+    // The head first, for every answer, so a streaming page learns the status before the first chunk.
+    reply({ type: "gilb-bridge-head", status: r.status, contentType: ct });
     if (ct.indexOf("text/event-stream") === 0 && r.body) {
       var rd = r.body.getReader();
       var dec = new TextDecoder();

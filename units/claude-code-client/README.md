@@ -66,6 +66,18 @@ if (await client.probe()) {
 const { start } = bridgeCommands({ origin: window.location.origin, basePath: "/", allowOrigin: window.location.origin });
 ```
 
+## The relay window (for Safari)
+
+Safari blocks an https page's direct fetch to `http://127.0.0.1:<port>` (mixed content). The bridge (0.1.7 and later) serves a small window at `/relay`; the client can talk to the bridge through it by postMessage.
+
+- `openRelay()` opens the window. Call it from a click: it calls `window.open` first, before any await, because popup blockers only allow that inside the click. It resolves true when the window said ready (within 10 s), false when the popup was blocked, the bridge has no `/relay` (an older bridge), or the window closed first.
+- `relayState()` is `"closed"`, `"opening"` or `"open"`; `onRelayChange(cb)` reports changes and returns the unsubscribe function; `closeRelay()` closes the window.
+- While the window is open, every bridge call (`probe`, `bridgeInfo`, pairing, the turn stream, tool answers, the unpair in `disconnect`) goes through it, never also direct. While it is closed, every call is a direct fetch. One internal function, `bridgeRequest`, decides.
+- If the person closes the window, open requests fail with "The Claude Code bridge window was closed. Open it again to go on." Through the relay the unpair in `disconnect` has no `keepalive`: it is sent and a failure is ignored. A relayed request with no answer head in 15 s fails like "not reachable"; a stream has no total timeout.
+- `directBlocked()` is true when a direct hello throws a TypeError within 1.5 s while the relay is not open. It cannot tell "the browser blocks this" from "the bridge is not running"; the Connect UI combines it with what else it knows.
+- Nothing about the relay is kept. After a page reload the person opens it again with a click.
+- Browser proof (not `npm test`): `units/claude-code-bridge/scripts/check-relay-client-browser.mjs`.
+
 ## Slipping a message into a running turn
 
 `sendTurn` takes an optional `takeSlipped`. When a top-level tool answer is about to go back to Claude Code, the client calls it and, if it returns messages, appends them after that tool's own result (`slippedSuffix`) and emits a `slipped` event with their ids. The text rides on the next top-level tool answer only: a hand-off's nested turn never takes it. A turn that makes no more tool calls never calls `takeSlipped`; the host then sends the message after the turn.
