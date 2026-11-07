@@ -83,6 +83,8 @@ A long run does not stop at the server's turn limits. When the server answers th
 
 Connector 0.5.8: gilbplatform_upload_file sends to the vault's own root exactly as the platform listed it (`/vault` for a user vault, `/base` for a system vault) instead of always `/base`, which the vault door refused with 403 for a user vault.
 
+Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx or network error for about 60 s, then say the platform is restarting, never 'could not sign in'; a failed sign-in is no longer remembered.
+
 Connector 0.5.7: a hand-off that runs out of tool rounds now says its answer is partial, is closed on its own turn, and the next call starts on a fresh turn. Detail: when the server cuts a hand-off, it is closed on its own turn, and its answer carries a `cut` field saying the answer is partial. The next call then starts on a fresh turn (within the same 5-per-process limit, never for Agent.Concept, never inside a hand-off); nothing is re-sent.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.

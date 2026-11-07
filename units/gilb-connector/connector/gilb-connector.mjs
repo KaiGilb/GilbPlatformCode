@@ -17,7 +17,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.8";
+export const CONNECTOR_VERSION = "0.5.9";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
