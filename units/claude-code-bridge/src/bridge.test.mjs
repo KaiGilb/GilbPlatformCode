@@ -59,6 +59,19 @@ const runs = () =>
     ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l))
     : [];
 
+// "claude was stopped". Off Windows the stand-in logs the SIGTERM it was sent. Windows has no SIGTERM to catch (the bridge ends the
+// tree with taskkill /F), so there it is the stand-in's process being gone; only runs that wait forever count, the others end by themselves.
+const isWin = process.platform === "win32";
+const pidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const stoppedRuns = () => (isWin ? runs().filter((r) => r.event === "run" && r.prompt.includes("WAITFOREVER") && !pidAlive(r.pid)) : runs().filter((r) => r.event === "sigterm"));
+
 async function pair(origin) {
   const res = await fetch(`${base}/v1/pair`, {
     method: "POST",
@@ -422,7 +435,7 @@ describe("single file", () => {
     fs.copyFileSync(path.join(HERE, "../bridge/bridge.mjs"), copy);
     const out = execFileSync(
       process.execPath,
-      ["--input-type=module", "-e", "const m = await import(process.env.BRIDGE_COPY); console.log(JSON.stringify(m.loadAllowedOrigins()));"],
+      ["--input-type=module", "-e", "const m = await import((await import(\"node:url\")).pathToFileURL(process.env.BRIDGE_COPY).href); console.log(JSON.stringify(m.loadAllowedOrigins()));"],
       // The copy's path goes in an env var, not argv[1]: where tmpdir is not behind a symlink (Linux), argv[1] === the module's
       // own path makes the bridge run its main() on import.
       { cwd: os.tmpdir(), encoding: "utf8", env: { ...process.env, BRIDGE_COPY: copy } },
@@ -562,8 +575,8 @@ describe("a turn", () => {
     await reader.read(); // start
     for (let i = 0; i < 50 && !runs().some((r) => r.event === "run"); i++) await new Promise((r) => setTimeout(r, 50));
     ctl.abort();
-    for (let i = 0; i < 50 && !runs().some((r) => r.event === "sigterm"); i++) await new Promise((r) => setTimeout(r, 50));
-    expect(runs().some((r) => r.event === "sigterm")).toBe(true);
+    for (let i = 0; i < 50 && !stoppedRuns().length > 0; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(stoppedRuns().length > 0).toBe(true);
   });
 });
 
@@ -683,7 +696,7 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
     });
     expect(h.events.find((e) => e[0] === "error")[1].message).toMatch(/took too long/);
     expect(t.events.find((e) => e[0] === "message")).toBeTruthy();
-    expect(runs().some((r) => r.event === "sigterm")).toBe(true);
+    expect(stoppedRuns().length > 0).toBe(true);
   });
 
   it("a hand-off whose CLI reports an API-key source is stopped, as a turn is", async () => {
@@ -832,7 +845,7 @@ describe("an abandoned hand-off is stopped", () => {
     // The parent's claude abandons the call.
     expect((await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 77, reason: "timed out" } })).status).toBe(202);
 
-    await until(() => runs().some((r) => r.event === "sigterm"), "the nested claude to get SIGTERM");
+    await until(() => stoppedRuns().length > 0, "the nested claude to get SIGTERM");
     await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled on the parent stream");
     expect(parent.events.find((e) => e[0] === "tool_cancelled")[1]).toEqual({ type: "tool_cancelled", id: reqId });
     await nested; // its stream ends
@@ -856,7 +869,7 @@ describe("an abandoned hand-off is stopped", () => {
     await rpc(parent.mcpUrl, { method: "notifications/cancelled", params: { requestId: 5 } });
     await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
     await new Promise((r) => setTimeout(r, 250));
-    expect(runs().some((r) => r.event === "sigterm")).toBe(false);
+    expect(stoppedRuns().length > 0).toBe(false);
     await parent.close();
     void nested;
   });
@@ -870,7 +883,7 @@ describe("an abandoned hand-off is stopped", () => {
     await until(() => runs().filter((r) => r.event === "run").length === 2, "the nested claude");
     // Kill the PARENT claude only (the first run).
     process.kill(runs().find((r) => r.event === "run").pid, "SIGKILL");
-    await until(() => runs().filter((r) => r.event === "sigterm").length >= 1, "the nested claude to get SIGTERM");
+    await until(() => (isWin ? (() => { const n = runs().filter((r) => r.event === "run")[1]; return Boolean(n) && !pidAlive(n.pid); })() : stoppedRuns().length >= 1), "the nested claude to get SIGTERM");
     const r = await nested;
     expect(r.status).toBe(200);
   });
@@ -1171,7 +1184,7 @@ describe("several hand-offs of one turn, and a call that ends stops only its own
     expect(parent.events.filter((e) => e[0] === "tool_cancelled").map((e) => e[1])).toEqual([{ type: "tool_cancelled", id: reqA }]);
     await until(() => hopA.events.some((e) => e[0] === "error"), "the cancelled hand-off to stop");
     await new Promise((r) => setTimeout(r, 200));
-    expect(runs().filter((r) => r.event === "sigterm")).toHaveLength(1);
+    expect(stoppedRuns()).toHaveLength(1);
     expect(hopB.events.some((e) => e[0] === "error")).toBe(false);
     expect(hopB.events.some((e) => e[0] === "start")).toBe(true);
     await parent.close();
@@ -1202,7 +1215,7 @@ describe("several hand-offs of one turn, and a call that ends stops only its own
     await sse;
     await until(() => parent.events.some((e) => e[0] === "tool_cancelled"), "tool_cancelled");
     expect(parent.events.find((e) => e[0] === "tool_cancelled")[1]).toEqual({ type: "tool_cancelled", id: reqId });
-    await until(() => runs().some((r) => r.event === "sigterm"), "the nested claude to get SIGTERM");
+    await until(() => stoppedRuns().length > 0, "the nested claude to get SIGTERM");
     const next = await hop(body.secret, parent.turnId, { prompt: "again" });
     expect(next.status).toBe(200);
     expect(next.events.find((e) => e[0] === "start")).toBeTruthy();

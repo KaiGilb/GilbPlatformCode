@@ -399,7 +399,7 @@ export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = proces
   const nodePath = o.nodePath ?? process.execPath;
   const found = resolveBin(bin, env, o.home ?? os.homedir(), "win32", files);
   // Not found: let the start fail with "not installed" the usual way.
-  if (!found) return { ok: true, command: bin, prefix: [], shown: bin };
+  if (!found || !files.exists(found)) return { ok: true, command: bin, prefix: [], shown: bin };
   const ext = W.extname(found).toLowerCase();
   if (ext === ".exe" || ext === ".com") return { ok: true, command: found, prefix: [], shown: found };
   if (ext === ".js" || ext === ".cjs" || ext === ".mjs") return { ok: true, command: nodePath, prefix: [found], shown: found };
