@@ -7,7 +7,7 @@ The Connect-Claude-Code view for an app: a button that walks the person through 
 React components and one stylesheet. View only: it shows the steps and calls a client the host built; it writes nothing itself.
 
 - `ClaudeCodeConnect` takes `client`, `commands`, `onConnected`, and optionally `onError` and `Button`. It opens on the instruction step with the commands to paste in Terminal and a Copy button for each, checks for a bridge on the person's computer, asks for the code, and calls `onConnected(readback)` once after the right code is typed and the secret is kept. The code field and Pair are always shown, whatever the bridge check said; when the check finds no bridge it also shows the start command and a Check again button that looks again without clearing what was typed.
-- On the Mac tab, section 1 starts with the supported browsers (`SUPPORTED_BROWSERS`: Chrome, Edge) and the ones that cannot connect yet (`NOT_YET_BROWSERS`: Safari, Brave). The list is from a measurement on a Mac, 2026-11-05; Linux and Windows show no browser item.
+- On the Mac tab, section 1 starts with the supported browsers (`SUPPORTED_BROWSERS`: Chrome, Edge) and the ones that cannot connect yet (`NOT_YET_BROWSERS`: Safari, Brave). The list is from a measurement on a Mac, 2026-11-05; Linux and Windows show no browser item. The Mac item also says the browser may ask to let the page use apps and devices on the network, and to choose Allow; the not-reachable hint in step 3 (Mac and Linux) repeats it and says what to do after Block.
 - `ClaudeCodeBadge` takes `onDisconnect`, and optionally `label` and `disconnectTestId`. It shows the provider name and a Disconnect button.
 - `claude-code.css` styles both through `--gcc-*` variables with plain fallbacks.
 - Exports: `ClaudeCodeConnect`, `SUPPORTED_BROWSERS`, `NOT_YET_BROWSERS`, `ClaudeCodeConnectProps`, `ClaudeCodeButtonProps`, `ClaudeCodeBadge`, `ClaudeCodeBadgeProps`.
@@ -58,7 +58,7 @@ const commands = bridgeCommands({ origin: location.origin, basePath: "/", allowO
 - `client`: a client from the `claude-code-client` unit, created with the host's own auth (`getAuthHeaders`), `platformOrigin`, `principal` and `bridgeUrl`.
 - `commands`: the result of `bridgeCommands(...)` from the same unit.
 - `onConnected`: what the app does once paired.
-- Optionally `onError` (to show errors elsewhere) and `Button` (the app's own button, same props as a `<button>` plus `variant: "primary" | "ghost"`).
+- Optionally `supportedBrowsers` and `notYetBrowsers` (lists of browser names; default to the exported constants; an empty `notYetBrowsers` drops the "cannot connect" sentence), `onError` (to show errors elsewhere) and `Button` (the app's own button, same props as a `<button>` plus `variant: "primary" | "ghost"`).
 - The CSS variables, if the defaults do not suit (each has a fallback): `--gcc-accent`, `--gcc-accent-ink`, `--gcc-error`, `--gcc-focus`, `--gcc-ink`, `--gcc-ink-faint`, `--gcc-ink-soft`, `--gcc-line`, `--gcc-radius`, `--gcc-surface`. Import `claude-code.css` once.
 - React 19, and the `claude-code-client` unit installed beside this one.
 

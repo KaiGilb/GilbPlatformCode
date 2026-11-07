@@ -48,6 +48,10 @@ function orWords(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
 }
 
+const ALLOW_BEFORE_PAIR = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
+const ALLOW_AFTER_BLOCK =
+  "If your browser asked to let this page use apps and devices on your network, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
+
 const SYSTEMS: { id: ClaudeCodeSystem; label: string }[] = [
   { id: "mac", label: "Mac" },
   { id: "windows", label: "Windows" },
@@ -64,6 +68,10 @@ export interface ClaudeCodeConnectProps {
   onError?: (message: string | null) => void;
   /** Where a person asks for Windows support. The host passes it (this unit names no host); without it the Windows tab shows no mail link. */
   supportEmail?: string;
+  /** Browsers shown as supported on the Mac tab. Optional; defaults to `SUPPORTED_BROWSERS`. */
+  supportedBrowsers?: readonly string[];
+  /** Browsers shown as not able to connect yet. Optional; defaults to `NOT_YET_BROWSERS`. When empty, the "cannot connect" sentence is left out. */
+  notYetBrowsers?: readonly string[];
   /** Your own button component (same props as a `<button>` plus `variant`). Default: a plain button styled by claude-code.css. */
   Button?: ComponentType<ClaudeCodeButtonProps>;
 }
@@ -74,7 +82,7 @@ export interface ClaudeCodeConnectProps {
  *   2. the code box: it looks for the bridge on this computer, then trades the typed code for the secret.
  * Rendering it IS choosing Claude Code, so mount it when the person picks that provider and unmount it on Cancel.
  */
-export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, Button = DefaultButton }: ClaudeCodeConnectProps): ReactElement {
+export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton }: ClaudeCodeConnectProps): ReactElement {
   const [stage, setStage] = useState<"steps" | "code">("steps");
   const [copied, setCopied] = useState(false);
   const [copiedAlways, setCopiedAlways] = useState(false);
@@ -197,7 +205,8 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         {bridgeUp === false ? (
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
             Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
-            <code className="gcc-mono gcc-break">{commands.start}</code>
+            <code className="gcc-mono gcc-break">{commands.start}</code>{" "}
+            <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>
           </p>
         ) : null}
         {/* The field and Pair are always there, whatever the bridge check said: a check can run
@@ -268,8 +277,11 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         {system === "mac" ? (
           <li data-testid="claude-code-supported-browsers">
             <p className="gcc-text">
-              <strong>Supported browsers: {listWords(SUPPORTED_BROWSERS)}.</strong> {listWords(NOT_YET_BROWSERS)} cannot connect to Claude Code yet. If you are in one of
-              them, open this page in {orWords(SUPPORTED_BROWSERS)}.
+              <strong>Supported browsers: {listWords(supportedBrowsers)}.</strong>
+              {notYetBrowsers.length > 0
+                ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
+                : ""}{" "}
+              {ALLOW_BEFORE_PAIR}
             </p>
           </li>
         ) : null}

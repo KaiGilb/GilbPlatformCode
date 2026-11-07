@@ -331,8 +331,9 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
 describe("<ClaudeCodeConnect> supported browsers", () => {
   const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
+  const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
   const BROWSER_TEXT =
-    "Supported browsers: Chrome and Edge. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome or Edge.";
+    "Supported browsers: Chrome and Edge. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome or Edge. " + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
     expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge"]);
@@ -351,6 +352,30 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(items).toHaveLength(3);
     expect(items[0]).toBe(item);
     expect(item).not.toHaveTextContent("Gilb");
+  });
+
+  it("Mac: the item carries the allow sentence, exact text", () => {
+    renderIt();
+    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent(ALLOW_BEFORE);
+  });
+
+  it("an empty not-yet list drops the cannot-connect sentence", () => {
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={[]} />);
+    const text = screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim();
+    expect(text).toBe("Supported browsers: Chrome and Edge. " + ALLOW_BEFORE);
+    expect(text).not.toContain("cannot connect");
+  });
+
+  it("a one-item not-yet list reads 'it'", () => {
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Safari"]} />);
+    expect(screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Supported browsers: Chrome and Edge. Safari cannot connect to Claude Code yet. If you are in it, open this page in Chrome or Edge. " + ALLOW_BEFORE,
+    );
+  });
+
+  it("the supported list can be passed in", () => {
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} />);
+    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent("Supported browsers: Chrome. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome.");
   });
 
   it("Linux: section 1 keeps the two-programs line and shows no browser item", async () => {
@@ -373,6 +398,32 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(screen.queryByRole("group", { name: "1 · Before you start" })).not.toBeInTheDocument();
     expect(panel).not.toHaveTextContent("browser");
     expect(panel).toHaveTextContent("Claude Code cannot connect from a Windows computer yet. If you need it, ask us at support@gilb.com and we will tell you when it works.");
+  });
+});
+
+describe("<ClaudeCodeConnect> allow hint in step 3", () => {
+  const ALLOW_AFTER =
+    "If your browser asked to let this page use apps and devices on your network, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
+
+  it.each(["mac", "linux"] as const)("%s: shown with exact text when the bridge check fails, absent before", async (sys) => {
+    const user = userEvent.setup();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await user.click(screen.getByTestId(`claude-code-tab-${sys}`));
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+    await toCodeBox(user);
+    const hint = await screen.findByTestId("claude-code-allow-hint");
+    expect(hint.textContent).toBe(ALLOW_AFTER);
+    expect(screen.getByTestId("claude-code-bridge-hint")).toContainElement(hint);
+  });
+
+  it("absent when the bridge answers", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValue(json(200, { bridge: "gilb-claude-code-bridge" }));
+    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await screen.findByLabelText("Code from the bridge terminal");
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
   });
 });
 
