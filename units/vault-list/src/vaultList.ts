@@ -121,3 +121,32 @@ export function orderVaultsAsTree(vaults: readonly VaultListItem[]): VaultTreeRo
   }
   return out;
 }
+
+function hostOf(text: string): string | null {
+  try {
+    return new URL(text).host.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The vault's one root, exactly as the vault list gives it (`vaultId`), for a host (`kai.example.test`, or any
+ * address on it) or a stored name. A host match wins over a name. `null` when nothing is listed for it, or when
+ * a name fits more than one vault. ⛔ The root is never composed: a user vault ends in `/vault`, a platform one
+ * in `/base`, and only the list knows which.
+ */
+export function vaultRootFromList(
+  vaults: readonly { vaultId: string; name?: string | null }[] | null | undefined,
+  hostOrName: string,
+): string | null {
+  const asked = hostOrName.trim().toLowerCase();
+  if (!asked || !vaults) return null;
+  const host = hostOf(asked) ?? hostOf(`https://${asked}`);
+  if (host) {
+    const byHost = vaults.find((v) => hostOf(v.vaultId) === host);
+    if (byHost) return byHost.vaultId;
+  }
+  const byName = vaults.filter((v) => (v.name ?? "").trim().toLowerCase() === asked);
+  return byName.length === 1 ? (byName[0] as { vaultId: string }).vaultId : null;
+}

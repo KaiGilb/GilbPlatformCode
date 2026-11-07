@@ -4,6 +4,7 @@ export {
   defaultWriteVaultId,
   orderVaultsAsTree,
   vaultLabel,
+  vaultRootFromList,
   writableVaults,
   type VaultListItem,
   type VaultParentRef,
