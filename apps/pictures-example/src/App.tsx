@@ -21,7 +21,7 @@ const STATUS_WORDS: Record<Tile["status"], string> = {
   wifi: "Full size waits for Wi-Fi",
 };
 
-export function App({ engine, onSignOut }: { engine: PictureEngine; onSignOut: () => void }) {
+export function App({ engine, onSignOut, vaultLine }: { engine: PictureEngine; onSignOut: () => void; vaultLine?: string }) {
   const state = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
   const origin = engine.session.vaultOrigin;
   const { open, viewer } = usePictureViewer({
@@ -80,6 +80,7 @@ export function App({ engine, onSignOut }: { engine: PictureEngine; onSignOut: (
           Sign out
         </button>
       </header>
+      {vaultLine ? <p className="vault-line" data-testid="vault-line">{vaultLine}</p> : null}
       <PicturePickButtons onPick={(files) => files.length && void engine.add(files)} multiple />
       {state.notes.map((n) => (
         <div key={n.key} className="note">
