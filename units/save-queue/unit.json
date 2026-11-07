@@ -45,5 +45,5 @@
     { "member": "setQueueDbName", "replaces": "const DB_NAME = \"tfp\", src/data/queue.ts:61 (the source app passes tfp)" },
     { "member": "principal argument of listOpsFor and stampOp", "replaces": "currentPrincipal(), src/data/principal.ts:6-14, used at src/screens/GardenScreen.tsx:90 and :283" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:QueuedVaultWrite.queue", "title": "Offline save queue (per person, retry)", "note": "Holds the queue and its rules on this device only; it sends nothing and has no loop, so the host sends and retries. Not a way to move work between devices." }
 }

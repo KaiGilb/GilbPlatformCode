@@ -29,5 +29,5 @@
   "host": [
     { "member": "words", "replaces": "nothing in a source app (new code); optional: the sentences and next steps by kind, in the app's language" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:ImageFile.errors", "title": "Picture error messages", "note": "Turns a thrown value into words; it does not catch, log or retry (retry is save-queue). For the access-denied screen take refusal-detail." }
 }

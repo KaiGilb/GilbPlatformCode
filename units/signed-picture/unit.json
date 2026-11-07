@@ -32,5 +32,5 @@
     { "member": "className", "replaces": "the literal thumb, src/ui/Thumb.tsx:60" },
     { "member": "alt", "replaces": "the literal empty alt, src/ui/Thumb.tsx:61" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:ImageFile.signed", "title": "Signed picture / thumbnail from a vault", "note": "Shows a picture that needs a signed request; a public picture is a plain img. To upload take picture-upload, to shrink picture-shrink." }
 }

@@ -22,5 +22,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:ImageFile.shrink", "title": "Picture shrink / resize (thumbnail, WebP)", "note": "Makes smaller bytes only and sends nothing; to send them take picture-upload. It is not a cropper." }
 }

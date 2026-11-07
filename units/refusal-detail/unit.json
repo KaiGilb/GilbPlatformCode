@@ -37,5 +37,5 @@
     { "member": "placeName", "replaces": "the word garden, src/screens/AskOwnerScreen.tsx:13" },
     { "member": "NoAccessError message", "replaces": "the sentence You have no write access to this garden yet. Ask the owner., src/data/errors.ts:14" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:VaultRequestRefusal.detail", "title": "Access denied screen and refusal line", "note": "For a refused read; it classifies nothing and sends nothing. The banner for a refused write is the app's own words." }
 }
