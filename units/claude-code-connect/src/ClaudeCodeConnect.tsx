@@ -76,13 +76,13 @@ const BRAVE_OTHER_BROWSERS_SENTENCE = "Brave needs one setting, shown here when 
 export const BRAVE_STEPS_HEADING = "Brave: allow it once yourself. Brave does not ask.";
 /** The five steps; the last one differs between the Mac supported-browsers item and step 3. */
 export const BRAVE_STEPS: readonly string[] = [
-  "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
-  "Click Site settings. A settings page opens for this site.",
-  "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+  "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+  "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+  "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
   "Set Apps on device to Allow.",
 ];
-export const BRAVE_LAST_STEP_ITEM = "Come back to this page. You can now pair.";
-export const BRAVE_LAST_STEP_CHECK = "Come back to this page and click Check again.";
+export const BRAVE_LAST_STEP_ITEM = "Go back to this tab. You can now pair.";
+export const BRAVE_LAST_STEP_CHECK = "Go back to this tab and click Check again.";
 
 const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
 export const RELAY_OFFER =

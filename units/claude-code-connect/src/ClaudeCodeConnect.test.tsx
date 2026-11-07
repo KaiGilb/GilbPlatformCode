@@ -369,11 +369,11 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     const ol = block.querySelector("ol");
     expect(ol).not.toBeNull();
     expect(Array.from(ol!.querySelectorAll(":scope > li")).map((li) => li.textContent)).toEqual([
-      "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
-      "Click Site settings. A settings page opens for this site.",
-      "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+      "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+      "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+      "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
       "Set Apps on device to Allow.",
-      "Come back to this page. You can now pair.",
+      "Go back to this tab. You can now pair.",
     ]);
     expect(block.textContent).not.toContain("gilb.com");
     expect(item).not.toHaveTextContent("Brave needs one setting");
@@ -845,11 +845,11 @@ describe("Safari-only wording follows the browser", () => {
   });
 
   const STEPS_CHECK = [
-    "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
-    "Click Site settings. A settings page opens for this site.",
-    "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+    "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+    "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+    "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
     "Set Apps on device to Allow.",
-    "Come back to this page and click Check again.",
+    "Go back to this tab and click Check again.",
   ];
   const expectBraveStep3 = async () => {
     const hint = await screen.findByTestId("claude-code-bridge-hint");
