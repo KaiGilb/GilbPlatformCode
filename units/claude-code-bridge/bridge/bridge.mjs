@@ -1639,6 +1639,14 @@ const realServiceFs = {
     read: (p) => fs.readFileSync(p, "utf8"),
     exists: (p) => fs.existsSync(p),
     rm: (p) => fs.rmSync(p, { force: true }),
+    list: (p) => {
+        try {
+            return fs.readdirSync(p);
+        }
+        catch {
+            return [];
+        }
+    },
     rmdirIfEmpty: (p) => {
         try {
             fs.rmdirSync(p); // refuses a folder that holds anything
