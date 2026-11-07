@@ -2,10 +2,10 @@
 /**
  * Runs the REAL Windows commands from bridgeCommands() in a real PowerShell, the way a person pastes them.
  *
- *   node --experimental-strip-types scripts/windows-commands-e2e.mjs --shell powershell|pwsh [--bridge-ref origin/kaizen/claude-code-windows-1107]
+ *   node --experimental-strip-types scripts/windows-commands-e2e.mjs --shell powershell|pwsh
  *
  * --shell powershell = Windows PowerShell 5.1 (powershell.exe); --shell pwsh = PowerShell 7. Windows only.
- * The bridge file comes from `git show <ref>:units/claude-code-bridge/bridge/bridge.mjs` and is served by a tiny local server
+ * The bridge file is read from units/claude-code-bridge/bridge/bridge.mjs in the checked-out tree and is served by a tiny local server
  * at http://127.0.0.1:<port>/app/claude-code-bridge.mjs. A stand-in claude (the bridge's own fake-claude.mjs behind a claude.cmd
  * shim written the way npm writes it) is put first on PATH, because the pasted commands cannot carry --claude.
  * Each command string is passed to the shell with -EncodedCommand (the same text, no quoting between us and PowerShell).
@@ -29,7 +29,6 @@ const arg = (n, d) => {
   return i > 0 ? process.argv[i + 1] : d;
 };
 const SHELL = arg("--shell");
-const REF = arg("--bridge-ref", "origin/kaizen/claude-code-windows-1107");
 if (SHELL !== "powershell" && SHELL !== "pwsh") throw new Error("--shell must be powershell or pwsh");
 const EXE = SHELL === "powershell" ? "powershell.exe" : "pwsh";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -40,9 +39,9 @@ const check = (ok, what) => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${what}`);
   if (!ok) failures += 1;
 };
-const show = (p) => execFileSync("git", ["show", `${REF}:${p}`], { cwd: REPO, maxBuffer: 64 * 1024 * 1024 });
+const show = (p) => fs.readFileSync(path.join(REPO, p));
 
-// the bridge file and the stand-in claude, from the Windows bridge branch
+// the bridge file and the stand-in claude, from the checked-out tree (the bridge that ships with this commit)
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "wincmd-"));
 const bridgeText = show("units/claude-code-bridge/bridge/bridge.mjs");
 fs.writeFileSync(path.join(work, "bridge.mjs"), bridgeText);
