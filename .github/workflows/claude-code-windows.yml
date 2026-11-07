@@ -31,6 +31,7 @@ jobs:
     steps:
       # The built bridge file is compared byte for byte with a fresh build: keep line ends as committed.
       - name: Keep LF line ends
+        working-directory: .
         run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
