@@ -57,7 +57,8 @@ export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"
 export const NOT_YET_BROWSERS: readonly string[] = ["Brave"];
 
 const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
-export const RELAY_OFFER = "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
+export const RELAY_OFFER =
+  "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it). If the window says it cannot connect, check the bridge is running: paste the Option Always On command from step 2 again.";
 export const RELAY_BAR_TEXT = "Safari needs the bridge window for Claude Code.";
 export const RELAY_FAILED =
   "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
@@ -250,7 +251,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
       </Button>
     ) : (
       <div data-testid="claude-code-connect">
-        {bridgeUp === false ? (
+        {bridgeUp === false && !isRelay ? (
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
             Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
             <code className="gcc-mono gcc-break">{commands.start}</code>{" "}
