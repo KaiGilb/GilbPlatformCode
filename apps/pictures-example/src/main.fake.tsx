@@ -72,6 +72,7 @@ function Root() {
   return (
     <App
       engine={engine}
+      vaultLine={`Vault: fake (${root})`}
       onSignOut={() => {
         engine.release();
         void forgetEverything();

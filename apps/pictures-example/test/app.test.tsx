@@ -10,6 +10,16 @@ function seedThree(vault: ReturnType<typeof setup>) {
 }
 
 describe("App", () => {
+  test("a vaultLine is shown under the title; none when not given", async () => {
+    const vault = setup();
+    const engine = newEngine(vault, async () => fakeSet());
+    const { unmount } = render(<App engine={engine} onSignOut={() => undefined} vaultLine="Vault: x (https://x.gilb.com/base)" />);
+    expect(screen.getByTestId("vault-line").textContent).toBe("Vault: x (https://x.gilb.com/base)");
+    unmount();
+    render(<App engine={engine} onSignOut={() => undefined} />);
+    expect(screen.queryByTestId("vault-line")).toBeNull();
+  });
+
   test("the grid shows the stored pictures through SignedImage, newest first, with no non-local request", async () => {
     const vault = setup();
     seedThree(vault);
