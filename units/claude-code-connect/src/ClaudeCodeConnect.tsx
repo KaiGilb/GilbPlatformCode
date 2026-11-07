@@ -108,7 +108,7 @@ function BraveSteps({ last }: { last: string }): ReactElement {
       <p className="gcc-text">
         <strong>{BRAVE_STEPS_HEADING}</strong>
       </p>
-      <ol className="gcc-list">
+      <ol className="gcc-steps-list">
         {[...BRAVE_STEPS, last].map((t) => (
           <li key={t}>{t}</li>
         ))}
@@ -390,7 +390,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
               {notYetBrowsers.length > 0
                 ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
                 : ""}{" "}
-              {SAFARI_WINDOW_SENTENCE} {supportedBrowsers.includes("Brave") && !isBrave ? `${BRAVE_OTHER_BROWSERS_SENTENCE} ` : ""}{ALLOW_BEFORE_PAIR}
+              {SAFARI_WINDOW_SENTENCE}{" "}{supportedBrowsers.includes("Brave") && !isBrave ? `${BRAVE_OTHER_BROWSERS_SENTENCE} ` : ""}{supportedBrowsers.includes("Brave") && isBrave ? "" : ALLOW_BEFORE_PAIR}
             </p>
             {supportedBrowsers.includes("Brave") && isBrave ? <BraveSteps last={BRAVE_LAST_STEP_ITEM} /> : null}
           </li>

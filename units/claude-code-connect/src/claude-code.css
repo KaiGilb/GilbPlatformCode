@@ -71,6 +71,8 @@ div.gcc-note { display: flex; flex-direction: column; align-items: flex-start; g
 .gcc-muted { max-width: 70ch; margin: 0; font-size: 13px; color: var(--gcc-muted, #656d76); }
 .gcc-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 14px; }
 .gcc-list li { display: flex; flex-direction: column; gap: 8px; }
+.gcc-steps-list { margin: 0; padding-left: 1.5em; list-style: decimal; }
+.gcc-steps-list li { display: list-item; margin: 4px 0; }
 .gcc-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--gcc-line, #d0d7de); }
 .gcc-tab {
   min-height: 44px; padding: 0 16px; font: inherit; font-size: 14px; cursor: pointer; background: none;

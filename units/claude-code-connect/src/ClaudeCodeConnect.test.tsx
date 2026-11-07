@@ -334,6 +334,15 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
   const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
   const SAFARI = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it. ";
   const BRAVE = "Brave needs one setting, shown here when you open this page in Brave. ";
+  // DOM textContent joins list items with no space.
+  const BRAVE_BLOCK_TEXT = [
+    "Brave: allow it once yourself. Brave does not ask.",
+    "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+    "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+    "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
+    "Set Apps on device to Allow.",
+    "Go back to this tab. You can now pair.",
+  ].join("");
   const BROWSER_TEXT = "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI + BRAVE + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
@@ -377,6 +386,13 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     ]);
     expect(block.textContent).not.toContain("gilb.com");
     expect(item).not.toHaveTextContent("Brave needs one setting");
+    expect(block.querySelector("ol")!.className).toBe("gcc-steps-list");
+    expect(block.querySelector(".gcc-list")).toBeNull();
+    expect(item).not.toHaveTextContent(ALLOW_BEFORE);
+    expect(item).not.toHaveTextContent("your browser may ask");
+    expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI.trim() + " " + BRAVE_BLOCK_TEXT,
+    );
   });
 
   it("Mac: the item carries the allow sentence, exact text", () => {
