@@ -17,7 +17,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.7";
+export const CONNECTOR_VERSION = "0.5.8";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -2050,8 +2050,13 @@ export function startConnector(opts) {
         // https always. Plain http only when the person started the connector against a plain-http door (a local test door).
         if (url.protocol !== "https:" && !(url.protocol === "http:" && origin.startsWith("http:")))
             return null;
+        // The vault's root exactly as the platform listed it (/base for a system vault, /vault for a user vault). Never composed:
+        // /base on a user vault is another namespace, and the door answers 403 "no write reach" (Connected AI aikai, 2026-11-07).
         const vaultOrigin = `${url.protocol}//${url.host}`;
-        return { base: `${vaultOrigin}/base`, origin: vaultOrigin };
+        const path = url.pathname.replace(/\/+$/, "");
+        if (path !== "/base" && path !== "/vault")
+            return null;
+        return { base: `${vaultOrigin}${path}`, origin: vaultOrigin };
     }
     async function onUploadFile(args, signal) {
         const refuse = (message) => toolResult(JSON.stringify({ error: message }), true);

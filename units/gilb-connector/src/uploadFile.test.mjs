@@ -148,13 +148,13 @@ function door(state) {
 const created = (n = "01abc") => ({ status: 201, body: { entity: `https://files.example.test/base/e/${n}`, contentHash: "sha256:x", byteSize: PNG.length, created: true } });
 
 /** A bound AI, one selected vault that is the fake vault door, and a working folder with files in it. */
-async function setup(vaultHandler = () => created(), { principal = AI_VAULT, select = true, extraVaults = [], boxOpts = {}, listed = [], createdVault = null } = {}) {
+async function setup(vaultHandler = () => created(), { principal = AI_VAULT, select = true, extraVaults = [], boxOpts = {}, listed = [], createdVault = null, root = "base" } = {}) {
   const home = scratch();
   const cwd = scratch();
   const state = { principal, createdVault };
   const identity = await listen(door(state));
   const vault = await listen(vaultHandler);
-  const base = `${vault.origin}/base`;
+  const base = `${vault.origin}/${root}`;
   state.vaults = listed.map((item) => (item === "self" ? base : item));
   const box = connect({
     origin: identity.origin,
@@ -187,6 +187,36 @@ describe("gilbplatform_upload_file", () => {
     expect(tool).toBeTruthy();
     expect(Object.keys(tool.inputSchema.properties)).toEqual(["path", "vault", "folder", "name"]);
     expect(tool.inputSchema.required).toEqual(["path"]);
+  });
+
+  it("b2r a vault listed as /vault uploads to /vault, not a composed /base", async () => {
+    const ctx = await setup(() => created(), { root: "vault" });
+    writeFileSync(join(ctx.cwd, "pic.png"), PNG);
+    const res = await call(ctx.box, { path: "pic.png" });
+    expect(res.result.isError).toBe(false);
+    expect(ctx.vault.requests[0].url).toBe(`/lws/vault/${encodeURIComponent(`${ctx.vault.origin}/vault`)}/files?name=pic.png`);
+    expect(toolText(res)).toContain(`Uploaded pic.png to ${ctx.vault.origin}/vault`);
+  });
+
+  it("b2s a vault selected by gilbplatform_use_vault from the platform's list keeps the listed /vault root", async () => {
+    const ctx = await setup(() => created(), { select: false, root: "vault", listed: ["self"] });
+    writeFileSync(join(ctx.cwd, "pic.png"), PNG);
+    const picked = await ctx.box.request("tools/call", { name: "gilbplatform_use_vault", arguments: { vault: ctx.vault.host } });
+    expect(toolText(picked)).toContain(`${ctx.vault.origin}/vault`);
+    const res = await call(ctx.box, { path: "pic.png" });
+    expect(res.result.isError).toBe(false);
+    expect(ctx.vault.requests[0].url).toContain(encodeURIComponent(`${ctx.vault.origin}/vault`));
+  });
+
+  it("b2t a selected id that is neither /base nor /vault is refused, and nothing is sent", async () => {
+    const ctx = await setup(() => created(), { select: false, extraVaults: [] });
+    const odd = new URL(ctx.vault.origin);
+    const box = connect({ origin: ctx.identity.origin, env: aiEnv(scratch()), cwd: ctx.cwd, vaults: [`${odd.origin}/elsewhere`] });
+    writeFileSync(join(ctx.cwd, "pic.png"), PNG);
+    const res = await call(box, { path: "pic.png" });
+    expect(res.result.isError).toBe(true);
+    expect(toolText(res)).toMatch(/no https address/);
+    expect(ctx.vault.requests).toHaveLength(0);
   });
 
   it("b2 sends the bytes once to the vault's own host, signed for that host, and answers address, sha256 and size", async () => {
