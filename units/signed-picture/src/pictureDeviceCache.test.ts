@@ -14,13 +14,19 @@ const ok = (text = "bytes") => new Response(text, { status: 200 });
 let fetchMock: ReturnType<typeof vi.fn>;
 let fake: FakeCaches;
 let blobs: Blob[];
-const textOf = (b: Blob) =>
-  new Promise<string>((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(String(r.result));
-    r.onerror = () => rej(r.error);
-    r.readAsText(b);
-  });
+// Reads any blob: a Node Blob has text(); a jsdom Blob (no text()) is read with jsdom's FileReader.
+const textOf = (b: Blob): Promise<string> => {
+  if (typeof (b as { text?: unknown }).text === "function") return b.text();
+  if (b instanceof Blob) {
+    return new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.onerror = () => rej(r.error);
+      r.readAsText(b);
+    });
+  }
+  return new Response(b).text();
+};
 let warn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
