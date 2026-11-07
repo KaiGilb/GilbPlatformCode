@@ -77,7 +77,7 @@ Named change, and only this:
 
 - K1. The imports of `pictures.ts` (lines 1-9) are not taken. `PictureUnreadableError` is now local to `shrink.ts`. `decode` and `encodeJpeg` stay unexported. Every number (1600, 0.82, 320, 0.72), the `imageOrientation: "from-image"` option, the `<img>` fallback and its comment, the `Math.max(1, ...)` rounding and the `!d.width || !d.height` guard are as in the source.
 
-`src/index.ts` is new. `src/testCanvas.ts` is a test-only fake (canvas, `createImageBitmap`, `Image`, object URLs) and is left out of the host-agnostic check, with the test files.
+`src/index.ts` is new. `test/testCanvas.ts` is a test-only fake (canvas, `createImageBitmap`, `Image`, object URLs), outside `src/`.
 
 ## Tests
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { PictureUnreadableError, makePictures, shrinkPicture } from "./index";
-import { fakeBitmap, installRig, type Rig } from "./testCanvas";
+import { fakeBitmap, installRig, type Rig } from "../test/testCanvas";
 
 let rig: Rig;
 beforeEach(() => {

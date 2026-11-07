@@ -89,7 +89,7 @@ TestFlowerPower (local repo `KaiGilb/TestFlowerPower`, not published), commit `e
 Named changes, and only these:
 
 - U1. `UploadTarget = { vaultOrigin, vaultRoot, folder }` replaces the app's settings. `uploadUrl(filename, target)` and `uploadPicture(blob, filename, target)`; the literal `plant-pictures` is `target.folder`, now encoded.
-- U2. Imports: `dpopWriteAuth`, `NotSignedInError`, `invalidateDpop` from `lws-session-bridge`; `serverReasonOrNull` from `lws-records`; `NoAccessError`, `VaultBusyError`, `refusalLine` and the type `RefusalDetail` from `refusal-detail` (the symbols the app imported, pictures.ts:2,3,7). `RefusalDetail` is imported and not used in the code.
+- U2. Imports: `dpopWriteAuth`, `NotSignedInError`, `invalidateDpop` from `lws-session-bridge`; `serverReasonOrNull` from `lws-records`; `NoAccessError`, `VaultBusyError` and `refusalLine` from `refusal-detail` (the symbols the app imported, pictures.ts:2,3,7).
 - U3. The body is read once after the 401 check, for every status other than 200 and 201. 403 throws `NoAccessError(sentence, { method: "PUT", path, status: 403, sentence })`. 502, 503 and 504 write one `console.warn` with the refusal line and `body.slice(0, 300)` and then throw the source's `VaultBusyError`. Any other status throws `PictureUploadError(status, text)`, whose message is the source's message byte for byte (the source threw a plain `Error`).
 - Comment edits: the "plant-pictures" in the address comment is "the folder".
 

@@ -1,6 +1,6 @@
 import { dpopWriteAuth, NotSignedInError, invalidateDpop } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { serverReasonOrNull } from "@kaigilb/gilbplatformcode-lws-records";
-import { NoAccessError, VaultBusyError, refusalLine, type RefusalDetail } from "@kaigilb/gilbplatformcode-refusal-detail";
+import { NoAccessError, VaultBusyError, refusalLine } from "@kaigilb/gilbplatformcode-refusal-detail";
 
 /** The vault answered an upload with a status that is not a success, not 401, not 403 and not 502/503/504. Keeps the status and the first 2000 characters of what the vault said. */
 export class PictureUploadError extends Error {

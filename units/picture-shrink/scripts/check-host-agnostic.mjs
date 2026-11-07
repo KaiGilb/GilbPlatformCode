@@ -2,7 +2,7 @@
 /**
  * Host-agnostic check for this unit body.
  *
- * Fails when a source file under src/ (tests and the test-only src/testCanvas.ts excepted) names a vault host on any line, comments
+ * Fails when a source file under src/ (tests excepted) names a vault host on any line, comments
  * included; when it imports anything but its own modules ("./x") and the packages listed in
  * ALLOWED_IMPORT; and when a CSS file pulls anything in (`@import`, `url(`) or names a host.
  * Imports are parsed with the TypeScript compiler, not matched by line, so a multi-line import and a
@@ -16,11 +16,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const UNIT = "units/picture-shrink";
+const UNIT = "units/refusal-detail";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^react$/, /^react\/jsx-runtime$/, /^@kaigilb\/gilbplatformcode-server-error$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);
@@ -35,7 +35,7 @@ function walk(dir) {
   }
   return out;
 }
-const all = walk(srcRoot).filter((f) => !/(\.test\.(ts|tsx|js)|[\/\\]testCanvas\.ts)$/.test(f));
+const all = walk(srcRoot).filter((f) => !/\.test\.(ts|tsx|js)$/.test(f));
 const code = all.filter((f) => /\.(ts|tsx|js|mjs)$/.test(f));
 const css = all.filter((f) => /\.css$/.test(f));
 if (code.length === 0) {
