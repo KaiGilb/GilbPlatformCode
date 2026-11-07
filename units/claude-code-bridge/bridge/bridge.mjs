@@ -193,6 +193,8 @@ export function relayPage(allowedOrigins) {
  */
 export function normalizeOrigin(input) {
     const raw = String(input ?? "").trim();
+    if (raw.includes('"'))
+        throw new Error(`${JSON.stringify(raw)} is not an origin: an origin never contains a quote mark.`);
     if (!raw || raw.includes("*"))
         throw new Error(`"${raw}" is not an origin. Use the exact address of the app, for example https://app.example.com (no wildcard).`);
     let u;
@@ -287,6 +289,18 @@ export function parseCmdShim(text) {
     }
     return null;
 }
+/** Is `target` inside `base`'s folder tree? Compared after resolving, case-insensitive, never a UNC path. */
+export function insideFolder(W, base, target) {
+    const b = W.resolve(base).toLowerCase().replace(/[\\/]+$/, "");
+    const t = W.resolve(target).toLowerCase();
+    if (t.startsWith("\\\\") || b.startsWith("\\\\"))
+        return false;
+    return t.startsWith(`${b}\\`) && !t.slice(b.length + 1).split("\\").includes("..");
+}
+/** Windows wording for "claude is not there". A bare name is never handed to the system, which would look in the current folder first. */
+export function claudeMissing() {
+    return "Claude Code was not found on this computer. Install Claude Code with Anthropic's Windows installer, log in with your Claude subscription (`claude auth login`), then start the bridge again.";
+}
 export function refusedLaunch(found) {
     return `Claude Code was found as ${found}, which the bridge cannot start safely. Install Claude Code with Anthropic's Windows installer, then start the bridge again.`;
 }
@@ -302,9 +316,9 @@ export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
     const files = o.files ?? realFiles;
     const nodePath = o.nodePath ?? process.execPath;
     const found = resolveBin(bin, env, o.home ?? os.homedir(), "win32", files);
-    // Not found: let the start fail with "not installed" the usual way.
+    // Not found: refuse. Never pass the bare name on: CreateProcess looks in the current folder before PATH, so a planted claude.exe there would run.
     if (!found || !files.exists(found))
-        return { ok: true, command: bin, prefix: [], shown: bin };
+        return { ok: false, reason: claudeMissing() };
     const ext = W.extname(found).toLowerCase();
     if (ext === ".exe" || ext === ".com")
         return { ok: true, command: found, prefix: [], shown: found };
@@ -319,8 +333,9 @@ export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
             /* unreadable: refused below */
         }
         if (shim) {
-            const target = W.resolve(W.dirname(found), shim.target);
-            if (files.exists(target)) {
+            const base = W.dirname(found);
+            const target = W.resolve(base, shim.target);
+            if (insideFolder(W, base, target) && files.exists(target)) {
                 return shim.kind === "exe" ? { ok: true, command: target, prefix: [], shown: target } : { ok: true, command: nodePath, prefix: [target], shown: target };
             }
         }
@@ -1257,6 +1272,10 @@ export function createBridge(opts = {}) {
 // ---- always-on service (macOS LaunchAgent; Windows below) -----------------------------------------------------------------------------
 export const DEFAULT_LABEL = "com.gilb.claude-code-bridge";
 const defaultStateDir = (home = os.homedir()) => path.join(home, ".gilb-claude-code-bridge");
+/** A label becomes part of file names and a registry value name: letters, digits, dot, dash, underscore; 1 to 64 characters; starts with a letter or digit. */
+export const LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const LABEL_MESSAGE = "--label may use letters, digits, dot, dash and underscore only (1 to 64 characters, starting with a letter or digit).";
+const badLabel = (opts) => (LABEL_RE.test(opts.label) ? null : { ok: false, message: LABEL_MESSAGE });
 /** Reads the command line into a plain object. Unknown flags are refused by main() before this is used. */
 export function parseCli(argv) {
     const val = (name) => {
@@ -1346,7 +1365,7 @@ export function resolveBin(name, env = process.env, home = os.homedir(), platfor
             W.join(home, ".local", "bin"),
             W.join(appData, "npm"),
             W.join(home, ".claude", "local"),
-        ].filter(Boolean);
+        ].filter((d) => d && W.isAbsolute(d)); // a relative PATH entry ("." or "bin") would mean the current folder
         for (const d of dirs) {
             const f = withExt(W.join(d, name)).find((c) => files.exists(c));
             if (f)
@@ -1375,8 +1394,9 @@ export function runLaunchctl(args) {
         execFile("/bin/launchctl", args, (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, out: `${stdout}${stderr}`.trim() }));
     });
 }
-const serviceFiles = (opts, home) => {
-    const stateDir = opts.stateDir ? path.resolve(opts.stateDir) : defaultStateDir(home);
+const serviceFiles = (opts, home, platform = process.platform) => {
+    // Windows: every other label has its own state folder, so two installs never share a token, status or supervisor file.
+    const stateDir = opts.stateDir ? path.resolve(opts.stateDir) : platform === "win32" && opts.label !== DEFAULT_LABEL ? `${defaultStateDir(home)}-${opts.label}` : defaultStateDir(home);
     return {
         stateDir,
         plist: path.join(home, "Library", "LaunchAgents", `${opts.label}.plist`),
@@ -1396,8 +1416,9 @@ export async function serviceInstall(opts, deps) {
     const platform = deps.platform ?? process.platform;
     if (platform !== "darwin" && platform !== "win32")
         return { ok: false, message: "--install works on macOS only (and on Windows). On other systems start the bridge in a terminal." };
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.label))
-        return { ok: false, message: "--label may use letters, digits, dot, dash and underscore only." };
+    const lbl = badLabel(opts);
+    if (lbl)
+        return lbl;
     const port0 = opts.port ?? DEFAULT_PORT;
     if (!Number.isInteger(port0) || port0 < 1 || port0 > 65535)
         return { ok: false, message: "--port must be a number from 1 to 65535." };
@@ -1462,6 +1483,9 @@ export async function serviceInstall(opts, deps) {
     };
 }
 export async function serviceUninstall(opts, deps) {
+    const lbl = badLabel(opts);
+    if (lbl)
+        return lbl;
     if ((deps.platform ?? process.platform) === "win32")
         return uninstallWindows(opts, deps);
     const f = serviceFiles(opts, deps.home);
@@ -1479,7 +1503,10 @@ function hintStatus(opts, deps) {
 }
 /** Asks the running bridge for its pairing code over 127.0.0.1 with the token only this user can read. */
 export async function fetchCode(opts, deps) {
-    const f = serviceFiles(opts, deps.home);
+    const lbl = badLabel(opts);
+    if (lbl)
+        return lbl;
+    const f = serviceFiles(opts, deps.home, deps.platform);
     let token;
     let st = {};
     try {
@@ -1507,7 +1534,10 @@ export async function fetchCode(opts, deps) {
  * memory); if none answers, the file is emptied so the next start loads nothing.
  */
 export async function unpairAll(opts, deps) {
-    const f = serviceFiles(opts, deps.home);
+    const lbl = badLabel(opts);
+    if (lbl)
+        return lbl;
+    const f = serviceFiles(opts, deps.home, deps.platform);
     const done = (n) => ({ ok: true, message: `Removed ${n} pairing${n === 1 ? "" : "s"}. Every app must be paired again with a new code.` });
     let token = null;
     let st = {};
@@ -1547,6 +1577,9 @@ export async function unpairAll(opts, deps) {
     return done(n);
 }
 export async function serviceStatus(opts, deps) {
+    const lbl = badLabel(opts);
+    if (lbl)
+        return lbl;
     if ((deps.platform ?? process.platform) === "win32")
         return statusWindows(opts, deps);
     const f = serviceFiles(opts, deps.home);
@@ -1675,7 +1708,8 @@ const jsString = (t) => JSON.stringify(t).replace(/\u2028/g, "\\u2028").replace(
 /** Where everything lives. `P` is path.win32 on Windows (and in the tests that pretend to be Windows). */
 export function serviceFilesWin(opts, home, platform, env) {
     const P = platform === "win32" ? path.win32 : path;
-    const stateDir = opts.stateDir ? P.resolve(opts.stateDir) : P.join(home, ".gilb-claude-code-bridge");
+    // Each label has its own state folder (token, status, pairings, supervisor and stop files): two installs never share one.
+    const stateDir = opts.stateDir ? P.resolve(opts.stateDir) : P.join(home, opts.label === DEFAULT_LABEL ? ".gilb-claude-code-bridge" : `.gilb-claude-code-bridge-${opts.label}`);
     const localDir = P.join(env.LOCALAPPDATA ?? P.join(home, "AppData", "Local"), "gilb-claude-code-bridge");
     const sys32 = P.join(env.SystemRoot ?? env.windir ?? "C:\\Windows", "System32");
     return {
@@ -1686,6 +1720,7 @@ export function serviceFilesWin(opts, home, platform, env) {
         logFile: P.join(localDir, opts.label === DEFAULT_LABEL ? "bridge.log" : `${opts.label}.log`),
         supervisorFile: P.join(stateDir, "supervisor.json"),
         stopFile: P.join(stateDir, "supervisor.stop"),
+        ownerFile: P.join(stateDir, "service-owner.json"),
         statusFile: P.join(stateDir, "status.json"),
         wscript: P.join(sys32, "wscript.exe"),
         reg: P.join(sys32, "reg.exe"),
@@ -1694,9 +1729,14 @@ export function serviceFilesWin(opts, home, platform, env) {
 /** The command line the Run value holds, and the arguments for starting the same thing right now. */
 const wscriptArgs = (f) => ["//B", "//Nologo", "//E:JScript", f.launcher];
 const runValue = (f) => winCommandLine([f.wscript, ...wscriptArgs(f)]);
+/** The first line of every launcher this bridge writes. --uninstall touches only a launcher that has it. */
+const LAUNCHER_MARK = "// Written by `node bridge.mjs --install` for the Gilb Claude Code bridge. `--uninstall` removes it.";
+/** A launcher file is UTF-16; read as text it has NULs between the letters. */
+const plainText = (raw) => String(raw).replace(/\0/g, "").replace(/\ufeff|\ufffd/g, "");
+const isOurLauncher = (raw) => plainText(raw).includes(LAUNCHER_MARK);
 function launcherText(f, command) {
     return [
-        "// Written by `node bridge.mjs --install` for the Gilb Claude Code bridge. `--uninstall` removes it.",
+        LAUNCHER_MARK,
         "// Starts the bridge supervisor with no window (window style 0). It decides nothing and reads nothing.",
         'var sh = new ActiveXObject("WScript.Shell");',
         `sh.CurrentDirectory = ${jsString(f.stateDir)};`,
@@ -1715,16 +1755,55 @@ function readJson(sfs, p) {
         return null;
     }
 }
-/** Asks a running supervisor to stop (a marker file it polls), waits for it to go. Never force-kills a pid it cannot prove is its own. */
-async function stopSupervisor(f, deps, sfs) {
-    const alive = deps.alive ?? pidAlive;
-    const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-    const sup = readJson(sfs, f.supervisorFile);
-    if (!sup?.pid || !alive(sup.pid)) {
+/** The supervisor rewrites its record this often (its "I am alive" beat). */
+export const SUPERVISOR_BEAT_MS = 1000;
+/** A beat this young is trusted at once; an older one is looked at again after SUPERVISOR_RECHECK_MS. */
+const BEAT_FRESH_MS = 3500;
+const SUPERVISOR_RECHECK_MS = 1600;
+/**
+ * Is the supervisor named in supervisor.json really running? A bare pid proves nothing: Windows reuses pids, and the file stays
+ * behind after a crash or a power cut. So the pid must be alive AND the record must be beating: its `beat` time is recent, or it
+ * changes within a moment. Only a running supervisor rewrites it. Anything else is stale (null), and the caller replaces it.
+ */
+export async function liveSupervisor(read, file, alive, sleep, now) {
+    const get = async () => {
+        for (let i = 0; i < 2; i++) {
+            try {
+                const r = JSON.parse(read(file));
+                return r && typeof r === "object" ? r : null;
+            }
+            catch {
+                if (i === 0)
+                    await sleep(100); // a rewrite in progress, or no file
+            }
+        }
+        return null;
+    };
+    const r = await get();
+    if (!r || !Number.isInteger(r.pid) || typeof r.instance !== "string" || typeof r.beat !== "number" || !alive(r.pid))
+        return null;
+    if (Math.abs(now() - r.beat) < BEAT_FRESH_MS)
+        return r;
+    await sleep(SUPERVISOR_RECHECK_MS);
+    const r2 = await get();
+    return r2 && r2.pid === r.pid && r2.instance === r.instance && r2.beat !== r.beat && alive(r.pid) ? r2 : null;
+}
+const depsClock = (deps) => ({
+    alive: deps.alive ?? pidAlive,
+    sleep: deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+    now: deps.now ?? Date.now,
+});
+/** Asks this label's running supervisor to stop (a marker file it polls), waits for it to go. Never force-kills a pid. A record that is not a live supervisor is stale and is removed; another label's supervisor is left alone. */
+async function stopSupervisor(f, deps, sfs, label) {
+    const { alive, sleep, now } = depsClock(deps);
+    const sup = await liveSupervisor((p) => String(sfs.read(p)), f.supervisorFile, alive, sleep, now);
+    if (!sup) {
         sfs.rm(f.supervisorFile);
         sfs.rm(f.stopFile);
         return { wasRunning: false, stillRunning: null };
     }
+    if (sup.label !== label)
+        return { wasRunning: false, stillRunning: null, foreign: sup.label ?? "another install" };
     sfs.write(f.stopFile, String(Date.now()));
     for (let i = 0; i < 80 && alive(sup.pid); i++)
         await sleep(250); // 20 s
@@ -1734,14 +1813,33 @@ async function stopSupervisor(f, deps, sfs) {
     sfs.rm(f.stopFile);
     return { wasRunning: true, stillRunning: null };
 }
+/** Another label's install that uses this port, found from its launcher file. */
+function labelOnPort(f, sfs, label, port) {
+    for (const name of sfs.list?.(f.localDir) ?? []) {
+        const m = /^start-(.+)\.js$/i.exec(name);
+        if (!m || m[1] === label)
+            continue;
+        let text = "";
+        try {
+            text = plainText(sfs.read(f.P.join(f.localDir, name)));
+        }
+        catch {
+            continue;
+        }
+        if (!text.includes(LAUNCHER_MARK))
+            continue;
+        if (new RegExp(`--port ${port}(?![0-9])`).test(text))
+            return m[1];
+    }
+    return null;
+}
 async function installWindows(opts, deps, ctx) {
     const { home, nodePath, file, env } = deps;
     const { claudeBin, port, extraOrigins } = ctx;
     const sfs = deps.sfs ?? realServiceFs;
     const exec = deps.exec ?? runExec;
-    const alive = deps.alive ?? pidAlive;
+    const { alive, sleep, now } = depsClock(deps);
     const hello = deps.hello ?? realHello;
-    const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     const f = serviceFilesWin(opts, home, "win32", env);
     // A % in a path would be expanded by Windows inside the command; refuse rather than start the wrong file.
     const bad = [nodePath, file, claudeBin, f.stateDir, f.launcher].find((p) => p.includes("%"));
@@ -1753,12 +1851,22 @@ async function installWindows(opts, deps, ctx) {
     const value = runValue(f);
     if (value.length > RUN_VALUE_MAX)
         return { ok: false, message: `Not installed.\nThe start-up command would be ${value.length} characters; Windows allows ${RUN_VALUE_MAX} in a Run entry. Use a shorter --label.` };
-    const prev = await stopSupervisor(f, deps, sfs); // installing again restarts on the new file
+    // One label, one state folder, one port. Refuse before anything is stopped or written.
+    const owner = readJson(sfs, f.ownerFile);
+    if (owner?.label && owner.label !== opts.label)
+        return { ok: false, message: `Not installed.\nThe state folder ${f.stateDir} belongs to the install "${owner.label}". Each --label needs its own --state-dir (leave --state-dir out and it gets its own).` };
+    const clash = labelOnPort(f, sfs, opts.label, port);
+    if (clash)
+        return { ok: false, message: `Not installed.\nPort ${port} is already used by the install "${clash}". Give this one its own --port, or remove the other first:  node ${commandPathForPerson(file, home, "win32")} --uninstall --label ${clash}` };
+    const prev = await stopSupervisor(f, deps, sfs, opts.label); // installing again restarts on the new file
+    if (prev.foreign)
+        return { ok: false, message: `Not installed.\nThe state folder ${f.stateDir} is in use by the install "${prev.foreign}". Each --label needs its own --state-dir.` };
     if (prev.stillRunning)
         return { ok: false, message: `Not installed.\nThe bridge started by an earlier install (process ${prev.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab), then run --install again.` };
     sfs.rm(f.stopFile);
     sfs.mkdirp(f.stateDir);
     sfs.mkdirp(f.localDir);
+    sfs.write(f.ownerFile, JSON.stringify({ label: opts.label }));
     // The log shows the pairing code. It sits under %LOCALAPPDATA%, inside the user's own profile folder, whose default access rights
     // (inherited, not changed here) give it to this user, SYSTEM and Administrators only.
     if (!sfs.exists(f.logFile))
@@ -1775,11 +1883,15 @@ async function installWindows(opts, deps, ctx) {
         return { ok: false, message: `The start-up entry is installed, but Windows Script Host did not start the bridge: ${started.out || `exit ${started.code}`}\nIt may be switched off on this computer. See ${f.logFile}` };
     let up = null;
     let supervised = false;
+    let ours = false;
     for (let i = 0; i < 80; i++) {
         up = await hello(port);
-        const sup = readJson(sfs, f.supervisorFile);
-        supervised = !!sup?.pid && alive(sup.pid);
-        if (up && supervised)
+        const sup = await liveSupervisor((p) => String(sfs.read(p)), f.supervisorFile, alive, sleep, now);
+        supervised = !!sup && sup.label === opts.label;
+        // What answers is THIS install's bridge only if it is the child this supervisor started: the bridge writes status.json with its own pid after it binds the port.
+        const st = readJson(sfs, f.statusFile);
+        ours = !!(up && supervised && sup.child && st?.ok && st.pid === sup.child && alive(st.pid));
+        if (ours)
             break;
         if (up && !supervised && i >= 12)
             break; // something else holds the port and our supervisor has given up
@@ -1788,8 +1900,8 @@ async function installWindows(opts, deps, ctx) {
     const me = opts.stateDir ? ` --state-dir ${psSingle(f.stateDir)}` : "";
     const flags = `${opts.label === DEFAULT_LABEL ? "" : ` --label ${opts.label}`}${me}`;
     const cmd = commandPathForPerson(file, home, "win32");
-    if (up && !supervised) {
-        return { ok: false, message: `The start-up entry is installed, but another bridge already holds port ${port} and the installed one gave way (it never runs two).\n  Close that bridge (a PowerShell window running it, or its node.exe in Task Manager), then run:  node ${cmd} --install${flags}` };
+    if (up && !ours) {
+        return { ok: false, message: `The start-up entry is installed, but another bridge already holds port ${port} and the installed one gave way (it never runs two).\n  Close that bridge (a PowerShell window running it, or its node.exe in Task Manager; for another install, run its --uninstall --label), then run:  node ${cmd} --install${flags}` };
     }
     if (!up)
         return { ok: false, message: `The start-up entry is installed, but the bridge did not answer on port ${port} within 20 seconds.\n  Read the log:  Get-Content ${psSingle(f.logFile)} -Tail 30` };
@@ -1809,20 +1921,37 @@ async function uninstallWindows(opts, deps) {
     const exec = deps.exec ?? runExec;
     const f = serviceFilesWin(opts, deps.home, "win32", deps.env);
     const q = await exec(f.reg, ["query", WIN_RUN_KEY, "/v", opts.label]);
-    const had = q.code === 0 || sfs.exists(f.launcher);
+    // Ours only if the entry holds exactly the command this bridge writes for this label, or the launcher carries the bridge's mark.
+    const entryOurs = q.code === 0 && q.out.includes(runValue(f));
+    let launcherOurs = false;
+    try {
+        launcherOurs = sfs.exists(f.launcher) && isOurLauncher(sfs.read(f.launcher));
+    }
+    catch {
+        /* unreadable: not ours */
+    }
+    if (q.code === 0 && !entryOurs && !launcherOurs) {
+        return { ok: false, message: `A start-up entry named ${opts.label} exists, but this bridge did not make it (its command is not the bridge's). It was left alone. Remove it yourself if you want it gone.` };
+    }
+    const had = entryOurs || launcherOurs;
     // Entry first, so nothing starts it again while it is being stopped.
-    if (q.code === 0) {
+    if (entryOurs) {
         const d = await exec(f.reg, ["delete", WIN_RUN_KEY, "/v", opts.label, "/f"]);
         if (d.code !== 0)
             return { ok: false, message: `Windows would not remove the start-up entry ${opts.label}: ${d.out || `exit ${d.code}`}` };
     }
-    const stop = await stopSupervisor(f, deps, sfs);
+    const stop = await stopSupervisor(f, deps, sfs, opts.label);
     if (stop.stillRunning)
         return { ok: false, message: `The start-up entry is removed, but the bridge (process ${stop.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab).` };
-    sfs.rm(f.launcher);
-    sfs.rm(f.logFile);
-    sfs.rm(`${f.logFile}.1`);
-    sfs.rmdirIfEmpty(f.localDir);
+    if (had) {
+        sfs.rm(f.launcher);
+        sfs.rm(f.logFile);
+        sfs.rm(`${f.logFile}.1`);
+        const owner = readJson(sfs, f.ownerFile);
+        if (owner?.label === opts.label)
+            sfs.rm(f.ownerFile);
+        sfs.rmdirIfEmpty(f.localDir);
+    }
     return {
         ok: true,
         message: had || stop.wasRunning ? `Removed ${opts.label}. The bridge no longer starts at login${stop.wasRunning ? " and has been stopped" : ""}. Your pairings in ${f.stateDir} are kept.` : `${opts.label} was not installed.`,
@@ -1831,18 +1960,19 @@ async function uninstallWindows(opts, deps) {
 async function statusWindows(opts, deps) {
     const sfs = deps.sfs ?? realServiceFs;
     const exec = deps.exec ?? runExec;
-    const alive = deps.alive ?? pidAlive;
+    const { alive, sleep, now } = depsClock(deps);
     const hello = deps.hello ?? realHello;
     const f = serviceFilesWin(opts, deps.home, "win32", deps.env);
     const lines = [];
     const entry = (await exec(f.reg, ["query", WIN_RUN_KEY, "/v", opts.label])).code === 0;
     const installed = entry && sfs.exists(f.launcher);
     lines.push(`Installed:  ${installed ? `yes (start-up entry ${opts.label})` : entry ? "damaged: the start-up entry is there but its launcher file is missing; run --install again" : "no"}`);
-    const sup = readJson(sfs, f.supervisorFile);
+    // Only a live supervisor of THIS label counts; a stale file, or another label's supervisor, is "no".
+    const rec = await liveSupervisor((p) => String(sfs.read(p)), f.supervisorFile, alive, sleep, now);
+    const sup = rec && rec.label === opts.label ? rec : null;
     const st = readJson(sfs, f.statusFile);
-    const supAlive = !!sup?.pid && alive(sup.pid);
-    const bridgePid = st?.pid && alive(st.pid) ? st.pid : null;
-    lines.push(`Running:    ${supAlive ? `yes (supervisor pid ${sup.pid}${bridgePid ? `, bridge pid ${bridgePid}` : ", bridge restarting"})` : "no"}`);
+    const bridgePid = sup && st?.pid && st.pid === sup.child && alive(st.pid) ? st.pid : null;
+    lines.push(`Running:    ${sup ? `yes (supervisor pid ${sup.pid}${bridgePid ? `, bridge pid ${bridgePid}` : ", bridge restarting"})` : "no"}`);
     const port = opts.port ?? st?.port ?? DEFAULT_PORT;
     if (st) {
         lines.push(`Last start: ${st.ok ? `ok at ${st.at}` : `FAILED at ${st.at}: ${st.reason}`}`);
@@ -1851,7 +1981,7 @@ async function statusWindows(opts, deps) {
     else
         lines.push("Last start: none recorded");
     const h = await hello(port);
-    lines.push(`Answering:  ${h ? `yes, http://127.0.0.1:${port}${h.build ? ` (build ${h.build})` : ""}` : `no (port ${port})`}`);
+    lines.push(`Answering:  ${h ? (bridgePid ? `yes, http://127.0.0.1:${port}${h.build ? ` (build ${h.build})` : ""}` : `no (something else answers on port ${port}; it is not this install's bridge)`) : `no (port ${port})`}`);
     lines.push(`Log:        ${f.logFile}`);
     return { ok: true, message: lines.join("\n") };
 }
@@ -1903,25 +2033,24 @@ export async function runSupervisor(cli, io = {}) {
     };
     fs.mkdirSync(f.localDir, { recursive: true });
     fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
-    // One supervisor per state folder. A leftover file from a dead process is replaced.
-    const mine = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+    // One supervisor per state folder. A record is trusted only while its owner is alive AND beating (see liveSupervisor); any other is replaced.
+    const sleepFn = io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    const clock = io.now ?? Date.now;
+    const instance = crypto.randomUUID();
+    let childPid;
+    const record = () => JSON.stringify({ pid: process.pid, instance, label: cli.label, at: startedAt, beat: clock(), child: childPid });
+    const startedAt = new Date().toISOString();
     for (let tries = 0;; tries++) {
         try {
-            fs.writeFileSync(f.supervisorFile, mine, { flag: "wx", mode: 0o600 });
+            fs.writeFileSync(f.supervisorFile, record(), { flag: "wx", mode: 0o600 });
             break;
         }
         catch (e) {
             if (e.code !== "EEXIST" || tries > 2)
                 throw e;
-            let other = 0;
-            try {
-                other = JSON.parse(fs.readFileSync(f.supervisorFile, "utf8")).pid ?? 0;
-            }
-            catch {
-                /* unreadable: treat as stale */
-            }
-            if (other && other !== process.pid && alive(other)) {
-                log(`another supervisor (pid ${other}) is already running; this one ends`);
+            const other = await liveSupervisor((p) => fs.readFileSync(p, "utf8"), f.supervisorFile, alive, sleepFn, clock);
+            if (other && other.pid !== process.pid) {
+                log(`another supervisor (pid ${other.pid}) is already running; this one ends`);
                 return "already-running";
             }
             fs.rmSync(f.supervisorFile, { force: true });
@@ -1933,6 +2062,31 @@ export async function runSupervisor(cli, io = {}) {
         if (fs.existsSync(f.stopFile))
             finish();
     }, io.pollMs ?? 500);
+    // The beat: proves to --install / --status / the next supervisor that this one is running, not just a pid some other process now has.
+    const beat = () => {
+        try {
+            let cur = null;
+            try {
+                cur = JSON.parse(fs.readFileSync(f.supervisorFile, "utf8"));
+            }
+            catch (e) {
+                if (e.code !== "ENOENT")
+                    return; // being rewritten: next beat
+            }
+            if (cur && cur.instance !== instance) {
+                log("supervisor.json now belongs to another supervisor; this one ends");
+                finish();
+                return;
+            }
+            const tmp = `${f.supervisorFile}.${process.pid}.tmp`;
+            fs.writeFileSync(tmp, record(), { mode: 0o600 });
+            fs.renameSync(tmp, f.supervisorFile);
+        }
+        catch {
+            /* a missed beat is not a reason to stop */
+        }
+    };
+    const beatTimer = setInterval(beat, io.beatMs ?? SUPERVISOR_BEAT_MS);
     const onSignal = () => finish();
     const sigs = platform === "win32" ? ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"] : ["SIGINT", "SIGTERM"];
     if (io.signals)
@@ -1965,7 +2119,12 @@ export async function runSupervisor(cli, io = {}) {
     log(`supervisor started (pid ${process.pid}), bridge file ${bridgeFile}`);
     try {
         const result = await superviseLoop({
-            spawnChild: io.spawnChild ?? realSpawn,
+            spawnChild: () => {
+                const c = (io.spawnChild ?? realSpawn)();
+                childPid = c.pid;
+                beat();
+                return c;
+            },
             now: io.now ?? Date.now,
             sleep: io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
             stop,
@@ -1976,11 +2135,12 @@ export async function runSupervisor(cli, io = {}) {
     }
     finally {
         clearInterval(timer);
+        clearInterval(beatTimer);
         if (io.signals)
             for (const s of sigs)
                 process.off(s, onSignal);
         try {
-            if (JSON.parse(fs.readFileSync(f.supervisorFile, "utf8")).pid === process.pid)
+            if (JSON.parse(fs.readFileSync(f.supervisorFile, "utf8")).instance === instance)
                 fs.rmSync(f.supervisorFile, { force: true });
         }
         catch {
@@ -2006,7 +2166,9 @@ async function main() {
     const cli = parseCli(argv);
     if (cli.mode === "help") {
         console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR]
-       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)`);
+       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
+       --label L: letters, digits, dot, dash, underscore, 1 to 64 characters.${process.platform === "win32" ? `
+       Windows: a second --label is a separate install (own state folder, log, launcher, start-up entry) and needs its own --port.` : ""}`);
         return;
     }
     // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
