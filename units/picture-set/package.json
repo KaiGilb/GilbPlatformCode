@@ -1,0 +1,41 @@
+{
+  "name": "@kaigilb/gilbplatformcode-picture-set",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../photo-ref",
+    "@kaigilb/gilbplatformcode-picture-upload": "file:../picture-upload",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-refusal-detail": "file:../refusal-detail",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
+    "@kaigilb/gilbplatformcode-photo-ref": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0"
+  }
+}
