@@ -29,7 +29,7 @@ import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.9";
+export const CONNECTOR_VERSION = "0.5.10";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -82,6 +82,25 @@ export function aiNoGrant(vault: string | undefined, principal: string): string 
 /** What the model is told when a hand-off it asked for could not finish. Same sentence as the page client. */
 export const HAND_OFF_FAILED_NEXT =
   "Do not call this hand-off again with the same Agent. Tell the person which Agent could not take the work, and why.";
+
+/** A hand-off stopped by HOP_MAX_MS. Apart from a crash: its tool calls were committed as they happened, so its writes stand. */
+class HopTimeoutError extends Error {
+  constructor() {
+    super("The hand-off took too long and was stopped.");
+    this.name = "HopTimeoutError";
+  }
+}
+
+/** What the model is told when a hand-off ran out of time. The minutes follow the limit. */
+export function hopTimeoutAnswer(role: string, hopMaxMs: number): string {
+  const minutes = Math.max(1, Math.round(hopMaxMs / 60000));
+  return JSON.stringify({
+    error: "the hand-off ran out of time",
+    role,
+    partial: `This hand-off ran out of time after ${minutes} ${minutes === 1 ? "minute" : "minutes"}. What it wrote before then is saved. Read the vault to see what is there, then hand over only the rest, in smaller parts.`,
+    next: "Read what this hand-off wrote, then hand the remaining work to the same Agent in smaller parts.",
+  });
+}
 
 const SIGN_IN_FAILED = "This computer could not sign in to GilbPlatform.";
 const AI_SIGN_IN_FAILED = "This AI could not sign in to GilbPlatform.";
@@ -1906,7 +1925,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       };
       timer = setTimeout(() => {
         child.kill("SIGTERM");
-        finish(() => reject(new Error("The hand-off took too long and was stopped.")));
+        finish(() => reject(new HopTimeoutError()));
       }, hopMaxMs);
       // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
       timer.unref();
@@ -1978,6 +1997,9 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (signal.aborted) return CANCELLED;
       if (closed.cut) rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
       const reason = err instanceof Error ? err.message : "the hand-off could not run";
+      // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
+      const isConcept = agentIsConcept() || shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
+      if (err instanceof HopTimeoutError && !isConcept) return toolResult(hopTimeoutAnswer(shaped.role, hopMaxMs), true);
       return failedHop(shaped.role, reason, closed.cut);
     } finally {
       hopsRunning -= 1;
