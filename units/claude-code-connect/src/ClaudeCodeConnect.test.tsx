@@ -333,7 +333,7 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
   const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
   const SAFARI = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it. ";
-  const BRAVE = "In Brave, allow it once yourself: click the icon left of the address, open Site settings, and set Apps on device to Allow. ";
+  const BRAVE = "Brave needs one setting, shown here when you open this page in Brave. ";
   const BROWSER_TEXT = "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI + BRAVE + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
@@ -355,9 +355,28 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(item).not.toHaveTextContent("Gilb");
   });
 
-  it("Mac: the item carries the Brave one-time step, exact text", () => {
+  it("Mac, not Brave: the item has the short Brave sentence and no steps block", () => {
     renderIt();
     expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent(BRAVE.trim());
+    expect(screen.queryByTestId("claude-code-brave-steps")).not.toBeInTheDocument();
+  });
+
+  it("Mac, Brave: the item shows the steps block (ordered list, 5 items, exact text, last step 'You can now pair'), not the short sentence", () => {
+    render(<ClaudeCodeConnect relayBrowser={false} braveBrowser client={client()} commands={commands} onConnected={() => {}} />);
+    const item = screen.getByTestId("claude-code-supported-browsers");
+    const block = within(item).getByTestId("claude-code-brave-steps");
+    expect(within(block).getByText("Brave: allow it once yourself. Brave does not ask.").tagName).toBe("STRONG");
+    const ol = block.querySelector("ol");
+    expect(ol).not.toBeNull();
+    expect(Array.from(ol!.querySelectorAll(":scope > li")).map((li) => li.textContent)).toEqual([
+      "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
+      "Click Site settings. A settings page opens for this site.",
+      "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+      "Set Apps on device to Allow.",
+      "Come back to this page. You can now pair.",
+    ]);
+    expect(block.textContent).not.toContain("gilb.com");
+    expect(item).not.toHaveTextContent("Brave needs one setting");
   });
 
   it("Mac: the item carries the allow sentence, exact text", () => {
@@ -825,18 +844,32 @@ describe("Safari-only wording follows the browser", () => {
     expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
   });
 
-  const BRAVE_HINT = "Brave does not ask. Click the icon left of the address, open Site settings, set Apps on device to Allow, then check again.";
+  const STEPS_CHECK = [
+    "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
+    "Click Site settings. A settings page opens for this site.",
+    "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+    "Set Apps on device to Allow.",
+    "Come back to this page and click Check again.",
+  ];
+  const expectBraveStep3 = async () => {
+    const hint = await screen.findByTestId("claude-code-bridge-hint");
+    expect(hint).not.toHaveTextContent("If your browser asked");
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+    const block = screen.getByTestId("claude-code-brave-steps");
+    expect(block).toHaveTextContent("Brave: allow it once yourself. Brave does not ask.");
+    const items = block.querySelectorAll("ol > li");
+    expect(items).toHaveLength(5);
+    expect(Array.from(items).map((li) => li.textContent)).toEqual(STEPS_CHECK);
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  };
 
-  it("Brave (override), failed check: Brave sentence exact, no generic one, no relay block", async () => {
+  it("Brave (override), failed check: the steps block (last step Check again), no generic Allow sentence", async () => {
     setUA(UA.chromeMac);
     const user = userEvent.setup();
     const step = stubClient({ probe: async () => false });
     render(<ClaudeCodeConnect braveBrowser client={step.c} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
-    const hint = await screen.findByTestId("claude-code-allow-hint");
-    expect(hint.textContent).toBe(BRAVE_HINT);
-    expect(screen.getByTestId("claude-code-bridge-hint")).not.toHaveTextContent("If your browser asked");
-    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+    await expectBraveStep3();
   });
 
   it("Brave detected from navigator.brave (no prop): Brave sentence", async () => {
@@ -847,7 +880,7 @@ describe("Safari-only wording follows the browser", () => {
       const step = stubClient({ probe: async () => false });
       render(<ClaudeCodeConnect client={step.c} commands={commands} onConnected={() => {}} />);
       await toCodeBox(user);
-      expect((await screen.findByTestId("claude-code-allow-hint")).textContent).toBe(BRAVE_HINT);
+      await expectBraveStep3();
     } finally {
       delete (navigator as unknown as { brave?: unknown }).brave;
     }
@@ -873,6 +906,7 @@ describe("Safari-only wording follows the browser", () => {
     expect(await screen.findByTestId("claude-code-relay")).toBeInTheDocument();
     expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
     expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-brave-steps")).not.toBeInTheDocument();
   });
 
   it("relayBrowser={false} overrides a Safari UA; relayBrowser={true} overrides a Chrome UA", async () => {

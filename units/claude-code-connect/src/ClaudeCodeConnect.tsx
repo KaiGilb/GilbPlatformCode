@@ -72,8 +72,18 @@ export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"
 /** Browsers measured to fail. None now. */
 export const NOT_YET_BROWSERS: readonly string[] = [];
 
-const BRAVE_ALLOW_ONCE = "In Brave, allow it once yourself: click the icon left of the address, open Site settings, and set Apps on device to Allow.";
-export const BRAVE_BLOCKED_HINT = "Brave does not ask. Click the icon left of the address, open Site settings, set Apps on device to Allow, then check again.";
+const BRAVE_OTHER_BROWSERS_SENTENCE = "Brave needs one setting, shown here when you open this page in Brave.";
+export const BRAVE_STEPS_HEADING = "Brave: allow it once yourself. Brave does not ask.";
+/** The five steps; the last one differs between the Mac supported-browsers item and step 3. */
+export const BRAVE_STEPS: readonly string[] = [
+  "Keep this page open. In Brave's address bar, click the small icon at the far left, just before this site's address.",
+  "Click Site settings. A settings page opens for this site.",
+  "Find Apps on device in the list. (Not Local network: leave that one as it is.)",
+  "Set Apps on device to Allow.",
+];
+export const BRAVE_LAST_STEP_ITEM = "Come back to this page. You can now pair.";
+export const BRAVE_LAST_STEP_CHECK = "Come back to this page and click Check again.";
+
 const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
 export const RELAY_OFFER =
   "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it). If the window says it cannot connect, check the bridge is running: paste the Option Always On command from step 2 again.";
@@ -90,6 +100,21 @@ function listWords(words: readonly string[]): string {
 function orWords(words: readonly string[]): string {
   if (words.length <= 1) return words.join("");
   return `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
+}
+
+function BraveSteps({ last }: { last: string }): ReactElement {
+  return (
+    <div className="gcc-note" data-testid="claude-code-brave-steps">
+      <p className="gcc-text">
+        <strong>{BRAVE_STEPS_HEADING}</strong>
+      </p>
+      <ol className="gcc-list">
+        {[...BRAVE_STEPS, last].map((t) => (
+          <li key={t}>{t}</li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 const ALLOW_BEFORE_PAIR = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
@@ -276,9 +301,10 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
             Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
             <code className="gcc-mono gcc-break">{commands.start}</code>{" "}
-            <span data-testid="claude-code-allow-hint">{isBrave ? BRAVE_BLOCKED_HINT : ALLOW_AFTER_BLOCK}</span>
+            {isBrave ? null : <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>}
           </p>
         ) : null}
+        {bridgeUp === false && !isRelay && isBrave ? <BraveSteps last={BRAVE_LAST_STEP_CHECK} /> : null}
         {bridgeUp === false && isRelay ? (
           <div className="gcc-note" data-testid="claude-code-relay">
             <p className="gcc-text">{RELAY_OFFER}</p>
@@ -364,8 +390,9 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
               {notYetBrowsers.length > 0
                 ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
                 : ""}{" "}
-              {SAFARI_WINDOW_SENTENCE} {supportedBrowsers.includes("Brave") ? `${BRAVE_ALLOW_ONCE} ` : ""}{ALLOW_BEFORE_PAIR}
+              {SAFARI_WINDOW_SENTENCE} {supportedBrowsers.includes("Brave") && !isBrave ? `${BRAVE_OTHER_BROWSERS_SENTENCE} ` : ""}{ALLOW_BEFORE_PAIR}
             </p>
+            {supportedBrowsers.includes("Brave") && isBrave ? <BraveSteps last={BRAVE_LAST_STEP_ITEM} /> : null}
           </li>
         ) : null}
         <li>
