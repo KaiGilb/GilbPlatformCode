@@ -18,6 +18,10 @@ export type Rig = {
   revokeObjectURL: ReturnType<typeof vi.fn>;
   /** make the next Image loads/fails */
   image: { mode: "load" | "error"; width: number; height: number };
+  /** every blob handed to a toBlob callback, in order */
+  blobs: Blob[];
+  /** toBlob answers image/png when asked for image/webp, as a browser without WebP export does */
+  noWebp: boolean;
   /** getContext answers null when set */
   noContext: boolean;
   /** toBlob answers null when set */
@@ -35,6 +39,8 @@ export function installRig(): Rig {
     createObjectURL: vi.fn(() => "blob:example.test/picture"),
     revokeObjectURL: vi.fn(),
     image: { mode: "load", width: 100, height: 100 },
+    blobs: [],
+    noWebp: false,
     noContext: false,
     nullBlob: false,
     drawThrows: false,
@@ -72,7 +78,10 @@ export function installRig(): Rig {
   };
   proto.toBlob = function (this: HTMLCanvasElement, cb: (b: Blob | null) => void, type?: string, quality?: number) {
     rig.blobCalls.push({ width: this.width, height: this.height, type, quality });
-    cb(rig.nullBlob ? null : new Blob(["jpeg"], { type: type ?? "image/png" }));
+    if (rig.nullBlob) return cb(null);
+    const blob = new Blob(["jpeg"], { type: rig.noWebp && type === "image/webp" ? "image/png" : (type ?? "image/png") });
+    rig.blobs.push(blob);
+    cb(blob);
   };
   rig.restore = () => {
     g.createImageBitmap = savedBitmap;

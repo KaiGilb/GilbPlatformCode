@@ -1,9 +1,9 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-shrink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Reads a picture file once and makes upright JPEG copies no larger than the sizes you ask for, a 1600 px master and a 320 px thumbnail by default, never enlarged or cropped.",
+  "description": "Reads a picture file once and makes upright copies no larger than the sizes you ask for: JPEG or WebP, a thumbnail, a screen copy and a full copy by default, never enlarged or cropped, with an optional host decoder for HEIC.",
   "exports": {
     ".": "./src/index.ts"
   },
