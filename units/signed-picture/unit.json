@@ -2,8 +2,8 @@
   "schema": 1,
   "unit": "units/signed-picture",
   "package": "@kaigilb/gilbplatformcode-signed-picture",
-  "version": "0.1.0",
-  "purpose": "Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out, lets only a few fetches run at once, and draws a React thumbnail that loads when it nears the screen.",
+  "version": "0.2.0",
+  "purpose": "Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out (and, if asked, a copy on the device for each person), lets only a few fetches run at once (a number the app can set), and draws a React thumbnail that loads when it nears the screen.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
     "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
@@ -18,7 +18,10 @@
     "G2. the demo branch (pictures.ts:113-114) is deleted",
     "G3. imports: dpopReadAuth from lws-session-bridge; entityIdTail and fileIdFromPhotoRef from photo-ref",
     "G4. Thumb is SignedImage with props vaultOrigin, placeholder (default null, replaces LeafGlyph), className (default thumb), alt (default empty); vaultOrigin is in the effect's dependency list",
-    "G5. the fetch's rejection handler becomes live && setFailed(true); the div carries data-state loading, shown or failed and draws the sentence This picture could not be loaded. when failed"
+    "G5. the fetch's rejection handler becomes live && setFailed(true); the div carries data-state loading, shown or failed and draws the sentence This picture could not be loaded. when failed",
+    "F1. 0.2.0: setPictureQueueLimit(n) sets the queue limit (integer at least 1, else RangeError; default 4; raising it starts waiting jobs at once)",
+    "F2. 0.2.0: enablePictureDeviceCache({ name }) / disablePictureDeviceCache(): pictureObjectUrl reads and fills Cache Storage under the request URL (off by default; no-op without caches; storage failures swallowed with one console.warn); forgetPictures({ device: true }) also deletes that cache",
+    "the default path is the 0.1.0 code, unchanged: with none of the new functions called the unit behaves as 0.1.0"
   ],
   "newFiles": [
     "src/index.ts"
