@@ -7,6 +7,9 @@ export const BRIDGE_FILE_NAME = "claude-code-bridge.mjs";
 /** Where the downloaded bridge lives on the person's computer. */
 export const BRIDGE_LOCAL_PATH = "~/.gilb-claude-code-bridge.mjs";
 
+/** The same place, written for PowerShell (double quotes keep a profile folder with a space in one piece). */
+export const BRIDGE_LOCAL_PATH_WINDOWS = '"$HOME\\.gilb-claude-code-bridge.mjs"';
+
 export interface BridgeCommandsOpts {
   /** The app's origin (no path), e.g. `window.location.origin`. */
   origin: string;
@@ -28,6 +31,11 @@ export interface BridgeCommands {
   install: string;
   /** Prints the current pairing code when the bridge runs without a window. */
   code: string;
+  /**
+   * The same three lines for PowerShell on Windows. They run in Windows PowerShell 5.1 (`powershell.exe`) and PowerShell 7 (`pwsh`):
+   * `curl.exe` (in 5.1 `curl` is an alias of Invoke-WebRequest), `;` and `if ($?)` (5.1 has no `&&`), and `$HOME`.
+   */
+  windows: { start: string; install: string; code: string };
 }
 
 /** Only characters an origin has, so a value can never carry shell syntax into the line the person pastes. */
@@ -58,9 +66,15 @@ export function bridgeCommands(opts: BridgeCommandsOpts): BridgeCommands {
   const url = checked("The bridge file URL (origin, basePath or bridgeFileUrl)", opts.bridgeFileUrl ?? bridgeFileUrl(opts.origin, opts.basePath));
   const allow = opts.allowOrigin ? ` --allow-origin ${checked("allowOrigin", originOf("allowOrigin", opts.allowOrigin))}` : "";
   const get = `curl -fsSL ${url} -o ${BRIDGE_LOCAL_PATH}`;
+  const getWin = `curl.exe -fsSL ${url} -o ${BRIDGE_LOCAL_PATH_WINDOWS}`;
   return {
     start: `${get} && node ${BRIDGE_LOCAL_PATH}${allow}`,
     install: `${get} && node ${BRIDGE_LOCAL_PATH} --install${allow}`,
     code: `node ${BRIDGE_LOCAL_PATH} --code`,
+    windows: {
+      start: `${getWin}; if ($?) { node ${BRIDGE_LOCAL_PATH_WINDOWS}${allow} }`,
+      install: `${getWin}; if ($?) { node ${BRIDGE_LOCAL_PATH_WINDOWS} --install${allow} }`,
+      code: `node ${BRIDGE_LOCAL_PATH_WINDOWS} --code`,
+    },
   };
 }

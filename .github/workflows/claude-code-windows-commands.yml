@@ -1,0 +1,46 @@
+name: claude-code-windows-commands
+
+# Runs the exact PowerShell commands the Connect screen shows (bridgeCommands().windows) in Windows PowerShell 5.1 and in PowerShell 7,
+# on GitHub's Windows runners, against the Windows bridge from the branch that carries it. Nothing here is a person on a Windows PC.
+
+on:
+  pull_request:
+    paths:
+      - "units/claude-code-client/**"
+      - "units/claude-code-connect/**"
+      - ".github/workflows/claude-code-windows-commands.yml"
+  push:
+    branches: [main]
+    paths:
+      - "units/claude-code-client/**"
+      - "units/claude-code-connect/**"
+      - ".github/workflows/claude-code-windows-commands.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  commands:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: powershell.exe (Windows PowerShell 5.1)
+            shell: powershell
+          - name: pwsh (PowerShell 7)
+            shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Get the Windows bridge branch
+        run: git fetch origin kaizen/claude-code-windows-1107
+      - name: Run the exact commands in ${{ matrix.name }}
+        working-directory: units/claude-code-client
+        run: node --experimental-strip-types --no-warnings scripts/windows-commands-e2e.mjs --shell ${{ matrix.shell }} --bridge-ref origin/kaizen/claude-code-windows-1107
