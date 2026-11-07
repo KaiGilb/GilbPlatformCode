@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "unit": "units/picture-viewer",
+  "package": "@kaigilb/gilbplatformcode-picture-viewer",
+  "version": "0.1.0",
+  "purpose": "A full-screen picture viewer for React apps that works like a phone's photo app: swipe, pinch and double-tap zoom, drag, keys, wheel and full screen, with the picture shown at once and sharpened when its full file arrives.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "ca9ca73386de9576b75eda5d03ed793e839f3e46",
+    "files": [
+      {
+        "path": "web-units/image-lightbox/src/lightboxCore.ts",
+        "lines": [
+          1,
+          167
+        ],
+        "to": "src/lightboxCore.ts"
+      },
+      {
+        "path": "web-units/image-lightbox/src/types.ts",
+        "lines": [
+          1,
+          34
+        ],
+        "to": "src/types.ts"
+      },
+      {
+        "path": "web-units/image-lightbox/src/LightboxViewer.vue",
+        "lines": [
+          1,
+          434
+        ],
+        "to": "src/PictureViewer.tsx"
+      },
+      {
+        "path": "web-units/image-lightbox/src/LightboxViewer.vue",
+        "lines": [
+          371,
+          433
+        ],
+        "to": "src/pictureViewer.css"
+      },
+      {
+        "path": "web-units/image-lightbox/src/lightboxCore.test.ts",
+        "lines": [
+          1,
+          111
+        ],
+        "to": "src/lightboxCore.test.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "V1: `LightboxItem` gains two optional fields after `fallback`: `thumbSrc` and `fileUri` (src/types.ts)",
+    "V2: `LightboxWords` and `defaultWords` gain `fullScreen` (\"Full screen\") and `exitFullScreen` (\"Leave full screen\") (src/types.ts, src/lightboxCore.ts)",
+    "the port: `LightboxViewer.vue` is the React function component `PictureViewer` (`ref` to state with a ref kept in step, `computed` to expressions, `watch(item, startLoad, { immediate })` to a layout effect on the shown index and the item's src, fallback and fileUri, `onMounted`/`onBeforeUnmount` to one effect with cleanup, Teleport to body to `createPortal` into `document.body`, the wheel listener native and non-passive); the `<style scoped>` block is `src/pictureViewer.css`, copied by script; handler bodies, numbers, thresholds and order are the source's",
+    "A1 full screen: a button after the zoom buttons (drawn only when `document.fullscreenEnabled`), the key `f`, and leaving the viewer exits full screen",
+    "A2 neighbours load first: when the shown picture is ready, the picture before and the one after are loaded (through `resolveSrc`, else `new Image().src`), never more, each once",
+    "A3 shown at once: `thumbSrc` is drawn at once (`ilb-img ilb-img-thumb`) with no loading cue, replaced when `src` loads, kept behind the failed message when it fails; css `.ilb-img-pending` for the unseen real picture",
+    "A4 signed sources: `resolveSrc` answers the file to load; a rejection is a failed load with the same fallback rule",
+    "A5 tap shows and hides the controls: a single tap on the picture after `DOUBLE_TAP_TIME` toggles `ilb-chrome-hidden` on the dialog (css `visibility: hidden`); any key shows them again",
+    "usePictureViewer: `{ open(items, index), viewer }`, closing restores focus to the element that had it when `open` was called; it stands in for the three Vue wrappers (ImageLightbox, LightboxScope, ProseImg), which are not ported"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/usePictureViewer.tsx",
+    "src/exports.test.ts",
+    "src/PictureViewer.test.tsx",
+    "src/gestures.test.tsx",
+    "src/additions.test.tsx",
+    "src/hostAgnostic.test.ts",
+    "test/setup.ts",
+    "test/kit.tsx",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "resolveSrc",
+      "replaces": "the plain `item.src` load: `shownSrc.value = item.value.src` in `startLoad`, web-units/image-lightbox/src/LightboxViewer.vue:41 (optional; without it `item.src` is used)"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}

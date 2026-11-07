@@ -1,0 +1,67 @@
+/* Theme: --site-block-overlay (the dark backdrop) and --site-block-on-overlay (its text and buttons), with
+   --site-block-accent for the focus ring; neutral fallbacks. */
+/* Box sizes include padding and border whatever the page's own reset, as under Tailwind's preflight. */
+.ilb-backdrop, .ilb-backdrop * { box-sizing: border-box; }
+.ilb-backdrop {
+  position: fixed; inset: 0; z-index: var(--site-block-z-overlay, 1000);
+  background: color-mix(in srgb, var(--site-block-overlay, #000000) 94%, transparent);
+  color: var(--site-block-on-overlay, #ffffff);
+  overscroll-behavior: contain; -webkit-user-select: none; user-select: none; outline: none;
+}
+.ilb-stage {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 4rem 1rem 5.5rem; touch-action: none; overflow: hidden;
+}
+.ilb-figure { display: flex; flex-direction: column; align-items: center; max-width: 100%; max-height: 100%; margin: 0; min-height: 0; }
+.ilb-img {
+  display: block; flex: 0 1 auto; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain;
+  transform-origin: center; will-change: transform; -webkit-user-drag: none;
+}
+.ilb-status {
+  margin: 0.5rem 0 0; padding: 0.25rem 0.75rem; text-align: center; font-size: 0.875rem; line-height: 1.5;
+  color: var(--site-block-on-overlay, #ffffff);
+}
+.ilb-loading::before {
+  content: ""; display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.5em; vertical-align: -0.1em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 999px;
+}
+@keyframes ilb-spin { to { transform: rotate(360deg); } }
+.ilb-img.ilb-failed { min-width: 12rem; min-height: 6rem; }
+.ilb-caption {
+  flex: none; max-width: 40rem; margin-top: 0.75rem; text-align: center; font-size: 0.9375rem; line-height: 1.5;
+  color: var(--site-block-on-overlay, #ffffff);
+}
+.ilb-count {
+  position: absolute; top: max(env(safe-area-inset-top), 1rem); left: 1rem; margin: 0; min-height: 2.75rem;
+  display: flex; align-items: center; font-size: 0.9375rem; font-variant-numeric: tabular-nums;
+  color: var(--site-block-on-overlay, #ffffff);
+}
+.ilb-btn {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; height: 2.75rem; padding: 0 0.5rem;
+  border: 0; border-radius: var(--site-block-radius, 0.5rem); cursor: pointer; font: inherit; font-size: 1.5rem; line-height: 1;
+  color: var(--site-block-on-overlay, #ffffff);
+  background: color-mix(in srgb, var(--site-block-on-overlay, #ffffff) 16%, var(--site-block-overlay, #000000));
+}
+.ilb-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--site-block-on-overlay, #ffffff) 28%, var(--site-block-overlay, #000000)); }
+.ilb-btn:disabled { cursor: default; color: color-mix(in srgb, var(--site-block-on-overlay, #ffffff) 55%, var(--site-block-overlay, #000000)); }
+.ilb-btn:focus-visible { outline: 2px solid var(--site-block-accent, #2563eb); outline-offset: 2px; }
+.ilb-close { position: absolute; top: max(env(safe-area-inset-top), 1rem); right: 1rem; }
+.ilb-prev, .ilb-next { position: absolute; top: 50%; transform: translateY(-50%); }
+.ilb-prev { left: 0.5rem; }
+.ilb-next { right: 0.5rem; }
+.ilb-tools {
+  position: absolute; bottom: max(env(safe-area-inset-bottom), 1rem); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 0.5rem;
+}
+.ilb-fit { font-size: 1rem; min-width: 3.25rem; }
+/* Motion: a fade on open and a glide on zoom, only for visitors who have not asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .ilb-loading::before { animation: ilb-spin 0.8s linear infinite; }
+  .ilb-backdrop { animation: ilb-fade var(--site-block-motion, 150ms) ease-out; }
+  .ilb-img.ilb-anim { transition: transform var(--site-block-motion, 150ms) ease-out; }
+}
+@keyframes ilb-fade { from { opacity: 0; } to { opacity: 1; } }
+/* A3: the small version stands in for the picture while the full file loads; the real picture waits, unseen, beside it. */
+.ilb-img.ilb-img-pending { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+/* A5: a tap on the picture hides the buttons, the counter and the caption. visibility keeps the focus order. */
+.ilb-chrome-hidden .ilb-btn, .ilb-chrome-hidden .ilb-count, .ilb-chrome-hidden .ilb-caption { visibility: hidden; }

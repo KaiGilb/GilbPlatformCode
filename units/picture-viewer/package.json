@@ -1,0 +1,37 @@
+{
+  "name": "@kaigilb/gilbplatformcode-picture-viewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A full-screen picture viewer for React apps that works like a phone's photo app: swipe, pinch and double-tap zoom, drag, keys, wheel and full screen, with the picture shown at once and sharpened when its full file arrives.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pictureViewer.css": "./src/pictureViewer.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "axe-core": "^4.14.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
