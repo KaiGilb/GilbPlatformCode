@@ -3,7 +3,7 @@ import { NotSignedInError, bearerHeaderFor, dpopReadAuth, invalidateDpop } from 
 import { normalizeTypeUri } from "@kaigilb/gilbplatformcode-record-types";
 import { narrowTotal } from "@kaigilb/gilbplatformcode-narrow-total";
 import { serverErrorText } from "@kaigilb/gilbplatformcode-lws-records";
-import { isNonRecordListEntry, isRelationEntityUri } from "./recordPlane";
+import { isNonRecordListEntry, isRelationEntityUri, typeLocalName } from "./recordPlane";
 
 // ── LWS vault-targeted reads (vaults / records / files) ─────────────────────────────────────
 // /lws/* is the Bearer conformance floor (lwsPrincipal). DPoP is an optional upgrade.
@@ -235,9 +235,14 @@ export async function listVaultRecordsPage(
   // `uiPrefs.saveUiPrefsToVault` had. The flag turns the REGISTER filter off so an OWNER of
   // the plane can enumerate its own rows. ⛔ Do not set it from a register/grid/graph
   // surface; those consumers are the reason the filter exists.
+  // A caller that NAMES `File` (`typeNames` holds it, any spelling) asked for file rows: the register
+  // filter dropped every one of them silently, so listing files returned an empty page. Those rows are
+  // kept for that caller only; a list nobody narrowed to `File` is unchanged.
+  const askedFile = typeNames.some((t) => typeLocalName(t) === "File");
   const records = (body.records ?? [])
     .filter((r) => {
       if (opts.includePresentationState) return true;
+      if (askedFile && typeLocalName(r.typeUri) === "File") return true;
       const admitted = isRelationEntityUri(r.entity) && opts.admitRelationRow?.(r.typeUri) === true;
       // An admitted row skips the relation-ADDRESS arm only: passing no address leaves the
       // type-name arms (control plane, non-record names, UI preferences) in force.

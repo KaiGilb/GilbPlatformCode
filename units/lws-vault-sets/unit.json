@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-vault-sets",
   "package": "@kaigilb/gilbplatformcode-lws-vault-sets",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Asking a vault what it holds over the platform's record interface: a page of its records or files, a find by attribute, a text search, and the cap on requests in flight.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -249,7 +249,8 @@
     "in `planRequestLimit.ts` the import of `MAX_PARALLEL_DEREFERENCES` (line 6) is `./mapWithConcurrency` and not `./heldTypes`",
     "in `lwsReadAuth` (`vaultSets.ts` line 64) `bearerHeaderFor(url)` is `bearerHeaderFor(url, method)`; `search.ts` line 93 is unchanged (its one caller sends GET)",
     "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed",
-    "in `vaultSets.ts` (0.2.0) the import from `vault-origin-rule` gains `LWS_VAULT_TYPES_URL` and `vaultOriginOf`, which the census code (lines 439-616) uses; the census code itself is the source's, with comments only reworded"
+    "in `vaultSets.ts` (0.2.0) the import from `vault-origin-rule` gains `LWS_VAULT_TYPES_URL` and `vaultOriginOf`, which the census code (lines 439-616) uses; the census code itself is the source's, with comments only reworded",
+    "in `vaultSets.ts` (0.2.1) `listVaultRecordsPage` keeps a `t:File` row when `typeNames` names `File` (any spelling): the register filter dropped every file row, so listing files returned an empty page; a list that did not name `File` is unchanged (this is not in the source app)"
   ],
   "newFiles": [
     "src/index.ts"
