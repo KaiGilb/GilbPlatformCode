@@ -29,6 +29,25 @@ function detectSystem(): ClaudeCodeSystem {
   }
 }
 
+/**
+ * Browsers that pair with Claude Code, shown on the Mac tab. Measured on a Mac, 2026-11-05, bridge 0.1.6:
+ * Chrome and Edge pass, Safari and Brave fail. Nothing else is measured; add a browser here only after it passes.
+ */
+export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge"];
+/** Browsers measured to fail (same measurement). */
+export const NOT_YET_BROWSERS: readonly string[] = ["Safari", "Brave"];
+
+/** "A", "A and B", "A, B and C". */
+function listWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join("");
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+/** "A", "A or B", "A, B or C". */
+function orWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join("");
+  return `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
+}
+
 const SYSTEMS: { id: ClaudeCodeSystem; label: string }[] = [
   { id: "mac", label: "Mac" },
   { id: "windows", label: "Windows" },
@@ -244,8 +263,16 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     "before",
     "1 · Before you start",
     <>
-      <p className="gcc-text">You need two programs on your computer:</p>
+      <p className="gcc-text">{system === "mac" ? "You need a supported browser and two programs on your computer:" : "You need two programs on your computer:"}</p>
       <ul className="gcc-list">
+        {system === "mac" ? (
+          <li data-testid="claude-code-supported-browsers">
+            <p className="gcc-text">
+              <strong>Supported browsers: {listWords(SUPPORTED_BROWSERS)}.</strong> {listWords(NOT_YET_BROWSERS)} cannot connect to Claude Code yet. If you are in one of
+              them, open this page in {orWords(SUPPORTED_BROWSERS)}.
+            </p>
+          </li>
+        ) : null}
         <li>
           <p className="gcc-text">
             <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in {T}:

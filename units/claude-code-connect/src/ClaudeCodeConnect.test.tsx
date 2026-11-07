@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
-import { ClaudeCodeConnect, ClaudeCodeBadge } from "./index";
+import { ClaudeCodeConnect, ClaudeCodeBadge, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
 import { defaultSystem } from "./ClaudeCodeConnect";
 
 const PRINCIPAL = "https://pelle.example/base";
@@ -323,6 +323,56 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
     expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F");
     await user.click(tab("mac"));
     expect(screen.getByLabelText("Code from the bridge terminal")).toHaveValue("K7F");
+  });
+});
+
+// Supported browsers (Kai, 2026-11-07), from a measurement on a Mac, 2026-11-05, bridge 0.1.6:
+// Chrome and Edge pass, Safari and Brave fail. Mac tab only; Linux and Windows are not measured.
+describe("<ClaudeCodeConnect> supported browsers", () => {
+  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
+  const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
+  const BROWSER_TEXT =
+    "Supported browsers: Chrome and Edge. Safari and Brave cannot connect to Claude Code yet. If you are in one of them, open this page in Chrome or Edge.";
+
+  it("the lists are the measured ones", () => {
+    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge"]);
+    expect(NOT_YET_BROWSERS).toEqual(["Safari", "Brave"]);
+  });
+
+  it("Mac: section 1 leads with a supported browser, and the browser item is first with exactly the text", () => {
+    renderIt();
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    expect(one).toHaveTextContent("You need a supported browser and two programs on your computer:");
+    expect(one).not.toHaveTextContent("You need two programs on your computer:");
+    const item = screen.getByTestId("claude-code-supported-browsers");
+    expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(BROWSER_TEXT);
+    expect(within(item).getByText("Supported browsers: Chrome and Edge.").tagName).toBe("STRONG");
+    const items = one.querySelectorAll("ul.gcc-list > li");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toBe(item);
+    expect(item).not.toHaveTextContent("Gilb");
+  });
+
+  it("Linux: section 1 keeps the two-programs line and shows no browser item", async () => {
+    const user = userEvent.setup();
+    renderIt();
+    await user.click(tab("linux"));
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    expect(one).toHaveTextContent("You need two programs on your computer:");
+    expect(one).not.toHaveTextContent("supported browser");
+    expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
+    expect(one.querySelectorAll("ul.gcc-list > li")).toHaveLength(2);
+  });
+
+  it("Windows: unchanged, only the not-available panel, no browser item", async () => {
+    const user = userEvent.setup();
+    renderIt();
+    await user.click(tab("windows"));
+    const panel = screen.getByRole("tabpanel");
+    expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "1 · Before you start" })).not.toBeInTheDocument();
+    expect(panel).not.toHaveTextContent("browser");
+    expect(panel).toHaveTextContent("Claude Code cannot connect from a Windows computer yet. If you need it, ask us at support@gilb.com and we will tell you when it works.");
   });
 });
 
