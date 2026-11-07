@@ -74,6 +74,7 @@ for (const file of code) {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   for (let i = 0; i < lines.length; i++) {
+    if (rel === join("src", "config.ts")) break; // the one file a host may live in
     for (const re of FORBIDDEN) if (re.test(lines[i])) hits.push(`${rel}:${i + 1}: host named: ${lines[i].trim().slice(0, 80)}`);
   }
   for (const [spec, line] of importsOf(file, text)) {

@@ -6,6 +6,7 @@ import type { Transport } from "@kaigilb/gilbplatformcode-signin";
 import { CardScreen } from "./CardScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import { SignInScreen } from "./SignInScreen";
+import { SIGNIN_ORIGIN } from "./config";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
 
 export interface AppSeams {
@@ -13,11 +14,14 @@ export interface AppSeams {
   makeSession?: () => SessionCredential;
   /** The transport of the sign-in's code request. Default: the unit's (`fetch`). */
   transport?: Transport;
+  /** Where the sign-in code is asked for and checked. Default: the Gilb sign-in host (`SIGNIN_ORIGIN`), not the vault's. */
+  signinOrigin?: string;
 }
 
-const newCredential = () => new SessionCredential();
+// No `dpopMintUrl`: the cookie session bridge stays off for a local app (it cannot work across sites), so a reload asks for a new code.
+export const newCredential = () => new SessionCredential();
 
-export function App({ makeSession = newCredential, transport }: AppSeams) {
+export function App({ makeSession = newCredential, transport, signinOrigin = SIGNIN_ORIGIN }: AppSeams) {
   const [settings, setSettings] = useState<AppSettings | null>(loadSettings);
   const [editingSettings, setEditingSettings] = useState(false);
   const [credential, setCredential] = useState<SessionCredential>(makeSession);
@@ -49,7 +53,7 @@ export function App({ makeSession = newCredential, transport }: AppSeams) {
           }}
         />
       ) : !signedIn ? (
-        <SignInScreen origin={settings.origin.trim()} credential={credential} transport={transport} onSignedIn={() => setSignedIn(true)} />
+        <SignInScreen origin={signinOrigin} credential={credential} transport={transport} onSignedIn={() => setSignedIn(true)} />
       ) : (
         <CardScreen settings={settings} session={credential} />
       )}

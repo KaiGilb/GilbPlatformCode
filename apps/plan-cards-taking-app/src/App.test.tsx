@@ -4,9 +4,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { __startCardsInEditMode } from "@kaigilb/gilbplatformcode-card-mode";
-import { App } from "./App";
+import { App, newCredential } from "./App";
 import { SETTINGS_KEY, loadSettings, providerSettings } from "./settings";
 import { parseAddress } from "./address";
+import { SIGNIN_ORIGIN } from "./config";
 import { createFakeVault, entityUriOf, ORIGIN, type ServedRecord } from "../test/fakeVault";
 import { TEST_SETTINGS, fakeCredential, keepSettings, okTransport, signIn, signedInApp } from "../test/helpers";
 
@@ -111,11 +112,21 @@ describe("sign-in", () => {
     render(<App makeSession={() => creds.credential} transport={t.transport} />);
     expect(screen.queryByRole("region", { name: "Card" })).toBeNull();
     await signIn(userEvent.setup());
-    expect(t.sent).toContain(`${ORIGIN}/base/auth/email/request-code`);
+    // The code goes to the sign-in host, not to the vault's host (a vault host sends the code and then refuses it).
+    expect(t.sent).toContain(`${SIGNIN_ORIGIN}/base/auth/email/request-code`);
+    expect(t.sent.some((u) => u.startsWith(ORIGIN))).toBe(false);
     expect(creds.signInWithCode).toHaveBeenCalledTimes(1);
-    expect(creds.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([ORIGIN, "ann@example.test", "123456"]);
+    expect(creds.signInWithCode.mock.calls[0]!.slice(0, 3)).toEqual([SIGNIN_ORIGIN, "ann@example.test", "123456"]);
     expect(Object.keys(localStorage as unknown as object)).not.toContain("token");
     expect(localStorage.getItem(SETTINGS_KEY)).not.toContain("fake-access-token");
+  });
+
+  test("the sign-in origin is the Gilb sign-in host", () => {
+    expect(SIGNIN_ORIGIN).toBe("https://id.gilb.com");
+  });
+
+  test("the credential the app makes has the cookie session bridge off", () => {
+    expect((newCredential() as unknown as { opts: { dpopMintUrl?: string } }).opts.dpopMintUrl).toBeUndefined();
   });
 
   test("Sign out drops the credential and returns to the sign-in screen", async () => {
