@@ -4,6 +4,7 @@
 //   claude -p ... (prompt on stdin)    -> stream-json on stdout; records its argv and the env it was given
 // If the prompt contains CALLTOOL it acts as an MCP client of the --mcp-config server, like the real CLI does.
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 
 const argv = process.argv.slice(2);
 if (argv[0] === "auth" && argv[1] === "status") {
@@ -82,6 +83,11 @@ process.stdin.on("end", async () => {
     const list = await rpc("tools/list", {}, 2);
     const call = await rpc("tools/call", { name: list.result.tools[0].name, arguments: { q: "x" } }, 3);
     text = `tool said: ${call.result.content[0].text}`;
+  }
+  if (prompt.includes("SPAWNCHILD")) {
+    // Like the real CLI, which starts helpers (its MCP children): one grandchild that sleeps, so a test can see whether Stop took it too.
+    const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    log({ event: "child", pid: kid.pid });
   }
   if (prompt.includes("WAITFOREVER")) {
     setInterval(() => {}, 1000);

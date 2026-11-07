@@ -74,8 +74,10 @@ describe("persisted pairings", () => {
     const row = JSON.parse(text).pairings[0];
     expect(row.hash).toBe(crypto.createHash("sha256").update(body.secret).digest("hex"));
     expect(row).toMatchObject({ origin: A, principalHash: "a".repeat(64), issued: clock });
-    expect(fs.statSync(file()).mode & 0o777).toBe(0o600);
-    expect(fs.statSync(path.dirname(file())).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") { // Windows ignores mode bits (README: Windows)
+      expect(fs.statSync(file()).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(path.dirname(file())).mode & 0o777).toBe(0o700);
+    }
     expect(fs.readdirSync(path.dirname(file()))).toEqual(["pairings.json"]); // no temp file left behind
   });
 

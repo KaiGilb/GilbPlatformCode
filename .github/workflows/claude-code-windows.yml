@@ -1,0 +1,100 @@
+name: claude-code-windows
+
+# Proves the Claude Code bridge on GitHub's Windows runners (and that macOS did not regress). Nothing here is a person on a Windows PC.
+
+on:
+  pull_request:
+    paths:
+      - "units/claude-code-bridge/**"
+      - ".github/workflows/claude-code-windows.yml"
+  push:
+    branches: [main]
+    paths:
+      - "units/claude-code-bridge/**"
+      - ".github/workflows/claude-code-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: units/claude-code-bridge
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      # The built bridge file is compared byte for byte with a fresh build: keep line ends as committed.
+      - name: Keep LF line ends
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - name: Build the bridge and confirm the committed file is the build
+        run: |
+          npm run build:bridge
+          git diff --exit-code -- bridge
+      - run: npm run typecheck
+      - run: npm test
+      - name: End to end on Windows (real bridge process, pair, one turn, Stop)
+        run: npm run test:windows-e2e
+      - name: Always On end to end (install, restart after taskkill, uninstall) as the runner's administrator
+        run: npm run test:windows-service-e2e
+
+  # The same Always On proof as a NORMAL Windows user: a new local account that is only in the Users group (no administrator rights),
+  # started with its profile loaded. The runner's own account is an administrator, so the job above proves nothing about rights.
+  windows-standard-user:
+    runs-on: windows-latest
+    steps:
+      - name: Keep LF line ends
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Make a standard user and run the Always On proof as that user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $plain = 'E2e-' + [guid]::NewGuid().ToString('N') + '!aA1'
+          $pw = ConvertTo-SecureString $plain -AsPlainText -Force
+          New-LocalUser -Name e2euser -Password $pw -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -Group 'Users' -Member 'e2euser'
+          Write-Host "groups of e2euser:"; net user e2euser | Select-String 'Local Group Memberships'
+          $root = 'C:\e2e'
+          New-Item -ItemType Directory -Force "$root\bridge", "$root\src", "$root\scripts" | Out-Null
+          Copy-Item bridge\bridge.mjs "$root\bridge\"
+          Copy-Item src\fake-claude.mjs "$root\src\"
+          Copy-Item scripts\windows-service-e2e.mjs "$root\scripts\"
+          icacls $root /grant 'e2euser:(OI)(CI)M' | Out-Null
+          $node = (Get-Command node).Source
+          Write-Host "node: $node"
+          $cred = New-Object System.Management.Automation.PSCredential('.\e2euser', $pw)
+          $p = Start-Process -FilePath $node -ArgumentList @("$root\scripts\windows-service-e2e.mjs", '--expect-standard-user', '--profile', 'C:\Users\e2euser') -Credential $cred -LoadUserProfile -WorkingDirectory $root -Wait -PassThru -RedirectStandardOutput "$root\out.txt" -RedirectStandardError "$root\err.txt"
+          Get-Content "$root\out.txt"
+          Write-Host '--- stderr ---'
+          Get-Content "$root\err.txt"
+          Write-Host "exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - name: End to end (same script, stand-in claude by path)
+        run: npm run test:windows-e2e

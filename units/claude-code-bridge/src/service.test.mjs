@@ -87,7 +87,7 @@ describe("--install, --uninstall", () => {
       ["bootstrap", "gui/501", plist],
     ]);
     expect(out.message).toMatch(/--code/);
-    expect(fs.statSync(path.join(home, ".gilb-claude-code-bridge")).mode & 0o077).toBe(0);
+    if (process.platform !== "win32") expect(fs.statSync(path.join(home, ".gilb-claude-code-bridge")).mode & 0o077).toBe(0); // Windows ignores mode bits
   });
 
   it("installing again rewrites and restarts (bootout then bootstrap)", async () => {
@@ -132,7 +132,7 @@ describe("--install, --uninstall", () => {
     expect((await serviceInstall(parseCli(["--install", "--claude", FAKE, "--port", "70000"]), deps())).ok).toBe(false);
     expect(fs.existsSync(path.join(home, "escape.plist"))).toBe(false);
     await serviceInstall(parseCli(["--install", "--claude", FAKE]), deps());
-    expect(fs.statSync(path.join(home, "Library", "Logs", "gilb-claude-code-bridge.log")).mode & 0o077).toBe(0);
+    if (process.platform !== "win32") expect(fs.statSync(path.join(home, "Library", "Logs", "gilb-claude-code-bridge.log")).mode & 0o077).toBe(0); // Windows ignores mode bits
   });
 
   it("refuses when claude cannot be found, and off macOS", async () => {
