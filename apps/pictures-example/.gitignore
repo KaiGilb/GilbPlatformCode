@@ -1,0 +1,6 @@
+node_modules
+dist
+tsconfig.tsbuildinfo
+proof-out
+runs
+dist-live
