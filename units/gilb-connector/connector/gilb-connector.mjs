@@ -17,7 +17,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.6";
+export const CONNECTOR_VERSION = "0.5.7";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -78,6 +78,8 @@ export const HOP_MAX_MS = 15 * 60 * 1000;
 export const MAX_HOPS_AT_ONCE = 4;
 /** How many times one process starts a fresh platform turn after the server refused a call at a turn limit. */
 export const MAX_TURN_ROLLS = 5;
+/** Added to a hand-off's answer when the server says the hand-off was cut by the round ceiling. */
+export const CUT_TEXT = "This hand-off ran out of tool rounds before it finished. Its answer is partial: say so, and hand the rest over again.";
 /** The two answers the server gives, before it runs anything, when a turn is out of room (POST /base/ai/claude-code/tool). */
 const TURN_LIMIT_NEXT = "tell the person what you did, and stop";
 const TURN_LIMIT_ROUNDS = "this turn has used all its tool rounds";
@@ -1398,8 +1400,8 @@ export function startConnector(opts) {
         await firstUse();
         return { authHeaders, dropAccess };
     }
-    function turnFields(forAgent = agent) {
-        const body = { userText, turnId, agent: forAgent };
+    function turnFields(forAgent = agent, forTurn = turnId) {
+        const body = { userText, turnId: forTurn, agent: forAgent };
         const ids = vaults.map((id) => id.trim()).filter((id) => id.startsWith("http"));
         if (ids.length > 0)
             body.contentVaultIds = ids;
@@ -1568,16 +1570,25 @@ export function startConnector(opts) {
         knownUnbound = true;
         cache = null;
     }
-    async function closeHop(id) {
+    /** Closes a hop on the turn that opened it (the main process may have rolled since). Says whether the server cut it; never throws. */
+    async function closeHop(id, hopTurn = turnId) {
         try {
-            await postPlatform(toolUrl, { ...turnFields(), name: "hop_done", arguments: "{}", hop: { id, done: true } });
+            const res = await postPlatform(toolUrl, { ...turnFields(agent, hopTurn), name: "hop_done", arguments: "{}", hop: { id, done: true } });
+            const body = res.body && typeof res.body === "object" ? res.body : {};
+            if (typeof body.result !== "string")
+                return { cut: false };
+            const parsed = JSON.parse(body.result);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+                return { cut: false };
+            return { cut: parsed.cut === true };
         }
         catch {
             // An id that is never closed still expires on the server.
+            return { cut: false };
         }
     }
-    function failedHop(role, reason) {
-        return toolResult(JSON.stringify({ error: "the Agent's run failed", role, reason, next: HAND_OFF_FAILED_NEXT }), true);
+    function failedHop(role, reason, cut = false) {
+        return toolResult(JSON.stringify({ error: "the Agent's run failed", role, reason, next: HAND_OFF_FAILED_NEXT, ...(cut ? { cut: CUT_TEXT } : {}) }), true);
     }
     async function runChild(hop, signal) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
@@ -1695,21 +1706,33 @@ export function startConnector(opts) {
             stdin.end(hop.task);
         });
     }
-    async function runHop(hop, signal) {
+    /**
+     * A cut hop spent its turn's rounds, so the next call starts on a fresh turn (nothing is re-sent: the hop may have written).
+     * Main process only, never Agent.Concept, within MAX_TURN_ROLLS, and only if no other path has rolled since the hop began.
+     */
+    function rollAfterCut(hopTurn, allowed) {
+        if (hopMode || !allowed || agentIsConcept() || turnId !== hopTurn || turnRolls >= MAX_TURN_ROLLS)
+            return;
+        turnRolls += 1;
+        turnId = newTurnId();
+        cache = null;
+        process.stderr.write(`gilb-connector: a hand-off ran out of tool rounds; started a new turn (${turnRolls} of ${MAX_TURN_ROLLS}).\n`);
+    }
+    async function runHop(hop, signal, hopTurn, mayRoll) {
         if (!validHop(hop)) {
             return toolResult(JSON.stringify({ error: "The hand-off returned an unexpected answer.", next: HAND_OFF_FAILED_NEXT }), true);
         }
         const shaped = { ...hop, role: hopRole(hop), answer: hopAnswer(hop) };
         if (hopMode) {
-            await closeHop(shaped.id);
+            await closeHop(shaped.id, hopTurn);
             return failedHop(shaped.role, "A hand-off cannot hand off again.");
         }
         if (!turnId) {
-            await closeHop(shaped.id);
+            await closeHop(shaped.id, hopTurn);
             return failedHop(shaped.role, "The hand-off could not be linked to its turn.");
         }
         if (hopsRunning >= maxHops) {
-            await closeHop(shaped.id);
+            await closeHop(shaped.id, hopTurn);
             return toolResult(JSON.stringify({
                 error: "the Agent's run failed",
                 role: shaped.role,
@@ -1722,15 +1745,19 @@ export function startConnector(opts) {
             const content = await runChild(shaped, signal);
             if (signal.aborted)
                 return CANCELLED;
-            await closeHop(shaped.id);
-            return toolResult(JSON.stringify({ ...shaped.answer, content }), false);
+            const closed = await closeHop(shaped.id, hopTurn);
+            if (closed.cut)
+                rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
+            return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, cut: CUT_TEXT } : { ...shaped.answer, content }), false);
         }
         catch (err) {
-            await closeHop(shaped.id);
+            const closed = await closeHop(shaped.id, hopTurn);
             if (signal.aborted)
                 return CANCELLED;
+            if (closed.cut)
+                rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
             const reason = err instanceof Error ? err.message : "the hand-off could not run";
-            return failedHop(shaped.role, reason);
+            return failedHop(shaped.role, reason, closed.cut);
         }
         finally {
             hopsRunning -= 1;
@@ -1787,6 +1814,7 @@ export function startConnector(opts) {
     async function callPlatformTool(name, args, signal, resent = false) {
         if (!hopMode)
             toolCallsSent += 1;
+        const sentTurn = turnId;
         const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
         if (signal.aborted)
             return CANCELLED;
@@ -1806,8 +1834,9 @@ export function startConnector(opts) {
             return toolResult(JSON.stringify({ error: errorText(res.status, res.body, `${name} could not run`) }), true);
         }
         const body = res.body && typeof res.body === "object" ? res.body : {};
-        if (body.hop && typeof body.hop === "object")
-            return runHop(body.hop, signal);
+        if (body.hop && typeof body.hop === "object") {
+            return runHop(body.hop, signal, sentTurn, name === "run_named_role" && roleMayRoll(args));
+        }
         const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
         // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
         // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
