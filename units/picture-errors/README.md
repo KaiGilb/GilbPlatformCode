@@ -93,6 +93,13 @@ New code, written for GitHubStandardPictures. Repository `KaiGilb/GilbPlatformCo
 
 The kinds follow the failures the Clarity.Error Value names: no access, wrong vault root, offline, vault busy, file too big, format unreadable, changed elsewhere, not signed in, storage full, unknown (the wrong sign-in host is a separate, eleventh kind). The `offline` message pattern is the one `save-queue` uses.
 
+Changes in 0.1.1, and only these:
+
+- The peer ranges of `picture-shrink` and `picture-upload` are `^0.1.0 || ^0.2.0`. Main holds 0.2.0 of both, and `^0.1.0` excludes it, so `npm install` stopped with ERESOLVE. The devDependency links are unchanged.
+- `src/peerRanges.test.ts` is new: it reads `package.json` and checks that each `@kaigilb` peer range holds the version in `../<peer>/package.json`.
+
+No code changed.
+
 ## Tests
 
-61 tests in 4 files. One per kind, the detail of each, the order of the checks (a `NoAccessError` while offline is still `no-access`), the `offline` messages, `words` (field by field), the note (alert, next step, Details only when there is a detail, axe clean), and a test that walks the ten failures of the Clarity.Error Value and checks that each gets its own kind and a non-empty next step: that is the Value's Meter. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
+The 0.1.1 count is in the commit message; 0.1.0 had 61 tests in 4 files. One per kind, the detail of each, the order of the checks (a `NoAccessError` while offline is still `no-access`), the `offline` messages, `words` (field by field), the note (alert, next step, Details only when there is a detail, axe clean), and a test that walks the ten failures of the Clarity.Error Value and checks that each gets its own kind and a non-empty next step: that is the Value's Meter. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
