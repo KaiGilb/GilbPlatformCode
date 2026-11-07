@@ -109,10 +109,11 @@ async function scenario(name, { home, label, port }) {
     const h = await hello(port);
     check(h?.bridge === "gilb-claude-code-bridge" && h.build === "0.1.8", `hello answers right after --install, no logout (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
     check((Date.now() - t0) < 20000, "within 20 seconds");
-    check(/node "\$HOME\\[^"]*" --code/.test(inst.stdout) || home, "the commands printed are PowerShell commands ($HOME form)");
+    check(/node ("\$HOME\\[^"]*"|'[^']*') --code/.test(inst.stdout), "the commands printed are PowerShell commands ($HOME form or single-quoted path)");
 
     // ---- what was created
-    const expected = `${path.join(SYS32, "wscript.exe")} //B //Nologo //E:JScript "${launcher}"`;
+    const q = (p) => (/\s/.test(p) ? `"${p}"` : p); // quoted only when it has a space, as the command line needs
+    const expected = `${path.join(SYS32, "wscript.exe")} //B //Nologo //E:JScript ${q(launcher)}`;
     check(regValue() === expected, `the start-up entry under HKCU Run holds exactly: ${expected}\n      found: ${regValue()}`);
     check(fs.existsSync(launcher) && fs.existsSync(logFile), "launcher file and log file exist");
     const js = fs.readFileSync(launcher).subarray(2).toString("utf16le");
