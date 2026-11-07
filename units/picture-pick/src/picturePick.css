@@ -1,0 +1,9 @@
+/* Rules copied by script from the source app's styles.css: lines 87-90 (.btn), 93 (.btn.secondary), 98 (.btn.grow), 109 (.row). The last rule is new. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 16px;
+  border-radius: 14px; border: 1px solid transparent; background: none; font-weight: 600; text-align: center;
+}
+.btn.secondary { background: #fff; border-color: #c9c2b6; }
+.btn.grow { flex: 1; cursor: pointer; }
+.row { display: flex; gap: 10px; }
+.picture-drop-active { outline: 2px dashed currentColor; outline-offset: 4px; }
