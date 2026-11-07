@@ -24,7 +24,7 @@ The source is TypeScript in `src/`. The files in `bridge/` are built from it (`n
 - Not the page side. The client that pairs with the bridge, runs a turn and relays tool calls, and the Connect component, are other units. This one is the process on the person's computer and the plugin that serves it.
 - Not a server. Nothing here runs on a host; no vault, no token and no key of the host is ever held.
 - Not an Anthropic API client. It cannot run on an API key.
-- Not Windows or Linux service support. `--install` writes a macOS LaunchAgent; running the file in a terminal works wherever Node and `claude` do.
+- Not Windows or Linux service support. `--install` writes a macOS LaunchAgent; running the file in a terminal works wherever Node and `claude` do. On Windows, `--install`, `--uninstall` and `--status` are refused for now (see "Windows").
 - Not exported from the package root: there is no browser-safe code in it, so the package has no `.` entry. It exports `./bridge.mjs`, `./vite` (with types) and `./fake-claude.mjs`.
 
 ## How to take it
@@ -93,6 +93,31 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 - The page side that pairs with the bridge and relays tool calls. Not in this unit.
 - A person with Node 18 or newer and Claude Code logged in with a Claude subscription.
 
+## Windows
+
+What works (0.1.8): one bridge session, started by the person in a PowerShell window that stays open.
+
+```powershell
+curl.exe -fsSL https://app.example.test/claude-code-bridge.mjs -o "$HOME\.gilb-claude-code-bridge.mjs"
+node "$HOME\.gilb-claude-code-bridge.mjs"
+# in another PowerShell window, to show the pairing code again:
+node "$HOME\.gilb-claude-code-bridge.mjs" --code
+```
+
+(`curl.exe`, not `curl`: in Windows PowerShell 5.1 `curl` is an alias of `Invoke-WebRequest`.) Ctrl+C stops the bridge (Node delivers SIGINT on Windows; the bridge also handles SIGBREAK and SIGHUP). `--unpair-all` and `--code` work. State is under `%USERPROFILE%\.gilb-claude-code-bridge` (`os.homedir()`).
+
+How `claude` is found: the bridge looks on PATH (split on `;`, extensions from `PATHEXT`: .com .exe .bat .cmd), then `%USERPROFILE%\.local\bin` (Anthropic's installer puts `claude.exe` there), `%APPDATA%\npm` (an npm global install puts `claude.cmd` there) and `%USERPROFILE%\.claude\local`. It never uses a shell.
+- A `claude.exe` is started directly.
+- A `claude.cmd` written by npm is not run (Node cannot start a `.cmd` without a shell, and a shell would pass text through cmd.exe). The bridge reads the shim and starts what it runs: `claude.exe` itself, or `node` with the script the shim names. A `.cmd` or `.bat` it cannot read that way is refused at start: "Claude Code was found as <path>, which the bridge cannot start safely. Install Claude Code with Anthropic's Windows installer, then start the bridge again."
+- `--claude` may also name a `.js`/`.mjs` file, which is started with node (this is how the tests use the stand-in).
+- Stop (and bridge shutdown) ends the whole process tree with the system `taskkill /PID <pid> /T /F`, because on Windows `kill()` ends only one process and leaves what Claude Code started (such as the `gilb` MCP child). Off Windows it is still SIGTERM to `claude`.
+
+Not built yet: Always On. `--install`, `--uninstall` and `--status` answer "Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open." Also not handled: a very long system prompt (Windows allows 32,767 characters on a command line).
+
+File modes (`0o600`, `0o700`) do nothing useful on Windows; the state folder is private only through the default access rights of the person's user folder.
+
+Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests and `scripts/windows-e2e.mjs` (the real built bridge as a process, a stand-in claude behind a `.cmd` shim written the way npm writes it, by name on PATH, and as a `.mjs`; pair, one turn, Stop, and a check with `tasklist` that the stand-in's child is gone) on GitHub's `windows-latest` runners with Node 20 and 22. It has not been tried by a person on a Windows PC, and the real `claude.exe` has not been run there.
+
 ## Relay window (for Safari)
 
 Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
@@ -135,3 +160,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 
 - 0.1.1: types tightened; no behaviour change (the built `bridge.mjs` is byte-identical to 0.1.0).
 - 0.1.7: relay window (`GET /relay`) for Safari; `/v1/hello` reports `relay: true`; relayed requests take the opener page as their origin.
+- 0.1.8: runs on Windows in one session (see "Windows"): Windows-aware `resolveBin`, no shell for `claude` (npm `.cmd` shim read, not run), process-tree stop with `taskkill`, PowerShell-correct commands in the banner, SIGBREAK/SIGHUP.

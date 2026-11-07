@@ -1,0 +1,59 @@
+name: claude-code-windows
+
+# Proves the Claude Code bridge on GitHub's Windows runners (and that macOS did not regress). Nothing here is a person on a Windows PC.
+
+on:
+  pull_request:
+    paths:
+      - "units/claude-code-bridge/**"
+      - ".github/workflows/claude-code-windows.yml"
+  push:
+    branches: [main]
+    paths:
+      - "units/claude-code-bridge/**"
+      - ".github/workflows/claude-code-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: units/claude-code-bridge
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      # The built bridge file is compared byte for byte with a fresh build: keep line ends as committed.
+      - name: Keep LF line ends
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - name: Build the bridge and confirm the committed file is the build
+        run: |
+          npm run build:bridge
+          git diff --exit-code -- bridge
+      - run: npm run typecheck
+      - run: npm test
+      - name: End to end on Windows (real bridge process, pair, one turn, Stop)
+        run: npm run test:windows-e2e
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - name: End to end (same script, stand-in claude by path)
+        run: npm run test:windows-e2e

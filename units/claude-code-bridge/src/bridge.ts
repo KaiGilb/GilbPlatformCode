@@ -113,7 +113,7 @@ export interface ServiceDeps {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.1.7";
+export const BRIDGE_BUILD = "0.1.8";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -315,14 +315,166 @@ const normCode = (c: unknown) => String(c ?? "").toUpperCase().replace(/[^A-Z0-9
 const sha = (s: unknown) => crypto.createHash("sha256").update(String(s)).digest();
 const same = (a: unknown, b: unknown) => crypto.timingSafeEqual(sha(a), sha(b));
 
+// ---- Windows support ----------------------------------------------------------------------------------------------
+// Node can start a `.exe` on Windows but not a `.cmd`/`.bat` without a shell (since the fix for CVE-2024-27980 it throws EINVAL),
+// and a shell would put text in front of cmd.exe. So on Windows the bridge never uses a shell: it starts `claude.exe` itself, or
+// reads npm's `.cmd` shim to find what the shim runs and starts that (node + a script, or an .exe). Anything else is refused.
+
+/** Pieces the Windows code reads from outside, replaceable in tests. */
+export interface PlatformOpts {
+  platform?: string | undefined;
+  /** Where "~" is (os.homedir(): USERPROFILE on Windows). */
+  home?: string | undefined;
+  /** The node that runs a `.js` Claude Code entry (default: this process's node). */
+  nodePath?: string | undefined;
+  /** File access for the Windows lookups: whether a file exists, and its text. */
+  files?: { exists: (p: string) => boolean; read: (p: string) => string } | undefined;
+  /** execFile for taskkill. */
+  execFile?: ((file: string, args: string[], opts: { windowsHide: boolean }, cb: (err: Error | null) => void) => unknown) | undefined;
+}
+
+const realFiles = {
+  exists: (p: string) => {
+    try {
+      fs.accessSync(p, fs.constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  read: (p: string) => fs.readFileSync(p, "utf8"),
+};
+
+/** An environment variable by name, ignoring case (Windows names are case-insensitive, a copied env object is not). */
+function envGet(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const want = name.toLowerCase();
+  for (const k of Object.keys(env)) if (k.toLowerCase() === want) return env[k];
+  return undefined;
+}
+
+/** The extensions Node can start without a shell, plus the two shim kinds this file reads, in the order PATHEXT lists them. */
+const WIN_EXTS = [".com", ".exe", ".bat", ".cmd"];
+function winExts(env: NodeJS.ProcessEnv): string[] {
+  const raw = envGet(env, "PATHEXT");
+  const listed = (raw ?? "").split(";").map((e) => e.trim().toLowerCase()).filter((e) => WIN_EXTS.includes(e));
+  return [...new Set(listed.length ? listed : [".exe", ".cmd", ".bat", ".com"])];
+}
+
+/** What a `.cmd` made by npm's cmd-shim runs: an `.exe`, or a node script, relative to the shim's folder. Null when the file is anything else. */
+export function parseCmdShim(text: string): { kind: "exe" | "node"; target: string } | null {
+  const lines = text.split(/\r?\n/);
+  // node script: `"%_prog%"  "%dp0%\node_modules\...\cli.js" %*`, with `SET "_prog=node"` in the file (no other program, no extra arguments)
+  if (lines.some((l) => /^\s*SET "_prog=node"\s*$/i.test(l))) {
+    for (const l of lines) {
+      const m = /"%_prog%"[ \t]+"%dp0%[\\/]+([^"%\r\n]+)"[ \t]+%\*[ \t]*$/.exec(l);
+      if (m) return /\.(c|m)?js$/i.test(m[1]!) ? { kind: "node", target: m[1]! } : null;
+    }
+    return null;
+  }
+  // a program: `"%dp0%\...\claude.exe"   %*`
+  for (const l of lines) {
+    const m = /^"%dp0%[\\/]+([^"%\r\n]+)"[ \t]+%\*[ \t]*$/.exec(l);
+    if (m) return /\.(exe|com)$/i.test(m[1]!) ? { kind: "exe", target: m[1]! } : null;
+  }
+  return null;
+}
+
+/** How to start Claude Code: `command` with `prefix` before the real arguments. `shown` is the path to tell the person. */
+export type ClaudeLaunch = { ok: true; command: string; prefix: string[]; shown: string } | { ok: false; reason: string };
+
+export function refusedLaunch(found: string) {
+  return `Claude Code was found as ${found}, which the bridge cannot start safely. Install Claude Code with Anthropic's Windows installer, then start the bridge again.`;
+}
+
+/**
+ * Works out how to start `claude`. Off Windows: the name as given, nothing added. On Windows: an absolute path, and never a shell
+ * (`.exe` directly; a `.js` file or an npm `.cmd` shim as node + the script; anything else is refused).
+ */
+export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): ClaudeLaunch {
+  const platform = o.platform ?? process.platform;
+  if (platform !== "win32") return { ok: true, command: bin, prefix: [], shown: bin };
+  const W = path.win32;
+  const files = o.files ?? realFiles;
+  const nodePath = o.nodePath ?? process.execPath;
+  const found = resolveBin(bin, env, o.home ?? os.homedir(), "win32", files);
+  // Not found: let the start fail with "not installed" the usual way.
+  if (!found) return { ok: true, command: bin, prefix: [], shown: bin };
+  const ext = W.extname(found).toLowerCase();
+  if (ext === ".exe" || ext === ".com") return { ok: true, command: found, prefix: [], shown: found };
+  if (ext === ".js" || ext === ".cjs" || ext === ".mjs") return { ok: true, command: nodePath, prefix: [found], shown: found };
+  if (ext === ".cmd" || ext === ".bat") {
+    let shim: ReturnType<typeof parseCmdShim> = null;
+    try {
+      shim = parseCmdShim(files.read(found));
+    } catch {
+      /* unreadable: refused below */
+    }
+    if (shim) {
+      const target = W.resolve(W.dirname(found), shim.target);
+      if (files.exists(target)) {
+        return shim.kind === "exe" ? { ok: true, command: target, prefix: [], shown: target } : { ok: true, command: nodePath, prefix: [target], shown: target };
+      }
+    }
+  }
+  return { ok: false, reason: refusedLaunch(found) };
+}
+
+/**
+ * Stops a child. Off Windows: SIGTERM, as before. On Windows kill() ends only that process and leaves what it started, so the
+ * whole tree is ended with taskkill (absolute path under SystemRoot). Resolves when it is done.
+ */
+export function killChild(child: ChildProcess | null | undefined, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): Promise<void> {
+  if (!child) return Promise.resolve();
+  const platform = o.platform ?? process.platform;
+  if (platform !== "win32") {
+    child.kill("SIGTERM");
+    return Promise.resolve();
+  }
+  const pid = child.pid;
+  const root = envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows";
+  const run = o.execFile ?? ((file, args, opts, cb) => execFile(file, args, opts, (e) => cb(e)));
+  return new Promise<void>((resolve) => {
+    if (pid === undefined) {
+      child.kill();
+      return resolve();
+    }
+    try {
+      run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, (err) => {
+        if (err) child.kill(); // taskkill could not run, or the process is already gone
+        resolve();
+      });
+    } catch {
+      child.kill();
+      resolve();
+    }
+  });
+}
+
+/** A command path as the person should type it. Off Windows: as it is. In PowerShell: under the home folder as "$HOME\...", else single-quoted. */
+export function commandPathForPerson(file: string, home = os.homedir(), platform = process.platform): string {
+  if (platform !== "win32") return file;
+  const W = path.win32;
+  const rel = W.relative(home, file);
+  if (rel && !rel.startsWith("..") && !W.isAbsolute(rel) && !/[$`"]/.test(rel)) return `"$HOME\\${rel}"`;
+  return `'${file.replace(/'/g, "''")}'`;
+}
+
+export const WINDOWS_ALWAYS_ON_LATER = "Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open.";
+
 /**
  * Checks, with the CLI's own `auth status`, that the person is logged in with a Claude SUBSCRIPTION.
  * Runs with the billing variables removed, so what it reports is what every turn will use.
  * @returns {Promise<{ok:true, info:{email?:string, subscriptionType:string}} | {ok:false, reason:string}>}
  */
-export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; info: { email?: string | undefined; subscriptionType: string } } | { ok: false; reason: string }> {
+export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.ProcessEnv = process.env, platformOpts: PlatformOpts = {}): Promise<{ ok: true; info: { email?: string | undefined; subscriptionType: string } } | { ok: false; reason: string }> {
   return new Promise((resolve) => {
-    execFile(claudeBin, ["auth", "status"], { env: childEnv(env), timeout: 20000 }, (err: ExecFileException | null, stdout) => {
+    const launch = resolveClaudeLaunch(claudeBin, env, platformOpts);
+    if (!launch.ok) {
+      resolve({ ok: false, reason: launch.reason });
+      return;
+    }
+    execFile(launch.command, [...launch.prefix, "auth", "status"], { env: childEnv(env), timeout: 20000, windowsHide: true }, (err: ExecFileException | null, stdout) => {
       if (err && !stdout) {
         const missing = err.code === "ENOENT";
         resolve({
@@ -397,6 +549,8 @@ export interface BridgeOptions {
   hopMaxMs?: number | undefined;
   progressEveryMs?: number | undefined;
   controlToken?: string | undefined;
+  /** Tests: pretend to be another platform, with file access and taskkill replaced. */
+  platformOpts?: PlatformOpts | undefined;
 }
 
 /**
@@ -427,6 +581,9 @@ export function createBridge(opts: BridgeOptions = {}) {
   const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
   const progressEveryMs = opts.progressEveryMs ?? PROGRESS_EVERY_MS;
   let port = opts.port ?? DEFAULT_PORT;
+  // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
+  const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
+  const stopChild = (c: ChildProcess | null | undefined) => killChild(c, env, opts.platformOpts);
 
   let pairingCode = newPairingCode();
   let pairFailures = 0;
@@ -620,7 +777,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   function stopHandoffFor(turn: Turn, callId: string) {
     const stop = (h: Turn) => {
       h.closed = true;
-      h.child?.kill("SIGTERM");
+      void stopChild(h.child);
       turn.handoffs.delete(h);
     };
     for (const h of turn.handoffs) {
@@ -798,11 +955,18 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused? }. */
   function runClaude(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
     return new Promise((resolve) => {
-      const child = spawn(claudeBin, claudeArgs(turn, mode), {
-        cwd: workDir,
-        env: childEnv(env),
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+      if (!launch.ok) return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
+      let child: ChildProcess;
+      try {
+        child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
+          cwd: workDir,
+          env: childEnv(env),
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+        });
+      } catch (e) {
+        return resolve({ error: `Could not start Claude Code: ${(e as ErrLike)?.message ?? e}`, sessionId: mode.sessionId, model: "" });
+      }
       turn.child = child;
       let buf = "";
       let stderr = "";
@@ -811,10 +975,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       let refused = false;
       let sawInit = false;
       let initOk = false; // fail closed: a good init event (apiKeySource "none") must have been seen
-      child.stderr.on("data", (d) => {
+      child.stderr!.on("data", (d) => {
         stderr = (stderr + d).slice(-2000);
       });
-      child.stdout.on("data", (d) => {
+      child.stdout!.on("data", (d) => {
         buf += d;
         let i;
         while ((i = buf.indexOf("\n")) >= 0) {
@@ -837,7 +1001,7 @@ export function createBridge(opts: BridgeOptions = {}) {
             if (ev.apiKeySource === "none" && result === null) initOk = true; // an init after the answer proves nothing
             else {
               refused = true;
-              child.kill("SIGTERM");
+              void stopChild(child);
             }
           } else if (ev.type === "result") {
             result = ev;
@@ -865,8 +1029,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           resolve({ error: `Claude Code stopped without an answer.${stderr ? ` ${stderr.trim().split("\n").slice(-2).join(" ")}` : ""}`, sessionId: mode.sessionId, model });
         }
       });
-      child.stdin.on("error", () => {});
-      child.stdin.end(prompt);
+      child.stdin!.on("error", () => {});
+      child.stdin!.end(prompt);
     });
   }
 
@@ -948,7 +1112,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     const hopTimer = parent
       ? setTimeout(() => {
           send("error", { message: "The hand-off took too long and was stopped." });
-          turn.child?.kill("SIGTERM");
+          void stopChild(turn.child);
           finish();
         }, hopMaxMs)
       : null;
@@ -962,7 +1126,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       // A turn that ends takes every hand-off it still has with it.
       for (const h of [...turn.handoffs]) {
         h.closed = true;
-        h.child?.kill("SIGTERM");
+        void stopChild(h.child);
       }
       turn.handoffs.clear();
       turn.closed = true;
@@ -973,7 +1137,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     res.on("close", () => {
       if (!res.writableEnded) {
         // The page went away mid-turn.
-        turn.child?.kill("SIGTERM");
+        void stopChild(turn.child);
       }
       finish();
     });
@@ -1136,8 +1300,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       });
     },
     close() {
-      for (const t of turns.values()) t.child?.kill("SIGTERM");
-      return new Promise<void>((resolve) => server.close(() => resolve()));
+      const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)));
+      return stopped.then(() => new Promise<void>((resolve) => server.close(() => resolve())));
     },
   };
 }
@@ -1213,8 +1377,38 @@ ${items}
 `;
 }
 
-/** The absolute path of `name`: an explicit path as given, else the first executable on PATH or in the usual install folders. */
-export function resolveBin(name: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir()) {
+/**
+ * The absolute path of `name`: an explicit path as given, else the first executable on PATH or in the usual install folders.
+ * On Windows ("win32"): PATH splits on `;`, a name without an extension is tried with each PATHEXT extension Node can start
+ * (.com .exe .bat .cmd; never the extensionless `claude` script npm also writes), and the usual folders are
+ * %USERPROFILE%\.local\bin (Anthropic's installer) and %APPDATA%\npm (npm -g).
+ */
+export function resolveBin(name: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir(), platform: string = process.platform, files: NonNullable<PlatformOpts["files"]> = realFiles) {
+  if (platform === "win32") {
+    const W = path.win32;
+    const exts = winExts(env);
+    const withExt = (base: string): string[] => {
+      const e = W.extname(base).toLowerCase();
+      if (WIN_EXTS.includes(e) || [".js", ".cjs", ".mjs"].includes(e)) return [base];
+      return exts.flatMap((x) => [base + x, base + x.toUpperCase()]);
+    };
+    if (/[\\/]/.test(name) || W.isAbsolute(name)) {
+      const abs = W.resolve(name);
+      return withExt(abs).find((f) => files.exists(f)) ?? abs;
+    }
+    const appData = envGet(env, "APPDATA") ?? W.join(home, "AppData", "Roaming");
+    const dirs = [
+      ...String(envGet(env, "PATH") ?? "").split(";").map((d) => d.trim().replace(/^"(.*)"$/, "$1")),
+      W.join(home, ".local", "bin"),
+      W.join(appData, "npm"),
+      W.join(home, ".claude", "local"),
+    ].filter(Boolean);
+    for (const d of dirs) {
+      const f = withExt(W.join(d, name)).find((c) => files.exists(c));
+      if (f) return f;
+    }
+    return null;
+  }
   if (name.includes("/")) return path.resolve(name);
   const dirs = [...String(env.PATH ?? "").split(":"), path.join(home, ".local", "bin"), path.join(home, ".claude", "local"), "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean);
   for (const d of dirs) {
@@ -1255,6 +1449,7 @@ const serviceFiles = (opts: CliOptions, home: string) => {
  */
 export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
   const { launchctl, uid, home, nodePath, file, env, log } = deps;
+  if ((deps.platform ?? process.platform) === "win32") return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
   if ((deps.platform ?? process.platform) !== "darwin") return { ok: false, message: "--install works on macOS only. On other systems start the bridge in a terminal." };
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.label)) return { ok: false, message: "--label may use letters, digits, dot, dash and underscore only." };
   const port0 = opts.port ?? DEFAULT_PORT;
@@ -1312,6 +1507,7 @@ export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promi
 }
 
 export async function serviceUninstall(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
+  if ((deps.platform ?? process.platform) === "win32") return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
   const f = serviceFiles(opts, deps.home);
   const r = await deps.launchctl(["bootout", `gui/${deps.uid}/${opts.label}`]);
   const had = fs.existsSync(f.plist);
@@ -1328,16 +1524,17 @@ export async function fetchCode(opts: CliOptions, deps: ServiceDeps): Promise<Se
     token = fs.readFileSync(f.tokenFile, "utf8").trim();
     st = JSON.parse(fs.readFileSync(f.statusFile, "utf8"));
   } catch {
-    return { ok: false, message: "No bridge has been started for this user yet (no control token). Run --install, or start the bridge." };
+    return { ok: false, message: (deps.platform ?? process.platform) === "win32" ? "No bridge has been started for this user yet (no control token). Start the bridge in a PowerShell window." : "No bridge has been started for this user yet (no control token). Run --install, or start the bridge." };
   }
   const port = opts.port ?? st.port ?? DEFAULT_PORT;
+  const tryStatus = (deps.platform ?? process.platform) === "win32" ? "Check that the bridge is still running in its PowerShell window." : "Try --status.";
   try {
     const res = await fetch(`http://127.0.0.1:${port}/control/code`, { headers: { "x-bridge-control": token } });
-    if (!res.ok) return { ok: false, message: `The bridge on port ${port} did not give the code (${res.status}). Is it the current one? Try --status.` };
+    if (!res.ok) return { ok: false, message: `The bridge on port ${port} did not give the code (${res.status}). Is it the current one? ${tryStatus}` };
     const b: { code?: unknown } = await res.json();
     return { ok: true, message: `Pairing code: ${b.code}\nIn the app, press Connect, choose Claude Code, and type it.` };
   } catch {
-    return { ok: false, message: `The bridge is not answering on port ${port}. Try --status.${st.ok === false ? ` Last start failed: ${st.reason}` : ""}` };
+    return { ok: false, message: `The bridge is not answering on port ${port}. ${tryStatus}${st.ok === false ? ` Last start failed: ${st.reason}` : ""}` };
   }
 }
 
@@ -1361,7 +1558,7 @@ export async function unpairAll(opts: CliOptions, deps: ServiceDeps): Promise<Se
     try {
       const res = await fetch(`http://127.0.0.1:${port}/control/unpair-all`, { method: "POST", headers: { "x-bridge-control": token } });
       if (res.ok) return done(((await res.json()) as { removed?: number }).removed ?? 0);
-      return { ok: false, message: `The bridge on port ${port} did not clear the pairings (${res.status}). Is it the current one? Try --status.` };
+      return { ok: false, message: `The bridge on port ${port} did not clear the pairings (${res.status}). Is it the current one? ${(deps.platform ?? process.platform) === "win32" ? "Check that the bridge is still running in its PowerShell window." : "Try --status."}` };
     } catch {
       /* not answering: clear the file below */
     }
@@ -1381,6 +1578,7 @@ export async function unpairAll(opts: CliOptions, deps: ServiceDeps): Promise<Se
 }
 
 export async function serviceStatus(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
+  if ((deps.platform ?? process.platform) === "win32") return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
   const f = serviceFiles(opts, deps.home);
   const lines = [];
   const installed = fs.existsSync(f.plist);
@@ -1428,7 +1626,7 @@ async function main() {
   const cli = parseCli(argv);
   if (cli.mode === "help") {
     console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR]
-       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (macOS always-on LaunchAgent; add --label L to use another label)`);
+       ${process.platform === "win32" ? "node bridge.mjs --code | --unpair-all   (--install, --uninstall and --status are not built for Windows yet)" : "node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (macOS always-on LaunchAgent; add --label L to use another label)"}`);
     return;
   }
   // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
@@ -1443,7 +1641,9 @@ async function main() {
     process.exit(2);
   }
   const home = os.homedir();
+  const platform = process.platform;
   const deps = {
+    platform,
     launchctl: runLaunchctl,
     uid: process.getuid?.() ?? 0,
     home,
@@ -1452,6 +1652,10 @@ async function main() {
     env: process.env,
     log: () => {},
   };
+  if (platform === "win32" && ["install", "uninstall", "status"].includes(cli.mode)) {
+    console.error(WINDOWS_ALWAYS_ON_LATER);
+    process.exit(1);
+  }
   if (cli.mode !== "run") {
     const fn = { install: serviceInstall, uninstall: serviceUninstall, status: serviceStatus, code: fetchCode, unpairAll }[cli.mode];
     const out = await fn!(cli, deps);
@@ -1480,6 +1684,7 @@ async function main() {
     }
   };
 
+  const launch = resolveClaudeLaunch(claudeBin, process.env);
   const login = await checkSubscriptionLogin(claudeBin);
   if (!login.ok) {
     console.error(`\nThe bridge did not start.\n${login.reason}\n`);
@@ -1513,18 +1718,22 @@ Gilb Claude Code bridge
   Listening:    http://127.0.0.1:${bridge.port}  (this computer only)
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
-  Claude Code:  your own \`${claudeBin}\`, tools off (no shell, no files, no web)
+  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`, tools off (no shell, no files, no web)
 
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 
   Pairing code: ${bridge.pairingCode}
   In the app that gave you this command, press Connect, choose Claude Code, and type this code.
-  Press Ctrl+C to stop. (Later: \`node ${fileURLToPath(import.meta.url)} --code\` prints the current code.)
+  Press Ctrl+C to stop. (Later: \`node ${commandPathForPerson(fileURLToPath(import.meta.url), home, platform)} --code\` prints the current code.)
 `);
   const stop = () => bridge.close().then(() => process.exit(0));
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  if (platform === "win32") {
+    process.on("SIGBREAK", stop); // Ctrl+Break
+    process.on("SIGHUP", stop); // the console window was closed (Windows ends node about 10 seconds later)
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

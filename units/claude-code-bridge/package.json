@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-claude-code-bridge",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "type": "module",
   "description": "A local-only bridge that lets a web app's agent pane talk to the Claude Code installed on the person's own computer.",
@@ -17,6 +17,7 @@
   "scripts": {
     "build:bridge": "node ./scripts/build-bridge.mjs",
     "test": "vitest run",
+    "test:windows-e2e": "node ./scripts/windows-e2e.mjs",
     "typecheck": "tsc --noEmit",
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
