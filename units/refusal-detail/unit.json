@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/refusal-detail",
+  "package": "@kaigilb/gilbplatformcode-refusal-detail",
+  "version": "0.1.0",
+  "purpose": "Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/data/errors.ts", "lines": [2, 52], "to": "src/refusal.ts" },
+      { "path": "src/data/plants.ts", "lines": [140, 143], "to": "src/refusal.ts" },
+      { "path": "src/screens/AskOwnerScreen.tsx", "lines": [1, 24], "to": "src/AccessDeniedScreen.tsx" },
+      { "path": "src/ui/background.css", "lines": [2, 7], "to": "src/accessDenied.css" },
+      { "path": "src/ui/styles.css", "lines": [22, 129], "to": "src/accessDenied.css" }
+    ]
+  },
+  "namedChanges": [
+    "R1. errors.ts line 1 (the import of the record client's errors) is deleted; mapWriteError, PlantChangedElsewhereError and PictureUnreadableError are not taken",
+    "R2. NoAccessError's constructor gains a third optional parameter message = \"You have no write access here yet. Ask the owner.\" and calls super(message)",
+    "R3. RefusalDetail, refusalLine and VaultBusyError as in the source",
+    "R4. readRefusal is new, lifted from plants.ts 140-143: \"GET\" is the method parameter, const detail = is return; the 403 check at line 139 is not in it; the sentence comes from the peer server-error unit",
+    "S1. imports are ./refusal; OWNER_NAME and SIGNIN_BG imports are deleted",
+    "S2. AskOwnerScreen is AccessDeniedScreen with props ownerName, placeName (default vault), backgroundImage, backgroundColor",
+    "S3. the title is This ${placeName} is private; the tagline uses ownerName",
+    "S4. the bg-layer div is drawn only when backgroundImage or backgroundColor is given",
+    "accessDenied.css holds only the rules for .bg-layer, .display, .signin-screen, .signin-panel, .signin-panel .display, .tagline, .btn, .btn.secondary, .btn.full and .refusal-details (summary, p): styles.css lines 22, 26-33 (not 34-37), 87-90, 93, 97, 127-129 and background.css 2-7"
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [
+    { "member": "ownerName", "replaces": "OWNER_NAME from the app's config, src/screens/AskOwnerScreen.tsx:3,14" },
+    { "member": "backgroundImage", "replaces": "SIGNIN_BG, src/screens/AskOwnerScreen.tsx:4,10" },
+    { "member": "backgroundColor", "replaces": "SIGNIN_BG_COLOR, src/screens/AskOwnerScreen.tsx:4,10" },
+    { "member": "onSignOut", "replaces": "the sign-out callback, as in the source, src/screens/AskOwnerScreen.tsx:7,19" },
+    { "member": "placeName", "replaces": "the word garden, src/screens/AskOwnerScreen.tsx:13" },
+    { "member": "NoAccessError message", "replaces": "the sentence You have no write access to this garden yet. Ask the owner., src/data/errors.ts:14" }
+  ],
+  "library": { "admitted": false }
+}

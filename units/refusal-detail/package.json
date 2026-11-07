@@ -1,0 +1,35 @@
+{
+  "name": "@kaigilb/gilbplatformcode-refusal-detail",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./accessDenied.css": "./src/accessDenied.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-server-error": "^0.1.0",
+    "react": "^19.0.0"
+  }
+}

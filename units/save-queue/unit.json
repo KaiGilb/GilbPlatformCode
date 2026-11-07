@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "unit": "units/save-queue",
+  "package": "@kaigilb/gilbplatformcode-save-queue",
+  "version": "0.1.0",
+  "purpose": "An on-device queue of unsent writes, kept separate for each signed-in person, that resumes after a failure, backs off when the vault is busy, and never sends a finished upload step twice.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/data/queue.ts", "lines": [1, 149], "to": "src/queue.ts" },
+      { "path": "src/data/outbox.ts", "lines": [10, 29], "to": "src/policy.ts" },
+      { "path": "src/screens/GardenScreen.tsx", "lines": [92, 289], "to": "src/policy.ts" }
+    ]
+  },
+  "namedChanges": [
+    "N1. queue.ts line 3, the import of the app's Plant type, is deleted",
+    "N2. PendingOp becomes PendingOp<T = unknown>",
+    "N3. plantId is recordId; plant?: Plant is record?: T",
+    "N4. change: { name?, count? } is change: Record<string, unknown>",
+    "N5. every other PendingOp in queue.ts stays non-generic",
+    "N6. DB_NAME = \"tfp\" is the setting setQueueDbName(name); queueDbName() throws a message naming setQueueDbName when it was not called",
+    "N7. indexedDB.open(DB_NAME, 1) is indexedDB.open(queueDbName(), 1)",
+    "P1. policy.ts Failure: outbox.ts 10-11 as in the source",
+    "P2. classify is classifyWith(e, tests): lines 14-16 call tests.refusedForGood, tests.busy, tests.notSignedIn",
+    "P3. progressOf: outbox.ts 22-29 as in the source, exported",
+    "P4. afterFailure: the pure part of runOp's catch (GardenScreen.tsx 221-222, 224-232); sentence(err) is the sentence argument",
+    "P5. busyDelayMs: the expression of GardenScreen.tsx 238",
+    "P6. resetForRetry: GardenScreen.tsx 271-272; tries and busySentence are not reset",
+    "P7. stopsFlush: the condition of GardenScreen.tsx 260",
+    "P8. opsFor: the filter of GardenScreen.tsx 92; listOpsFor is new",
+    "P9. stampOp: GardenScreen.tsx 284-289 without the banner; null when there is no person",
+    "P10. opStatus: GardenScreen.tsx 155 with busy.has(op.id) replaced by the sending argument"
+  ],
+  "newFiles": [
+    "src/policy.ts",
+    "src/index.ts"
+  ],
+  "host": [
+    { "member": "FailureTests.refusedForGood", "replaces": "e instanceof NoAccessError || e instanceof PlantChangedElsewhereError, src/data/outbox.ts:14" },
+    { "member": "FailureTests.busy", "replaces": "e instanceof VaultBusyError, src/data/outbox.ts:15" },
+    { "member": "FailureTests.notSignedIn", "replaces": "e instanceof NotSignedInError, src/data/outbox.ts:16" },
+    { "member": "setQueueDbName", "replaces": "const DB_NAME = \"tfp\", src/data/queue.ts:61 (the source app passes tfp)" },
+    { "member": "principal argument of listOpsFor and stampOp", "replaces": "currentPrincipal(), src/data/principal.ts:6-14, used at src/screens/GardenScreen.tsx:90 and :283" }
+  ],
+  "library": { "admitted": false }
+}
