@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "unit": "units/picture-errors",
+  "package": "@kaigilb/gilbplatformcode-picture-errors",
+  "version": "0.1.0",
+  "purpose": "Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "a59cafc9e48b8f20575ad554554c08215845a500",
+    "files": []
+  },
+  "namedChanges": [
+    "New code, written for GitHubStandardPictures: pictureFailure(e, words?) with eleven kinds in a fixed order, DEFAULT_PICTURE_FAILURE_WORDS, and PictureFailureNote with pictureErrors.css"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/pictureFailure.ts",
+    "src/PictureFailureNote.tsx",
+    "src/pictureErrors.css",
+    "src/exports.test.ts",
+    "src/pictureFailure.test.ts",
+    "src/PictureFailureNote.test.tsx",
+    "src/hostAgnostic.test.ts",
+    "test/setup.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    { "member": "words", "replaces": "nothing in a source app (new code); optional: the sentences and next steps by kind, in the app's language" }
+  ],
+  "library": { "admitted": false }
+}

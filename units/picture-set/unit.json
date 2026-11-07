@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/picture-set",
+  "package": "@kaigilb/gilbplatformcode-picture-set",
+  "version": "0.1.0",
+  "purpose": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
+  "source": {
+    "repo": "KaiGilb/TestFlowerPower (local, not published)",
+    "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
+    "files": [
+      { "path": "src/data/plants.ts", "lines": [183, 224], "to": "src/uploadSet.ts" },
+      { "path": "src/data/plants.ts", "lines": [27, 27], "to": "src/copies.ts" },
+      { "path": "src/data/plants.ts", "lines": [29, 40], "to": "src/copies.ts" },
+      { "path": "src/data/plants.ts", "lines": [49, 55], "to": "src/copies.ts" },
+      { "path": "src/data/plants.ts", "lines": [112, 132], "to": "src/copies.ts" }
+    ]
+  },
+  "namedChanges": [
+    "C1. baseName falls back to picture, not plant (both places)",
+    "C2. uploadWithThumb(master, thumb, sink, target): uploadPicture(x, name) becomes uploadPicture(x, name, target); patchRecord from lws-records, entityIdTail from photo-ref; uploadWithThumb, UploadProgress and ProgressSink are exported",
+    "C3. the file extension follows the blob: ext(b) is .webp for image/webp, else .jpg, for the master and the 320 copy",
+    "C4. optional full copy as the ROOT (t:TranscodedFrom, Agent.Concept): uploadWithThumb(..., target, full?) uploads master, full, thumb, links the thumb and then the master to the full copy; UploadProgress gains fullEntity, masterLinked, thumbRelinked; linkFullLater(progress, full, sink, target, name?) for a full copy that arrives later; best effort, the master is still answered",
+    "C5. buildCopyMap (id tail -> copies by bytes, both link shapes, at most two steps to the root, a broken link in no group) and pickBySize are new; buildThumbMap is verbatim",
+    "C6. onCellular is new"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/exports.test.ts",
+    "src/uploadSet.test.ts",
+    "src/copies.test.ts",
+    "src/hostAgnostic.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    { "member": "target", "replaces": "the app's settings read by uploadPicture, src/data/pictures.ts:84" },
+    { "member": "sink.progress and sink.onProgress", "replaces": "the same parameters of uploadWithThumb, src/data/plants.ts:190; the host keeps the progress" }
+  ],
+  "library": { "admitted": false }
+}
