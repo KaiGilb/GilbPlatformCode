@@ -24,7 +24,7 @@ The source is TypeScript in `src/`. The files in `bridge/` are built from it (`n
 - Not the page side. The client that pairs with the bridge, runs a turn and relays tool calls, and the Connect component, are other units. This one is the process on the person's computer and the plugin that serves it.
 - Not a server. Nothing here runs on a host; no vault, no token and no key of the host is ever held.
 - Not an Anthropic API client. It cannot run on an API key.
-- Not Windows or Linux service support. `--install` writes a macOS LaunchAgent; running the file in a terminal works wherever Node and `claude` do. On Windows, `--install`, `--uninstall` and `--status` are refused for now (see "Windows").
+- Not Linux service support. `--install` writes a macOS LaunchAgent, or on Windows a per-user start-up entry (see "Windows"); running the file in a terminal works wherever Node and `claude` do.
 - Not exported from the package root: there is no browser-safe code in it, so the package has no `.` entry. It exports `./bridge.mjs`, `./vite` (with types) and `./fake-claude.mjs`.
 
 ## How to take it
@@ -95,7 +95,7 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 
 ## Windows
 
-What works (0.1.8): one bridge session, started by the person in a PowerShell window that stays open.
+What works (0.1.8): one bridge session in a PowerShell window, and Always On (below).
 
 ```powershell
 curl.exe -fsSL https://app.example.test/claude-code-bridge.mjs -o "$HOME\.gilb-claude-code-bridge.mjs"
@@ -112,11 +112,30 @@ How `claude` is found: the bridge looks on PATH (split on `;`, extensions from `
 - `--claude` may also name a `.js`/`.mjs` file, which is started with node (this is how the tests use the stand-in).
 - Stop (and bridge shutdown) ends the whole process tree with the system `taskkill /PID <pid> /T /F`, because on Windows `kill()` ends only one process and leaves what Claude Code started (such as the `gilb` MCP child). Off Windows it is still SIGTERM to `claude`.
 
-Not built yet: Always On. `--install`, `--uninstall` and `--status` answer "Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open." Also not handled: a very long system prompt (Windows allows 32,767 characters on a command line).
+Also not handled: a very long system prompt (Windows allows 32,767 characters on a command line).
+
+### Always On (Windows)
+
+```powershell
+node "$HOME\.gilb-claude-code-bridge.mjs" --install     # also: --allow-origin https://your-app.example (repeatable)
+node "$HOME\.gilb-claude-code-bridge.mjs" --code        # the pairing code
+node "$HOME\.gilb-claude-code-bridge.mjs" --status      # installed / running / build / log
+node "$HOME\.gilb-claude-code-bridge.mjs" --uninstall   # stop it and remove everything it made
+```
+
+It does what the Mac LaunchAgent does: the bridge starts when you log in, with no window, and starts again if it stops. `--install` starts it at once (no logout), checks your Claude subscription login first, and records `--port`, `--claude`, `--state-dir` and every `--allow-origin` you gave. `--label L` installs a second one under another name. Close a bridge running in a PowerShell window first: only one can hold port 47821 (a second one gives way and says so in the log).
+
+How it works, and what it needs: no administrator rights, and nothing outside your own user account.
+- One value under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` (your user only; the machine-wide keys are not touched). It runs `wscript.exe //B //Nologo //E:JScript "%LOCALAPPDATA%\gilb-claude-code-bridge\start-<label>.js"`. That small script (UTF-16, so any user name works) starts `node bridge.mjs --supervise ...` with window style 0, so no window opens or flashes (`wscript.exe` has no console, and the Node console it starts is hidden). Paths with spaces, such as `C:\Users\Anna Maria\`, are quoted. A path with a `%` is refused.
+- `--supervise` runs the real bridge as a child and starts it again when it ends, after 1 s, 2 s, 5 s, then 30 s; a bridge that stayed up 5 minutes starts the waits over. If a bridge finds port 47821 taken it exits with code 98 and the supervisor stops (it never runs two bridges and never loops on it). If the supervisor itself is killed, the bridge it started ends within 5 seconds instead of running unwatched.
+- Why these choices (Microsoft Learn): `schtasks /create` says "Only Administrators can schedule tasks" for system-account tasks and defaults to prompting for a password, and an ONLOGON task is "whenever a user (any user) logs on", so it was not used. The Run key is per-user and needs no rights. `VBScript` is a Windows feature on demand "before being retired in future Windows releases", so the launcher is JScript (also run by `wscript.exe`), not VBScript; `conhost.exe --headless` is not documented by Microsoft, so it is not used. Run values are a command line of at most 260 characters; `--install` refuses a longer one. Windows may delay Run entries a little after login, and Task Manager > Startup apps can switch the entry off (then it does not start at login).
+- Where things are: log `%LOCALAPPDATA%\gilb-claude-code-bridge\bridge.log` (another label: `<label>.log`; over 5 MB it moves to `.log.1`); state (pairing list, control token, `supervisor.json`, `supervisor.stop`) in `%USERPROFILE%\.gilb-claude-code-bridge`, the same as on a Mac. The log shows the pairing code. `%LOCALAPPDATA%` is inside your profile folder, whose default access rights (inherited, not changed by the bridge) give it to you, SYSTEM and Administrators only; no `icacls` change is made. Other administrators on the same computer can read it.
+- `--uninstall` removes the Run value, the launcher and the log, asks the supervisor to stop through the `supervisor.stop` marker (it ends the bridge and itself), and keeps your pairings. If it does not stop within 20 seconds the command says so and names Task Manager; it never ends a process by number.
+- The commands use `reg.exe`, `wscript.exe` and Node only, always with an argument list and never through a shell, and no page or user text goes to any of them.
 
 File modes (`0o600`, `0o700`) do nothing useful on Windows; the state folder is private only through the default access rights of the person's user folder.
 
-Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests and `scripts/windows-e2e.mjs` (the real built bridge as a process, a stand-in claude behind a `.cmd` shim written the way npm writes it, by name on PATH, and as a `.mjs`; pair, one turn, Stop, and a check with `tasklist` that the stand-in's child is gone) on GitHub's `windows-latest` runners with Node 20 and 22. It has not been tried by a person on a Windows PC, and the real `claude.exe` has not been run there.
+Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests, `scripts/windows-service-e2e.mjs` (Always On on a real runner: `--install` then hello within 20 s, `--status`, the registry value, `--code`, pair and one turn, `taskkill` of the bridge and it returns within 15 s, the stored start-up command run as Windows runs it, `--uninstall` leaves nothing; once with a home folder `...\Anna Maria`, once as a new standard user in the Users group) and `scripts/windows-e2e.mjs` (the real built bridge as a process, a stand-in claude behind a `.cmd` shim written the way npm writes it, by name on PATH, and as a `.mjs`; pair, one turn, Stop, and a check with `tasklist` that the stand-in's child is gone) on GitHub's `windows-latest` runners with Node 20 and 22. It has not been tried by a person on a Windows PC, and the real `claude.exe` has not been run there.
 
 ## Relay window (for Safari)
 
@@ -160,4 +179,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 
 - 0.1.1: types tightened; no behaviour change (the built `bridge.mjs` is byte-identical to 0.1.0).
 - 0.1.7: relay window (`GET /relay`) for Safari; `/v1/hello` reports `relay: true`; relayed requests take the opener page as their origin.
-- 0.1.8: runs on Windows in one session (see "Windows"): Windows-aware `resolveBin`, no shell for `claude` (npm `.cmd` shim read, not run), process-tree stop with `taskkill`, PowerShell-correct commands in the banner, SIGBREAK/SIGHUP.
+- 0.1.8: runs on Windows, in one session or Always On (see "Windows"): Windows-aware `resolveBin`, no shell for `claude` (npm `.cmd` shim read, not run), process-tree stop with `taskkill`, PowerShell-correct commands in the banner, SIGBREAK/SIGHUP.

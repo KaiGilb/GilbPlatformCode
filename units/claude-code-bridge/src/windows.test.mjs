@@ -9,7 +9,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   checkSubscriptionLogin, commandPathForPerson, fetchCode, killChild, parseCmdShim, parseCli, refusedLaunch, resolveBin, resolveClaudeLaunch,
-  serviceInstall, serviceStatus, serviceUninstall, WINDOWS_ALWAYS_ON_LATER,
 } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -185,18 +184,11 @@ describe("what the person is told to type in PowerShell", () => {
 
 describe("the always-on commands on Windows", () => {
   const deps = { launchctl: async () => { throw new Error("must not run"); }, uid: 0, home: HOME, nodePath: "node", file: "f", env: {}, platform: "win32" };
-  it("are refused with the plain sentence, and run no launchctl", async () => {
-    const cli = parseCli(["--install"]);
-    for (const fn of [serviceInstall, serviceUninstall, serviceStatus]) {
-      expect(await fn(cli, deps)).toEqual({ ok: false, message: "Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open." });
-    }
-    expect(WINDOWS_ALWAYS_ON_LATER).toBe("Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open.");
-  });
   it("--code on Windows reads the same status and token files, and never tells the person to run --install or --status", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "code-"));
     const none = await fetchCode(parseCli(["--state-dir", dir]), { ...deps, home: dir });
     expect(none.ok).toBe(false);
-    expect(none.message).toBe("No bridge has been started for this user yet (no control token). Start the bridge in a PowerShell window.");
+    expect(none.message).toBe("No bridge has been started for this user yet (no control token). Run --install, or start the bridge in a PowerShell window.");
     fs.writeFileSync(path.join(dir, "control-token"), "tok");
     fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify({ ok: true, port: 1 }));
     const down = await fetchCode(parseCli(["--state-dir", dir]), { ...deps, home: dir });

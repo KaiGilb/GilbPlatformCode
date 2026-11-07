@@ -7,7 +7,7 @@
 //
 //   node bridge.mjs [--allow-origin https://your-app.example]
 //
-// Always on without a window (macOS): `node bridge.mjs --install` (then --code, --status, --uninstall). See README.md.
+// Always on without a window (macOS LaunchAgent, Windows per-user Run entry): `node bridge.mjs --install` (then --code, --status, --uninstall). See README.md.
 //
 // What it is, and what it is NOT (decided, see README.md):
 //   * It runs the person's own official `claude` CLI as a child process (headless, stream-json). It never reads,
@@ -370,7 +370,6 @@ export function commandPathForPerson(file, home = os.homedir(), platform = proce
         return `"$HOME\\${rel}"`;
     return `'${file.replace(/'/g, "''")}'`;
 }
-export const WINDOWS_ALWAYS_ON_LATER = "Always On for Windows is coming. For now start the bridge in a PowerShell window and keep it open.";
 /**
  * Checks, with the CLI's own `auth status`, that the person is logged in with a Claude SUBSCRIPTION.
  * Runs with the billing variables removed, so what it reports is what every turn will use.
@@ -1255,7 +1254,7 @@ export function createBridge(opts = {}) {
         },
     };
 }
-// ---- always-on service (macOS LaunchAgent) -----------------------------------------------------------------------------
+// ---- always-on service (macOS LaunchAgent; Windows below) -----------------------------------------------------------------------------
 export const DEFAULT_LABEL = "com.gilb.claude-code-bridge";
 const defaultStateDir = (home = os.homedir()) => path.join(home, ".gilb-claude-code-bridge");
 /** Reads the command line into a plain object. Unknown flags are refused by main() before this is used. */
@@ -1274,7 +1273,7 @@ export function parseCli(argv) {
             return [];
         return [argv[i + 1] !== undefined && !argv[i + 1].startsWith("--") ? argv[i + 1] : ""];
     });
-    const modes = ["--install", "--uninstall", "--status", "--code", "--unpair-all", "--help", "-h"].filter((m) => argv.includes(m));
+    const modes = ["--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"].filter((m) => argv.includes(m));
     return {
         mode: modes.length === 0 ? "run" : modes[0].replace(/^-+/, "") === "h" ? "help" : modes[0] === "--unpair-all" ? "unpairAll" : modes[0].replace(/^-+/, ""),
         modes,
@@ -1394,24 +1393,21 @@ const serviceFiles = (opts, home) => {
  */
 export async function serviceInstall(opts, deps) {
     const { launchctl, uid, home, nodePath, file, env, log } = deps;
-    if ((deps.platform ?? process.platform) === "win32")
-        return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
-    if ((deps.platform ?? process.platform) !== "darwin")
-        return { ok: false, message: "--install works on macOS only. On other systems start the bridge in a terminal." };
+    const platform = deps.platform ?? process.platform;
+    if (platform !== "darwin" && platform !== "win32")
+        return { ok: false, message: "--install works on macOS only (and on Windows). On other systems start the bridge in a terminal." };
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(opts.label))
         return { ok: false, message: "--label may use letters, digits, dot, dash and underscore only." };
     const port0 = opts.port ?? DEFAULT_PORT;
     if (!Number.isInteger(port0) || port0 < 1 || port0 > 65535)
         return { ok: false, message: "--port must be a number from 1 to 65535." };
-    const claudeBin = resolveBin(opts.claude ?? "claude", env, home);
+    const claudeBin = resolveBin(opts.claude ?? "claude", env, home, platform, deps.files);
     if (!claudeBin)
         return { ok: false, message: "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again." };
     const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);
     if (!login.ok)
         return { ok: false, message: `Not installed.\n${login.reason}` };
-    const f = serviceFiles(opts, home);
     const port = opts.port ?? DEFAULT_PORT;
-    const args = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
     // Persisted in the LaunchAgent: the origins the person allowed at install time (checked now, so a typo never installs).
     let extraOrigins;
     try {
@@ -1420,6 +1416,10 @@ export async function serviceInstall(opts, deps) {
     catch (e) {
         return { ok: false, message: `Not installed.\n${e.message}` };
     }
+    if (platform === "win32")
+        return installWindows(opts, deps, { claudeBin, port, extraOrigins });
+    const f = serviceFiles(opts, home);
+    const args = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
     for (const o of extraOrigins)
         args.push("--allow-origin", o);
     const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
@@ -1463,12 +1463,19 @@ export async function serviceInstall(opts, deps) {
 }
 export async function serviceUninstall(opts, deps) {
     if ((deps.platform ?? process.platform) === "win32")
-        return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
+        return uninstallWindows(opts, deps);
     const f = serviceFiles(opts, deps.home);
     const r = await deps.launchctl(["bootout", `gui/${deps.uid}/${opts.label}`]);
     const had = fs.existsSync(f.plist);
     fs.rmSync(f.plist, { force: true });
     return { ok: true, message: had || r.code === 0 ? `Removed ${opts.label}. The bridge no longer starts at login.` : `${opts.label} was not installed.` };
+}
+/** What to suggest when the bridge does not answer: --status where a service is installed, else the PowerShell window it runs in. */
+function hintStatus(opts, deps) {
+    if ((deps.platform ?? process.platform) !== "win32")
+        return "Try --status.";
+    const installed = (deps.sfs ?? realServiceFs).exists(serviceFilesWin(opts, deps.home, "win32", deps.env).launcher);
+    return installed ? "Try --status." : "Check that the bridge is still running in its PowerShell window.";
 }
 /** Asks the running bridge for its pairing code over 127.0.0.1 with the token only this user can read. */
 export async function fetchCode(opts, deps) {
@@ -1480,10 +1487,10 @@ export async function fetchCode(opts, deps) {
         st = JSON.parse(fs.readFileSync(f.statusFile, "utf8"));
     }
     catch {
-        return { ok: false, message: (deps.platform ?? process.platform) === "win32" ? "No bridge has been started for this user yet (no control token). Start the bridge in a PowerShell window." : "No bridge has been started for this user yet (no control token). Run --install, or start the bridge." };
+        return { ok: false, message: (deps.platform ?? process.platform) === "win32" ? "No bridge has been started for this user yet (no control token). Run --install, or start the bridge in a PowerShell window." : "No bridge has been started for this user yet (no control token). Run --install, or start the bridge." };
     }
     const port = opts.port ?? st.port ?? DEFAULT_PORT;
-    const tryStatus = (deps.platform ?? process.platform) === "win32" ? "Check that the bridge is still running in its PowerShell window." : "Try --status.";
+    const tryStatus = hintStatus(opts, deps);
     try {
         const res = await fetch(`http://127.0.0.1:${port}/control/code`, { headers: { "x-bridge-control": token } });
         if (!res.ok)
@@ -1517,7 +1524,7 @@ export async function unpairAll(opts, deps) {
             const res = await fetch(`http://127.0.0.1:${port}/control/unpair-all`, { method: "POST", headers: { "x-bridge-control": token } });
             if (res.ok)
                 return done((await res.json()).removed ?? 0);
-            return { ok: false, message: `The bridge on port ${port} did not clear the pairings (${res.status}). Is it the current one? ${(deps.platform ?? process.platform) === "win32" ? "Check that the bridge is still running in its PowerShell window." : "Try --status."}` };
+            return { ok: false, message: `The bridge on port ${port} did not clear the pairings (${res.status}). Is it the current one? ${hintStatus(opts, deps)}` };
         }
         catch {
             /* not answering: clear the file below */
@@ -1541,7 +1548,7 @@ export async function unpairAll(opts, deps) {
 }
 export async function serviceStatus(opts, deps) {
     if ((deps.platform ?? process.platform) === "win32")
-        return { ok: false, message: WINDOWS_ALWAYS_ON_LATER };
+        return statusWindows(opts, deps);
     const f = serviceFiles(opts, deps.home);
     const lines = [];
     const installed = fs.existsSync(f.plist);
@@ -1575,6 +1582,412 @@ export async function serviceStatus(opts, deps) {
     lines.push(`Log:        ${f.logFile}`);
     return { ok: true, message: lines.join("\n") };
 }
+// ---- always-on service (Windows) ---------------------------------------------------------------------------------------
+// How it works, in one place:
+//   * Start at login, no admin: one value under HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run (per user; the
+//     machine-wide keys are not touched). It runs wscript.exe on a tiny JScript file that starts `node bridge.mjs --supervise`
+//     with its window hidden (WshShell.Run, window style 0). wscript.exe has no console window of its own, and node's console is hidden.
+//   * Restart if it stops: `--supervise` runs the real bridge as a child and starts it again with a growing wait.
+//   * Everything the install makes: that one Run value, the launcher file and the log under %LOCALAPPDATA%\gilb-claude-code-bridge,
+//     and (while running) supervisor.json and supervisor.stop in the state folder. --uninstall removes all of them.
+export const WIN_RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+/** The exit code of a bridge that found its port taken. The supervisor stops on it instead of looping. */
+export const EXIT_PORT_IN_USE = 98;
+/** Waits before each restart: 1 s, 2 s, 5 s, then 30 s. */
+export const SUPERVISOR_DELAYS_MS = [1000, 2000, 5000, 30000];
+/** A bridge that ran this long counts as healthy: the next stop starts the waits again from 1 s. */
+export const SUPERVISOR_STABLE_MS = 5 * 60 * 1000;
+/** A Run value is a command line of at most 260 characters (Microsoft Learn: "Run and RunOnce Registry Keys"). */
+const RUN_VALUE_MAX = 260;
+const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
+const realServiceFs = {
+    mkdirp: (p) => void fs.mkdirSync(p, { recursive: true }),
+    write: (p, data) => fs.writeFileSync(p, data),
+    read: (p) => fs.readFileSync(p, "utf8"),
+    exists: (p) => fs.existsSync(p),
+    rm: (p) => fs.rmSync(p, { force: true }),
+    rmdirIfEmpty: (p) => {
+        try {
+            fs.rmdirSync(p); // refuses a folder that holds anything
+        }
+        catch {
+            /* not empty or not there */
+        }
+    },
+};
+/** Runs a program with an argument list. No shell: nothing is ever parsed by cmd.exe or PowerShell. */
+export function runExec(file, args, o = {}) {
+    return new Promise((resolve) => {
+        if (o.detached) {
+            // Starting something that outlives us: no pipes to it, so nothing it starts can hold this command open. Done when the starter exits.
+            const c = spawn(file, args, { stdio: "ignore", windowsHide: true });
+            c.once("error", (e) => resolve({ code: 1, out: e.message }));
+            c.once("exit", (code) => resolve({ code: code ?? 1, out: "" }));
+            return;
+        }
+        execFile(file, args, { windowsHide: true }, (err, stdout, stderr) => resolve({ code: err ? (typeof err.code === "number" ? err.code : 1) : 0, out: `${stdout}${stderr}`.trim() }));
+    });
+}
+export function pidAlive(pid) {
+    if (!Number.isInteger(pid) || pid <= 0)
+        return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    }
+    catch (e) {
+        return e.code === "EPERM";
+    }
+}
+async function realHello(port) {
+    try {
+        const h = await fetch(`http://127.0.0.1:${port}/v1/hello`, { signal: AbortSignal.timeout(2000) });
+        return h.ok ? (await h.json()) : null;
+    }
+    catch {
+        return null;
+    }
+}
+/** One argument as the Windows C runtime reads it back (what reg.exe, node and wscript all use). */
+export function winQuoteArg(a) {
+    if (a !== "" && !/[\s"]/.test(a))
+        return a;
+    let r = '"';
+    let bs = 0;
+    for (const ch of a) {
+        if (ch === "\\") {
+            bs++;
+        }
+        else if (ch === '"') {
+            r += `${"\\".repeat(bs * 2 + 1)}"`;
+            bs = 0;
+        }
+        else {
+            r += `${"\\".repeat(bs)}${ch}`;
+            bs = 0;
+        }
+    }
+    return `${r}${"\\".repeat(bs * 2)}"`;
+}
+export const winCommandLine = (args) => args.map(winQuoteArg).join(" ");
+/** A JScript string literal. JSON is one, except that U+2028 and U+2029 end a line in JScript. */
+const jsString = (t) => JSON.stringify(t).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+/** Where everything lives. `P` is path.win32 on Windows (and in the tests that pretend to be Windows). */
+export function serviceFilesWin(opts, home, platform, env) {
+    const P = platform === "win32" ? path.win32 : path;
+    const stateDir = opts.stateDir ? P.resolve(opts.stateDir) : P.join(home, ".gilb-claude-code-bridge");
+    const localDir = P.join(env.LOCALAPPDATA ?? P.join(home, "AppData", "Local"), "gilb-claude-code-bridge");
+    const sys32 = P.join(env.SystemRoot ?? env.windir ?? "C:\\Windows", "System32");
+    return {
+        P,
+        stateDir,
+        localDir,
+        launcher: P.join(localDir, `start-${opts.label}.js`),
+        logFile: P.join(localDir, opts.label === DEFAULT_LABEL ? "bridge.log" : `${opts.label}.log`),
+        supervisorFile: P.join(stateDir, "supervisor.json"),
+        stopFile: P.join(stateDir, "supervisor.stop"),
+        statusFile: P.join(stateDir, "status.json"),
+        wscript: P.join(sys32, "wscript.exe"),
+        reg: P.join(sys32, "reg.exe"),
+    };
+}
+/** The command line the Run value holds, and the arguments for starting the same thing right now. */
+const wscriptArgs = (f) => ["//B", "//Nologo", "//E:JScript", f.launcher];
+const runValue = (f) => winCommandLine([f.wscript, ...wscriptArgs(f)]);
+function launcherText(f, command) {
+    return [
+        "// Written by `node bridge.mjs --install` for the Gilb Claude Code bridge. `--uninstall` removes it.",
+        "// Starts the bridge supervisor with no window (window style 0). It decides nothing and reads nothing.",
+        'var sh = new ActiveXObject("WScript.Shell");',
+        `sh.CurrentDirectory = ${jsString(f.stateDir)};`,
+        `sh.Run(${jsString(winCommandLine(command))}, 0, false);`,
+        "",
+    ].join("\r\n");
+}
+/** UTF-16 with a byte order mark: Windows Script Host reads any user name in it correctly. */
+const utf16 = (t) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(t, "utf16le")]);
+const psSingle = (t) => `'${t.replace(/'/g, "''")}'`;
+function readJson(sfs, p) {
+    try {
+        return JSON.parse(sfs.read(p));
+    }
+    catch {
+        return null;
+    }
+}
+/** Asks a running supervisor to stop (a marker file it polls), waits for it to go. Never force-kills a pid it cannot prove is its own. */
+async function stopSupervisor(f, deps, sfs) {
+    const alive = deps.alive ?? pidAlive;
+    const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    const sup = readJson(sfs, f.supervisorFile);
+    if (!sup?.pid || !alive(sup.pid)) {
+        sfs.rm(f.supervisorFile);
+        sfs.rm(f.stopFile);
+        return { wasRunning: false, stillRunning: null };
+    }
+    sfs.write(f.stopFile, String(Date.now()));
+    for (let i = 0; i < 80 && alive(sup.pid); i++)
+        await sleep(250); // 20 s
+    if (alive(sup.pid))
+        return { wasRunning: true, stillRunning: sup.pid };
+    sfs.rm(f.supervisorFile);
+    sfs.rm(f.stopFile);
+    return { wasRunning: true, stillRunning: null };
+}
+async function installWindows(opts, deps, ctx) {
+    const { home, nodePath, file, env } = deps;
+    const { claudeBin, port, extraOrigins } = ctx;
+    const sfs = deps.sfs ?? realServiceFs;
+    const exec = deps.exec ?? runExec;
+    const alive = deps.alive ?? pidAlive;
+    const hello = deps.hello ?? realHello;
+    const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    const f = serviceFilesWin(opts, home, "win32", env);
+    // A % in a path would be expanded by Windows inside the command; refuse rather than start the wrong file.
+    const bad = [nodePath, file, claudeBin, f.stateDir, f.launcher].find((p) => p.includes("%"));
+    if (bad)
+        return { ok: false, message: `Not installed.\nThe path ${bad} contains a % sign, which Windows would expand inside the start-up command. Move the file to a folder without one.` };
+    const base = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
+    for (const o of extraOrigins)
+        base.push("--allow-origin", o);
+    const value = runValue(f);
+    if (value.length > RUN_VALUE_MAX)
+        return { ok: false, message: `Not installed.\nThe start-up command would be ${value.length} characters; Windows allows ${RUN_VALUE_MAX} in a Run entry. Use a shorter --label.` };
+    const prev = await stopSupervisor(f, deps, sfs); // installing again restarts on the new file
+    if (prev.stillRunning)
+        return { ok: false, message: `Not installed.\nThe bridge started by an earlier install (process ${prev.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab), then run --install again.` };
+    sfs.rm(f.stopFile);
+    sfs.mkdirp(f.stateDir);
+    sfs.mkdirp(f.localDir);
+    // The log shows the pairing code. It sits under %LOCALAPPDATA%, inside the user's own profile folder, whose default access rights
+    // (inherited, not changed here) give it to this user, SYSTEM and Administrators only.
+    if (!sfs.exists(f.logFile))
+        sfs.write(f.logFile, "");
+    sfs.write(f.launcher, utf16(launcherText(f, [nodePath, file, "--supervise", ...base, "--label", opts.label])));
+    const add = await exec(f.reg, ["add", WIN_RUN_KEY, "/v", opts.label, "/t", "REG_SZ", "/d", value, "/f"]);
+    if (add.code !== 0) {
+        sfs.rm(f.launcher);
+        return { ok: false, message: `Not installed. Windows would not add the start-up entry: ${add.out || `exit ${add.code}`}` };
+    }
+    // Start it now the way login will: the same wscript command, no logout needed.
+    const started = await exec(f.wscript, wscriptArgs(f), { detached: true });
+    if (started.code !== 0)
+        return { ok: false, message: `The start-up entry is installed, but Windows Script Host did not start the bridge: ${started.out || `exit ${started.code}`}\nIt may be switched off on this computer. See ${f.logFile}` };
+    let up = null;
+    let supervised = false;
+    for (let i = 0; i < 80; i++) {
+        up = await hello(port);
+        const sup = readJson(sfs, f.supervisorFile);
+        supervised = !!sup?.pid && alive(sup.pid);
+        if (up && supervised)
+            break;
+        if (up && !supervised && i >= 12)
+            break; // something else holds the port and our supervisor has given up
+        await sleep(250);
+    }
+    const me = opts.stateDir ? ` --state-dir ${psSingle(f.stateDir)}` : "";
+    const flags = `${opts.label === DEFAULT_LABEL ? "" : ` --label ${opts.label}`}${me}`;
+    const cmd = commandPathForPerson(file, home, "win32");
+    if (up && !supervised) {
+        return { ok: false, message: `The start-up entry is installed, but another bridge already holds port ${port} and the installed one gave way (it never runs two).\n  Close that bridge (a PowerShell window running it, or its node.exe in Task Manager), then run:  node ${cmd} --install${flags}` };
+    }
+    if (!up)
+        return { ok: false, message: `The start-up entry is installed, but the bridge did not answer on port ${port} within 20 seconds.\n  Read the log:  Get-Content ${psSingle(f.logFile)} -Tail 30` };
+    return {
+        ok: true,
+        message: `Always-on bridge installed (${opts.label}). It starts when you log in and restarts if it stops.
+  Billing: Claude subscription (checked at every start; never an API key)
+  Log:     ${f.logFile}
+  Get your pairing code:  node ${cmd} --code${flags}
+  Check it:               node ${cmd} --status${flags}
+  Remove it:              node ${cmd} --uninstall${flags}
+  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.`,
+    };
+}
+async function uninstallWindows(opts, deps) {
+    const sfs = deps.sfs ?? realServiceFs;
+    const exec = deps.exec ?? runExec;
+    const f = serviceFilesWin(opts, deps.home, "win32", deps.env);
+    const q = await exec(f.reg, ["query", WIN_RUN_KEY, "/v", opts.label]);
+    const had = q.code === 0 || sfs.exists(f.launcher);
+    // Entry first, so nothing starts it again while it is being stopped.
+    if (q.code === 0) {
+        const d = await exec(f.reg, ["delete", WIN_RUN_KEY, "/v", opts.label, "/f"]);
+        if (d.code !== 0)
+            return { ok: false, message: `Windows would not remove the start-up entry ${opts.label}: ${d.out || `exit ${d.code}`}` };
+    }
+    const stop = await stopSupervisor(f, deps, sfs);
+    if (stop.stillRunning)
+        return { ok: false, message: `The start-up entry is removed, but the bridge (process ${stop.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab).` };
+    sfs.rm(f.launcher);
+    sfs.rm(f.logFile);
+    sfs.rm(`${f.logFile}.1`);
+    sfs.rmdirIfEmpty(f.localDir);
+    return {
+        ok: true,
+        message: had || stop.wasRunning ? `Removed ${opts.label}. The bridge no longer starts at login${stop.wasRunning ? " and has been stopped" : ""}. Your pairings in ${f.stateDir} are kept.` : `${opts.label} was not installed.`,
+    };
+}
+async function statusWindows(opts, deps) {
+    const sfs = deps.sfs ?? realServiceFs;
+    const exec = deps.exec ?? runExec;
+    const alive = deps.alive ?? pidAlive;
+    const hello = deps.hello ?? realHello;
+    const f = serviceFilesWin(opts, deps.home, "win32", deps.env);
+    const lines = [];
+    const entry = (await exec(f.reg, ["query", WIN_RUN_KEY, "/v", opts.label])).code === 0;
+    const installed = entry && sfs.exists(f.launcher);
+    lines.push(`Installed:  ${installed ? `yes (start-up entry ${opts.label})` : entry ? "damaged: the start-up entry is there but its launcher file is missing; run --install again" : "no"}`);
+    const sup = readJson(sfs, f.supervisorFile);
+    const st = readJson(sfs, f.statusFile);
+    const supAlive = !!sup?.pid && alive(sup.pid);
+    const bridgePid = st?.pid && alive(st.pid) ? st.pid : null;
+    lines.push(`Running:    ${supAlive ? `yes (supervisor pid ${sup.pid}${bridgePid ? `, bridge pid ${bridgePid}` : ", bridge restarting"})` : "no"}`);
+    const port = opts.port ?? st?.port ?? DEFAULT_PORT;
+    if (st) {
+        lines.push(`Last start: ${st.ok ? `ok at ${st.at}` : `FAILED at ${st.at}: ${st.reason}`}`);
+        lines.push(`Billing:    ${st.ok ? st.billing : "not running: the subscription check failed, so no turn can run (never an API key)"}`);
+    }
+    else
+        lines.push("Last start: none recorded");
+    const h = await hello(port);
+    lines.push(`Answering:  ${h ? `yes, http://127.0.0.1:${port}${h.build ? ` (build ${h.build})` : ""}` : `no (port ${port})`}`);
+    lines.push(`Log:        ${f.logFile}`);
+    return { ok: true, message: lines.join("\n") };
+}
+/** Runs the bridge as a child and starts it again when it ends: after 1 s, 2 s, 5 s, then 30 s. A bridge that stayed up for 5 minutes starts the waits over. Never two bridges: a child that found the port taken ends the loop. */
+export async function superviseLoop(o) {
+    let stopped = false;
+    void o.stop.then(() => {
+        stopped = true;
+    });
+    let fails = 0;
+    while (!stopped) {
+        const t0 = o.now();
+        const child = o.spawnChild();
+        o.log(`bridge started (pid ${child.pid ?? "?"})`);
+        const r = await Promise.race([child.exited.then((e) => ({ e })), o.stop.then(() => null)]);
+        if (r === null) {
+            o.log("stop requested; ending the bridge");
+            await child.kill();
+            return "stopped";
+        }
+        const upMs = o.now() - t0;
+        if (r.e.code === EXIT_PORT_IN_USE) {
+            o.log(`the bridge found port taken (exit ${EXIT_PORT_IN_USE}): another bridge is running. Not starting a second one; the supervisor ends here.`);
+            return "port-in-use";
+        }
+        fails = upMs >= SUPERVISOR_STABLE_MS ? 1 : fails + 1;
+        const delay = SUPERVISOR_DELAYS_MS[Math.min(fails - 1, SUPERVISOR_DELAYS_MS.length - 1)];
+        o.log(`bridge stopped (${r.e.code === null ? `signal ${r.e.signal ?? "none"}` : `exit ${r.e.code}`}) after ${Math.round(upMs / 1000)} s; starting it again in ${delay / 1000} s`);
+        const w = await Promise.race([o.sleep(delay).then(() => "slept"), o.stop.then(() => "stop")]);
+        if (w === "stop")
+            return "stopped";
+    }
+    return "stopped";
+}
+/** `--supervise`: one supervisor per state folder; stops when supervisor.stop appears. Its own lines and the bridge's output go to the log. */
+export async function runSupervisor(cli, io = {}) {
+    const home = io.home ?? os.homedir();
+    const env = io.env ?? process.env;
+    const platform = io.platform ?? process.platform;
+    const f = serviceFilesWin(cli, home, platform, env);
+    const alive = io.alive ?? pidAlive;
+    const log = (line) => {
+        try {
+            fs.appendFileSync(f.logFile, `${new Date().toISOString()} supervisor: ${line}\n`);
+        }
+        catch {
+            /* no log is not a reason to stop */
+        }
+    };
+    fs.mkdirSync(f.localDir, { recursive: true });
+    fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
+    // One supervisor per state folder. A leftover file from a dead process is replaced.
+    const mine = JSON.stringify({ pid: process.pid, at: new Date().toISOString() });
+    for (let tries = 0;; tries++) {
+        try {
+            fs.writeFileSync(f.supervisorFile, mine, { flag: "wx", mode: 0o600 });
+            break;
+        }
+        catch (e) {
+            if (e.code !== "EEXIST" || tries > 2)
+                throw e;
+            let other = 0;
+            try {
+                other = JSON.parse(fs.readFileSync(f.supervisorFile, "utf8")).pid ?? 0;
+            }
+            catch {
+                /* unreadable: treat as stale */
+            }
+            if (other && other !== process.pid && alive(other)) {
+                log(`another supervisor (pid ${other}) is already running; this one ends`);
+                return "already-running";
+            }
+            fs.rmSync(f.supervisorFile, { force: true });
+        }
+    }
+    let finish = () => { };
+    const stop = new Promise((resolve) => (finish = resolve));
+    const timer = setInterval(() => {
+        if (fs.existsSync(f.stopFile))
+            finish();
+    }, io.pollMs ?? 500);
+    const onSignal = () => finish();
+    const sigs = platform === "win32" ? ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"] : ["SIGINT", "SIGTERM"];
+    if (io.signals)
+        for (const s of sigs)
+            process.on(s, onSignal);
+    const bridgeFile = io.file ?? fs.realpathSync(fileURLToPath(import.meta.url));
+    const childArgs = ["--port", String(cli.port ?? DEFAULT_PORT), "--claude", cli.claude ?? "claude", "--state-dir", f.stateDir];
+    for (const o of cli.allowOrigins ?? [])
+        childArgs.push("--allow-origin", o);
+    const realSpawn = () => {
+        try {
+            if (fs.statSync(f.logFile).size > LOG_ROTATE_BYTES)
+                fs.renameSync(f.logFile, `${f.logFile}.1`); // no child holds it now
+        }
+        catch {
+            /* no log yet */
+        }
+        const fd = fs.openSync(f.logFile, "a");
+        const c = spawn(process.execPath, [bridgeFile, ...childArgs], { stdio: ["ignore", fd, fd], windowsHide: true, env: { ...env, GILB_BRIDGE_SUPERVISOR_PID: String(process.pid) } });
+        fs.closeSync(fd);
+        const exited = new Promise((resolve) => {
+            c.once("exit", (code, signal) => resolve({ code, signal }));
+            c.once("error", (e) => {
+                log(`could not start the bridge: ${e.message}`);
+                resolve({ code: null, signal: null });
+            });
+        });
+        return { pid: c.pid, exited, kill: () => killChild(c, env) };
+    };
+    log(`supervisor started (pid ${process.pid}), bridge file ${bridgeFile}`);
+    try {
+        const result = await superviseLoop({
+            spawnChild: io.spawnChild ?? realSpawn,
+            now: io.now ?? Date.now,
+            sleep: io.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+            stop,
+            log,
+        });
+        log(`supervisor ends (${result})`);
+        return result;
+    }
+    finally {
+        clearInterval(timer);
+        if (io.signals)
+            for (const s of sigs)
+                process.off(s, onSignal);
+        try {
+            if (JSON.parse(fs.readFileSync(f.supervisorFile, "utf8")).pid === process.pid)
+                fs.rmSync(f.supervisorFile, { force: true });
+        }
+        catch {
+            /* already gone */
+        }
+    }
+}
 /** The node to record in the plist: the name on the person's PATH (survives a brew upgrade) when it is this very node, else this node's own path. */
 function stableNodePath() {
     const named = resolveBin("node");
@@ -1593,11 +2006,11 @@ async function main() {
     const cli = parseCli(argv);
     if (cli.mode === "help") {
         console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR]
-       ${process.platform === "win32" ? "node bridge.mjs --code | --unpair-all   (--install, --uninstall and --status are not built for Windows yet)" : "node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (macOS always-on LaunchAgent; add --label L to use another label)"}`);
+       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)`);
         return;
     }
     // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--help", "-h"]);
+    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"]);
     const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]));
     if (unknown.length > 0) {
         console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --label, --install, --uninstall, --status, --code, --unpair-all, --help`);
@@ -1619,9 +2032,9 @@ async function main() {
         env: process.env,
         log: () => { },
     };
-    if (platform === "win32" && ["install", "uninstall", "status"].includes(cli.mode)) {
-        console.error(WINDOWS_ALWAYS_ON_LATER);
-        process.exit(1);
+    if (cli.mode === "supervise") {
+        const r = await runSupervisor(cli, { home, env: process.env, platform, signals: true });
+        process.exit(r === "port-in-use" ? 1 : 0);
     }
     if (cli.mode !== "run") {
         const fn = { install: serviceInstall, uninstall: serviceUninstall, status: serviceStatus, code: fetchCode, unpairAll }[cli.mode];
@@ -1670,7 +2083,7 @@ async function main() {
         console.error(`\nThe bridge did not start: ${why}\n`);
         if (e.code !== "EADDRINUSE")
             writeStatus({ ok: false, reason: why }); // a bridge that already runs keeps its own token and status
-        process.exit(1);
+        process.exit(e.code === "EADDRINUSE" ? EXIT_PORT_IN_USE : 1); // the supervisor reads this one: never two bridges
     }
     try {
         fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
@@ -1698,6 +2111,10 @@ Gilb Claude Code bridge
   Press Ctrl+C to stop. (Later: \`node ${commandPathForPerson(fileURLToPath(import.meta.url), home, platform)} --code\` prints the current code.)
 `);
     const stop = () => bridge.close().then(() => process.exit(0));
+    // Started by --supervise: when the supervisor is gone (killed, not stopped), do not carry on as an unwatched second bridge.
+    const supervisorPid = Number(process.env.GILB_BRIDGE_SUPERVISOR_PID);
+    if (supervisorPid > 0)
+        setInterval(() => void (pidAlive(supervisorPid) || stop()), 5000).unref();
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
     if (platform === "win32") {
