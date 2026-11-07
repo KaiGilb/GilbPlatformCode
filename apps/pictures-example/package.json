@@ -1,0 +1,51 @@
+{
+  "name": "pictures-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pictures: a one-screen example app that gives a signed-in person the whole picture capability (add, see, view) by taking the picture units of this repository.",
+  "scripts": {
+    "dev": "vite",
+    "dev:fake": "vite --mode fake",
+    "dev:live": "vite --mode live",
+    "build": "tsc --noEmit && vite build --mode fake",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build:live": "tsc --noEmit && vite build --mode live --outDir dist-live"
+  },
+  "dependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../../units/base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../../units/lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../../units/lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../../units/photo-ref",
+    "@kaigilb/gilbplatformcode-picture-errors": "file:../../units/picture-errors",
+    "@kaigilb/gilbplatformcode-picture-pick": "file:../../units/picture-pick",
+    "@kaigilb/gilbplatformcode-picture-set": "file:../../units/picture-set",
+    "@kaigilb/gilbplatformcode-picture-shrink": "file:../../units/picture-shrink",
+    "@kaigilb/gilbplatformcode-picture-upload": "file:../../units/picture-upload",
+    "@kaigilb/gilbplatformcode-picture-viewer": "file:../../units/picture-viewer",
+    "@kaigilb/gilbplatformcode-record-types": "file:../../units/record-types",
+    "@kaigilb/gilbplatformcode-refusal-detail": "file:../../units/refusal-detail",
+    "@kaigilb/gilbplatformcode-save-queue": "file:../../units/save-queue",
+    "@kaigilb/gilbplatformcode-server-error": "file:../../units/server-error",
+    "@kaigilb/gilbplatformcode-signed-picture": "file:../../units/signed-picture",
+    "@kaigilb/gilbplatformcode-signin": "file:../../units/signin",
+    "@kaigilb/gilbplatformcode-vault-list": "file:../../units/vault-list",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../../units/vault-origin-rule",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "fake-indexeddb": "6.2.6",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}

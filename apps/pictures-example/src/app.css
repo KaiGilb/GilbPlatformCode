@@ -1,0 +1,18 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 16px/1.4 system-ui, sans-serif; color: #1c2a33; background: #f6f8fa; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.page { max-width: 960px; margin: 0 auto; padding: 16px; min-height: 100vh; }
+.top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.top h1 { margin: 0; font-size: 1.4rem; }
+.hint { color: #5b6b75; }
+.grid { list-style: none; margin: 16px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.cell { position: relative; }
+.tile { display: block; width: 100%; padding: 0; border: 0; background: none; }
+.thumb { width: 100%; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #dde5ea; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph { display: block; width: 100%; height: 100%; }
+.badge { position: absolute; left: 6px; bottom: 6px; background: rgba(28, 42, 51, 0.85); color: #fff; font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; }
+.note { border: 1px solid #e3c9c9; background: #fff6f6; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.btn { border: 1px solid #b7c3cb; background: #fff; padding: 8px 14px; border-radius: 8px; }
+.picture-drop-active { outline: 2px dashed currentColor; outline-offset: -4px; }
