@@ -64,6 +64,16 @@ export function aiNoGrant(vault, principal) {
 export const HAND_OFF_FAILED_NEXT = "Do not call this hand-off again with the same Agent. Tell the person which Agent could not take the work, and why.";
 const SIGN_IN_FAILED = "This computer could not sign in to GilbPlatform.";
 const AI_SIGN_IN_FAILED = "This AI could not sign in to GilbPlatform.";
+/** Waits between tries when the platform is restarting. They add up to 60 s. */
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000];
+/** A proxy or a restarting server answers these while it is down; none of them says the sign-in was wrong. */
+function isTransientStatus(status) {
+    return status === 502 || status === 503 || status === 504 || (status >= 520 && status <= 524);
+}
+/** The sentence for a platform that is down or restarting. `what` is the HTTP status or the network error. */
+function unreachableMessage(what) {
+    return `GilbPlatform is restarting or out of reach just now (${what}). Try again in a minute.`;
+}
 const WRITE_SCOPE_REFUSED = "The platform refused scope base.write, so this AI is using base.read. Writes will be refused until the platform accepts base.write.";
 /** Renew a machine session once it has less than this long to live. Matches the proof freshness window. */
 const RENEW_WITHIN_MS = 60_000;
@@ -164,6 +174,23 @@ class NotConnected extends Error {
         super(message);
         this.name = "NotConnected";
     }
+}
+/** The platform was down or restarting, not a refused sign-in: the next call may open again. */
+class PlatformDown extends NotConnected {
+}
+/** A network failure, as a short word for the person: the cause code if there is one. */
+function networkWhat(err) {
+    const cause = err instanceof Error ? err.cause : undefined;
+    const code = cause && typeof cause === "object" ? cause.code : undefined;
+    if (typeof code === "string" && /^[A-Z0-9_]{3,30}$/.test(code))
+        return code;
+    return "no answer";
+}
+/** The connection was refused or the host unknown: nothing reached a server, so a write was not run. */
+function neverArrived(err) {
+    const cause = err instanceof Error ? err.cause : undefined;
+    const code = cause && typeof cause === "object" ? cause.code : undefined;
+    return code === "ECONNREFUSED" || code === "ENOTFOUND";
 }
 const GILB_WHOAMI = {
     name: "gilbplatform_whoami",
@@ -1075,6 +1102,7 @@ export function startConnector(opts) {
     let userText = opts.userText !== undefined && opts.userText.trim() !== "" ? opts.userText : DEFAULT_USER_TEXT;
     const progressEveryMs = opts.progressEveryMs !== undefined && opts.progressEveryMs >= 5 ? opts.progressEveryMs : PROGRESS_EVERY_MS;
     const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
+    const retryDelays = opts.retryDelaysMs ?? RETRY_DELAYS_MS;
     const maxHops = opts.maxHops ?? MAX_HOPS_AT_ONCE;
     const selfFile = opts.selfFile ?? fileURLToPath(import.meta.url);
     const hopModel = opts.hopModel !== undefined && HOP_MODEL_RE.test(opts.hopModel) ? opts.hopModel : undefined;
@@ -1146,11 +1174,35 @@ export function startConnector(opts) {
         saidSignIn = true;
         process.stderr.write(line + "\n");
     }
+    /**
+     * Run a request again, with short waits, while the platform answers like a restart (network error or a 5xx from
+     * the proxy). `run` builds a fresh request each time (a proof is used once) and returns status 0 for a network
+     * error. `again` says whether a failure may be repeated; a write that may have run must not be.
+     */
+    async function retrying(run, again = () => true, signal) {
+        let result = await run();
+        for (const wait of retryDelays) {
+            if (!(result.status === 0 || isTransientStatus(result.status)) || !again(result) || signal?.aborted)
+                return result;
+            process.stderr.write(`gilb-connector: GilbPlatform is restarting or out of reach; trying again in ${Math.round(wait / 1000)} s.\n`);
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            if (signal?.aborted)
+                return result;
+            result = await run();
+        }
+        return result;
+    }
     // One open per process. A failure is remembered: the person restarts Claude Code after connecting.
+    // A platform that was down is not: the next call opens again.
     let opening = null;
     function credential() {
-        if (!opening)
-            opening = openCredential();
+        if (!opening) {
+            opening = openCredential().catch((err) => {
+                if (err instanceof PlatformDown)
+                    opening = null;
+                throw err;
+            });
+        }
         return opening;
     }
     async function openCredential() {
@@ -1261,21 +1313,27 @@ export function startConnector(opts) {
                 declaredOrigin: AI_DECLARED_ORIGIN,
                 clientDisplayName: aiDisplayName(displayName),
             };
-            let res;
-            try {
-                res = await fetch(url, {
-                    method: "POST",
-                    redirect: "manual",
-                    headers: { "content-type": "application/json", accept: "application/json" },
-                    body: JSON.stringify(body),
-                });
-            }
-            catch {
-                const message = "Registration failed: GilbPlatform could not be reached.";
+            const sent = await retrying(async () => {
+                try {
+                    const r = await fetch(url, {
+                        method: "POST",
+                        redirect: "manual",
+                        headers: { "content-type": "application/json", accept: "application/json" },
+                        body: JSON.stringify(body),
+                    });
+                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
+                }
+                catch (err) {
+                    return { status: 0, text: "", what: networkWhat(err) };
+                }
+            });
+            if (sent.status === 0 || isTransientStatus(sent.status)) {
+                const message = unreachableMessage(sent.what);
                 say(message);
-                throw new NotConnected(message);
+                throw new PlatformDown(message);
             }
-            const parsed = readJsonText(await res.text());
+            const res = { status: sent.status };
+            const parsed = readJsonText(sent.text);
             if (res.status < 200 || res.status >= 300) {
                 const message = registrationMessage(parsed);
                 say(message);
@@ -1291,32 +1349,38 @@ export function startConnector(opts) {
         }
         async function requestMachineToken(scope, allowFallback) {
             const tokenUrl = `${origin}/base/oauth/token`;
-            const assertion = clientAssertion(clientId, tokenUrl, privateKey);
-            const proof = dpopProof("POST", tokenUrl, privateKey, publicJwk);
-            const form = new URLSearchParams({
-                grant_type: "client_credentials",
-                client_assertion_type: CLIENT_ASSERTION_TYPE,
-                client_assertion: assertion,
-                scope,
-            });
-            let res;
-            try {
-                res = await fetch(tokenUrl, {
-                    method: "POST",
-                    redirect: "manual",
-                    headers: {
-                        "content-type": "application/x-www-form-urlencoded",
-                        accept: "application/json",
-                        dpop: proof,
-                    },
-                    body: form.toString(),
+            const sent = await retrying(async () => {
+                // A fresh assertion and proof each try: the door refuses a used jti.
+                const form = new URLSearchParams({
+                    grant_type: "client_credentials",
+                    client_assertion_type: CLIENT_ASSERTION_TYPE,
+                    client_assertion: clientAssertion(clientId, tokenUrl, privateKey),
+                    scope,
                 });
+                try {
+                    const r = await fetch(tokenUrl, {
+                        method: "POST",
+                        redirect: "manual",
+                        headers: {
+                            "content-type": "application/x-www-form-urlencoded",
+                            accept: "application/json",
+                            dpop: dpopProof("POST", tokenUrl, privateKey, publicJwk),
+                        },
+                        body: form.toString(),
+                    });
+                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
+                }
+                catch (err) {
+                    return { status: 0, text: "", what: networkWhat(err) };
+                }
+            });
+            if (sent.status === 0 || isTransientStatus(sent.status)) {
+                const message = unreachableMessage(sent.what);
+                say(message);
+                throw new PlatformDown(message);
             }
-            catch {
-                say(AI_SIGN_IN_FAILED);
-                throw new NotConnected(AI_SIGN_IN_FAILED);
-            }
-            const parsed = readJsonText(await res.text());
+            const res = { status: sent.status };
+            const parsed = readJsonText(sent.text);
             const errorCode = parsed && typeof parsed === "object" ? parsed.error : undefined;
             if (allowFallback && scope === "base.write" && res.status === 400 && errorCode === "invalid_scope") {
                 if (!saidScope) {
@@ -1374,18 +1438,24 @@ export function startConnector(opts) {
         async function firstUse() {
             const url = `${origin}/base/e/first-use`;
             const once = async () => {
-                const headers = await authHeaders("GET", url);
-                headers.accept = "application/json";
-                let res;
-                try {
-                    res = await fetch(url, { method: "GET", headers, redirect: "manual" });
+                const sent = await retrying(async () => {
+                    const headers = await authHeaders("GET", url);
+                    headers.accept = "application/json";
+                    try {
+                        const r = await fetch(url, { method: "GET", headers, redirect: "manual" });
+                        await r.text();
+                        return { status: r.status, what: `HTTP ${r.status}` };
+                    }
+                    catch (err) {
+                        return { status: 0, what: networkWhat(err) };
+                    }
+                });
+                if (sent.status === 0 || isTransientStatus(sent.status)) {
+                    const message = unreachableMessage(sent.what);
+                    say(message);
+                    throw new PlatformDown(message);
                 }
-                catch {
-                    say("GilbPlatform could not be reached.");
-                    throw new NotConnected("GilbPlatform could not be reached.");
-                }
-                await res.text();
-                return res.status;
+                return sent.status;
             };
             let status = await once();
             if (status === 401) {
@@ -1407,7 +1477,12 @@ export function startConnector(opts) {
             body.contentVaultIds = ids;
         return body;
     }
-    async function postPlatform(url, payload, signal) {
+    /**
+     * `repeatable`: a read, so a restart's 5xx or network error may be tried again. Any other call is tried again
+     * only when the connection was refused, which proves nothing reached the server and nothing ran.
+     */
+    async function postPlatform(url, payload, signal, repeatable = false) {
+        let lastNetwork = null;
         const send = async () => {
             const cred = await credential();
             if (signal?.aborted)
@@ -1440,15 +1515,25 @@ export function startConnector(opts) {
             catch (err) {
                 if (signal?.aborted)
                     throw err;
-                throw new PlatformError(0, "GilbPlatform could not be reached.");
+                lastNetwork = err;
+                return { status: 0, body: null };
             }
+            lastNetwork = null;
             return { status: res.status, body: readJsonText(await res.text()) };
         };
-        let res = await send();
+        const settle = async () => {
+            const out = await retrying(send, (r) => (repeatable ? true : r.status === 0 && neverArrived(lastNetwork)), signal);
+            if (out.status === 0)
+                throw new PlatformError(0, unreachableMessage(networkWhat(lastNetwork)));
+            if (repeatable && isTransientStatus(out.status))
+                throw new PlatformError(out.status, unreachableMessage(`HTTP ${out.status}`));
+            return out;
+        };
+        let res = await settle();
         if (res.status === 401 && !signal?.aborted) {
             const cred = await credential();
             cred.dropAccess?.();
-            res = await send();
+            res = await settle();
         }
         if (res.status === 401)
             throw new PlatformError(401, "Your session needs to re-authorize — try again.");
@@ -1496,7 +1581,7 @@ export function startConnector(opts) {
             : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault, upload];
     }
     async function fetchContext(forAgent) {
-        const res = await postPlatform(contextUrl, turnFields(forAgent));
+        const res = await postPlatform(contextUrl, turnFields(forAgent), undefined, true);
         if (asMode === "ai" && res.status === 404) {
             const sentence = isVaultNamespace(reportedPrincipal) ? aiNoGrant(undefined, reportedPrincipal) : aiNotBound(aiClientId);
             say(sentence);
@@ -1928,7 +2013,7 @@ export function startConnector(opts) {
         autoSelectAttempted = true;
         let res;
         try {
-            res = await postPlatform(toolUrl, { ...turnFields(), name: "list_vaults", arguments: "{}" }, signal);
+            res = await postPlatform(toolUrl, { ...turnFields(), name: "list_vaults", arguments: "{}" }, signal, true);
         }
         catch (err) {
             if (signal.aborted || (err instanceof Error && err.name === "AbortError"))
