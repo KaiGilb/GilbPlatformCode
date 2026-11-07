@@ -273,18 +273,6 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
     expect(screen.getAllByRole("tab").filter((t) => t.getAttribute("aria-selected") === "true")).toHaveLength(1);
   });
 
-  it("Windows says it is not available yet and links a request mail (the host passes the address: the unit names no host)", async () => {
-    const user = userEvent.setup();
-    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
-    await user.click(tab("windows"));
-    const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("heading", { name: "Windows is not available yet" })).toBeInTheDocument();
-    expect(panel).toHaveTextContent("Claude Code cannot connect from a Windows computer yet. If you need it, ask us at support@gilb.com and we will tell you when it works.");
-    expect(screen.getByTestId("claude-code-windows-request")).toHaveAttribute("href", "mailto:support@gilb.com?subject=Claude%20Code%20on%20Windows");
-    expect(screen.queryByTestId("claude-code-command")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /I've started it/ })).not.toBeInTheDocument();
-  });
-
   it("Linux shows only the one-session command and the terminal-window code line", async () => {
     const user = userEvent.setup();
     renderIt();
@@ -430,24 +418,13 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
     expect(one.querySelectorAll("ul.gcc-list > li")).toHaveLength(2);
   });
-
-  it("Windows: unchanged, only the not-available panel, no browser item", async () => {
-    const user = userEvent.setup();
-    renderIt();
-    await user.click(tab("windows"));
-    const panel = screen.getByRole("tabpanel");
-    expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "1 · Before you start" })).not.toBeInTheDocument();
-    expect(panel).not.toHaveTextContent("browser");
-    expect(panel).toHaveTextContent("Claude Code cannot connect from a Windows computer yet. If you need it, ask us at support@gilb.com and we will tell you when it works.");
-  });
 });
 
 describe("<ClaudeCodeConnect> allow hint in step 3", () => {
   const ALLOW_AFTER =
     "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
 
-  it.each(["mac", "linux"] as const)("%s: shown with exact text when the bridge check fails, absent before", async (sys) => {
+  it.each(["mac", "linux", "windows"] as const)("%s: shown with exact text when the bridge check fails, absent before", async (sys) => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
@@ -960,5 +937,101 @@ describe("isBraveBrowser", () => {
       },
     };
     expect(isBraveBrowser(nav)).toBe(false);
+  });
+});
+
+describe("<ClaudeCodeConnect> Windows tab", () => {
+  const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
+  const renderWin = async (extra: { supportEmail?: string } = {}) => {
+    const user = userEvent.setup();
+    render(<ClaudeCodeConnect relayBrowser={false} braveBrowser={false} client={client()} commands={commands} onConnected={() => {}} {...extra} />);
+    await user.click(tab("windows"));
+    return user;
+  };
+  const EARLY = "Windows is new. It works on Windows test machines but has not yet been tried by a person on their own PC. If something does not work, write to support@gilb.com and we will help.";
+
+  it("opens with the early notice, with a mailto link when the host gives an address", async () => {
+    await renderWin({ supportEmail: "support@gilb.com" });
+    const panel = screen.getByRole("tabpanel");
+    const early = within(panel).getByTestId("claude-code-windows-early");
+    expect(early.textContent).toBe(EARLY);
+    expect(panel.firstElementChild).toBe(early);
+    expect(screen.getByTestId("claude-code-windows-request")).toHaveAttribute("href", "mailto:support@gilb.com?subject=Claude%20Code%20on%20Windows");
+  });
+
+  it("without an address the notice has no link and no host", async () => {
+    await renderWin();
+    expect(screen.getByTestId("claude-code-windows-early").textContent).toBe(
+      "Windows is new. It works on Windows test machines but has not yet been tried by a person on their own PC. If something does not work, ask us and we will help.",
+    );
+    expect(screen.queryByTestId("claude-code-windows-request")).not.toBeInTheDocument();
+  });
+
+  it("section 1 has the exact Windows texts and says PowerShell, never Terminal", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    render(<ClaudeCodeConnect relayBrowser={false} braveBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
+    await user.click(tab("windows"));
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    expect(screen.getByTestId("claude-code-windows-browser").textContent).toBe("Use Chrome on Windows. Edge and Brave use the same engine as Chrome but have not been tried on Windows yet.");
+    expect(screen.getByTestId("claude-code-windows-open").textContent).toBe("You will paste commands into PowerShell. To open it: press the Windows key, type PowerShell, and press Enter.");
+    expect(one).toHaveTextContent("Claude Code for Windows, signed in with your Claude subscription. Install it from Anthropic's setup page (code.claude.com/docs/en/setup), then sign in once in PowerShell:");
+    expect(within(one).getByRole("link", { name: "code.claude.com/docs/en/setup" })).toHaveAttribute("href", "https://code.claude.com/docs/en/setup");
+    expect(one).toHaveTextContent("Node.js 18 or newer, the free program that runs the bridge. To check, type this in PowerShell; it should show v18 or higher:");
+    expect(one).toHaveTextContent("Get it from nodejs.org if it is missing (choose the LTS Windows installer).");
+    expect(one).toHaveTextContent("It is billed to your Claude subscription, and your turns stay on your computer.");
+    expect(screen.getByTestId("claude-code-windows-allow").textContent).toBe("When you pair, Chrome may ask to let this page use apps on this device. Choose Allow.");
+    expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("Terminal");
+    await user.click(within(one).getByRole("button", { name: "Copy sign-in command" }));
+    expect(writeText).toHaveBeenCalledWith("claude auth login");
+  });
+
+  it("section 2 shows the Windows install and start commands, and Copy copies them", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
+    await user.click(tab("windows"));
+    const two = screen.getByRole("group", { name: "2 · Start the bridge on your computer" });
+    expect(two).toHaveTextContent("Option Always On");
+    expect(two).toHaveTextContent("Paste this once in PowerShell. It starts by itself each time you log in.");
+    expect(two).toHaveTextContent("Option One Session");
+    expect(two).toHaveTextContent("Paste this in PowerShell and keep that window open. It shows your pairing code.");
+    expect(screen.getByTestId("claude-code-install-command").textContent).toBe(commands.windows.install);
+    expect(screen.getByTestId("claude-code-command").textContent).toBe(commands.windows.start);
+    expect(two).not.toHaveTextContent("&&");
+    await user.click(screen.getByTestId("claude-code-install-copy"));
+    expect(writeText).toHaveBeenCalledWith(commands.windows.install);
+  });
+
+  it("section 3 has the Windows code lines and the exact node note", async () => {
+    await renderWin();
+    const three = screen.getByRole("group", { name: "3 · Enter your pairing code" });
+    expect(three).toHaveTextContent("Option Always On: get your code by pasting this in PowerShell.");
+    expect(screen.getByTestId("claude-code-code-command").textContent).toBe(commands.windows.code);
+    expect(screen.getByTestId("claude-code-node-note").textContent).toBe("Type it exactly, starting with node.");
+    expect(three).toHaveTextContent("Option One Session: the code is shown in the PowerShell window.");
+  });
+
+  it("not reachable: says PowerShell window, shows the Windows start command and the Allow hint", async () => {
+    const user = await renderWin();
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await toCodeBox(user);
+    const hint = await screen.findByTestId("claude-code-bridge-hint");
+    expect(hint).toHaveTextContent("Not reachable on this computer yet. Check the PowerShell window is still open, then check again. The command is:");
+    expect(hint).toHaveTextContent(commands.windows.start);
+    expect(hint.textContent).not.toContain("&&");
+    expect(hint).toContainElement(screen.getByTestId("claude-code-allow-hint"));
+    expect(screen.getByTestId("claude-code-windows-early")).toBeInTheDocument();
+  });
+
+  it("the Mac and Linux tabs show no Windows text and keep the Mac commands", async () => {
+    const user = userEvent.setup();
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
+    expect(screen.getByTestId("claude-code-command").textContent).toBe(commands.start);
+    expect(screen.queryByTestId("claude-code-windows-early")).not.toBeInTheDocument();
+    await user.click(tab("linux"));
+    expect(screen.getByTestId("claude-code-command").textContent).toBe(commands.start);
+    expect(screen.getByRole("tabpanel")).not.toHaveTextContent("PowerShell");
   });
 });

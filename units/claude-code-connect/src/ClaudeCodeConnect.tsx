@@ -121,6 +121,11 @@ const ALLOW_BEFORE_PAIR = "When you pair, your browser may ask to let this page 
 const ALLOW_AFTER_BLOCK =
   "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
 
+export const WINDOWS_EARLY_NOTICE = "Windows is new. It works on Windows test machines but has not yet been tried by a person on their own PC. If something does not work,";
+const WINDOWS_BROWSER_SENTENCE = "Use Chrome on Windows. Edge and Brave use the same engine as Chrome but have not been tried on Windows yet.";
+const WINDOWS_OPEN_POWERSHELL = "You will paste commands into PowerShell. To open it: press the Windows key, type PowerShell, and press Enter.";
+const WINDOWS_ALLOW_SENTENCE = "When you pair, Chrome may ask to let this page use apps on this device. Choose Allow.";
+
 const SYSTEMS: { id: ClaudeCodeSystem; label: string }[] = [
   { id: "mac", label: "Mac" },
   { id: "windows", label: "Windows" },
@@ -135,7 +140,7 @@ export interface ClaudeCodeConnectProps {
   onConnected: (readback: ClaudeCodeReadback) => void;
   /** Where to show errors. When omitted the component shows them itself, under the form. Called with null to clear. */
   onError?: (message: string | null) => void;
-  /** Where a person asks for Windows support. The host passes it (this unit names no host); without it the Windows tab shows no mail link. */
+  /** Where a person writes if Windows does not work for them (the Windows early notice). The host passes it (this unit names no host); without it the Windows tab shows no mail link. */
   supportEmail?: string;
   /** Browsers shown as supported on the Mac tab. Optional; defaults to `SUPPORTED_BROWSERS`. */
   supportedBrowsers?: readonly string[];
@@ -263,7 +268,9 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     </div>
   );
 
-  const T = system === "linux" ? "terminal" : "Terminal";
+  const T = system === "linux" ? "terminal" : system === "windows" ? "PowerShell" : "Terminal";
+  const win = system === "windows";
+  const startCmd = win ? commands.windows.start : commands.start;
 
   const selectSystem = (id: ClaudeCodeSystem) => {
     setSystem(id);
@@ -300,7 +307,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         {bridgeUp === false && !isRelay ? (
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
             Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
-            <code className="gcc-mono gcc-break">{commands.start}</code>{" "}
+            <code className="gcc-mono gcc-break">{startCmd}</code>{" "}
             {isBrave ? null : <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>}
           </p>
         ) : null}
@@ -367,12 +374,12 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
           "code",
           "3 · Enter your pairing code",
           <>
-            <p className="gcc-text">Option Always On: get your code by pasting this in Terminal.</p>
-            {cmdBox({ text: commands.code, testId: "claude-code-code-command", copyLabel: "Copy code command", copiedFlag: copiedCode, onCopied: () => setCopiedCode(true) })}
+            <p className="gcc-text">Option Always On: get your code by pasting this in {T}.</p>
+            {cmdBox({ text: win ? commands.windows.code : commands.code, testId: "claude-code-code-command", copyLabel: "Copy code command", copiedFlag: copiedCode, onCopied: () => setCopiedCode(true) })}
             <p className="gcc-note" data-testid="claude-code-node-note">
-              Type it exactly, starting with node. Without node your Mac answers "Permission denied".
+              {win ? "Type it exactly, starting with node." : 'Type it exactly, starting with node. Without node your Mac answers "Permission denied".'}
             </p>
-            <p className="gcc-text">Option One Session: the code is shown in the Terminal window.</p>
+            <p className="gcc-text">Option One Session: the code is shown in the {T} window.</p>
             {codeEntry}
           </>,
         );
@@ -381,6 +388,12 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     "before",
     "1 · Before you start",
     <>
+      {win ? (
+        <>
+          <p className="gcc-text" data-testid="claude-code-windows-browser">{WINDOWS_BROWSER_SENTENCE}</p>
+          <p className="gcc-text" data-testid="claude-code-windows-open">{WINDOWS_OPEN_POWERSHELL}</p>
+        </>
+      ) : null}
       <p className="gcc-text">{system === "mac" ? "You need a supported browser and two programs on your computer:" : "You need two programs on your computer:"}</p>
       <ul className="gcc-list">
         {system === "mac" ? (
@@ -397,7 +410,19 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         ) : null}
         <li>
           <p className="gcc-text">
-            <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in {T}:
+            {win ? (
+              <>
+                <strong>Claude Code for Windows</strong>, signed in with your Claude subscription. Install it from Anthropic's setup page (
+                <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener noreferrer">
+                  code.claude.com/docs/en/setup
+                </a>
+                ), then sign in once in {T}:
+              </>
+            ) : (
+              <>
+                <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in {T}:
+              </>
+            )}
           </p>
           {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
         </li>
@@ -411,11 +436,12 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
               nodejs.org
             </a>{" "}
-            if it is missing.
+            if it is missing{win ? " (choose the LTS Windows installer)." : "."}
           </p>
         </li>
       </ul>
       <p className="gcc-text">It is billed to your Claude subscription, and your turns stay on your computer.</p>
+      {win ? <p className="gcc-text" data-testid="claude-code-windows-allow">{WINDOWS_ALLOW_SENTENCE}</p> : null}
     </>,
   );
 
@@ -423,7 +449,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     <div className="gcc-choice">
       <p className="gcc-choice__title">Option One Session</p>
       <p className="gcc-text">Paste this in {T} and keep that window open. It shows your pairing code.</p>
-      {cmdBox({ text: commands.start, testId: "claude-code-command", copiedFlag: copied, onCopied: () => setCopied(true) })}
+      {cmdBox({ text: startCmd, testId: "claude-code-command", copiedFlag: copied, onCopied: () => setCopied(true) })}
     </div>
   );
 
@@ -435,9 +461,9 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
       <div className="gcc-choices">
         <div className="gcc-choice">
           <p className="gcc-choice__title">Option Always On</p>
-          <p className="gcc-text">Paste this once in Terminal. It starts by itself each time you log in.</p>
+          <p className="gcc-text">Paste this once in {T}. It starts by itself each time you log in.</p>
           {cmdBox({
-            text: commands.install,
+            text: win ? commands.windows.install : commands.install,
             testId: "claude-code-install-command",
             copyTestId: "claude-code-install-copy",
             copyLabel: "Copy always-on command",
@@ -452,30 +478,36 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
 
   const sectionTwoLinux = section("start", "2 · Start the bridge on your computer", oneSession);
 
-  const windowsPanel = section(
-    "windows",
-    "Windows is not available yet",
-    <p className="gcc-text">
-      Claude Code cannot connect from a Windows computer yet. If you need it, ask us
-      {supportEmail ? (
-        <>
-          {" "}at{" "}
-          <a href={`mailto:${supportEmail}?subject=Claude%20Code%20on%20Windows`} data-testid="claude-code-windows-request">
-            {supportEmail}
-          </a>
-        </>
-      ) : null}{" "}
-      and we will tell you when it works.
-    </p>,
+  const windowsEarly = (
+    <div className="gcc-note" data-testid="claude-code-windows-early">
+      <p className="gcc-text">
+        <strong>
+          {WINDOWS_EARLY_NOTICE}
+          {supportEmail ? (
+            <>
+              {" write to "}
+              <a href={`mailto:${supportEmail}?subject=Claude%20Code%20on%20Windows`} data-testid="claude-code-windows-request">
+                {supportEmail}
+              </a>
+            </>
+          ) : (
+            " ask us"
+          )}
+          {" and we will help."}
+        </strong>
+      </p>
+    </div>
   );
 
   const panelBody =
-    system === "windows" ? (
-      windowsPanel
-    ) : stage === "code" ? (
-      sectionThree
+    stage === "code" ? (
+      <>
+        {win ? windowsEarly : null}
+        {sectionThree}
+      </>
     ) : (
       <>
+        {win ? windowsEarly : null}
         {sectionOne}
         {system === "linux" ? sectionTwoLinux : sectionTwoMac}
         {sectionThree}
