@@ -8,7 +8,7 @@ Uploads picture bytes to a vault's file door with a request signed for that vaul
 
 - `UploadTarget`: `{ vaultOrigin, vaultRoot, folder }`.
 - `uploadUrl(filename, target)`: `<vaultOrigin>/lws/vault/<encoded vaultRoot>/files?name=<encoded filename>&folder=<encoded folder>`. For `vaultOrigin` `https://example.test`, `vaultRoot` `https://example.test/vault`, folder `a b` and filename `x y.jpg` it is `https://example.test/lws/vault/https%3A%2F%2Fexample.test%2Fvault/files?name=x%20y.jpg&folder=a%20b`.
-- `uploadPicture(blob, filename, target)`: `PUT` to that address with the headers of `dpopWriteAuth("PUT", url)` (peer `lws-session-bridge`), `content-type: image/jpeg`, the blob as the body, and `credentials: "omit"`. It answers the `entity` the vault names. 201 (new) and 200 (identical re-upload) are both success.
+- `uploadPicture(blob, filename, target)`: `PUT` to that address with the headers of `dpopWriteAuth("PUT", url)` (peer `lws-session-bridge`), `content-type` (the blob's own type when it starts with `image/`, else `image/jpeg`), the blob as the body, and `credentials: "omit"`. It answers the `entity` the vault names. 201 (new) and 200 (identical re-upload) are both success.
 - What it throws, by status. The body is read once, right after the 401 check, for every status other than 200 and 201.
   - 401: `invalidateDpop()` and `NotSignedInError` (from `lws-session-bridge`); no body read.
   - 403: `NoAccessError` (from `refusal-detail`) with the server's sentence (`serverReasonOrNull`, peer `lws-records`) and a `RefusalDetail` `{ method: "PUT", path, status: 403, sentence }`.
@@ -73,7 +73,7 @@ Also: the peers `lws-session-bridge` (set up so `dpopWriteAuth` can sign), `lws-
 
 ## Wrong readings
 
-- "The content type follows the blob." It is always `image/jpeg`, whatever the blob is. Re-encode with `picture-shrink` first.
+- "The content type is always image/jpeg." Since 0.2.0 it follows the blob when the blob's type starts with `image/` (a WebP from `picture-shrink` is sent as `image/webp`); a blob with no type or a non-image type is sent as `image/jpeg`, the 0.1.0 value.
 - "A 200 means something went wrong." A 200 for an identical re-upload is success: the vault de-duplicates, and answers the existing entity.
 - "`vaultRoot` can be derived." It must come from the vault list. A wrong root is refused by the platform (a 400 that names the right root), and arrives here as a `PictureUploadError`.
 - "A 503 is always the platform." The edge in front of the vault also answers 503 with an HTML page; that is why the warning keeps the first 300 characters of the body.
@@ -95,6 +95,12 @@ Named changes, and only these:
 
 `src/index.ts` is new. Everything else is as in the source: method `PUT`, the headers, `credentials: "omit"`, the keepalive comment, 401 giving `invalidateDpop()` and `NotSignedInError`, 200 and 201 accepted, the `entity` check and its message.
 
+## Changes in 0.2.0
+
+Changes in 0.2.0, and only this:
+
+- U4. In `uploadPicture` the header `"content-type": "image/jpeg"` is now `blob.type && blob.type.startsWith("image/") ? blob.type : "image/jpeg"`. For a JPEG blob (every 0.1.0 caller, whose blobs come from `picture-shrink`) the request is byte-identical (pinned). A WebP blob sends `image/webp`. A 0.1.0 test that pinned `image/jpeg` for a PNG blob now pins `image/png`; that is the change.
+
 ## Tests
 
-41 tests in 3 files. The source app's `test/plants.test.ts:259` (a 200 as well as a 201 answers the entity) runs on its own fake vault and is re-expressed here, not ported. New, written for this unit: the exact address; 201 and 200 answering the entity; 200 with no, empty or non-string entity; the request (method, headers, content type, body, `credentials: "omit"`); 401 (one `invalidateDpop`, no body read); 403 (sentence and detail, an unreadable body); 502, 503 and 504 (status, the warning line, the 300-character cut, an unreadable body); 500 with `boom`; a 5000-character body kept to 2000; the body read at most once. `lws-session-bridge`'s signing is replaced by a fake; `lws-records` and `refusal-detail` are the real ones. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
+46 tests in 3 files (41 in 0.1.0; 0.2.0 replaces one test with six for the content type). The source app's `test/plants.test.ts:259` (a 200 as well as a 201 answers the entity) runs on its own fake vault and is re-expressed here, not ported. New, written for this unit: the exact address; 201 and 200 answering the entity; 200 with no, empty or non-string entity; the request (method, headers, content type, body, `credentials: "omit"`); 401 (one `invalidateDpop`, no body read); 403 (sentence and detail, an unreadable body); 502, 503 and 504 (status, the warning line, the 300-character cut, an unreadable body); 500 with `boom`; a 5000-character body kept to 2000; the body read at most once. `lws-session-bridge`'s signing is replaced by a fake; `lws-records` and `refusal-detail` are the real ones. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
