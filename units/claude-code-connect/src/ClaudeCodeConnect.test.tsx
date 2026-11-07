@@ -3,7 +3,7 @@ import { render, screen, within, fireEvent, act, waitFor } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import { ClaudeCodeConnect, ClaudeCodeBadge, ClaudeCodeRelayButton, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
-import { defaultSystem, isRelayBrowser } from "./ClaudeCodeConnect";
+import { defaultSystem, isRelayBrowser, isBraveBrowser } from "./ClaudeCodeConnect";
 
 const PRINCIPAL = "https://pelle.example/base";
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -56,7 +56,7 @@ describe("bridgeCommands", () => {
 
 describe("<ClaudeCodeConnect>", () => {
   it("opens on the instruction step with both commands, and does not probe yet", () => {
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     const steps = screen.getByTestId("claude-code-steps");
     expect(steps).toHaveTextContent("Claude subscription");
     expect(steps).toHaveTextContent("claude auth login");
@@ -72,7 +72,7 @@ describe("<ClaudeCodeConnect>", () => {
   it("Copy puts exactly the one-off command, and Copy always-on exactly the install command, on the clipboard", async () => {
     const user = userEvent.setup();
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await user.click(screen.getByRole("button", { name: "Copy" }));
     expect(writeText).toHaveBeenLastCalledWith(commands.start);
     await user.click(screen.getByRole("button", { name: "Copy always-on command" }));
@@ -82,7 +82,7 @@ describe("<ClaudeCodeConnect>", () => {
   it("with no bridge running it shows the command, and Check again clears the hint once the bridge answers", async () => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     expect(await screen.findByTestId("claude-code-bridge-hint")).toHaveTextContent(commands.start);
     fetchMock.mockResolvedValue(json(200, { bridge: "gilb-claude-code-bridge" }));
@@ -97,7 +97,7 @@ describe("<ClaudeCodeConnect>", () => {
     const c = client();
     const onConnected = vi.fn<(r: ClaudeCodeReadback) => void>();
     fetchMock.mockImplementation(async (url: string) => (url.endsWith("/v1/hello") ? json(200, { bridge: "gilb-claude-code-bridge" }) : json(200, { secret: "sec" })));
-    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={onConnected} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={c} commands={commands} onConnected={onConnected} />);
     await toCodeBox(user);
     await user.type(await screen.findByLabelText("Code from the bridge terminal"), "K7F-29Q");
     await user.click(screen.getByRole("button", { name: "Pair" }));
@@ -113,7 +113,7 @@ describe("<ClaudeCodeConnect>", () => {
     const user = userEvent.setup();
     const c = client();
     fetchMock.mockImplementation(async (url: string) => (url.endsWith("/v1/hello") ? json(200, { bridge: "gilb-claude-code-bridge" }) : json(401, { error: "That code is not right." })));
-    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={c} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     await user.type(await screen.findByLabelText("Code from the bridge terminal"), "AAA-AAA");
     await user.click(screen.getByRole("button", { name: "Pair" }));
@@ -126,7 +126,7 @@ describe("<ClaudeCodeConnect>", () => {
     const user = userEvent.setup();
     const onError = vi.fn();
     fetchMock.mockImplementation(async (url: string) => (url.endsWith("/v1/hello") ? json(200, { bridge: "gilb-claude-code-bridge" }) : json(401, { error: "That code is not right." })));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} onError={onError} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} onError={onError} />);
     await toCodeBox(user);
     await user.type(await screen.findByLabelText("Code from the bridge terminal"), "AAA-AAA");
     await user.click(screen.getByRole("button", { name: "Pair" }));
@@ -136,7 +136,7 @@ describe("<ClaudeCodeConnect>", () => {
 
   it("an app's own Button component is used for every button", () => {
     const Button = ({ variant, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => <button data-my-button={variant} {...rest} />;
-    const { container } = render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} Button={Button} />);
+    const { container } = render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} Button={Button} />);
     expect(container.querySelectorAll("button")).toHaveLength(9);
     expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(5);
     expect(container.querySelectorAll(".gcc-btn")).toHaveLength(0);
@@ -144,7 +144,7 @@ describe("<ClaudeCodeConnect>", () => {
 });
 
 describe("<ClaudeCodeConnect> sections", () => {
-  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+  const renderIt = () => render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
 
   it("shows three separate groups with the exact headings", () => {
     renderIt();
@@ -186,7 +186,7 @@ describe("<ClaudeCodeConnect> sections", () => {
 });
 
 describe("<ClaudeCodeConnect> wording round CM2", () => {
-  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+  const renderIt = () => render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
 
   it("section 1 says signed in using Terminal, explains Node.js, links nodejs.org, and copies node --version", async () => {
     const user = userEvent.setup();
@@ -234,7 +234,7 @@ describe("defaultSystem", () => {
 });
 
 describe("<ClaudeCodeConnect> system tabs CM3", () => {
-  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+  const renderIt = () => render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
 
   it("shows three tabs in order Mac, Windows, Linux with the tabs wiring", () => {
@@ -275,7 +275,7 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
 
   it("Windows says it is not available yet and links a request mail (the host passes the address: the unit names no host)", async () => {
     const user = userEvent.setup();
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
     await user.click(tab("windows"));
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getByRole("heading", { name: "Windows is not available yet" })).toBeInTheDocument();
@@ -329,16 +329,25 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
 // Supported browsers (Kai, 2026-11-07), from a measurement on a Mac, 2026-11-05, bridge 0.1.6:
 // Chrome and Edge pass, Safari and Brave fail directly; Safari works through the bridge window. Mac tab only; Linux and Windows are not measured.
 describe("<ClaudeCodeConnect> supported browsers", () => {
-  const renderIt = () => render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
+  const renderIt = () => render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
-  const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
+  const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
   const SAFARI = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it. ";
-  const BROWSER_TEXT =
-    "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE;
+  const BRAVE = "Brave needs one setting, shown here when you open this page in Brave. ";
+  // DOM textContent joins list items with no space.
+  const BRAVE_BLOCK_TEXT = [
+    "Brave: allow it once yourself. Brave does not ask.",
+    "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+    "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+    "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
+    "Set Apps on device to Allow.",
+    "Go back to this tab. You can now pair.",
+  ].join("");
+  const BROWSER_TEXT = "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI + BRAVE + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
-    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge", "Safari"]);
-    expect(NOT_YET_BROWSERS).toEqual(["Brave"]);
+    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge", "Safari", "Brave"]);
+    expect(NOT_YET_BROWSERS).toEqual([]);
   });
 
   it("Mac: section 1 leads with a supported browser, and the browser item is first with exactly the text", () => {
@@ -348,11 +357,42 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(one).not.toHaveTextContent("You need two programs on your computer:");
     const item = screen.getByTestId("claude-code-supported-browsers");
     expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(BROWSER_TEXT);
-    expect(within(item).getByText("Supported browsers: Chrome, Edge and Safari.").tagName).toBe("STRONG");
+    expect(within(item).getByText("Supported browsers: Chrome, Edge, Safari and Brave.").tagName).toBe("STRONG");
     const items = one.querySelectorAll("ul.gcc-list > li");
     expect(items).toHaveLength(3);
     expect(items[0]).toBe(item);
     expect(item).not.toHaveTextContent("Gilb");
+  });
+
+  it("Mac, not Brave: the item has the short Brave sentence and no steps block", () => {
+    renderIt();
+    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent(BRAVE.trim());
+    expect(screen.queryByTestId("claude-code-brave-steps")).not.toBeInTheDocument();
+  });
+
+  it("Mac, Brave: the item shows the steps block (ordered list, 5 items, exact text, last step 'You can now pair'), not the short sentence", () => {
+    render(<ClaudeCodeConnect relayBrowser={false} braveBrowser client={client()} commands={commands} onConnected={() => {}} />);
+    const item = screen.getByTestId("claude-code-supported-browsers");
+    const block = within(item).getByTestId("claude-code-brave-steps");
+    expect(within(block).getByText("Brave: allow it once yourself. Brave does not ask.").tagName).toBe("STRONG");
+    const ol = block.querySelector("ol");
+    expect(ol).not.toBeNull();
+    expect(Array.from(ol!.querySelectorAll(":scope > li")).map((li) => li.textContent)).toEqual([
+      "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+      "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+      "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
+      "Set Apps on device to Allow.",
+      "Go back to this tab. You can now pair.",
+    ]);
+    expect(block.textContent).not.toContain("gilb.com");
+    expect(item).not.toHaveTextContent("Brave needs one setting");
+    expect(block.querySelector("ol")!.className).toBe("gcc-steps-list");
+    expect(block.querySelector(".gcc-list")).toBeNull();
+    expect(item).not.toHaveTextContent(ALLOW_BEFORE);
+    expect(item).not.toHaveTextContent("your browser may ask");
+    expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI.trim() + " " + BRAVE_BLOCK_TEXT,
+    );
   });
 
   it("Mac: the item carries the allow sentence, exact text", () => {
@@ -361,22 +401,23 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
   });
 
   it("an empty not-yet list drops the cannot-connect sentence", () => {
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={[]} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={[]} />);
     const text = screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim();
-    expect(text).toBe("Supported browsers: Chrome, Edge and Safari. " + SAFARI + ALLOW_BEFORE);
+    expect(text).toBe(BROWSER_TEXT);
     expect(text).not.toContain("cannot connect");
   });
 
   it("a one-item not-yet list reads 'it'", () => {
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Brave"]} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Brave"]} />);
     expect(screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE,
+      "Supported browsers: Chrome, Edge, Safari and Brave. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge, Safari or Brave. " + SAFARI + BRAVE + ALLOW_BEFORE,
     );
   });
 
   it("the supported list can be passed in", () => {
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} notYetBrowsers={["Brave"]} />);
     expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent("Supported browsers: Chrome. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome.");
+    expect(screen.getByTestId("claude-code-supported-browsers")).not.toHaveTextContent("In Brave, allow it once");
   });
 
   it("Linux: section 1 keeps the two-programs line and shows no browser item", async () => {
@@ -404,12 +445,12 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
 
 describe("<ClaudeCodeConnect> allow hint in step 3", () => {
   const ALLOW_AFTER =
-    "If your browser asked to let this page use apps and devices on your network, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
+    "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
 
   it.each(["mac", "linux"] as const)("%s: shown with exact text when the bridge check fails, absent before", async (sys) => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await user.click(screen.getByTestId(`claude-code-tab-${sys}`));
     expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
     await toCodeBox(user);
@@ -421,7 +462,7 @@ describe("<ClaudeCodeConnect> allow hint in step 3", () => {
   it("absent when the bridge answers", async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValue(json(200, { bridge: "gilb-claude-code-bridge" }));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     await screen.findByLabelText("Code from the bridge terminal");
     expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
@@ -436,7 +477,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
   it("when the bridge check says not reachable, the field, Pair and Check again are all there and the field takes typing", async () => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     expect(await screen.findByTestId("claude-code-bridge-hint")).toBeInTheDocument();
     const field = screen.getByLabelText("Code from the bridge terminal");
@@ -451,7 +492,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
   it("Check again keeps what the person typed", async () => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     await screen.findByTestId("claude-code-bridge-hint");
     await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
@@ -480,7 +521,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
       }
       return json(200, { secret: "sec" });
     });
-    render(<ClaudeCodeConnect client={c} commands={commands} onConnected={onConnected} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={c} commands={commands} onConnected={onConnected} />);
     await toCodeBox(user);
     await screen.findByTestId("claude-code-bridge-hint");
     await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
@@ -493,7 +534,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
   it("while the first check is still running, the field takes typing", async () => {
     const user = userEvent.setup();
     fetchMock.mockReturnValue(new Promise(() => {}));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     const field = screen.getByLabelText("Code from the bridge terminal");
     expect(field).toBeEnabled();
@@ -505,7 +546,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
   it("Pair is off while the field is empty", async () => {
     const user = userEvent.setup();
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     await screen.findByTestId("claude-code-bridge-hint");
     expect(screen.getByRole("button", { name: "Pair" })).toBeDisabled();
@@ -517,7 +558,7 @@ describe("<ClaudeCodeConnect> code field always shown", () => {
       if (String(url).endsWith("/v1/hello")) return hello();
       throw new TypeError("Failed to fetch");
     });
-    render(<ClaudeCodeConnect client={client()} commands={commands} onConnected={() => {}} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     await user.type(screen.getByLabelText("Code from the bridge terminal"), "K7F-29Q");
     await user.click(screen.getByRole("button", { name: "Pair" }));
@@ -573,7 +614,8 @@ function stubClient(over: { openRelay?: () => Promise<boolean>; directBlocked?: 
   return { c, calls, fire, listeners };
 }
 
-const RELAY_OFFER_TEXT = "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it).";
+const RELAY_OFFER_TEXT =
+  "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it). If the window says it cannot connect, check the bridge is running: paste the Option Always On command from step 2 again.";
 const RELAY_FAILED_TEXT =
   "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
 
@@ -589,6 +631,8 @@ describe("<ClaudeCodeConnect> bridge window block in step 3", () => {
     expect(block).toHaveTextContent(RELAY_OFFER_TEXT);
     expect(screen.getByTestId("claude-code-relay-open")).toHaveTextContent("Open bridge window");
     expect(screen.queryByTestId("claude-code-relay-failed")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
   });
 
   it("absent when the bridge answers", async () => {
@@ -777,6 +821,8 @@ describe("Safari-only wording follows the browser", () => {
     render(<ClaudeCodeConnect client={step.c} commands={commands} onConnected={() => {}} />);
     await toCodeBox(user);
     expect(await screen.findByTestId("claude-code-relay")).toHaveTextContent(RELAY_OFFER_TEXT);
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -803,6 +849,82 @@ describe("Safari-only wording follows the browser", () => {
     expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
   });
 
+  it("Chrome UA, failed check: generic hint and allow hint show, no relay block", async () => {
+    setUA(UA.chromeMac);
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    expect(await screen.findByTestId("claude-code-bridge-hint")).toHaveTextContent(commands.start);
+    expect(screen.getByTestId("claude-code-allow-hint")).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  });
+
+  const STEPS_CHECK = [
+    "In Brave's address bar, click the small icon with two sliders, at the far left just before this site's address.",
+    "In the panel that opens, click Site settings at the bottom. It opens in a new tab.",
+    "Scroll to the very bottom of that list and find Apps on device. (Not Local network, just above it: leave that one as it is.)",
+    "Set Apps on device to Allow.",
+    "Go back to this tab and click Check again.",
+  ];
+  const expectBraveStep3 = async () => {
+    const hint = await screen.findByTestId("claude-code-bridge-hint");
+    expect(hint).not.toHaveTextContent("If your browser asked");
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+    const block = screen.getByTestId("claude-code-brave-steps");
+    expect(block).toHaveTextContent("Brave: allow it once yourself. Brave does not ask.");
+    const items = block.querySelectorAll("ol > li");
+    expect(items).toHaveLength(5);
+    expect(Array.from(items).map((li) => li.textContent)).toEqual(STEPS_CHECK);
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  };
+
+  it("Brave (override), failed check: the steps block (last step Check again), no generic Allow sentence", async () => {
+    setUA(UA.chromeMac);
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect braveBrowser client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    await expectBraveStep3();
+  });
+
+  it("Brave detected from navigator.brave (no prop): Brave sentence", async () => {
+    setUA(UA.chromeMac);
+    Object.defineProperty(navigator, "brave", { value: { isBrave: () => Promise.resolve(true) }, configurable: true });
+    try {
+      const user = userEvent.setup();
+      const step = stubClient({ probe: async () => false });
+      render(<ClaudeCodeConnect client={step.c} commands={commands} onConnected={() => {}} />);
+      await toCodeBox(user);
+      await expectBraveStep3();
+    } finally {
+      delete (navigator as unknown as { brave?: unknown }).brave;
+    }
+  });
+
+  it("Chrome (braveBrowser={false}), failed check: the generic Allow sentence", async () => {
+    setUA(UA.chromeMac);
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect braveBrowser={false} client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const hint = await screen.findByTestId("claude-code-allow-hint");
+    expect(hint.textContent).toBe(
+      "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.",
+    );
+  });
+
+  it("Safari (relay) with braveBrowser: relay block only, no hint", async () => {
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect relayBrowser braveBrowser client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    expect(await screen.findByTestId("claude-code-relay")).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-brave-steps")).not.toBeInTheDocument();
+  });
+
   it("relayBrowser={false} overrides a Safari UA; relayBrowser={true} overrides a Chrome UA", async () => {
     setUA(UA.safari26Mac);
     const a = stubClient({ directBlocked: async () => true });
@@ -815,5 +937,28 @@ describe("Safari-only wording follows the browser", () => {
     const b = stubClient({ directBlocked: async () => true });
     render(<ClaudeCodeRelayButton client={b.c} relayBrowser />);
     await screen.findByTestId("claude-code-relay-bar");
+  });
+});
+
+describe("isBraveBrowser", () => {
+  it("true for navigator.brave with an isBrave function", () => {
+    expect(isBraveBrowser({ brave: { isBrave: () => Promise.resolve(true) } })).toBe(true);
+  });
+  it("false for {}, a brave object without isBrave, and null", () => {
+    expect(isBraveBrowser({})).toBe(false);
+    expect(isBraveBrowser({ brave: {} })).toBe(false);
+    expect(isBraveBrowser(null)).toBe(false);
+  });
+  it("false with no argument in jsdom (no navigator.brave)", () => {
+    expect(isBraveBrowser()).toBe(false);
+    expect(isBraveBrowser(undefined)).toBe(false);
+  });
+  it("false when reading throws", () => {
+    const nav = {
+      get brave(): never {
+        throw new Error("no");
+      },
+    };
+    expect(isBraveBrowser(nav)).toBe(false);
   });
 });
