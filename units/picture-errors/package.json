@@ -1,0 +1,50 @@
+{
+  "name": "@kaigilb/gilbplatformcode-picture-errors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pictureErrors.css": "./src/pictureErrors.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-picture-shrink": "file:../picture-shrink",
+    "@kaigilb/gilbplatformcode-picture-upload": "file:../picture-upload",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-refusal-detail": "file:../refusal-detail",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "axe-core": "^4.14.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-shrink": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0",
+    "@kaigilb/gilbplatformcode-refusal-detail": "^0.1.0",
+    "react": "^19.0.0"
+  }
+}
