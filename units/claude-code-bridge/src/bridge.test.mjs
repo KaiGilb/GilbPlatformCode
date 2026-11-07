@@ -56,7 +56,13 @@ afterEach(async () => {
 
 const runs = () =>
   fs.existsSync(logFile)
-    ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    ? fs.readFileSync(logFile, "utf8").trim().split("\n").flatMap((l) => {
+        try {
+          return [JSON.parse(l)];
+        } catch {
+          return []; // the stand-in is writing this line right now; the next read has it
+        }
+      })
     : [];
 
 // "claude was stopped". Off Windows the stand-in logs the SIGTERM it was sent. Windows has no SIGTERM to catch (the bridge ends the
