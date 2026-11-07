@@ -1,0 +1,39 @@
+{
+  "name": "@kaigilb/gilbplatformcode-signed-picture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out, lets only a few fetches run at once, and draws a React thumbnail that loads when it nears the screen.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../photo-ref",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
+    "@kaigilb/gilbplatformcode-photo-ref": "^0.1.0",
+    "react": "^19.0.0"
+  }
+}
