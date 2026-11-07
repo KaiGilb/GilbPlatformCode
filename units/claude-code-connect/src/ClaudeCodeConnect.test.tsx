@@ -3,7 +3,7 @@ import { render, screen, within, fireEvent, act, waitFor } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import { ClaudeCodeConnect, ClaudeCodeBadge, ClaudeCodeRelayButton, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
-import { defaultSystem, isRelayBrowser } from "./ClaudeCodeConnect";
+import { defaultSystem, isRelayBrowser, isBraveBrowser } from "./ClaudeCodeConnect";
 
 const PRINCIPAL = "https://pelle.example/base";
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -331,14 +331,14 @@ describe("<ClaudeCodeConnect> system tabs CM3", () => {
 describe("<ClaudeCodeConnect> supported browsers", () => {
   const renderIt = () => render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportEmail="support@gilb.com" />);
   const tab = (n: "mac" | "windows" | "linux") => screen.getByTestId(`claude-code-tab-${n}`);
-  const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
+  const ALLOW_BEFORE = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
   const SAFARI = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it. ";
-  const BROWSER_TEXT =
-    "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE;
+  const BRAVE = "In Brave, allow it once yourself: click the icon left of the address, open Site settings, and set Apps on device to Allow. ";
+  const BROWSER_TEXT = "Supported browsers: Chrome, Edge, Safari and Brave. " + SAFARI + BRAVE + ALLOW_BEFORE;
 
   it("the lists are the measured ones", () => {
-    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge", "Safari"]);
-    expect(NOT_YET_BROWSERS).toEqual(["Brave"]);
+    expect(SUPPORTED_BROWSERS).toEqual(["Chrome", "Edge", "Safari", "Brave"]);
+    expect(NOT_YET_BROWSERS).toEqual([]);
   });
 
   it("Mac: section 1 leads with a supported browser, and the browser item is first with exactly the text", () => {
@@ -348,11 +348,16 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
     expect(one).not.toHaveTextContent("You need two programs on your computer:");
     const item = screen.getByTestId("claude-code-supported-browsers");
     expect(item.textContent?.replace(/\s+/g, " ").trim()).toBe(BROWSER_TEXT);
-    expect(within(item).getByText("Supported browsers: Chrome, Edge and Safari.").tagName).toBe("STRONG");
+    expect(within(item).getByText("Supported browsers: Chrome, Edge, Safari and Brave.").tagName).toBe("STRONG");
     const items = one.querySelectorAll("ul.gcc-list > li");
     expect(items).toHaveLength(3);
     expect(items[0]).toBe(item);
     expect(item).not.toHaveTextContent("Gilb");
+  });
+
+  it("Mac: the item carries the Brave one-time step, exact text", () => {
+    renderIt();
+    expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent(BRAVE.trim());
   });
 
   it("Mac: the item carries the allow sentence, exact text", () => {
@@ -363,20 +368,21 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
   it("an empty not-yet list drops the cannot-connect sentence", () => {
     render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={[]} />);
     const text = screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim();
-    expect(text).toBe("Supported browsers: Chrome, Edge and Safari. " + SAFARI + ALLOW_BEFORE);
+    expect(text).toBe(BROWSER_TEXT);
     expect(text).not.toContain("cannot connect");
   });
 
   it("a one-item not-yet list reads 'it'", () => {
     render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} notYetBrowsers={["Brave"]} />);
     expect(screen.getByTestId("claude-code-supported-browsers").textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Supported browsers: Chrome, Edge and Safari. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge or Safari. " + SAFARI + ALLOW_BEFORE,
+      "Supported browsers: Chrome, Edge, Safari and Brave. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome, Edge, Safari or Brave. " + SAFARI + BRAVE + ALLOW_BEFORE,
     );
   });
 
   it("the supported list can be passed in", () => {
-    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} />);
+    render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} supportedBrowsers={["Chrome"]} notYetBrowsers={["Brave"]} />);
     expect(screen.getByTestId("claude-code-supported-browsers")).toHaveTextContent("Supported browsers: Chrome. Brave cannot connect to Claude Code yet. If you are in it, open this page in Chrome.");
+    expect(screen.getByTestId("claude-code-supported-browsers")).not.toHaveTextContent("In Brave, allow it once");
   });
 
   it("Linux: section 1 keeps the two-programs line and shows no browser item", async () => {
@@ -404,7 +410,7 @@ describe("<ClaudeCodeConnect> supported browsers", () => {
 
 describe("<ClaudeCodeConnect> allow hint in step 3", () => {
   const ALLOW_AFTER =
-    "If your browser asked to let this page use apps and devices on your network, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
+    "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
 
   it.each(["mac", "linux"] as const)("%s: shown with exact text when the bridge check fails, absent before", async (sys) => {
     const user = userEvent.setup();
@@ -819,6 +825,56 @@ describe("Safari-only wording follows the browser", () => {
     expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
   });
 
+  const BRAVE_HINT = "Brave does not ask. Click the icon left of the address, open Site settings, set Apps on device to Allow, then check again.";
+
+  it("Brave (override), failed check: Brave sentence exact, no generic one, no relay block", async () => {
+    setUA(UA.chromeMac);
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect braveBrowser client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const hint = await screen.findByTestId("claude-code-allow-hint");
+    expect(hint.textContent).toBe(BRAVE_HINT);
+    expect(screen.getByTestId("claude-code-bridge-hint")).not.toHaveTextContent("If your browser asked");
+    expect(screen.queryByTestId("claude-code-relay")).not.toBeInTheDocument();
+  });
+
+  it("Brave detected from navigator.brave (no prop): Brave sentence", async () => {
+    setUA(UA.chromeMac);
+    Object.defineProperty(navigator, "brave", { value: { isBrave: () => Promise.resolve(true) }, configurable: true });
+    try {
+      const user = userEvent.setup();
+      const step = stubClient({ probe: async () => false });
+      render(<ClaudeCodeConnect client={step.c} commands={commands} onConnected={() => {}} />);
+      await toCodeBox(user);
+      expect((await screen.findByTestId("claude-code-allow-hint")).textContent).toBe(BRAVE_HINT);
+    } finally {
+      delete (navigator as unknown as { brave?: unknown }).brave;
+    }
+  });
+
+  it("Chrome (braveBrowser={false}), failed check: the generic Allow sentence", async () => {
+    setUA(UA.chromeMac);
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect braveBrowser={false} client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    const hint = await screen.findByTestId("claude-code-allow-hint");
+    expect(hint.textContent).toBe(
+      "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.",
+    );
+  });
+
+  it("Safari (relay) with braveBrowser: relay block only, no hint", async () => {
+    const user = userEvent.setup();
+    const step = stubClient({ probe: async () => false });
+    render(<ClaudeCodeConnect relayBrowser braveBrowser client={step.c} commands={commands} onConnected={() => {}} />);
+    await toCodeBox(user);
+    expect(await screen.findByTestId("claude-code-relay")).toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-bridge-hint")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("claude-code-allow-hint")).not.toBeInTheDocument();
+  });
+
   it("relayBrowser={false} overrides a Safari UA; relayBrowser={true} overrides a Chrome UA", async () => {
     setUA(UA.safari26Mac);
     const a = stubClient({ directBlocked: async () => true });
@@ -831,5 +887,28 @@ describe("Safari-only wording follows the browser", () => {
     const b = stubClient({ directBlocked: async () => true });
     render(<ClaudeCodeRelayButton client={b.c} relayBrowser />);
     await screen.findByTestId("claude-code-relay-bar");
+  });
+});
+
+describe("isBraveBrowser", () => {
+  it("true for navigator.brave with an isBrave function", () => {
+    expect(isBraveBrowser({ brave: { isBrave: () => Promise.resolve(true) } })).toBe(true);
+  });
+  it("false for {}, a brave object without isBrave, and null", () => {
+    expect(isBraveBrowser({})).toBe(false);
+    expect(isBraveBrowser({ brave: {} })).toBe(false);
+    expect(isBraveBrowser(null)).toBe(false);
+  });
+  it("false with no argument in jsdom (no navigator.brave)", () => {
+    expect(isBraveBrowser()).toBe(false);
+    expect(isBraveBrowser(undefined)).toBe(false);
+  });
+  it("false when reading throws", () => {
+    const nav = {
+      get brave(): never {
+        throw new Error("no");
+      },
+    };
+    expect(isBraveBrowser(nav)).toBe(false);
   });
 });

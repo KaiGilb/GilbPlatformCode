@@ -48,14 +48,32 @@ export function detectRelayBrowser(): boolean {
 }
 
 /**
- * Browsers that pair with Claude Code, shown on the Mac tab. Measured on a Mac, 2026-11-05, bridge 0.1.6:
- * Chrome and Edge pass, Safari and Brave fail directly. Safari works through the bridge window (real Safari 26.5 spike,
- * 2026-11-07). Nothing else is measured; add a browser here only after it passes.
+ * True when the browser is Brave. Brave's user agent looks like Chrome, so this reads its documented API:
+ * `navigator.brave` is an object with an `isBrave` function. Default false when it cannot be read.
+ * Pass a navigator-like value to test; with none it reads the real `navigator`.
  */
-export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"];
-/** Browsers measured to fail (same measurement). */
-export const NOT_YET_BROWSERS: readonly string[] = ["Brave"];
+export function isBraveBrowser(nav?: unknown): boolean {
+  try {
+    const n = (nav === undefined ? (typeof navigator === "undefined" ? undefined : navigator) : nav) as { brave?: { isBrave?: unknown } } | null | undefined;
+    const b = n?.brave;
+    return typeof b === "object" && b !== null && typeof b.isBrave === "function";
+  } catch {
+    return false;
+  }
+}
 
+/**
+ * Browsers that pair with Claude Code, shown on the Mac tab. Measured on a Mac, 2026-11-05, bridge 0.1.6:
+ * Chrome and Edge pass. Safari works through the bridge window (real Safari 26.5 spike, 2026-11-07; a person paired
+ * and chatted through it the same day). Brave works once the person sets Apps on device to Allow in Site settings
+ * (a person on a Mac, 2026-11-07, bridge 0.1.7). Nothing else is measured; add a browser here only after it passes.
+ */
+export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari", "Brave"];
+/** Browsers measured to fail. None now. */
+export const NOT_YET_BROWSERS: readonly string[] = [];
+
+const BRAVE_ALLOW_ONCE = "In Brave, allow it once yourself: click the icon left of the address, open Site settings, and set Apps on device to Allow.";
+export const BRAVE_BLOCKED_HINT = "Brave does not ask. Click the icon left of the address, open Site settings, set Apps on device to Allow, then check again.";
 const SAFARI_WINDOW_SENTENCE = "In Safari, Claude Code works through a small bridge window that you open in step 3. Keep it open while you chat; you can minimise it.";
 export const RELAY_OFFER =
   "Safari only reaches the bridge through a small window. Open it, then keep it open while you chat (you can minimise it). If the window says it cannot connect, check the bridge is running: paste the Option Always On command from step 2 again.";
@@ -74,9 +92,9 @@ function orWords(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}`;
 }
 
-const ALLOW_BEFORE_PAIR = "When you pair, your browser may ask to let this page use apps and devices on your network. Choose Allow.";
+const ALLOW_BEFORE_PAIR = "When you pair, your browser may ask to let this page use apps on this device. Choose Allow.";
 const ALLOW_AFTER_BLOCK =
-  "If your browser asked to let this page use apps and devices on your network, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
+  "If your browser asked to let this page use apps on this device, choose Allow. If you chose Block, open the site settings (the icon left of the address) and allow it, then check again.";
 
 const SYSTEMS: { id: ClaudeCodeSystem; label: string }[] = [
   { id: "mac", label: "Mac" },
@@ -102,6 +120,8 @@ export interface ClaudeCodeConnectProps {
   Button?: ComponentType<ClaudeCodeButtonProps>;
   /** Whether this browser needs the bridge window (Safari). Optional; default is read from the user agent. For tests and hosts. */
   relayBrowser?: boolean;
+  /** Overrides Brave detection (`isBraveBrowser()`), for tests and hosts. */
+  braveBrowser?: boolean;
 }
 
 /**
@@ -110,8 +130,9 @@ export interface ClaudeCodeConnectProps {
  *   2. the code box: it looks for the bridge on this computer, then trades the typed code for the secret.
  * Rendering it IS choosing Claude Code, so mount it when the person picks that provider and unmount it on Cancel.
  */
-export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton, relayBrowser }: ClaudeCodeConnectProps): ReactElement {
+export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton, relayBrowser, braveBrowser }: ClaudeCodeConnectProps): ReactElement {
   const isRelay = relayBrowser ?? detectRelayBrowser();
+  const isBrave = braveBrowser ?? isBraveBrowser();
   const [stage, setStage] = useState<"steps" | "code">("steps");
   const [copied, setCopied] = useState(false);
   const [copiedAlways, setCopiedAlways] = useState(false);
@@ -255,7 +276,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
           <p className="gcc-text" data-testid="claude-code-bridge-hint">
             Not reachable on this computer yet. Check the {T} window is still open, then check again. The command is:{" "}
             <code className="gcc-mono gcc-break">{commands.start}</code>{" "}
-            <span data-testid="claude-code-allow-hint">{ALLOW_AFTER_BLOCK}</span>
+            <span data-testid="claude-code-allow-hint">{isBrave ? BRAVE_BLOCKED_HINT : ALLOW_AFTER_BLOCK}</span>
           </p>
         ) : null}
         {bridgeUp === false && isRelay ? (
@@ -343,7 +364,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
               {notYetBrowsers.length > 0
                 ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
                 : ""}{" "}
-              {SAFARI_WINDOW_SENTENCE} {ALLOW_BEFORE_PAIR}
+              {SAFARI_WINDOW_SENTENCE} {supportedBrowsers.includes("Brave") ? `${BRAVE_ALLOW_ONCE} ` : ""}{ALLOW_BEFORE_PAIR}
             </p>
           </li>
         ) : null}
