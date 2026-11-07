@@ -418,7 +418,7 @@ export type ClaudeLaunch = { ok: true; command: string; prefix: string[]; shown:
 
 /** Windows wording for "claude is not there". A bare name is never handed to the system, which would look in the current folder first. */
 export function claudeMissing() {
-  return "Claude Code was not found on this computer. Install Claude Code with Anthropic's Windows installer, log in with your Claude subscription (`claude auth login`), then start the bridge again.";
+  return "Claude Code is not installed on this computer (the `claude` command was not found). Install Claude Code with Anthropic's Windows installer, log in with your Claude subscription (`claude auth login`), then start the bridge again.";
 }
 
 export function refusedLaunch(found: string) {
