@@ -17,5 +17,5 @@
   ],
   "newFiles": [],
   "host": [],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:TextQuery.filter", "title": "Text filter / search (accent-insensitive)", "note": "Answers true or false for a word found anywhere in the text; it does not rank or highlight. For word-prefix search take search-tokens." }
 }

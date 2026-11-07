@@ -37,5 +37,5 @@
     { "member": "target", "replaces": "the app's settings read by uploadPicture, src/data/pictures.ts:84" },
     { "member": "sink.progress and sink.onProgress", "replaces": "the same parameters of uploadWithThumb, src/data/plants.ts:190; the host keeps the progress" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:ImageFile.set", "title": "Picture sizes upload and copy map", "note": "Remembers what was uploaded and linked, with resume; the upload itself is picture-upload, the shrinking picture-shrink, the retry save-queue." }
 }

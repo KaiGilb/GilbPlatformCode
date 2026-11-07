@@ -25,5 +25,5 @@
     { "member": "UploadTarget.vaultRoot", "replaces": "vaultNamespace(), src/config.ts:14, used at src/data/pictures.ts:84" },
     { "member": "UploadTarget.folder", "replaces": "the literal plant-pictures, src/data/pictures.ts:84" }
   ],
-  "library": { "admitted": false }
+  "library": { "admitted": true, "tag": "t:ImageFile.upload", "title": "Picture upload", "note": "Uploads bytes only; to make the sizes take picture-shrink, to upload and link all sizes with resume take picture-set." }
 }

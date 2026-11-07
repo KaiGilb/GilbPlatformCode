@@ -79,7 +79,5 @@
       "replaces": "the plain `item.src` load: `shownSrc.value = item.value.src` in `startLoad`, web-units/image-lightbox/src/LightboxViewer.vue:41 (optional; without it `item.src` is used)"
     }
   ],
-  "library": {
-    "admitted": false
-  }
+  "library": { "admitted": true, "tag": "t:ImageFile.view", "title": "Picture viewer (full screen, photo-app gestures)", "note": "Only shows pictures from URLs you give it; it does not shrink, sign or upload. For a signed thumbnail from a vault take signed-picture." }
 }
