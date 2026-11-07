@@ -306,7 +306,7 @@ async function notInstalledAndShim() {
     fs.rmSync(marker, { force: true });
     const r = BRIDGE_RUN(["--port", "47861"], { cwd, env, timeout: 20000 });
     say(`one session from the folder with the planted claude.exe: exit ${r.status}\n${r.stdout}${r.stderr}`);
-    check(r.status === 1 && /Claude Code was not found/.test(r.stderr + r.stdout) && /Windows installer/.test(r.stderr + r.stdout), "one session: refused with 'Claude Code was not found ... Windows installer'");
+    check(r.status === 1 && /Claude Code is not installed/.test(r.stderr + r.stdout) && /Windows installer/.test(r.stderr + r.stdout), "one session: refused with 'Claude Code is not installed ... Windows installer'");
     check(!fs.existsSync(marker) && !planted(), "the planted claude.exe in the current folder did NOT run (no marker, no claude.exe process)");
     check(!(await hello(47861)), "no bridge is listening");
     const i = BRIDGE_RUN(["--install", "--port", "47862", "--label", "e2e.plant"], { cwd, env, timeout: 20000 });
