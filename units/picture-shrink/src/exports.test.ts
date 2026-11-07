@@ -3,6 +3,6 @@ import * as unit from "./index";
 
 describe("the package's exports", () => {
   it("are exactly these values", () => {
-    expect(Object.keys(unit).sort()).toEqual(["PictureUnreadableError", "makePictures", "shrinkPicture"].sort());
+    expect(Object.keys(unit).sort()).toEqual(["HEIC_UNREADABLE", "PictureUnreadableError", "makePictureSet", "makePictures", "setHeicDecoder", "shrinkPicture", "webpSupported"].sort());
   });
 });

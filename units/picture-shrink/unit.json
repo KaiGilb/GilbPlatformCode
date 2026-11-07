@@ -2,8 +2,8 @@
   "schema": 1,
   "unit": "units/picture-shrink",
   "package": "@kaigilb/gilbplatformcode-picture-shrink",
-  "version": "0.1.0",
-  "purpose": "Reads a picture file once and makes upright JPEG copies no larger than the sizes you ask for, a 1600 px master and a 320 px thumbnail by default, never enlarged or cropped.",
+  "version": "0.2.0",
+  "purpose": "Reads a picture file once and makes upright copies no larger than the sizes you ask for: JPEG or WebP, a thumbnail, a screen copy and a full copy by default, never enlarged or cropped, with an optional host decoder for HEIC.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
     "commit": "e39e1732551d9d5e6abf681546b97a3a30311e30",
@@ -13,7 +13,10 @@
     ]
   },
   "namedChanges": [
-    "K1. the imports of pictures.ts (1-9) are not taken; PictureUnreadableError is local; decode and encodeJpeg stay unexported"
+    "K1. the imports of pictures.ts (1-9) are not taken; PictureUnreadableError is local; decode and encodeJpeg stay unexported",
+    "S1. encodeJpeg calls encode(d, maxEdge, quality, type) with image/jpeg, so the 0.1.0 paths give the same output; webpSupported() probes a 1x1 canvas once and remembers the answer",
+    "S2. makePictureSet(file, options?) answers thumb (320, q0.72), screen (1600, q0.82) and full (4096, q0.9; null when the original's longest edge is at most screen) from one decode; type image/jpeg, image/webp or auto",
+    "S3. setHeicDecoder(fn | null) and HEIC_UNREADABLE: when the browser fails on a HEIC file the app's decoder is tried once; a HEIC failure now says HEIC, every other failure keeps the 0.1.0 message"
   ],
   "newFiles": [
     "src/index.ts"

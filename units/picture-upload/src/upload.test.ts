@@ -102,9 +102,34 @@ describe("a stored picture", () => {
     expect(init.body).toBe(b);
     expect(dpopWriteAuth).toHaveBeenCalledWith("PUT", URL_OK);
   });
-  test("the content type is image/jpeg whatever the blob is", async () => {
+  test("a JPEG blob sends image/jpeg: the request is the 0.1.0 request", async () => {
+    fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
+    await uploadPicture(blob(), "a.jpg", target);
+    expect(fetchMock.mock.calls[0]![1].headers).toEqual({ authorization: "DPoP t-PUT", dpop: `proof-for-${uploadUrl("a.jpg", target)}`, "content-type": "image/jpeg" });
+  });
+  test("a WebP blob sends image/webp", async () => {
+    fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
+    await uploadPicture(new Blob(["x"], { type: "image/webp" }), "a.webp", target);
+    expect(fetchMock.mock.calls[0]![1].headers["content-type"]).toBe("image/webp");
+  });
+  test("another image type is sent as it is", async () => {
     fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
     await uploadPicture(new Blob(["x"], { type: "image/png" }), "a.png", target);
+    expect(fetchMock.mock.calls[0]![1].headers["content-type"]).toBe("image/png");
+  });
+  test("a blob with no type sends image/jpeg (the 0.1.0 value)", async () => {
+    fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
+    await uploadPicture(new Blob(["x"]), "a.jpg", target);
+    expect(fetchMock.mock.calls[0]![1].headers["content-type"]).toBe("image/jpeg");
+  });
+  test("a type that only starts like image (no slash) sends image/jpeg", async () => {
+    fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
+    await uploadPicture(new Blob(["x"], { type: "imagery/x" }), "a.jpg", target);
+    expect(fetchMock.mock.calls[0]![1].headers["content-type"]).toBe("image/jpeg");
+  });
+  test("a blob with a non-image type sends image/jpeg", async () => {
+    fetchMock.mockResolvedValue(once(201, '{"entity":"e"}').res);
+    await uploadPicture(new Blob(["x"], { type: "text/html" }), "a.jpg", target);
     expect(fetchMock.mock.calls[0]![1].headers["content-type"]).toBe("image/jpeg");
   });
   test("a success reads the body once, as json, and never as text", async () => {

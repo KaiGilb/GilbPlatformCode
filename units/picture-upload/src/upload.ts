@@ -27,7 +27,7 @@ export async function uploadPicture(blob: Blob, filename: string, target: Upload
   const url = uploadUrl(filename, target);
   const res = await fetch(url, {
     method: "PUT",
-    headers: { ...(await dpopWriteAuth("PUT", url)), "content-type": "image/jpeg" },
+    headers: { ...(await dpopWriteAuth("PUT", url)), "content-type": blob.type && blob.type.startsWith("image/") ? blob.type : "image/jpeg" },
     body: blob,
     credentials: "omit",
     // No keepalive: Chrome refuses a keepalive body over 64 KiB.
