@@ -1,6 +1,6 @@
 {
   "name": "pictures-example",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Pictures: a one-screen example app that gives a signed-in person the whole picture capability (add, see, view) by taking the picture units of this repository.",
