@@ -62,12 +62,17 @@ async function run() {
   const mcp = JSON.parse(arg("--mcp-config") ?? "{}");
   const server = mcp.mcpServers && mcp.mcpServers.GilbPlatform;
   if (server && server.command) {
-    text = await callFirstTool(server);
+    text = await callFirstTool(server, prompt.includes("EACHTOOL"));
+  }
+  // Opt-in for a hop whose tool ran and the run then failed. Default runs are unchanged.
+  if (prompt.includes("FAILAFTERTOOL")) {
+    out({ type: "result", subtype: "error", is_error: true, num_turns: 1, session_id: sessionId, result: "the hand-off broke after its tool" });
+    return;
   }
   out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
 }
 
-function callFirstTool(server) {
+function callFirstTool(server, every = false) {
   return new Promise((resolve, reject) => {
     const child = spawn(server.command, server.args ?? [], {
       env: server.env ?? process.env,
@@ -123,13 +128,19 @@ function callFirstTool(server) {
         await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fake", version: "0" } }, 1);
         child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
         const list = await rpc("tools/list", {}, 2);
-        const tool = list.result.tools[0];
-        if (!tool) throw new Error("hop connector listed no tools");
-        const call = await rpc("tools/call", { name: tool.name, arguments: { q: "x" } }, 3);
-        const text = call.result.content[0].text;
+        const tools = list.result.tools;
+        const chosen = every ? tools : tools.slice(0, 1);
+        if (chosen.length === 0) throw new Error("hop connector listed no tools");
+        const texts = [];
+        let nextId = 3;
+        for (const tool of chosen) {
+          const call = await rpc("tools/call", { name: tool.name, arguments: { q: "x" } }, nextId);
+          nextId += 1;
+          texts.push(call.result.content[0].text);
+        }
         child.stdin.end();
         await new Promise((res) => child.on("close", res));
-        resolve(text);
+        resolve(texts.join("\n"));
       } catch (err) {
         fail(err);
       }

@@ -28,7 +28,7 @@ const USE_VAULT = "gilbplatform_use_vault";
 const INSTRUCTIONS_SECOND =
   "Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
 const SELECT_SENTENCE =
-  "A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.";
+  "A vault you make with create_vault is selected for the session at once; one made inside a hand-off is selected when the hand-off ends.";
 const AUTO_VAULTS_NOTE = "(selected automatically: the only vault this AI can reach)";
 
 const PLATFORM_TOOLS = [
@@ -437,38 +437,110 @@ describe("create_vault selects the vault", () => {
     expect(child.body.contentVaultIds).toEqual([ALREADY, NS]);
   }, 15000);
 
-  it("s7 a create_vault inside a hop selects nothing", async () => {
+  it("s7 a create_vault inside a hop is selected when the hop ends", async () => {
+    const firstJson = made();
+    const secondJson = made({ vaultId: OTHER, vault: `${OTHER}/e/made`, name: "other" });
+    let creates = 0;
+    const platform = await listen(async (rec) => {
+      if (!rec.url.endsWith("/tool")) return { status: 404, body: { error: "no such door" } };
+      if (rec.body.name === "run_named_role" && !rec.body.hop) {
+        return {
+          body: {
+            hop: {
+              id: HOP_A,
+              system: "You are Jackfruit.",
+              task: "Make two vaults. EACHTOOL",
+              tools: [
+                { name: "create_vault", description: "Create.", inputSchema: { type: "object", properties: {} } },
+                { name: "create_vault", description: "Create another.", inputSchema: { type: "object", properties: {} } },
+              ],
+              role: "Jackfruit",
+              answer: { role: "Jackfruit", summary: "handed" },
+            },
+          },
+        };
+      }
+      if (rec.body.hop && rec.body.name === "create_vault") {
+        creates += 1;
+        return { body: { result: creates === 1 ? firstJson : secondJson } };
+      }
+      if (rec.body.name === "hop_done") return { body: { result: JSON.stringify({ closed: true }) } };
+      if (rec.body.name === "read_record") return { body: { result: "tool-ok" } };
+      return { status: 404, body: { error: "unexpected tool" } };
+    });
+    const box = connect({ origin: platform.origin, as: "me", vaults: [ALREADY], env: meEnv(), claudeBin: FAKE_CLAUDE });
+    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit" } });
+    expect(hop.result.isError).toBe(false);
+    const madePosts = toolPosts(platform.requests).filter((rec) => rec.body.name === "create_vault");
+    expect(madePosts).toHaveLength(2);
+    expect(madePosts[0].body.hop).toEqual({ id: HOP_A });
+    expect(madePosts[0].body.contentVaultIds).toEqual([ALREADY]);
+    expect(madePosts[1].body.contentVaultIds).toEqual([ALREADY]);
+    const next = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(toolText(next)).toBe("tool-ok");
+    const read = toolPosts(platform.requests).find((rec) => rec.body.name === "read_record");
+    expect(read.body.hop).toBeUndefined();
+    expect(read.body.contentVaultIds).toEqual([ALREADY, NS, OTHER]);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who).split("\n")[0]).toBe("connector: 0.5.11");
+    expect(toolText(who)).toContain(`vaults: ${ALREADY}, ${NS}, ${OTHER}`);
+  }, 15000);
+
+  it("s8 a hop whose create_vault succeeded but the hop then fails selects nothing", async () => {
     const doorJson = made();
     const platform = await listen(async (rec) => {
-      if (rec.url.endsWith("/tool")) {
-        if (rec.body.name === "create_vault") return { body: { result: doorJson } };
-        if (rec.body.name === "read_record") return { body: { result: "tool-ok" } };
-        return { status: 404, body: { error: "unexpected tool" } };
+      if (!rec.url.endsWith("/tool")) return { status: 404, body: { error: "no such door" } };
+      if (rec.body.name === "run_named_role" && !rec.body.hop) {
+        return {
+          body: {
+            hop: {
+              id: HOP_A,
+              system: "You are Jackfruit.",
+              task: "Make it FAILAFTERTOOL",
+              tools: [{ name: "create_vault", description: "Create.", inputSchema: { type: "object", properties: {} } }],
+              role: "Jackfruit",
+              answer: { role: "Jackfruit", summary: "handed" },
+            },
+          },
+        };
       }
-      return { status: 404, body: { error: "no such door" } };
+      if (rec.body.hop && rec.body.name === "create_vault") return { body: { result: doorJson } };
+      if (rec.body.name === "hop_done") return { body: { result: JSON.stringify({ closed: true }) } };
+      if (rec.body.name === "read_record") return { body: { result: "tool-ok" } };
+      return { status: 404, body: { error: "unexpected tool" } };
     });
-    const box = connect({
-      origin: platform.origin,
-      as: "me",
-      hopId: HOP_A,
-      vaults: [ALREADY],
-      hopTools: [
-        { name: "create_vault", description: "Create.", inputSchema: { type: "object", properties: {} } },
-        { name: "read_record", description: "Read.", inputSchema: { type: "object", properties: { id: { type: "string" } } } },
-      ],
-      env: meEnv(),
+    const box = connect({ origin: platform.origin, as: "me", vaults: [ALREADY], env: meEnv(), claudeBin: FAKE_CLAUDE });
+    const hop = await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit" } });
+    expect(hop.result.isError).toBe(true);
+    const madePosts = toolPosts(platform.requests).filter((rec) => rec.body.name === "create_vault");
+    expect(madePosts).toHaveLength(1);
+    expect(madePosts[0].body.hop).toEqual({ id: HOP_A });
+    const next = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+    expect(toolText(next)).toBe("tool-ok");
+    const read = toolPosts(platform.requests).find((rec) => rec.body.name === "read_record");
+    expect(read.body.contentVaultIds).toEqual([ALREADY]);
+    const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
+    expect(toolText(who)).toContain(`vaults: ${ALREADY}`);
+    expect(toolText(who)).not.toContain(NS);
+  }, 15000);
+
+  it("s9 a create_vault in the main process is still selected at once", async () => {
+    const doorJson = made();
+    const { platform, box } = await boundBox((rec) => {
+      if (rec.body.name === "list_vaults") return vaultList([AI_VAULT, NS, OTHER]);
+      if (rec.body.name === "create_vault") return { body: { result: doorJson } };
+      return { body: { result: "tool-ok" } };
     });
     const call = await box.request("tools/call", { name: "create_vault", arguments: { name: "testcarwashcouponapp" } });
     expect(call.result.isError).toBe(false);
-    expect(call.result.content).toHaveLength(1);
+    expect(call.result.content).toHaveLength(2);
     expect(call.result.content[0]).toEqual({ type: "text", text: doorJson });
+    expect(call.result.content[1]).toEqual({ type: "text", text: selectedFor(NS, [NS]) });
     const next = await box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
     expect(toolText(next)).toBe("tool-ok");
-    const posts = toolPosts(platform.requests);
-    expect(posts.map((rec) => rec.body.name)).toEqual(["create_vault", "read_record"]);
-    expect(posts[0].body.hop).toEqual({ id: HOP_A });
-    expect(posts[0].body.contentVaultIds).toEqual([ALREADY]);
-    expect(posts[1].body.contentVaultIds).toEqual([ALREADY]);
+    const read = toolPosts(platform.requests).find((rec) => rec.body.name === "read_record");
+    expect(read.body.hop).toBeUndefined();
+    expect(read.body.contentVaultIds).toContain(NS);
   });
 
   it("initialize says a vault made with create_vault is selected at once", async () => {
