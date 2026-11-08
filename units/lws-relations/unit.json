@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-relations",
   "package": "@kaigilb/gilbplatformcode-lws-relations",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "Writing, reading and ending the relations between two records in a vault over the platform's relation interface, and the share acts and link-plane checks a relation write goes through.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -387,6 +387,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.0. shareEntityEditAndView grants write then view and reads both rights back; a write grant plants only a:directWriter, so view is a separate read grant. shareEntity is unchanged apart from the comment that claimed a write grant also plants a:directReader",
     "the imports are replaced by imports of the peers: `./config` by `vault-origin-rule`; `./token`, `./bearer` and `./dpop` by `lws-session-bridge` (with `import * as dpopModule` for the module the app read as a namespace); `./records` by `lws-records` 0.2.0; `./vaultSets` and `./recordPlane` by `lws-vault-sets`; `./recordTypes` by `record-types`; `./stakeholderKinds` (`GILBVEDA_MASTER_ORIGIN`) by `term-origin`; `./termSearch` by `ontology-reads`; the type `RecordRelation` by `relation-role`; `typeCurieFromJsonLd` by `type-curie`; `parseGrantPrincipals` and `DirectShareEntry` by `direct-shares`; `shareRefusalMessage` by `share-refusal`; the type `FolderPart` by `folder-part`; the names the taken code does not use are dropped from the import lists",
     "`BASE_ORIGIN` is `baseOrigin()` at `relationWrite.ts:115`, `relationWrite.ts:305`, `entityShare.ts:103` and `entityShare.ts:625`",
     "`GILBVEDA_MASTER_ORIGIN.replace(...)` (`relationWrite.ts:187`) is `termOrigin().replace(...)`",

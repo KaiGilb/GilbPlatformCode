@@ -50,6 +50,7 @@ describe("lws-relations exports", () => {
       "revokePublicOnRelation",
       "setFolderTreePublic",
       "shareEntity",
+      "shareEntityEditAndView",
       "uriTail",
       "writePairRelation",
     ]);

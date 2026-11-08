@@ -15,7 +15,7 @@ A relation here is the reified link between two records: its own document at `/b
 - `readRelations(id, at)`: `GET /base/e/<id>/relations`, the `(relation, role)` rows a record takes part in, with the relation's type and its co-members when the vault sends them. `[]` on 404. `relationsKey(id, at)` is the cache key of that question: the id and the origin it was asked at, so two doors are two keys.
 - `readRelationDoc(relationIdOrUri, at?)`: `GET /base/r/<id>` signed with a proof, as a `RelationDoc` (`id`, `uri`, `typeCurie`, `sourceUri`, `targetUri`, `extras`, `otherRoles?`), or `null` on 404. `relationDocFromJson(id, doc)` is the parser, and expands a `base:e/...` reference against the document's own `@id`.
 - `uriTail(uri)`: the last path segment of an address, decoded.
-- `shareEntity(recordId, grantee, mode, vaultNamespace, door, opts?)`, `revokeEntityShare(recordId, principal, vaultNamespace, door, opts?)`: share one record (read, or write in one act) and take a principal's grants back (one patch per predicate; on a refused patch, `revoke-direct`). `grantPublicOnRelation(uri)`, `revokePublicOnRelation(uri)`: public read on one folder link. `grantDirectUrl`, `revokeDirectUrl`, `entityUriForShare`, `listDirectShares(facts)`: their addresses and the list of direct shares on a record. `onEntityShareChanged(listener)`: the signal that a share list changed.
+- `shareEntity(recordId, grantee, mode, vaultNamespace, door, opts?)`, `shareEntityEditAndView(recordId, grantee, vaultNamespace, door, opts?)`, `revokeEntityShare(recordId, principal, vaultNamespace, door, opts?)`: share one record (read, or write in one act; edit-and-view grants write then view and reads both rights back) and take a principal's grants back (one patch per predicate; on a refused patch, `revoke-direct`). `grantPublicOnRelation(uri)`, `revokePublicOnRelation(uri)`: public read on one folder link. `grantDirectUrl`, `revokeDirectUrl`, `entityUriForShare`, `listDirectShares(facts)`: their addresses and the list of direct shares on a record. `onEntityShareChanged(listener)`: the signal that a share list changed.
 - `setFolderTreePublic(folder, on, vaultNamespace, door)`, `inheritFolderPublic(input)`, `isPublicFolder(folder, door)`, `listFolderPartMembers(folder, door)`: make a folder, its links, its members and the folders inside it public (or take that back), the hook a new link into a public folder runs, and who is a member of a folder, read from what each link means.
 - `publicGrantee()`, `isPublicPrincipal(principal)`: the platform's "everyone" grantee, built from the ontology origin the host set, and the exact-equality test for it.
 - `readUserLinkPlaneCatalog()`, `catalogFromGraph(graph, plane, stale?)`, `liveIsOfferable(curie)`, `LINK_PLANES`, `__setCatalogForTest(catalog | null)`: the live user-plane link catalogue (read once a minute from the public corpus origin) and the set of types a person may link with. The last is the test seam that injects a catalogue and empties the module state below.
@@ -76,6 +76,7 @@ await endRelation(id, vault); // { relation, changed, verified }
 - `setBaseOrigin(...)` and `setSystemVaultHosts([...])` from `base-origin`, once at start-up.
 - `setTermOrigin(...)` from `term-origin`, once at start-up: the GilbVeda master's origin. A relation that names its roles is checked at `<origin>/base/t/<Type>`, and the public grantee is `<origin>/base/t/PublicGrantee`. Called before it is set, those calls throw an error that names `setTermOrigin`.
 - `setLwsAuth(host)` from `lws-session-bridge`, once at start-up. Called before it is set, a call that signs a request rejects with an error that names `setLwsAuth`.
+- A write grant does not give view rights. Use shareEntityEditAndView for "can edit".
 - For the link-plane catalogue: `setOntologyApiOrigin(...)` if the term search is answered elsewhere than the platform origin, and on a local rig only `setLocalRigHosts([...])` and `setPublicCorpusOrigin(...)` (the catalogue is read from the origin `corpusApiOrigin()` of `ontology-reads` names).
 
 ## Do not
@@ -96,6 +97,11 @@ await endRelation(id, vault); // { relation, changed, verified }
 - "`listDirectShares` here is the one in `direct-shares`." Both answer the same on the inputs tried, but the code differs (this unit keeps the app's, the other is a rewrite), so only `parseGrantPrincipals` and the `DirectShareEntry` type are imported from `direct-shares`.
 - "`isPublicPrincipal` accepts a near miss." It compares exactly, as the platform does. The grantee it compares to is `publicGrantee()`, so a host that sets a different ontology origin shares with a different string; the app had the one literal.
 - Two kept oddities, for the owner and not fixed here: a reference is read as an address when it merely STARTS with `http` (`idOf`, relationDoc.ts: `httpx:..` passes), while `memberEntityUri` requires `http://` or `https://`; and `entityUriForShare` accepts an `entityUri` that starts with `http` but an id only with `http://` or `https://`.
+
+## Changes in 0.2.0
+
+- `shareEntity` still grants one mode. A write grant plants only `a:directWriter`. The comment that said the server also plants `a:directReader` was wrong. View is a separate read grant.
+- `shareEntityEditAndView` grants write, then view, then reads the record back. If either right is missing it throws, and the message names the missing right (`view` or `edit`).
 
 ## Where it came from
 
