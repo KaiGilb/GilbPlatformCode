@@ -87,10 +87,14 @@ credentialAllowedAt("https://evil.example/x"); // false
 
 - "A foreign host is asked at its own origin." It is not: `vaultOriginOf` answers the platform origin for any host outside the platform family, except a system vault host. This is the security rule, not a defect.
 - "A system vault host may receive the credential." Not unless it is in the platform family: `credentialAllowedAt` is false for a system host of another family (a development build reads such a host without a credential).
-- "An unset system host list throws." It does not. `vaultOriginOf` and `storeOfOrigin` catch every error the way the app did, so before `setSystemVaultHosts` a host outside the platform family is asked at the platform origin, and `storeOfOrigin` answers `"identity"` for it. `credentialAllowedAt` never reads the list. With no platform origin set, `vaultOriginOf(null)` and the builders throw, and `credentialAllowedAt` answers false.
+- "An unset system host list throws." It does not, once the platform origin is set. `vaultOriginOf` catches an error from the system-host read and asks a host outside the platform family at the platform origin; `storeOfOrigin` catches that same error and answers `"identity"`. `credentialAllowedAt` never reads the list. With no platform origin set, an empty address and the builders throw `base-origin: call setBaseOrigin(<origin>) once at start-up`, and `credentialAllowedAt` answers false. A valid https address is the exception: `vaultOriginOf` returns that address's own origin, because a vault entity's host is its vault host.
 - "The rig rule works without setting." It does not: see "What the host must supply". Even with a rig host named, `credentialAllowedAt` is true for the `http` form of a rig vault URL and false for its `https` form, because it asks the origin the rule would ask at.
 - "`vaultSegmentOf` reads the vault segment anywhere in the URI." Only the FIRST path segment: `/lws/r/x` gives `/base`.
 - "gilb-photo is pinned." The app installs that package as `file:../gilb-photo` with no pinned commit, so production used an unpinned local copy. This unit inlines the package at commit `bf56ec7d8bfeb573b338d7248f953fe8e0fdd827` (version 0.2.1).
+
+## Changes in 0.1.1
+
+- Before `setBaseOrigin`, `vaultOriginOf` of a valid https address returns that address's own origin. An empty address still throws `base-origin: call setBaseOrigin(<origin>) once at start-up`.
 
 ## Where it came from
 

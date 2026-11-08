@@ -55,7 +55,13 @@ describe("the settings are read when the function is called, not when the module
     expect(() => sessionTokenUrl()).toThrow(/setBaseOrigin/);
     expect(() => sessionDpopTokenUrl()).toThrow(/setBaseOrigin/);
     expect(() => vaultOriginOf(null)).toThrow(/setBaseOrigin/);
+    expect(() => vaultOriginOf("")).toThrow(/base-origin: call setBaseOrigin\(<origin>\) once at start-up/);
     expect(credentialAllowedAt("https://x.example.test/")).toBe(false);
+  });
+
+  it("before setBaseOrigin a valid https entity address returns its own origin", () => {
+    resetBaseOrigin();
+    expect(vaultOriginOf("https://anna.gilb.com/vault/e/x")).toBe("https://anna.gilb.com");
   });
 });
 
