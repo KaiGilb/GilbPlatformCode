@@ -243,7 +243,7 @@ export function listDirectShares(facts: Record<string, string> | undefined | nul
   const out: DirectShareEntry[] = [];
   for (const principal of all) {
     const modes: Array<"read" | "write"> = [];
-    // Write share plants both attrs; show Write (and Read is implied for UI copy).
+    // A write grant plants only a:directWriter. Show Write (Read is implied for UI copy).
     if (writers.has(principal)) {
       modes.push("read", "write");
     } else if (readers.has(principal)) {
