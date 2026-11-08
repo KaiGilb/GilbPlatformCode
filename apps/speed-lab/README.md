@@ -190,7 +190,8 @@ npm run run-screen -- --url <app url> --app <name> --rows <css> --network <label
   [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] \
   [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] \
   [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--timeout <ms>] [--away-wait <ms>] \
-  [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--runs <dir>] [--no-shots] [--headed]
+  [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--override "<prefix>=<dir>"] \
+  [--runs <dir>] [--no-shots] [--headed]
 ```
 
 `--url`, `--app`, `--rows` and `--network` are required. `--network` is a label for the network this run was taken on, up to 80 characters, such as `home wifi`. It is written on the result. `--app` is the same short name as `run-app`.
@@ -199,9 +200,24 @@ npm run run-screen -- --url <app url> --app <name> --rows <css> --network <label
 
 Defaults: `--face img`, `--entries cold,hard,refresh,return`, `--repeat 5`, `--quiet 4000`, `--min-rows 1`, `--timeout 60000`, `--away-wait 2500`, `--profile desktop`.
 
+`--override "<url prefix>=<local folder>"` answers the app's own files from a folder on this machine, while the page is still opened at `--url`. The sign-in cookie still belongs to that site. The prefix is an http or https url that ends in `/`. The folder must exist and hold `index.html`. Repeat the flag for up to four folders. While an override is on, the browser is not allowed to register a service worker, so a worker from the live site cannot answer in place of the folder.
+
+A request under the prefix is read from the folder. The query and the hash are dropped. A path that contains `..` is a 400. An empty path, or one that ends in `/`, is `index.html`. If that file is missing and the last part of the path has no dot, a document is `index.html` too (the app's pages). A picture or an API with no dot still goes to the network. A missing file whose name has a dot is a 404, so the live site's script is not mixed in. `index.html` is sent with `Cache-Control: no-cache`. Files under `assets/` are sent with `Cache-Control: public, max-age=31536000, immutable`. Anything else is `no-cache`. Requests outside the prefix are untouched.
+
+Each run counts those answers as `overrideServed`. They stay in the request list with everything else. The result's `settings.overrides` is the prefix and the folder's name, never the path on this machine. At the start it prints `override: <prefix> ← local folder <name>`.
+
+With an override and no `--commit`, the commit is `local`. If you also pass `--version-url` and the folder has a `version.json`, the commit is read from that file, the same fields as `run-app` (`revision`, then `commit`, `sha`, `gitSha`). The url itself is not fetched. It would name the released build, not the folder being measured.
+
+Compare two local builds this way, one of the released code and one with the change. Do not compare a local build against the live site. Those two are not fetched the same way.
+
+```sh
+npm run run-screen -- --url https://gilb.com/app/ --app gilb-app --rows "<row css>" --network "home wifi" \
+  --override "https://gilb.com/app/=/path/to/dist"
+```
+
 Steps are separated by semicolons, because a CSS selector can contain a comma. `click:<data-testid>` and `wait:<data-testid>` are the same as `run-app`. `click-css:<selector>` and `wait-css:<selector>` use a CSS selector. `click-label:<aria-label>` clicks the first visible element with that exact label. `pause:<ms>` waits a whole number of milliseconds. `return` needs both `--away-steps` and `--back-steps`. The first back step has to be a click, because that click is what starts the clock.
 
-Each run writes the done time, the first row with text, the time every row had its text, and the last picture to paint. It also writes the requests that started from the run's start until half a second after it was done: the url with the query and the hash removed, the method, the type, the status, the times, and the size. No headers, no cookies, no bodies. A run that hits `--timeout` is kept, with `timedOut` true. The command still exits 0, and it prints a WARNING line. A bad argument exits 2. A crash exits 1.
+Each run writes the done time, the first row with text, the time every row had its text, the last picture to paint, and the first 40 characters of the first row in view when it settled (`firstRowText`). It also writes the requests that started from the run's start until half a second after it was done: the url with the query and the hash removed, the method, the type, the status, the times, and the size. No headers, no cookies, no bodies. A run that hits `--timeout` is kept, with `timedOut` true. The command still exits 0, and it prints a WARNING line. A bad argument exits 2. A crash exits 1.
 
 Unless you pass `--no-shots`, it saves a picture of the window under `shots/`, next to the result.
 
@@ -211,7 +227,7 @@ The result file is `<YYYYMMDDTHHMMSSZ>-<app>-<first 7 of the commit, or unknown>
 npm run proof:screen-self
 ```
 
-`proof:screen-self` is the known answer. It serves a small page on `127.0.0.1` port 5262. Twelve rows arrive after 300 ms. Eleven of them have pictures that take longer and longer (the last one about 860 ms after the rows appear). One row has no picture. Thirty more rows sit below the first screen. It runs `run-screen` on that page with `--app screen-self`, `--repeat 2`, `--quiet 1500`, and cold, hard, refresh, and return. It checks that every run finished, that the first screen's counts land where they should, and that the times land where the delays say they should. It always stops the server. The result goes to a temp folder, or to `SPEED_LAB_RUNS` when that is set.
+`proof:screen-self` is the known answer. It serves a small page on `127.0.0.1` port 5262. Twelve rows arrive after 300 ms. Eleven of them have pictures that take longer and longer (the last one about 860 ms after the rows appear). One row has no picture. Thirty more rows sit below the first screen. It runs `run-screen` on that page with `--app screen-self`, `--repeat 2`, `--quiet 1500`, and cold, hard, refresh, and return. It checks that every run finished, that the first screen's counts land where they should, and that the times land where the delays say they should. It then runs a short second pass, cold and refresh, with `--override` pointed at a folder whose page is the same one with every row prefixed `LOCAL `. The rows must come from that folder, and the cold run must still have waited for the pictures from the server. It always stops the server. The result goes to a temp folder, or to `SPEED_LAB_RUNS` when that is set.
 
 ## Live mode
 

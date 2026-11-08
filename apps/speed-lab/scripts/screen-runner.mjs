@@ -1,16 +1,17 @@
 // Times a screen in Chromium until every row on the first screen has its text and its picture.
 // The done rule lives in screen-core.mjs (settle). The probe below is the same rule, checked every frame.
+// --override answers the app's files from a local folder. Everything else still goes to the network.
 // node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [options]
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, devices } from "playwright-core";
 import { checkStorageStateFile, commitFromVersionJson, validAppName } from "./app-runner.mjs";
 import { appVersion, gitMeta, runsDir } from "./results.mjs";
-import { parseScreenSteps, redactUrl, selectorOf, summarise } from "./screen-core.mjs";
+import { cacheControlOf, contentTypeOf, overridePath, parseOverride, parseScreenSteps, redactUrl, selectorOf, spaFallback, summarise } from "./screen-core.mjs";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = 'usage: node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--timeout <ms>] [--away-wait <ms>] [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--runs <dir>] [--no-shots] [--headed]';
+const USAGE = 'usage: node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--timeout <ms>] [--away-wait <ms>] [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--override "<prefix>=<dir>"] [--runs <dir>] [--no-shots] [--headed]';
 const ENTRIES = ["cold", "hard", "refresh", "return"];
 const CLICKS = new Set(["click", "click-css", "click-label"]);
 const FLAGS = {
@@ -81,6 +82,7 @@ export function installScreenProbe() {
     lastFaceAt: null,
     counts: { rows: 0, painted: 0, none: 0, broken: 0 },
     totalRowsInDom: 0,
+    firstRowText: null,
     fault: null,
   };
   let rowsSel = "";
@@ -89,6 +91,7 @@ export function installScreenProbe() {
   let minRows = 1;
   let lastSig = null;
   let lastChange = null;
+  let changeText = null;
   let prevAllText = false;
   let prevPainted = new Map();
   let timeline = [];
@@ -128,16 +131,19 @@ export function installScreenProbe() {
     const all = document.querySelectorAll(rowsSel);
     state.totalRowsInDom = all.length;
     const rows = [];
+    let firstRowText = null;
     let seen = 0;
     for (const el of all) {
       const rect = el.getBoundingClientRect();
       const inView = rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
       if (!inView) continue;
+      const raw = el.innerText.trim();
+      if (firstRowText === null) firstRowText = raw.slice(0, 40);
       const record = el.getAttribute("data-record-id");
       const testid = el.getAttribute("data-testid");
       const key = record != null && record !== "" ? record : testid != null && testid !== "" ? testid : String(seen);
       seen += 1;
-      const text = el.innerText.trim().length > 0;
+      const text = raw.length > 0;
       const img = el.querySelector(faceSel);
       let face = "none";
       let sig = "";
@@ -149,7 +155,7 @@ export function installScreenProbe() {
       }
       rows.push({ key, text, face, sig });
     }
-    return rows;
+    return { rows, firstRowText };
   }
 
   function arm(cfg) {
@@ -161,6 +167,7 @@ export function installScreenProbe() {
     minRows = cfg.minRows;
     lastSig = null;
     lastChange = null;
+    changeText = null;
     prevAllText = false;
     prevPainted = new Map();
     timeline = [];
@@ -173,18 +180,22 @@ export function installScreenProbe() {
     state.lastFaceAt = null;
     state.counts = { rows: 0, painted: 0, none: 0, broken: 0 };
     state.totalRowsInDom = 0;
+    state.firstRowText = null;
     state.fault = null;
 
     const frame = () => {
       if (token !== gen) return;
       try {
         const now = window.performance.now();
-        const rows = collect();
+        const got = collect();
+        const rows = got.rows;
         state.counts = tally(rows);
+        state.firstRowText = got.firstRowText;
         const sig = signature(rows);
         if (sig !== lastSig) {
           lastSig = sig;
           lastChange = now;
+          changeText = got.firstRowText;
           if (state.firstRowAt === null && rows.some((r) => r.text === true)) state.firstRowAt = now;
           const textReady = rows.length >= minRows && rows.every((r) => r.text === true);
           if (textReady && !prevAllText) state.allTextAt = now;
@@ -206,6 +217,7 @@ export function installScreenProbe() {
         if (ready && lastChange !== null && now >= lastChange + quietMs) {
           state.done = true;
           state.doneAt = lastChange;
+          state.firstRowText = changeText;
           return;
         }
       } catch (e) {
@@ -234,6 +246,7 @@ export function installScreenProbe() {
         broken: state.counts.broken,
       },
       totalRowsInDom: state.totalRowsInDom,
+      firstRowText: state.firstRowText,
     };
   }
 
@@ -319,6 +332,10 @@ function beginNet(net) {
   net.stopAt = Infinity;
   net.items = [];
   net.byReq = new Map();
+  if (net.served) {
+    net.served.n = 0;
+    net.served.active = true;
+  }
 }
 
 function markDone(net, doneWall) {
@@ -331,6 +348,7 @@ async function drainNet(net, inflightAtDone) {
   const remain = net.stopAt - Date.now();
   if (remain > 0) await sleep(remain);
   net.active = false;
+  if (net.served) net.served.active = false;
   await sleep(30);
   while (net.pending.size) await Promise.all([...net.pending]);
   const byHost = {};
@@ -361,12 +379,99 @@ function minus(at, start) {
   return round1(at - start);
 }
 
+function resolveInside(rootDir, rel) {
+  if (typeof rel !== "string" || rel.includes("\0")) return null;
+  const root = resolve(rootDir);
+  const full = resolve(root, rel);
+  const fromRoot = relative(root, full);
+  if (fromRoot === "" || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || fromRoot.split(sep).includes("..")) return null;
+  return full;
+}
+
+function isFile(p) {
+  try { return statSync(p).isFile(); }
+  catch { return false; }
+}
+
+function noteServed(served) {
+  if (served.active) served.n += 1;
+}
+
+async function fulfillPlain(route, status, body) {
+  await route.fulfill({
+    status,
+    contentType: "text/plain; charset=utf-8",
+    headers: { "cache-control": "no-cache" },
+    body,
+  });
+}
+
+async function fulfillFile(route, rel, full) {
+  await route.fulfill({
+    status: 200,
+    contentType: contentTypeOf(rel),
+    headers: { "cache-control": cacheControlOf(rel) },
+    body: readFileSync(full),
+  });
+}
+
+// A document with no file is the app shell. A picture or an API with no dot is not:
+// it goes to the network, so the live site still answers it.
+async function fulfillOverride(route, ov, served) {
+  const decision = overridePath(ov.prefix, route.request().url());
+  if (decision.kind === "outside") {
+    await route.fallback();
+    return;
+  }
+  if (decision.kind !== "file") {
+    noteServed(served);
+    await fulfillPlain(route, 400, "bad path");
+    return;
+  }
+  const full = resolveInside(ov.dir, decision.rel);
+  if (!full) {
+    noteServed(served);
+    await fulfillPlain(route, 400, "bad path");
+    return;
+  }
+  if (isFile(full)) {
+    noteServed(served);
+    await fulfillFile(route, decision.rel, full);
+    return;
+  }
+  if (spaFallback(decision.rel)) {
+    if (route.request().resourceType() !== "document") {
+      await route.fallback();
+      return;
+    }
+    const index = resolveInside(ov.dir, "index.html");
+    if (!index || !isFile(index)) {
+      noteServed(served);
+      await fulfillPlain(route, 404, "not found");
+      return;
+    }
+    noteServed(served);
+    await fulfillFile(route, "index.html", index);
+    return;
+  }
+  noteServed(served);
+  await fulfillPlain(route, 404, "not found");
+}
+
 async function openContext(browser, opt) {
-  const ctx = await browser.newContext(contextOptions(opt.profile, opt.storageState));
+  const opts = contextOptions(opt.profile, opt.storageState);
+  if (opt.overrides.length) opts.serviceWorkers = "block";
+  const ctx = await browser.newContext(opts);
   ctx.setDefaultTimeout(opt.timeoutMs);
+  const served = { n: 0, active: false };
+  const ordered = [...opt.overrides].sort((a, b) => a.prefix.length - b.prefix.length);
+  for (const ov of ordered) {
+    await ctx.route(`${ov.prefix}**`, (route) => fulfillOverride(route, ov, served));
+  }
   await ctx.addInitScript(installScreenProbe);
   const page = await ctx.newPage();
   const net = attachNetwork(page);
+  net.served = served;
   return { ctx, page, net };
 }
 
@@ -439,7 +544,7 @@ async function clickAtStart(page, step) {
 
 function runLine(run, repeat) {
   const c = run.counts ?? {};
-  return `${run.entry} ${run.i}/${repeat}  done ${fmt(run.doneMs)} ms  first row ${fmt(run.firstRowMs)}  all text ${fmt(run.allTextMs)}  last face ${fmt(run.lastFaceMs)}  rows ${c.rows ?? "-"} (pictures ${c.painted ?? "-"}, none ${c.none ?? "-"}, broken ${c.broken ?? "-"})  requests ${run.requests}`;
+  return `${run.entry} ${run.i}/${repeat}  done ${fmt(run.doneMs)} ms  first row ${fmt(run.firstRowMs)}  all text ${fmt(run.allTextMs)}  last face ${fmt(run.lastFaceMs)}  rows ${c.rows ?? "-"} (pictures ${c.painted ?? "-"}, none ${c.none ?? "-"}, broken ${c.broken ?? "-"})  requests ${run.requests}  override ${run.overrideServed}`;
 }
 
 function printTable(out, entries, summary, file) {
@@ -454,14 +559,33 @@ function printTable(out, entries, summary, file) {
   out.log(`result file: ${file}`);
 }
 
+function checkedOverride(raw) {
+  const parsed = parseOverride(raw);
+  const dir = resolve(parsed.dir);
+  let st;
+  try { st = statSync(dir); }
+  catch { throw new Error(`override folder does not exist: ${parsed.dir}`); }
+  if (!st.isDirectory()) throw new Error(`override folder is not a folder: ${parsed.dir}`);
+  const index = join(dir, "index.html");
+  if (!existsSync(index) || !isFile(index)) throw new Error(`override folder has no index.html: ${parsed.dir}`);
+  return { prefix: parsed.prefix, dir, dirName: basename(dir) };
+}
+
 function optionsFrom(argv) {
   const got = {};
   const bools = {};
+  const overrideArgs = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--no-shots" || a === "--headed") {
       if (bools[a]) throw new Error(`${a} given twice`);
       bools[a] = true;
+      continue;
+    }
+    if (a === "--override") {
+      const v = argv[++i];
+      if (v === undefined || v.startsWith("--")) throw new Error("--override needs a value");
+      overrideArgs.push(v);
       continue;
     }
     const slot = FLAGS[a];
@@ -498,6 +622,8 @@ function optionsFrom(argv) {
   const timeoutMs = got.timeout === undefined ? 60_000 : parseWhole(got.timeout, "timeout");
   const awayWait = got.awayWait === undefined ? 2500 : parseWhole(got.awayWait, "away-wait");
   if (got.commit !== undefined && got.versionUrl !== undefined) throw new Error("pass --commit or --version-url, not both");
+  if (overrideArgs.length > 4) throw new Error("at most 4 overrides");
+  const overrides = overrideArgs.map(checkedOverride);
   return {
     url: got.url,
     app: got.app,
@@ -517,14 +643,42 @@ function optionsFrom(argv) {
     profile,
     commit: got.commit,
     versionUrl: got.versionUrl,
+    overrides,
     runs: got.runs,
     noShots: bools["--no-shots"] === true,
     headed: bools["--headed"] === true,
   };
 }
 
-async function commitOf(opt) {
+function readLocalVersion(overrides) {
+  for (const ov of overrides) {
+    const p = join(ov.dir, "version.json");
+    if (!existsSync(p) || !isFile(p)) continue;
+    let text;
+    try { text = readFileSync(p, "utf8"); }
+    catch { throw new Error(`local version.json could not be read (${ov.dirName})`); }
+    let obj;
+    try { obj = JSON.parse(text); }
+    catch { throw new Error(`local version.json is not JSON (${ov.dirName})`); }
+    return { commit: commitFromVersionJson(obj), dirName: ov.dirName };
+  }
+  return null;
+}
+
+async function commitOf(opt, out) {
   if (opt.commit !== undefined) return opt.commit;
+  if (opt.overrides.length) {
+    if (opt.versionUrl !== undefined) {
+      parseHttp(opt.versionUrl, "version-url");
+      const found = readLocalVersion(opt.overrides);
+      if (found) {
+        out.log(`commit: local version.json (${found.dirName}) ${found.commit}`);
+        return found.commit;
+      }
+    }
+    out.log("commit: local");
+    return "local";
+  }
   if (opt.versionUrl === undefined) return "unknown";
   const url = parseHttp(opt.versionUrl, "version-url");
   let res;
@@ -551,8 +705,9 @@ export async function main(argv, env = process.env, out = console) {
     const problem = checkStorageStateFile(opt.storageState);
     if (problem) { out.error(problem); return { code: 2, runs: [], file: null, summary: null }; }
   }
+  for (const ov of opt.overrides) out.log(`override: ${ov.prefix} ← local folder ${ov.dirName}`);
   let appCommit;
-  try { appCommit = await commitOf(opt); }
+  try { appCommit = await commitOf(opt, out); }
   catch (e) { out.error(String(e?.message ?? e).split("\n")[0]); return { code: 2, runs: [], file: null, summary: null }; }
 
   const runs = [];
@@ -587,9 +742,11 @@ export async function main(argv, env = process.env, out = console) {
         firstRowMs: minus(reading.firstRowAt, reading.startMs),
         allTextMs: minus(reading.allTextAt, reading.startMs),
         lastFaceMs: minus(reading.lastFaceAt, reading.startMs),
+        firstRowText: typeof reading.firstRowText === "string" ? reading.firstRowText.slice(0, 40) : null,
         counts: reading.counts,
         totalRowsInDom: reading.totalRowsInDom,
         requests: netSummary.requests,
+        overrideServed: net.served ? net.served.n : 0,
         bytes: netSummary.bytes,
         byHost: netSummary.byHost,
         inflightAtDone: netSummary.inflightAtDone,
@@ -702,6 +859,7 @@ export async function main(argv, env = process.env, out = console) {
         repeat: opt.repeat,
         entries: opt.entries,
         timeoutMs: opt.timeoutMs,
+        ...(opt.overrides.length ? { overrides: opt.overrides.map((o) => ({ prefix: o.prefix, dirName: o.dirName })) } : {}),
       },
       runs,
       summary,

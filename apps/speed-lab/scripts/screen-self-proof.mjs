@@ -1,7 +1,8 @@
 // Known answer for run-screen: a local page whose pictures arrive on a clock we chose.
 // Serves 127.0.0.1:5262, runs the runner, checks the times, and always stops the server.
+// A second pass serves that same page from a folder, with each row prefixed "LOCAL ".
 import { createServer } from "node:http";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main as runScreen } from "./screen-runner.mjs";
@@ -196,11 +197,42 @@ function judge(result) {
     orderBits.push(`${r.entry} ${r.i} ${r.doneMs} >= ${r.lastFaceMs} >= ${r.firstRowMs}`);
   }
   checks.push({ ok: orderOk, text: `doneMs >= lastFaceMs >= firstRowMs (${orderBits.join("; ") || "no triple"})` });
+
+  const textOk = runs.length > 0 && runs.every((r) => typeof r.firstRowText === "string" && r.firstRowText.startsWith("Name "));
+  const textBits = runs.map((r) => `${r.entry} ${r.i} ${JSON.stringify(r.firstRowText)}`).join("; ");
+  checks.push({ ok: textOk, text: `firstRowText starts with Name (${textBits || "no runs"})` });
+  return checks;
+}
+
+function localRows(html) {
+  const from = 'name.textContent = "Name " + n;';
+  if (!html.includes(from)) throw new Error("the page has no row text to prefix");
+  return html.replace(from, 'name.textContent = "LOCAL Name " + n;');
+}
+
+function judgeOverride(result) {
+  const runs = result.runs ?? [];
+  const checks = [];
+  const names = runs.map((r) => r.entry).join(",");
+  const finished = runs.length === 2 && names === "cold,refresh" && runs.every((r) => r.timedOut === false);
+  checks.push({ ok: finished, text: `override runs finished (${runs.map((r) => `${r.entry} timedOut ${r.timedOut}`).join("; ") || "none"})` });
+
+  const servedOk = runs.length === 2 && runs.every((r) => typeof r.overrideServed === "number" && r.overrideServed >= 1);
+  checks.push({ ok: servedOk, text: `overrideServed >= 1 (${runs.map((r) => `${r.entry} ${r.overrideServed}`).join("; ") || "none"})` });
+
+  const textOk = runs.length === 2 && runs.every((r) => typeof r.firstRowText === "string" && r.firstRowText.startsWith("LOCAL "));
+  checks.push({ ok: textOk, text: `firstRowText starts with LOCAL (${runs.map((r) => `${r.entry} ${JSON.stringify(r.firstRowText)}`).join("; ") || "none"})` });
+
+  const cold = runs.find((r) => r.entry === "cold");
+  const coldOk = !!cold && typeof cold.doneMs === "number" && cold.doneMs >= 1000;
+  const coldDetail = cold ? `${cold.doneMs} painted ${cold.counts?.painted} broken ${cold.counts?.broken}` : "none";
+  checks.push({ ok: coldOk, text: `override cold doneMs >= 1000 (${coldDetail})` });
   return checks;
 }
 
 async function main() {
   let server;
+  let overrideDir;
   let code = 1;
   try {
     if (PNG[0] !== 0x89 || PNG[1] !== 0x50) throw new Error("the 1x1 picture is not a png");
@@ -225,11 +257,35 @@ async function main() {
       console.log(`${c.ok ? "PASS" : "FAIL"} ${c.text}`);
       if (!c.ok) ok = false;
     }
+
+    overrideDir = mkdtempSync(join(tmpdir(), "speed-lab-override-"));
+    writeFileSync(join(overrideDir, "index.html"), localRows(PAGE));
+    const over = await runScreen([
+      "--url", BASE,
+      "--app", "screen-self",
+      "--rows", "li[data-record-id]",
+      "--network", "local",
+      "--entries", "cold,refresh",
+      "--repeat", "1",
+      "--quiet", "1500",
+      "--no-shots",
+      "--runs", runsDir,
+      "--override", `${BASE}=${overrideDir}`,
+    ], process.env);
+    if (over.code !== 0) {
+      console.log(`FAIL override runner exit code ${over.code}`);
+      ok = false;
+    }
+    for (const c of judgeOverride(over)) {
+      console.log(`${c.ok ? "PASS" : "FAIL"} ${c.text}`);
+      if (!c.ok) ok = false;
+    }
     code = ok ? 0 : 1;
   } catch (e) {
     console.error(String(e?.stack ?? e));
     code = 1;
   } finally {
+    if (overrideDir) rmSync(overrideDir, { recursive: true, force: true });
     await stop(server);
   }
   process.exitCode = code;

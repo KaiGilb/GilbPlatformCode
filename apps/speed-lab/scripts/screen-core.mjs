@@ -1,4 +1,4 @@
-// Pure screen-timing rules: steps, the done rule, the summary. No browser.
+// Pure screen-timing rules: steps, the done rule, the summary, and local-folder overrides. No browser.
 // A settle() timeline may include an unchanged "tick" snapshot. The in-page probe does not store those;
 // it checks the clock each frame instead. The tick stands for that clock check.
 
@@ -144,4 +144,96 @@ export function redactUrl(u) {
   } catch {
     return "(unparsable)";
   }
+}
+
+const CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".webmanifest": "application/manifest+json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+  ".map": "application/json",
+};
+
+/** "--override" value: "https://host/app/=/path/to/dir". The prefix must be http(s) and end in "/". */
+export function parseOverride(str) {
+  const raw = String(str ?? "");
+  const eq = raw.indexOf("=");
+  if (eq === -1) throw new Error("override needs a prefix and a folder, separated by =");
+  const prefix = raw.slice(0, eq);
+  const dir = raw.slice(eq + 1);
+  if (dir === "") throw new Error("override needs a folder");
+  let url;
+  try { url = new URL(prefix); }
+  catch { throw new Error("override prefix is not a url"); }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("override prefix must be http or https");
+  if (!prefix.endsWith("/")) throw new Error("override prefix must end with /");
+  return { prefix, dir };
+}
+
+/**
+ * Where a request sits under an override prefix.
+ * Query and hash are ignored. ".." after decoding is "bad". An empty path, or one that ends in "/", is index.html.
+ */
+export function overridePath(prefixUrl, requestUrl) {
+  let prefix;
+  try { prefix = new URL(prefixUrl); }
+  catch { return { kind: "outside" }; }
+  if (prefix.protocol !== "http:" && prefix.protocol !== "https:") return { kind: "outside" };
+
+  const noHash = String(requestUrl ?? "").split("#", 1)[0];
+  const noQuery = noHash.split("?", 1)[0];
+  const m = /^(https?:)\/\/([^/?#]+)([^?#]*)$/i.exec(noQuery);
+  if (!m) return { kind: "outside" };
+
+  let origin;
+  try { origin = new URL(`${m[1].toLowerCase()}//${m[2]}`).origin; }
+  catch { return { kind: "outside" }; }
+  if (origin !== prefix.origin) return { kind: "outside" };
+
+  const rawPath = m[3] === "" ? "/" : m[3];
+  const prefixPath = prefix.pathname.endsWith("/") ? prefix.pathname : `${prefix.pathname}/`;
+  if (!rawPath.startsWith(prefixPath)) return { kind: "outside" };
+
+  const rest = rawPath.slice(prefixPath.length);
+  let decoded;
+  try { decoded = decodeURIComponent(rest); }
+  catch { return { kind: "bad" }; }
+  if (decoded.includes("\0") || decoded.startsWith("/") || decoded.includes("..")) return { kind: "bad" };
+  if (decoded === "" || decoded.endsWith("/")) return { kind: "file", rel: "index.html" };
+  return { kind: "file", rel: decoded };
+}
+
+/** Content-Type for a file name. Unknown extensions are application/octet-stream. */
+export function contentTypeOf(name) {
+  const base = String(name ?? "").split("/").pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot < 0) return "application/octet-stream";
+  const ext = base.slice(dot).toLowerCase();
+  return CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+/** True when the last path segment has no dot, so a missing file can be the app shell. */
+export function spaFallback(rel) {
+  const last = String(rel ?? "").split("/").pop() ?? "";
+  return last !== "" && !last.includes(".");
+}
+
+/** Cache-Control for a file served from the local folder. index.html is never immutable. */
+export function cacheControlOf(rel) {
+  const norm = String(rel ?? "").replaceAll("\\", "/");
+  const base = norm.split("/").pop() ?? "";
+  if (base === "index.html") return "no-cache";
+  if (norm.startsWith("assets/")) return "public, max-age=31536000, immutable";
+  return "no-cache";
 }
