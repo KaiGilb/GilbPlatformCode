@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-qualifiers-line",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the \"Not in the Scale\" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.",
@@ -17,7 +17,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0",
     "@kaigilb/gilbplatformcode-value-line-kit": "^0.1.0",
     "react": "^19.0.0"
   },

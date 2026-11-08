@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/value-graph-geometry",
   "package": "@kaigilb/gilbplatformcode-value-graph-geometry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows.",
   "source": {
     "repo": "KaiGilb/GilbApp",

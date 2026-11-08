@@ -26,7 +26,7 @@ const lv = (kind: string, value: number | null, q: Partial<LevelQualifier> = {},
 const NONE: EndpointPart = { typeIri: "", typeLabel: "", words: "" };
 const APP: EndpointPart = { typeIri: "https://ontology.example.test/base/t/MobileApp", typeLabel: "mobile app", words: "" };
 const mk = (levels: ValueLevel[], subject = NONE, reference = NONE): ValueCardData => ({
-  scale: { text: "minutes", unit: "min", rate: "", context: "", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "", direction: "lower", source: {} },
   variables: [{ name: "Country", definition: "", defaultOption: "Norway", options: [{ name: "Norway", definition: "" }, { name: "Sweden", definition: "" }], source: {} }],
   endpoint: { subject, reference, text: "", source: {} },
   meters: [],

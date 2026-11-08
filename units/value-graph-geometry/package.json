@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-graph-geometry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows. No DOM, no React.",
@@ -17,7 +17,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-date-rules": "^0.1.0",
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0"
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0"
   },
   "devDependencies": {
     "@kaigilb/gilbplatformcode-date-rules": "file:../date-rules",

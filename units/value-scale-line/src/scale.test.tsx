@@ -49,8 +49,10 @@ describe("read: the Scale as text", () => {
     mount(card({ scale: scale({ unit: "   " }) }));
     expect(view().textContent).toBe("");
   });
-  it("the older Scale sentence (scale.text) is kept as it is and never shown", () => {
-    mount(card({ scale: scale({ text: "minutes to learn [Task]", unit: "min" }) }));
+  it("the Scale has no sentence: the line shows the unit and nothing else as a sentence", () => {
+    const s = scale({ unit: "min" });
+    expect("text" in s).toBe(false);
+    mount(card({ scale: s }));
     expect(view().textContent).not.toContain("minutes to learn");
     expect(view().textContent).toContain("Unit: min");
   });

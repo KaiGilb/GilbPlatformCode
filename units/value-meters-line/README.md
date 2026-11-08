@@ -28,7 +28,7 @@ One component, `PlanValueMetersBody`, the body of the group titled "Meter" on a 
 
 Package: `@kaigilb/gilbplatformcode-value-meters-line`
 
-Take it together with its peers `plan-card-facts`, `qualifier-value-picker`, `value-card-model` (0.2.0 or later) and `value-line-kit`, and their own peers (`qualifier-value-picker` has `plan-button-row` and `qualifier-values`; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
+Take it together with its peers `plan-card-facts`, `qualifier-value-picker`, `value-card-model` (0.3.0 or later) and `value-line-kit`, and their own peers (`qualifier-value-picker` has `plan-button-row` and `qualifier-values`; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
 
 ```
 install-links=true

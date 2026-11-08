@@ -53,12 +53,11 @@ const serverPatch = (stored: Record<string, unknown>, patch: Record<string, unkn
 const blankScale = () => readValueCard({}).scale;
 
 describe("the Scale record", () => {
-  it("the record's facts: tag, a:partOf, description, unit, rate, scaleContext, scaleDirection (always)", () => {
-    const s = { ...blankScale(), text: "min to [Task]", unit: "min", rate: "per [Task]", context: "in [Country]", direction: "target" as const };
+  it("the record's facts: tag, a:partOf, unit, rate, scaleContext, scaleDirection (always); no sentence", () => {
+    const s = { ...blankScale(), unit: "min", rate: "per [Task]", context: "in [Country]", direction: "target" as const };
     expect(scaleCreateFacts(s, "V.Scale", VALUE)).toEqual({
       unitTag: "V.Scale",
       partOf: { "@id": VALUE },
-      description: "min to [Task]",
       unit: "min",
       rate: "per [Task]",
       scaleContext: "in [Country]",
@@ -105,8 +104,10 @@ describe("the Scale record", () => {
     expect(readValueCard({ ...ref, valueScale: { unit: "old" } }, found).scale.unit).toBe("from record");
     // no record row: the inline Scale
     expect(readValueCard({ hasScale: { "a:unit": "inline" }, valueScale: { unit: "old" } }).scale.unit).toBe("inline");
-    // neither: the older keys (and their older sentence keys)
-    expect(readValueCard({ valueScale: { unit: "old", scaleText: "old words" } }).scale).toMatchObject({ unit: "old", text: "old words", direction: "lower" });
+    // neither: the older keys. The older sentence is not read.
+    const old = readValueCard({ valueScale: { unit: "old", scaleText: "old words" } }).scale;
+    expect(old).toMatchObject({ unit: "old", direction: "lower" });
+    expect(JSON.stringify(old)).not.toContain("old words");
     // a pointer to a record that is not among the rows reads as no Scale (never as an inline one)
     expect(scaleRowOf(ref, [], VALUE)).toBeUndefined();
     expect(readValueCard(ref).scale.unit).toBe("");
@@ -121,8 +122,8 @@ describe("the Scale record", () => {
     const rec = row("Scale", { partOf: { "@id": VALUE }, description: "w", unit: "min", scaleDirection: "higher" }, "s1");
     const s = readValueCard({ hasScale: { "@id": "x" } }, rec).scale;
     expect(scalePatch(rec, s)).toEqual({});
-    expect(scalePatch(rec, { ...s, unit: "sec" })).toEqual({ unit: "sec" });
-    expect(scalePatch(rec, { ...s, rate: "per [Task]", unit: "" })).toEqual({ rate: "per [Task]", unit: null });
+    expect(scalePatch(rec, { ...s, unit: "sec" })).toEqual({ unit: "sec", description: null });
+    expect(scalePatch(rec, { ...s, rate: "per [Task]", unit: "" })).toEqual({ rate: "per [Task]", unit: null, description: null });
     const noDir = row("Scale", { partOf: { "@id": VALUE }, unit: "min" }, "s2");
     expect(scalePatch(noDir, { ...blankScale(), unit: "sec", direction: "lower" })).toMatchObject({ unit: "sec", scaleDirection: "lower" });
   });

@@ -29,7 +29,7 @@ export const keyed = (l: ValueLevel, key: string): ValueLevel => setLevelKey({ .
 /** A Value that reads 'lower is better' with a Status and a Goal on one row. */
 export const lowered = (more: Partial<ValueCardData> = {}): ValueCardData =>
   card({
-    scale: { text: "", unit: "min", rate: "", context: "", direction: "lower", source: {} },
+    scale: { unit: "min", rate: "", context: "", direction: "lower", source: {} },
     levels: [level("Status", 9, { when: "2026-10-27" }), level("Goal", 5, { when: "2027-06-30" })],
     ...more,
   });

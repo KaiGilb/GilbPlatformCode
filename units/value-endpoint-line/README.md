@@ -29,7 +29,7 @@ One component, `PlanEndpointBody`, and one function, `parseEndpointText`. The bo
 
 Package: `@kaigilb/gilbplatformcode-value-endpoint-line`
 
-Take it together with its peers `plan-card-facts`, `term-origin`, `type-chooser`, `type-term-popover`, `value-card-model` (0.2.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record` and `plan-source`; `type-chooser`'s and `type-term-popover`'s: `open-popups` and `type-picture`, with theirs). React 19 is a peer (`react-dom` too, for the type popover and the chooser). Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one term origin):
+Take it together with its peers `plan-card-facts`, `term-origin`, `type-chooser`, `type-term-popover`, `value-card-model` (0.3.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record` and `plan-source`; `type-chooser`'s and `type-term-popover`'s: `open-popups` and `type-picture`, with theirs). React 19 is a peer (`react-dom` too, for the type popover and the chooser). Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one term origin):
 
 ```
 install-links=true

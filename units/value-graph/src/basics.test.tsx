@@ -16,7 +16,7 @@ const lv = (kind: string, value: number, when: string, conditions: string[], var
 });
 
 const data: ValueCardData = {
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
   variables: [
     { name: "User type", definition: "", defaultOption: "Novice", options: [], source: {} },
     { name: "Task", definition: "", defaultOption: "Order.Place", options: [], source: {} },

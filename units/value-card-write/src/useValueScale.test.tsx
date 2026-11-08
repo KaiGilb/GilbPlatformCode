@@ -13,7 +13,7 @@ const server = createServer({ ifMatch: true, patchTagCheck: true });
 beforeEach(() => server.reset());
 afterEach(cleanup);
 
-const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ text: "", unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
+const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
 
 function mount(value: BaseRecord, seed: ValuePartsSeed = {}) {
   const b = makeBrowser(server);
@@ -166,9 +166,10 @@ describe("the save", () => {
     await expect(t.hook.result.current.save(scale({ unit: "seconds" }), async () => false)).rejects.toThrow(
       "Couldn't save the Scale. Nothing was changed; the Scale is back as it was.",
     );
+    // The hidden sentence is not restored, by design (Kai 2026-11-08: the Scale has no sentence).
     expect(server.patches.map((p) => p.body)).toEqual([
       { description: null, scaleDirection: "higher", unit: "seconds" },
-      { description: "older words", scaleDirection: "lower", unit: "kg" },
+      { scaleDirection: "lower", unit: "kg" },
     ]);
   });
 });

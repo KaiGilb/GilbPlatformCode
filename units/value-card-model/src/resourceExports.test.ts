@@ -32,7 +32,7 @@ import type { BaseRecord } from "./baseRecord";
 const ORIGIN = "https://ontology.example.test";
 const ERR = "term-origin: call setTermOrigin(<origin>) once at start-up";
 
-const scaleOf = (direction: "lower" | "higher" | "target", unit = "") => ({ text: "", unit, rate: "", context: "", direction, source: {} });
+const scaleOf = (direction: "lower" | "higher" | "target", unit = "") => ({ unit, rate: "", context: "", direction, source: {} });
 const row = (type: string, served: Record<string, unknown>): BaseRecord =>
   ({
     id: "r1",

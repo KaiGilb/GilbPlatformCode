@@ -25,7 +25,7 @@ const lv = (kind: string, value: number | null, q: Partial<LevelQualifier> = {},
 });
 const NONE: EndpointPart = { typeIri: "", typeLabel: "", words: "" };
 const mk = (levels: ValueLevel[]): ValueCardData => ({
-  scale: { text: "minutes", unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
   variables: [{ name: "Country", definition: "", defaultOption: "Norway", options: [{ name: "Norway", definition: "" }, { name: "Sweden", definition: "" }], source: {} }],
   endpoint: { subject: NONE, reference: NONE, text: "", source: {} },
   meters: [],

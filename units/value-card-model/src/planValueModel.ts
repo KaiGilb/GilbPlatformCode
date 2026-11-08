@@ -26,8 +26,6 @@ export const LEGACY_VALUE_SLUGS = {
 export type ScaleDirection = "lower" | "higher" | "target";
 
 export interface ValueScale {
-  /** The Scale sentence. Variables are written in brackets: "minutes for a defined [User type] to learn …". */
-  text: string;
   unit: string;
   rate: string;
   /** For a duration: "from: …; until: …". */

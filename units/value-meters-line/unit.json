@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/value-meters-line",
   "package": "@kaigilb/gilbplatformcode-value-meters-line",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws and edits the Meters line of a Value card: each Meter with its qualifiers and its Human, AI and Instrument lines, each line with its method and source, giving every change up whole through onChange.",
   "source": {
     "repo": "KaiGilb/GilbApp",

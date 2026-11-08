@@ -2,13 +2,13 @@
   "schema": 1,
   "unit": "units/value-illustration",
   "package": "@kaigilb/gilbplatformcode-value-illustration",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "3513ae1756fb15146079d7edce3486b03dce5f78",
     "files": [
-      { "path": "src/components/records/PlanValueLines.tsx", "lines": [2596, 2615], "to": "src/PlanValuePictureBody.tsx" }
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [2605, 2624], "to": "src/PlanValuePictureBody.tsx" }
     ]
   },
   "namedChanges": [

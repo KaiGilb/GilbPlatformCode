@@ -32,7 +32,7 @@ afterEach(cleanup);
 describe("the README example", () => {
   it("a click on the unit edits it in place; Enter saves the whole card once", async () => {
     const saved = vi.fn();
-    const start = card({ scale: { text: "", unit: "minutes", rate: "per [Task]", context: "", direction: "lower", source: {} } });
+    const start = card({ scale: { unit: "minutes", rate: "per [Task]", context: "", direction: "lower", source: {} } });
     render(<ScaleCard start={start} save={saved} />);
     await userEvent.click(screen.getByRole("button", { name: "Edit Scale unit" }));
     fireEvent.change(screen.getByLabelText("Edit Scale unit"), { target: { value: "seconds" } });
@@ -42,7 +42,7 @@ describe("the README example", () => {
     expect(saved.mock.calls[0]![0].levels).toBe(start.levels);
   });
   it("the Scale line does not ask for the host of the lines: without it, it draws", () => {
-    render(<ScaleCard start={card({ scale: { text: "", unit: "minutes", rate: "", context: "", direction: "higher", source: {} } })} save={() => {}} />, null);
+    render(<ScaleCard start={card({ scale: { unit: "minutes", rate: "", context: "", direction: "higher", source: {} } })} save={() => {}} />, null);
     expect(screen.getByRole("button", { name: "Edit Scale unit" })).toBeTruthy();
   });
 });

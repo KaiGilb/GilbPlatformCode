@@ -51,7 +51,7 @@ function browser(value: BaseRecord, seed: ValuePartsSeed) {
   return { qc: b.qc, fake: b.host, calls: b.calls, PV, rows, notices, wrapper: b.Frame };
 }
 
-const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ text: "", unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
+const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
 const variable = (name: string, options: { name: string; definition: string }[] = [], over: Partial<ScaleVariable> = {}): ScaleVariable => ({
   name,
   definition: "",
@@ -83,7 +83,7 @@ describe("the Scale is a t:Scale record", () => {
     const t = scaleHost(value);
     const linked: (string | null)[] = [];
     await act(async () => {
-      await t.host.save(scale({ text: "minutes to [Task]", unit: "minutes", rate: "per [Task]", context: "in [Country]" }), async (uri) => (linked.push(uri), true));
+      await t.host.save(scale({ unit: "minutes", rate: "per [Task]", context: "in [Country]" }), async (uri) => (linked.push(uri), true));
     });
     expect(server.creates).toHaveLength(1);
     const c = server.creates[0]!;
@@ -92,7 +92,6 @@ describe("the Scale is a t:Scale record", () => {
     expect(c.facts).toEqual({
       unitTag: "Speed.Scale",
       partOf: { "@id": VALUE_URI },
-      description: "minutes to [Task]",
       unit: "minutes",
       rate: "per [Task]",
       scaleContext: "in [Country]",
@@ -111,14 +110,14 @@ describe("the Scale is a t:Scale record", () => {
     expect(server.creates[0]!.facts.scaleDirection).toBe("lower");
   });
 
-  it("an edit of a Scale that is a record patches that record alone, with only the facts that changed", async () => {
+  it("an edit of a Scale that is a record patches that record alone, and a real edit removes the old sentence", async () => {
     const value = valueRow({ hasScale: { "@id": "https://h.example.test/base/e/scale1" } });
     const t = scaleHost(value, { scale: { "a:description": "words", "a:unit": "minutes", "a:scaleDirection": "higher" } });
     const link = vi.fn(async () => true);
     await act(async () => {
-      await t.host.save(scale({ text: "words", unit: "seconds" }), link);
+      await t.host.save(scale({ unit: "seconds" }), link);
     });
-    expect(server.patches).toEqual([{ id: "scale1", body: { unit: "seconds" } }]);
+    expect(server.patches).toEqual([{ id: "scale1", body: { description: null, unit: "seconds" } }]);
     expect(server.creates).toEqual([]);
     expect(link).not.toHaveBeenCalled();
   });

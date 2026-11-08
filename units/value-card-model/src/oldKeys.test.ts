@@ -54,7 +54,7 @@ describe("old keys are never written", () => {
       levelCreateFacts(lvl, "T.Goal", "https://h/e/p", 1),
       qualifierCreateFacts(q as never, "T.Q.Country", "https://h/e/p", 1),
       meterLineCreateFacts(line, "T.Meter.Human", "https://h/e/p", 1),
-      valueCardPatch({ ...emptyValueCard(), scale: { text: "sentence", unit: "min", rate: "", context: "", direction: "higher", source: {} }, endpoint: { subject: { typeIri: "https://x/t/App", typeLabel: "App", words: "w" }, reference: { typeIri: "", typeLabel: "", words: "" }, text: "old free text", source: {} } }),
+      valueCardPatch({ ...emptyValueCard(), scale: { unit: "min", rate: "", context: "", direction: "higher", source: {} }, endpoint: { subject: { typeIri: "https://x/t/App", typeLabel: "App", words: "w" }, reference: { typeIri: "", typeLabel: "", words: "" }, text: "old free text", source: {} } }),
     ];
     const used = all.flatMap((x) => keysDeep(x));
     expect(used.filter((k) => OLD.includes(k))).toEqual([]);
@@ -135,7 +135,7 @@ describe("old level record is rewritten on edit", () => {
   it("a Value holding the older valueScale reads it, and writeScale keeps the unknown members", () => {
     const card = readValueCard({ valueScale: [{ "a:unit": "min", scaleText: "How long", "a:scaleDirection": "higher" }] });
     expect(card.scale.unit).toBe("min");
-    expect(card.scale.text).toBe("How long");
+    expect(JSON.stringify(card.scale)).not.toContain("How long");
     expect(card.scale.direction).toBe("higher");
   });
 });

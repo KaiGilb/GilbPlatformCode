@@ -16,6 +16,18 @@ export interface BaseRecord {
    * hydration), not a claim about the record. The Plan card gates read it: such a record is never a Development Resource card.
    */
   typeSubstituted?: true;
+  /**
+   * The `@type` exactly as the vault served it. `typeUri` is normalised, so any host's `/base/t/<Name>`
+   * collapses onto this app's own and loses who vouched for it. Only a check that must tell hosts apart
+   * reads this; everything else reads `typeUri`. Absent when the document named no type.
+   */
+  servedType?: string;
+  /**
+   * The host of the request that read this record (the vault that serves it), so a type spelled with that
+   * host can be told from the same spelling under another host. Set by that read only; a record from a
+   * listing row or built in code has none.
+   */
+  readHost?: string;
   /** The typed facts, keyed by attribute slug (bare, e.g. `title`). */
   facts: Record<string, string>;
   /**
@@ -37,6 +49,8 @@ export interface BaseRecord {
    * means no served document is in hand.
    */
   served?: ServedDocument;
+  /** Client-only, never sent. Set and cleared only by the retype; `upsert` never copies it from the incoming row. */
+  retypePending?: true;
 }
 
 /** The facts of one served record document, unflattened — see {@link BaseRecord.served}. */

@@ -289,7 +289,7 @@ describe("blanks and empty data", () => {
     expect(blankEndpointPart()).toEqual({ typeIri: "", typeLabel: "", words: "" });
     expect(blankVariable("N")).toEqual({ name: "N", definition: "", defaultOption: "", options: [], source: {} });
     const d = emptyValueCard();
-    expect(d.scale).toEqual({ text: "", unit: "", rate: "", context: "", direction: "higher", source: {} });
+    expect(d.scale).toEqual({ unit: "", rate: "", context: "", direction: "higher", source: {} });
     expect(d.levels).toEqual([]);
     expect(d.endpoint.subject).toEqual(blankEndpointPart());
     expect(emptyValueCard()).not.toBe(d);
@@ -485,12 +485,12 @@ describe("level lines: text helpers", () => {
 });
 
 describe("Scale: names, rows, tags, reference", () => {
-  it("scaleQualifierNames: the [Name] words of text, unit, rate and context, in that order, once each", () => {
-    expect(scaleQualifierNames({ text: "per [Task]", unit: "[Unit] and [task]", rate: "[Rate]", context: "[Ctx] [rate]" })).toEqual(["Task", "Unit", "Rate", "Ctx"]);
+  it("scaleQualifierNames: the [Name] words of unit, rate and context, in that order, once each", () => {
+    expect(scaleQualifierNames({ unit: "per [Task]", rate: "[Unit] and [task]", context: "[Rate] [Ctx]" })).toEqual(["Task", "Unit", "Rate", "Ctx"]);
     expect(scaleQualifierNames({})).toEqual([]);
   });
   it("qualifierRows: one row per Scale name in Scale order, then the defined names the Scale lacks", () => {
-    const data = { scale: { ...emptyValueCard().scale, text: "per [Task] in [Country]" }, variables: [variable("country"), variable("Old"), variable("  ")] };
+    const data = { scale: { ...emptyValueCard().scale, rate: "per [Task] in [Country]" }, variables: [variable("country"), variable("Old"), variable("  ")] };
     const rows = qualifierRows(data);
     expect(rows.map((r) => [r.name, r.index, r.inScale])).toEqual([
       ["Task", null, true],
@@ -501,14 +501,14 @@ describe("Scale: names, rows, tags, reference", () => {
     expect(rows[1]!.variable).toBe(data.variables[0]);
   });
   it("withScaleQualifiers: the rows' variables, Scale order first; the other data untouched", () => {
-    const data = { ...emptyValueCard(), scale: { ...emptyValueCard().scale, text: "[B] [A]" }, variables: [variable("A", ["x"])] };
+    const data = { ...emptyValueCard(), scale: { ...emptyValueCard().scale, unit: "[B] [A]" }, variables: [variable("A", ["x"])] };
     const out = withScaleQualifiers(data);
     expect(out.variables.map((v) => v.name)).toEqual(["B", "A"]);
     expect(out.variables[1]).toBe(data.variables[0]);
     expect(out.scale).toBe(data.scale);
   });
   it("renameCandidate: exactly one defined name the Scale lacks and exactly one Scale name with no record", () => {
-    const scale = { ...emptyValueCard().scale, text: "[New]" };
+    const scale = { ...emptyValueCard().scale, context: "[New]" };
     expect(renameCandidate({ scale, variables: [variable("Old")] })).toEqual({ from: "Old", to: "New" });
     expect(renameCandidate({ scale, variables: [variable("Old"), variable("Other")] })).toBeNull();
     expect(renameCandidate({ scale, variables: [variable("New")] })).toBeNull();
@@ -535,9 +535,9 @@ describe("Scale: names, rows, tags, reference", () => {
     expect(scaleRefOf({ hasScale: { "a:unit": "min" } })).toBe("");
   });
   it("readScaleRecord and scaleCreateFacts round-trip a Scale record", () => {
-    const s = { ...emptyValueCard().scale, text: "words", unit: "min", direction: "target" as const };
+    const s = { ...emptyValueCard().scale, unit: "min", direction: "target" as const };
     const facts = scaleCreateFacts(s, "V.Scale", "https://example.test/base/e/val");
-    expect(facts).toEqual({ unitTag: "V.Scale", partOf: { "@id": "https://example.test/base/e/val" }, description: "words", unit: "min", scaleDirection: "target" });
+    expect(facts).toEqual({ unitTag: "V.Scale", partOf: { "@id": "https://example.test/base/e/val" }, unit: "min", scaleDirection: "target" });
     expect(readScaleRecord(row("s1", "Scale", facts))).toEqual(s);
     expect(scaleDirectionOf({ scale: s })).toBe("target");
     expect(scaleDirectionOf(null)).toBe("higher");

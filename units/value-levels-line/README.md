@@ -35,7 +35,7 @@ One component, `PlanValueLevelsBody`, the body of the group titled "Levels" on a
 
 Package: `@kaigilb/gilbplatformcode-value-levels-line`
 
-Take it together with its peers `open-popups`, `plan-card-facts`, `qualifier-value-picker`, `value-card-model` (0.2.0 or later) and `value-line-kit`, and their own peers (`qualifier-value-picker` has `plan-button-row` and `qualifier-values`; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 and `react-dom` (for the kind menu's portal) are peers. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack):
+Take it together with its peers `open-popups`, `plan-card-facts`, `qualifier-value-picker`, `value-card-model` (0.3.0 or later) and `value-line-kit`, and their own peers (`qualifier-value-picker` has `plan-button-row` and `qualifier-values`; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 and `react-dom` (for the kind menu's portal) are peers. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack):
 
 ```
 install-links=true

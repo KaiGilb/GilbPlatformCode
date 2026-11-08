@@ -1,5 +1,5 @@
 // A Value's Scale as a record. The Scale is ONE t:Scale record, a:partOf the Value, tag `<ValueTag>.Scale`, with
-// a:description (the Scale sentence), a:unit, a:rate, a:scaleContext and a:scaleDirection. The Value points at it: a:hasScale = {"@id": record}.
+// a:unit, a:rate, a:scaleContext and a:scaleDirection. It has no sentence (Kai, 2026-11-08). The Value points at it: a:hasScale = {"@id": record}.
 // It is made, found and rolled back the way the levels, qualifiers and meters are (valueChildRecords.ts). An older Scale (inline a:hasScale,
 // or a:valueScale) is read as it is; its next edit is ONE group: the Scale record is made, then the Value is patched to point at it;
 // if the Value patch fails, the new record is ended again.

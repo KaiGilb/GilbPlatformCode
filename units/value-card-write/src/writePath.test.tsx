@@ -194,7 +194,7 @@ describe("whole chain: a 412 on a Timeline drop", () => {
       const [notice, setNotice] = useState<string | null>(null);
       const host = useValueLevels({ enabled: true, record: VALUE, vaultId: P, planVault: PV, rows, variableOrder: [], onNotice: setNotice });
       const data: ValueCardData = {
-        scale: { text: "t", unit: "min", rate: "", context: "", direction: "lower", source: {} },
+        scale: { unit: "min", rate: "", context: "", direction: "lower", source: {} },
         variables: [],
         endpoint: { subject: { typeIri: "", typeLabel: "", words: "" }, reference: { typeIri: "", typeLabel: "", words: "" }, text: "", source: {} },
         meters: [],

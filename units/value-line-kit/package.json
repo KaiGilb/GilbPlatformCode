@@ -20,7 +20,7 @@
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-source": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-chooser": "^0.1.0",
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
