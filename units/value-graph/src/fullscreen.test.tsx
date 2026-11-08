@@ -19,7 +19,7 @@ const lv = (kind: string, value: number, when: string, variables: Record<string,
 });
 
 const data: ValueCardData = {
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
   variables: [
     {
       name: "Country",

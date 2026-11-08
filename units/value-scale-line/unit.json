@@ -2,16 +2,16 @@
   "schema": 1,
   "unit": "units/value-scale-line",
   "package": "@kaigilb/gilbplatformcode-value-scale-line",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws and edits the Scale line of a Value card or a Development Resource card: its unit, rate and context (each [Qualifier] in the rate and context is a chip that jumps to that qualifier's row), which direction is better, and its source, giving every change up whole through onChange.",
   "source": {
     "repo": "KaiGilb/GilbApp",
-    "commit": "dcfc18b33e9f091cf22d6ae06906839ec5855e67",
+    "commit": "3513ae1756fb15146079d7edce3486b03dce5f78",
     "files": [
-      { "path": "src/components/records/PlanValueLines.tsx", "lines": [101, 105], "to": "src/PlanScaleBody.tsx" },
-      { "path": "src/components/records/PlanValueLines.tsx", "lines": [734, 742], "to": "src/PlanScaleBody.tsx" },
-      { "path": "src/components/records/PlanValueLines.tsx", "lines": [744, 787], "to": "src/PlanScaleBody.tsx" },
-      { "path": "src/components/records/PlanValueLines.tsx", "lines": [791, 887], "to": "src/PlanScaleBody.tsx" }
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [102, 106], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [735, 743], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [745, 788], "to": "src/PlanScaleBody.tsx" },
+      { "path": "src/components/records/PlanValueLines.tsx", "lines": [792, 888], "to": "src/PlanScaleBody.tsx" }
     ]
   },
   "namedChanges": [

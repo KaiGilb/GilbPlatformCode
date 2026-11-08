@@ -1503,7 +1503,7 @@ export function PlanValueGraph(props: PlanValueGraphProps) {
             </button>
           </div>
           <PlanValueGraphFullScreen
-            title={title || data.scale.text || "Illustration"}
+            title={title || "Illustration"}
             chips={
               <>
                 {chips}

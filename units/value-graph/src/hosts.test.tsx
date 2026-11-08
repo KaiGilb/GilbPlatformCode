@@ -15,7 +15,7 @@ afterEach(() => {
 const part = (name: string): EndpointPart => ({ typeIri: `https://ontology.example.test/base/t/${name}`, typeLabel: name, words: "" });
 const none: EndpointPart = { typeIri: "", typeLabel: "", words: "" };
 const card = (subject: EndpointPart): ValueCardData => ({
-  scale: { text: "minutes", unit: "min", rate: "", context: "", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "", direction: "lower", source: {} },
   variables: [],
   endpoint: { subject, reference: none, text: "", source: {} },
   meters: [],

@@ -11,7 +11,7 @@ One component, `PlanValuePictureBody`, the body of the group titled "Illustratio
 - The graph draws `data` (see `value-graph` for the Arrow and the Timeline, the markers, the "+ New" menu, the chips and the full-screen view).
 - Editing: the graph is editable when the card is in Edit or the person may edit (`editing || canEdit`); the Illustration is a graph you can work in without turning the card to Edit.
 - Older stored list: while `legacy.levels` is more than 0 (the Value still holds an old stored list of levels and has no level records) the line forces both `editing` and `canEdit` off: the graph is read-only, whatever the card says. The card moves the list (the Levels line shows the button); then the graph is editable again. An older list of qualifiers or Meters does not matter here.
-- What the card gives the graph: the card's title (`record.facts.title`; without one the graph names itself from the Scale's text, then "Illustration") for the full-screen header; `host.progress` ("Moving 1 of 5…" while the card moves a whole row), `host.capped` ("Showing the first 2 of 24 records at this level.") and, only when it is given, `host.onNotice` (the graph's one notice, "This level was removed by someone else.", also goes to the card's notice line).
+- What the card gives the graph: the card's title (`record.facts.title`; without one the graph names itself "Illustration" (the Scale has no sentence)) for the full-screen header; `host.progress` ("Moving 1 of 5…" while the card moves a whole row), `host.capped` ("Showing the first 2 of 24 records at this level.") and, only when it is given, `host.onNotice` (the graph's one notice, "This level was removed by someone else.", also goes to the card's notice line).
 - What goes up: every change of the levels is `onChange({ ...data, levels: next })` where `next` is the graph's whole new list with the unknown items of the old list carried (`carryOthers`); the rest of the card (the Scale, the qualifiers, the Endpoint, the Meters) goes up as the same objects. The graph calls it once for one act (a drop, a key step, a pick, a chip), never on each pointer move.
 
 ## What this is not
@@ -25,7 +25,7 @@ One component, `PlanValuePictureBody`, the body of the group titled "Illustratio
 
 Package: `@kaigilb/gilbplatformcode-value-illustration`
 
-Take it together with its peers `value-card-model` (0.2.0 or later), `value-graph` and `value-line-kit` (for the props type), and their own peers (`value-graph`'s: `open-popups`, `qualifier-value-picker`, `type-picture`, `type-term-popover`, `value-graph-geometry` with theirs; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 and `react-dom` (for the graph's full-screen layer and menus) are peers. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one set of contexts, one term origin, one level-key table):
+Take it together with its peers `value-card-model` (0.3.0 or later), `value-graph` and `value-line-kit` (for the props type), and their own peers (`value-graph`'s: `open-popups`, `qualifier-value-picker`, `type-picture`, `type-term-popover`, `value-graph-geometry` with theirs; the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 and `react-dom` (for the graph's full-screen layer and menus) are peers. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one set of contexts, one term origin, one level-key table):
 
 ```
 install-links=true
@@ -94,11 +94,11 @@ function IllustrationCard({ start, save, olderListMoved }: { start: ValueCardDat
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, `src/components/records/PlanValueLines.tsx`; the symbol of this unit, in `src/PlanValuePictureBody.tsx`, copied by `sed -n 'A,Bp'`:
+GilbApp (private repo KaiGilb/GilbApp), commit `3513ae1756fb15146079d7edce3486b03dce5f78`, `src/components/records/PlanValueLines.tsx`; the symbol of this unit, in `src/PlanValuePictureBody.tsx`, copied by `sed -n 'A,Bp'`:
 
 | Symbol | Lines |
 |---|---|
-| `PlanValuePictureBody` | 2596-2615 |
+| `PlanValuePictureBody` | 2605-2624 |
 
 `ValueLineProps` (type only) is in `value-line-kit`. Code verbatim except the named changes (the comment-stripped text of the symbol is the same as in the source, and the check is scripted).
 

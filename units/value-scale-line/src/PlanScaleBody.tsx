@@ -74,7 +74,7 @@ export function PlanScaleBody(p: ValueLineProps) {
     if (stamp) next.source = own(next.source, p.selfId);
     onChange({ ...data, scale: next });
   };
-  // The Scale has no sentence: an older a:scaleText is kept as it is and never shown or written anew.
+  // The Scale has no sentence (Kai, 2026-11-08): what the card shows is the whole Scale.
   const said = !!(s.unit.trim() || s.rate.trim() || s.context.trim());
   if (!editing) {
     const on = inPlace(p);

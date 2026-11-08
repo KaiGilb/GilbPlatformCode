@@ -34,7 +34,7 @@ One component, `PlanVariablesBody`, the body of the group titled "Qualifiers" on
 
 Package: `@kaigilb/gilbplatformcode-value-qualifiers-line`
 
-Take it together with its peers `plan-card-facts`, `value-card-model` (0.2.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
+Take it together with its peers `plan-card-facts`, `value-card-model` (0.3.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
 
 ```
 install-links=true

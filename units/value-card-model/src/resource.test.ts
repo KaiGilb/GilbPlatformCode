@@ -120,7 +120,7 @@ describe("a Value did not change", () => {
   it("a Value's Scale default is higher, a stored Scale record without direction still reads lower, a Value 'lower' is stored", () => {
     expect(readValueCard({}).scale.direction).toBe("higher");
     expect(readValueCard({}, null, false).scale.direction).toBe("higher");
-    const f = scaleFacts({ text: "", unit: "", rate: "", context: "", direction: "lower", source: {} });
+    const f = scaleFacts({ unit: "", rate: "", context: "", direction: "lower", source: {} });
     expect(f?.["a:scaleDirection"]).toBe("lower");
   });
   it("a custom Budget on a Value sorts after Wish and is not the Goal point", () => {
@@ -183,13 +183,13 @@ describe("Resource Scale direction default vs stored", () => {
     expect(readValueCard({ valueScale: { "a:description": "USD", "a:scaleDirection": "higher" } }, null, true).scale.direction).toBe("higher");
   });
   it("a Resource Scale with 'lower' and no words stores nothing, but with a unit it stores lower explicitly", () => {
-    const s = { text: "", unit: "", rate: "", context: "", direction: "lower" as const, source: {} };
+    const s = { unit: "", rate: "", context: "", direction: "lower" as const, source: {} };
     expect(scaleFacts(s, true)).toBeNull();
     expect(scaleFacts({ ...s, unit: "USD" }, true)?.["a:scaleDirection"]).toBe("lower");
     expect(scaleFacts({ ...s, direction: "higher" as const }, true)?.["a:scaleDirection"]).toBe("higher");
   });
   it("creating a Resource Scale record always stores the direction (never rely on a default)", () => {
-    const s = { text: "", unit: "", rate: "", context: "", direction: "lower" as const, source: {} };
+    const s = { unit: "", rate: "", context: "", direction: "lower" as const, source: {} };
     expect(scaleCreateFacts(s, "T", "https://vault.example.test/base/e/r", 0, true).scaleDirection).toBe("lower");
   });
   it("an old Value Scale record with no direction was lower; still lower", () => {

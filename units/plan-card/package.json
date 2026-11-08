@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-card",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.",
@@ -42,7 +42,7 @@
     "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-chooser": "^0.1.0",
     "@kaigilb/gilbplatformcode-type-curie": "^0.1.0",
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0",
     "@kaigilb/gilbplatformcode-value-card-write": "^0.1.0",
     "@kaigilb/gilbplatformcode-value-endpoint-line": "^0.1.0",
     "@kaigilb/gilbplatformcode-value-illustration": "^0.1.0",

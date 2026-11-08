@@ -29,7 +29,7 @@ const lv = (kind: string, value: number | null, q: Partial<LevelQualifier> = {})
 });
 const country = (c: string) => ({ Country: c });
 const mk = (levels: ValueLevel[], withVars = true): ValueCardData => ({
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
   variables: withVars
     ? [
         {

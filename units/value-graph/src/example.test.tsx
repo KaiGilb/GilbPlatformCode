@@ -22,7 +22,7 @@ const level = (kind: string, value: number, when = ""): ValueLevel => ({
   note: "",
 });
 const card: ValueCardData = {
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "", direction: "lower", source: {} },
   variables: [],
   endpoint: { subject: { typeIri: "", typeLabel: "", words: "" }, reference: { typeIri: "", typeLabel: "", words: "" }, text: "", source: {} },
   meters: [],

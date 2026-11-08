@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-illustration",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.",
@@ -16,7 +16,7 @@
     "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0",
     "@kaigilb/gilbplatformcode-value-graph": "^0.1.0",
     "@kaigilb/gilbplatformcode-value-line-kit": "^0.1.0",
     "react": "^19.0.0"

@@ -39,7 +39,7 @@ All of the above except `ValueLineProps` is exported for the line units; a line 
 
 Package: `@kaigilb/gilbplatformcode-value-line-kit`
 
-Take it together with its peers `base-record`, `plan-card-facts`, `plan-source`, `type-chooser` (its types are used by the host) and `value-card-model` (0.2.0 or later), and their own peers: `plan-source` has `entity-ref`, `entity-ref-value`, `record-picker`, `remove-control` and `type-curie` (`entity-ref-value` has `entity-ref`; `record-picker` has `id-tail`); `type-chooser` has `type-term-popover` (which has `open-popups`, `term-origin` and `type-picture`; `type-picture` has `type-name`); `value-card-model` has `plan-kinds` (which has `type-key`), `qualifier-values`, `term-origin` and `type-key`. React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one term origin):
+Take it together with its peers `base-record`, `plan-card-facts`, `plan-source`, `type-chooser` (its types are used by the host) and `value-card-model` (0.3.0 or later), and their own peers: `plan-source` has `entity-ref`, `entity-ref-value`, `record-picker`, `remove-control` and `type-curie` (`entity-ref-value` has `entity-ref`; `record-picker` has `id-tail`); `type-chooser` has `type-term-popover` (which has `open-popups`, `term-origin` and `type-picture`; `type-picture` has `type-name`); `value-card-model` has `plan-kinds` (which has `type-key`), `qualifier-values`, `term-origin` and `type-key`. React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one term origin):
 
 ```
 install-links=true

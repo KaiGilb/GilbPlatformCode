@@ -17,7 +17,7 @@ const lv = (kind: string, value: number | null, q: Partial<LevelQualifier> = {})
 });
 const NO = { typeIri: "", typeLabel: "", words: "" };
 const mk = (levels: ValueLevel[], direction: "lower" | "higher" = "lower"): ValueCardData => ({
-  scale: { text: "minutes", unit: "min", rate: "", context: "", direction, source: {} },
+  scale: { unit: "min", rate: "", context: "", direction, source: {} },
   variables: [],
   endpoint: { subject: NO, reference: NO, text: "", source: {} },
   meters: [],

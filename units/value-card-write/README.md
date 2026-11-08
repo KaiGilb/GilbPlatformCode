@@ -36,7 +36,7 @@ What one edit writes:
 
 Package: `@kaigilb/gilbplatformcode-value-card-write`
 
-Take it together with its peers `value-card-model`, `plan-card-facts`, `plan-links-model`, `plan-kinds`, `base-record`, `description-parts-model` (for `asGrid`) and `fact-faithful`, and their own peers (`type-key`, `type-curie`, `id-tail`, `entity-ref`, `relation-role`, `qualifier-values` and `term-origin`). `value-card-model` must be `^0.2.0`. Put this line in your app's own `.npmrc` so all are installed as copies and not links (one copy of React, one copy of each unit):
+Take it together with its peers `value-card-model`, `plan-card-facts`, `plan-links-model`, `plan-kinds`, `base-record`, `description-parts-model` (for `asGrid`) and `fact-faithful`, and their own peers (`type-key`, `type-curie`, `id-tail`, `entity-ref`, `relation-role`, `qualifier-values` and `term-origin`). `value-card-model` must be `^0.3.0`. Put this line in your app's own `.npmrc` so all are installed as copies and not links (one copy of React, one copy of each unit):
 
 ```
 install-links=true
@@ -209,6 +209,7 @@ GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839e
   4. `useQueryClient()` is `useValueWriteHost()` (reads `ValueWriteHostContext`, throws a sentence that names the provider when there is none); `useDeleteRecord(vaultId)` is `host.useDeleteRecord(vaultId)`. The `qc` entry of `useChildList`'s kept context is `host`.
   5. In `useValueQualifiers.definitionRows` the lines `const key = planFindKey(...)` and the `qc.getQueryData(key)` / `qc.fetchQuery(...)` pair are `host.cachedPlanFind(...)` and `host.fetchPlanFind(..., { staleTime: 15_000 })`; the key is formed by the host.
   6. Comments lose the names, batch tags, QA ids and round tags of the source; they keep their meaning. Nothing else in the six files is changed.
+  7. the opening comment of `useValueScale.ts` no longer says the Scale has a description (the Scale sentence): the Scale has no sentence (GilbApp 3513ae17, Kai 2026-11-08). The rest of that file is the copy of `dcfc18b3`. `source.commit` stays `dcfc18b33e9f091cf22d6ae06906839ec5855e67`: `useValueScale.ts` is not unchanged at `3513ae17`, so the pin does not move.
 - `src/lib/base/planFind.ts` lines 26-37 (`PlanFind`, `planFindRows`) to `src/planFind.ts`. Verbatim.
 - `src/lib/base/planRowCache.ts` lines 17-70 (`PlanRowPatch`, `editorString`, `applyPatch`) to `src/applyPatch.ts`; `isFactStringFaithful` is the `fact-faithful` unit (compared with the source's: the same). Verbatim.
 - `src/lib/base/records.ts` lines 427-433 (`WriteSource`), 447-452 (`writeSource`), 942-948 (`MergePatchValue`), 215-220 (`RecordFactValue`) and 234 (`RecordCreateFacts`) to `src/writeSource.ts`. Verbatim; the first three are the same copy as in `plan-stakeholder-lines`.

@@ -156,7 +156,7 @@ export function defaultDirectionFor(resource?: boolean): ScaleDirection {
 
 export function emptyValueCard(): ValueCardData {
   return {
-    scale: { text: "", unit: "", rate: "", context: "", direction: "higher", source: {} },
+    scale: { unit: "", rate: "", context: "", direction: "higher", source: {} },
     variables: [],
     endpoint: { subject: blankEndpointPart(), reference: blankEndpointPart(), text: "", source: {} },
     meters: [],
@@ -327,7 +327,7 @@ function set(entry: Rec, name: string, value: unknown): void {
 
 /* ------------------------------------------------------------------- scale */
 
-// The Scale sentence is a:description inside a:hasScale. The older a:scale / a:scaleText are owned too, so they are read but never carried.
+// The Scale has no sentence (Kai, 2026-11-08). The old description, scale and scaleText keys are owned so they are never carried, and are removed by the next save.
 const SCALE_OWNED = ["unit", "rate", "scaleContext", "scaleDirection", "description", "scale", "scaleText", ...SOURCE_KEYS];
 const DIRECTIONS: readonly ScaleDirection[] = ["lower", "higher", "target"];
 
@@ -350,8 +350,7 @@ function readScale(raw: unknown): ValueCardData["scale"] {
   const o = asRec(listOf(raw)[0]);
   const out = emptyValueCard().scale; // no Scale yet: "higher"
   if (!o) return out;
-  // Read a:description first, then the older a:scale / a:scaleText (read-only; dropped on the next write).
-  out.text = str(o, "description") || str(o, "scale") || str(o, "scaleText");
+  // The Scale has no sentence (Kai, 2026-11-08). The old description, scale and scaleText keys are owned so they are never carried, and are removed by the next save.
   out.unit = str(o, "unit");
   out.rate = str(o, "rate");
   out.context = str(o, "scaleContext");
@@ -366,13 +365,11 @@ function readScale(raw: unknown): ValueCardData["scale"] {
  */
 export function scaleFacts(s: ValueCardData["scale"], resource?: boolean): Rec | null {
   const entry = base(s, SCALE_OWNED);
-  const text = s.text.trim();
-  set(entry, "description", text);
   set(entry, "unit", s.unit.trim());
   set(entry, "rate", s.rate.trim());
   set(entry, "scaleContext", s.context.trim());
   const facts = sourceWire(s.source);
-  const any = text || s.unit.trim() || s.rate.trim() || s.context.trim() || Object.keys(facts).length || s.direction !== defaultDirectionFor(resource);
+  const any = s.unit.trim() || s.rate.trim() || s.context.trim() || Object.keys(facts).length || s.direction !== defaultDirectionFor(resource);
   if (!any && !hasUnknown(entry, SCALE_OWNED)) return null;
   // Always stored, "lower" included, so a later change of the default can never flip a saved Value.
   entry["a:scaleDirection"] = s.direction;
@@ -1096,7 +1093,9 @@ export function scaleRowOf(
   );
 }
 
-const SCALE_FACT_SLUGS = ["description", "unit", "rate", "scaleContext"] as const;
+const SCALE_FACT_SLUGS = ["unit", "rate", "scaleContext"] as const;
+/** A stored sentence. Cleared on the next real edit; never read. */
+const SCALE_SENTENCE_SLUGS = ["description", "scale", "scaleText"] as const;
 
 /** The Scale record's served facts as one `a:` object, so the one Scale reader reads a record and an inline Scale alike. */
 function scaleRecOf(row: BaseRecord): Rec {
@@ -1139,6 +1138,12 @@ export function scalePatch(row: BaseRecord, s: ValueCardData["scale"], resource?
   }
   // Written by something else without a direction: any edit also states it (always stored).
   if (Object.keys(patch).length && !("scaleDirection" in patch) && !prevDir) patch.scaleDirection = s.direction;
+  // The Scale has no sentence (Kai, 2026-11-08). A real edit removes a stored one. An unchanged card writes nothing.
+  if (Object.keys(patch).length) {
+    for (const slug of SCALE_SENTENCE_SLUGS) {
+      if (textOf(rowServedFact(row, slug))) patch[slug] = null;
+    }
+  }
   return patch;
 }
 
@@ -1542,7 +1547,7 @@ export function valueCardPatch(data: ValueCardData): Record<string, unknown> {
 export function valueLinesEmpty(data: ValueCardData) {
   const s = data.scale;
   return {
-    scale: !s.text.trim() && !s.unit.trim() && !s.rate.trim() && !s.context.trim() && planSourceEmpty(s.source),
+    scale: !s.unit.trim() && !s.rate.trim() && !s.context.trim() && planSourceEmpty(s.source),
     scaleVariables: data.variables.length === 0,
     endpoint: !data.endpoint.text.trim() && !writePart(data.endpoint.subject) && !writePart(data.endpoint.reference) && planSourceEmpty(data.endpoint.source),
     valueMeters: data.meters.length === 0,
@@ -1552,7 +1557,7 @@ export function valueLinesEmpty(data: ValueCardData) {
 
 /* --------------------------------------------------------- Scale variables */
 
-/** The `[Name]` words in the Scale sentence, in order, each once. */
+/** The `[Name]` words in a Scale field, in order, each once. */
 export function scaleVariableNames(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -1567,13 +1572,13 @@ export function scaleVariableNames(text: string): string[] {
 }
 
 /**
- * The qualifier names the Scale gives: the `[Name]` words of the Scale sentence, then Unit, Rate and Context, in that order,
- * each name once (case-insensitive, trimmed, spelled as first written).
+ * The qualifier names the Scale gives: the `[Name]` words of Unit, Rate and Context, in that order,
+ * each name once (case-insensitive, trimmed, spelled as first written). The Scale has no sentence.
  */
-export function scaleQualifierNames(scale: { text?: string; unit?: string; rate?: string; context?: string }): string[] {
+export function scaleQualifierNames(scale: { unit?: string; rate?: string; context?: string }): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const field of [scale.text, scale.unit, scale.rate, scale.context]) {
+  for (const field of [scale.unit, scale.rate, scale.context]) {
     for (const name of scaleVariableNames(field ?? "")) {
       const key = name.toLowerCase();
       if (seen.has(key)) continue;

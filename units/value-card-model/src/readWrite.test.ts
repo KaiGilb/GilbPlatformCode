@@ -61,7 +61,6 @@ function example(): ValueCardData {
   const levels = LINES.map((l) => parseLevelLine(l, variables)!);
   return {
     scale: {
-      text: "minutes for a defined [User type] to learn to do a defined [Task] in the app, on a defined [Device], without help",
       unit: "minutes",
       rate: "per learner, per [Task]; the median over the learners tested",
       context: "from: first opening of the app, with no training; until: the [Task] is first done correctly, without help",
@@ -140,7 +139,7 @@ describe("planValue card round trip", () => {
     const x = example();
     const patch = valueCardPatch(x);
     expect("valueLevels" in patch).toBe(false);
-    // The Scale and Endpoint sentences are saved as a:description, so they come back.
+    // The Endpoint sentence is saved as a:description, so it comes back. The Scale has no sentence.
     // The old stored lists (qualifier definitions, meters) are read-only: not in the patch.
     const without = { ...x, levels: [], variables: [], meters: [] };
     // The Scale is its own record (scaleFacts); the Value's patch holds the Endpoint only.
@@ -175,14 +174,15 @@ describe("planValue card round trip", () => {
     expect(readLegacyLevels([{ "levelKind": "Goal" }, 7]).length).toBe(1);
   });
 
-  it("the older Scale sentence (scaleText, and a:scale) is read from both and moved to a:description, never carried", () => {
+  it("the older Scale sentence (scaleText, and a:scale) is not read and is not written", () => {
     const d = readValueCard({ hasScale: { scaleText: "old", "a:unit": "min" } });
-    expect(d.scale.text).toBe("old");
-    expect(readValueCard({ hasScale: { "a:scale": "new", "a:unit": "min" } }).scale.text).toBe("new");
+    expect(JSON.stringify(d.scale)).not.toContain("old");
+    expect(JSON.stringify(readValueCard({ hasScale: { "a:scale": "new", "a:unit": "min" } }).scale)).not.toContain("new");
     const facts = scaleFacts(d.scale) as Record<string, unknown>;
     expect(facts.scaleText).toBeUndefined();
-    expect(facts["a:description"]).toBe("old");
+    expect(facts["a:description"]).toBeUndefined();
     expect(facts["a:scale"]).toBeUndefined();
+    expect(facts["a:unit"]).toBe("min");
     d.scale.unit = "sec";
     expect((scaleFacts(d.scale) as Record<string, unknown>)["a:unit"]).toBe("sec");
   });
@@ -191,7 +191,8 @@ describe("planValue card round trip", () => {
     for (const junk of [null, 5, "{{", [1, 2], { "@id": "x" }]) {
       const d = readValueCard({ valueScale: junk, valueLevels: junk, valueMeters: junk, scaleQualifierDefinitions: junk, endpoint: junk, valueEndpoint: junk });
       expect(d.levels).toEqual([]);
-      expect(d.scale.text).toBe("");
+      expect(d.scale.unit).toBe("");
+      expect("text" in d.scale).toBe(false);
     }
     // An empty Value shows Thing / Person; the patch of that read carries them (written only with a first Endpoint save).
     const empty = valueCardPatch(readValueCard({})) as Record<string, Record<string, Record<string, unknown>>>;

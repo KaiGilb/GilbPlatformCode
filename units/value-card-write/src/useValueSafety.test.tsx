@@ -49,7 +49,7 @@ function browser(value: BaseRecord, seed: ValuePartsSeed) {
   return { qc: b.qc, fake: b.host, calls: b.calls, PV, rows, notices, wrapper: b.Frame };
 }
 
-const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ text: "", unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
+const scale = (over: Partial<ValueScale> = {}): ValueScale => ({ unit: "", rate: "", context: "", direction: "higher", source: {}, ...over });
 /** An edit of a variable the way the card makes it: a copy that keeps the variable's record key. */
 const edited = (v: ScaleVariable, over: Partial<ScaleVariable>): ScaleVariable => carryRaw({ ...v, ...over }, v);
 const srv = (id: string) => server.recs.get(id);
@@ -109,7 +109,7 @@ describe("migrate-on-edit safety", () => {
     const t = scaleHost(value, {});
     let err: unknown = null;
     const link = vi.fn(async () => true);
-    await act(async () => { await t.host.save(scale({ text: "minutes" }), link).catch((e) => (err = e)); });
+    await act(async () => { await t.host.save(scale({ unit: "minutes" }), link).catch((e) => (err = e)); });
     expect(err, String((err as Error)?.message)).toBeNull();
   });
 

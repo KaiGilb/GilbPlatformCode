@@ -32,7 +32,7 @@ const NONE = part("", "");
 const APP = part("https://ontology.example.test/base/t/MobileApp", "mobile app");
 const USER = part("https://ontology.example.test/base/t/AppUser", "AppUser");
 const mk = (levels: ValueLevel[], subject = NONE, reference = NONE, direction: "lower" | "target" = "lower"): ValueCardData => ({
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "", direction, source: {} },
+  scale: { unit: "min", rate: "", context: "", direction, source: {} },
   variables: [
     {
       name: "Country",

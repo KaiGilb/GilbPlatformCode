@@ -12,7 +12,7 @@ One component, `PlanScaleBody`, the body of the group titled "Scale" on a Value 
   - "Unit: minutes" when there is a unit; "Rate: ..." and "Context: ..." when there are some; each `[Name]` in them is a chip (see below).
   - The direction in words (`Lower is better`, `Higher is better`, `Target range`), when the Scale says something (a unit, a rate or a context) or the person may edit.
   - The source under it ("Source: ..."), when it has one.
-  - The Scale's older sentence (`scale.text`) is kept as it is and never shown or written anew.
+  - The Scale has no sentence (Kai, 2026-11-08). An old stored one is not read, and the model removes it on the next real edit (`scalePatch` of `value-card-model`).
 - Click to type (`canEdit` and not Edit): each value is a button, `Edit Scale unit`, `Edit Scale rate`, `Edit Scale context`, `Edit Scale direction`, `Edit Scale source`, that turns into its editor and back. An empty unit, rate or context shows `Add unit`, `Add rate`, `Add context`. Enter or leaving saves a changed text once; Escape saves nothing. The rate and the context are text boxes (Shift+Enter is a line break). The direction is a select; a pick saves at once.
 - Edit: one box for each part, with the names Unit, Rate, Context, Better, and the source box open. The boxes save on Enter or on leaving when the text differs. The direction select saves at once.
 - The chips: each `[Name]` in the rate or the context is a button (`role="button"`, `data-kind="plan-scale-variable"`, `aria-label="Go to qualifier <Name>"`). A click, or Enter or Space, focuses the row of that qualifier in the same card (the Qualifiers line) and scrolls it near. The click and the keys stop at the chip, so in click-to-type mode a chip does not open the rate's editor. A name with no row does nothing.
@@ -29,7 +29,7 @@ One component, `PlanScaleBody`, the body of the group titled "Scale" on a Value 
 
 Package: `@kaigilb/gilbplatformcode-value-scale-line`
 
-Take it together with its peers `value-card-model` (0.2.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record`, `plan-card-facts`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
+Take it together with its peers `value-card-model` (0.3.0 or later) and `value-line-kit`, and their own peers (the kit's: `base-record`, `plan-card-facts`, `plan-source` and `type-chooser`, with theirs). React 19 is a peer. Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each):
 
 ```
 install-links=true
@@ -92,7 +92,7 @@ function ScaleCard({ start, save }: { start: ValueCardData; save: (next: ValueCa
 ## Wrong readings
 
 - "A Development Resource shows 'Lower is better' by itself." The line shows `scaleDirectionOf` of the data it is given, which is "higher" when the Scale has no direction. The "lower" of a Development Resource is put into the data by the model; a Resource whose data says "higher" shows "Higher is better".
-- "The Scale is a sentence with chips." It has no sentence: it has a unit, a rate and a context, and the chips are in the rate and the context. An older `scale.text` is carried but never shown, and never rewritten.
+- "The Scale is a sentence with chips." The Scale has no sentence (Kai, 2026-11-08): it has a unit, a rate and a context, and the chips are in the rate and the context. An old stored sentence is not read, and the model removes it on the next real edit (`scalePatch` of `value-card-model`).
 - "A change of the direction makes the signed-in person the source." Not so: only a change of the unit, the rate or the context does, and only when the Scale has no source yet. A change of the source never does.
 - "The unit is trimmed when it is saved." It is sent as typed (`"  min "` goes up with its blanks). Only the test for whether the line says anything (unit, rate or context) trims.
 - "A click on a chip edits the rate." In click-to-type mode a chip goes to the qualifier and stops there; the words around the chip, and the rate when it has no chip, open the editor. The label "Rate:" is outside the button.
@@ -101,14 +101,14 @@ function ScaleCard({ start, save }: { start: ValueCardData; save: (next: ValueCa
 
 ## Where it came from
 
-GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, `src/components/records/PlanValueLines.tsx`; the symbols of this unit, all in `src/PlanScaleBody.tsx` in the source's order, each copied by `sed -n 'A,Bp'`:
+GilbApp (private repo KaiGilb/GilbApp), commit `3513ae1756fb15146079d7edce3486b03dce5f78`, `src/components/records/PlanValueLines.tsx`; the symbols of this unit, all in `src/PlanScaleBody.tsx` in the source's order, each copied by `sed -n 'A,Bp'`:
 
 | Symbol | Lines |
 |---|---|
-| `DIRECTION_WORDS` | 101-105 |
-| `goToQualifier` | 734-742 |
-| `SentenceWithChips` | 744-787 |
-| `PlanScaleBody` | 791-887 |
+| `DIRECTION_WORDS` | 102-106 |
+| `goToQualifier` | 735-743 |
+| `SentenceWithChips` | 745-788 |
+| `PlanScaleBody` | 792-888 |
 
 The pieces the other lines share with this one (`CommitText`, `Src`, `Piece`, `TextPiece`, `InlineSelect`, `ViewSrc`, `own`, `inPlace`, `box`, `faint`) are in `value-line-kit`. Code verbatim except the named changes (the comment-stripped text of each of the four symbols is the same as in the source, and the check is scripted).
 

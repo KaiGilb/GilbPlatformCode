@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/value-graph",
   "package": "@kaigilb/gilbplatformcode-value-graph",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The Value card's graph: the Scale as an arrow and as a timeline, with the levels as markers you can drag, a \"+ New\" menu, qualifier chips, endpoint pictures and a full-screen view; it never writes, the host saves what onChangeLevels gives.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -22,7 +22,8 @@
     "Imports: `../../lib/base/planValueModel` and `../../lib/base/planValue` are `@kaigilb/gilbplatformcode-value-card-model` (each name was checked to be exported there: `kindClass`, `ALL_VALUE`, `carryRaw`, `levelNumberDisplay`, `levelRangeEnds`, `levelNumberTyped`, `levelHasQualifierValue`, `levelKey`, `levelLike`, `qualifierValues`, `resolveLevelKey`, `scaleDirectionOf`, `scaleQualifierNames`, `withScaleQualifiers` and the types `ValueCardData`, `ValueLevel`, `EndpointPart`); `./PlanValueGraph.geometry` is `@kaigilb/gilbplatformcode-value-graph-geometry` (every name checked); `../ui/layers` and `../ui/openStack` are `@kaigilb/gilbplatformcode-open-popups`; `./PlanQualifierValue` is `@kaigilb/gilbplatformcode-qualifier-value-picker`; `useTypePicture` from `./TypePicture` is `@kaigilb/gilbplatformcode-type-picture`; `./TypeTermPopover` is `@kaigilb/gilbplatformcode-type-term-popover`; `planCapSentence` from `../../lib/base/planFind` is `./planCapSentence`.",
     "`src/planCapSentence.ts` is new in this unit: the app's `PLAN_FIND_CAP` (with its doc comment) and `planCapSentence`, copied unchanged. The same function is in the `plan-tag-links` unit (`src/planFindNote.ts`); the two texts were compared and are identical.",
     "Comments: the names of people, the batch and cycle tags and the QA ids are removed, keeping the technical meaning; a note that named two components of the app (the layer \"follows OrgListSheet and Modal\") says what the layer does instead, and \"in the order the brief names them\" is \"in this order\". No code line changed.",
-    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with."
+    "`tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with.",
+    "the fullscreen title no longer falls back to `data.scale.text`: the Scale has no sentence (GilbApp 3513ae17, Kai 2026-11-08)"
   ],
   "newFiles": [
     "src/index.ts",

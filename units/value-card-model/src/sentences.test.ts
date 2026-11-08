@@ -1,39 +1,44 @@
-// The Scale sentence and the Endpoint sentence are saved (a:description), and no old key is carried.
+// The Scale has no sentence (Kai, 2026-11-08). The Endpoint sentence is still saved as a:description, and no old key is carried.
 import { describe, expect, it } from "vitest";
 import { readValueCard, scaleFacts, valueCardPatch } from "./planValue";
 
 type P = Record<string, Record<string, unknown>>;
 
-describe("the Scale sentence is saved", () => {
-  it("a new Value (no old keys): type a Scale sentence, save, re-read", () => {
-    const d = readValueCard({});
-    d.scale.text = "How long it takes to [Task]";
-    d.scale.unit = "min";
+describe("the Scale has no sentence", () => {
+  it("a unit is saved; a sentence is not written and does not come back", () => {
+    const d = readValueCard({ hasScale: { "a:description": "How long it takes to [Task]", "a:unit": "min" } });
+    expect("text" in d.scale).toBe(false);
+    expect(JSON.stringify(d.scale)).not.toContain("How long");
+    d.scale.unit = "sec";
     const facts = scaleFacts(d.scale)!;
-    expect(facts["a:description"]).toBe("How long it takes to [Task]");
-    expect(readValueCard({ hasScale: facts }).scale.text).toBe("How long it takes to [Task]");
-    expect(readValueCard({ hasScale: facts }).scale.unit).toBe("min");
+    expect(facts["a:description"]).toBeUndefined();
+    expect(facts["a:unit"]).toBe("sec");
+    expect(JSON.stringify(readValueCard({ hasScale: facts }).scale)).not.toContain("How long");
+    expect(readValueCard({ hasScale: facts }).scale.unit).toBe("sec");
   });
 
-  it("a sentence alone (no unit) is still saved", () => {
-    const d = readValueCard({});
-    d.scale.text = "Just words";
-    expect(readValueCard({ hasScale: scaleFacts(d.scale) }).scale.text).toBe("Just words");
+  it("a sentence alone (no unit) is not a Scale", () => {
+    const d = readValueCard({ hasScale: { "a:description": "Just words", "a:scaleDirection": "higher" } });
+    expect(scaleFacts(d.scale)).toBeNull();
   });
 
-  it("the older scale / scaleText sentence keys are read, moved to a:description on write, and never carried", () => {
+  it("the older scale / scaleText sentence keys are not read and are never written", () => {
     for (const old of ["scaleText", "scale"]) {
       const d = readValueCard({ hasScale: { [old]: "old words", "a:unit": "min" } });
-      expect(d.scale.text).toBe("old words");
+      expect(JSON.stringify(d.scale)).not.toContain("old words");
       d.scale.unit = "sec";
       const entry = scaleFacts(d.scale)!;
-      expect(entry["a:description"]).toBe("old words");
-      expect(JSON.stringify(entry)).not.toMatch(/scaleText|"a:scale"/);
+      expect(entry["a:description"]).toBeUndefined();
+      expect(entry["a:unit"]).toBe("sec");
+      expect(JSON.stringify(entry)).not.toMatch(/scaleText|"a:scale"|old words/);
     }
   });
 
-  it("description wins over the old names when both are held", () => {
-    expect(readValueCard({ hasScale: { "a:description": "new", scaleText: "old" } }).scale.text).toBe("new");
+  it("a stored description is not read, even beside an older name", () => {
+    const d = readValueCard({ hasScale: { "a:description": "new", scaleText: "old", "a:unit": "min" } });
+    expect(d.scale.unit).toBe("min");
+    expect(JSON.stringify(d.scale)).not.toContain("new");
+    expect(JSON.stringify(d.scale)).not.toContain("old");
   });
 });
 

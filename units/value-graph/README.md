@@ -30,7 +30,7 @@ One component, `PlanValueGraph`, with its parts. It draws the Illustration line 
 
 Package: `@kaigilb/gilbplatformcode-value-graph`
 
-Take it together with its peers: `open-popups`, `qualifier-value-picker`, `type-picture`, `type-term-popover`, `value-card-model` (0.2.0 or later) and `value-graph-geometry` (0.2.0 or later). Their own peers are installed too: `qualifier-value-picker` has `plan-button-row` and `qualifier-values`; `type-picture` has `type-name`; `type-term-popover` has `term-origin`; `value-card-model` has `plan-card-facts`, `plan-kinds` (which has `type-key`), `qualifier-values`, `term-origin` and `type-key`; `value-graph-geometry` has `date-rules`. React 19 and `react-dom` are peers (`react-dom` for the full-screen layer, the "+ New" menu and the type popover, which are portalled to the page body). Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one set of contexts, one term origin, one level-key table):
+Take it together with its peers: `open-popups`, `qualifier-value-picker`, `type-picture`, `type-term-popover`, `value-card-model` (0.3.0 or later) and `value-graph-geometry` (0.2.0 or later). Their own peers are installed too: `qualifier-value-picker` has `plan-button-row` and `qualifier-values`; `type-picture` has `type-name`; `type-term-popover` has `term-origin`; `value-card-model` has `plan-card-facts`, `plan-kinds` (which has `type-key`), `qualifier-values`, `term-origin` and `type-key`; `value-graph-geometry` has `date-rules`. React 19 and `react-dom` are peers (`react-dom` for the full-screen layer, the "+ New" menu and the type popover, which are portalled to the page body). Put this line in your app's own `.npmrc` so all of them are installed as copies and not links (one copy of each: one open-popups stack, one set of contexts, one term origin, one level-key table):
 
 ```
 install-links=true
@@ -88,7 +88,7 @@ function Illustration({ start, save }: { start: ValueCardData; save: (levels: Va
   - `editing: boolean`: dragging, stepping, the chips and "+ New" are on only when true.
   - `onChangeLevels(next: ValueLevel[])`: called with the whole new list after a drag, a key step, a popover edit, a chip pick or an add. It is the only write seam. Called once for one act (a drop, a pick), never on each pointer move.
   - `height?: number`: the Timeline's height in px; default is the width times 0.45, between 320 and 560.
-  - `title?: string`: the name shown in the full-screen header; default the Scale's text, then "Illustration".
+  - `title?: string`: the name shown in the full-screen header; default "Illustration". The Scale has no sentence.
   - `progress?: { done: number; total: number } | null`: while the host moves a whole row, "Moving 12 of 50..." shows and dragging is off.
   - `capped?: { total: number; cap: number } | null`: the host's find stopped at its cap: "Showing the first N of M records at this level.".
   - `onNotice?(notice: string | null)`: the graph shows its one notice itself ("This level was removed by someone else.", when a level under a popover, a drag or a key step is gone from the list) and hands it to the card's own notice line; a year out of range is shown under the date field, as `plan-date-year-error`, and is not a notice.
@@ -138,7 +138,7 @@ GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839e
 
 The geometry file `PlanValueGraph.geometry.ts` is not here: it is the `value-graph-geometry` unit.
 
-Code verbatim except the named changes below (the comment-stripped text of each of the five files differs from the source only in the import lines).
+Code verbatim except the named changes below (the comment-stripped text of each of the five files differs from the source only in the import lines, and `PlanValueGraph.tsx` also in the full-screen title).
 
 Named changes:
 1. File names: the prefix `PlanValueGraph.` is dropped from the four parts (`ui`, `chips`, `endpoint`, `newMenu`), as the unit's import check allows only names without a dot; the imports between the five files follow (`./PlanValueGraph.newMenu` is `./newMenu`, and so on). The component and function names are unchanged.
@@ -146,6 +146,7 @@ Named changes:
 3. `src/planCapSentence.ts` is new in this unit: the app's `PLAN_FIND_CAP` (with its doc comment) and `planCapSentence`, copied unchanged. The same function is in the `plan-tag-links` unit (`src/planFindNote.ts`); the two texts were compared and are identical.
 4. Comments: the names of people, the batch and cycle tags and the QA ids are removed, keeping the technical meaning; a note that named two components of the app (the layer "follows OrgListSheet and Modal") says what the layer does instead, and "in the order the brief names them" is "in this order". No code line changed.
 5. `tsconfig.json` leaves out `noUncheckedIndexedAccess`, which the app's source is not compiled with.
+6. the fullscreen title no longer falls back to `data.scale.text`: the Scale has no sentence (GilbApp 3513ae17, Kai 2026-11-08).
 
 New in this unit: `src/index.ts`, `scripts/check-host-agnostic.mjs`, `test/mount.tsx`, `src/planCapSentence.ts` (above) and the tests below.
 

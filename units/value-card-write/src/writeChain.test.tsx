@@ -22,7 +22,7 @@ afterEach(cleanup);
 const part = (iri: string, label: string): EndpointPart => ({ typeIri: iri, typeLabel: label, words: "" });
 const NONE = part("", "");
 const mk = (levels: ValueLevel[], subject = NONE, reference = NONE, direction: "lower" | "target" = "lower"): ValueCardData => ({
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "", direction, source: {} },
+  scale: { unit: "min", rate: "", context: "", direction, source: {} },
   variables: [
     {
       name: "Country",
@@ -158,7 +158,7 @@ describe("the graph to the vault", () => {
 // ---- a level added from the "+ New" menu
 
 const mkMenu = (levels: ValueLevel[], withVars = true): ValueCardData => ({
-  scale: { text: "minutes to learn", unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
+  scale: { unit: "min", rate: "", context: "in [Country]", direction: "lower", source: {} },
   variables: withVars
     ? [
         {

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-meters-line",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Draws and edits the Meters line of a Value card: each Meter with its qualifiers and its Human, AI and Instrument lines, each line with its method and source, giving every change up whole through onChange.",
@@ -18,7 +18,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-plan-card-facts": "^0.1.0",
     "@kaigilb/gilbplatformcode-qualifier-value-picker": "^0.1.0",
-    "@kaigilb/gilbplatformcode-value-card-model": "^0.2.0",
+    "@kaigilb/gilbplatformcode-value-card-model": "^0.3.0",
     "@kaigilb/gilbplatformcode-value-line-kit": "^0.1.0",
     "react": "^19.0.0"
   },

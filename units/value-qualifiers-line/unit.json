@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/value-qualifiers-line",
   "package": "@kaigilb/gilbplatformcode-value-qualifiers-line",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the \"Not in the Scale\" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.",
   "source": {
     "repo": "KaiGilb/GilbApp",
