@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-origin-rule",
   "package": "@kaigilb/gilbplatformcode-vault-origin-rule",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The one rule for which origin a vault address names and which URL may receive the app's credential, so every address and credential check answers the same way.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -187,6 +187,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. before setBaseOrigin, vaultOriginOf of a valid https address returns that address's own origin; an empty address still throws the base-origin startup error",
     "every read of `BASE_ORIGIN` becomes `baseOrigin()` (peer `base-origin`)",
     "`SYSTEM_VAULT_HOSTS.has(...)` becomes `systemVaultHosts().has(...)`",
     "become the functions `sessionTokenUrl()` and `sessionDpopTokenUrl()`",

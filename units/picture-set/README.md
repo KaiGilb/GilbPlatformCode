@@ -13,7 +13,7 @@ Storing:
 - `uploadWithThumb(master, thumb, sink, target, full?)`: uploads the master, then (when given) the full copy, then the small copy, then tells the vault how they relate (`transcodedFrom`, a PATCH on the file record, because the upload door takes no facts at create). Answers the MASTER's entity URI. `sink` is `{ progress?, onProgress? }`: `progress` is what an earlier try already did; `onProgress` is called (and awaited) with a copy of the progress after every finished step. A step that `progress` already holds is skipped, so a retry never uploads the same picture twice.
 - File names: `<base>.jpg`, `<base>-320.jpg`, `<base>-full.jpg`, where `<base>` is the master's file name without its extension (`picture` for a blob that is not a `File`, or a file whose name is only an extension). The extension follows each blob: `.webp` for a `image/webp` blob, else `.jpg`. For a JPEG master and thumb the names are `<base>.jpg` and `<base>-320.jpg`.
 - The master upload failing fails the call. The small copy, the full copy and every link are best effort: a failure writes one `console.warn` and the call goes on with what it has.
-- `UploadProgress`: `{ masterEntity?, thumbEntity?, thumbLinked?, fullEntity?, masterLinked?, thumbRelinked? }`.
+- `UploadProgress`: `{ masterEntity?, thumbEntity?, thumbLinked?, fullEntity?, masterLinked?, thumbRelinked?, linkFailures? }`. `linkFailures` is `{ which: "full" | "thumb"; message: string }[]`: empty when every link to the full copy landed, and one entry for each link that did not. The call still does not throw.
 - The full copy is the ROOT (`t:TranscodedFrom`: the subject is made from the object; a vault's original carries none). With `full`: the small copy is linked to the full copy, not to the master, and the master is linked to the full copy too. Without `full` the small copy is linked to the master and nothing else runs.
 - `linkFullLater(progress, full, sink, target, name?)`: for a full copy that arrives after the save (it waits for Wi-Fi). Uploads it when `progress.fullEntity` is not set (`<name or "picture">-full<ext>`), then links the master and the small copy (when there is one) to it. Resumes by `fullEntity`, `masterLinked` and `thumbRelinked`. Answers the new progress; a failed upload or link warns and answers what was reached, for the caller to try again later. Throws only for a progress with no `masterEntity`.
 
@@ -84,6 +84,8 @@ const big = pickBySize(copies, Infinity);
 
 Also: the peers `picture-upload`, `lws-records` (`patchRecord`) and `photo-ref` (`entityIdTail`).
 
+Check linkFailures: a picture whose link failed is stored but not tied to its record.
+
 ## Do not
 
 - Do not call `uploadWithThumb` again with the same blobs and no `progress`: it uploads them again. Keep the progress from `onProgress` and pass it back.
@@ -123,6 +125,10 @@ Changes in 0.1.1, and only these:
 - `src/peerRanges.test.ts` is new: it checks that each `@kaigilb` peer range holds the version in `../<peer>/package.json`.
 - README additions only, no code change: the input shape of `buildThumbMap` and `buildCopyMap`, the body of the link PATCH, that a failed copy is a warning, and that no unit lists the picture files yet.
 
+Changes in 0.1.2, and only these:
+
+- A failed link to the full copy is still only a warning (the call does not throw). The progress now carries `linkFailures`, one `{ which, message }` for each link that did not land, or an empty list when they all did. `which` is `"full"` for the picture itself and `"thumb"` for the small copy.
+
 ## Tests
 
-75 tests in 4 files. Ported from the source app's `test/batch5.test.ts:105-123`: the four reading tests of `buildThumbMap`. The source's save tests run on the app's fake vault and are re-expressed here with `picture-upload` and `lws-records` replaced by fakes (`vi.mock`): the order of steps, the names, `onProgress` after each step with a copy, resume from `masterEntity`, `thumbEntity` and `thumbLinked`, a thumb failure warning while the master is answered. New: the file extensions, the full copy as the root (order, links, failure, resume), `linkFullLater` (with resume), `buildCopyMap` for both shapes, ties, a broken link and a cycle, `pickBySize`, each branch of `onCellular`. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
+84 tests in 5 files. Ported from the source app's `test/batch5.test.ts:105-123`: the four reading tests of `buildThumbMap`. The source's save tests run on the app's fake vault and are re-expressed here with `picture-upload` and `lws-records` replaced by fakes (`vi.mock`): the order of steps, the names, `onProgress` after each step with a copy, resume from `masterEntity`, `thumbEntity` and `thumbLinked`, a thumb failure warning while the master is answered. New: the file extensions, the full copy as the root (order, links, failure, resume), `linkFullLater` (with resume), `buildCopyMap` for both shapes, ties, a broken link and a cycle, `pickBySize`, each branch of `onCellular`. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.

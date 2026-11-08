@@ -1,11 +1,21 @@
 import { describe, expect, test } from "vitest";
+import { baseOrigin, resetBaseOrigin } from "@kaigilb/gilbplatformcode-base-origin";
 import { queuePicture, forgetPictures, pictureObjectUrl } from "@kaigilb/gilbplatformcode-signed-picture";
 import { listOps, saveOp, setQueueStore } from "@kaigilb/gilbplatformcode-save-queue";
 import { forgetEverything } from "../src/App";
-import { deviceCacheName, QUEUE_DB_NAME } from "../src/setup";
+import { configureApp, deviceCacheName, identityOrigin, ID_ORIGIN, PLATFORM_ORIGIN, QUEUE_DB_NAME } from "../src/setup";
 import { setup } from "./helpers";
 
 describe("start-up settings", () => {
+  test("live base origin is the apex; sign-in stays at the identity host", () => {
+    resetBaseOrigin();
+    configureApp(PLATFORM_ORIGIN);
+    expect(baseOrigin()).toBe("https://gilb.com");
+    expect(identityOrigin()).toBe(ID_ORIGIN);
+    expect(ID_ORIGIN).toBe("https://id.gilb.com");
+    resetBaseOrigin();
+  });
+
   test("the device cache name differs per person", () => {
     expect(deviceCacheName("https://x/i/ann")).not.toBe(deviceCacheName("https://x/i/ben"));
     expect(deviceCacheName("https://x/i/ann")).toBe(deviceCacheName("https://x/i/ann"));

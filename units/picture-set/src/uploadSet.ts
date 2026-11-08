@@ -10,8 +10,11 @@ const baseName = (pic: File | Blob): string => {
   return base || "picture";
 };
 
+/** A link to the full copy that did not land. The picture is stored; it is not tied to its record. */
+export type LinkFailure = { which: "full" | "thumb"; message: string };
+
 /** What a send has already done. A retry resumes after these steps and never uploads the same picture twice. */
-export type UploadProgress = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; masterLinked?: boolean; thumbRelinked?: boolean };
+export type UploadProgress = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; masterLinked?: boolean; thumbRelinked?: boolean; linkFailures?: LinkFailure[] };
 export type ProgressSink = { progress?: UploadProgress; onProgress?: (p: UploadProgress) => void | Promise<void> };
 
 /**
@@ -61,17 +64,30 @@ export async function uploadWithThumb(master: File | Blob, thumb: Blob | null | 
   return file;
 }
 
-/** Links the master and the small copy to the full copy, each once (best effort: a failure warns and the other still runs). Needs `done.fullEntity`. */
+function linkFailureMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Links the master and the small copy to the full copy, each once (best effort: a failure warns and the other still runs). Needs `done.fullEntity`. Records each failed link on `done.linkFailures` and does not throw. */
 async function linkToFull(done: UploadProgress, note: () => Promise<void>): Promise<void> {
   const full = done.fullEntity;
-  if (!full) return;
+  const failures: LinkFailure[] = [];
+  const stamp = () => {
+    done.linkFailures = failures.map((f) => ({ ...f }));
+  };
+  if (!full) {
+    stamp();
+    return;
+  }
   if (done.masterEntity && !done.masterLinked) {
     try {
       await patchRecord(entityIdTail(done.masterEntity) || done.masterEntity, { transcodedFrom: { "@id": full } }, done.masterEntity);
       done.masterLinked = true;
+      stamp();
       await note();
     } catch (e) {
       console.warn("The picture could not be linked to its full-size copy.", e);
+      failures.push({ which: "full", message: linkFailureMessage(e) });
     }
   }
   if (done.thumbEntity && !done.thumbRelinked) {
@@ -79,11 +95,15 @@ async function linkToFull(done: UploadProgress, note: () => Promise<void>): Prom
       await patchRecord(entityIdTail(done.thumbEntity) || done.thumbEntity, { transcodedFrom: { "@id": full } }, done.thumbEntity);
       done.thumbLinked = true;
       done.thumbRelinked = true;
+      stamp();
       await note();
     } catch (e) {
       console.warn("The small copy could not be linked to the full-size copy.", e);
+      failures.push({ which: "thumb", message: linkFailureMessage(e) });
     }
   }
+  stamp();
+  if (failures.length > 0) await note();
 }
 
 /**

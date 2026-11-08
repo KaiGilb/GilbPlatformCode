@@ -8,14 +8,14 @@ import type { VaultListItem } from "@kaigilb/gilbplatformcode-vault-list";
 import { enablePictureDeviceCache } from "@kaigilb/gilbplatformcode-signed-picture";
 import { App, forgetEverything } from "./App";
 import { PictureEngine } from "./engine";
-import { configureApp, deviceCacheName } from "./setup";
+import { configureApp, deviceCacheName, identityOrigin, PLATFORM_ORIGIN } from "./setup";
 import type { Session } from "./types";
 import { VaultGate } from "./vaultChoice";
 
-// dev:live (http://localhost:5251): sign in at the identity host, read the vault root from the vault list.
-// NOT RUN by the author of this file. See "Not yet proven live" in the README.
-const ID_ORIGIN = "https://id.gilb.com";
-configureApp(ID_ORIGIN);
+// dev:live (http://localhost:5251): units address each vault at its own host (apex base origin).
+// Sign-in, create-named and the vault list stay on the identity host. NOT RUN against a live platform. See the README.
+configureApp(PLATFORM_ORIGIN);
+const ID_ORIGIN = identityOrigin();
 
 const credential = new SessionCredential({});
 setLwsAuth(lwsAuthFromSession(credential));

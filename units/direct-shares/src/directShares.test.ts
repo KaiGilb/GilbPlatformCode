@@ -17,15 +17,31 @@ describe("listDirectShares", () => {
       directWriter: "writer-too, writer-only",
     });
     expect(rows).toEqual([
-      { principal: "reader-only", modes: ["read"] },
-      { principal: "writer-only", modes: ["read", "write"] },
-      { principal: "writer-too", modes: ["read", "write"] },
+      { principal: "reader-only", modes: ["read"], readGranted: true },
+      { principal: "writer-only", modes: ["read", "write"], readGranted: false },
+      { principal: "writer-too", modes: ["read", "write"], readGranted: true },
+    ]);
+  });
+
+  // production 2026-11-08, PictureRecords run 2, F26: a write grant does not plant a reader.
+  it("a writer with no reader fact is still read and write, and readGranted is false", () => {
+    expect(listDirectShares({ directWriter: "writer-only" })).toEqual([
+      { principal: "writer-only", modes: ["read", "write"], readGranted: false },
+    ]);
+  });
+
+  it("a writer the reader fact also names has readGranted true", () => {
+    expect(listDirectShares({ directReader: "both", directWriter: "both" })).toEqual([
+      { principal: "both", modes: ["read", "write"], readGranted: true },
     ]);
   });
 
   it("reads the raw spelling when the framed key is absent", () => {
     expect(listDirectShares({ "a:directReader": "one" })).toEqual([
-      { principal: "one", modes: ["read"] },
+      { principal: "one", modes: ["read"], readGranted: true },
+    ]);
+    expect(listDirectShares({ "a:directWriter": "only-write" })).toEqual([
+      { principal: "only-write", modes: ["read", "write"], readGranted: false },
     ]);
   });
 

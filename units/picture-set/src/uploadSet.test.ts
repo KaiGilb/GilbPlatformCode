@@ -149,7 +149,7 @@ describe("uploadWithThumb with a full copy as the root", () => {
     const seen: UploadProgress[] = [];
     await uploadWithThumb(named("a.jpg"), jpeg("t"), { onProgress: (p) => void seen.push(p) }, target, jpeg("f"));
     expect(seen.length).toBe(5);
-    expect(seen.at(-1)).toEqual({ masterEntity: E("ajpg"), fullEntity: E("afulljpg"), thumbEntity: E("a320jpg"), thumbLinked: true, thumbRelinked: true, masterLinked: true });
+    expect(seen.at(-1)).toEqual({ masterEntity: E("ajpg"), fullEntity: E("afulljpg"), thumbEntity: E("a320jpg"), thumbLinked: true, thumbRelinked: true, masterLinked: true, linkFailures: [] });
   });
   test("a full copy with no thumb: master is linked to the full copy", async () => {
     await uploadWithThumb(named("a.jpg"), null, {}, target, jpeg("f"));
@@ -199,7 +199,7 @@ describe("linkFullLater", () => {
     expect(names()).toEqual(["rose-full.webp"]);
     expect(patch.mock.calls.map((c) => c[2])).toEqual([E("m"), E("t")]);
     expect(patch.mock.calls.map((c) => (c[1] as { transcodedFrom: { "@id": string } }).transcodedFrom["@id"])).toEqual([E("rosefullwebp"), E("rosefullwebp")]);
-    expect(r).toEqual({ ...saved, fullEntity: E("rosefullwebp"), masterLinked: true, thumbRelinked: true });
+    expect(r).toEqual({ ...saved, fullEntity: E("rosefullwebp"), masterLinked: true, thumbRelinked: true, linkFailures: [] });
     expect(seen.length).toBe(3);
     expect(up.mock.calls[0]![2]).toBe(target);
   });
@@ -244,5 +244,16 @@ describe("linkFullLater", () => {
   });
   test("a progress with no master is refused", async () => {
     await expect(linkFullLater({}, jpeg("f"), {}, target)).rejects.toThrow();
+  });
+  test("a link that is refused is one linkFailure, and a clean link is an empty list", async () => {
+    patch.mockRejectedValueOnce(new Error("412"));
+    const failed = await linkFullLater(saved, jpeg("f"), {}, target);
+    expect(failed.linkFailures).toEqual([{ which: "full", message: "412" }]);
+    expect(failed.masterLinked).toBeUndefined();
+    expect(failed.thumbRelinked).toBe(true);
+    patch.mockReset();
+    patch.mockImplementation(async () => ({ etag: null }));
+    const ok = await linkFullLater(saved, jpeg("f"), {}, target);
+    expect(ok.linkFailures).toEqual([]);
   });
 });

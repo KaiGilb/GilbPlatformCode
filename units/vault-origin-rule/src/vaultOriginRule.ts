@@ -37,9 +37,23 @@ import { vaultSegmentOf } from "./photoSegments";
  */
 export function vaultOriginOf(entityUri: string | null | undefined): string {
   if (!entityUri) return baseOrigin();
+  let u: URL;
   try {
-    const u = new URL(entityUri);
-    if (u.protocol !== "https:" && u.protocol !== "http:") return baseOrigin();
+    u = new URL(entityUri);
+  } catch {
+    return baseOrigin();
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return baseOrigin();
+  // No platform origin yet. A vault entity's own host is its vault host, so a valid
+  // https address answers that origin instead of the base-origin startup error.
+  let baseText: string;
+  try {
+    baseText = baseOrigin();
+  } catch (err) {
+    if (u.protocol === "https:") return u.origin;
+    throw err;
+  }
+  try {
     // ⚠ SAME HOST -> BASE_ORIGIN VERBATIM, so the SCHEME is never flipped.
     // Base mints vault and entity URIs as `https://…` even on a dev rig served over plain
     // a local rig origin. Returning `u.origin` there would re-address every collection
@@ -48,11 +62,11 @@ export function vaultOriginOf(entityUri: string | null | undefined): string {
     // routing fact this function exists to recover; when the authority is already the one we
     // are talking to, the configured origin is the truthful answer and the URI's scheme is a
     // minting artefact, not a routing instruction.
-    const base = new URL(baseOrigin());
-    if (u.host === base.host) return baseOrigin();
-    return platformOriginOf(u, base) ?? systemOriginOf(u) ?? baseOrigin();
+    const base = new URL(baseText);
+    if (u.host === base.host) return baseText;
+    return platformOriginOf(u, base) ?? systemOriginOf(u) ?? baseText;
   } catch {
-    return baseOrigin();
+    return baseText;
   }
 }
 

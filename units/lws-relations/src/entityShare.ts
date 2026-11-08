@@ -191,8 +191,7 @@ export async function shareEntity(
 ): Promise<{ granted: boolean; mode: ShareMode }> {
   const rec = opts?.rec ?? (await readRecord(recordId, door));
   if (!rec) throw new Error("Record not found or not readable.");
-  // Write: single grant-write-direct (server plants a:directReader + a:directWriter).
-  // Do NOT grant-direct then grant-write — second full-state PUT was retracting directReader.
+  // A write grant plants only a:directWriter. View is a separate read grant (a:directReader).
   if (mode === "write") {
     await grantDirect(rec, granteePrincipal, "write", vaultNamespace);
   } else {
@@ -200,6 +199,32 @@ export async function shareEntity(
   }
   emitEntityShareChanged(recordId);
   return { granted: true, mode };
+}
+
+/**
+ * Grant edit and view. Write first, then view: a write grant plants only a:directWriter
+ * (measured production 2026-11-08), so view is a separate read grant. The platform's
+ * grant handler carries the other mode, and write-then-read is the order that held.
+ * Reads the record back and throws if either right does not name the grantee.
+ */
+export async function shareEntityEditAndView(
+  recordId: string,
+  granteePrincipal: string,
+  vaultNamespace: string | null | undefined,
+  door: string | null,
+  opts?: { rec?: BaseRecord | null },
+): Promise<{ granted: true }> {
+  await shareEntity(recordId, granteePrincipal, "write", vaultNamespace, door, opts);
+  await shareEntity(recordId, granteePrincipal, "read", vaultNamespace, door);
+  const after = await readRecord(recordId, door);
+  if (!after) throw new Error("Record not found or not readable.");
+  const readers = parseGrantPrincipals(after.facts.directReader ?? after.facts["a:directReader"]);
+  const writers = parseGrantPrincipals(after.facts.directWriter ?? after.facts["a:directWriter"]);
+  const missing: string[] = [];
+  if (!writers.some((p) => samePrincipal(p, granteePrincipal))) missing.push("edit");
+  if (!readers.some((p) => samePrincipal(p, granteePrincipal))) missing.push("view");
+  if (missing.length > 0) throw new Error(`The share did not give ${missing.join(" and ")}.`);
+  return { granted: true };
 }
 
 /**
@@ -218,7 +243,7 @@ export function listDirectShares(facts: Record<string, string> | undefined | nul
   const out: DirectShareEntry[] = [];
   for (const principal of all) {
     const modes: Array<"read" | "write"> = [];
-    // Write share plants both attrs; show Write (and Read is implied for UI copy).
+    // A write grant plants only a:directWriter. Show Write (Read is implied for UI copy).
     if (writers.has(principal)) {
       modes.push("read", "write");
     } else if (readers.has(principal)) {
