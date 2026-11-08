@@ -8,7 +8,7 @@ Who is named on this record as a direct reader or a direct writer. Not the rest 
 
 `listDirectShares(facts)` reads `directReader` or `a:directReader`, and `directWriter` or `a:directWriter`.
 
-- A writer is listed as `read` and `write`, even when the reader fact does not name them.
+- A writer is listed as `read` and `write`, even when the reader fact does not name them. `readGranted` is true only when the reader fact names them. Show Repair when a writer has `readGranted` false.
 - A reader who is not a writer is `read` only.
 - Nobody else is invented.
 - Rows are sorted with `localeCompare` and no locale argument, so the order follows the runtime.
@@ -40,10 +40,14 @@ listDirectShares({
   directReader: "reader-only, writer-too",
   directWriter: "writer-only",
 });
-// reader-only → ["read"]
-// writer-only → ["read", "write"]
-// writer-too  → ["read", "write"]
+// reader-only → ["read"], readGranted true
+// writer-only → ["read", "write"], readGranted false
+// writer-too  → ["read", "write"], readGranted true
 ```
+
+## Changes in 0.1.1
+
+- Each person row has `readGranted`. It is true only when the reader fact names them. A writer is still listed as read and write when it is false. Show Repair when a writer has `readGranted` false.
 
 ## Do not
 
