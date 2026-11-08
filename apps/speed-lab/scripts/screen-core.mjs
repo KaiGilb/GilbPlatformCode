@@ -1,6 +1,8 @@
 // Pure screen-timing rules: steps, the done rule, the summary, and local-folder overrides. No browser.
 // A settle() timeline may include an unchanged "tick" snapshot. The in-page probe does not store those;
 // it checks the clock each frame instead. The tick stands for that clock check.
+// A snapshot may carry textOk. false means the page's own completeness text has not matched.
+// Absent means that check passed, which is the rule with no --done-text.
 
 const KINDS = new Set(["click", "wait", "click-css", "wait-css", "click-label", "pause"]);
 
@@ -48,8 +50,8 @@ export function summarise(values) {
   return { n, median: round1(median), min: round1(nums[0]), max: round1(nums[n - 1]) };
 }
 
-function signature(rows) {
-  return JSON.stringify(rows.map((r) => [r.key, r.text === true, r.face, r.sig ?? ""]));
+function signature(rows, textOk) {
+  return JSON.stringify([textOk, rows.map((r) => [r.key, r.text === true, r.face, r.sig ?? ""])]);
 }
 
 function allText(rows, minRows) {
@@ -58,10 +60,21 @@ function allText(rows, minRows) {
   return true;
 }
 
-function complete(rows, minRows) {
+function complete(rows, minRows, textOk) {
+  if (textOk === false) return false;
   if (!allText(rows, minRows)) return false;
   for (const r of rows) if (r.face === "loading") return false;
   return true;
+}
+
+/** The source of a --done-text pattern. No flags. Throws a clear error when it does not compile. */
+export function compileDoneText(src) {
+  try {
+    new RegExp(src);
+  } catch (e) {
+    throw new Error(`--done-text is not a regular expression: ${String(e?.message ?? e).split("\n")[0]}`);
+  }
+  return src;
 }
 
 function countsOf(rows) {
@@ -79,9 +92,11 @@ function countsOf(rows) {
 const EMPTY_COUNTS = { rows: null, painted: null, none: null, broken: null };
 
 /**
- * Done when the snapshot at lastChange is complete (enough rows, every row has text, none still loading)
- * and a later snapshot shows that same screen still complete at least quietMs afterwards.
- * doneAt is lastChange, not the tick. Stops at the first such tick.
+ * Done when the snapshot at lastChange is complete (enough rows, every row has text, none still loading,
+ * textOk not false) and a later snapshot shows that same screen still complete at least quietMs afterwards.
+ * textOk joins the signature, so the frame it turns true is a change and the quiet window starts there.
+ * Absent textOk counts as passed. doneAt is lastChange, not the tick.
+ * doneTextAt is the first snapshot with textOk true, otherwise null. Stops at the first such tick.
  */
 export function settle(timeline, { quietMs, minRows }) {
   let lastSig = null;
@@ -92,13 +107,16 @@ export function settle(timeline, { quietMs, minRows }) {
   let firstRowAt = null;
   let allTextAt = null;
   let lastFaceAt = null;
+  let doneTextAt = null;
   let done = false;
   let doneAt = null;
   let doneRows = null;
 
   for (const snap of timeline) {
     const rows = Array.isArray(snap.rows) ? snap.rows : [];
-    const sig = signature(rows);
+    const textOk = snap.textOk !== false;
+    if (doneTextAt === null && snap.textOk === true) doneTextAt = snap.t;
+    const sig = signature(rows, textOk);
     if (sig !== lastSig) {
       lastSig = sig;
       lastChange = snap.t;
@@ -118,7 +136,7 @@ export function settle(timeline, { quietMs, minRows }) {
       if (became) lastFaceAt = snap.t;
       prevPainted = nextPainted;
     }
-    if (!done && lastChange !== null && complete(rows, minRows) && snap.t >= lastChange + quietMs) {
+    if (!done && lastChange !== null && complete(rows, minRows, textOk) && snap.t >= lastChange + quietMs) {
       done = true;
       doneAt = lastChange;
       doneRows = changeRows;
@@ -132,6 +150,7 @@ export function settle(timeline, { quietMs, minRows }) {
     firstRowAt,
     allTextAt,
     lastFaceAt,
+    doneTextAt,
     counts: doneRows ? countsOf(doneRows) : EMPTY_COUNTS,
   };
 }

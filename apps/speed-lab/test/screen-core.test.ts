@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain ESM script without types
-import { parseScreenSteps, redactUrl, selectorOf, settle, summarise } from "../scripts/screen-core.mjs";
+import { compileDoneText, parseScreenSteps, redactUrl, selectorOf, settle, summarise } from "../scripts/screen-core.mjs";
+// @ts-expect-error plain ESM script without types
+import { main as runScreen } from "../scripts/screen-runner.mjs";
 
 const row = (key: string, text: boolean, face: string, sig = "") => ({ key, text, face, sig });
 
@@ -134,8 +136,92 @@ describe("screen-core", () => {
       firstRowAt: 20,
       allTextAt: 40,
       lastFaceAt: 90,
+      doneTextAt: null,
       counts: { rows: 2, painted: 2, none: 0, broken: 0 },
     });
+  });
+
+  it("settle: textOk false keeps a finished screen from being done", () => {
+    const got = settle([
+      { t: 0, rows: [row("a", true, "painted", "1:a")], textOk: false },
+      { t: 500, rows: [row("a", true, "painted", "1:a")], textOk: false },
+    ], { quietMs: 100, minRows: 1 });
+    expect(got.done).toBe(false);
+    expect(got.doneAt).toBe(null);
+    expect(got.doneTextAt).toBe(null);
+    expect(got.lastFaceAt).toBe(0);
+    expect(got.counts).toEqual({ rows: null, painted: null, none: null, broken: null });
+  });
+
+  it("settle: text turning true is a change and starts the quiet window", () => {
+    const early = settle([
+      { t: 0, rows: [row("a", true, "painted", "1:a")], textOk: false },
+      { t: 40, rows: [row("a", true, "painted", "1:a")], textOk: false },
+      { t: 80, rows: [row("a", true, "painted", "1:a")], textOk: true },
+      { t: 179, rows: [row("a", true, "painted", "1:a")], textOk: true },
+    ], { quietMs: 100, minRows: 1 });
+    expect(early.done).toBe(false);
+    expect(early.doneAt).toBe(null);
+    expect(early.doneTextAt).toBe(80);
+
+    const got = settle([
+      { t: 0, rows: [row("a", true, "painted", "1:a")], textOk: false },
+      { t: 40, rows: [row("a", true, "painted", "1:a")], textOk: false },
+      { t: 80, rows: [row("a", true, "painted", "1:a")], textOk: true },
+      { t: 179, rows: [row("a", true, "painted", "1:a")], textOk: true },
+      { t: 180, rows: [row("a", true, "painted", "1:a")], textOk: true },
+    ], { quietMs: 100, minRows: 1 });
+    expect(got.done).toBe(true);
+    expect(got.doneAt).toBe(80);
+    expect(got.doneTextAt).toBe(80);
+    expect(got.counts).toEqual({ rows: 1, painted: 1, none: 0, broken: 0 });
+  });
+
+  it("settle: doneTextAt stays at the first match when a later picture moves doneAt", () => {
+    const got = settle([
+      { t: 0, rows: [row("a", true, "loading", "")], textOk: false },
+      { t: 30, rows: [row("a", true, "loading", "")], textOk: true },
+      { t: 70, rows: [row("a", true, "painted", "1:a")], textOk: true },
+      { t: 170, rows: [row("a", true, "painted", "1:a")], textOk: true },
+    ], { quietMs: 100, minRows: 1 });
+    expect(got.done).toBe(true);
+    expect(got.doneAt).toBe(70);
+    expect(got.doneTextAt).toBe(30);
+    expect(got.lastFaceAt).toBe(70);
+  });
+
+  it("settle: an absent textOk is the old done rule, and doneTextAt stays null", () => {
+    const got = settle([
+      { t: 0, rows: [row("a", true, "painted", "1:a")] },
+      { t: 100, rows: [row("a", true, "painted", "1:a")] },
+    ], { quietMs: 100, minRows: 1 });
+    expect(got.done).toBe(true);
+    expect(got.doneAt).toBe(0);
+    expect(got.doneTextAt).toBe(null);
+    expect(got.counts).toEqual({ rows: 1, painted: 1, none: 0, broken: 0 });
+  });
+
+  it("compileDoneText accepts a backreference and rejects a source that does not compile", () => {
+    const src = "from (\\d+) of \\1 vaults read";
+    expect(compileDoneText(src)).toBe(src);
+    const re = new RegExp(src);
+    expect(re.test("62 rows from 24 of 24 vaults read")).toBe(true);
+    expect(re.test("32 rows from 16 of 24 vaults read")).toBe(false);
+    expect(compileDoneText("all \\d+ read")).toBe("all \\d+ read");
+    expect(() => compileDoneText("(")).toThrow("--done-text is not a regular expression");
+    expect(() => compileDoneText("(")).toThrow("Unterminated group");
+  });
+
+  it("a --done-text that does not compile exits 2", async () => {
+    const errors: string[] = [];
+    const got = await runScreen(
+      ["--url", "http://127.0.0.1:9/", "--app", "a", "--rows", "li", "--network", "n", "--done-text", "("],
+      {},
+      { log() {}, error(m: unknown) { errors.push(String(m)); } },
+    );
+    expect(got.code).toBe(2);
+    expect(got.runs).toEqual([]);
+    expect(errors.join("\n")).toContain("--done-text is not a regular expression");
   });
 
   it("redactUrl drops the query and the hash", () => {

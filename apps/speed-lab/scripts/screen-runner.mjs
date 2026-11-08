@@ -1,4 +1,5 @@
 // Times a screen in Chromium until every row on the first screen has its text and its picture.
+// With --done-text, it also waits until the page's own text matches that regular expression.
 // The done rule lives in screen-core.mjs (settle). The probe below is the same rule, checked every frame.
 // --override answers the app's files from a local folder. Everything else still goes to the network.
 // node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [options]
@@ -8,10 +9,10 @@ import { fileURLToPath } from "node:url";
 import { chromium, devices } from "playwright-core";
 import { checkStorageStateFile, commitFromVersionJson, validAppName } from "./app-runner.mjs";
 import { appVersion, gitMeta, runsDir } from "./results.mjs";
-import { cacheControlOf, contentTypeOf, overridePath, parseOverride, parseScreenSteps, redactUrl, selectorOf, spaFallback, summarise } from "./screen-core.mjs";
+import { cacheControlOf, compileDoneText, contentTypeOf, overridePath, parseOverride, parseScreenSteps, redactUrl, selectorOf, spaFallback, summarise } from "./screen-core.mjs";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = 'usage: node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--timeout <ms>] [--away-wait <ms>] [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--override "<prefix>=<dir>"] [--runs <dir>] [--no-shots] [--headed]';
+const USAGE = 'usage: node scripts/screen-runner.mjs --url <app url> --app <name> --rows <css> --network <label> [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--done-text <regexp>] [--timeout <ms>] [--away-wait <ms>] [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--override "<prefix>=<dir>"] [--runs <dir>] [--no-shots] [--headed]';
 const ENTRIES = ["cold", "hard", "refresh", "return"];
 const CLICKS = new Set(["click", "click-css", "click-label"]);
 const FLAGS = {
@@ -28,6 +29,7 @@ const FLAGS = {
   "--repeat": "repeat",
   "--quiet": "quiet",
   "--min-rows": "minRows",
+  "--done-text": "doneText",
   "--timeout": "timeout",
   "--away-wait": "awayWait",
   "--profile": "profile",
@@ -80,6 +82,7 @@ export function installScreenProbe() {
     firstRowAt: null,
     allTextAt: null,
     lastFaceAt: null,
+    doneTextAt: null,
     counts: { rows: 0, painted: 0, none: 0, broken: 0 },
     totalRowsInDom: 0,
     firstRowText: null,
@@ -89,6 +92,7 @@ export function installScreenProbe() {
   let faceSel = "img";
   let quietMs = 0;
   let minRows = 1;
+  let doneTextRe = null;
   let lastSig = null;
   let lastChange = null;
   let changeText = null;
@@ -109,10 +113,16 @@ export function installScreenProbe() {
     return null;
   }
 
-  function signature(rows) {
+  function signature(rows, textOk) {
     const parts = [];
     for (const r of rows) parts.push([r.key, r.text === true, r.face, r.sig]);
-    return JSON.stringify(parts);
+    return JSON.stringify([textOk, parts]);
+  }
+
+  function bodyMatches() {
+    if (!doneTextRe) return true;
+    const text = document.body ? document.body.innerText : "";
+    return doneTextRe.test(text);
   }
 
   function tally(rows) {
@@ -165,6 +175,7 @@ export function installScreenProbe() {
     faceSel = cfg.faceSel;
     quietMs = cfg.quietMs;
     minRows = cfg.minRows;
+    doneTextRe = null;
     lastSig = null;
     lastChange = null;
     changeText = null;
@@ -178,10 +189,18 @@ export function installScreenProbe() {
     state.firstRowAt = null;
     state.allTextAt = null;
     state.lastFaceAt = null;
+    state.doneTextAt = null;
     state.counts = { rows: 0, painted: 0, none: 0, broken: 0 };
     state.totalRowsInDom = 0;
     state.firstRowText = null;
     state.fault = null;
+    if (typeof cfg.doneText === "string") {
+      try { doneTextRe = new RegExp(cfg.doneText); }
+      catch (e) {
+        state.fault = "done-text: " + String(e && e.message ? e.message : e);
+        return;
+      }
+    }
 
     const frame = () => {
       if (token !== gen) return;
@@ -191,7 +210,9 @@ export function installScreenProbe() {
         const rows = got.rows;
         state.counts = tally(rows);
         state.firstRowText = got.firstRowText;
-        const sig = signature(rows);
+        const textOk = bodyMatches();
+        if (doneTextRe && textOk && state.doneTextAt === null) state.doneTextAt = now;
+        const sig = signature(rows, textOk);
         if (sig !== lastSig) {
           lastSig = sig;
           lastChange = now;
@@ -210,10 +231,10 @@ export function installScreenProbe() {
           }
           if (became) state.lastFaceAt = now;
           prevPainted = nextPainted;
-          timeline.push({ t: now, rows });
+          timeline.push({ t: now, rows, textOk });
           if (timeline.length > 5000) timeline.shift();
         }
-        const ready = rows.length >= minRows && rows.every((r) => r.text === true) && rows.every((r) => r.face !== "loading");
+        const ready = textOk && rows.length >= minRows && rows.every((r) => r.text === true) && rows.every((r) => r.face !== "loading");
         if (ready && lastChange !== null && now >= lastChange + quietMs) {
           state.done = true;
           state.doneAt = lastChange;
@@ -239,6 +260,7 @@ export function installScreenProbe() {
       firstRowAt: state.firstRowAt,
       allTextAt: state.allTextAt,
       lastFaceAt: state.lastFaceAt,
+      doneTextAt: state.doneTextAt,
       counts: {
         rows: state.counts.rows,
         painted: state.counts.painted,
@@ -544,7 +566,7 @@ async function clickAtStart(page, step) {
 
 function runLine(run, repeat) {
   const c = run.counts ?? {};
-  return `${run.entry} ${run.i}/${repeat}  done ${fmt(run.doneMs)} ms  first row ${fmt(run.firstRowMs)}  all text ${fmt(run.allTextMs)}  last face ${fmt(run.lastFaceMs)}  rows ${c.rows ?? "-"} (pictures ${c.painted ?? "-"}, none ${c.none ?? "-"}, broken ${c.broken ?? "-"})  requests ${run.requests}  override ${run.overrideServed}`;
+  return `${run.entry} ${run.i}/${repeat}  done ${fmt(run.doneMs)} ms  first row ${fmt(run.firstRowMs)}  all text ${fmt(run.allTextMs)}  last face ${fmt(run.lastFaceMs)}  done-text ${fmt(run.doneTextMs)}  rows ${c.rows ?? "-"} (pictures ${c.painted ?? "-"}, none ${c.none ?? "-"}, broken ${c.broken ?? "-"})  requests ${run.requests}  override ${run.overrideServed}`;
 }
 
 function printTable(out, entries, summary, file) {
@@ -606,6 +628,7 @@ function optionsFrom(argv) {
   if (face.trim() === "") throw new Error("--face needs a value");
   const profile = got.profile ?? "desktop";
   if (profile !== "desktop" && profile !== "phone") throw new Error("--profile must be desktop or phone");
+  const doneText = got.doneText === undefined ? null : compileDoneText(got.doneText);
   const entries = parseEntries(got.entries ?? "cold,hard,refresh,return");
   const openSteps = parseScreenSteps(got.openSteps ?? "");
   const awaySteps = got.awaySteps === undefined ? [] : parseScreenSteps(got.awaySteps);
@@ -638,6 +661,7 @@ function optionsFrom(argv) {
     repeat,
     quietMs,
     minRows,
+    doneText,
     timeoutMs,
     awayWait,
     profile,
@@ -693,7 +717,7 @@ async function commitOf(opt, out) {
 }
 
 function armCfg(opt, startMs) {
-  return { rowsSel: opt.rows, faceSel: opt.face, startMs, quietMs: opt.quietMs, minRows: opt.minRows };
+  return { rowsSel: opt.rows, faceSel: opt.face, startMs, quietMs: opt.quietMs, minRows: opt.minRows, doneText: opt.doneText };
 }
 
 /** Runs the screen timer and writes one result file. Returns { code, runs, file, summary }. Does not exit the process. */
@@ -742,6 +766,7 @@ export async function main(argv, env = process.env, out = console) {
         firstRowMs: minus(reading.firstRowAt, reading.startMs),
         allTextMs: minus(reading.allTextAt, reading.startMs),
         lastFaceMs: minus(reading.lastFaceAt, reading.startMs),
+        doneTextMs: minus(reading.doneTextAt, reading.startMs),
         firstRowText: typeof reading.firstRowText === "string" ? reading.firstRowText.slice(0, 40) : null,
         counts: reading.counts,
         totalRowsInDom: reading.totalRowsInDom,
@@ -856,6 +881,7 @@ export async function main(argv, env = process.env, out = console) {
         face: opt.face,
         quietMs: opt.quietMs,
         minRows: opt.minRows,
+        ...(opt.doneText != null ? { doneText: opt.doneText } : {}),
         repeat: opt.repeat,
         entries: opt.entries,
         timeoutMs: opt.timeoutMs,

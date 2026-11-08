@@ -1,8 +1,9 @@
 // Known answer for run-screen: a local page whose pictures arrive on a clock we chose.
 // Serves 127.0.0.1:5262, runs the runner, checks the times, and always stops the server.
 // A second pass serves that same page from a folder, with each row prefixed "LOCAL ".
+// A third pass waits until the page's own line says "all N read".
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main as runScreen } from "./screen-runner.mjs";
@@ -19,6 +20,7 @@ const PAGE = `<!doctype html>
 <style>
   html, body { margin: 0; padding: 0; }
   #bar { position: fixed; top: 8px; left: 8px; z-index: 10; }
+  #status { margin: 0 0 0 12px; display: inline; font: 14px sans-serif; }
   #elsewhere { padding: 48px; font: 16px sans-serif; }
   #elsewhere[hidden] { display: none; }
   ul { margin: 0; padding: 0; list-style: none; }
@@ -30,6 +32,7 @@ const PAGE = `<!doctype html>
 <div id="bar">
   <button type="button" data-testid="go-away">Go away</button>
   <button type="button" data-testid="go-back">Go back</button>
+  <p id="status">loading</p>
 </div>
 <div id="elsewhere" hidden>elsewhere</div>
 <ul id="list"></ul>
@@ -76,8 +79,17 @@ const PAGE = `<!doctype html>
     }
     showList();
   }
+  const statusEl = document.getElementById("status");
+  let statusTimer = 0;
+  function armStatus(delay) {
+    statusEl.textContent = "loading";
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { statusEl.textContent = "all 12 read"; }, delay);
+  }
+  armStatus(2500);
   document.querySelector("[data-testid=go-away]").addEventListener("click", showAway);
   document.querySelector("[data-testid=go-back]").addEventListener("click", () => {
+    armStatus(2000);
     setTimeout(() => {
       version += 1;
       const imgs = list.querySelectorAll("img");
@@ -230,6 +242,43 @@ function judgeOverride(result) {
   return checks;
 }
 
+function judgeDoneText(result) {
+  const runs = result.runs ?? [];
+  const checks = [];
+  const cold = runs.find((r) => r.entry === "cold");
+  const back = runs.find((r) => r.entry === "return");
+  const names = runs.map((r) => `${r.entry} timedOut ${r.timedOut}`).join("; ");
+  const finished = runs.length === 2 && runs[0]?.entry === "cold" && runs[1]?.entry === "return" && runs.every((r) => r.timedOut === false);
+  checks.push({ ok: finished, text: `done-text runs finished (${names || "none"})` });
+
+  const coldOk = !!cold && typeof cold.doneMs === "number" && cold.doneMs >= 2400;
+  checks.push({ ok: coldOk, text: `done-text cold doneMs >= 2400 (${cold?.doneMs ?? "none"})` });
+
+  const backOk = !!back && typeof back.doneMs === "number" && back.doneMs >= 1900;
+  checks.push({ ok: backOk, text: `done-text return doneMs >= 1900 (${back?.doneMs ?? "none"})` });
+
+  const near = (r) => !!r
+    && typeof r.doneMs === "number"
+    && typeof r.doneTextMs === "number"
+    && r.doneTextMs <= r.doneMs
+    && r.doneMs - r.doneTextMs <= 300;
+  const nearText = [cold, back].map((r) => (r ? `${r.entry} done ${r.doneMs} doneText ${r.doneTextMs}` : "missing")).join("; ");
+  checks.push({ ok: near(cold) && near(back), text: `doneTextMs within 300 ms below doneMs (${nearText})` });
+
+  let stored = null;
+  let readOk = false;
+  if (result.file) {
+    try {
+      stored = JSON.parse(readFileSync(result.file, "utf8"))?.settings?.doneText ?? null;
+      readOk = stored === "all \\d+ read";
+    } catch (e) {
+      stored = String(e?.message ?? e);
+    }
+  }
+  checks.push({ ok: readOk, text: `settings.doneText is the source (${JSON.stringify(stored)})` });
+  return checks;
+}
+
 async function main() {
   let server;
   let overrideDir;
@@ -277,6 +326,29 @@ async function main() {
       ok = false;
     }
     for (const c of judgeOverride(over)) {
+      console.log(`${c.ok ? "PASS" : "FAIL"} ${c.text}`);
+      if (!c.ok) ok = false;
+    }
+
+    const textRun = await runScreen([
+      "--url", BASE,
+      "--app", "screen-self",
+      "--rows", "li[data-record-id]",
+      "--network", "local",
+      "--entries", "cold,return",
+      "--repeat", "1",
+      "--quiet", "1500",
+      "--done-text", "all \\d+ read",
+      "--away-steps", "click:go-away",
+      "--back-steps", "click:go-back",
+      "--no-shots",
+      "--runs", runsDir,
+    ], process.env);
+    if (textRun.code !== 0) {
+      console.log(`FAIL done-text runner exit code ${textRun.code}`);
+      ok = false;
+    }
+    for (const c of judgeDoneText(textRun)) {
       console.log(`${c.ok ? "PASS" : "FAIL"} ${c.text}`);
       if (!c.ok) ok = false;
     }
