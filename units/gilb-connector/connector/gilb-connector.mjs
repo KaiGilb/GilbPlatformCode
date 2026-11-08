@@ -12,12 +12,12 @@
 // Zero runtime dependencies. Node 18 or newer.
 import { spawn } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign as cryptoSign, } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.10";
+export const CONNECTOR_VERSION = "0.5.11";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -211,7 +211,7 @@ function neverArrived(err) {
 }
 const GILB_WHOAMI = {
     name: "gilbplatform_whoami",
-    description: "Report this connector's sign-in: the mode, the Client ID, the principal, whether this AI is bound, and the selected vaults.",
+    description: "Report this connector's sign-in: the connector version, the mode, the Client ID, the principal, whether this AI is bound, and the selected vaults.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 const GILB_AGENT = {
@@ -267,8 +267,8 @@ const GILB_UPLOAD_FILE = {
 };
 /** Told to the model on initialize, and in the README. A vault switch stays the person's decision. */
 const USE_VAULT_INSTRUCTIONS = "When the person names a vault to work in, call gilbplatform_use_vault with the name they used before any other tool on that vault. Do not choose 'don't ask again' for gilbplatform_use_vault: every vault switch stays the person's decision.";
-/** Told to the model on initialize, and in the README. Creating a vault approves it for this session. */
-const CREATE_VAULT_INSTRUCTIONS = "A vault you make with create_vault is selected for the session at once; you do not need gilbplatform_use_vault for it.";
+/** Told to the model on initialize, and in the README. A vault made here is selected at once; one made in a hand-off, when that hand-off ends. */
+const CREATE_VAULT_INSTRUCTIONS = "A vault you make with create_vault is selected for the session at once; one made inside a hand-off is selected when the hand-off ends.";
 /** Told to the model on initialize, and in the README. One work vault is not a choice. */
 const AUTO_SELECT_INSTRUCTIONS = "If this AI can reach exactly one vault besides its own, that vault is selected automatically.";
 const AGENT_PROMPT = {
@@ -593,6 +593,23 @@ function createdVaultNamespace(result) {
     if (typeof record.vaultId !== "string" || !isVaultNamespace(record.vaultId))
         return null;
     return record.vaultId;
+}
+/** Vault namespaces a hop wrote, one per line. A missing file means the hop made none. */
+function hopCreatedNamespaces(file) {
+    let text;
+    try {
+        text = readFileSync(file, "utf8");
+    }
+    catch {
+        return [];
+    }
+    const out = [];
+    for (const line of text.split("\n")) {
+        const namespace = line.trim();
+        if (isVaultNamespace(namespace))
+            out.push(namespace);
+    }
+    return out;
 }
 /**
  * `list_vaults` answers `{ vaults: [...] }` (or the array itself).
@@ -945,6 +962,7 @@ const KNOWN_FLAGS = new Set([
     "--hop",
     "--turn",
     "--hop-tools",
+    "--hop-created",
     "--upload-root",
     "--hop-model",
     "--progress-ms",
@@ -966,6 +984,7 @@ export function parseCli(argv, env = process.env) {
             hopId: undefined,
             turnId: undefined,
             hopToolsPath: undefined,
+            hopCreatedPath: undefined,
             uploadRoots: [],
             hopModel: undefined,
             progressEveryMs: PROGRESS_EVERY_MS,
@@ -1000,6 +1019,7 @@ export function parseCli(argv, env = process.env) {
     const hopId = oneFlag(argv, "--hop") ?? (env.GILB_CONNECTOR_HOP || undefined);
     const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
     const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
+    const hopCreatedPath = oneFlag(argv, "--hop-created");
     if (hopId !== undefined && !/^[0-9a-f]{24}$/.test(hopId))
         throw new CliError("--hop must be the hand-off id.");
     if (turnId !== undefined && !TURN_ID_RE.test(turnId))
@@ -1031,6 +1051,7 @@ export function parseCli(argv, env = process.env) {
         hopId,
         turnId,
         hopToolsPath,
+        hopCreatedPath,
         uploadRoots: flagValues(argv, "--upload-root").map((dir) => dir.trim()).filter((dir) => dir !== ""),
         hopModel,
         progressEveryMs,
@@ -1113,6 +1134,7 @@ export function startConnector(opts) {
     const hopId = opts.hopId;
     const hopMode = hopId !== undefined && hopId !== "";
     const hopTools = [...(opts.hopTools ?? [])];
+    const hopCreatedPath = opts.hopCreatedPath;
     let turnId = opts.turnId ?? newTurnId();
     if (!TURN_ID_RE.test(turnId))
         throw new Error("turnId does not match the platform pattern.");
@@ -1575,7 +1597,7 @@ export function startConnector(opts) {
         return `vaults: ${list}`;
     }
     function whoamiText() {
-        const lines = [`mode: ${asMode}`];
+        const lines = [`connector: ${CONNECTOR_VERSION}`, `mode: ${asMode}`];
         if (asMode === "ai" && aiClientId)
             lines.push(`client id: ${aiClientId}`);
         if (reportedPrincipal)
@@ -1696,7 +1718,8 @@ export function startConnector(opts) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
         writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
-        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile];
+        const createdFile = join(dir, "created-vaults");
+        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile, "--hop-created", createdFile];
         // The live list, not a copy taken at startup, so a vault selected later is passed on.
         for (const id of vaults)
             args.push("--vault", id);
@@ -1801,7 +1824,8 @@ export function startConnector(opts) {
                     finish(() => reject(new Error(`Claude Code stopped without an answer.${safeTail(stderr)}`)));
                 else {
                     const text = resultText;
-                    finish(() => resolve(text));
+                    const created = hopCreatedNamespaces(createdFile);
+                    finish(() => resolve({ text, created }));
                 }
             });
             stdin.on("error", () => undefined);
@@ -1844,12 +1868,16 @@ export function startConnector(opts) {
         }
         hopsRunning += 1;
         try {
-            const content = await runChild(shaped, signal);
+            const ran = await runChild(shaped, signal);
             if (signal.aborted)
                 return CANCELLED;
             const closed = await closeHop(shaped.id, hopTurn);
             if (closed.cut)
                 rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
+            // The hop returned, including one the server cut. Select here, in this process, never inside the hop.
+            for (const namespace of ran.created)
+                selectVault(namespace);
+            const content = ran.text;
             return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, cut: CUT_TEXT } : { ...shaped.answer, content }), false);
         }
         catch (err) {
@@ -1965,7 +1993,12 @@ export function startConnector(opts) {
             say(sentence);
             return toolResult(sentence, true);
         }
-        // A hop is a nested run. It keeps the vault list the parent started it with, so a create_vault inside it selects nothing.
+        // A hop keeps the vault list it was started with. A vault it makes is recorded for the main process, which selects it when the hop returns.
+        if (hopMode && name === "create_vault" && hopCreatedPath) {
+            const namespace = createdVaultNamespace(result);
+            if (namespace)
+                appendFileSync(hopCreatedPath, `${namespace}\n`);
+        }
         if (!hopMode && name === "create_vault") {
             const namespace = createdVaultNamespace(result);
             if (namespace) {
@@ -2552,6 +2585,7 @@ async function main() {
         ...(cli.profile !== undefined ? { profile: cli.profile } : {}),
         ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
         ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
+        ...(cli.hopCreatedPath !== undefined ? { hopCreatedPath: cli.hopCreatedPath } : {}),
         ...(hopTools !== undefined ? { hopTools } : {}),
         ...(hopUserText !== undefined ? { userText: hopUserText } : {}),
     });
