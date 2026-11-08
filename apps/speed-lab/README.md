@@ -170,6 +170,49 @@ npm run proof:app-self -- --engines chromium --profiles desktop
 
 It always stops the server. `SPEED_LAB_RUNS` decides where the result files go, as for the runner. The log is `~/Library/Logs/speed-lab-app-self.log`.
 
+## Time a screen until its pictures are in (run-screen)
+
+`npm run run-screen` times a screen in Chromium until every row on the first screen shows its text and its picture. It does not know the app, and it does not read the app's speed meter. It watches the rows you name.
+
+A row is on the first screen when its box is inside the window. It has its text when that text is not empty. Its picture is the element you name with `--face` (default `img`). That picture is `painted` when it has loaded, `broken` when it failed, `loading` while it is still coming, and `none` when the row has no such element. The screen is done when at least `--min-rows` rows are on the first screen, every one of them has its text, none of them is still loading, and that picture stays unchanged for `--quiet` milliseconds. The time written down is the moment it settled, not the end of the quiet wait.
+
+Four ways in. Each one is repeated `--repeat` times (default 5):
+
+- **cold.** A new browser context and an empty cache, the first open. Then the open steps.
+- **hard.** Reload with the cache skipped and service workers bypassed, the way a hard refresh does. The site's saved data stays.
+- **refresh.** An ordinary reload.
+- **return.** Leave with the away steps, wait, then come back with the back steps. The clock starts at the click that comes back.
+
+`cold` uses a new context every time. The other three share one context. It opens the page, runs the open steps, and waits until the screen is done once. That warm-up is not recorded.
+
+```sh
+npm run run-screen -- --url <app url> --app <name> --rows <css> --network <label> \
+  [--face <css>] [--storage-state <file.json>] [--open-steps "<step>;<step>"] \
+  [--away-steps "<step>;..."] [--back-steps "<step>;..."] [--entries cold,hard,refresh,return] \
+  [--repeat <n>] [--quiet <ms>] [--min-rows <n>] [--timeout <ms>] [--away-wait <ms>] \
+  [--profile desktop|phone] [--commit <sha> | --version-url <url>] [--runs <dir>] [--no-shots] [--headed]
+```
+
+`--url`, `--app`, `--rows` and `--network` are required. `--network` is a label for the network this run was taken on, up to 80 characters, such as `home wifi`. It is written on the result. `--app` is the same short name as `run-app`.
+
+`--rows` is a CSS selector for a row. `--face` is a CSS selector for the picture inside a row. `--profile desktop` is 1440×900. `--profile phone` is an iPhone 13. `--commit` and `--version-url` are the same as `run-app`: the app's commit, or `unknown`. `--storage-state` is the same file `save-signin` writes, with the same checks. `--runs` and `SPEED_LAB_RUNS` choose the folder. Otherwise it is `runs/` next to the app.
+
+Defaults: `--face img`, `--entries cold,hard,refresh,return`, `--repeat 5`, `--quiet 4000`, `--min-rows 1`, `--timeout 60000`, `--away-wait 2500`, `--profile desktop`.
+
+Steps are separated by semicolons, because a CSS selector can contain a comma. `click:<data-testid>` and `wait:<data-testid>` are the same as `run-app`. `click-css:<selector>` and `wait-css:<selector>` use a CSS selector. `click-label:<aria-label>` clicks the first visible element with that exact label. `pause:<ms>` waits a whole number of milliseconds. `return` needs both `--away-steps` and `--back-steps`. The first back step has to be a click, because that click is what starts the clock.
+
+Each run writes the done time, the first row with text, the time every row had its text, and the last picture to paint. It also writes the requests that started from the run's start until half a second after it was done: the url with the query and the hash removed, the method, the type, the status, the times, and the size. No headers, no cookies, no bodies. A run that hits `--timeout` is kept, with `timedOut` true. The command still exits 0, and it prints a WARNING line. A bad argument exits 2. A crash exits 1.
+
+Unless you pass `--no-shots`, it saves a picture of the window under `shots/`, next to the result.
+
+The result file is `<YYYYMMDDTHHMMSSZ>-<app>-<first 7 of the commit, or unknown>-screen.json`. Its schema is `speed-lab.screen/1`. The `summary` has, for each way in, how many runs produced a time, the median, and the slowest. The file mode is 0644. The storage state is never written into it.
+
+```sh
+npm run proof:screen-self
+```
+
+`proof:screen-self` is the known answer. It serves a small page on `127.0.0.1` port 5262. Twelve rows arrive after 300 ms. Eleven of them have pictures that take longer and longer (the last one about 860 ms after the rows appear). One row has no picture. Thirty more rows sit below the first screen. It runs `run-screen` on that page with `--app screen-self`, `--repeat 2`, `--quiet 1500`, and cold, hard, refresh, and return. It checks that every run finished, that the first screen's counts land where they should, and that the times land where the delays say they should. It always stops the server. The result goes to a temp folder, or to `SPEED_LAB_RUNS` when that is set.
+
 ## Live mode
 
 A second mode of the same app: a real sign-in to GilbPlatform and a real `completeCopy` read of `t:CatalogEntry` in ONE named test vault, and (with `--allow-write`) three writes in that vault. It is chosen at build time (`VITE_PLATFORM=live`); the stand-in mode above is unchanged. Live and stand-in use different device databases (`speedkittaking-live-cache` and `speedkittaking-cache`), so their copies never meet.

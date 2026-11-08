@@ -96,3 +96,8 @@
 - The speed label is decided when the first rows are SEEN (`src/source.ts`): preview, memory, device (also a late copy), network. A network commit clears a stale "device" mark. `lastPaint` gains `fullMs`.
 - While partial, live Add and Rename are off; End works from the made-list and stays on.
 - With 30 entries the first visit is now labelled `preview` too (head, page 1 as a preview, then the since pass), not `network`.
+
+## 2026-11-08 run-screen
+
+- Added `scripts/screen-core.mjs` (steps, the done rule, the summary), `scripts/screen-runner.mjs` (`npm run run-screen`), and `scripts/screen-self-proof.mjs` (`npm run proof:screen-self`). `run-screen` times a screen in Chromium until every row on the first screen has its text and its picture. It does not read the app's meter. The four ways in are cold (new context, empty cache), hard (reload with the cache skipped), refresh (ordinary reload), and return (leave and come back; the clock starts at the click).
+- `proof:screen-self` serves a page on 127.0.0.1:5262 whose twelve first-screen rows arrive after 300 ms, eleven of them with pictures on a known delay and one with no picture. All 8 runs finished (`--repeat 2`). Median done: cold 1615.1 ms, hard 1612.5 ms, refresh 309.9 ms (equal to all-text; the pictures were already cached), return 1463.7 ms. Every run: rows 12, pictures 11, none 1, broken 0. Every check PASS.

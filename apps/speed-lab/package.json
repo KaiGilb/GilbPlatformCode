@@ -12,9 +12,11 @@
     "preview": "vite preview",
     "proof:browser": "node scripts/browser-proof.mjs",
     "run-app": "node scripts/app-runner.mjs",
+    "run-screen": "node scripts/screen-runner.mjs",
     "save-signin": "node scripts/save-signin.mjs",
     "forget-signin": "node scripts/forget-signin.mjs",
     "proof:app-self": "node scripts/app-self-proof.mjs",
+    "proof:screen-self": "node scripts/screen-self-proof.mjs",
     "dev:live": "node scripts/dev-live.mjs",
     "compare": "node scripts/compare.mjs"
   },
