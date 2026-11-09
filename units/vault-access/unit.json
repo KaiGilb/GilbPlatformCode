@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "unit": "units/vault-access",
+  "package": "@kaigilb/gilbplatformcode-vault-access",
+  "version": "0.1.0",
+  "purpose": "Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "e7c83b7dea8c30a1b851a9f4ada46cce4431141d",
+    "files": [
+      {
+        "path": "src/lib/base/vaultAccess.ts",
+        "lines": [34, 185],
+        "to": "src/vaultAccess.ts"
+      },
+      {
+        "path": "src/lib/base/vaultAccess.ts",
+        "lines": [293, 297],
+        "to": "src/vaultAccess.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [686, 693],
+        "to": "src/vaultAccess.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [702, 708],
+        "to": "src/vaultAccess.ts"
+      },
+      {
+        "path": "src/lib/base/config.ts",
+        "lines": [776, 779],
+        "to": "src/vaultAccess.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "The imports: `vaultOriginOf` from `@kaigilb/gilbplatformcode-vault-origin-rule`; `dpopReadAuth`, `dpopWriteAuth` and `invalidateDpop` from `@kaigilb/gilbplatformcode-lws-session-bridge`; `serverErrorText` from `@kaigilb/gilbplatformcode-server-error`. In the source these are `./config`, `./dpop` and `./serverError`. The three URL constants are functions in this file, built from `vaultOriginOf` at each call.",
+    "The short-WebID example on `VaultAclEntry` named a host. The example is removed. No code changed.",
+    "Comments: cycle, ticket and person tags are removed.",
+    "`postGrant` returns the parsed body, so a caller can read the principal the platform echoes. `grantVaultAccess` and `revokeVaultAccess` still return `Promise<void>`.",
+    "`shareVault` and `unshareVault` are new, and so is the type `VaultShareLevel`. View grants read. Edit grants write, reads the access list, and matches `grantee` from the grant's body. `unshareVault` revokes write, then read, then append, because revoking write leaves the planted read."
+  ],
+  "newFiles": [
+    "src/index.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": false
+  }
+}
