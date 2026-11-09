@@ -105,6 +105,10 @@ Six module-level caches, all named here; two installed copies of this unit would
 - "`typeAncestry` always reaches the root." It stops after twelve steps, at a cycle, or at the first read that failed (the failure is not kept).
 - "A failed entry-name read is remembered." Only a good read is kept; a failure is asked again.
 
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, copied by script:
