@@ -572,7 +572,9 @@ describe("hand-off", () => {
     expect(log[0].hasApiKey).toBe(false);
     expect(log[0].argv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json"]));
     expect(log[0].system).toBe("You are Jackfruit.");
-    expect(log[0].prompt).toBe("Do the records.");
+    expect(log[0].prompt).toBe(
+      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.",
+    );
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
     expect(mcp.mcpServers.GilbPlatform.command).toBe(process.execPath);
     expect(mcp.mcpServers.GilbPlatform.args[0]).toBe(MJS);

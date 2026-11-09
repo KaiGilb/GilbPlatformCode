@@ -91,9 +91,23 @@ class HopTimeoutError extends Error {
   }
 }
 
+/** The minutes in the timeout sentence and in the child's time-limit paragraph. At least one. */
+function hopLimitMinutes(hopMaxMs: number): number {
+  return Math.max(1, Math.round(hopMaxMs / 60000));
+}
+
+/**
+ * Appended to a non-Concept child's task. The timer kills the process and the caller does not see what was unfinished,
+ * so the child is told to stop on its own and name the rest.
+ */
+function hopTimeLimitParagraph(hopMaxMs: number): string {
+  const minutes = hopLimitMinutes(hopMaxMs);
+  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+}
+
 /** What the model is told when a hand-off ran out of time. The minutes follow the limit. */
 export function hopTimeoutAnswer(role: string, hopMaxMs: number): string {
-  const minutes = Math.max(1, Math.round(hopMaxMs / 60000));
+  const minutes = hopLimitMinutes(hopMaxMs);
   return JSON.stringify({
     error: "the hand-off ran out of time",
     role,
@@ -1873,6 +1887,14 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     );
   }
 
+  /**
+   * The Concept test a timed-out hop already uses: this connector is Agent.Concept, or the hop's role names Concept.
+   * A mint must not be split, so those hops are not told to stop early.
+   */
+  function conceptHop(role: string): boolean {
+    return agentIsConcept() || role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
+  }
+
   async function runChild(hop: HopShape, signal: AbortSignal): Promise<{ text: string; created: string[] }> {
     const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
     const toolsFile = join(dir, "tools.json");
@@ -1971,7 +1993,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         }
       });
       stdin.on("error", () => undefined);
-      stdin.end(hop.task);
+      stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxMs)}`);
     });
   }
 
@@ -2028,7 +2050,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (closed.cut) rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
       const reason = err instanceof Error ? err.message : "the hand-off could not run";
       // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
-      const isConcept = agentIsConcept() || shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
+      const isConcept = conceptHop(shaped.role);
       if (err instanceof HopTimeoutError && !isConcept) return toolResult(hopTimeoutAnswer(shaped.role, hopMaxMs), true);
       return failedHop(shaped.role, reason, closed.cut);
     } finally {

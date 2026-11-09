@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
 import { PassThrough } from "node:stream";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -138,6 +138,19 @@ function stderrLines() {
 }
 
 
+function readLog(file) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line));
+}
+
+/** The paragraph a non-Concept child is given. `minutes` is the limit, already rounded. */
+function timeLimitParagraph(minutes) {
+  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+}
+
 const hopOf = (id, role, task) => ({ id, system: "You are " + role + ".", task, tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }], role, answer: { role, summary: "s" } });
 const answerOf = (res) => JSON.parse(text(res));
 const closes = (platform) => posts(platform).filter((rec) => rec.body.name === "hop_done");
@@ -207,4 +220,29 @@ describe("a hand-off that runs out of time", () => {
     expect(JSON.parse(hopTimeoutAnswer("R", 400)).partial).toContain("after 1 minute.");
     expect(JSON.parse(hopTimeoutAnswer("Agent.Outcome", 900000)).role).toBe("Agent.Outcome");
   });
+
+  it("t5 a non-Concept child is told the minutes from hopMaxMs; a Concept child's stdin is exactly the task", async () => {
+    const paragraph = timeLimitParagraph(2);
+    const logFile = join(scratch(), "claude.log");
+    const platform = await hopDoor("Agent.Outcome", "Do the records.");
+    const box = connect({ origin: platform.origin, env: meEnv({ FAKE_CLAUDE_LOG: logFile }), hopMaxMs: 2 * 60 * 1000 });
+    expect((await run(box, "Agent.Outcome")).result.isError).toBe(false);
+    const prompt = readLog(logFile)[0].prompt;
+    expect(prompt.endsWith(paragraph)).toBe(true);
+    expect(prompt).toBe(`Do the records.${paragraph}`);
+
+    for (const role of ["Agent.Concept", "Concept"]) {
+      const conceptLog = join(scratch(), "concept.log");
+      const concept = await hopDoor(role, "Mint one concept.");
+      const conceptBox = connect({ origin: concept.origin, env: meEnv({ FAKE_CLAUDE_LOG: conceptLog }), hopMaxMs: 2 * 60 * 1000 });
+      await run(conceptBox, role);
+      expect(readLog(conceptLog)[0].prompt, role).toBe("Mint one concept.");
+    }
+    // The connector itself being Agent.Concept is the same test runHop uses, not only the hop's role.
+    const ownLog = join(scratch(), "own.log");
+    const own = await hopDoor("Jackfruit", "Mint from here.");
+    const ownBox = connect({ origin: own.origin, env: meEnv({ FAKE_CLAUDE_LOG: ownLog }), hopMaxMs: 2 * 60 * 1000, agent: "Agent.Concept" });
+    await run(ownBox, "Jackfruit");
+    expect(readLog(ownLog)[0].prompt).toBe("Mint from here.");
+  }, 20000);
 });
