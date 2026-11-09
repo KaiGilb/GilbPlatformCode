@@ -87,6 +87,8 @@ Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx
 
 Connector 0.5.10: a hand-off that runs out of time says its writes so far are saved and the rest can be handed over again in smaller parts, instead of 'do not call this hand-off again'.
 
+Connector 0.5.12: a hand-off is told its time limit, and one stopped for time returns the calls it made and its last words.
+
 Connector 0.5.11: whoami reports the connector version; a vault made inside a hand-off is selected when the hand-off ends.
 
 Connector 0.5.7: a hand-off that runs out of tool rounds now says its answer is partial, is closed on its own turn, and the next call starts on a fresh turn. Detail: when the server cuts a hand-off, it is closed on its own turn, and its answer carries a `cut` field saying the answer is partial. The next call then starts on a fresh turn (within the same 5-per-process limit, never for Agent.Concept, never inside a hand-off); nothing is re-sent.

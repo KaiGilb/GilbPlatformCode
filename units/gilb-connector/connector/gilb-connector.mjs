@@ -17,7 +17,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.11";
+export const CONNECTOR_VERSION = "0.5.12";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -64,20 +64,94 @@ export function aiNoGrant(vault, principal) {
 export const HAND_OFF_FAILED_NEXT = "Do not call this hand-off again with the same Agent. Tell the person which Agent could not take the work, and why.";
 /** A hand-off stopped by HOP_MAX_MS. Apart from a crash: its tool calls were committed as they happened, so its writes stand. */
 class HopTimeoutError extends Error {
-    constructor() {
+    progress;
+    constructor(progress) {
         super("The hand-off took too long and was stopped.");
         this.name = "HopTimeoutError";
+        this.progress = progress;
     }
 }
+/** The minutes in the timeout sentence and in the child's time-limit paragraph. At least one. */
+function hopLimitMinutes(hopMaxMs) {
+    return Math.max(1, Math.round(hopMaxMs / 60000));
+}
+/**
+ * Appended to a non-Concept child's task. The timer kills the process and the caller does not see what was unfinished,
+ * so the child is told to stop on its own and name the rest.
+ */
+function hopTimeLimitParagraph(hopMaxMs) {
+    const minutes = hopLimitMinutes(hopMaxMs);
+    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+}
+const TOOL_CALLS_MAX = 60;
+const TOOL_CALL_CHARS = 200;
+const LAST_WORDS_CHARS = 1500;
+const TOOL_TAG_KEYS = ["tag", "unitTag", "table", "entity"];
+/** Name plus tag, unitTag, table and entity only. Any other input field (a body, a token, a file) is left out. */
+function toolCallLine(name, input) {
+    let line = name;
+    if (input && typeof input === "object" && !Array.isArray(input)) {
+        const row = input;
+        for (const key of TOOL_TAG_KEYS) {
+            const value = row[key];
+            if (typeof value !== "string" || value === "")
+                continue;
+            line += ` ${key}=${value}`;
+        }
+    }
+    return line.slice(0, TOOL_CALL_CHARS);
+}
+/**
+ * stream-json assistant event: `{ type: "assistant", message: { content } }`.
+ * `content` is text blocks `{ type: "text", text }` and tool calls `{ type: "tool_use", name, input }`.
+ * A later message with no text does not wipe the last thing the child said.
+ */
+function noteAssistant(message, progress) {
+    if (!message || typeof message !== "object" || Array.isArray(message))
+        return;
+    const content = message.content;
+    if (!Array.isArray(content))
+        return;
+    const texts = [];
+    for (const block of content) {
+        if (!block || typeof block !== "object" || Array.isArray(block))
+            continue;
+        const row = block;
+        if (row.type === "text" && typeof row.text === "string" && row.text !== "")
+            texts.push(row.text);
+        else if (row.type === "tool_use" && typeof row.name === "string" && row.name !== "" && progress.toolCalls.length < TOOL_CALLS_MAX) {
+            progress.toolCalls.push(toolCallLine(row.name, row.input));
+        }
+    }
+    if (texts.length > 0)
+        progress.lastText = texts.join("\n");
+}
+/** Progress worth telling the caller. An empty collection keeps the old sentence, which says to read the vault. */
+function sawProgress(progress) {
+    if (!progress)
+        return false;
+    return progress.toolCalls.length > 0 || (typeof progress.lastText === "string" && progress.lastText !== "");
+}
 /** What the model is told when a hand-off ran out of time. The minutes follow the limit. */
-export function hopTimeoutAnswer(role, hopMaxMs) {
-    const minutes = Math.max(1, Math.round(hopMaxMs / 60000));
-    return JSON.stringify({
+export function hopTimeoutAnswer(role, hopMaxMs, progress) {
+    const minutes = hopLimitMinutes(hopMaxMs);
+    const unit = minutes === 1 ? "minute" : "minutes";
+    const seen = sawProgress(progress);
+    const partial = seen
+        ? `This hand-off ran out of time after ${minutes} ${unit}. What it wrote before then is saved; done_before_stop lists its calls. Hand over only what is not in that list, in smaller parts.`
+        : `This hand-off ran out of time after ${minutes} ${unit}. What it wrote before then is saved. Read the vault to see what is there, then hand over only the rest, in smaller parts.`;
+    const body = {
         error: "the hand-off ran out of time",
         role,
-        partial: `This hand-off ran out of time after ${minutes} ${minutes === 1 ? "minute" : "minutes"}. What it wrote before then is saved. Read the vault to see what is there, then hand over only the rest, in smaller parts.`,
+        partial,
         next: "Read what this hand-off wrote, then hand the remaining work to the same Agent in smaller parts.",
-    });
+    };
+    if (seen) {
+        body.done_before_stop = progress.toolCalls;
+        if (typeof progress.lastText === "string" && progress.lastText !== "")
+            body.last_words = progress.lastText.slice(0, LAST_WORDS_CHARS);
+    }
+    return JSON.stringify(body);
 }
 const SIGN_IN_FAILED = "This computer could not sign in to GilbPlatform.";
 const AI_SIGN_IN_FAILED = "This AI could not sign in to GilbPlatform.";
@@ -1714,6 +1788,13 @@ export function startConnector(opts) {
     function failedHop(role, reason, cut = false) {
         return toolResult(JSON.stringify({ error: "the Agent's run failed", role, reason, next: HAND_OFF_FAILED_NEXT, ...(cut ? { cut: CUT_TEXT } : {}) }), true);
     }
+    /**
+     * The Concept test a timed-out hop already uses: this connector is Agent.Concept, or the hop's role names Concept.
+     * A mint must not be split, so those hops are not told to stop early.
+     */
+    function conceptHop(role) {
+        return agentIsConcept() || role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
+    }
     async function runChild(hop, signal) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
@@ -1749,6 +1830,7 @@ export function startConnector(opts) {
         let refused = false;
         let resultText = null;
         let resultError = null;
+        const progress = { toolCalls: [] };
         const onAbort = () => child.kill("SIGTERM");
         if (signal.aborted)
             onAbort();
@@ -1787,6 +1869,9 @@ export function startConnector(opts) {
                     else
                         resultText = String(event.result ?? "");
                 }
+                else if (event.type === "assistant") {
+                    noteAssistant(event.message, progress);
+                }
             }
         });
         return await new Promise((resolve, reject) => {
@@ -1805,7 +1890,7 @@ export function startConnector(opts) {
             };
             timer = setTimeout(() => {
                 child.kill("SIGTERM");
-                finish(() => reject(new HopTimeoutError()));
+                finish(() => reject(new HopTimeoutError(progress)));
             }, hopMaxMs);
             // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
             timer.unref();
@@ -1829,7 +1914,7 @@ export function startConnector(opts) {
                 }
             });
             stdin.on("error", () => undefined);
-            stdin.end(hop.task);
+            stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxMs)}`);
         });
     }
     /**
@@ -1888,9 +1973,9 @@ export function startConnector(opts) {
                 rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
             const reason = err instanceof Error ? err.message : "the hand-off could not run";
             // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
-            const isConcept = agentIsConcept() || shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
+            const isConcept = conceptHop(shaped.role);
             if (err instanceof HopTimeoutError && !isConcept)
-                return toolResult(hopTimeoutAnswer(shaped.role, hopMaxMs), true);
+                return toolResult(hopTimeoutAnswer(shaped.role, hopMaxMs, err.progress), true);
             return failedHop(shaped.role, reason, closed.cut);
         }
         finally {

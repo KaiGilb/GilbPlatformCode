@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
 import { PassThrough } from "node:stream";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -138,6 +138,19 @@ function stderrLines() {
 }
 
 
+function readLog(file) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line) => JSON.parse(line));
+}
+
+/** The paragraph a non-Concept child is given. `minutes` is the limit, already rounded. */
+function timeLimitParagraph(minutes) {
+  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+}
+
 const hopOf = (id, role, task) => ({ id, system: "You are " + role + ".", task, tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }], role, answer: { role, summary: "s" } });
 const answerOf = (res) => JSON.parse(text(res));
 const closes = (platform) => posts(platform).filter((rec) => rec.body.name === "hop_done");
@@ -164,7 +177,13 @@ describe("a hand-off that runs out of time", () => {
     expect(text(res)).toBe(hopTimeoutAnswer("Agent.Outcome", 400));
     const answer = answerOf(res);
     expect(answer.error).toBe("the hand-off ran out of time");
-    expect(answer.partial).toContain("after 1 minute. What it wrote before then is saved");
+    // Nothing was streamed, so done_before_stop is left out and the sentence stays the old one.
+    // An empty list would tell the caller the list is complete when we saw no calls.
+    expect(answer.done_before_stop).toBeUndefined();
+    expect(answer.last_words).toBeUndefined();
+    expect(answer.partial).toBe(
+      "This hand-off ran out of time after 1 minute. What it wrote before then is saved. Read the vault to see what is there, then hand over only the rest, in smaller parts.",
+    );
     expect(answer.next).not.toBe(HAND_OFF_FAILED_NEXT);
     expect(closes(platform)).toHaveLength(1);
   }, 20000);
@@ -207,4 +226,106 @@ describe("a hand-off that runs out of time", () => {
     expect(JSON.parse(hopTimeoutAnswer("R", 400)).partial).toContain("after 1 minute.");
     expect(JSON.parse(hopTimeoutAnswer("Agent.Outcome", 900000)).role).toBe("Agent.Outcome");
   });
+
+  it("t5 a non-Concept child is told the minutes from hopMaxMs; a Concept child's stdin is exactly the task", async () => {
+    const paragraph = timeLimitParagraph(2);
+    const logFile = join(scratch(), "claude.log");
+    const platform = await hopDoor("Agent.Outcome", "Do the records.");
+    const box = connect({ origin: platform.origin, env: meEnv({ FAKE_CLAUDE_LOG: logFile }), hopMaxMs: 2 * 60 * 1000 });
+    expect((await run(box, "Agent.Outcome")).result.isError).toBe(false);
+    const prompt = readLog(logFile)[0].prompt;
+    expect(prompt.endsWith(paragraph)).toBe(true);
+    expect(prompt).toBe(`Do the records.${paragraph}`);
+
+    for (const role of ["Agent.Concept", "Concept"]) {
+      const conceptLog = join(scratch(), "concept.log");
+      const concept = await hopDoor(role, "Mint one concept.");
+      const conceptBox = connect({ origin: concept.origin, env: meEnv({ FAKE_CLAUDE_LOG: conceptLog }), hopMaxMs: 2 * 60 * 1000 });
+      await run(conceptBox, role);
+      expect(readLog(conceptLog)[0].prompt, role).toBe("Mint one concept.");
+    }
+    // The connector itself being Agent.Concept is the same test runHop uses, not only the hop's role.
+    const ownLog = join(scratch(), "own.log");
+    const own = await hopDoor("Jackfruit", "Mint from here.");
+    const ownBox = connect({ origin: own.origin, env: meEnv({ FAKE_CLAUDE_LOG: ownLog }), hopMaxMs: 2 * 60 * 1000, agent: "Agent.Concept" });
+    await run(ownBox, "Jackfruit");
+    expect(readLog(ownLog)[0].prompt).toBe("Mint from here.");
+  }, 20000);
+
+  /** stream-json assistant messages: `{ role, content: [{ type: "text", text } | { type: "tool_use", name, input }] }`. */
+  const streamTask = (messages) => `STREAM:${JSON.stringify(messages)}ENDSTREAM`;
+
+  it("t6 a child that streams two calls and text, then hangs, returns both calls and the last text", async () => {
+    stderrLines();
+    const task = streamTask([
+      { role: "assistant", content: [{ type: "text", text: "not the last words" }, { type: "tool_use", name: "create_record", input: { tag: "VKT-1", unitTag: "unit-a" } }] },
+      { role: "assistant", content: [{ type: "text", text: "Wrote the plans table." }, { type: "tool_use", name: "write_table", input: { table: "plans", entity: "row-9" } }] },
+    ]);
+    const platform = await hopDoor("Agent.Outcome", task);
+    const box = connect({ origin: platform.origin, env: meEnv(), hopMaxMs: 400 });
+    const answer = answerOf(await run(box, "Agent.Outcome"));
+    expect(answer.done_before_stop).toEqual(["create_record tag=VKT-1 unitTag=unit-a", "write_table table=plans entity=row-9"]);
+    expect(answer.last_words).toBe("Wrote the plans table.");
+    expect(answer.partial).toBe(
+      "This hand-off ran out of time after 1 minute. What it wrote before then is saved; done_before_stop lists its calls. Hand over only what is not in that list, in smaller parts.",
+    );
+    expect(answer.error).toBe("the hand-off ran out of time");
+    expect(answer.role).toBe("Agent.Outcome");
+    expect(answer.next).toBe("Read what this hand-off wrote, then hand the remaining work to the same Agent in smaller parts.");
+    expect(JSON.stringify(answer)).not.toContain("not the last words");
+    expect(closes(platform)).toHaveLength(1);
+  }, 20000);
+
+  it("t7 a tool input's body is not in the timeout answer", async () => {
+    stderrLines();
+    const secret = "body-secret-9f3c2a-token-file";
+    const task = streamTask([
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", name: "create_record", input: { tag: "VKT-9", body: secret, token: "tok-should-not-leak", file: "confidential-file-bytes" } }],
+      },
+    ]);
+    const platform = await hopDoor("Agent.Outcome", task);
+    const box = connect({ origin: platform.origin, env: meEnv(), hopMaxMs: 400 });
+    const raw = text(await run(box, "Agent.Outcome"));
+    const answer = JSON.parse(raw);
+    expect(answer.done_before_stop).toEqual(["create_record tag=VKT-9"]);
+    expect(raw).not.toContain(secret);
+    expect(raw).not.toContain("tok-should-not-leak");
+    expect(raw).not.toContain("confidential-file-bytes");
+    expect(answer.last_words).toBeUndefined();
+  }, 20000);
+
+  it("t8 a Concept hop that streamed calls keeps the failed answer", async () => {
+    stderrLines();
+    const task = streamTask([
+      { role: "assistant", content: [{ type: "text", text: "minted half" }, { type: "tool_use", name: "create_record", input: { tag: "VKT-1", body: "secret-concept" } }] },
+    ]);
+    const platform = await hopDoor("Agent.Concept", task);
+    const box = connect({ origin: platform.origin, env: meEnv(), hopMaxMs: 400 });
+    const answer = answerOf(await run(box, "Agent.Concept"));
+    expect(Object.keys(answer)).toEqual(["error", "role", "reason", "next"]);
+    expect(answer.error).toBe("the Agent's run failed");
+    expect(answer.reason).toBe("The hand-off took too long and was stopped.");
+    expect(answer.next).toBe(HAND_OFF_FAILED_NEXT);
+    expect(JSON.stringify(answer)).not.toContain("VKT-1");
+    expect(JSON.stringify(answer)).not.toContain("secret-concept");
+    expect(JSON.stringify(answer)).not.toContain("minted half");
+  }, 20000);
+
+  it("t9 a long hand-off keeps 60 lines, each cut to 200, and 1500 of the last text", async () => {
+    stderrLines();
+    const calls = [];
+    for (let i = 1; i <= 61; i++) {
+      calls.push({ type: "tool_use", name: "create_record", input: { tag: i === 61 ? "OVERFLOW" : `T${i}`, unitTag: "u".repeat(250) } });
+    }
+    const task = streamTask([{ role: "assistant", content: [{ type: "text", text: "z".repeat(1800) }, ...calls] }]);
+    const platform = await hopDoor("Agent.Outcome", task);
+    const box = connect({ origin: platform.origin, env: meEnv(), hopMaxMs: 400 });
+    const answer = answerOf(await run(box, "Agent.Outcome"));
+    expect(answer.done_before_stop).toHaveLength(60);
+    expect(answer.done_before_stop.every((line) => line.length === 200)).toBe(true);
+    expect(answer.done_before_stop.join("\n")).not.toContain("OVERFLOW");
+    expect(answer.last_words).toBe("z".repeat(1500));
+  }, 20000);
 });

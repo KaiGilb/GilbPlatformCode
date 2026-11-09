@@ -52,6 +52,13 @@ async function run() {
     tools: [],
     mcp_servers: [{ name: "GilbPlatform", status: "connected" }],
   });
+  // A prompt that names assistant messages emits them, then stays up so the parent can hit its time limit.
+  const streamed = assistantLines(prompt, sessionId);
+  if (streamed) {
+    for (const row of streamed) out(row);
+    setInterval(() => {}, 1000);
+    return;
+  }
   // A run that must not finish (or that is not the person's subscription) stays up until the parent stops it.
   // It does not start the hop connector, so nothing is left behind when this process exits.
   if (prompt.includes("WAITFOREVER") || apiKeySource !== "none") {
@@ -70,6 +77,27 @@ async function run() {
     return;
   }
   out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
+}
+
+/**
+ * STREAM:<json>ENDSTREAM in the prompt. The json is an array of assistant `message` objects, the stream-json shape
+ * `{ role, content: [{ type: "text", text } | { type: "tool_use", name, input }] }`. Anything else is not a stream.
+ */
+function assistantLines(prompt, sessionId) {
+  const at = prompt.indexOf("STREAM:");
+  if (at < 0) return null;
+  const end = prompt.indexOf("ENDSTREAM", at);
+  if (end < 0) return null;
+  let spec;
+  try {
+    spec = JSON.parse(prompt.slice(at + "STREAM:".length, end));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(spec)) return null;
+  return spec
+    .filter((message) => message && typeof message === "object")
+    .map((message) => ({ type: "assistant", message, session_id: sessionId }));
 }
 
 function callFirstTool(server, every = false) {
