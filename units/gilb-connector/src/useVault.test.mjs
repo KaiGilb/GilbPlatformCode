@@ -375,11 +375,11 @@ describe("gilbplatform_use_vault", () => {
     const { box } = await boundBox([NS, OTHER]);
     const before = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(before.result.isError).toBe(false);
-    expect(toolText(before)).toBe(`connector: 0.5.11\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
+    expect(toolText(before)).toBe(`connector: 0.5.12\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
     const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "testcarwashcouponapp" } });
     expect(toolText(call)).toBe(using(NS, [NS]));
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.5.11\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
+    expect(toolText(who)).toBe(`connector: 0.5.12\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
   });
 
   it("u7 not bound answers the not-bound sentence and selects nothing", async () => {
@@ -423,7 +423,7 @@ describe("gilbplatform_use_vault", () => {
     expect(posts[1].body.contentVaultIds).toEqual([ONLY]);
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(toolText(who)).toBe(
-      `connector: 0.5.11\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${ONLY} ${AUTO_VAULTS_NOTE}`,
+      `connector: 0.5.12\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${ONLY} ${AUTO_VAULTS_NOTE}`,
     );
     const listed = await box.request("tools/list", {});
     expect(listed.result.tools.map((tool) => tool.name)).toContain("read_record");
@@ -447,7 +447,7 @@ describe("gilbplatform_use_vault", () => {
     expect(later.filter((rec) => rec.body.name === "list_vaults")).toHaveLength(1);
     expect(later[later.length - 1].body.contentVaultIds).toBeUndefined();
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.5.11\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
+    expect(toolText(who)).toBe(`connector: 0.5.12\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
     expect(toolText(who)).not.toContain("selected automatically");
   });
 
@@ -485,7 +485,7 @@ describe("gilbplatform_use_vault", () => {
     expect(selected.result.isError).toBe(false);
     expect(toolText(selected)).toBe(using(NS, [NS]));
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.5.11\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
+    expect(toolText(who)).toBe(`connector: 0.5.12\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
     expect(toolText(who)).not.toContain("selected automatically");
     const listsAfterPick = toolPosts(platform.requests).filter((rec) => rec.body.name === "list_vaults").length;
     ids.splice(0, ids.length, AI_VAULT, ONLY);
