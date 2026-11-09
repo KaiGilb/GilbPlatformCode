@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/person-create",
   "package": "@kaigilb/gilbplatformcode-person-create",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Makes a person record in a named vault, finds candidate people first, and refreshes the lists afterwards.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -37,6 +37,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "The imports are the peers `pick-or-create`, `tag-client`, `record-sync`, `vocabulary-source`, `stakeholder-field-sets`, `vault-origin-rule`, `record-cache-kit`, `plan-record-hooks`, `lws-records`, `term-origin`, `stakeholder-card-vocabulary`, `platform-fetch`, `plan-self-source`, `self-card`, `lws-relations` and `ontology-reads`, and the third-party `@tanstack/react-query`; `./canWriteVault` and `./plainBoundStep` are the unit's own.",
     "The interface `PersonCreateHost` is added and exported; `recordPerson(deps, input)` is `recordPerson(host, deps, input)` and `adderCardOf(` is `host.adderCardOf(`; `afterRecordPerson(qc, made)` is `afterRecordPerson(host, qc, made)` and `rememberCreatedIn(` is `host.rememberCreatedIn(`, with the same arguments.",
     "`export const PICKER_READING_QUERY_KEY = [\"gilb-stakeholders\", \"picker-reading\", GILBVEDA_MASTER_ORIGIN] as const;` is `export function pickerReadingQueryKey() { return [\"gilb-stakeholders\", \"picker-reading\", termOrigin()] as const; }`; its use is `queryKey: pickerReadingQueryKey()` and the two overload types `typeof PICKER_READING_QUERY_KEY` are `ReturnType<typeof pickerReadingQueryKey>`.",
