@@ -66,7 +66,7 @@ Nothing as an object. The unit reads two settings that the app sets once at star
 
 `useVaults` needs a React Query `QueryClientProvider` above it.
 
-The sign-in session carries no vault list; after sign-in, call listReachableVaults (units/reachable-vaults) for the vaults this person can reach.
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
 
 ## Module state
 
@@ -87,7 +87,7 @@ None. The unit holds no cache of its own.
 
 ## Changes in 0.1.1
 
-The sign-in session carries no vault list; after sign-in, call listReachableVaults (units/reachable-vaults) for the vaults this person can reach. No code changed.
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session. No code changed.
 
 ## Where it came from
 

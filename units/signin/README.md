@@ -82,7 +82,7 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 - Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
 - `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
 - Never cache `authHeaders`. Each proof is single-use.
-- The sign-in session carries no vault list; after sign-in, call listReachableVaults (units/reachable-vaults) for the vaults this person can reach.
+- After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
 
 ## Machine credential (`./machine`)
 
@@ -138,7 +138,7 @@ Every later `npm install` and `npm ci`, CI included, then keeps the copy. Withou
 
 ## Changes in 0.2.1
 
-The sign-in session carries no vault list; after sign-in, call listReachableVaults (units/reachable-vaults) for the vaults this person can reach. `signInWithCode` adopts the token with an empty vault list. No code changed.
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session. `signInWithCode` adopts the token with an empty vault list. No code changed.
 
 ## Verify (in this artefact)
 
