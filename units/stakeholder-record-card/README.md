@@ -99,6 +99,10 @@ Package metadata only; no source or test change. The unit's `devDependencies` ga
 
 - Peer ranges only: `contact-rows` 0.2.0 and `one-card` 0.3.0 (a skill is shown by its name, never its address) are the releases it is installed with. Peers: `contact-rows` is now `^0.2.0`; `one-card` is now `^0.3.0`. devDependencies gained `skill-uri-label`, `term-name-text`, so the installed units resolve in the tests. The install line is the output of `peers.mjs` again. No source or test of this unit changed.
 
+## Changes in 0.1.5
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp `src/components/records/RecordDetail.tsx` at a703b3ed78e612e2cab77e94876ce9bce109d5a3, the ranges listed in `unit.json`, and `src/lib/base/recordVault.ts` lines 104-117. About 1,120 of the 3,041 lines are kept as written (comments naming a cycle, ruling, agent, date or ticket are removed; the others are kept), 180 are replaced by slot calls, 1,179 are dropped. The stripped range compare (comments and imports removed, word by word) shows only the named changes: `recordFacts.ts`, `ExtraFact.tsx`, `FieldEditor.tsx`: 0 words removed from the source, one added (`export`); the body: the dropped ranges, the slot calls and the edits listed in `unit.json`.
