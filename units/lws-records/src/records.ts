@@ -489,6 +489,7 @@ function slugFromName(name: string | undefined): string | undefined {
  * in that vault iff the principal holds a whole-vault write grant on it — otherwise 403 (fail-closed,
  * NEVER the writer's own sign-in vault). Authorizes with the sender-constrained DPoP credential.
  * Returns the minted id, the initial ETag, and `entity` (the absolute entity URI on this vault).
+ * Always set by createRecord; optional in the type so hosts that stub createRecord still type-check.
  */
 export async function createRecord(
   vaultNamespace: string,
@@ -497,7 +498,7 @@ export async function createRecord(
   nameHint?: string,
   /** Where these slugs came from; omit for app-authored facts. {@link WriteSource} */
   source?: WriteSource,
-): Promise<{ id: string; etag: string | null; entity: string }> {
+): Promise<{ id: string; etag: string | null; entity?: string }> {
   const url = LWS_VAULT_CONTAINER_URL(vaultNamespace);
   const headers: Record<string, string> = {
     ...(await dpopWriteAuth("POST", url)),
