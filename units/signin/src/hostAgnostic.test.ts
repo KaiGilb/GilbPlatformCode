@@ -48,6 +48,8 @@ describe("host-agnostic check", () => {
     ["a hardcoded host in a pulled-in file", "transport.ts", "export const H = `https://localhost:4000/x`;"],
     ["a hardcoded host in the card", "SignInCard.tsx", `export const D = "gilb.com";`],
     ["a host named in a comment", "session.ts", "// see https://id.gilb.com for the live service"],
+    ["a baked host url beside the page-credential literals", "http.ts", `export const URL = "https://id.gilb.com/base";`],
+    ["an extra page-host literal in http.ts", "http.ts", `export const extra = "gilb.com";`],
   ] as const)("a planted %s fails", (_name, file, planted) => {
     const r = runWithPlant(file, planted);
     expect(r.status, `${r.stdout}${r.stderr}`).toBe(1);

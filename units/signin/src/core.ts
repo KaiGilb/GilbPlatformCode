@@ -21,6 +21,7 @@ export {
   prepareVaultName,
   checkVaultName,
   verifySignInCodeHttp,
+  credentialsForPage,
 } from "./http";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";

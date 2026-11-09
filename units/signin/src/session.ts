@@ -346,6 +346,7 @@ export class SessionCredential {
     const send = this.opts.transport ?? fetchTransport;
     const res: TransportResponse = await send(url, {
       method: "POST",
+      // First-party only: the session-cookie bridge. A third-party page must not send it.
       credentials: "include",
       headers: { ...CSRF_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ dpopJwk: jwk }),

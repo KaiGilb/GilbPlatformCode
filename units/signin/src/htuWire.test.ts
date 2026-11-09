@@ -146,7 +146,8 @@ test("the default transport forwards method, headers, body, credentials and a ti
     assert.equal(init.method, "POST");
     assert.deepEqual(init.headers, { "Content-Type": "application/json" });
     assert.deepEqual(JSON.parse(String(init.body)), { email: "person@example.test", code: "42", dpopJwk: { kty: "EC" } });
-    assert.equal(init.credentials, "include");
+    // No page location in this runtime, so verify-code omits cookies; fetch must be handed that.
+    assert.equal(init.credentials, "omit");
     assert.ok(init.signal instanceof AbortSignal);
   } finally { globalThis.fetch = saved; }
 });
