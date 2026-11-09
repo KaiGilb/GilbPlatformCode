@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-access",
   "package": "@kaigilb/gilbplatformcode-vault-access",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.",
   "source": {
     "repo": "KaiGilb/GilbApp",
