@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-levels-io",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Reads every level of a project's vault page by page, writes the four default levels once when the vault has none, and adds one level, for the level chooser of a Plan card.",
@@ -63,7 +63,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
     "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
-    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0 || ^0.2.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
     "@kaigilb/gilbplatformcode-project-levels": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-cache-kit": "^0.3.0",

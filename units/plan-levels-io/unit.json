@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/plan-levels-io",
   "package": "@kaigilb/gilbplatformcode-plan-levels-io",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Reads every level of a project's vault page by page, writes the four default levels once when the vault has none, and adds one level, for the level chooser of a Plan card.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -59,6 +59,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "the imports are replaced by imports of the peers `base-record` (`GridRecord`), `lws-records` (`createRecord`, `readRecord`, `recordFromServed`, `withTypeUri`, `RecordCreateFacts`), `lws-relations` (`memberEntityUri`), `lws-vault-sets` (`listVaultRecordsPage`, `planReadLimit`, `VaultRecordRef`), `project-levels` (`DEFAULT_LEVELS`, `directChildren`, `levelTag`, `levelTree`, `nextPosition`, `pascalCase`, `tagOf`, `tokenOf`, `LevelNode`), `record-cache-kit` (`recordsKey`, `RecordsPage`), `record-types` (`typeUriForVaultNamespace`) and `@tanstack/react-query`; `react` is not imported",
     "`async function waitForLevels(` (line 462) is `export async function waitForLevels(`: private in the app, where the hook beside it called it; the host of `project-levels` calls it as its member `waitForLevels`",
     "`DEFAULT_LEVELS`, `levelTree`, `tokenOf`, `tagOf`, `pascalCase`, `directChildren`, `nextPosition` and `levelTag` are not copied: `project-levels` holds them, each compared with the source's (comments stripped; the entries of `DEFAULT_LEVELS` differ only in the getter that unit names, so the string written is `${termOrigin()}/base/t/BusinessLevel` and its three siblings, read when the default is written); `directChildren` and `nextPosition` are the exports that unit added for a host that writes a level",
