@@ -96,3 +96,21 @@
 - The speed label is decided when the first rows are SEEN (`src/source.ts`): preview, memory, device (also a late copy), network. A network commit clears a stale "device" mark. `lastPaint` gains `fullMs`.
 - While partial, live Add and Rename are off; End works from the made-list and stays on.
 - With 30 entries the first visit is now labelled `preview` too (head, page 1 as a preview, then the since pass), not `network`.
+
+## 2026-11-08 run-screen
+
+- Added `scripts/screen-core.mjs` (steps, the done rule, the summary), `scripts/screen-runner.mjs` (`npm run run-screen`), and `scripts/screen-self-proof.mjs` (`npm run proof:screen-self`). `run-screen` times a screen in Chromium until every row on the first screen has its text and its picture. It does not read the app's meter. The four ways in are cold (new context, empty cache), hard (reload with the cache skipped), refresh (ordinary reload), and return (leave and come back; the clock starts at the click).
+- `proof:screen-self` serves a page on 127.0.0.1:5262 whose twelve first-screen rows arrive after 300 ms, eleven of them with pictures on a known delay and one with no picture. All 8 runs finished (`--repeat 2`). Median done: cold 1615.1 ms, hard 1612.5 ms, refresh 309.9 ms (equal to all-text; the pictures were already cached), return 1463.7 ms. Every run: rows 12, pictures 11, none 1, broken 0. Every check PASS.
+
+## 2026-11-08 run-screen --override
+
+- `run-screen` takes `--override "<url prefix>=<local folder>"` (up to 4). The prefix is an http(s) url ending in `/`. The folder must contain `index.html`. Those requests are answered from the folder. A picture or an API under the same prefix whose name has no dot still goes to the network. A missing file whose name has a dot is a 404, so the live site's script is not mixed in. Service workers are blocked. The result records `overrideServed` and `settings.overrides` (the prefix and the folder's name, never the full path). With an override and no `--commit`, `app.commit` is `local`, or the revision in the folder's `version.json` when `--version-url` is also given. Each run records `firstRowText`, the first 40 characters of the first row in view when the screen settled.
+- `proof:screen-self` still passes the first 8 runs (`--repeat 2`). Median done: cold 1621.9 ms, hard 1553.2 ms, refresh 308.1 ms, return 1521.0 ms. Every run: rows 12, pictures 11, none 1, broken 0. `firstRowText` was `Name 1`.
+- The second pass (cold and refresh, once each) served the same page from a local folder with every row prefixed `LOCAL `. Both finished. `overrideServed` was 1. `firstRowText` was `LOCAL Name 1`. Cold done was 1554.4 ms, pictures 11, broken 0, so the pictures still came from the server. Every check PASS.
+
+## 2026-11-08 run-screen --done-text
+
+- `run-screen` takes `--done-text`, a JavaScript regular expression with no flags. The screen is not done until that expression matches the page's own text, and the match joins the signature, so the quiet window starts when it first becomes true. A source that does not compile exits 2. The result stores the source as `settings.doneText` and each run's `doneTextMs` (nothing when the pattern is off or never matches). The printed line includes `done-text` and those milliseconds, or `-`. GilbApp's finished line is the two numbers being the same: `--done-text "from (\\d+) of \\1 vaults read"`.
+- `proof:screen-self` still passes the first 8 runs (`--repeat 2`). Median done: cold 1618.9 ms, hard 1671.6 ms, refresh 310.3 ms, return 1491.3 ms. Every run: rows 12, pictures 11, none 1, broken 0. `done-text` was `-`. `firstRowText` was `Name 1`.
+- The override pass (cold and refresh, once each) still finished. `overrideServed` was 1. `firstRowText` was `LOCAL Name 1`. Cold done was 1682.2 ms, pictures 11, broken 0.
+- The page's status line stays `loading` until `all 12 read`, 2500 ms after the page starts and 2000 ms after Go back. A third pass (cold and return, once each) used `--done-text "all \\d+ read"`. Cold done was 2509.6 ms and `doneTextMs` was 2509.6 (last picture 1617.9, so the text held the screen). Return done was 2007.5 ms and `doneTextMs` was 2007.5 (last picture 1458.2). Every check PASS.
