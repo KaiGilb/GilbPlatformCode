@@ -30,8 +30,10 @@ export interface Door {
   bodies: boolean;
   /** Replace the whole answer for a page (offset -> wire), for a test that needs a door's odd answer. */
   pages: ((offset: number, types: string[]) => Record<string, unknown> | null) | null;
+  /** When set, the list answers this status and raw body instead of a page. */
+  refusal: { status: number; body: string } | null;
 }
-export const door: Door = { pageSize: 100, neverComplete: false, bodies: true, pages: null };
+export const door: Door = { pageSize: 100, neverComplete: false, bodies: true, pages: null, refusal: null };
 
 export function resetStore(): void {
   store.clear();
@@ -43,6 +45,7 @@ export function resetStore(): void {
   door.neverComplete = false;
   door.bodies = true;
   door.pages = null;
+  door.refusal = null;
 }
 
 /** Put a document in the store as ANOTHER app wrote it (keys already stored, e.g. `a:claimSubject`). */
@@ -70,6 +73,7 @@ export async function fakeFetch(input: unknown, init?: RequestInit): Promise<Res
     const types = url.searchParams.getAll("type");
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const wantBody = url.searchParams.get("include") === "body";
+    if (door.refusal) return new Response(door.refusal.body, { status: door.refusal.status });
     if (door.pages) {
       const custom = door.pages(offset, types);
       if (custom) return json(custom);

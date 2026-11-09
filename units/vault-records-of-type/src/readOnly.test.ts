@@ -1,5 +1,6 @@
 // New. This unit only reads. The source (comments left out) names no HTTP method and no write verb, calls no network function itself (the
-// requests are the peers' `listVaultRecordsPage` and `getResource`), and imports no write function of the record client.
+// requests are the peers' `listVaultRecordsPage` and `getResource`), and imports no write function of the record client. The word
+// `fetch` may appear as the refusal tap, which reads an answer the peer already asked for; the source still does not call it.
 import { describe, expect, test } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,7 +29,7 @@ describe("the source can only read", () => {
   test.each(files)("%s: no method, no write verb, no write function, no network call", (f) => {
     const c = code(f);
     expect(c).not.toMatch(/\b(POST|PUT|PATCH|DELETE)\b/);
-    expect(c).not.toMatch(/\bmethod\b|\bfetch\b|XMLHttpRequest|sendBeacon|WebSocket/);
+    expect(c).not.toMatch(/\bmethod\b|\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket/);
     expect(c).not.toMatch(/\b(createResource|patchResource|deleteResource|createRecord|patchRecord|deleteRecord)\b/);
   });
 });

@@ -2,7 +2,8 @@
 // platform at the level of `fetch` (the source mocked the app's list function). The rest is new: F4 (the page ceiling is SAID), the boundary of the
 // ceiling, `getListedResource`, and that the unit only reads.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MAX_LIST_PAGES, getListedResource, listRecordsOfType as list } from "./index";
+import { NO_REASON_TAIL } from "@kaigilb/gilbplatformcode-server-error";
+import { MAX_LIST_PAGES, RecordsListError, getListedResource, listRecordsOfType as list } from "./index";
 
 // The listing answers { records, complete, reason? }. These helpers read the records, as the ported cases did when it answered the array.
 const listRecordsOfType = async (vault: string, type: string) => (await list(vault, type)).records;
@@ -125,6 +126,29 @@ describe("F4: the page ceiling is said, and what was read is kept", () => {
     seedClaims(2);
     expect(await list(VAULT, "PlaceClaim")).toMatchObject({ complete: true });
     expect((await list(VAULT, "PlaceClaim")).records).toHaveLength(2);
+  });
+});
+
+describe("a refused listing keeps the status and the server's sentence", () => {
+  it("403 with a sentence in message: status 403, that sentence, and the message unchanged", async () => {
+    const why = "you may not list these";
+    fake.door.refusal = { status: 403, body: JSON.stringify({ error: "Forbidden", message: why }) };
+    const err = await list(VAULT, "PlaceClaim").then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(RecordsListError);
+    const refused = err as RecordsListError;
+    expect(refused.status).toBe(403);
+    expect(refused.serverSentence).toBe(why);
+    expect(refused.message).toBe(why);
+  });
+
+  it("500 with a non-JSON body: status 500, no sentence, and the message unchanged", async () => {
+    fake.door.refusal = { status: 500, body: "nope" };
+    const err = await list(VAULT, "PlaceClaim").then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(RecordsListError);
+    const refused = err as RecordsListError;
+    expect(refused.status).toBe(500);
+    expect(refused.serverSentence).toBeNull();
+    expect(refused.message).toBe(`nope (HTTP 500) — ${NO_REASON_TAIL}`);
   });
 });
 

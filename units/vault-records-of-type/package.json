@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-records-of-type",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Lists every record of one type in a vault, page by page, and says when the listing stopped before the end.",
@@ -24,6 +24,7 @@
     "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
     "@kaigilb/gilbplatformcode-resource-id": "file:../resource-id",
     "@kaigilb/gilbplatformcode-result-total": "file:../result-total",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
     "@kaigilb/gilbplatformcode-signin": "file:../signin",
     "@kaigilb/gilbplatformcode-vault-namespace": "file:../vault-namespace",
     "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
@@ -37,6 +38,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-vault-sets": "^0.2.0",
+    "@kaigilb/gilbplatformcode-server-error": "^0.1.0",
     "@kaigilb/gilbplatformcode-resource-id": "^0.1.0",
     "@kaigilb/gilbplatformcode-vault-resources": "^0.1.0"
   }

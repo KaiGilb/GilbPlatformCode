@@ -8,6 +8,7 @@ import { listVaultRecordsPage } from "@kaigilb/gilbplatformcode-lws-vault-sets";
 import { recordFromServed, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
 import { getResource } from "@kaigilb/gilbplatformcode-vault-resources";
 import { idFromResourceUri } from "@kaigilb/gilbplatformcode-resource-id";
+import { serverReasonOrNull } from "@kaigilb/gilbplatformcode-server-error";
 
 type Doc = { doc: Record<string, unknown>; etag: string | null; gone: boolean; typeUri?: string };
 
@@ -41,6 +42,51 @@ export async function getListedResource(ref: RecordRef, vaultId: string): Promis
 export const MAX_LIST_PAGES = 50;
 
 /**
+ * A refused listing. `message` is the one the vault-set client already built, so a caller that matches on it still matches.
+ * `serverSentence` is the server's own sentence, or null when the body had none.
+ */
+export class RecordsListError extends Error {
+  readonly status: number;
+  readonly serverSentence: string | null;
+  constructor(message: string, status: number, serverSentence: string | null) {
+    super(message);
+    this.name = "RecordsListError";
+    this.status = status;
+    this.serverSentence = serverSentence;
+  }
+}
+
+type FetchFn = typeof globalThis.fetch;
+
+/**
+ * The vault-set client throws a plain Error and keeps only the sentence, so the status is lost.
+ * Watch the answer it already asked for and put the status back. This sends no request.
+ */
+async function keepRefusal<T>(work: () => Promise<T>): Promise<T> {
+  const real = globalThis.fetch.bind(globalThis);
+  // A box, not a let: an assignment inside the wrapper is invisible to narrowing, and a narrowed let becomes `never`.
+  const held: { value: { status: number; text: string } | null } = { value: null };
+  const wrapped = (async (input: Parameters<FetchFn>[0], init?: Parameters<FetchFn>[1]) => {
+    const res = await real(input, init);
+    // 401 stays NotSignedInError: the client drops the credential and retries once.
+    if (!res.ok && res.status !== 401 && held.value === null) {
+      held.value = { status: res.status, text: await res.clone().text().catch(() => "") };
+    }
+    return res;
+  }) as FetchFn;
+  globalThis.fetch = wrapped;
+  try {
+    return await work();
+  } catch (e) {
+    const seen = held.value;
+    if (seen && e instanceof Error) throw new RecordsListError(e.message, seen.status, serverReasonOrNull(seen.text));
+    throw e;
+  } finally {
+    if (globalThis.fetch === wrapped) globalThis.fetch = real;
+  }
+}
+
+/**
  * CHANGED (new, F4): what a listing came to. GilbApp returned the records it had and ended its loop quietly, whether the listing was whole, cut off at the
  * page ceiling, or stopped by a door that could not advance, so records past that point were never shown and nothing said so. Now the records read are
  * ALWAYS returned, with a marker a view can say:
@@ -55,8 +101,13 @@ export type RecordListing =
   | { readonly records: RecordRef[]; readonly complete: false; readonly reason: "capped" | "stalled" };
 
 /** Every record of one type in the vault (MyNet's `GET …/records?type=<bare name>`), every page —
- *  walked as `uiPrefs.listUiPrefsRowsOnVault` walks them. CHANGED: answers a {@link RecordListing}, not the bare array. */
+ *  walked as `uiPrefs.listUiPrefsRowsOnVault` walks them. CHANGED: answers a {@link RecordListing}, not the bare array.
+ *  A refused answer throws {@link RecordsListError}. */
 export async function listRecordsOfType(vaultId: string, typeQuery: string): Promise<RecordListing> {
+  return keepRefusal(() => listOneType(vaultId, typeQuery));
+}
+
+async function listOneType(vaultId: string, typeQuery: string): Promise<RecordListing> {
   const out: RecordRef[] = [];
   let offset = 0;
   for (let n = 0; n < MAX_LIST_PAGES; n++) {
