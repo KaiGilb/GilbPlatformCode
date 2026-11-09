@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-kind-model",
   "package": "@kaigilb/gilbplatformcode-contact-kind-model",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "The pure model of a contact's kind: its chips, its start choices and the relations its header shows.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -47,6 +47,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "The imports are the peers `person-connections`, `contact-header`, `lws-relations`, `relation-role` and `stakeholder-card-vocabulary`.",
     "`KindPredicate` and `KindEntry` (types only, `kindRelation.ts` lines 86-102) are moved into `contactKindModel.ts` to break a type cycle.",
     "`DEFAULT_PARTY_TIE_CURIE` (a literal with no origin in it, `relationPredicates.ts` line 256, with its doc comment) is in `headerRelations.ts`, before the code that uses it.",

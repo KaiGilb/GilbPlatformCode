@@ -83,6 +83,10 @@ None.
 - "A kind with an unreadable predicate term is dropped." It is drawn as the holder's own label, dashed, titled that the relation term could not be read; never any part of the term's address.
 - "`DEFAULT_PARTY_TIE_CURIE` is exported by the app's relation predicates." There it sits among other predicates in a file that is in no unit; here it is the one constant, copied.
 
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, copied by script:
