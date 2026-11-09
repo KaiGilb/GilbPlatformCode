@@ -87,6 +87,8 @@ Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx
 
 Connector 0.5.10: a hand-off that runs out of time says its writes so far are saved and the rest can be handed over again in smaller parts, instead of 'do not call this hand-off again'.
 
+Connector 0.5.13: publish puts a built folder on https://<name>.pages.dev.
+
 Connector 0.5.12: a hand-off is told its time limit, and one stopped for time returns the calls it made and its last words.
 
 Connector 0.5.11: whoami reports the connector version; a vault made inside a hand-off is selected when the hand-off ends.
@@ -112,6 +114,16 @@ Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so t
 - With `--as me`, it cannot sign in if this computer was never approved. Run `gilb-computer add`, approve it in GilbApp, and restart Claude Code.
 - It will not run a hand-off on an API key. Those variables are removed from the nested Claude Code process, and a run that is not your Claude subscription is stopped.
 - A hand-off cannot hand off again.
+
+## Publish an app
+
+The connector is installed, and this AI has signed in once. Then:
+
+```sh
+node gilb-connector.mjs publish --dir <built folder> --name <name>
+```
+
+That publishes the built folder. The live address is `https://<name>.pages.dev`. `--dry-run` only lists what would be sent.
 
 ## Options
 

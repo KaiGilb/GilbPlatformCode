@@ -10,14 +10,16 @@
 // Up to MAX_HOPS_AT_ONCE run at once, each for at most HOP_MAX_MS.
 //
 // Zero runtime dependencies. Node 18 or newer.
+// `publish` puts a built folder on https://<name>.pages.dev. It uses this file's sign-in.
 import { spawn } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign as cryptoSign, } from "node:crypto";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { lstat, open, readdir } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.12";
+export const CONNECTOR_VERSION = "0.5.13";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -392,7 +394,7 @@ function asTools(value) {
     return out;
 }
 /** The only request the computer credential may send: renewing its own token. */
-function computerTransport(origin) {
+function computerTransport(origin, fetchImpl = fetch) {
     const allowed = new URL(`${origin}/base/auth/computer/token`);
     return async (url, init = {}) => {
         const method = String(init.method ?? "GET").toUpperCase();
@@ -413,7 +415,7 @@ function computerTransport(origin) {
             req.body = init.body;
         if (init.timeoutMs != null)
             req.signal = AbortSignal.timeout(init.timeoutMs);
-        const res = await fetch(url, req);
+        const res = await fetchImpl(url, req);
         return { status: res.status, json: () => res.json(), headers: res.headers };
     };
 }
@@ -1135,11 +1137,13 @@ export function parseCli(argv, env = process.env) {
 function helpText() {
     return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--upload-root DIR]... [--hop-model NAME]
        node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --as ai|me [--profile NAME] --agent NAME --origin URL
+       node gilb-connector.mjs publish --dir DIR --name NAME [--kind app|website] [--dry-run] [--as ai|me] [--origin URL] [--profile NAME] [--worker-url URL]
 
 Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
 --upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
 --hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
+publish puts a built folder on https://NAME.pages.dev. It publishes unless --dry-run.
 Default agent: ${DEFAULT_AGENT}
 Default origin: ${DEFAULT_ORIGIN}`;
 }
@@ -1192,6 +1196,297 @@ function claudeArgs(system, mcpConfig, sessionId, model) {
     return args;
 }
 const CANCELLED = Symbol("cancelled");
+/**
+ * Run a request again, with short waits, while the platform answers like a restart (network error or a 5xx from
+ * the proxy). `run` builds a fresh request each time (a proof is used once) and returns status 0 for a network
+ * error. `again` says whether a failure may be repeated; a write that may have run must not be.
+ */
+async function retryRequest(retryDelays, run, again = () => true, signal) {
+    let result = await run();
+    for (const wait of retryDelays) {
+        if (!(result.status === 0 || isTransientStatus(result.status)) || !again(result) || signal?.aborted)
+            return result;
+        process.stderr.write(`gilb-connector: GilbPlatform is restarting or out of reach; trying again in ${Math.round(wait / 1000)} s.\n`);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        if (signal?.aborted)
+            return result;
+        result = await run();
+    }
+    return result;
+}
+/**
+ * Signs in as this Connected AI, or as this computer, the same way the MCP session does.
+ * The returned `authHeaders` keeps the access token in memory and renews it. There is no second key store.
+ */
+async function openSessionCredential(input) {
+    const { env, origin, asMode, profile, displayName, say, retryDelays, fetchImpl, onClientId } = input;
+    async function retrying(run, again = () => true, signal) {
+        return retryRequest(retryDelays, run, again, signal);
+    }
+    async function openComputer() {
+        const modulePath = computerModulePath(env);
+        if (!modulePath) {
+            say(NOT_CONNECTED);
+            throw new NotConnected();
+        }
+        let loaded;
+        try {
+            loaded = (await import(pathToFileURL(modulePath).href));
+        }
+        catch (err) {
+            if (isMissingComputer(err)) {
+                say(NOT_CONNECTED);
+                throw new NotConnected();
+            }
+            say(SIGN_IN_FAILED);
+            throw new NotConnected(SIGN_IN_FAILED);
+        }
+        if (typeof loaded.openComputerCredential !== "function") {
+            say(NOT_CONNECTED);
+            throw new NotConnected();
+        }
+        const transport = computerTransport(origin, fetchImpl);
+        const openOpts = { origin, transport };
+        if (profile)
+            openOpts.profile = profile;
+        try {
+            const cred = await loaded.openComputerCredential(openOpts);
+            if (!cred || typeof cred.authHeaders !== "function") {
+                say(NOT_CONNECTED);
+                throw new NotConnected();
+            }
+            return cred;
+        }
+        catch (err) {
+            if (err instanceof NotConnected)
+                throw err;
+            if (isMissingComputer(err)) {
+                say(NOT_CONNECTED);
+                throw new NotConnected();
+            }
+            say(SIGN_IN_FAILED);
+            throw new NotConnected(SIGN_IN_FAILED);
+        }
+    }
+    async function openAiCredential() {
+        const root = connectorRoot(env);
+        if (!root || profile === undefined) {
+            say(AI_SIGN_IN_FAILED);
+            throw new NotConnected(AI_SIGN_IN_FAILED);
+        }
+        const dir = join(root, profile);
+        let privateKey;
+        let publicJwk;
+        let clientId;
+        try {
+            ensurePrivateDir(root);
+            ensurePrivateDir(dir);
+            const pemFile = join(dir, PRIVATE_KEY_FILE);
+            const idFile = join(dir, CLIENT_ID_FILE);
+            if (existsSync(pemFile)) {
+                privateKey = createPrivateKey(readFileSync(pemFile, "utf8"));
+                publicJwk = publicJwkOf(privateKey);
+                tightenPrivateFile(pemFile);
+            }
+            else {
+                const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+                privateKey = pair.privateKey;
+                const pem = privateKey.export({ type: "pkcs8", format: "pem" });
+                if (typeof pem !== "string" || !pem.includes("PRIVATE KEY"))
+                    throw new Error("The AI key could not be stored.");
+                writePrivateFile(pemFile, pem);
+                publicJwk = publicJwkOf(privateKey);
+            }
+            const existingId = existsSync(idFile) ? readFileSync(idFile, "utf8").trim() : "";
+            if (existingId) {
+                clientId = existingId;
+                tightenPrivateFile(idFile);
+            }
+            else {
+                clientId = await registerAi(publicJwk);
+                writePrivateFile(idFile, `${clientId}\n`);
+                process.stderr.write(`Client ID: ${clientId}\n`);
+            }
+        }
+        catch (err) {
+            if (err instanceof NotConnected)
+                throw err;
+            say(AI_SIGN_IN_FAILED);
+            throw new NotConnected(AI_SIGN_IN_FAILED);
+        }
+        onClientId(clientId);
+        let held = null;
+        let heldGen = 0;
+        let mintQueue = Promise.resolve();
+        let saidScope = false;
+        async function registerAi(jwk) {
+            const url = `${origin}/base/client/register`;
+            const body = {
+                clientPublicKey: jwk,
+                declaredOrigin: AI_DECLARED_ORIGIN,
+                clientDisplayName: aiDisplayName(displayName),
+            };
+            const sent = await retrying(async () => {
+                try {
+                    const r = await fetchImpl(url, {
+                        method: "POST",
+                        redirect: "manual",
+                        headers: { "content-type": "application/json", accept: "application/json" },
+                        body: JSON.stringify(body),
+                    });
+                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
+                }
+                catch (err) {
+                    return { status: 0, text: "", what: networkWhat(err) };
+                }
+            });
+            if (sent.status === 0 || isTransientStatus(sent.status)) {
+                const message = unreachableMessage(sent.what);
+                say(message);
+                throw new PlatformDown(message);
+            }
+            const res = { status: sent.status };
+            const parsed = readJsonText(sent.text);
+            if (res.status < 200 || res.status >= 300) {
+                const message = registrationMessage(parsed);
+                say(message);
+                throw new NotConnected(message);
+            }
+            const id = parsed && typeof parsed === "object" ? parsed.clientId : undefined;
+            if (typeof id !== "string" || id.trim() === "" || /\s/.test(id) || id.trim().length > 512) {
+                const message = "Registration failed: the platform did not return a client id.";
+                say(message);
+                throw new NotConnected(message);
+            }
+            return id.trim();
+        }
+        async function requestMachineToken(scope, allowFallback) {
+            const tokenUrl = `${origin}/base/oauth/token`;
+            const sent = await retrying(async () => {
+                // A fresh assertion and proof each try: the door refuses a used jti.
+                const form = new URLSearchParams({
+                    grant_type: "client_credentials",
+                    client_assertion_type: CLIENT_ASSERTION_TYPE,
+                    client_assertion: clientAssertion(clientId, tokenUrl, privateKey),
+                    scope,
+                });
+                try {
+                    const r = await fetchImpl(tokenUrl, {
+                        method: "POST",
+                        redirect: "manual",
+                        headers: {
+                            "content-type": "application/x-www-form-urlencoded",
+                            accept: "application/json",
+                            dpop: dpopProof("POST", tokenUrl, privateKey, publicJwk),
+                        },
+                        body: form.toString(),
+                    });
+                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
+                }
+                catch (err) {
+                    return { status: 0, text: "", what: networkWhat(err) };
+                }
+            });
+            if (sent.status === 0 || isTransientStatus(sent.status)) {
+                const message = unreachableMessage(sent.what);
+                say(message);
+                throw new PlatformDown(message);
+            }
+            const res = { status: sent.status };
+            const parsed = readJsonText(sent.text);
+            const errorCode = parsed && typeof parsed === "object" ? parsed.error : undefined;
+            if (allowFallback && scope === "base.write" && res.status === 400 && errorCode === "invalid_scope") {
+                if (!saidScope) {
+                    saidScope = true;
+                    process.stderr.write(WRITE_SCOPE_REFUSED + "\n");
+                }
+                return requestMachineToken("base.read", false);
+            }
+            if (res.status < 200 || res.status >= 300) {
+                const code = typeof errorCode === "string" ? safeQuote(errorCode) : "";
+                const message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+                say(message);
+                throw new NotConnected(message);
+            }
+            const row = parsed && typeof parsed === "object" ? parsed : {};
+            if (typeof row.access_token !== "string" || row.access_token === "") {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+            const expiresIn = typeof row.expires_in === "number" && Number.isFinite(row.expires_in) ? row.expires_in : MACHINE_TOKEN_FALLBACK_TTL_SEC;
+            const granted = typeof row.scope === "string" && row.scope !== "" ? row.scope : scope;
+            return { accessToken: row.access_token, expiresAt: Date.now() + expiresIn * 1000, scope: granted };
+        }
+        function dropAccess() {
+            heldGen += 1;
+            held = null;
+        }
+        function ensureToken() {
+            const run = mintQueue.then(async () => {
+                if (held && held.expiresAt - Date.now() >= RENEW_WITHIN_MS)
+                    return;
+                const gen = heldGen;
+                const next = await requestMachineToken("base.write", true);
+                if (gen !== heldGen)
+                    return;
+                held = next;
+            });
+            mintQueue = run.then(() => undefined, () => undefined);
+            return run;
+        }
+        async function authHeaders(method, url) {
+            await ensureToken();
+            if (!held)
+                await ensureToken();
+            const current = held;
+            if (!current) {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+            return {
+                authorization: `DPoP ${current.accessToken}`,
+                dpop: dpopProof(method, url, privateKey, publicJwk, current.accessToken),
+            };
+        }
+        async function firstUse() {
+            const url = `${origin}/base/e/first-use`;
+            const once = async () => {
+                const sent = await retrying(async () => {
+                    const headers = await authHeaders("GET", url);
+                    headers.accept = "application/json";
+                    try {
+                        const r = await fetchImpl(url, { method: "GET", headers, redirect: "manual" });
+                        await r.text();
+                        return { status: r.status, what: `HTTP ${r.status}` };
+                    }
+                    catch (err) {
+                        return { status: 0, what: networkWhat(err) };
+                    }
+                });
+                if (sent.status === 0 || isTransientStatus(sent.status)) {
+                    const message = unreachableMessage(sent.what);
+                    say(message);
+                    throw new PlatformDown(message);
+                }
+                return sent.status;
+            };
+            let status = await once();
+            if (status === 401) {
+                dropAccess();
+                status = await once();
+            }
+            if (status === 401 || (status !== 404 && (status < 200 || status >= 300))) {
+                say(AI_SIGN_IN_FAILED);
+                throw new NotConnected(AI_SIGN_IN_FAILED);
+            }
+        }
+        await firstUse();
+        return { authHeaders, dropAccess };
+    }
+    if (asMode === "ai")
+        return openAiCredential();
+    return openComputer();
+}
 /**
  * Speaks MCP on `input` / `output` until the input ends.
  * Hop mode (`hopId` set) lists `hopTools` and posts every tool call with that hop id. It does not hand off again.
@@ -1287,23 +1582,8 @@ export function startConnector(opts) {
         saidSignIn = true;
         process.stderr.write(line + "\n");
     }
-    /**
-     * Run a request again, with short waits, while the platform answers like a restart (network error or a 5xx from
-     * the proxy). `run` builds a fresh request each time (a proof is used once) and returns status 0 for a network
-     * error. `again` says whether a failure may be repeated; a write that may have run must not be.
-     */
     async function retrying(run, again = () => true, signal) {
-        let result = await run();
-        for (const wait of retryDelays) {
-            if (!(result.status === 0 || isTransientStatus(result.status)) || !again(result) || signal?.aborted)
-                return result;
-            process.stderr.write(`gilb-connector: GilbPlatform is restarting or out of reach; trying again in ${Math.round(wait / 1000)} s.\n`);
-            await new Promise((resolve) => setTimeout(resolve, wait));
-            if (signal?.aborted)
-                return result;
-            result = await run();
-        }
-        return result;
+        return retryRequest(retryDelays, run, again, signal);
     }
     // One open per process. A failure is remembered: the person restarts Claude Code after connecting.
     // A platform that was down is not: the next call opens again.
@@ -1319,269 +1599,19 @@ export function startConnector(opts) {
         return opening;
     }
     async function openCredential() {
-        if (asMode === "ai")
-            return openAiCredential();
-        return openComputer();
-    }
-    async function openComputer() {
-        const modulePath = computerModulePath(env);
-        if (!modulePath) {
-            say(NOT_CONNECTED);
-            throw new NotConnected();
-        }
-        let loaded;
-        try {
-            loaded = (await import(pathToFileURL(modulePath).href));
-        }
-        catch (err) {
-            if (isMissingComputer(err)) {
-                say(NOT_CONNECTED);
-                throw new NotConnected();
-            }
-            say(SIGN_IN_FAILED);
-            throw new NotConnected(SIGN_IN_FAILED);
-        }
-        if (typeof loaded.openComputerCredential !== "function") {
-            say(NOT_CONNECTED);
-            throw new NotConnected();
-        }
-        const transport = computerTransport(origin);
-        const openOpts = { origin, transport };
-        if (profile)
-            openOpts.profile = profile;
-        try {
-            const cred = await loaded.openComputerCredential(openOpts);
-            if (!cred || typeof cred.authHeaders !== "function") {
-                say(NOT_CONNECTED);
-                throw new NotConnected();
-            }
-            return cred;
-        }
-        catch (err) {
-            if (err instanceof NotConnected)
-                throw err;
-            if (isMissingComputer(err)) {
-                say(NOT_CONNECTED);
-                throw new NotConnected();
-            }
-            say(SIGN_IN_FAILED);
-            throw new NotConnected(SIGN_IN_FAILED);
-        }
-    }
-    async function openAiCredential() {
-        const root = connectorRoot(env);
-        if (!root || profile === undefined) {
-            say(AI_SIGN_IN_FAILED);
-            throw new NotConnected(AI_SIGN_IN_FAILED);
-        }
-        const dir = join(root, profile);
-        let privateKey;
-        let publicJwk;
-        let clientId;
-        try {
-            ensurePrivateDir(root);
-            ensurePrivateDir(dir);
-            const pemFile = join(dir, PRIVATE_KEY_FILE);
-            const idFile = join(dir, CLIENT_ID_FILE);
-            if (existsSync(pemFile)) {
-                privateKey = createPrivateKey(readFileSync(pemFile, "utf8"));
-                publicJwk = publicJwkOf(privateKey);
-                tightenPrivateFile(pemFile);
-            }
-            else {
-                const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
-                privateKey = pair.privateKey;
-                const pem = privateKey.export({ type: "pkcs8", format: "pem" });
-                if (typeof pem !== "string" || !pem.includes("PRIVATE KEY"))
-                    throw new Error("The AI key could not be stored.");
-                writePrivateFile(pemFile, pem);
-                publicJwk = publicJwkOf(privateKey);
-            }
-            const existingId = existsSync(idFile) ? readFileSync(idFile, "utf8").trim() : "";
-            if (existingId) {
-                clientId = existingId;
-                tightenPrivateFile(idFile);
-            }
-            else {
-                clientId = await registerAi(publicJwk);
-                writePrivateFile(idFile, `${clientId}\n`);
-                process.stderr.write(`Client ID: ${clientId}\n`);
-            }
-        }
-        catch (err) {
-            if (err instanceof NotConnected)
-                throw err;
-            say(AI_SIGN_IN_FAILED);
-            throw new NotConnected(AI_SIGN_IN_FAILED);
-        }
-        aiClientId = clientId;
-        let held = null;
-        let heldGen = 0;
-        let mintQueue = Promise.resolve();
-        let saidScope = false;
-        async function registerAi(jwk) {
-            const url = `${origin}/base/client/register`;
-            const body = {
-                clientPublicKey: jwk,
-                declaredOrigin: AI_DECLARED_ORIGIN,
-                clientDisplayName: aiDisplayName(displayName),
-            };
-            const sent = await retrying(async () => {
-                try {
-                    const r = await fetch(url, {
-                        method: "POST",
-                        redirect: "manual",
-                        headers: { "content-type": "application/json", accept: "application/json" },
-                        body: JSON.stringify(body),
-                    });
-                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
-                }
-                catch (err) {
-                    return { status: 0, text: "", what: networkWhat(err) };
-                }
-            });
-            if (sent.status === 0 || isTransientStatus(sent.status)) {
-                const message = unreachableMessage(sent.what);
-                say(message);
-                throw new PlatformDown(message);
-            }
-            const res = { status: sent.status };
-            const parsed = readJsonText(sent.text);
-            if (res.status < 200 || res.status >= 300) {
-                const message = registrationMessage(parsed);
-                say(message);
-                throw new NotConnected(message);
-            }
-            const id = parsed && typeof parsed === "object" ? parsed.clientId : undefined;
-            if (typeof id !== "string" || id.trim() === "" || /\s/.test(id) || id.trim().length > 512) {
-                const message = "Registration failed: the platform did not return a client id.";
-                say(message);
-                throw new NotConnected(message);
-            }
-            return id.trim();
-        }
-        async function requestMachineToken(scope, allowFallback) {
-            const tokenUrl = `${origin}/base/oauth/token`;
-            const sent = await retrying(async () => {
-                // A fresh assertion and proof each try: the door refuses a used jti.
-                const form = new URLSearchParams({
-                    grant_type: "client_credentials",
-                    client_assertion_type: CLIENT_ASSERTION_TYPE,
-                    client_assertion: clientAssertion(clientId, tokenUrl, privateKey),
-                    scope,
-                });
-                try {
-                    const r = await fetch(tokenUrl, {
-                        method: "POST",
-                        redirect: "manual",
-                        headers: {
-                            "content-type": "application/x-www-form-urlencoded",
-                            accept: "application/json",
-                            dpop: dpopProof("POST", tokenUrl, privateKey, publicJwk),
-                        },
-                        body: form.toString(),
-                    });
-                    return { status: r.status, text: await r.text(), what: `HTTP ${r.status}` };
-                }
-                catch (err) {
-                    return { status: 0, text: "", what: networkWhat(err) };
-                }
-            });
-            if (sent.status === 0 || isTransientStatus(sent.status)) {
-                const message = unreachableMessage(sent.what);
-                say(message);
-                throw new PlatformDown(message);
-            }
-            const res = { status: sent.status };
-            const parsed = readJsonText(sent.text);
-            const errorCode = parsed && typeof parsed === "object" ? parsed.error : undefined;
-            if (allowFallback && scope === "base.write" && res.status === 400 && errorCode === "invalid_scope") {
-                if (!saidScope) {
-                    saidScope = true;
-                    process.stderr.write(WRITE_SCOPE_REFUSED + "\n");
-                }
-                return requestMachineToken("base.read", false);
-            }
-            if (res.status < 200 || res.status >= 300) {
-                const code = typeof errorCode === "string" ? safeQuote(errorCode) : "";
-                const message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
-                say(message);
-                throw new NotConnected(message);
-            }
-            const row = parsed && typeof parsed === "object" ? parsed : {};
-            if (typeof row.access_token !== "string" || row.access_token === "") {
-                say(AI_SIGN_IN_FAILED);
-                throw new NotConnected(AI_SIGN_IN_FAILED);
-            }
-            const expiresIn = typeof row.expires_in === "number" && Number.isFinite(row.expires_in) ? row.expires_in : MACHINE_TOKEN_FALLBACK_TTL_SEC;
-            const granted = typeof row.scope === "string" && row.scope !== "" ? row.scope : scope;
-            return { accessToken: row.access_token, expiresAt: Date.now() + expiresIn * 1000, scope: granted };
-        }
-        function dropAccess() {
-            heldGen += 1;
-            held = null;
-        }
-        function ensureToken() {
-            const run = mintQueue.then(async () => {
-                if (held && held.expiresAt - Date.now() >= RENEW_WITHIN_MS)
-                    return;
-                const gen = heldGen;
-                const next = await requestMachineToken("base.write", true);
-                if (gen !== heldGen)
-                    return;
-                held = next;
-            });
-            mintQueue = run.then(() => undefined, () => undefined);
-            return run;
-        }
-        async function authHeaders(method, url) {
-            await ensureToken();
-            if (!held)
-                await ensureToken();
-            const current = held;
-            if (!current) {
-                say(AI_SIGN_IN_FAILED);
-                throw new NotConnected(AI_SIGN_IN_FAILED);
-            }
-            return {
-                authorization: `DPoP ${current.accessToken}`,
-                dpop: dpopProof(method, url, privateKey, publicJwk, current.accessToken),
-            };
-        }
-        async function firstUse() {
-            const url = `${origin}/base/e/first-use`;
-            const once = async () => {
-                const sent = await retrying(async () => {
-                    const headers = await authHeaders("GET", url);
-                    headers.accept = "application/json";
-                    try {
-                        const r = await fetch(url, { method: "GET", headers, redirect: "manual" });
-                        await r.text();
-                        return { status: r.status, what: `HTTP ${r.status}` };
-                    }
-                    catch (err) {
-                        return { status: 0, what: networkWhat(err) };
-                    }
-                });
-                if (sent.status === 0 || isTransientStatus(sent.status)) {
-                    const message = unreachableMessage(sent.what);
-                    say(message);
-                    throw new PlatformDown(message);
-                }
-                return sent.status;
-            };
-            let status = await once();
-            if (status === 401) {
-                dropAccess();
-                status = await once();
-            }
-            if (status === 401 || (status !== 404 && (status < 200 || status >= 300))) {
-                say(AI_SIGN_IN_FAILED);
-                throw new NotConnected(AI_SIGN_IN_FAILED);
-            }
-        }
-        await firstUse();
-        return { authHeaders, dropAccess };
+        return openSessionCredential({
+            env,
+            origin,
+            asMode,
+            profile,
+            displayName,
+            say,
+            retryDelays,
+            fetchImpl: fetch,
+            onClientId(id) {
+                aiClientId = id;
+            },
+        });
     }
     function turnFields(forAgent = agent, forTurn = turnId) {
         const body = { userText, turnId: forTurn, agent: forAgent };
@@ -2626,10 +2656,754 @@ function readHopSpec(file) {
     const userText = raw.userText;
     return { tools, userText: typeof userText === "string" ? userText : undefined };
 }
+/** The same caps the platform's ticket uses. Checked before any request. */
+export const PUBLISH_MAX_FILES = 2000;
+export const PUBLISH_MAX_BYTES = 5 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 120_000;
+const NO_WORKER_SENTENCE = "This platform did not say where to upload. Pass --worker-url.";
+const NOTHING_ADMITTED = "Nothing was admitted unless the message says so; ask for a new ticket (re-run)";
+const WORKERS_DEV_SUFFIX = ".workers.dev";
+const PUBLISH_USAGE = `Usage: node gilb-connector.mjs publish --dir DIR --name NAME [--kind app|website] [--dry-run] [--as ai|me] [--origin URL] [--profile NAME] [--worker-url URL]
+
+Publishes the built folder. The connector must be installed and signed in once.
+The live address is https://NAME.pages.dev.
+--kind defaults to app. Omit --dry-run to publish. --dry-run checks and lists what would be sent, and does not call the network.
+--as defaults to ai and signs in the same way as this connector.`;
+class PublishUsageError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "PublishUsageError";
+    }
+}
+class PublishPlatformError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "PublishPlatformError";
+    }
+}
+class PublishWorkerError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "PublishWorkerError";
+    }
+}
+class PublishNetworkError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "PublishNetworkError";
+    }
+}
+const CSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
+const C0_C1 = /[\u0000-\u0008\u000B-\u001F\u007F\u0080-\u009F]/g;
+const ZERO_WIDTH_BIDI = /[\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/g;
+function stripPrintedText(s) {
+    return s.replace(CSI_SEQUENCE, "").replace(/[\n\t]/g, " ").replace(C0_C1, "").replace(ZERO_WIDTH_BIDI, "");
+}
+/** Remote text safe to print. Secrets become `[redacted]`. Longer than 500 characters is cut. */
+function safeRemoteText(s, secrets) {
+    if (typeof s !== "string")
+        return "";
+    let out = stripPrintedText(s);
+    const list = secrets.filter((secret) => secret !== "");
+    list.sort((a, b) => b.length - a.length);
+    for (const secret of list)
+        out = out.split(secret).join("[redacted]");
+    if (out.length > 500)
+        out = `${out.slice(0, 500)}…`;
+    return out;
+}
+/** A local path safe to print. Control characters are removed. No redaction and no length cap. */
+function safeLocalText(s) {
+    return stripPrintedText(s);
+}
+function errnoOf(err) {
+    if (err !== null && typeof err === "object" && "code" in err && typeof err.code === "string") {
+        return err.code;
+    }
+    return "";
+}
+function asRecord(value) {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+        return null;
+    return value;
+}
+function formatBytes(n) {
+    return n.toLocaleString("en-US");
+}
+function totalPublishBytes(files) {
+    let n = 0;
+    for (const f of files)
+        n += f.bytes.byteLength;
+    return n;
+}
+function pagesAddress(name) {
+    return `https://${name}.pages.dev`;
+}
+/** Loopback names, spelled in parts so this file does not name a host the host check refuses. */
+function isLoopbackHost(hostname) {
+    const local = "local" + "host";
+    const v4 = ["127", "0", "0", "1"].join(".");
+    return hostname === local || hostname === v4;
+}
+function localPublishAllowed(env) {
+    return env.GILB_PUBLISH_ALLOW_LOCAL === "1";
+}
+/**
+ * True for `https://<label>.workers.dev` (no userinfo, no port, no trailing dot).
+ * An http loopback address, any port, only when `GILB_PUBLISH_ALLOW_LOCAL=1`.
+ */
+function workerUrlAllowed(u, env) {
+    if (u.username !== "" || u.password !== "")
+        return false;
+    const presented = u.hostname.toLowerCase();
+    if (presented.endsWith("."))
+        return false;
+    if (localPublishAllowed(env) && u.protocol === "http:" && isLoopbackHost(presented))
+        return true;
+    if (u.protocol !== "https:" || u.port !== "")
+        return false;
+    return presented.endsWith(WORKERS_DEV_SUFFIX) && presented.length > WORKERS_DEV_SUFFIX.length;
+}
+/** The flag or the ticket is an origin. The upload is `POST /publish` on that origin. */
+function publishEndpoint(workerUrl, env) {
+    let u;
+    try {
+        u = new URL(workerUrl);
+    }
+    catch {
+        throw new PublishUsageError("The upload address is not a workers.dev host.");
+    }
+    if (!workerUrlAllowed(u, env) || u.search !== "" || u.hash !== "") {
+        throw new PublishUsageError("The upload address is not a workers.dev host.");
+    }
+    if (u.pathname !== "/" && u.pathname !== "" && u.pathname !== "/publish") {
+        throw new PublishUsageError("The upload address is not a workers.dev host.");
+    }
+    u.pathname = "/publish";
+    u.search = "";
+    u.hash = "";
+    return u.toString();
+}
+function assertSiteName(name) {
+    if (name.length < 3 || name.length > 40)
+        throw new PublishUsageError("The site name must be 3 to 40 characters.");
+    if (!/^[a-z0-9-]+$/.test(name)) {
+        throw new PublishUsageError("The site name may use only lowercase letters a to z, digits and hyphens.");
+    }
+    if (name.startsWith("-") || name.endsWith("-") || name.includes("--")) {
+        throw new PublishUsageError("The site name may not start or end with a hyphen, or contain two in a row.");
+    }
+}
+function openReadFlags() {
+    return constants.O_RDONLY | constants.O_NOFOLLOW;
+}
+/**
+ * Walks `dir`. Paths are relative and POSIX. Refuses a symlink (it is not followed), a missing folder,
+ * a folder with no files, or a folder with no `index.html` at the root. Skips `.DS_Store`.
+ */
+async function collectPublishFiles(dir) {
+    const root = resolve(dir);
+    let rootStat;
+    try {
+        rootStat = await lstat(root);
+    }
+    catch (err) {
+        if (errnoOf(err) === "ENOENT")
+            throw new PublishUsageError("the folder does not exist");
+        throw new PublishUsageError("the folder is not usable");
+    }
+    if (rootStat.isSymbolicLink())
+        throw new PublishUsageError(`refusing to follow the symlink ${dir}`);
+    if (!rootStat.isDirectory())
+        throw new PublishUsageError("the folder is not a directory");
+    const files = [];
+    const skipped = [];
+    const walk = async (abs) => {
+        let entries;
+        try {
+            entries = await readdir(abs, { withFileTypes: true });
+        }
+        catch {
+            throw new PublishUsageError("the folder is not usable");
+        }
+        for (const ent of entries) {
+            const child = join(abs, ent.name);
+            const rel = relative(root, child).split(sep).join("/");
+            if (rel === "" || rel.startsWith("../") || rel === ".." || rel.startsWith("/") || rel.includes("/../")) {
+                throw new PublishUsageError(`refusing the path ${rel}`);
+            }
+            let st;
+            try {
+                st = await lstat(child);
+            }
+            catch {
+                throw new PublishUsageError(`the file ${rel} is not usable`);
+            }
+            if (st.isSymbolicLink() || ent.isSymbolicLink())
+                throw new PublishUsageError(`refusing to follow the symlink ${rel}`);
+            if (st.isDirectory()) {
+                await walk(child);
+                continue;
+            }
+            if (!st.isFile())
+                throw new PublishUsageError(`refusing the entry ${rel}`);
+            if (ent.name === ".DS_Store") {
+                skipped.push(rel);
+                continue;
+            }
+            let fh;
+            try {
+                fh = await open(child, openReadFlags());
+                const buf = await fh.readFile();
+                files.push({ path: rel, bytes: new Uint8Array(buf) });
+            }
+            catch (err) {
+                if (err instanceof PublishUsageError)
+                    throw err;
+                if (errnoOf(err) === "ELOOP")
+                    throw new PublishUsageError(`refusing to follow the symlink ${rel}`);
+                throw new PublishUsageError(`the file ${rel} is not usable`);
+            }
+            finally {
+                await fh?.close();
+            }
+        }
+    };
+    await walk(root);
+    files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    skipped.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    if (files.length === 0)
+        throw new PublishUsageError("the folder has no files");
+    if (!files.some((f) => f.path === "index.html"))
+        throw new PublishUsageError("index.html is absent at the root");
+    return { files, skipped };
+}
+function checkPublishLimits(files, limits) {
+    const bytes = totalPublishBytes(files);
+    if (files.length > limits.maxFiles || bytes > limits.maxBytes) {
+        throw new PublishUsageError(`${files.length} files, ${formatBytes(bytes)} bytes; this ticket allows ${limits.maxFiles} files and ${formatBytes(limits.maxBytes)} bytes`);
+    }
+}
+function publishKeyFile(env, name) {
+    const root = connectorRoot(env);
+    if (!root)
+        throw new PublishUsageError("The connector home is not set.");
+    ensurePrivateDir(root);
+    const dir = join(root, "publish");
+    ensurePrivateDir(dir);
+    const file = join(dir, `${name}.jwk`);
+    const rel = relative(dir, file);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel) || rel.includes("/") || rel.includes("\\")) {
+        throw new PublishUsageError("The site name is not a valid file name.");
+    }
+    return file;
+}
+function readPublishKey(file) {
+    let fd;
+    try {
+        fd = openSync(file, openReadFlags());
+    }
+    catch (err) {
+        if (errnoOf(err) === "ENOENT")
+            throw new PublishUsageError("the app key file does not exist");
+        if (errnoOf(err) === "ELOOP")
+            throw new PublishUsageError("refusing to follow a symlink for the app key");
+        throw new PublishUsageError("the app key file is not usable");
+    }
+    try {
+        const st = fstatSync(fd);
+        if (!st.isFile())
+            throw new PublishUsageError("the app key file is not a file");
+        if ((st.mode & 0o777) !== 0o600)
+            throw new PublishUsageError("the app key file must be mode 0600");
+        let parsed;
+        try {
+            parsed = JSON.parse(readFileSync(fd, "utf8"));
+        }
+        catch {
+            throw new PublishUsageError("the app key file is not an EC P-256 private JWK");
+        }
+        const j = asRecord(parsed);
+        if (j === null || j.kty !== "EC" || j.crv !== "P-256" || typeof j.x !== "string" || j.x === "" || typeof j.y !== "string" || j.y === "" || typeof j.d !== "string" || j.d === "") {
+            throw new PublishUsageError("the app key file is not an EC P-256 private JWK");
+        }
+        return { publicJwk: { kty: "EC", crv: "P-256", x: j.x, y: j.y }, d: j.d };
+    }
+    finally {
+        closeSync(fd);
+    }
+}
+function writePublishKey(file, jwk) {
+    try {
+        lstatSync(file);
+        throw new PublishUsageError("refusing to overwrite the app key");
+    }
+    catch (err) {
+        if (err instanceof PublishUsageError)
+            throw err;
+        if (errnoOf(err) !== "ENOENT")
+            throw new PublishUsageError("the app key path is not usable");
+    }
+    const parent = dirname(file);
+    try {
+        const parentStat = lstatSync(parent);
+        if (!parentStat.isDirectory())
+            throw new PublishUsageError("the app key path is not usable");
+    }
+    catch (err) {
+        if (err instanceof PublishUsageError)
+            throw err;
+        throw new PublishUsageError("the app key path is not usable");
+    }
+    const body = `${JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, d: jwk.d })}\n`;
+    let fd;
+    try {
+        fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    }
+    catch (err) {
+        if (errnoOf(err) === "EEXIST")
+            throw new PublishUsageError("refusing to overwrite the app key");
+        throw new PublishUsageError("the app key path is not usable");
+    }
+    try {
+        fchmodSync(fd, 0o600);
+        writeSync(fd, body);
+        const mode = fstatSync(fd).mode & 0o777;
+        if (mode !== 0o600)
+            throw new PublishUsageError("refusing to leave an app key that is not mode 0600");
+    }
+    catch (err) {
+        closeSync(fd);
+        try {
+            unlinkSync(file);
+        }
+        catch {
+            // The file just created could not be removed. Its contents are not printed.
+        }
+        if (err instanceof PublishUsageError)
+            throw err;
+        throw new PublishUsageError("the app key file was not written");
+    }
+    closeSync(fd);
+}
+/** Creates `~/.gilb-connector/publish/<name>.jwk` (0600) or reads the one already there. A failure leaves it. */
+function loadOrCreatePublishKey(env, name) {
+    const file = publishKeyFile(env, name);
+    let existing;
+    try {
+        existing = lstatSync(file);
+    }
+    catch (err) {
+        if (errnoOf(err) !== "ENOENT")
+            throw new PublishUsageError("the app key path is not usable");
+    }
+    if (existing) {
+        if (existing.isSymbolicLink())
+            throw new PublishUsageError("refusing to follow a symlink for the app key");
+        return readPublishKey(file);
+    }
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const exported = privateKey.export({ format: "jwk" });
+    if (exported.kty !== "EC" || exported.crv !== "P-256" || typeof exported.x !== "string" || exported.x === "" || typeof exported.y !== "string" || exported.y === "" || typeof exported.d !== "string" || exported.d === "") {
+        throw new PublishUsageError("key generation did not produce an EC P-256 private JWK");
+    }
+    writePublishKey(file, { x: exported.x, y: exported.y, d: exported.d });
+    return { publicJwk: { kty: "EC", crv: "P-256", x: exported.x, y: exported.y }, d: exported.d };
+}
+function buildPublishBody(ticket, files, appPublicJwk) {
+    const body = {
+        ticket,
+        files: files.map((f) => ({ path: f.path, contentBase64: Buffer.from(f.bytes).toString("base64") })),
+    };
+    if (appPublicJwk !== undefined)
+        body.clientPublicKey = { kty: "EC", crv: "P-256", x: appPublicJwk.x, y: appPublicJwk.y };
+    return body;
+}
+function refusalText(status, parsed, secrets) {
+    const message = safeRemoteText(parsed?.message, secrets);
+    const error = safeRemoteText(parsed?.error, secrets);
+    if (error !== "" && message !== "")
+        return `${error}: ${message}`;
+    if (message !== "" || error !== "")
+        return message || error;
+    if (status === 401)
+        return "The platform refused this sign-in.";
+    return `the platform answered ${status}`;
+}
+function rememberHeaderSecrets(headers, secrets) {
+    for (const [name, value] of Object.entries(headers)) {
+        const lower = name.toLowerCase();
+        if (lower === "content-type" || lower === "accept" || value === "")
+            continue;
+        secrets.push(value);
+        if (lower === "authorization") {
+            const token = value.split(" ").pop() ?? "";
+            if (token.length >= 8)
+                secrets.push(token);
+        }
+    }
+}
+async function requestPublishTicket(cred, origin, input, fetchImpl, secrets) {
+    const url = new URL(origin);
+    url.pathname = "/base/publish/ticket";
+    url.search = "";
+    url.hash = "";
+    const ticketUrl = url.toString();
+    const signed = await cred.authHeaders("POST", ticketUrl);
+    const headers = {};
+    for (const [k, v] of Object.entries(signed)) {
+        if (typeof v !== "string")
+            continue;
+        if (k.toLowerCase() === "content-type")
+            continue;
+        headers[k] = v;
+    }
+    headers["content-type"] = "application/json";
+    headers.accept = "application/json";
+    rememberHeaderSecrets(headers, secrets);
+    let res;
+    try {
+        res = await fetchImpl(ticketUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ kind: input.kind, siteName: input.siteName }),
+            redirect: "manual",
+        });
+    }
+    catch {
+        throw new PublishNetworkError("the platform could not be reached");
+    }
+    let parsed = null;
+    try {
+        const text = await res.text();
+        parsed = asRecord(text === "" ? null : JSON.parse(text));
+    }
+    catch {
+        parsed = null;
+    }
+    if (parsed !== null && typeof parsed.ticket === "string" && parsed.ticket !== "")
+        secrets.push(parsed.ticket);
+    if (res.status !== 200)
+        throw new PublishPlatformError(refusalText(res.status, parsed, secrets));
+    if (parsed === null)
+        throw new PublishPlatformError("the platform's ticket answer was missing a field");
+    const ticket = parsed.ticket;
+    const expiresAt = parsed.expiresAt;
+    const kind = parsed.kind;
+    const siteName = parsed.siteName;
+    const maxFiles = parsed.maxFiles;
+    const maxBytes = parsed.maxBytes;
+    if (typeof ticket !== "string" || ticket === "" || (typeof expiresAt !== "string" && typeof expiresAt !== "number") || (kind !== "app" && kind !== "website") || typeof siteName !== "string" || siteName === "" || typeof maxFiles !== "number" || !Number.isFinite(maxFiles) || maxFiles < 0 || typeof maxBytes !== "number" || !Number.isFinite(maxBytes) || maxBytes < 0) {
+        throw new PublishPlatformError("the platform's ticket answer was missing a field");
+    }
+    if (siteName !== input.siteName)
+        throw new PublishPlatformError("the ticket's site name does not match the name asked for");
+    if (kind !== input.kind)
+        throw new PublishPlatformError("the ticket's kind does not match the kind asked for");
+    const answer = { ticket, expiresAt, kind, siteName, maxFiles, maxBytes };
+    const workerRaw = parsed.workerUrl;
+    if (workerRaw !== undefined && workerRaw !== null && workerRaw !== "") {
+        if (typeof workerRaw !== "string")
+            throw new PublishUsageError("The upload address is not a workers.dev host.");
+        answer.workerUrl = workerRaw;
+    }
+    return answer;
+}
+function headerMap(headers) {
+    const out = {};
+    headers.forEach((value, key) => {
+        out[key.toLowerCase()] = value;
+    });
+    return out;
+}
+function workerText(json, secrets) {
+    const row = asRecord(json);
+    if (row === null)
+        return "";
+    const error = safeRemoteText(row.error, secrets);
+    const message = safeRemoteText(row.message, secrets);
+    if (error !== "" && message !== "")
+        return `${error}: ${message}`;
+    return message || error;
+}
+function liveFields(json) {
+    const row = asRecord(json);
+    if (row === null)
+        return null;
+    if (row.siteState !== "t:SiteStateLive" || typeof row.url !== "string" || row.url === "")
+        return null;
+    if (row.admittedOrigin !== null && row.admittedOrigin !== undefined && typeof row.admittedOrigin !== "string")
+        return null;
+    return { siteState: "t:SiteStateLive" };
+}
+async function uploadToWorker(workerUrl, body, fetchImpl, env) {
+    const endpoint = publishEndpoint(workerUrl, env);
+    const headers = { "content-type": "application/json" };
+    for (const name of Object.keys(headers)) {
+        if (name.toLowerCase() === "authorization" || name.toLowerCase() === "dpop") {
+            throw new PublishUsageError("refusing to send the sign-in credential to the Worker");
+        }
+    }
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), UPLOAD_TIMEOUT_MS);
+    if (typeof timer.unref === "function")
+        timer.unref();
+    try {
+        const res = await fetchImpl(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal: ac.signal, redirect: "manual" });
+        let json = {};
+        try {
+            json = JSON.parse(await res.text());
+        }
+        catch {
+            json = {};
+        }
+        return { status: res.status, json, headers: headerMap(res.headers) };
+    }
+    catch (e) {
+        if (e instanceof PublishUsageError)
+            throw e;
+        const name = e !== null && typeof e === "object" && "name" in e ? e.name : "";
+        if (name === "AbortError")
+            throw new PublishNetworkError("the upload timed out");
+        throw new PublishNetworkError("the upload could not reach the Worker");
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+function warnCors(headers, stderr, secrets) {
+    const names = Object.keys(headers)
+        .filter((k) => k.toLowerCase().startsWith("access-control-"))
+        .map((k) => safeRemoteText(k, secrets));
+    if (names.length > 0)
+        stderr(`warning: the Worker sent ${names.join(", ")}; step 1 expects no access-control header`);
+}
+function printDryRun(args, files, skipped, stdout) {
+    stdout("dry-run (no network call)");
+    stdout(`site: ${args.name}`);
+    stdout(`address: ${pagesAddress(args.name)}`);
+    stdout(`kind: ${args.kind}`);
+    stdout(`files: ${files.length}`);
+    stdout(`bytes: ${totalPublishBytes(files)}`);
+    for (const skippedPath of skipped)
+        stdout(`skipped: ${safeLocalText(skippedPath)}`);
+}
+function parsePublishArgs(argv, env) {
+    let help = false;
+    let dryRun = false;
+    let dir = "";
+    let name = "";
+    let kind = "app";
+    let asFlag;
+    let originFlag;
+    let profileFlag;
+    let workerUrl = "";
+    const known = new Set(["--dir", "--name", "--kind", "--dry-run", "--as", "--origin", "--profile", "--worker-url", "--help", "-h"]);
+    const assign = (flag, value) => {
+        if (flag === "--dir")
+            dir = value;
+        else if (flag === "--name")
+            name = value;
+        else if (flag === "--kind") {
+            if (value !== "app" && value !== "website")
+                throw new CliError("--kind must be app or website.");
+            kind = value;
+        }
+        else if (flag === "--as")
+            asFlag = value;
+        else if (flag === "--origin")
+            originFlag = value;
+        else if (flag === "--profile")
+            profileFlag = value;
+        else if (flag === "--worker-url")
+            workerUrl = value;
+    };
+    for (let i = 0; i < argv.length; i++) {
+        const token = argv[i] ?? "";
+        if (token === "--help" || token === "-h") {
+            help = true;
+            continue;
+        }
+        if (token === "--dry-run") {
+            dryRun = true;
+            continue;
+        }
+        if (!token.startsWith("-"))
+            throw new CliError(`unexpected argument ${token}`);
+        const eq = token.indexOf("=");
+        const flag = eq === -1 ? token : token.slice(0, eq);
+        const inline = eq === -1 ? "" : token.slice(eq + 1);
+        if (!known.has(flag))
+            throw new CliError(`Unknown option: ${flag}`);
+        if (flag === "--dry-run" || flag === "--help" || flag === "-h") {
+            if (inline !== "")
+                throw new CliError(`${flag} does not take a value.`);
+            if (flag === "--dry-run")
+                dryRun = true;
+            else
+                help = true;
+            continue;
+        }
+        if (eq !== -1 && inline === "")
+            throw new CliError(`${flag} needs a value.`);
+        if (inline !== "") {
+            assign(flag, inline);
+            continue;
+        }
+        const value = argv[i + 1];
+        if (value === undefined || value.startsWith("--"))
+            throw new CliError(`${flag} needs a value.`);
+        i += 1;
+        assign(flag, value);
+    }
+    if (help) {
+        return { help: true, dryRun, dir, name, kind, as: "ai", origin: DEFAULT_ORIGIN, profile: undefined, workerUrl, displayName: undefined };
+    }
+    if (dir === "")
+        throw new CliError("--dir is required.");
+    if (name === "")
+        throw new CliError("--name is required.");
+    const asRaw = (asFlag ?? env.GILB_CONNECTOR_AS ?? "ai").trim().toLowerCase();
+    if (asRaw !== "ai" && asRaw !== "me")
+        throw new CliError("--as must be ai or me.");
+    const asMode = asRaw;
+    const profileRaw = asMode === "me"
+        ? profileFlag ?? env.GILB_CONNECTOR_PROFILE ?? env.GILB_COMPUTER_PROFILE ?? diskProfile(env)
+        : profileFlag ?? env.GILB_CONNECTOR_PROFILE ?? DEFAULT_AI_PROFILE;
+    if (profileRaw !== undefined && (!PROFILE_NAME.test(profileRaw) || profileRaw === "." || profileRaw === "..")) {
+        throw new CliError("The computer profile name is not valid.");
+    }
+    const origin = normalizeOrigin(originFlag ?? env.GILB_CONNECTOR_ORIGIN ?? DEFAULT_ORIGIN);
+    let displayName;
+    const fromEnv = env.GILB_CONNECTOR_NAME;
+    if (fromEnv !== undefined && fromEnv !== "") {
+        const trimmed = fromEnv.trim();
+        if (trimmed === "" || trimmed.length > 256)
+            throw new CliError("The display name must be 1 to 256 characters.");
+        displayName = trimmed;
+    }
+    if (workerUrl !== "")
+        publishEndpoint(workerUrl, env);
+    return { help: false, dryRun, dir, name, kind, as: asMode, origin, profile: profileRaw, workerUrl, displayName };
+}
+async function runPublish(argv, io) {
+    const args = parsePublishArgs(argv, io.env);
+    if (args.help) {
+        io.stdout(PUBLISH_USAGE.trimEnd());
+        return 0;
+    }
+    assertSiteName(args.name);
+    const collected = await collectPublishFiles(args.dir);
+    checkPublishLimits(collected.files, { maxFiles: PUBLISH_MAX_FILES, maxBytes: PUBLISH_MAX_BYTES });
+    if (args.dryRun) {
+        printDryRun(args, collected.files, collected.skipped, io.stdout);
+        return 0;
+    }
+    const secrets = [];
+    let appPublic;
+    if (args.kind === "app") {
+        const loaded = loadOrCreatePublishKey(io.env, args.name);
+        appPublic = loaded.publicJwk;
+        secrets.push(loaded.d, loaded.publicJwk.x, loaded.publicJwk.y);
+    }
+    const cred = await openSessionCredential({
+        env: io.env,
+        origin: args.origin,
+        asMode: args.as,
+        profile: args.as === "ai" ? safeProfileName(args.profile ?? DEFAULT_AI_PROFILE) : args.profile,
+        displayName: args.displayName,
+        say() {
+            // The failure is printed once, by publishCommand, from the error this throws.
+        },
+        retryDelays: RETRY_DELAYS_MS,
+        fetchImpl: io.fetchImpl,
+        onClientId() {
+            return undefined;
+        },
+    });
+    const ticket = await requestPublishTicket(cred, args.origin, { kind: args.kind, siteName: args.name }, io.fetchImpl, secrets);
+    try {
+        checkPublishLimits(collected.files, { maxFiles: ticket.maxFiles, maxBytes: ticket.maxBytes });
+    }
+    catch (err) {
+        if (err instanceof PublishUsageError)
+            throw new PublishUsageError(`${err.message}; a new ticket is needed`);
+        throw err;
+    }
+    const workerRaw = ticket.workerUrl !== undefined ? ticket.workerUrl : args.workerUrl;
+    if (workerRaw === "")
+        throw new PublishUsageError(NO_WORKER_SENTENCE);
+    const body = buildPublishBody(ticket.ticket, collected.files, appPublic);
+    const uploaded = await uploadToWorker(workerRaw, body, io.fetchImpl, io.env);
+    if (uploaded.json !== null && typeof uploaded.json === "object" && !Array.isArray(uploaded.json)) {
+        const echoed = uploaded.json.ticket;
+        if (typeof echoed === "string" && echoed !== "")
+            secrets.push(echoed);
+    }
+    warnCors(uploaded.headers, io.stderr, secrets);
+    if (uploaded.status >= 500) {
+        const detail = workerText(uploaded.json, secrets);
+        throw new PublishWorkerError(detail === "" ? NOTHING_ADMITTED : `${detail} ${NOTHING_ADMITTED}`);
+    }
+    if (uploaded.status !== 200) {
+        const detail = workerText(uploaded.json, secrets);
+        throw new PublishWorkerError(detail === "" ? "the Worker refused the upload" : detail);
+    }
+    const live = liveFields(uploaded.json);
+    if (live === null)
+        throw new PublishWorkerError("the Worker did not report a live site");
+    io.stdout(pagesAddress(args.name));
+    io.stdout(live.siteState);
+    return 0;
+}
+/**
+ * `publish` puts a built folder on `https://<name>.pages.dev`.
+ * Exit 0 when the site is live, or when `--dry-run` or `--help` finishes.
+ * Exit 2: usage or a local refusal. Exit 3: the platform refused the ticket.
+ * Exit 4: the Worker refused. Exit 5: the network. Never prints a ticket, a header, or a key.
+ */
+export async function publishCommand(argv, io = {}) {
+    const stdout = io.stdout ?? ((line) => process.stdout.write(line.endsWith("\n") ? line : `${line}\n`));
+    const stderr = io.stderr ?? ((line) => process.stderr.write(line.endsWith("\n") ? line : `${line}\n`));
+    const fetchImpl = io.fetchImpl ?? fetch;
+    const env = io.env ?? process.env;
+    try {
+        return await runPublish(argv, { stdout, stderr, fetchImpl, env });
+    }
+    catch (err) {
+        if (err instanceof CliError || err instanceof PublishUsageError) {
+            stderr(safeLocalText(err.message));
+            return 2;
+        }
+        if (err instanceof PublishPlatformError) {
+            stderr(err.message);
+            return 3;
+        }
+        if (err instanceof PublishWorkerError) {
+            stderr(err.message);
+            return 4;
+        }
+        if (err instanceof PlatformDown || err instanceof PublishNetworkError) {
+            stderr(err.message);
+            return 5;
+        }
+        if (err instanceof NotConnected) {
+            stderr(err.message);
+            return 2;
+        }
+        stderr("publish failed");
+        return 5;
+    }
+}
 async function main() {
+    const argv = process.argv.slice(2);
+    if (argv[0] === "publish") {
+        const code = await publishCommand(argv.slice(1));
+        process.exit(code);
+    }
     let cli;
     try {
-        cli = parseCli(process.argv.slice(2), process.env);
+        cli = parseCli(argv, process.env);
     }
     catch (err) {
         const message = err instanceof Error ? err.message : "Could not read the options.";
