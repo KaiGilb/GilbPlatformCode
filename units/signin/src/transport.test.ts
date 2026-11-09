@@ -39,7 +39,8 @@ test("with NO global fetch, a whole sign-in completes through an injected transp
     assert.deepEqual(JSON.parse(calls[0].req.body!), { email: "person@example.test" });
     assert.deepEqual(JSON.parse(calls[1].req.body!), { email: "person@example.test", code: "123456", dpopJwk: key.publicJwk });
     assert.equal(calls[1].req.method, "POST");
-    assert.equal(calls[1].req.credentials, "include");
+    // No page location in this runtime, so verify-code omits cookies.
+    assert.equal(calls[1].req.credentials, "omit");
   } finally {
     globalThis.fetch = saved;
   }

@@ -42,12 +42,15 @@ const auth: SignInAuth = {
 interface SignedIn {
   principal: string;
   vaults: VaultListItem[];
+  /** Set when the vault list could not be read, or is only partial. */
+  vaultsProblem?: string;
 }
 
 async function readSignIn(): Promise<SignedIn> {
   const who = await credential.getSession();
-  // The sign-in's own vault set (vaultId + modes). reachable-vaults would add names and parents but its peer chain is ~50 units.
-  return { principal: who.principal, vaults: (who.vaults ?? []) as VaultListItem[] };
+  // Not only the set verify-code returned (that answer has none). signInWithCode fills vaults
+  // from GET /lws/vaults. A list that could not be read, or that is partial, is vaultsProblem.
+  return { principal: who.principal, vaults: (who.vaults ?? []) as VaultListItem[], vaultsProblem: who.vaultsProblem };
 }
 
 /** Starts the engine only for the vault the owner chose in ?vault=. */
@@ -83,7 +86,7 @@ function Root() {
     );
   }
   return (
-    <VaultGate vaults={signedIn.vaults} search={window.location.search} onSignOut={signOut}>
+    <VaultGate vaults={signedIn.vaults} problem={signedIn.vaultsProblem} search={window.location.search} onSignOut={signOut}>
       {(vault, name) => <ChosenVault signedIn={signedIn} vault={vault} name={name} onSignOut={signOut} />}
     </VaultGate>
   );

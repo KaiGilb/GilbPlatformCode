@@ -11,6 +11,7 @@ import {
   tokenExpiresAt,
   EXPIRY_GUARD_MS,
   UNKNOWN_TTL_FALLBACK_MS,
+  REACHABLE_VAULTS_PATH,
 } from "./session";
 import { generateDpopKeyPair } from "./core";
 import type { Transport, TransportRequest } from "./transport";
@@ -241,4 +242,372 @@ test("a 2xx from the bridge that is not JSON is refused as no token, not a raw p
   const send: Transport = async () => ({ status: 200, json: async () => { throw new SyntaxError("Unexpected token <"); } });
   const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: send });
   await assert.rejects(cred.getSession(), /no token/);
+});
+
+const LIST_ORIGIN = "https://id.example.test";
+const UNREACHABLE = "Could not reach your vault list. The browser blocked the request or the network failed.";
+const UNREADABLE = "The vault list answer could not be read.";
+const heldVault = { entity: "https://v.example.test/base/e/v1", id: "v1", name: "sam" };
+
+/** verify-code, then one vault-list answer. Records every call. */
+function codeTransport(
+  vaults: { status: number; body?: unknown; json?: () => Promise<unknown> } | "throw",
+  token = jwtWithExp(Math.floor(Date.now() / 1000) + 1800),
+) {
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === `${LIST_ORIGIN}${REACHABLE_VAULTS_PATH}`) {
+      if (vaults === "throw") throw new TypeError("Failed to fetch");
+      return {
+        status: vaults.status,
+        json: vaults.json ?? (async () => vaults.body),
+      };
+    }
+    return { status: 200, json: async () => ({ token, principal: "https://id.example.test/i/p9" }) };
+  };
+  return { send, calls, token };
+}
+
+function listCall(calls: Call[]) {
+  const hit = calls.filter((c) => c.url === `${LIST_ORIGIN}${REACHABLE_VAULTS_PATH}`);
+  assert.equal(hit.length, 1);
+  return hit[0]!;
+}
+
+test("REACHABLE_VAULTS_PATH is the wire path GET /lws/vaults", () => {
+  assert.equal(REACHABLE_VAULTS_PATH, "/lws/vaults");
+});
+
+test("signInWithCode reads GET /lws/vaults with a DPoP proof and cookies omitted, and keeps the narrowed list", async () => {
+  const wire = {
+    "@context": "https://example.test/ctx",
+    total: 2,
+    vaults: [
+      { vaultId: "https://a.example.test/vault", modes: ["read", "append"], name: "A", isLandingVault: true },
+      { vaultId: "", modes: ["read"] },
+      { "@id": "https://b.example.test/base/e/1", vaultId: "https://b.example.test/vault", modes: ["write", "read", "write"] },
+    ],
+    complete: true,
+    incompletePeers: 0,
+  };
+  const t = codeTransport({ status: 200, body: wire });
+  const cred = new SessionCredential({ transport: t.send });
+  const body = await cred.signInWithCode(LIST_ORIGIN, "a@example.test", "123456");
+  assert.equal(body.principal, "https://id.example.test/i/p9");
+  const req = listCall(t.calls).req;
+  assert.equal(req.method, "GET");
+  assert.equal(req.credentials, "omit");
+  assert.equal(req.timeoutMs, 15000);
+  assert.equal(req.headers.Authorization, `DPoP ${t.token}`);
+  assert.equal(req.headers.Accept, "application/ld+json, application/json");
+  assert.equal(typeof req.headers.DPoP, "string");
+  const claims = dec(req.headers.DPoP.split(".")[1]);
+  assert.equal(claims.htm, "GET");
+  assert.equal(claims.htu, `${LIST_ORIGIN}/lws/vaults`);
+  assert.equal(cred.session?.principal, "https://id.example.test/i/p9");
+  assert.equal(cred.session?.vault, null);
+  assert.deepEqual(cred.session?.vaults, [
+    { vaultId: "https://a.example.test/vault", modes: ["read"] },
+    { vaultId: "https://b.example.test/vault", modes: ["write", "read"] },
+  ]);
+  assert.equal(cred.session?.vaultsProblem, undefined);
+});
+
+test("signInWithCode still resolves when the vault list request throws, and the vaults stay as they were", async () => {
+  const t = codeTransport("throw");
+  const cred = new SessionCredential({ transport: t.send });
+  const body = await cred.signInWithCode(LIST_ORIGIN, "a@example.test", "123456");
+  assert.equal(body.principal, "https://id.example.test/i/p9");
+  assert.equal(cred.session?.principal, "https://id.example.test/i/p9");
+  assert.deepEqual(cred.session?.vaults, []);
+  assert.equal(cred.session?.vaultsProblem, UNREACHABLE);
+  assert.equal(listCall(t.calls).req.credentials, "omit");
+});
+
+test("a non-2xx vault list leaves the held vaults and names the HTTP status", async () => {
+  const before = [{ vaultId: "keep", modes: ["write" as const] }];
+  const t = fakeTransport([{ status: 503 }]);
+  const cred = new SessionCredential({ transport: t.send });
+  cred.adopt("tok", { principal: "p", vault: heldVault, vaults: before }, Date.now() + 3_600_000);
+  const session = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(t.calls.length, 1);
+  assert.equal(t.calls[0]!.url, `${LIST_ORIGIN}${REACHABLE_VAULTS_PATH}`);
+  assert.equal(session.vaults, before);
+  assert.equal(session.vault, heldVault);
+  assert.equal(session.principal, "p");
+  assert.equal(session.vaultsProblem, "Could not read your vault list (HTTP 503).");
+});
+
+test("a vault list that is not JSON, or whose vaults is not an array, cannot be read", async () => {
+  const before = [{ vaultId: "keep", modes: ["read" as const] }];
+  const send: Transport = async () => ({ status: 200, json: async () => { throw new SyntaxError("Unexpected token <"); } });
+  const a = new SessionCredential({ transport: send });
+  const kept = before.map((v) => ({ ...v, modes: [...v.modes] }));
+  a.adopt("tok", { principal: "p", vault: heldVault, vaults: kept }, Date.now() + 3_600_000);
+  const session = await a.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(session.vaults, kept);
+  assert.equal(session.vault, heldVault);
+  assert.equal(session.vaultsProblem, UNREADABLE);
+
+  const b = new SessionCredential({
+    transport: fakeTransport([{ status: 200, body: { complete: true, vaults: { not: "a list" } } }]).send,
+  });
+  const keptB = [{ vaultId: "keep", modes: ["read" as const] }];
+  b.adopt("tok", { principal: "p", vault: heldVault, vaults: keptB }, Date.now() + 3_600_000);
+  const second = await b.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(second.vaults, keptB);
+  assert.equal(second.vaultsProblem, UNREADABLE);
+});
+
+test("a partial vault list is kept and names how many stores did not answer", async () => {
+  const partial = { vaults: [{ vaultId: "v9", modes: ["read", "append"] }, { modes: ["read"] }], complete: false, incompletePeers: 2 };
+  const t = fakeTransport([{ status: 200, body: partial }]);
+  const cred = new SessionCredential({ transport: t.send });
+  cred.adopt("tok", { principal: "p", vault: heldVault, vaults: [{ vaultId: "old", modes: ["write"] }] }, Date.now() + 3_600_000);
+  const session = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.deepEqual(session.vaults, [{ vaultId: "v9", modes: ["read"] }]);
+  assert.equal(session.vault, heldVault);
+  assert.equal(session.principal, "p");
+  assert.equal(session.vaultsProblem, "Your vault list may be incomplete: 2 store(s) did not answer.");
+
+  const zero = new SessionCredential({
+    transport: fakeTransport([{ status: 200, body: { vaults: [], complete: false, incompletePeers: 0 } }]).send,
+  });
+  zero.adopt("tok", { principal: "p", vault: null, vaults: [] }, Date.now() + 3_600_000);
+  assert.equal(
+    (await zero.loadReachableVaults(LIST_ORIGIN)).vaultsProblem,
+    "Your vault list may be incomplete: 0 store(s) did not answer.",
+  );
+
+  const unnamed = new SessionCredential({
+    transport: fakeTransport([{ status: 200, body: { vaults: [{ vaultId: "v", modes: ["read"] }], complete: false } }]).send,
+  });
+  unnamed.adopt("tok", { principal: "p", vault: null, vaults: [] }, Date.now() + 3_600_000);
+  const named = await unnamed.loadReachableVaults(LIST_ORIGIN);
+  assert.deepEqual(named.vaults, [{ vaultId: "v", modes: ["read"] }]);
+  assert.equal(named.vaultsProblem, "Your vault list may be incomplete: some store(s) did not answer.");
+});
+
+test("a whole vault list replaces vaults and clears a previous vaultsProblem", async () => {
+  const answers = [
+    { status: 502 },
+    { status: 200, body: { vaults: [{ vaultId: "v1", modes: ["read", "write", "control"] }], complete: true, incompletePeers: 0 } },
+  ];
+  const t = fakeTransport(answers);
+  const cred = new SessionCredential({ transport: t.send });
+  cred.adopt("tok", { principal: "p", vault: heldVault, vaults: [{ vaultId: "old", modes: ["read"] }] }, Date.now() + 3_600_000);
+  const failed = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(failed.vaultsProblem, "Could not read your vault list (HTTP 502).");
+  const whole = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.deepEqual(whole.vaults, [{ vaultId: "v1", modes: ["read", "write"] }]);
+  assert.equal(whole.vault, heldVault);
+  assert.equal(whole.vaultsProblem, undefined);
+  assert.equal(Object.hasOwn(whole, "vaultsProblem"), false);
+});
+
+test("loadReachableVaults with no token throws NotSignedInError and sends nothing", async () => {
+  let sent = 0;
+  const send: Transport = async () => {
+    sent++;
+    return { status: 200, json: async () => ({ vaults: [], complete: true }) };
+  };
+  const cred = new SessionCredential({ transport: send });
+  await assert.rejects(cred.loadReachableVaults(LIST_ORIGIN), NotSignedInError);
+  assert.equal(sent, 0);
+  assert.equal(cred.session, null);
+});
+
+const RUNS_OUT = "Could not read your vault list: your sign-in runs out too soon. Sign in again.";
+
+test("a token inside the expiry guard keeps the vaults and names the short sign-in, and sends no list request", async () => {
+  let now = 1_000_000;
+  let sent = 0;
+  const send: Transport = async () => {
+    sent++;
+    return { status: 200, json: async () => ({ vaults: [], complete: true }) };
+  };
+  const before = [{ vaultId: "keep", modes: ["write" as const] }];
+  const cred = new SessionCredential({ transport: send, now: () => now });
+  cred.adopt("tok", { principal: "p", vault: heldVault, vaults: before }, now + 30_000);
+  const session = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(sent, 0);
+  assert.equal(session.vaults, before);
+  assert.equal(session.vault, heldVault);
+  assert.equal(session.principal, "p");
+  assert.equal(session.vaultsProblem, RUNS_OUT);
+  assert.equal(cred.session, session);
+});
+
+test("signInWithCode still resolves when the new token is already inside the expiry guard", async () => {
+  let now = 1_000_000;
+  const token = jwtWithExp(Math.floor((now + 30_000) / 1000));
+  const t = codeTransport({ status: 200, body: { vaults: [{ vaultId: "v", modes: ["read"] }], complete: true } }, token);
+  const cred = new SessionCredential({ transport: t.send, now: () => now });
+  const body = await cred.signInWithCode(LIST_ORIGIN, "a@example.test", "123456");
+  assert.equal(body.principal, "https://id.example.test/i/p9");
+  assert.equal(cred.session?.principal, body.principal);
+  assert.deepEqual(cred.session?.vaults, []);
+  assert.equal(cred.session?.vaultsProblem, RUNS_OUT);
+  assert.equal(t.calls.length, 1);
+  assert.equal(t.calls[0]!.url, `${LIST_ORIGIN}/base/auth/email/verify-code`);
+});
+
+test("a sign-out while the vault-list proof is being built stores nothing", async () => {
+  let now = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let minting = false;
+  const send: Transport = async (url) => {
+    if (url === MINT_URL) {
+      minting = true;
+      await gate;
+      return { status: 200, json: async () => okBody("tok-new", 1800) };
+    }
+    return { status: 200, json: async () => ({ vaults: [{ vaultId: "v", modes: ["read"] }], complete: true }) };
+  };
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: send, now: () => now });
+  cred.adopt("tok-old", { principal: "p", vault: null, vaults: [{ vaultId: "keep", modes: ["read"] }] }, 30_000);
+  const pending = cred.loadReachableVaults(LIST_ORIGIN);
+  for (let i = 0; i < 50 && !minting; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(minting, true, "the proof's re-mint was on the wire");
+  cred.invalidate(true);
+  release();
+  await assert.rejects(pending, NotSignedInError);
+  assert.equal(cred.session, null);
+});
+
+test("a re-mint inside the guard stores the vault list on the new token", async () => {
+  let now = 0;
+  const t = fakeTransport([
+    { status: 200, body: okBody("tok-fresh", 1800) },
+    { status: 200, body: { vaults: [{ vaultId: "v-list", modes: ["read", "write"] }], complete: true } },
+  ]);
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: t.send, now: () => now });
+  cred.adopt("tok-old", { principal: "p", vault: null, vaults: [] }, 30_000);
+  const session = await cred.loadReachableVaults(LIST_ORIGIN);
+  assert.equal(t.calls[0]!.url, MINT_URL);
+  assert.equal(t.calls[1]!.url, `${LIST_ORIGIN}${REACHABLE_VAULTS_PATH}`);
+  assert.equal(t.calls[1]!.req.headers.Authorization, "DPoP tok-fresh");
+  assert.equal(session.principal, "https://id.example.test/i/p1");
+  assert.deepEqual(session.vaults, [{ vaultId: "v-list", modes: ["read", "write"] }]);
+  assert.equal(cred.session, session);
+});
+
+test("a vault list is stored only on the token it was read with", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let listed = false;
+  const send: Transport = async () => {
+    listed = true;
+    await gate;
+    return { status: 200, json: async () => ({ vaults: [{ vaultId: "from-first", modes: ["read"] }], complete: true }) };
+  };
+  const cred = new SessionCredential({ transport: send, now: () => 0 });
+  const expiry = 3_600_000;
+  cred.adopt("tok-1", { principal: "p1", vault: heldVault, vaults: [{ vaultId: "old", modes: ["write"] }] }, expiry);
+  const pending = cred.loadReachableVaults(LIST_ORIGIN);
+  for (let i = 0; i < 50 && !listed; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(listed, true, "the list request was on the wire");
+  cred.adopt("tok-2", { principal: "p2", vault: null, vaults: [{ vaultId: "kept", modes: ["write"] }] }, expiry);
+  release();
+  const returned = await pending;
+  assert.equal(cred.session?.principal, "p2");
+  assert.deepEqual(cred.session?.vaults, [{ vaultId: "kept", modes: ["write"] }]);
+  assert.equal(cred.session?.vaultsProblem, undefined);
+  assert.equal(returned.principal, "p1");
+  assert.equal(returned.vault, heldVault);
+  assert.deepEqual(returned.vaults, [{ vaultId: "from-first", modes: ["read"] }]);
+  assert.equal(returned.vaultsProblem, undefined);
+});
+
+test("a failed vault list does not record its problem on a token it was not read with", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let listed = false;
+  const before = [{ vaultId: "old", modes: ["write" as const] }];
+  const send: Transport = async () => {
+    listed = true;
+    await gate;
+    return { status: 503, json: async () => ({}) };
+  };
+  const cred = new SessionCredential({ transport: send, now: () => 0 });
+  cred.adopt("tok-1", { principal: "p1", vault: heldVault, vaults: before }, 3_600_000);
+  const pending = cred.loadReachableVaults(LIST_ORIGIN);
+  for (let i = 0; i < 50 && !listed; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(listed, true, "the list request was on the wire");
+  cred.adopt("tok-2", { principal: "p2", vault: null, vaults: [{ vaultId: "kept", modes: ["write"] }] }, 3_600_000);
+  release();
+  const returned = await pending;
+  assert.equal(cred.session?.principal, "p2");
+  assert.deepEqual(cred.session?.vaults, [{ vaultId: "kept", modes: ["write"] }]);
+  assert.equal(cred.session?.vaultsProblem, undefined);
+  assert.equal(returned.principal, "p1");
+  assert.equal(returned.vaults, before);
+  assert.equal(returned.vaultsProblem, "Could not read your vault list (HTTP 503).");
+});
+
+test("a plain invalidate() while the vault list is on the wire does not reject and stores nothing", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let listed = false;
+  const send: Transport = async () => {
+    listed = true;
+    await gate;
+    return { status: 200, json: async () => ({ vaults: [{ vaultId: "v-read", modes: ["read", "write"] }], complete: true }) };
+  };
+  const cred = new SessionCredential({ transport: send, now: () => 0 });
+  cred.adopt("tok", { principal: "p", vault: heldVault, vaults: [{ vaultId: "old", modes: ["read"] }] }, 3_600_000);
+  const pending = cred.loadReachableVaults(LIST_ORIGIN);
+  for (let i = 0; i < 50 && !listed; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(listed, true, "the list request was on the wire");
+  cred.invalidate();
+  release();
+  const returned = await pending;
+  assert.equal(cred.session, null);
+  assert.equal(returned.principal, "p");
+  assert.equal(returned.vault, heldVault);
+  assert.deepEqual(returned.vaults, [{ vaultId: "v-read", modes: ["read", "write"] }]);
+  assert.equal(returned.vaultsProblem, undefined);
+});
+
+test("loadReachableVaults strips trailing slashes from the origin", async () => {
+  const body = { vaults: [{ vaultId: "v", modes: ["read"] }], complete: true };
+  const one = fakeTransport([{ status: 200, body }]);
+  const cred = new SessionCredential({ transport: one.send, now: () => 0 });
+  cred.adopt("tok", { principal: "p", vault: null, vaults: [] }, 3_600_000);
+  const session = await cred.loadReachableVaults("https://x.test/");
+  assert.equal(one.calls.length, 1);
+  assert.equal(one.calls[0]!.url, "https://x.test/lws/vaults");
+  assert.equal(one.calls[0]!.req.credentials, "omit");
+  assert.equal(dec(one.calls[0]!.req.headers.DPoP.split(".")[1]).htu, "https://x.test/lws/vaults");
+  assert.deepEqual(session.vaults, [{ vaultId: "v", modes: ["read"] }]);
+
+  const two = fakeTransport([{ status: 200, body }]);
+  const again = new SessionCredential({ transport: two.send, now: () => 0 });
+  again.adopt("tok", { principal: "p", vault: null, vaults: [] }, 3_600_000);
+  await again.loadReachableVaults("https://x.test//");
+  assert.equal(two.calls[0]!.url, "https://x.test/lws/vaults");
+});
+
+test("a sign-out while the vault list is on the wire leaves no session", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  let listed = false;
+  const send: Transport = async (url) => {
+    if (url === `${LIST_ORIGIN}${REACHABLE_VAULTS_PATH}`) {
+      listed = true;
+      await gate;
+      return { status: 200, json: async () => ({ vaults: [{ vaultId: "v", modes: ["read", "write"] }], complete: true }) };
+    }
+    return { status: 200, json: async () => ({ token: "tok-late", principal: "https://id.example.test/i/p1" }) };
+  };
+  const cred = new SessionCredential({ transport: send });
+  const pending = cred.signInWithCode(LIST_ORIGIN, "person@example.test", "123456");
+  for (let i = 0; i < 50 && !listed; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(listed, true, "the list request was on the wire");
+  cred.invalidate(true);
+  release();
+  await assert.rejects(pending, NotSignedInError);
+  assert.equal(cred.session, null);
 });

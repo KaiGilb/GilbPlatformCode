@@ -113,6 +113,43 @@ export interface VerifyHttpBody {
   suggestedName?: string;
 }
 
+/** First-party page hosts: the platform's own pages and the dev loopback rigs. Exact match. */
+const FIRST_PARTY_PAGE_HOSTS: ReadonlySet<string> = new Set([
+  "gilb.com",
+  "www.gilb.com",
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+]);
+
+/**
+ * Cookie mode for verify-code from a page on `hostname`.
+ *
+ * GilbPlatform `src/server/cors.ts` sends Access-Control-Allow-Credentials only for a first-party
+ * page. An attested third-party origin does not get that header, so "include" makes the browser
+ * discard the JSON, which already carries the token (the cookieless mint). Those pages send "omit".
+ * Exact hostname only — a subdomain, a lookalike, or a suffix is third-party. No page location
+ * (empty hostname) omits.
+ */
+export function credentialsForPage(hostname: string): RequestCredentials {
+  return FIRST_PARTY_PAGE_HOSTS.has(hostname) ? "include" : "omit";
+}
+
+/**
+ * The only read of `location`. Tests replace `read` to inject a page hostname.
+ * No `location` (a worker, a test, a server) yields "" so {@link credentialsForPage} omits.
+ */
+export const pageHostname: { read: () => string } = {
+  read(): string {
+    try {
+      const hostname = globalThis.location?.hostname;
+      return typeof hostname === "string" ? hostname : "";
+    } catch {
+      return "";
+    }
+  },
+};
+
 export async function verifySignInCodeHttp(
   origin: string,
   email: string,
@@ -131,11 +168,13 @@ export async function verifySignInCodeHttp(
       dpopJwk,
     };
     if (name?.trim()) body.name = name.trim();
-    // ⚠ This route also sets a session cookie for the platform's own apps. A third-party app does
-    // not need it: the returned token is the credential. A transport without cookies is fine.
+    // ⚠ Cookie only on a first-party page. GilbPlatform src/server/cors.ts does not send
+    // Access-Control-Allow-Credentials for an attested third-party origin, so "include" there
+    // makes the browser drop this answer. The token is already in the JSON; those pages send
+    // "omit". An explicit opts.credentials wins over credentialsForPage.
     res = await send(join(origin, "/base/auth/email/verify-code"), {
       method: "POST",
-      credentials: "include",
+      credentials: opts.credentials ?? credentialsForPage(pageHostname.read()),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       timeoutMs: 15000,

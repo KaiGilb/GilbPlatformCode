@@ -138,6 +138,24 @@ describe("the session", () => {
     expect(s.vault?.id).toBe("v1");
     expect(s.vaults.map((v) => v.vaultId)).toEqual(SESSION.vaults.map((v) => v.vaultId));
   });
+  it("tokenManager.getSession copies vaultsProblem when the sign-in session has one, and omits it when the list is whole", async () => {
+    const problem = "Could not read your vault list (HTTP 503).";
+    const credential = new SessionCredential();
+    credential.adopt("t", { principal: "p", vault: null, vaults: [], vaultsProblem: problem }, Date.now() + 600_000);
+    setLwsAuth(lwsAuthFromSession(credential));
+    const s = await tokenManager.getSession();
+    expect(s.vaultsProblem).toBe(problem);
+    expect(s.principal).toBe("p");
+    expect(s.vault).toBeNull();
+    expect(s.vaults).toEqual([]);
+
+    const whole = new SessionCredential();
+    whole.adopt("t2", { principal: "p", vault: null, vaults: [] }, Date.now() + 600_000);
+    setLwsAuth(lwsAuthFromSession(whole));
+    const clean = await tokenManager.getSession();
+    expect(clean.vaultsProblem).toBeUndefined();
+    expect(Object.hasOwn(clean, "vaultsProblem")).toBe(false);
+  });
 });
 
 describe("invalidate", () => {

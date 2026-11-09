@@ -58,11 +58,13 @@ async function pair(session: SessionCredential, method: string, url: string, opt
 }
 
 function toLwsSession(s: GilbSession): LwsSession {
-  return {
+  const session: LwsSession = {
     principal: s.principal,
     vault: s.vault ? { ...s.vault } : null,
     vaults: s.vaults.map((v) => ({ vaultId: v.vaultId, modes: [...v.modes] })),
   };
+  if (s.vaultsProblem !== undefined) session.vaultsProblem = s.vaultsProblem;
+  return session;
 }
 
 /**

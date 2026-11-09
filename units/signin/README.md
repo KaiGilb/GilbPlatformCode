@@ -53,6 +53,15 @@ POST {dpopMintUrl}            credentials: include, X-Base-Csrf: 1
 
 401 is `NotSignedInError`. 403 is `OriginNotAllowedError` (this app's origin is not admitted). A 2xx with no token is refused.
 
+Reachable vaults after a code sign-in (`./session`). verify-code returns no vault list, and the bridge above is first-party only, so a third-party app reads the list itself:
+
+```
+GET {origin}/lws/vaults       credentials: omit, Authorization + DPoP, Accept: application/ld+json, application/json
+→ { "vaults": [{ "vaultId", "modes" }], "complete", "incompletePeers" }
+```
+
+`REACHABLE_VAULTS_PATH` is that path. A list that cannot be read, or that is partial (`complete: false`), leaves the sign-in in place and sets `session.vaultsProblem`.
+
 Machine token (`./machine`):
 
 ```
@@ -82,7 +91,8 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 - Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
 - `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
 - Never cache `authHeaders`. Each proof is single-use.
-- After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
+- `signInWithCode` then calls `loadReachableVaults(origin)`: `GET {origin}/lws/vaults`, one fresh proof, cookies omitted. A trailing slash on `origin` is removed. Modes narrow to read and write; an entry with no `vaultId` is dropped. `principal` and `vault` stay as they were. A list problem does not throw: the request was unreachable, not 2xx, not readable, `vaults` was not an array, `complete` was false, or the proof could not be built because the token runs out inside the 60 s guard. The vaults stay as they were when no list was read, and `session.vaultsProblem` is the sentence. The list is stored only on the token the read started with. A sign-out while the proof is built or while the request is on the wire throws `NotSignedInError` and stores nothing. A newer sign-in, or a plain `invalidate()`, stores nothing and does not throw.
+- After a code sign-in the session holds each reachable vault's `vaultId` and `modes`. For names, parents and the landing flag, call `listReachableVaults` (units/reachable-vaults).
 
 ## Machine credential (`./machine`)
 
@@ -150,8 +160,20 @@ npm run typecheck
 npm run check:host-agnostic
 ```
 
-Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a host on its fixed list (see `scripts/check-host-agnostic.mjs`), or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module.
+Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a host on its fixed list (see `scripts/check-host-agnostic.mjs`), or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module. The one exception is the first-party page-host literals in `credentialsForPage` (`src/http.ts`): each appears once, and they classify the page for the verify-code cookie decision rather than naming a request target.
 
 ## Source
 
 The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows when check-name returns an `address`, or else when name-prep returns a `webIdDomain`.
+
+## Changes in 0.2.2
+
+verify-code sends cookies only on a first-party page. `credentialsForPage` answers "include" for an exact hostname of gilb.com, www.gilb.com, localhost, 127.0.0.1 or [::1], and "omit" for every other page and for a page with no location. An explicit credentials option still wins. An attested third-party origin gets no Access-Control-Allow-Credentials, so "include" there made the browser drop the verify-code answer. The token is already in the JSON.
+
+`signInWithCode` reads the reachable vaults from `GET /lws/vaults` after the code is accepted. verify-code returns none, and the session-cookie bridge is first-party only, so a third-party app was left with `vaults: []`. A list that cannot be read or is only partial stays signed in; `session.vaultsProblem` is the sentence. `loadReachableVaults(origin)` is that read on its own.
+
+A list problem never rejects the sign-in. A token with under 60 s left, and no bridge, used to make the proof throw `NotSignedInError` while the token stayed held. That failure now keeps the vaults as they were and sets `vaultsProblem` to "Could not read your vault list: your sign-in runs out too soon. Sign in again." A sign-out while the proof is built still throws `NotSignedInError` and stores nothing.
+
+The list is stored only on the access token it was read with. A newer sign-in that replaced the token, or a plain `invalidate()` that dropped it, stores nothing and does not throw. The caller still gets the session this read built. A sign-out still throws `NotSignedInError`.
+
+A trailing slash on `origin` is stripped once, so `loadReachableVaults("https://x.test/")` requests `https://x.test/lws/vaults`.

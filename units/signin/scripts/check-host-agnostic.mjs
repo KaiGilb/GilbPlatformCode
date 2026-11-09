@@ -4,6 +4,10 @@
  *
  * 1. Every source file under src/ (tests excepted), line by line, comments included: a vault host
  *    named anywhere is a fail. Injected hosts in tests use example.test.
+ *    One exception: `credentialsForPage` in src/http.ts names the first-party page hosts once each,
+ *    as exact quoted literals (`gilb.com`, `www.gilb.com`, `localhost`, `127.0.0.1`, `[::1]`).
+ *    Those classify the page for the verify-code cookie decision; they are not a request target.
+ *    Any other host text in that file, or a second copy of one of those literals, is still a fail.
  * 2. The headless entries (`core`, `session`, `machine`) and every file they reach by relative
  *    import, parsed with the TypeScript compiler: an import of anything but a sibling module
  *    (`./x`) is a fail. A package import (React included) or an import from an app would tie the
@@ -21,6 +25,21 @@ import ts from "typescript";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\./i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
+// Exact quoted literals credentialsForPage is allowed to name, once each. Longer host first so
+// "www.gilb.com" is not also counted as "gilb.com".
+const PAGE_CREDENTIAL_HOSTS = ["gilb.com", "www.gilb.com", "localhost", "127.0.0.1"];
+
+function pageCredentialLiteralRe() {
+  return /"(?:www\.gilb\.com|gilb\.com|localhost|127\.0\.0\.1)"/g;
+}
+
+function stripPageCredentialLiterals(line) {
+  return line.replace(pageCredentialLiteralRe(), '""');
+}
+
+function pageCredentialHosts(text) {
+  return [...text.matchAll(pageCredentialLiteralRe())].map((m) => m[0].slice(1, -1));
+}
 const HEADLESS_ENTRIES = ["src/core.ts", "src/session.ts", "src/machine.ts"];
 const SIBLING_IMPORT = /^\.\/[A-Za-z0-9_-]+$/;
 
@@ -64,11 +83,24 @@ const hits = [];
 for (const file of walk(srcRoot)) {
   if (!/\.(ts|tsx|js|mjs)$/.test(file)) continue;
   if (/\.test\.(ts|tsx|js)$/.test(file)) continue;
-  const lines = readFileSync(file, "utf8").split("\n");
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const rel = relative(root, file).split("\\").join("/");
+  const pageRule = rel === "src/http.ts";
   for (let i = 0; i < lines.length; i++) {
+    const scanned = pageRule ? stripPageCredentialLiterals(lines[i]) : lines[i];
     for (const re of FORBIDDEN) {
-      if (re.test(lines[i])) hits.push(`${relative(root, file)}:${i + 1}: host named: ${lines[i].trim().slice(0, 80)}`);
+      if (re.test(scanned)) hits.push(`${rel}:${i + 1}: host named: ${lines[i].trim().slice(0, 80)}`);
     }
+  }
+  if (pageRule) {
+    const found = pageCredentialHosts(text);
+    for (const host of PAGE_CREDENTIAL_HOSTS) {
+      const n = found.filter((h) => h === host).length;
+      if (n !== 1) hits.push(`${rel}: first-party page host ${host} appears ${n} times; want 1`);
+    }
+    const v6 = [...text.matchAll(/"\[::1\]"/g)].length;
+    if (v6 !== 1) hits.push(`${rel}: first-party page host [::1] appears ${v6} times; want 1`);
   }
 }
 

@@ -15,8 +15,11 @@ export interface TransportRequest {
   headers: Record<string, string>;
   /** Already-serialised body, or undefined. */
   body?: string;
-  /** Browser cookie hint; a transport that holds no cookies may ignore it. */
-  credentials?: "include" | "omit";
+  /**
+   * Browser cookie hint. A transport that holds no cookies may ignore it.
+   * verify-code sets this from the page rule, or from {@link HttpOptions.credentials} when the caller passes one.
+   */
+  credentials?: RequestCredentials;
   /** Give up after this many milliseconds. */
   timeoutMs: number;
 }
@@ -50,4 +53,9 @@ export const fetchTransport: Transport = (url, req) =>
 export interface HttpOptions {
   /** Defaults to {@link fetchTransport}. */
   transport?: Transport;
+  /**
+   * Cookie mode for this call. When set, it wins over the page rule (`credentialsForPage` in ./http).
+   * The platform's own apps pass `"include"`.
+   */
+  credentials?: RequestCredentials;
 }

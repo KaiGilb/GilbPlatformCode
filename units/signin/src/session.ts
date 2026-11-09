@@ -10,13 +10,19 @@
 //   - one DPoP key (made by `generateDpopKeyPair`, private half non-extractable, or one the host
 //     passes in, e.g. a Secure Enclave signer);
 //   - the current access token, its expiry, and the session it resolved (principal, landing
-//     vault, reachable vaults).
+//     vault, reachable vaults). On the cookieless path the reachable vaults are not in the token
+//     response: they are read from `GET /lws/vaults` ({@link REACHABLE_VAULTS_PATH}).
 //
 // Where a token comes from, in this order:
-//   1. `adopt()`: the token verify-code returned (the cookieless path).
+//   1. `adopt()`: the token verify-code returned (the cookieless path). verify-code returns no
+//      vault list. The session-cookie bridge below is first-party only, so a third-party app
+//      cannot learn its vaults from either answer. `signInWithCode` therefore reads
+//      `GET /lws/vaults` on the same origin the code was verified at, with a DPoP proof and no
+//      cookies.
 //   2. The DPoP session bridge, when the host names its URL (`dpopMintUrl`): a POST that rides the
-//      platform's session cookie and returns a token bound to this key. This is what keeps a
-//      person signed in across a reload, because the token itself dies with the page.
+//      platform's session cookie and returns a token bound to this key, and the vault list with
+//      it. This is what keeps a person signed in across a reload, because the token itself dies
+//      with the page. A third-party page cannot use it.
 //
 // ⛔ Nothing here names a host. The host passes every URL. (Checked by
 // `scripts/check-host-agnostic.mjs`.)
@@ -38,6 +44,9 @@ export const UNKNOWN_TTL_FALLBACK_MS = 5 * 60_000;
 
 /** The anti-CSRF header the session bridge requires. A wire name: do not rename. */
 const CSRF_HEADERS = { "X-Base-Csrf": "1" } as const;
+
+/** `GET /lws/vaults`, the reachable-vault list. A wire path: do not rename. */
+export const REACHABLE_VAULTS_PATH = "/lws/vaults";
 
 /** The two modes an app reasons about in a reachable vault. */
 export type VaultMode = "read" | "write";
@@ -66,6 +75,11 @@ export interface GilbSession {
   vault: SessionVaultInfo | null;
   /** Every vault the principal reaches. Empty when it holds no grants; never a fallback vault. */
   vaults: SessionVault[];
+  /**
+   * A plain-English sentence when the vault list could not be read, or is only partial.
+   * Absent when the list is whole.
+   */
+  vaultsProblem?: string;
 }
 
 /** One `vaults[]` entry on the wire: `modes` arrives as raw strings. */
@@ -244,6 +258,7 @@ export class SessionCredential {
    * @returns the verify-code body (`needsVaultName`, `suggestedName`)
    * @throws whatever `verifySignInCodeHttp` throws; {@link NotSignedInError} when no token came
    *   back, or when a sign-out (`invalidate(true)`) happened while the code was being verified
+   *   or while the vault list (`GET /lws/vaults`) was being read
    */
   async signInWithCode(
     origin: string,
@@ -266,7 +281,108 @@ export class SessionCredential {
       throw new NotSignedInError();
     }
     this.adopt(body.token, { principal: body.principal, vault: null, vaults: [] });
+    // verify-code carries no vault list, and the cookie bridge is first-party only.
+    // A list problem stays signed in; a sign-out while that read is on the wire still rejects.
+    await this.loadReachableVaults(origin);
     return body;
+  }
+
+  /**
+   * Reads the reachable vaults from `GET {origin}/lws/vaults` onto the held session.
+   * Never throws for a list problem: the sign-in has succeeded and stays signed in, and
+   * {@link GilbSession.vaultsProblem} says what happened (absent when the list is whole).
+   * `principal` and `vault` are left as they were.
+   *
+   * @param origin the origin the token was verified at. Trailing slashes are removed once,
+   *   so the path is not joined onto a doubled slash.
+   * @returns the session this read built. Stored on the held token only when that token is
+   *   still the one the read started with.
+   * @throws {@link NotSignedInError} when no token is held at the start (nothing is sent), or
+   *   when a sign-out (`invalidate(true)`) landed while the proof was built or while this read
+   *   was on the wire (nothing is stored)
+   */
+  async loadReachableVaults(origin: string): Promise<GilbSession> {
+    if (!this.minted) throw new NotSignedInError();
+    const gen = this.generation;
+    // The token this call found. A proof failure is judged against it: a sign-out bumps the
+    // generation, a plain invalidate() or a newer sign-in only replaces the token.
+    const startedToken = this.minted.accessToken;
+    const startedSession = this.minted.session;
+    const url = `${origin.replace(/\/+$/, "")}${REACHABLE_VAULTS_PATH}`;
+    const send = this.opts.transport ?? fetchTransport;
+    let res: TransportResponse;
+    let proof: { Authorization: string; DPoP: string };
+    // One proof per request: the server refuses a reused `jti`. Building it re-mints inside
+    // the 60 s guard. With no bridge that throws, and the sign-in has already succeeded.
+    try {
+      proof = await this.authHeaders("GET", url);
+    } catch {
+      if (gen !== this.generation) throw new NotSignedInError();
+      return this.storeVaultList(gen, startedToken, startedSession, undefined, "Could not read your vault list: your sign-in runs out too soon. Sign in again.");
+    }
+    if (gen !== this.generation) throw new NotSignedInError();
+    // authHeaders may have re-minted. The list was signed with the token held now.
+    const readToken = this.minted?.accessToken ?? startedToken;
+    const readSession = this.minted?.session ?? startedSession;
+    try {
+      res = await send(url, {
+        method: "GET",
+        credentials: "omit",
+        headers: { ...proof, Accept: "application/ld+json, application/json" },
+        timeoutMs: 15000,
+      });
+    } catch {
+      return this.storeVaultList(gen, readToken, readSession, undefined, "Could not reach your vault list. The browser blocked the request or the network failed.");
+    }
+    if (gen !== this.generation) throw new NotSignedInError();
+    if (res.status < 200 || res.status > 299) {
+      return this.storeVaultList(gen, readToken, readSession, undefined, `Could not read your vault list (HTTP ${res.status}).`);
+    }
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      return this.storeVaultList(gen, readToken, readSession, undefined, "The vault list answer could not be read.");
+    }
+    if (gen !== this.generation) throw new NotSignedInError();
+    const raw = body && typeof body === "object" && !Array.isArray(body)
+      ? (body as { vaults?: unknown; complete?: unknown; incompletePeers?: unknown })
+      : null;
+    if (!raw || !Array.isArray(raw.vaults)) {
+      return this.storeVaultList(gen, readToken, readSession, undefined, "The vault list answer could not be read.");
+    }
+    const list = readSessionVaults(raw.vaults as WireSessionVault[]);
+    if (raw.complete === false) {
+      const peers = typeof raw.incompletePeers === "number" && Number.isFinite(raw.incompletePeers)
+        ? raw.incompletePeers
+        : "some";
+      return this.storeVaultList(gen, readToken, readSession, list, `Your vault list may be incomplete: ${peers} store(s) did not answer.`);
+    }
+    return this.storeVaultList(gen, readToken, readSession, list);
+  }
+
+  /**
+   * Writes the vault list onto the held session when the held access token is still the one
+   * this read started with. Otherwise stores nothing and returns the session this read built.
+   * A sign-out that bumped the generation stores nothing and throws.
+   *
+   * @param accessToken the token this read was signed with
+   * @param prior the session of that token, used when it is no longer the one held
+   * @param vaults the replacement list; omit to keep the list already held
+   * @param problem the sentence to show; omit when the list is whole (clears any previous one)
+   */
+  private storeVaultList(gen: number, accessToken: string, prior: GilbSession, vaults: SessionVault[] | undefined, problem?: string): GilbSession {
+    if (gen !== this.generation) throw new NotSignedInError();
+    const held = this.minted;
+    const base = held && held.accessToken === accessToken ? held.session : prior;
+    const session: GilbSession = {
+      principal: base.principal,
+      vault: base.vault,
+      vaults: vaults ?? base.vaults,
+    };
+    if (problem !== undefined) session.vaultsProblem = problem;
+    if (held && held.accessToken === accessToken) held.session = session;
+    return session;
   }
 
   /**
@@ -346,6 +462,7 @@ export class SessionCredential {
     const send = this.opts.transport ?? fetchTransport;
     const res: TransportResponse = await send(url, {
       method: "POST",
+      // First-party only: the session-cookie bridge. A third-party page must not send it.
       credentials: "include",
       headers: { ...CSRF_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ dpopJwk: jwk }),

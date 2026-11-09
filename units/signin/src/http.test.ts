@@ -1,13 +1,16 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   checkVaultName,
+  credentialsForPage,
+  pageHostname,
   prepareVaultName,
   requestSignInCode,
   verifySignInCodeHttp,
 } from "./http";
+import type { Transport, TransportRequest } from "./transport";
 import {
   CodeRejectedError,
   SignInRefusedError,
@@ -109,6 +112,20 @@ describe("requestSignInCode — email one-time-code request", () => {
   });
 });
 
+function recordingTransport() {
+  const calls: { url: string; req: TransportRequest }[] = [];
+  const transport: Transport = async (url, req) => {
+    calls.push({ url, req });
+    return { status: 200, json: async () => ({ token: "t", principal: "https://id.example.test/p" }) };
+  };
+  return { calls, transport };
+}
+
+const readPageHostname = pageHostname.read;
+afterEach(() => {
+  pageHostname.read = readPageHostname;
+});
+
 describe("verifySignInCodeHttp — email one-time-code verify", () => {
   it("POSTs /base/auth/email/verify-code with email, code, dpopJwk on the injected origin", async () => {
     const { result, calls } = await withFetch(
@@ -117,7 +134,8 @@ describe("verifySignInCodeHttp — email one-time-code verify", () => {
     );
     expect(calls[0]!.url).toBe(`${ORIGIN_A}/base/auth/email/verify-code`);
     expect(calls[0]!.init.method).toBe("POST");
-    expect(calls[0]!.init.credentials).toBe("include");
+    // No page location in this runtime, so the third-party rule omits cookies.
+    expect(calls[0]!.init.credentials).toBe("omit");
     const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
     expect(body.email).toBe(EMAIL);
     expect(body.code).toBe(CODE);
@@ -136,6 +154,64 @@ describe("verifySignInCodeHttp — email one-time-code verify", () => {
     const body = JSON.parse(String(calls[0]!.init.body)) as Record<string, unknown>;
     expect(body.name).toBe("acme");
     expect(body).not.toHaveProperty("a:name");
+  });
+
+  it.each([
+    ["gilb.com", "include"],
+    ["www.gilb.com", "include"],
+    ["localhost", "include"],
+    ["127.0.0.1", "include"],
+    ["[::1]", "include"],
+    ["kaidev-pictures.pages.dev", "omit"],
+    ["x.app.gilb.com", "omit"],
+    ["x.web.gilb.com", "omit"],
+    ["id.gilb.com", "omit"],
+    ["evilgilb.com", "omit"],
+    ["gilb.com.evil.com", "omit"],
+  ] as const)("credentialsForPage %s → %s", (hostname, want) => {
+    expect(credentialsForPage(hostname)).toBe(want);
+  });
+
+  it("credentialsForPage no location → omit", () => {
+    expect(pageHostname.read()).toBe("");
+    expect(credentialsForPage(pageHostname.read())).toBe("omit");
+  });
+
+  it("verify-code sends omit for a third-party page", async () => {
+    pageHostname.read = () => "kaidev-pictures.pages.dev";
+    const seen = recordingTransport();
+    await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", { transport: seen.transport });
+    expect(seen.calls[0]!.req.credentials).toBe("omit");
+  });
+
+  it("verify-code sends include for gilb.com", async () => {
+    pageHostname.read = () => "gilb.com";
+    const seen = recordingTransport();
+    await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", { transport: seen.transport });
+    expect(seen.calls[0]!.req.credentials).toBe("include");
+    const fetched = await withFetch(
+      [jsonResponse(200, { token: "t" })],
+      () => verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP),
+    );
+    expect(fetched.calls[0]!.init.credentials).toBe("include");
+  });
+
+  it("an explicit credentials option wins over the page rule", async () => {
+    pageHostname.read = () => "kaidev-pictures.pages.dev";
+    const forcedInclude = recordingTransport();
+    await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", {
+      transport: forcedInclude.transport,
+      credentials: "include",
+    });
+    expect(forcedInclude.calls[0]!.req.credentials).toBe("include");
+
+    pageHostname.read = () => "gilb.com";
+    const forcedOmit = recordingTransport();
+    await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", {
+      transport: forcedOmit.transport,
+      credentials: "omit",
+    });
+    expect(forcedOmit.calls[0]!.req.credentials).toBe("omit");
   });
 
   it("throws CodeRejectedError on 401", async () => {
@@ -174,7 +250,20 @@ describe("artefact independence and host-agnostic body", () => {
 
   it("unit source bakes no vault host", () => {
     for (const name of ["http.ts", "types.ts", "core.ts", "pendingSignInEmail.ts", "SignInCard.tsx", "VaultNameStep.tsx", "index.ts"]) {
-      const src = readFileSync(join(here, name), "utf8");
+      const raw = readFileSync(join(here, name), "utf8");
+      // credentialsForPage names these page hosts once each. They are not a request target.
+      const src = name === "http.ts"
+        ? raw.replace(/"(?:www\.gilb\.com|gilb\.com|localhost|127\.0\.0\.1)"/g, '""')
+        : raw;
+      if (name === "http.ts") {
+        expect(raw.match(/"(?:www\.gilb\.com|gilb\.com|localhost|127\.0\.0\.1|\[::1\])"/g)).toEqual([
+          '"gilb.com"',
+          '"www.gilb.com"',
+          '"localhost"',
+          '"127.0.0.1"',
+          '"[::1]"',
+        ]);
+      }
       expect(src, name).not.toMatch(/gilb\.com/i);
       expect(src, name).not.toMatch(/localhost/i);
       expect(src, name).not.toMatch(/127\.0\.0\.1/);
