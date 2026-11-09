@@ -1,4 +1,4 @@
-import { LWS_RESOURCE_URL, LWS_VAULT_CONTAINER_URL } from "@kaigilb/gilbplatformcode-vault-origin-rule";
+import { LWS_RESOURCE_URL, LWS_VAULT_CONTAINER_URL, vaultOriginOf, vaultSegmentOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
 import { NotSignedInError, bearerHeaderFor, dpopWriteAuth, invalidateDpop, tokenManager } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { attrKey, normalizeTypeUri, typeUri, typeUriForVaultNamespace } from "@kaigilb/gilbplatformcode-record-types";
 import {
@@ -488,7 +488,7 @@ function slugFromName(name: string | undefined): string | undefined {
  * put in the request PATH; Base resolves it through the ONE write resolver and lands the create
  * in that vault iff the principal holds a whole-vault write grant on it — otherwise 403 (fail-closed,
  * NEVER the writer's own sign-in vault). Authorizes with the sender-constrained DPoP credential.
- * Returns the minted id + the initial ETag.
+ * Returns the minted id, the initial ETag, and `entity` (the absolute entity URI on this vault).
  */
 export async function createRecord(
   vaultNamespace: string,
@@ -497,7 +497,7 @@ export async function createRecord(
   nameHint?: string,
   /** Where these slugs came from; omit for app-authored facts. {@link WriteSource} */
   source?: WriteSource,
-): Promise<{ id: string; etag: string | null }> {
+): Promise<{ id: string; etag: string | null; entity: string }> {
   const url = LWS_VAULT_CONTAINER_URL(vaultNamespace);
   const headers: Record<string, string> = {
     ...(await dpopWriteAuth("POST", url)),
@@ -520,7 +520,13 @@ export async function createRecord(
   const id = location
     ? idFromResourceUrl(location)
     : idFromResourceUrl(String((await res.json().catch(() => ({})))["@id"] ?? ""));
-  return { id, etag };
+  // Location is /lws/r/<id>. The entity URI uses the vault namespace's own host and segment.
+  return { id, etag, entity: entityUriOfCreated(vaultNamespace, id) };
+}
+
+/** Absolute entity URI of a record just created in `vaultNamespace`. */
+function entityUriOfCreated(vaultNamespace: string, id: string): string {
+  return `${vaultOriginOf(vaultNamespace)}${vaultSegmentOf(vaultNamespace)}/e/${id}`;
 }
 
 /**
