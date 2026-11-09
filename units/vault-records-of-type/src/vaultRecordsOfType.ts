@@ -5,10 +5,9 @@
 //   MyNet                                 GilbApp                         this unit
 //   listRecords(<vault>/records?type=T)   listVaultRecordsPage(vault, [T])  (every page)
 import { listVaultRecordsPage } from "@kaigilb/gilbplatformcode-lws-vault-sets";
-import { recordFromServed, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
+import { recordFromServed, serverReasonOrNull, type BaseRecord } from "@kaigilb/gilbplatformcode-lws-records";
 import { getResource } from "@kaigilb/gilbplatformcode-vault-resources";
 import { idFromResourceUri } from "@kaigilb/gilbplatformcode-resource-id";
-import { serverReasonOrNull } from "@kaigilb/gilbplatformcode-server-error";
 
 type Doc = { doc: Record<string, unknown>; etag: string | null; gone: boolean; typeUri?: string };
 

@@ -19,7 +19,7 @@
     ]
   },
   "namedChanges": [
-    "0.1.1. A refused listing throws `RecordsListError` with `status` and `serverSentence` (the sentence `server-error` picks, or null). The message stays the one `lws-vault-sets` already built.",
+    "0.1.1. A refused listing throws `RecordsListError` with `status` and `serverSentence` (the sentence `lws-records` `serverReasonOrNull` picks, the same rule as `server-error`, or null). The message stays the one `lws-vault-sets` already built. No new peer: units that already install this one do not install one.",
     "The imports: the vault surface is `vault-resources` (`getResource`), `lws-vault-sets` (`listVaultRecordsPage`), `lws-records` (`recordFromServed`) and `resource-id` (`idFromResourceUri`).",
     "An incomplete listing is said and what was read is kept (F4): `listRecordsOfType` answers `{ records, complete, reason? }`, `capped` at the page ceiling or `stalled` by a door that cannot advance (GilbApp ended quietly in both). `MAX_LIST_PAGES` is exported.",
     "A stalled door is also incomplete (GilbApp's quiet stop, its test X19, now pins the marker).",

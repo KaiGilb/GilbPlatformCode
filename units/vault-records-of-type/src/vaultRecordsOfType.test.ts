@@ -2,7 +2,7 @@
 // platform at the level of `fetch` (the source mocked the app's list function). The rest is new: F4 (the page ceiling is SAID), the boundary of the
 // ceiling, `getListedResource`, and that the unit only reads.
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { NO_REASON_TAIL } from "@kaigilb/gilbplatformcode-server-error";
+import { NO_REASON_TAIL } from "@kaigilb/gilbplatformcode-lws-records";
 import { MAX_LIST_PAGES, RecordsListError, getListedResource, listRecordsOfType as list } from "./index";
 
 // The listing answers { records, complete, reason? }. These helpers read the records, as the ported cases did when it answered the array.
