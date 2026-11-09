@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/reachable-vaults",
   "package": "@kaigilb/gilbplatformcode-reachable-vaults",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Reads the vaults the signed-in person can reach, with their names, parents and landing flag, and decorates the session's vault set with them.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -59,6 +59,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The README says the sign-in session carries no vault list; after sign-in, call listReachableVaults for the vaults this person can reach. No code changed.",
     "`LWS_VAULTS_URL`, a constant built from the base origin when the module loaded, is the function `lwsVaultsUrl()`, built from the base-origin setting at each call (the setting unit's rule); `listReachableVaults` calls it at both places the source used the constant.",
     "The imports: `NotSignedInError`, `bearerHeaderFor`, `dpopReadAuth`, `invalidateDpop` from `@kaigilb/gilbplatformcode-lws-session-bridge`; `serverErrorText` from `lws-records`; `narrowVaultModes` from `vault-modes`; the type `ReachableVault` from `plan-record-hooks`. In the source these are `./token`, `./bearer`, `./dpop`, `./serverError` and `./types`.",
     "`lwsReadAuth` passes the method to `bearerHeaderFor(url, method)`, as `lws-vault-sets` does (the bridge's signature took the URL alone in the app).",
