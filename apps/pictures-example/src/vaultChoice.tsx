@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { writableVaults, type VaultListItem } from "@kaigilb/gilbplatformcode-vault-list";
+import { canReadVault, canWriteVault, writableVaults, type VaultListItem } from "@kaigilb/gilbplatformcode-vault-list";
 
 /** The name a person types in ?vault=: the first label of the vault's host (testflowerpower.gilb.com -> testflowerpower). */
 export function vaultShortName(vaultId: string): string {
@@ -28,20 +28,34 @@ export function chooseVault(vaults: readonly VaultListItem[] | null | undefined,
   return { kind: "none", asked, writable };
 }
 
+/** Reachable vaults the person can read and cannot write. */
+function readOnlyReachable(vaults: readonly VaultListItem[] | null | undefined): number {
+  let n = 0;
+  for (const v of vaults ?? []) {
+    if (canReadVault(v) && !canWriteVault(v)) n++;
+  }
+  return n;
+}
+
 /** Shows the chosen vault's app, or only the chooser: no engine, no add buttons, nothing can be written. */
 export function VaultGate({
   vaults,
   search,
   onSignOut,
   children,
+  problem,
 }: {
   vaults: readonly VaultListItem[] | null | undefined;
   search: string;
   onSignOut: () => void;
   children: (vault: VaultListItem, name: string) => ReactNode;
+  /** Set when the vault list could not be read, or is only partial. */
+  problem?: string;
 }) {
+  const problemLine = problem ? <p role="alert" data-testid="vaults-problem">{problem}</p> : null;
   const choice = chooseVault(vaults, search);
-  if (choice.kind === "chosen") return <>{children(choice.vault, choice.name)}</>;
+  if (choice.kind === "chosen") return <>{problemLine}{children(choice.vault, choice.name)}</>;
+  const reached = vaults?.length ?? 0;
   return (
     <div className="page" data-testid="vault-chooser">
       <header className="top">
@@ -50,9 +64,16 @@ export function VaultGate({
           Sign out
         </button>
       </header>
+      {problemLine}
       {choice.asked ? <p role="alert">No writable vault named {choice.asked}.</p> : null}
       <p>Choose the vault to use:</p>
-      {choice.writable.length === 0 ? <p className="hint">This person has no vault they can write to.</p> : null}
+      {choice.writable.length === 0 ? (
+        <p className="hint">
+          {reached > 0
+            ? `You can read ${readOnlyReachable(vaults)} vault(s) but write to none.`
+            : "This person has no vault they can write to."}
+        </p>
+      ) : null}
       <ul>
         {choice.writable.map((v) => {
           const n = vaultShortName(v.vaultId);

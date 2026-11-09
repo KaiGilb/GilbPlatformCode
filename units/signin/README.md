@@ -53,6 +53,15 @@ POST {dpopMintUrl}            credentials: include, X-Base-Csrf: 1
 
 401 is `NotSignedInError`. 403 is `OriginNotAllowedError` (this app's origin is not admitted). A 2xx with no token is refused.
 
+Reachable vaults after a code sign-in (`./session`). verify-code returns no vault list, and the bridge above is first-party only, so a third-party app reads the list itself:
+
+```
+GET {origin}/lws/vaults       credentials: omit, Authorization + DPoP, Accept: application/ld+json, application/json
+→ { "vaults": [{ "vaultId", "modes" }], "complete", "incompletePeers" }
+```
+
+`REACHABLE_VAULTS_PATH` is that path. A list that cannot be read, or that is partial (`complete: false`), leaves the sign-in in place and sets `session.vaultsProblem`.
+
 Machine token (`./machine`):
 
 ```
@@ -82,7 +91,8 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 - Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
 - `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
 - Never cache `authHeaders`. Each proof is single-use.
-- After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
+- `signInWithCode` then calls `loadReachableVaults(origin)`: `GET {origin}/lws/vaults`, one fresh proof, cookies omitted. Modes narrow to read and write; an entry with no `vaultId` is dropped. `principal` and `vault` stay as they were. The five list failures (unreachable, non-2xx, unreadable body, `vaults` not an array, `complete: false`) do not throw. A sign-out while that request is on the wire does, and stores nothing.
+- For each vault's name, parent and landing flag, call `listReachableVaults` (units/reachable-vaults); the session list carries only `vaultId` and `modes`.
 
 ## Machine credential (`./machine`)
 
@@ -155,3 +165,9 @@ Tests mock fetch or run a local `node:http` server. They prove request shape, ho
 ## Source
 
 The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows when check-name returns an `address`, or else when name-prep returns a `webIdDomain`.
+
+## Changes
+
+### 0.2.2
+
+`signInWithCode` reads the reachable vaults from `GET /lws/vaults` after the code is accepted. verify-code returns none, and the session-cookie bridge is first-party only, so a third-party app was left with `vaults: []`. A list that cannot be read or is only partial stays signed in; `session.vaultsProblem` is the sentence. `loadReachableVaults(origin)` is that read on its own.
