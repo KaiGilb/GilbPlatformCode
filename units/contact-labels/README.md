@@ -118,6 +118,10 @@ Three promises in `heldContactLabel.ts` (the claim type; the four read terms wit
 - "A card with a chip reads both catalogues." It reads one small document per distinct kind a chip names.
 - "The default and a specific kind are both shown." The default is hidden beside a specific kind; if ending it failed, it is ended by the next change.
 
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9bce109d5a3`, copied by script, whole files:
