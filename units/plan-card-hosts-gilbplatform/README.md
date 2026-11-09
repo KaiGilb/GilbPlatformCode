@@ -183,6 +183,10 @@ The session in that check was a machine client's token held in this repository's
 - "`canEdit` makes the stakeholder lines editable." Only with `createStakeholderDialog`.
 - "The hosts are made on every render." They are made once for the client and session.
 
+## Changes in 0.2.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`. This is the one unit that is new code and not extraction: it composes the 22 extracted units of the pilot and the resync (`base-origin`, `working-set-store`, `vault-origin-rule`, `record-types`, `ontology-reads`, `lws-session-bridge`, `lws-records`, `lws-vault-sets`, `record-cache-kit`, `vocabulary-source`, `stakeholder-kinds`, `record-sync`, `own-card`, `online-card-link`, `lws-relations`, `vault-type-census`, `stakeholder-list-state`, `plan-record-hooks`, `plan-levels-io`, `plan-stakeholder-io`, `plan-self-source`, `main-tag`) and the card units that own the contexts. The census (`CENSUS-2026-10-28-HostFamilies-GitHubStandard`) names for each of the 177 members the GilbApp call it replaces; `unit.json` `host` lists them.

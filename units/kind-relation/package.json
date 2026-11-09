@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-kind-relation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Writes and ends the tie between a person and a kind of contact, with race guards.",
@@ -79,7 +79,7 @@
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-contact-kind-catalogue": "^0.1.0",
     "@kaigilb/gilbplatformcode-contact-kind-model": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0 || ^0.2.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.0",
     "@kaigilb/gilbplatformcode-plan-record-hooks": "^0.2.0",
     "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",

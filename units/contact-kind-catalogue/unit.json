@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-kind-catalogue",
   "package": "@kaigilb/gilbplatformcode-contact-kind-catalogue",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Reads the master catalogue of contact kinds and the holder's own additions, with caches.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -26,6 +26,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "The imports are the five peers `contact-kind-model`, `lws-relations`, `lws-vault-sets`, `term-origin` and `term-slots`.",
     "`const MASTER_BASE = `${GILBVEDA_MASTER_ORIGIN}/base`;` (built when the module loaded) is `function masterBase(): string { return `${termOrigin()}/base`; }`; its uses are `masterBase()`.",
     "`${GILBVEDA_MASTER_ORIGIN}/base/t/RelationshipKind` in `ownKindType` is `${termOrigin()}/base/t/RelationshipKind`.",

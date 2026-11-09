@@ -48,7 +48,7 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 install-links=true
 ```
 
-The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency of its own. Peers: `tag-client` (`^0.1.0`), `platform-fetch` (`^0.1.0`), `record-sync` (`^0.2.0`, the type `PlatformClient`), `lws-relations` (`^0.1.0`, `boundAwait`), `vault-origin-rule` (`^0.1.0`), `@tanstack/react-query` (`^5.101.2`) and `react` (`^19.0.0`).
+The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency of its own. Peers: `tag-client` (`^0.1.0`), `platform-fetch` (`^0.1.0`), `record-sync` (`^0.2.0`, the type `PlatformClient`), `lws-relations` (`^0.1.0 || ^0.2.0`, `boundAwait`), `vault-origin-rule` (`^0.1.0`), `@tanstack/react-query` (`^5.101.2`) and `react` (`^19.0.0`).
 
 ## Examples
 
@@ -112,6 +112,10 @@ Dynamic imports in the files taken: none. The tracer does not follow `import()`,
 - "`useMainTags` always shows the latest map." NOT DETERMINED. The map is memoised on the groups' `dataUpdatedAt` stamps joined with commas, and the dependency list is not complete (the app silences the lint rule). While groups are pending their stamp is 0, so a change of the list of groups that leaves the stamps equal could keep a stale map. Whether this is reachable is not determined; the tests do not reach it.
 - "`readMasterTags` chunks like `readMainTags`." It does not: it throws above 50 records, although `readMainTags` of `tag-client` cuts the list by itself. Harmless, because its callers cut first.
 - "A failed read in `fetchMainTagsForRows` throws." It does not: that group's rows get no tags and the other groups are answered. The `useMainTags` hook shows the same group as absent.
+
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
 
 ## Where it came from
 

@@ -146,6 +146,22 @@ describe("addresses and statuses", () => {
 });
 
 describe("createRecord", () => {
+  it("returns the entity URI on the vault host when Location names the id", async () => {
+    fetchMock.mockResolvedValue(resp(201, {
+      headers: { location: "https://v.platform.example.test/lws/r/abc", etag: '"sha256:aa"' },
+      body: {},
+    }));
+    const out = await createRecord("https://v.platform.example.test/base", typeUri("Note"), { title: "x" });
+    expect(out).toEqual({ id: "abc", etag: '"sha256:aa"', entity: "https://v.platform.example.test/base/e/abc" });
+  });
+  it("builds the entity URI from the id when Location is absent, under the namespace segment", async () => {
+    fetchMock.mockResolvedValue(resp(201, {
+      headers: { etag: '"sha256:bb"' },
+      body: { "@id": `${ORIGIN}/lws/r/def` },
+    }));
+    const out = await createRecord("https://v.platform.example.test/vault", typeUri("Note"), { title: "x" });
+    expect(out).toEqual({ id: "def", etag: '"sha256:bb"', entity: "https://v.platform.example.test/vault/e/def" });
+  });
   it("takes the id from the Location header, else from the @id of the body", async () => {
     fetchMock.mockResolvedValueOnce(resp(201, { headers: { location: `${ORIGIN}/lws/r/abc` }, body: {} }));
     expect((await createRecord("https://v.platform.example.test/base", typeUri("Note"), { title: "x" })).id).toBe("abc");

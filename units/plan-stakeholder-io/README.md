@@ -100,6 +100,10 @@ None of its own. The shared kind reader of the master is kept by `stakeholder-ki
 - "The main tag is asked for every link." Only when the facts of the record are known (the loaded list or the one read) and hold no name, label, `unitTag` or `tag`: a record not in the loaded list costs two round trips in series, the read of the record and then the tag call.
 - "The type set key is a constant." It was one in the app, evaluated when the module loaded, before an app can set the term origin; it is the function `stakeholderTypeSetQueryKey()` here and the options carry a getter.
 
+## Changes in 0.2.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo KaiGilb/GilbApp), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, copied by script:

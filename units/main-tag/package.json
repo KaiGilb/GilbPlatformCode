@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-main-tag",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Gives the main tag of a record, or of a page of records, read from the platform in one call per record and one call per fifty records, kept in one shared cache that a tag change refreshes at once.",
@@ -52,7 +52,7 @@
     "vitest": "^2.1.9"
   },
   "peerDependencies": {
-    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0 || ^0.2.0",
     "@kaigilb/gilbplatformcode-platform-fetch": "^0.1.0",
     "@kaigilb/gilbplatformcode-record-sync": "^0.4.0",
     "@kaigilb/gilbplatformcode-tag-client": "^0.2.0",

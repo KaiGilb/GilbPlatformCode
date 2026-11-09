@@ -37,7 +37,11 @@ describe("createRecord (POST /lws/vault/:vaultId/c — Cycle053 VDS-4 FIX-1)", (
       resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"' }, body: { "@id": "x" } }),
     );
     const out = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "Hello", body: "" }, "Hello");
-    expect(out).toEqual({ id: "note-abc123", etag: '"sha256:aa"' });
+    expect(out).toEqual({
+      id: "note-abc123",
+      etag: '"sha256:aa"',
+      entity: "https://kaizen.platform.example.test/base/e/note-abc123",
+    });
 
     const [url, init] = lastCall();
     // THE fix: the create names the VIEWED vault's namespace as the path segment, so a record

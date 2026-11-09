@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-kind-model",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "The pure model of a contact's kind: its chips, its start choices and the relations its header shows.",
@@ -54,7 +54,7 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-contact-header": "^0.1.0",
-    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-relations": "^0.1.0 || ^0.2.0",
     "@kaigilb/gilbplatformcode-person-connections": "^0.1.0",
     "@kaigilb/gilbplatformcode-relation-role": "^0.1.0",
     "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary": "^0.1.0"

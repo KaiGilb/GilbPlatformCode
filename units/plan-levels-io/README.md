@@ -116,6 +116,10 @@ One map, `inflight`: the read-then-write of `ensureDefaultLevels`, per vault id.
 - "The ceiling is a page count of the vault." It is a count of the requests of one walk; a vault of fifty pages or more of levels is an error, not a short list.
 - "`waitForLevels` is the hook's read." It is a second reader of the same key (`fetchQuery`); the hook calls it only when its own query is neither a success nor an error yet.
 
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo KaiGilb/GilbApp), commit `dcfc18b33e9f091cf22d6ae06906839ec5855e67`, copied by script:

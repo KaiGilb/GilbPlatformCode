@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/plan-card-hosts-gilbplatform",
   "package": "@kaigilb/gilbplatformcode-plan-card-hosts-gilbplatform",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "The ready-made GilbPlatform host for the four Plan cards: one provider that sets the platform's origins and the session and mounts the fourteen host contexts, so the Value, Function, Solution and Resource cards draw, read and save with no host object written.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -83,6 +83,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "src/inline.ts holds six inline copies: `tagUsedInVault` (planLinks.ts 222-230) with its `vaultIdOfEntity` (picture.ts 73-76); `useLinkLabel` (PlanValueLines.tsx 448-466); `useRecordRead` (PlanStakeholders.tsx 134-139); the two `useRelationDoc` queries (PlanStakeholders.tsx 537-543 and PlanImpacts.tsx 397-402); `usePickerQuery` (OrgRecordPicker.tsx 144-150). Each is the source's code with its free names replaced by the peers' exports; no code was changed.",
     "src/shell.ts maps the session's vault set to the rows the cards read as `useVaults` did when `GET /lws/vaults` had not answered (hooks.ts 108-129); it does not make that second call. A row carries `shortName: null` and `shortNameKnown: false` (hooks.ts 126-129), as the app's own lean row does.",
     "src/provider.tsx takes the query client's defaults from main.tsx 72-76.",

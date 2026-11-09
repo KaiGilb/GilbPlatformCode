@@ -9,7 +9,7 @@ Reading, creating and changing one record in a vault over the platform's record 
 The typed client for one record: read it with its version, create one in a named vault, change facts of it with a merge patch. Each call is addressed at the vault the record lives in, signs through the auth seam (`lws-session-bridge`) and turns a refusal into a typed error. It also holds what a write needs to spell a fact the way the vault stores it: it reads the vault's own `@context` and its datom log, and so does not invent a key that names no term. Plain functions and types, no React.
 
 - `readRecord(id, at)`: `GET /lws/r/<id>` at the origin `at` names (the record's own entity URI; `null` only where no URI exists). A `BaseRecord`, or `null` on 404. Every read is its own request: there is no join of reads.
-- `createRecord(vaultNamespace, typeUri, facts, nameHint?, source?)`: `POST /lws/vault/<vaultNamespace>/c`, the new record lands in THAT vault. Answers `{ id, etag }`. Signed with the sender-constrained credential (`dpopWriteAuth`).
+- `createRecord(vaultNamespace, typeUri, facts, nameHint?, source?)`: `POST /lws/vault/<vaultNamespace>/c`, the new record lands in THAT vault. Answers `{ id, etag, entity }`. `entity` is optional in the type: the absolute entity URI on that vault's host (`https://<host>/base/e/<id>` or `/vault/e/<id>`). The id comes from the `Location` header when the answer has one, otherwise from the body's `@id`. Signed with the sender-constrained credential (`dpopWriteAuth`).
 - `patchRecord(id, patch, at, source?, precondition?)`: `PATCH /lws/r/<id>`, JSON merge patch; a `null` member deletes the fact. `precondition.ifMatch` makes it conditional. Answers `{ etag }`.
 - `retypeRecord(id, typeBare, ifMatch, at, facts?, source?, keepEmpty?)`: `PUT /lws/r/<id>` with `If-Match`, the same id and a new type (the type goes on the wire as the CURIE `t:<Type>`); `facts` are the whole fact set, built with `factsAsServed`. An empty type is refused before anything is sent. Answers `{ etag }`. Added in 0.3.0.
 - `deleteRecord(id, at, precondition?)`: `DELETE /lws/r/<id>`; a 404 or 204 is done, except that a conditional delete (`precondition.ifMatch`) treats a 404 as an error with status 404. Added in 0.3.0.
@@ -32,6 +32,10 @@ The unit holds two pieces of module state, `reads` (the vault `@context`, read o
 - Not the app's `types.ts`. The session types it holds (`BaseSession`, `VaultInfo`, `readSessionVaults`, ...) belong to the replaced token and DPoP modules and are `lws-session-bridge`'s `LwsSession` here.
 - Not a cache. It remembers a vault's `@context` and datom log (the two caches above) and nothing else; every record read is a request.
 - Not a sign-in. It asks the auth seam for headers.
+
+### Changes in 0.4.1
+
+`createRecord` also answers `entity`, optional in the type, the new record's absolute entity URI on the vault namespace's host and segment (`/base/e/<id>` or `/vault/e/<id>`). The id still comes from the `Location` header when the answer has one, otherwise from the body's `@id`. `id` and `etag` are unchanged. A caller no longer has to read the record back to learn the entity URI.
 
 ### Changes in 0.4.0
 

@@ -66,6 +66,8 @@ Nothing as an object. The unit reads two settings that the app sets once at star
 
 `useVaults` needs a React Query `QueryClientProvider` above it.
 
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
+
 ## Module state
 
 None. The unit holds no cache of its own.
@@ -82,6 +84,10 @@ None. The unit holds no cache of its own.
 - "A failed decoration gives an error." Not while the session set has rows: the rows stay lean and `error` is null.
 - "`enrichFailed` follows the hook's re-render." The memo in `useVaults` is keyed on the session's set and the answer's data only, as in the source, so a failure that arrives with no change of data does not recompute the list. The source has the same property (a quirk kept, not fixed).
 - "The mode of a vault comes from `GET /lws/vaults`." It comes from the session.
+
+## Changes in 0.1.1
+
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session. No code changed.
 
 ## Where it came from
 

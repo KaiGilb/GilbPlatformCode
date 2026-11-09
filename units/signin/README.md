@@ -82,6 +82,7 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 - Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
 - `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
 - Never cache `authHeaders`. Each proof is single-use.
+- After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
 
 ## Machine credential (`./machine`)
 
@@ -134,6 +135,10 @@ Every later `npm install` and `npm ci`, CI included, then keeps the copy. Withou
 - Do not persist the DPoP key or the token to `localStorage`. That is a platform decision, not an app one.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.1
+
+After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session. `signInWithCode` adopts the token with an empty vault list. No code changed.
 
 ## Verify (in this artefact)
 

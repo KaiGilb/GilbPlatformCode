@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/contact-labels",
   "package": "@kaigilb/gilbplatformcode-contact-labels",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Shows the kinds and circles a person has for the holder, and lets the holder add one with \"+ Relation\".",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -27,6 +27,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "the imports are the units': `termOrigin` from `term-origin`; `HELD_NOTES_STALE_MS`, `heldClaimsKey`, `mergeClaim`, `runSerial`, `listHeldClaimsAbout`, `readHeldClaimDoc` and the type `HeldClaimDoc` from `held-notes`; `useAdderCard` from `adder-card`; `sameIri` from `stated-by`; the catalogue reads, `readOwnEntryName`, `readOwnKinds`, `USER_VOCAB_KEY`, `readHeaderVocab` from `contact-kind-catalogue`; the model functions and types from `contact-kind-model`; the tie functions and the types `KindVault`, `TieFound` from `kind-relation`; `readRelations`, `relationsKey`, `uriTail`, `readRelationDoc` from `lws-relations`; `NotSignedInError` from `lws-session-bridge`; `annotationsFit` from `contact-annotation`; `createResource`, `deleteResource`, `getResource`, `FactValue` from `vault-resources`; `attributeSpelling`, `typeSpelling` from `term-slots`; `registerCardPartTypes` from `lws-vault-sets`",
     "`GILBVEDA_MASTER_ORIGIN` (built when the module loaded) is `termOrigin()` at its three uses: the master address of a type name in `masterTypeOf`, and the keys of the circle-label and relationship-kind catalogue queries",
     "`readOwnKinds` and `readOwnEntryName` of `contact-kind-catalogue` take `host: OwnKindsHost` first; `useContactLabels.ts` adds `const ownKindsHost = { createResource, getResource }` (from `vault-resources`) and passes it at the two calls, with the source's other arguments",

@@ -107,6 +107,10 @@ Two installed copies of this unit would each keep their own `fallbackQueryClient
 - "`answeredNoTag` is true for any failure of the tag." Only for a 4xx answer of the tag ensure route; a 5xx, a timeout or a failed master read says nothing about the tag.
 - "`canWriteVault` here is the vault list's." The vault list's tolerates a vault with no `modes` and says false; this one is the app's, which reads `modes` directly and throws on a vault with none. It is private to the unit.
 
+## Changes in 0.1.1
+
+The peer range of `lws-relations` is `^0.1.0 || ^0.2.0`. Main holds 0.2.0, and `^0.1.0` stopped `npm install` with ERESOLVE. 0.2.0 adds `shareEntityEditAndView` and corrects two comments; this unit does not call that function.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `9a602ea7dfbbc1433f6cf566dae24eed0abfb8a6`, copied by script:
