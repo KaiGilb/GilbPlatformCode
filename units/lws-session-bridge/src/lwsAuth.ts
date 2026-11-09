@@ -35,6 +35,11 @@ export interface LwsSession {
   principal: string;
   vault: LwsVaultInfo | null;
   vaults: LwsSessionVault[];
+  /**
+   * A plain-English sentence when the vault list could not be read, or is only partial.
+   * Absent when the list is whole.
+   */
+  vaultsProblem?: string;
 }
 
 /**

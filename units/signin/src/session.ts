@@ -293,20 +293,37 @@ export class SessionCredential {
    * {@link GilbSession.vaultsProblem} says what happened (absent when the list is whole).
    * `principal` and `vault` are left as they were.
    *
-   * @param origin the origin the token was verified at, no trailing slash
-   * @returns the held session
-   * @throws {@link NotSignedInError} when no token is held (nothing is sent), or when a sign-out
-   *   (`invalidate(true)`) landed while this read was on the wire (nothing is stored)
+   * @param origin the origin the token was verified at. Trailing slashes are removed once,
+   *   so the path is not joined onto a doubled slash.
+   * @returns the session this read built. Stored on the held token only when that token is
+   *   still the one the read started with.
+   * @throws {@link NotSignedInError} when no token is held at the start (nothing is sent), or
+   *   when a sign-out (`invalidate(true)`) landed while the proof was built or while this read
+   *   was on the wire (nothing is stored)
    */
   async loadReachableVaults(origin: string): Promise<GilbSession> {
     if (!this.minted) throw new NotSignedInError();
     const gen = this.generation;
-    const url = `${origin}${REACHABLE_VAULTS_PATH}`;
+    // The token this call found. A proof failure is judged against it: a sign-out bumps the
+    // generation, a plain invalidate() or a newer sign-in only replaces the token.
+    const startedToken = this.minted.accessToken;
+    const startedSession = this.minted.session;
+    const url = `${origin.replace(/\/+$/, "")}${REACHABLE_VAULTS_PATH}`;
     const send = this.opts.transport ?? fetchTransport;
     let res: TransportResponse;
-    // One proof per request: the server refuses a reused `jti`.
-    const proof = await this.authHeaders("GET", url);
+    let proof: { Authorization: string; DPoP: string };
+    // One proof per request: the server refuses a reused `jti`. Building it re-mints inside
+    // the 60 s guard. With no bridge that throws, and the sign-in has already succeeded.
+    try {
+      proof = await this.authHeaders("GET", url);
+    } catch {
+      if (gen !== this.generation) throw new NotSignedInError();
+      return this.storeVaultList(gen, startedToken, startedSession, undefined, "Could not read your vault list: your sign-in runs out too soon. Sign in again.");
+    }
     if (gen !== this.generation) throw new NotSignedInError();
+    // authHeaders may have re-minted. The list was signed with the token held now.
+    const readToken = this.minted?.accessToken ?? startedToken;
+    const readSession = this.minted?.session ?? startedSession;
     try {
       res = await send(url, {
         method: "GET",
@@ -315,53 +332,56 @@ export class SessionCredential {
         timeoutMs: 15000,
       });
     } catch {
-      return this.storeVaultList(gen, undefined, "Could not reach your vault list. The browser blocked the request or the network failed.");
+      return this.storeVaultList(gen, readToken, readSession, undefined, "Could not reach your vault list. The browser blocked the request or the network failed.");
     }
     if (gen !== this.generation) throw new NotSignedInError();
     if (res.status < 200 || res.status > 299) {
-      return this.storeVaultList(gen, undefined, `Could not read your vault list (HTTP ${res.status}).`);
+      return this.storeVaultList(gen, readToken, readSession, undefined, `Could not read your vault list (HTTP ${res.status}).`);
     }
     let body: unknown;
     try {
       body = await res.json();
     } catch {
-      return this.storeVaultList(gen, undefined, "The vault list answer could not be read.");
+      return this.storeVaultList(gen, readToken, readSession, undefined, "The vault list answer could not be read.");
     }
     if (gen !== this.generation) throw new NotSignedInError();
     const raw = body && typeof body === "object" && !Array.isArray(body)
       ? (body as { vaults?: unknown; complete?: unknown; incompletePeers?: unknown })
       : null;
     if (!raw || !Array.isArray(raw.vaults)) {
-      return this.storeVaultList(gen, undefined, "The vault list answer could not be read.");
+      return this.storeVaultList(gen, readToken, readSession, undefined, "The vault list answer could not be read.");
     }
     const list = readSessionVaults(raw.vaults as WireSessionVault[]);
     if (raw.complete === false) {
       const peers = typeof raw.incompletePeers === "number" && Number.isFinite(raw.incompletePeers)
         ? raw.incompletePeers
         : "some";
-      return this.storeVaultList(gen, list, `Your vault list may be incomplete: ${peers} store(s) did not answer.`);
+      return this.storeVaultList(gen, readToken, readSession, list, `Your vault list may be incomplete: ${peers} store(s) did not answer.`);
     }
-    return this.storeVaultList(gen, list);
+    return this.storeVaultList(gen, readToken, readSession, list);
   }
 
   /**
-   * Writes the vault list onto the held session, or leaves the list in place when `vaults` is
-   * omitted. A sign-out that bumped the generation stores nothing.
+   * Writes the vault list onto the held session when the held access token is still the one
+   * this read started with. Otherwise stores nothing and returns the session this read built.
+   * A sign-out that bumped the generation stores nothing and throws.
    *
+   * @param accessToken the token this read was signed with
+   * @param prior the session of that token, used when it is no longer the one held
    * @param vaults the replacement list; omit to keep the list already held
    * @param problem the sentence to show; omit when the list is whole (clears any previous one)
    */
-  private storeVaultList(gen: number, vaults: SessionVault[] | undefined, problem?: string): GilbSession {
+  private storeVaultList(gen: number, accessToken: string, prior: GilbSession, vaults: SessionVault[] | undefined, problem?: string): GilbSession {
     if (gen !== this.generation) throw new NotSignedInError();
     const held = this.minted;
-    if (!held) throw new NotSignedInError();
+    const base = held && held.accessToken === accessToken ? held.session : prior;
     const session: GilbSession = {
-      principal: held.session.principal,
-      vault: held.session.vault,
-      vaults: vaults ?? held.session.vaults,
+      principal: base.principal,
+      vault: base.vault,
+      vaults: vaults ?? base.vaults,
     };
     if (problem !== undefined) session.vaultsProblem = problem;
-    held.session = session;
+    if (held && held.accessToken === accessToken) held.session = session;
     return session;
   }
 

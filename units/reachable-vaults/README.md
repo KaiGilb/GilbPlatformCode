@@ -66,7 +66,7 @@ Nothing as an object. The unit reads two settings that the app sets once at star
 
 `useVaults` needs a React Query `QueryClientProvider` above it.
 
-After an email-code sign-in (signInWithCode) the session holds no vault list, until a token renewal brings one. Call listReachableVaults (units/reachable-vaults) after sign-in for the vaults this person can reach; do not read them from the session.
+From signin 0.2.2 the session holds `vaultId` + `modes` after a code sign-in; this unit adds names, parents and the landing flag.
 
 ## Module state
 
