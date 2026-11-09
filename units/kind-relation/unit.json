@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/kind-relation",
   "package": "@kaigilb/gilbplatformcode-kind-relation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Writes and ends the tie between a person and a kind of contact, with race guards.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -64,6 +64,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.2. The peer range of lws-relations is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE). 0.2.0 adds shareEntityEditAndView and corrects two comments; this unit does not call that function.",
     "The imports are the peers `term-origin`, `term-slots`, `lws-relations`, `lws-session-bridge`, `relation-role`, `plan-record-hooks`, `contact-kind-model`, `contact-kind-catalogue` and the third-party `@tanstack/react-query`; `./kindRelation` (in partyTie) and `./expandRelationRef` are the unit's own.",
     "`KindPredicate` and `KindEntry` (kindRelation.ts lines 86-103) are not here: `contact-kind-model` holds them, and `kindRelation.ts` imports `KindEntry` from it.",
     "`GILBVEDA_MASTER_ORIGIN` (built when the module loaded) is `termOrigin()` at its two uses in `kindRelation.ts` (the master address of a type name) and the one in `partyTie.ts` (`masterTypeAddress`).",
