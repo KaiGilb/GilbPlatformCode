@@ -60,6 +60,8 @@ With `--changed <base-ref> --with-dependents`, it also proves every unit that de
 
 `lines` is `[from, to]` (1-based, inclusive) or `null` for a file copied whole; `to` is the unit file the lines went into, or `null`. `library` is `{ "admitted": false }` for a unit not in the library. Peers are not here: they are in `package.json`, and `peers.mjs` reads them.
 
+Below 1.0, a caret range accepts only patch bumps, so an additive change is a patch bump (0.4.0 → 0.4.1). A minor bump breaks every unit that peers this one; use it only for a breaking change, and change those peer ranges in the same pull request. `node scripts/check-peer-ranges.mjs` checks every peer range.
+
 ## Drift
 
 Which units' source ranges changed in the app since the unit was copied.
