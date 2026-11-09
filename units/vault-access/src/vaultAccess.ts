@@ -181,11 +181,54 @@ async function postGrant(
   throw new VaultAccessError(res.status, msg);
 }
 
+/** Path of a grantee URL, or the raw text when it is not a URL. */
+function granteePath(grantee: string): string {
+  try {
+    return new URL(grantee).pathname;
+  } catch {
+    return grantee;
+  }
+}
+
+/** `/base/p/…` and `/base/g/…` are opaque keys the platform has already resolved. */
+function isOpaqueKey(grantee: string): boolean {
+  const path = granteePath(grantee);
+  return path.includes("/base/p/") || path.includes("/base/g/");
+}
+
+/** A vault address is the path a person signs in as: `/vault` or `/base`. */
+function isVaultAddress(grantee: string): boolean {
+  const path = granteePath(grantee);
+  return path === "/vault" || path === "/base";
+}
+
+/**
+ * An https URL with an empty path or "/" is the vault's host. Nobody signs in as that string, so a
+ * grant stored under it would never reach them. Refuse before any request. Revoke does not call
+ * this: an old grant stored under a host can still be removed.
+ */
+function refuseBareHost(grantee: string): void {
+  let url: URL;
+  try {
+    url = new URL(grantee);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "https:") return;
+  if (url.pathname !== "" && url.pathname !== "/") return;
+  throw new VaultAccessError(
+    400,
+    `"${grantee}" is a vault's host, not a person. Use their vault address, for example ${url.origin}/vault.`,
+  );
+}
+
 /**
  * Grants `grantee` the whole-vault `mode` on `vaultId`. `mode` `control` delegates Control (the
  * grantee may then grant and revoke onward). A caller who does not hold Control gets 403.
+ * A grantee that is only the vault's host is refused before any request.
  */
 export async function grantVaultAccess(vaultId: string, grantee: string, mode: VaultGrantMode): Promise<void> {
+  refuseBareHost(grantee);
   await postGrant(grantVaultUrl(vaultId), vaultId, grantee, mode);
 }
 
@@ -196,11 +239,15 @@ export async function revokeVaultAccess(vaultId: string, grantee: string, mode: 
 
 /**
  * Share the whole vault so `grantee` can open it (`view`) or add records in it (`edit`).
- * `view` grants read. `edit` grants write, then reads the access list back and requires the echoed
- * principal to hold both read and write. The platform resolves a short WebID to an opaque principal
- * and echoes that principal as `grantee`; the read-back matches the echo, not the text that was pasted.
+ * A grantee that is only the vault's host is refused before any request. `view` grants read.
+ * `edit` grants write, then reads the access list back and requires the echoed principal to hold
+ * both read and write. The platform resolves a short WebID to an opaque principal and echoes that
+ * principal as `grantee`; the read-back matches the echo, not the text that was pasted. An echo
+ * that is still an unresolved name (not an opaque key, and not a vault address) throws, because
+ * that grant would reach no one.
  */
 export async function shareVault(vaultId: string, grantee: string, level: VaultShareLevel): Promise<void> {
+  refuseBareHost(grantee);
   if (level === "view") {
     await postGrant(grantVaultUrl(vaultId), vaultId, grantee, "read");
     return;
@@ -210,6 +257,15 @@ export async function shareVault(vaultId: string, grantee: string, level: VaultS
   }
   const body = await postGrant(grantVaultUrl(vaultId), vaultId, grantee, "write");
   const echoed = typeof body.grantee === "string" && body.grantee.trim() !== "" ? body.grantee : grantee;
+  // The old read-back compared the access list with this echo. The platform stores the grantee it
+  // was given and echoes that same string, so a host or other name nobody signs in as matched
+  // itself and the check could not fail.
+  if (echoed === grantee && !isOpaqueKey(grantee) && !isVaultAddress(grantee)) {
+    throw new VaultAccessError(
+      400,
+      `The platform did not resolve "${grantee}" to a person, so the grant would reach no one.`,
+    );
+  }
   const acl = await fetchVaultAcl(vaultId);
   const levels = acl.controlled ? (acl.acl.find((e) => e.principal === echoed)?.levels ?? []) : [];
   const missing: string[] = [];

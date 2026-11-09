@@ -14,11 +14,11 @@ A write grant also gives read. The platform plants the read in the same act as t
 
 Every call goes to the vault's own host. Set the base origin to the apex, the platform origin, not to a vault host and not to the identity host. The address is the vault host from `vaultOriginOf` (`vault-origin-rule`) plus the path. The body, or the `vault` query on the access list, still names the vault.
 
-- `grantVaultAccess(vaultId, grantee, mode)`: `POST /base/authz/grant-vault` with `{ vault, grantee, mode }`. `mode` is `read`, `write`, `append` or `control`. Returns nothing. A 401 drops the credential and says to re-authorize. Any other refusal uses the platform's sentence, not its machine token (`BadRequest` is not the sentence).
-- `revokeVaultAccess(vaultId, grantee, mode)`: `POST /base/authz/revoke-vault`, same body and the same errors.
+- `grantVaultAccess(vaultId, grantee, mode)`: `POST /base/authz/grant-vault` with `{ vault, grantee, mode }`. `mode` is `read`, `write`, `append` or `control`. Returns nothing. A grantee that is an https URL with an empty path or "/" is refused before any request (`VaultAccessError` 400): that string is the vault's host, not a person, and the message gives the vault address on that same origin. A 401 drops the credential and says to re-authorize. Any other refusal uses the platform's sentence, not its machine token (`BadRequest` is not the sentence).
+- `revokeVaultAccess(vaultId, grantee, mode)`: `POST /base/authz/revoke-vault`, same body and the same errors. A bare host is still sent, so a grant already stored under one can be revoked.
 - `fetchVaultAcl(vaultId)`: `GET /base/consent/vault-acl?vault=`. 200 is `{ controlled: true, note, acl, edges }`. 404 is `{ controlled: false }`. Each entry keeps `principal`, `levels`, `label`, `webId` and `kind`; a missing label or WebID is null, and a kind other than `owner-inferred` is `grant`. `labelSource`, `registered` and `viewer` are on the type and are not copied onto the entry (the source normalizer leaves them out).
-- `shareVault(vaultId, grantee, level)`: `level` is `"view"` or `"edit"`. View grants read. Edit grants write, then reads the access list and requires the grantee the grant echoes — the platform resolves a short WebID to an opaque principal and returns that principal as `grantee` — to hold both read and write. If either is missing, it throws `VaultAccessError` and the message names the missing level (`view` or `edit`).
-- `unshareVault(vaultId, grantee)`: revoke write, then read, then append. It does not revoke control.
+- `shareVault(vaultId, grantee, level)`: `level` is `"view"` or `"edit"`. A grantee that is an https URL with an empty path or "/" is refused before any request, same as `grantVaultAccess`. View grants read. Edit grants write, then reads the access list and requires the grantee the grant echoes — the platform resolves a short WebID to an opaque principal and returns that principal as `grantee` — to hold both read and write. If that echo is byte-for-byte the text that was sent, and that text is not an opaque key (`/base/p/` or `/base/g/`) and not a vault address (path `/vault` or `/base`), it throws `VaultAccessError` 400: the platform did not resolve them to a person, so the grant would reach no one. If read or write is missing, it throws `VaultAccessError` and the message names the missing level (`view` or `edit`).
+- `unshareVault(vaultId, grantee)`: revoke write, then read, then append. It does not revoke control. A bare host is still sent, so an old grant can be removed.
 - `VaultAccessError` (status and message), `VAULT_GRANT_MODES`, and the types `VaultGrantMode`, `VaultShareLevel`, `VaultAclEntry`, `VaultReachAclEntry`, `VaultAclResult`, `PrincipalLabelSource`, `PrincipalViewerRelation`.
 
 The credential is the DPoP write pair for a grant or revoke, and the DPoP read pair for the access list, both from `lws-session-bridge`. The seam sends no credential to a host outside the platform's family.
@@ -56,11 +56,11 @@ import { shareVault, unshareVault } from "@kaigilb/gilbplatformcode-vault-access
 
 const vault = "https://anna.gilb.com/vault";
 
-await shareVault(vault, "https://anna.gilb.com", "edit");
-await unshareVault(vault, "https://anna.gilb.com");
+await shareVault(vault, "https://anna.gilb.com/vault", "edit");
+await unshareVault(vault, "https://anna.gilb.com/vault");
 ```
 
-`shareVault(vault, "https://anna.gilb.com", "view")` grants read only. The grant is sent to `https://anna.gilb.com/base/authz/grant-vault` when the base origin is the apex `https://gilb.com`.
+`shareVault(vault, "https://anna.gilb.com/vault", "view")` grants read only. The grant is sent to `https://anna.gilb.com/base/authz/grant-vault` when the base origin is the apex `https://gilb.com`.
 
 ## What the host must supply
 
@@ -68,6 +68,10 @@ Nothing as an object. The unit reads two settings that the app sets once at star
 
 - the base origin (`setBaseOrigin` of `base-origin`), which `vaultOriginOf` reads. Set it to the apex;
 - the auth seam (`setLwsAuth` of `lws-session-bridge`), which forms the credential headers.
+
+## What the host must know
+
+The grantee is the person's vault address, ending in /vault (or /base), exactly as their sign-in names it. A bare host such as https://anna.gilb.com names no one: the grant would be stored and never reach them.
 
 ## Module state
 
@@ -79,6 +83,7 @@ None. The unit holds no cache of its own.
 - Do not revoke only write and tell the person their access is gone. The read planted with that write is still there. Call `unshareVault`.
 - Do not grant the public marker on this route. The platform refuses it. Making a vault public is a different act, and this unit does not wrap it.
 - Do not treat a per-record share as permission to add a record.
+- Do not pass a vault's bare host as the grantee. Nobody signs in as that string. Pass the vault address their sign-in names.
 
 ## Wrong readings
 
@@ -87,6 +92,11 @@ None. The unit holds no cache of its own.
 - "Revoking write removes the person." It leaves read.
 - "Any signed-in person can share a vault." Only a Control holder can. Others get 403.
 - "The access list shows a label's register, or whether the row is the viewer." The type allows those fields. The read copied here does not put them on the entry.
+- "The grantee is the vault's host." A host such as `https://anna.gilb.com` names no one. The grantee is the vault address that person signs in as.
+
+## Changes in 0.1.1
+
+The grantee of a grant is the person's vault address (`/vault` or `/base`), not the vault's host. `shareVault` and `grantVaultAccess` refuse a bare host before any request. `shareVault` throws when the platform echoes a grantee it did not resolve to an opaque key or a vault address, because that grant would be stored and reach no one. `revokeVaultAccess` and `unshareVault` still send a bare host, so an old grant can be removed.
 
 ## Where it came from
 

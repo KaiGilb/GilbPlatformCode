@@ -4,7 +4,7 @@ import { jsonResponse, setUp, stubFetch, tearDown, type Seen } from "../test/sup
 
 const VAULT = "https://ann.platform.example.test/vault";
 const VAULT_HOST = "ann.platform.example.test";
-const GRANTEE = "https://id.example.test/base/p/sam";
+const GRANTEE = "https://sam.platform.example.test/vault";
 const CONTROL = "You don't hold Control on this vault, so you can't change who can access it.";
 const REAUTH = "Your session needs to re-authorize — try again.";
 
@@ -154,6 +154,7 @@ describe("shareVault", () => {
   });
 
   it("edit matches the principal the grant echoes, not the text that was pasted", async () => {
+    // A short WebID is not a vault address. The platform resolves it, so the echo is not the paste.
     const pasted = "https://ann.example.test/i";
     const echoed = "https://id.example.test/base/p/resolved";
     stubFetch((url) => {
@@ -213,5 +214,101 @@ describe("revokeVaultAccess", () => {
     await revokeVaultAccess(VAULT, GRANTEE, "read");
     expect(seen[0]?.url).toBe(`https://${VAULT_HOST}/base/authz/revoke-vault`);
     expect(auth.dpopWriteAuth).toHaveBeenCalledWith("POST", seen[0]?.url);
+  });
+});
+
+describe("the grantee is a vault address", () => {
+  const host = "https://sam.platform.example.test";
+
+  function refuseMessage(grantee: string): string {
+    return `"${grantee}" is a vault's host, not a person. Use their vault address, for example ${host}/vault.`;
+  }
+
+  it("refuses a bare host before any request", async () => {
+    const seen = stubFetch(() => jsonResponse({}));
+    const message = refuseMessage(host);
+    await expect(shareVault(VAULT, host, "edit")).rejects.toMatchObject({
+      name: "VaultAccessError",
+      status: 400,
+      message,
+    });
+    await expect(grantVaultAccess(VAULT, host, "write")).rejects.toMatchObject({
+      name: "VaultAccessError",
+      status: 400,
+      message,
+    });
+    expect(seen).toHaveLength(0);
+  });
+
+  it("refuses a host whose path is only /", async () => {
+    const grantee = `${host}/`;
+    const seen = stubFetch(() => jsonResponse({}));
+    const message = refuseMessage(grantee);
+    await expect(shareVault(VAULT, grantee, "view")).rejects.toMatchObject({
+      name: "VaultAccessError",
+      status: 400,
+      message,
+    });
+    await expect(grantVaultAccess(VAULT, grantee, "read")).rejects.toMatchObject({
+      name: "VaultAccessError",
+      status: 400,
+      message,
+    });
+    expect(seen).toHaveLength(0);
+  });
+
+  it.each(["/vault", "/base"])("accepts a vault address %s and sends the grant", async (path) => {
+    const grantee = `${host}${path}`;
+    const seen = stubFetch((url) => {
+      if (url.includes("/base/consent/vault-acl")) {
+        return jsonResponse({ acl: [{ principal: grantee, levels: ["read", "write"] }] });
+      }
+      return jsonResponse({ vault: VAULT, grantee, mode: "write", granted: true }, 201);
+    });
+    await expect(shareVault(VAULT, grantee, "edit")).resolves.toBeUndefined();
+    await grantVaultAccess(VAULT, grantee, "read");
+    const grants = seen.filter((s) => new URL(s.url).pathname === "/base/authz/grant-vault");
+    expect(grants.map((s) => bodyOf(s).grantee)).toEqual([grantee, grantee]);
+  });
+
+  it("still sends a revoke for a bare host, so an old grant can be removed", async () => {
+    const seen = stubFetch(() => jsonResponse({ vault: VAULT, grantee: host, mode: "write", revoked: true }));
+    await revokeVaultAccess(VAULT, host, "write");
+    expect(seen).toHaveLength(1);
+    expect(bodyOf(seen[0]!).grantee).toBe(host);
+    expect(new URL(seen[0]!.url).pathname).toBe("/base/authz/revoke-vault");
+  });
+
+  it("still sends an unshare for a bare host", async () => {
+    const seen = stubFetch(() => jsonResponse({ revoked: true }));
+    await unshareVault(VAULT, host);
+    expect(seen).toHaveLength(3);
+    expect(seen.map((s) => bodyOf(s).grantee)).toEqual([host, host, host]);
+  });
+
+  it("throws when the platform echoes an unresolved grantee unchanged", async () => {
+    const grantee = `${host}/i`;
+    stubFetch((url) => {
+      if (url.includes("/base/consent/vault-acl")) {
+        return jsonResponse({ acl: [{ principal: grantee, levels: ["read", "write"] }] });
+      }
+      return jsonResponse({ vault: VAULT, grantee, mode: "write", granted: true }, 201);
+    });
+    await expect(shareVault(VAULT, grantee, "edit")).rejects.toMatchObject({
+      name: "VaultAccessError",
+      status: 400,
+      message: `The platform did not resolve "${grantee}" to a person, so the grant would reach no one.`,
+    });
+  });
+
+  it.each(["/base/p/sam", "/base/g/team"])("accepts an echoed opaque key %s", async (path) => {
+    const grantee = `https://id.platform.example.test${path}`;
+    stubFetch((url) => {
+      if (url.includes("/base/consent/vault-acl")) {
+        return jsonResponse({ acl: [{ principal: grantee, levels: ["read", "write"] }] });
+      }
+      return jsonResponse({ vault: VAULT, grantee, mode: "write", granted: true }, 201);
+    });
+    await expect(shareVault(VAULT, grantee, "edit")).resolves.toBeUndefined();
   });
 });
