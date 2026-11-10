@@ -110,4 +110,52 @@ describe("createNamedVault", () => {
     await expect(createNamedVault(ORIGIN, { name: "n", represents: REP }, { credential: r.credential, transport: r.transport })).rejects.toMatchObject({ status: 503 });
     expect(r.sent).toHaveLength(1);
   });
+
+  describe("2xx answer with no usable vaultId", () => {
+    const SENTENCE = "The vault was made, but the answer named no vaultId and it is not in your vault list yet. Sign in again, then look for it.";
+    function twoStep(createRes: () => { status: number; json: () => Promise<unknown> }, list: unknown) {
+      const sent: Sent[] = [];
+      const credential: SignedRequestSource = { authHeaders: async () => ({ Authorization: "DPoP t", DPoP: "p" }) };
+      const transport: Transport = async (url, req) => {
+        sent.push({ url, req });
+        return req.method === "POST" ? createRes() : { status: 200, json: async () => list };
+      };
+      return { sent, credential, transport };
+    }
+    const posts = (sent: Sent[]) => sent.filter((s) => s.req.method === "POST").length;
+    const listed = { vaults: [{ vaultId: "v9", name: "johndevelopersailboats", modes: ["read"] }] };
+    const run = (r: ReturnType<typeof twoStep>) =>
+      createNamedVault(ORIGIN, { name: "johndeveloper-sailboats", represents: REP }, { credential: r.credential, transport: r.transport });
+
+    it("finds the vault in the list by normalised name; one POST", async () => {
+      const r = twoStep(() => ({ status: 201, json: async () => ({ created: true }) }), listed);
+      const out = await run(r);
+      expect(out.vaultId).toBe("v9");
+      expect(out.name).toBe("johndevelopersailboats");
+      expect(out.represents).toBe(REP);
+      expect(out.parent).toBeUndefined();
+      expect(posts(r.sent)).toBe(1);
+    });
+
+    it("throws the sentence when the list lacks it; one POST", async () => {
+      const r = twoStep(() => ({ status: 201, json: async () => ({}) }), { vaults: [{ vaultId: "x", name: "other" }] });
+      const err = await run(r).catch((e) => e);
+      expect(err).toBeInstanceOf(VaultRequestRefusedError);
+      expect(err.platformMessage).toBe(SENTENCE);
+      expect(err.status).toBe(201);
+      expect(posts(r.sent)).toBe(1);
+    });
+
+    it("treats a non-JSON 2xx body the same way (found)", async () => {
+      const r = twoStep(() => ({ status: 201, json: async () => { throw new SyntaxError("bad json"); } }), listed);
+      expect((await run(r)).vaultId).toBe("v9");
+      expect(posts(r.sent)).toBe(1);
+    });
+
+    it("treats a non-JSON 2xx body the same way (not found)", async () => {
+      const r = twoStep(() => ({ status: 201, json: async () => { throw new SyntaxError("bad json"); } }), { vaults: [] });
+      await expect(run(r)).rejects.toMatchObject({ platformMessage: SENTENCE });
+      expect(posts(r.sent)).toBe(1);
+    });
+  });
 });

@@ -185,9 +185,29 @@ export async function createNamedVault(
   if (res.status < 200 || res.status > 299) {
     throw new VaultRequestRefusedError("Making the vault", res.status, await platformMessage(res));
   }
-  const b = (await res.json()) as Record<string, unknown>;
+  let b: Record<string, unknown> = {};
+  try {
+    const parsed = await res.json();
+    if (parsed && typeof parsed === "object") b = parsed as Record<string, unknown>;
+  } catch {
+    /* unreadable 2xx body: fall through to the vault-list lookup below */
+  }
+  if (typeof b.vaultId !== "string" || !b.vaultId) {
+    // The vault was made but the answer names no id. Never re-post: find it in the list, once.
+    const wanted = normaliseVaultName(body.name);
+    const found = (await listVaults(origin, opts)).find((v) => v.name === wanted);
+    if (!found) {
+      throw new VaultRequestRefusedError(
+        "Making the vault",
+        res.status,
+        "The vault was made, but the answer named no vaultId and it is not in your vault list yet. Sign in again, then look for it.",
+      );
+    }
+    // The list carries no vault address; the address is the origin's vault path for that id.
+    return { vaultId: found.vaultId, vault: join(origin, `/lws/vaults/${found.vaultId}`), name: wanted, represents: body.represents };
+  }
   const out: CreatedNamedVault = {
-    vaultId: String(b.vaultId ?? ""),
+    vaultId: b.vaultId,
     vault: String(b.vault ?? ""),
     name: String(b.name ?? ""),
     represents: iri(b.represents) ?? body.represents,
