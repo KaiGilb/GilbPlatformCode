@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-set",
   "package": "@kaigilb/gilbplatformcode-picture-set",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "purpose": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -16,6 +16,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.3. new src/files.ts: listVaultFiles, thumbIndexFor, thumbFor, endFile, endPictureFiles, PictureFilesError (host passes origin and a signed send; no new dependency)",
     "0.1.2. a failed link to the full copy still only warns, and the progress carries linkFailures (which full or thumb, and the message), empty when every link landed",
     "0.1.1. peerDependencies picture-upload is \"^0.1.0 || ^0.2.0\" (main holds 0.2.0; \"^0.1.0\" stopped npm install with ERESOLVE); src/peerRanges.test.ts checks every @kaigilb peer range against the sibling unit's version; README only otherwise (record shapes, link body, warnings, listing)",
     "C1. baseName falls back to picture, not plant (both places)",
@@ -32,7 +33,9 @@
     "src/uploadSet.test.ts",
     "src/copies.test.ts",
     "src/hostAgnostic.test.ts",
-    "scripts/check-host-agnostic.mjs"
+    "scripts/check-host-agnostic.mjs",
+    "src/files.ts",
+    "src/files.test.ts"
   ],
   "host": [
     { "member": "target", "replaces": "the app's settings read by uploadPicture, src/data/pictures.ts:84" },
