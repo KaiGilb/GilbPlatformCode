@@ -486,3 +486,22 @@ test("R11 --dry-run --refresh prints the refresh note, sends and reads nothing, 
     assert.equal(posts, fixtureUnits.length * 2);
   } finally { s.clean(); }
 });
+
+test("R12 marker present but not at the start of the exhibit: not-refreshed, no PATCH, exit non-zero", () => {
+  const x = refreshRun("r12", [live({ title: "Old" }, { text: "Old text first.\n\n" + WANT.exhibit, title: "Old" })]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.equal(x.rc.items[EXH].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /does not start with/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R13 exhibit PATCH answers 200 but the readback still serves the old exhibit text (document equal): exhibit unknown, exit non-zero", () => {
+  const x = refreshRun("r13", [live({}, { text: WANT.exhibit.replace("a".repeat(40), "b".repeat(40)) })], { env: { MOCK_NOAPPLY: "1" } });
+  assert.equal(x.patches.length, 1);
+  assert.ok(/exseed/.test(x.patches[0].url), "only the exhibit was patched");
+  assert.equal(x.rc.items[DOC].state, "unchanged");
+  assert.equal(x.rc.items[EXH].state, "unknown");
+  assert.match(x.rc.items[EXH].reason, /readback still differs: a:referenceExhibit/);
+  assert.notEqual(x.r.status, 0);
+});
