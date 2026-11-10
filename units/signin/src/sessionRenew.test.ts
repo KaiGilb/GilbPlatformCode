@@ -13,6 +13,7 @@ import {
   SIGN_OUT_BOUND_MS,
   STORE_TIMEOUT_MS,
   STORED_SESSION_VERSION,
+  recordIsCurrent,
   type SessionStore,
   type StoredSession,
 } from "./session";
@@ -51,12 +52,19 @@ function memoryStore(initial: StoredSession | null = null): Mem {
       await Promise.resolve();
       current = structuredClone(session);
     },
-    async saveIfSameKey(session, samePublicKeyId) {
+    async saveIfCurrent(session, expect) {
       const seen = current;
-      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      if (!recordIsCurrent(seen, expect)) return;
       await Promise.resolve();
       if (current !== seen) return;
       current = structuredClone(session);
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = null;
     },
     async clear() {
       await Promise.resolve();
@@ -544,12 +552,13 @@ function hangStore(inner: Mem, mode: { hangLoadAfter?: number; hangSavesAfter?: 
       return inner.load();
     },
     save: (session) => inner.save(session),
-    async saveIfSameKey(session, samePublicKeyId) {
+    async saveIfCurrent(session, expect) {
       saves += 1;
       if (mode.throwSaveAt?.includes(saves)) throw new Error("store save failed");
       if (mode.hangSavesAfter !== undefined && saves > mode.hangSavesAfter) return new Promise(() => {});
-      return inner.saveIfSameKey(session, samePublicKeyId);
+      return inner.saveIfCurrent(session, expect);
     },
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
     clear: () => inner.clear(),
   };
 }
@@ -709,12 +718,13 @@ test("the retry window is judged when the request is about to be sent", async ()
     peek: () => inner.peek(),
     load: () => inner.load(),
     save: (session) => inner.save(session),
-    async saveIfSameKey(session, samePublicKeyId) {
+    async saveIfCurrent(session, expect) {
       saves += 1;
       // The second presentation's mark starts inside the window and lands past it.
       if (saves === 2) now = NOW + 45_001;
-      return inner.saveIfSameKey(session, samePublicKeyId);
+      return inner.saveIfCurrent(session, expect);
     },
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
     clear: () => inner.clear(),
   };
   const server = graceRenew(() => now, { lose: "throw", loseCount: 2 });
@@ -838,7 +848,8 @@ test("a store load that throws is not an empty record", async () => {
       return inner.load();
     },
     save: (session) => inner.save(session),
-    saveIfSameKey: (session, samePublicKeyId) => inner.saveIfSameKey(session, samePublicKeyId),
+    saveIfCurrent: (session, expect) => inner.saveIfCurrent(session, expect),
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
     clear: () => inner.clear(),
   };
   let now = NOW;
@@ -1217,4 +1228,315 @@ test("signOut with no token clears locally when the renew fails", async () => {
   assert.deepEqual(calls, [RENEW_URL]);
   assert.equal(cred.session, null);
   assert.equal(store.peek(), null);
+});
+
+test("a stale plain invalidate does not replace a newer rotation", async () => {
+  const uninstall = installLocks(undefined);
+  try {
+    for (const gap of [10_000, 70_000]) {
+      const store = memoryStore(await seed());
+      let now = NOW;
+      const server = graceRenew(() => now);
+      const a = new SessionCredential({ store, transport: server.send, now: () => now });
+      const b = new SessionCredential({ store, transport: server.send, now: () => now });
+      assert.equal((await a.restore())?.principal, PRINCIPAL);
+      assert.equal((await b.restore())?.principal, PRINCIPAL);
+      assert.equal(await a.renew(), a.session);
+      const stored = store.peek()?.renew;
+      const token = store.peek()?.accessToken;
+      assert.ok(stored && stored !== OLD_RENEW);
+      assert.ok(token && token.length > 0);
+      now += gap;
+      await b.invalidate();
+      assert.equal(store.peek()?.renew, stored, `gap ${gap}: stale invalidate left the rotated credential`);
+      assert.equal(store.peek()?.accessToken, token, `gap ${gap}: stale invalidate left the token`);
+      const before = server.presented.length;
+      assert.equal((await a.renew())?.principal, PRINCIPAL);
+      assert.equal(server.reuse(), 0, `gap ${gap}`);
+      assert.deepEqual(server.presented.slice(before).filter((secret) => secret === OLD_RENEW), []);
+      const fresh = new SessionCredential({ store, transport: server.send, now: () => now });
+      assert.equal((await fresh.restore())?.principal, PRINCIPAL);
+      assert.equal(server.reuse(), 0, `gap ${gap}: fresh restore`);
+      assert.equal(server.presented.slice(before).filter((secret) => secret === OLD_RENEW).length, 0);
+    }
+  } finally {
+    uninstall();
+  }
+});
+
+test("a rotation save retries when a stale invalidate commits during the save gap", async () => {
+  const initial = await seed();
+  let current: StoredSession | null = initial;
+  let releaseHold!: () => void;
+  const hold = new Promise<void>((resolve) => { releaseHold = resolve; });
+  let holding = false;
+  let heldRotation = false;
+  const store: Mem = {
+    peek: () => current,
+    async load() {
+      await Promise.resolve();
+      return current ? structuredClone(current) : null;
+    },
+    async save(session) {
+      await Promise.resolve();
+      current = structuredClone(session);
+    },
+    async saveIfCurrent(session, expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      // The first put of the rotated credential yields, the way a store can
+      // between its compare and its put. A stale invalidate commits in that gap.
+      const rotation = session.renew !== OLD_RENEW && session.accessToken !== "";
+      if (rotation && !heldRotation) {
+        heldRotation = true;
+        holding = true;
+        await hold;
+        if (current !== seen) return;
+        current = structuredClone(session);
+        return;
+      }
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = structuredClone(session);
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = null;
+    },
+    async clear() {
+      await Promise.resolve();
+      current = null;
+    },
+  };
+  let now = NOW;
+  const server = graceRenew(() => now);
+  const uninstall = installLocks(undefined);
+  try {
+    const a = new SessionCredential({ store, transport: server.send, now: () => now });
+    const b = new SessionCredential({ store, transport: server.send, now: () => now });
+    assert.equal((await a.restore())?.principal, PRINCIPAL);
+    assert.equal((await b.restore())?.principal, PRINCIPAL);
+    const pending = a.renew();
+    const deadline = Date.now() + 2000;
+    while (!holding && Date.now() < deadline) await nextTurn();
+    assert.equal(holding, true);
+    await b.invalidate();
+    assert.equal(store.peek()?.renew, OLD_RENEW);
+    assert.equal(store.peek()?.accessToken, "");
+    releaseHold();
+    assert.equal((await pending)?.principal, PRINCIPAL);
+    assert.equal(store.peek()?.renew, server.current());
+    assert.ok((store.peek()?.accessToken ?? "").length > 0);
+    now += 70_000;
+    const before = server.presented.length;
+    assert.equal((await b.renew())?.principal, PRINCIPAL);
+    assert.equal(server.reuse(), 0);
+    assert.equal(server.presented.slice(before).includes(OLD_RENEW), false);
+  } finally {
+    uninstall();
+  }
+});
+
+test("a renew 401 does not clear another tab's newer sign-in", async () => {
+  const store = memoryStore();
+  let now = NOW;
+  const aRenew = "rsi1.fam.a-secret";
+  const bRenew = "rsi1.fam.b-secret";
+  let aPresented = 0;
+  let bPresented = 0;
+  const bAnswer = renewedBody("rsi1.fam.b-next");
+  const vaults = jsonResponse(200, { vaults: [], complete: true });
+  const aSend: Transport = async (url) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(Math.floor(NOW / 1000) + 3600),
+        principal: PRINCIPAL,
+        renew: aRenew,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === RENEW_URL) {
+      aPresented += 1;
+      return jsonResponse(401, { error: "Unauthorized" });
+    }
+    return jsonResponse(500, {});
+  };
+  const bSend: Transport = async (url, req) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(Math.floor(NOW / 1000) + 3600),
+        principal: "https://id.example.test/i/b",
+        renew: bRenew,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === RENEW_URL) {
+      bPresented += 1;
+      assert.equal((JSON.parse(req.body ?? "{}") as { renew?: unknown }).renew, bRenew);
+      return jsonResponse(200, { ...bAnswer, principal: "https://id.example.test/i/b" });
+    }
+    return jsonResponse(500, {});
+  };
+  const uninstall = installLocks(undefined);
+  try {
+    const a = new SessionCredential({ store, transport: aSend, now: () => now });
+    const b = new SessionCredential({ store, transport: bSend, now: () => now });
+    await a.signInWithCode(ORIGIN, "a@example.test", "123456");
+    await b.signInWithCode(ORIGIN, "b@example.test", "123456");
+    assert.equal(store.peek()?.renew, bRenew);
+    now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+    await assert.rejects(a.authHeaders("GET", `${ORIGIN}/x`), NotSignedInError);
+    assert.equal(aPresented, 1);
+    assert.equal(a.session, null);
+    assert.equal(store.peek()?.renew, bRenew, "B's newer sign-in stays in the store");
+    const headers = await b.authHeaders("GET", `${ORIGIN}/x`);
+    assert.equal(headers.Authorization, `DPoP ${bAnswer.token}`);
+    assert.equal(b.session?.principal, "https://id.example.test/i/b");
+    assert.equal(bPresented, 1);
+    const fresh = new SessionCredential({ store, transport: bSend, now: () => now });
+    assert.equal((await fresh.restore())?.principal, "https://id.example.test/i/b");
+    assert.equal(bPresented, 1, "the fresh page adopts B's live token and does not present");
+  } finally {
+    uninstall();
+  }
+});
+
+test("an explicit sign-out still empties the store and the other tab does not present", async () => {
+  const store = memoryStore();
+  let now = NOW;
+  const aRenew = "rsi1.fam.a-secret";
+  const bRenew = "rsi1.fam.b-secret";
+  let bPresented = 0;
+  const vaults = jsonResponse(200, { vaults: [], complete: true });
+  const aSend: Transport = async (url) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(Math.floor(NOW / 1000) + 3600),
+        principal: PRINCIPAL,
+        renew: aRenew,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const bSend: Transport = async (url) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(Math.floor(NOW / 1000) + 3600),
+        principal: "https://id.example.test/i/b",
+        renew: bRenew,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === RENEW_URL) {
+      bPresented += 1;
+      return jsonResponse(200, renewedBody());
+    }
+    return jsonResponse(500, {});
+  };
+  const uninstall = installLocks(undefined);
+  try {
+    const a = new SessionCredential({ store, transport: aSend, now: () => now });
+    const b = new SessionCredential({ store, transport: bSend, now: () => now });
+    await a.signInWithCode(ORIGIN, "a@example.test", "123456");
+    await b.signInWithCode(ORIGIN, "b@example.test", "123456");
+    assert.equal(store.peek()?.renew, bRenew);
+    const signedOut = await a.signOut(ORIGIN);
+    assert.equal(signedOut.serverSignedOut, true);
+    assert.equal(store.peek(), null, "explicit sign-out clears whatever the store holds");
+    assert.equal(await b.renew(), null);
+    assert.equal(bPresented, 0, "B signs out from the empty store without presenting");
+    await assert.rejects(b.authHeaders("GET", `${ORIGIN}/x`), NotSignedInError);
+    assert.equal(bPresented, 0);
+    assert.equal(b.session, null);
+  } finally {
+    uninstall();
+  }
+});
+
+test("a rotation save does not overwrite another tab's newer rotation", async () => {
+  const inner = memoryStore(await seed());
+  let now = NOW;
+  let requests = 0;
+  let aEntered!: () => void;
+  const aWaiting = new Promise<void>((resolve) => { aEntered = resolve; });
+  let noteBSave!: () => void;
+  const bSaved = new Promise<void>((resolve) => { noteBSave = resolve; });
+  let current = OLD_RENEW;
+  let previous: string | null = null;
+  let serial = 0;
+  const issued: string[] = [];
+  const accept = (presented: string): { renew: string; token: string } | null => {
+    const grace = previous !== null && presented === previous;
+    if (presented !== current && !grace) return null;
+    previous = current;
+    serial += 1;
+    current = `rsi1.fam.rot-${serial}`;
+    const token = jwt(NEW_EXP);
+    issued.push(current);
+    return { renew: current, token };
+  };
+  const send: Transport = async (url, req) => {
+    if (url !== RENEW_URL) return jsonResponse(500, {});
+    const presented = (JSON.parse(req.body ?? "{}") as { renew?: unknown }).renew;
+    if (typeof presented !== "string") return jsonResponse(400, {});
+    const accepted = accept(presented);
+    if (!accepted) return jsonResponse(401, { error: "Unauthorized" });
+    requests += 1;
+    if (requests === 1) {
+      aEntered();
+      await bSaved;
+    }
+    return jsonResponse(200, {
+      token: accepted.token,
+      renew: accepted.renew,
+      renewExpiresAt: LIVE_EXPIRY,
+      principal: PRINCIPAL,
+    });
+  };
+  let rotationSaves = 0;
+  const store: Mem = {
+    peek: () => inner.peek(),
+    load: () => inner.load(),
+    save: (session) => inner.save(session),
+    async saveIfCurrent(session, expect) {
+      await inner.saveIfCurrent(session, expect);
+      if (typeof session.renew === "string" && session.renew !== OLD_RENEW && session.accessToken.length > 0) {
+        rotationSaves += 1;
+        if (rotationSaves === 1) noteBSave();
+      }
+    },
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
+    clear: () => inner.clear(),
+  };
+  const uninstall = installLocks(undefined);
+  try {
+    const a = new SessionCredential({ store, transport: send, now: () => now });
+    const b = new SessionCredential({ store, transport: send, now: () => now });
+    assert.equal((await a.restore())?.principal, PRINCIPAL);
+    assert.equal((await b.restore())?.principal, PRINCIPAL);
+    const pendingA = a.renew();
+    await aWaiting;
+    const sessionB = await b.renew();
+    const sessionA = await pendingA;
+    assert.equal(sessionB?.principal, PRINCIPAL);
+    assert.equal(sessionA?.principal, PRINCIPAL);
+    assert.deepEqual(issued, ["rsi1.fam.rot-1", "rsi1.fam.rot-2"]);
+    assert.equal(store.peek()?.renew, "rsi1.fam.rot-2", "A's later save does not replace B's rotation");
+    assert.equal(rotationSaves, 2);
+    const before = requests;
+    assert.equal((await a.renew())?.principal, PRINCIPAL);
+    assert.equal(requests, before, "A's next renew adopts B's record and does not present");
+    assert.equal(store.peek()?.renew, "rsi1.fam.rot-2");
+  } finally {
+    uninstall();
+  }
 });

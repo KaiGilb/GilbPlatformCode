@@ -2,7 +2,7 @@
 // a second tab writing a signed-out record back, and a key pair whose halves do not match.
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { SessionCredential, STORE_TIMEOUT_MS, STORED_SESSION_VERSION, type SessionStore, type StoredSession } from "./session";
+import { SessionCredential, STORE_TIMEOUT_MS, STORED_SESSION_VERSION, recordIsCurrent, type SessionStore, type StoredSession } from "./session";
 import { generateDpopKeyPair } from "./dpop";
 import type { Transport } from "./transport";
 
@@ -39,13 +39,21 @@ function mem(delay = 0): Mem {
       await sleep(delay);
       current = structuredClone(record);
     },
-    async saveIfSameKey(record, samePublicKeyId) {
+    async saveIfCurrent(record, expect) {
       const seen = current;
-      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      if (!recordIsCurrent(seen, expect)) return;
       // A clear or a replace during the wait wins: this update does not put the record back.
       await sleep(delay);
       if (current !== seen) return;
       current = structuredClone(record);
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      clears++;
+      await sleep(delay);
+      if (current !== seen) return;
+      current = null;
     },
     async clear() {
       clears++;
@@ -101,7 +109,8 @@ test("a hanging load makes restore return null and does not clear the record", a
     },
     load: () => hang,
     async save() {},
-    async saveIfSameKey() {},
+    async saveIfCurrent() {},
+    async clearIfCurrent() {},
     clear: () => {
       clears++;
       return hang;
@@ -129,10 +138,11 @@ test("signInWithCode settles while a save never resolves", async () => {
       saveCalled = true;
       return hang;
     },
-    saveIfSameKey: () => {
+    saveIfCurrent: () => {
       saveCalled = true;
       return hang;
     },
+    clearIfCurrent: () => hang,
     async clear() {},
   };
   const cred = new SessionCredential({ store, transport: transportFor("https://id.example.test/i/A"), now: () => NOW });
@@ -155,7 +165,8 @@ test("invalidate(true) settles while a clear never resolves", async () => {
       return null;
     },
     async save() {},
-    async saveIfSameKey() {},
+    async saveIfCurrent() {},
+    async clearIfCurrent() {},
     clear: () => {
       clears++;
       return hang;

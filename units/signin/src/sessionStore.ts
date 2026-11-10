@@ -8,8 +8,9 @@
 //   - the DPoP key is the CryptoKey OBJECTS. IndexedDB structured-clones them. The private key
 //     stays non-extractable. Nothing here calls `exportKey`, or writes `localStorage`.
 //   - `publicKeyId` is the public key's JWK `x` and `y` joined by `.`. The caller computes it
-//     with `exportKey` before any transaction. An update compares that string and does not
-//     export inside one. The session code re-reads the JWK when it adopts the record.
+//     with `exportKey` before any transaction. An update compares that string, and the renewal
+//     credential or access token it was given, and does not export inside one. The session
+//     code re-reads the JWK when it adopts the record.
 //
 // A later record shape bumps {@link STORED_SESSION_VERSION}. Readers refuse a version they do
 // not know rather than guessing.
@@ -83,6 +84,58 @@ export interface StoredSession {
   renewGraceUsed?: boolean;
 }
 
+/**
+ * The record a tab may still change: the one it holds.
+ * `publicKeyId` is always compared, and it must be a non-empty string.
+ * `renew`, when the property is present, must be the stored credential.
+ * `null` or `""` means the stored record has no renewal credential.
+ * `accessToken`, when the property is present, must be the stored access token.
+ * A record with no renewal credential is matched on that token.
+ */
+export interface CurrentRecordExpect {
+  publicKeyId: string;
+  renew?: string | null;
+  accessToken?: string;
+}
+
+/**
+ * True when `existing` is the record `expect` names.
+ * Every field present on `expect` is compared. A missing record is not current.
+ * Callers can run this inside one IndexedDB `get` callback: it does not await.
+ */
+export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect): boolean {
+  if (!existing || typeof existing !== "object") return false;
+  if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
+  const record = existing as Partial<StoredSession>;
+  if (record.publicKeyId !== expect.publicKeyId) return false;
+  if ("renew" in expect) {
+    const stored = typeof record.renew === "string" && record.renew.length > 0 ? record.renew : null;
+    const want = typeof expect.renew === "string" && expect.renew.length > 0 ? expect.renew : null;
+    if (stored !== want) return false;
+  }
+  if ("accessToken" in expect && record.accessToken !== expect.accessToken) return false;
+  return true;
+}
+
+/**
+ * The identity of a stored record, for a later conditional clear.
+ * Null when the value has no `publicKeyId` to compare.
+ * A renewal credential is the match. With none, the access token is.
+ */
+export function expectOfStored(raw: unknown): CurrentRecordExpect | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Partial<StoredSession>;
+  if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
+  if (typeof record.renew === "string" && record.renew.length > 0) {
+    return { publicKeyId: record.publicKeyId, renew: record.renew };
+  }
+  return {
+    publicKeyId: record.publicKeyId,
+    renew: null,
+    accessToken: typeof record.accessToken === "string" ? record.accessToken : "",
+  };
+}
+
 /** The persistence seam. A throwing method is a storage failure, not a failed sign-in. */
 export interface SessionStore {
   /** The current record, or null when nothing is stored. */
@@ -90,13 +143,19 @@ export interface SessionStore {
   /** Replaces the one record. A fresh sign-in may create it. */
   save(session: StoredSession): Promise<void>;
   /**
-   * Writes `session` only when a record is already stored and its `publicKeyId`
-   * equals `samePublicKeyId`, and that id is not empty. If the record is missing,
-   * has no id, or holds another id, this writes nothing. The IndexedDB adapter
-   * compares the strings and puts inside the same `get` success callback, so the
-   * transaction is still active and a delete that commits first is not put back.
+   * Writes `session` only when the stored record is still {@link recordIsCurrent}
+   * for `expect`. A missing record, another key, or another credential writes
+   * nothing. The IndexedDB adapter compares every given field and puts inside
+   * the same `get` success callback, so the transaction is still active and a
+   * delete that commits first is not put back.
    */
-  saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void>;
+  saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<void>;
+  /**
+   * Deletes the one record only when it is still {@link recordIsCurrent} for
+   * `expect`. Another key or credential is left in place. The IndexedDB adapter
+   * compares and deletes inside the same `get` success callback.
+   */
+  clearIfCurrent(expect: CurrentRecordExpect): Promise<void>;
   /** Deletes the one record. Starts the delete before it needs to wait, when it can. */
   clear(): Promise<void>;
 }
@@ -133,9 +192,18 @@ class IndexedDbSessionStore implements SessionStore {
     await transactionDone(tx);
   }
 
-  async saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void> {
+  async saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<void> {
     const db = await this.connect();
-    await putIfSamePublicKeyId(db, session, samePublicKeyId);
+    await mutateIfCurrent(db, expect, (objectStore) => {
+      objectStore.put(session, SESSION_RECORD_KEY);
+    });
+  }
+
+  async clearIfCurrent(expect: CurrentRecordExpect): Promise<void> {
+    const db = await this.connect();
+    await mutateIfCurrent(db, expect, (objectStore) => {
+      objectStore.delete(SESSION_RECORD_KEY);
+    });
   }
 
   async clear(): Promise<void> {
@@ -240,15 +308,19 @@ function requestResult<T>(req: IDBRequest<T>): Promise<T> {
 }
 
 /**
- * One readwrite transaction: read the record, compare `publicKeyId` with
- * `samePublicKeyId`, and put only when both are that same non-empty string.
+ * One readwrite transaction: read the record, compare every field on `expect`,
+ * and put or delete only when the stored record is still that one.
  *
- * The compare and the put run in the `get` callback with no await between them.
- * A transaction commits once control returns to the event loop with no request
- * in flight, so an export or any other promise here would let the put throw
- * TransactionInactiveError and drop the update.
+ * The compare and the mutation run in the `get` callback with no await between
+ * them. A transaction commits once control returns to the event loop with no
+ * request in flight, so an export or any other promise here would let the
+ * mutation throw TransactionInactiveError and drop the update.
  */
-function putIfSamePublicKeyId(db: IDBDatabase, session: StoredSession, samePublicKeyId: string): Promise<void> {
+function mutateIfCurrent(
+  db: IDBDatabase,
+  expect: CurrentRecordExpect,
+  mutate: (objectStore: IDBObjectStore) => void,
+): Promise<void> {
   let tx: IDBTransaction;
   try {
     tx = readwrite(db);
@@ -271,16 +343,15 @@ function putIfSamePublicKeyId(db: IDBDatabase, session: StoredSession, samePubli
     const req = objectStore.get(SESSION_RECORD_KEY);
     req.onerror = () => finish(req.error ?? new Error("IndexedDB request failed"));
     req.onsuccess = () => {
-      const existing = req.result as StoredSession | undefined;
-      const storedId = existing?.publicKeyId;
-      if (typeof storedId !== "string" || storedId.length === 0 || storedId !== samePublicKeyId) {
-        // No put. Resolve here: a get-only transaction has nothing left in flight,
-        // and the test double does not fire `oncomplete` unless a put or delete did.
+      if (!recordIsCurrent(req.result, expect)) {
+        // No mutation. Resolve here: a get-only transaction has nothing left in
+        // flight, and the test double does not fire `oncomplete` unless a put
+        // or delete did.
         finish();
         return;
       }
       try {
-        objectStore.put(session, SESSION_RECORD_KEY);
+        mutate(objectStore);
       } catch (err) {
         finish(err);
       }

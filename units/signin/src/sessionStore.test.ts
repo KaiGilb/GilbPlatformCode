@@ -11,6 +11,8 @@ import {
   SESSION_OBJECT_STORE,
   SESSION_RECORD_KEY,
   indexedDbSessionStore,
+  recordIsCurrent,
+  type CurrentRecordExpect,
   type SessionStore,
   type StoredSession,
 } from "./session";
@@ -57,13 +59,20 @@ function memoryStore(): Mem {
       await Promise.resolve();
       current = structuredClone(session);
     },
-    async saveIfSameKey(session, samePublicKeyId) {
+    async saveIfCurrent(session, expect) {
       const seen = current;
-      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      if (!recordIsCurrent(seen, expect)) return;
       await Promise.resolve();
       if (current !== seen) return;
       saves.push(session.accessToken);
       current = structuredClone(session);
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = null;
     },
     async clear() {
       enteredClears++;
@@ -378,9 +387,13 @@ test("sign-out during restore stores nothing and returns null", async () => {
       });
     },
     async save(session) { current = session; },
-    async saveIfSameKey(session, samePublicKeyId) {
-      if (typeof current?.publicKeyId !== "string" || current.publicKeyId.length === 0 || current.publicKeyId !== samePublicKeyId) return;
+    async saveIfCurrent(session, expect) {
+      if (!recordIsCurrent(current, expect)) return;
       current = session;
+    },
+    async clearIfCurrent(expect) {
+      if (!recordIsCurrent(current, expect)) return;
+      current = null;
     },
     async clear() { current = null; },
   };
@@ -405,7 +418,8 @@ test("concurrent restore calls share one load", async () => {
       return new Promise((resolve) => { release = resolve; });
     },
     async save() {},
-    async saveIfSameKey() {},
+    async saveIfCurrent() {},
+    async clearIfCurrent() {},
     async clear() {},
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -497,7 +511,8 @@ test("a store that throws on save still lets sign-in succeed", async () => {
   const store: SessionStore = {
     async load() { return null; },
     async save() { throw new Error("quota"); },
-    async saveIfSameKey() { throw new Error("quota"); },
+    async saveIfCurrent() { throw new Error("quota"); },
+    async clearIfCurrent() { throw new Error("quota"); },
     async clear() { throw new Error("quota"); },
   };
   const t = codeTransport(liveVaults);
@@ -512,7 +527,8 @@ test("a store that throws on load makes restore return null", async () => {
   const store: SessionStore = {
     async load() { throw new Error("blocked"); },
     async save() { throw new Error("blocked"); },
-    async saveIfSameKey() { throw new Error("blocked"); },
+    async saveIfCurrent() { throw new Error("blocked"); },
+    async clearIfCurrent() { throw new Error("blocked"); },
     async clear() { throw new Error("blocked"); },
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -599,31 +615,82 @@ test("the indexedDB adapter keeps one record and clear removes it", async () => 
   }
 });
 
-test("saveIfSameKey writes only when the stored publicKeyId matches, in one transaction", async () => {
+test("saveIfCurrent writes only when the stored key and credential match, in one transaction", async () => {
   const fake = fakeIndexedDb();
   const prior = installIndexedDb(fake.api);
   try {
     const store = indexedDbSessionStore("app-session");
-    const first = await seed();
-    const other = await seed({ accessToken: "tok-other" });
-    await store.saveIfSameKey(first, first.publicKeyId);
+    const first = await seed({ renew: "rsi1.fam.s1" });
+    const other = await seed({ accessToken: "tok-other", renew: "rsi1.fam.other" });
+    const keyOnly: CurrentRecordExpect = { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" };
+    await store.saveIfCurrent(first, keyOnly);
     assert.equal(await store.load(), null, "no record yet, so an update writes nothing");
     await store.save(first);
     const before = fake.transactions;
     const updated = { ...first, accessToken: "tok-updated", session: { ...first.session, principal: "p-updated" } };
-    await store.saveIfSameKey(updated, first.publicKeyId);
+    await store.saveIfCurrent(updated, keyOnly);
     assert.equal(fake.transactions - before, 1, "the compare and the write share one transaction");
     assert.equal((await store.load())?.accessToken, "tok-updated");
     assert.equal((await store.load())?.session.principal, "p-updated");
     assert.equal((await store.load())?.publicKeyId, first.publicKeyId);
-    await store.saveIfSameKey({ ...other, accessToken: "tok-replaced" }, other.publicKeyId);
+    await store.saveIfCurrent({ ...other, accessToken: "tok-replaced" }, { publicKeyId: other.publicKeyId, renew: other.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
-    await store.saveIfSameKey({ ...first, accessToken: "tok-empty-id" }, "");
+    await store.saveIfCurrent(
+      { ...first, accessToken: "tok-other-renew", renew: "rsi1.fam.s2" },
+      { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2" },
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s1", "a different renew credential does not replace the record");
+    await store.saveIfCurrent({ ...first, accessToken: "tok-empty-id" }, { publicKeyId: "", renew: first.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "an empty id does not replace the record");
     const { publicKeyId: _gone, ...withoutId } = updated;
     await store.save({ ...withoutId, accessToken: "tok-no-id" } as StoredSession);
-    await store.saveIfSameKey({ ...first, accessToken: "tok-should-stay-out" }, first.publicKeyId);
+    await store.saveIfCurrent({ ...first, accessToken: "tok-should-stay-out" }, keyOnly);
     assert.equal((await store.load())?.accessToken, "tok-no-id", "a record with no publicKeyId is not updated");
+
+    const tokenOnly = await seed({ accessToken: "tok-plain" });
+    delete tokenOnly.renew;
+    await store.save(tokenOnly);
+    await store.saveIfCurrent(
+      { ...tokenOnly, accessToken: "tok-plain-next" },
+      { publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" },
+    );
+    assert.equal((await store.load())?.accessToken, "tok-plain-next", "a record with no renew matches its access token");
+    await store.saveIfCurrent(
+      { ...tokenOnly, accessToken: "tok-should-stay-out" },
+      { publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" },
+    );
+    assert.equal((await store.load())?.accessToken, "tok-plain-next", "a different access token does not replace a record with no renew");
+  } finally {
+    installIndexedDb(prior);
+  }
+});
+
+test("clearIfCurrent deletes only the record it names, in one transaction", async () => {
+  const fake = fakeIndexedDb();
+  const prior = installIndexedDb(fake.api);
+  try {
+    const store = indexedDbSessionStore("app-session");
+    const first = await seed({ renew: "rsi1.fam.s1", accessToken: "tok-1" });
+    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" });
+    assert.equal(await store.load(), null);
+    await store.save(first);
+    const before = fake.transactions;
+    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.other" });
+    assert.equal(fake.transactions - before, 1, "the compare and the skipped delete share one transaction");
+    assert.equal((await store.load())?.renew, "rsi1.fam.s1");
+    await store.clearIfCurrent({ publicKeyId: "other-key", renew: "rsi1.fam.s1" });
+    assert.equal((await store.load())?.accessToken, "tok-1");
+    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" });
+    assert.equal(await store.load(), null, "the matching credential is deleted");
+
+    const tokenOnly = await seed({ accessToken: "tok-plain" });
+    delete tokenOnly.renew;
+    await store.save(tokenOnly);
+    await store.clearIfCurrent({ publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-other" });
+    assert.equal((await store.load())?.accessToken, "tok-plain");
+    await store.clearIfCurrent({ publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" });
+    assert.equal(await store.load(), null);
+    await store.clear();
   } finally {
     installIndexedDb(prior);
   }

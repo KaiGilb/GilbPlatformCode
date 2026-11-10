@@ -52,14 +52,16 @@ import { fetchTransport, type Transport, type TransportResponse } from "./transp
 import { verifySignInCodeHttp, type VerifyHttpBody } from "./http";
 import {
   indexedDbSessionStore,
+  expectOfStored,
   SESSION_DB_NAME,
   STORED_SESSION_VERSION,
+  type CurrentRecordExpect,
   type SessionStore,
   type StoredSession,
 } from "./sessionStore";
 
-export { indexedDbSessionStore, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
-export type { SessionStore, StoredSession } from "./sessionStore";
+export { indexedDbSessionStore, expectOfStored, recordIsCurrent, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
+export type { CurrentRecordExpect, SessionStore, StoredSession } from "./sessionStore";
 
 /** Re-mint when less than this much of the token's life is left (clock skew and time in flight). */
 export const EXPIRY_GUARD_MS = 60_000;
@@ -390,6 +392,13 @@ export class SessionCredential {
    * another tab's sign-out. A load that fails or times out is not an empty record.
    */
   private hadStoredRecord = false;
+  /**
+   * Set only by an explicit sign-out (`invalidate(true)` / `signOut`). A late write
+   * then deletes the record unconditionally: that is the person's intent for this
+   * app on this device. A sign-in that died (renew 401, expired renewal) does not
+   * set this, and its clear leaves a record that holds another credential.
+   */
+  private explicitClear = false;
   /** Aborts the in-flight renew wait. A sign-out must not sit behind that lock. */
   private renewAbort: AbortController | null = null;
   /**
@@ -442,6 +451,7 @@ export class SessionCredential {
   adopt(accessToken: string, session: GilbSession, expiresAt?: number): Promise<void> {
     this.signInSerial++;
     this.signedOut = false;
+    this.explicitClear = false;
     // A new token may create or replace the record. Later updates from this hold are not creates.
     this.canCreateRecord = true;
     this.minted = {
@@ -679,9 +689,11 @@ export class SessionCredential {
    * runs, can leave a record. That follow-up runs when the save finishes, which does not
    * happen if the page is already gone.
    *
-   * A plain `invalidate()` keeps the in-memory key and drops the stored access token. The
-   * renewal credential stays on the record (`renew`, `renewExpiresAt`, `origin`,
-   * `renewAttemptAt`, `renewGraceUsed`), with the session, so a reload can renew. The
+   * A plain `invalidate()` keeps the in-memory key and drops the stored access token only
+   * when the stored record is still this tab's key and credential. The renewal credential
+   * stays on that record (`renew`, `renewExpiresAt`, `origin`, `renewAttemptAt`,
+   * `renewGraceUsed`), with the session, so a reload can renew. If another tab has rotated,
+   * the write does nothing: this tab adopts the newer record on its next renew. The
    * rejected token is not restored. A record with no renewal credential is not a session:
    * `restore()` clears it and returns null.
    */
@@ -690,18 +702,20 @@ export class SessionCredential {
     // after a 401: the sign-in is still live, so a mint already under way is the fresh token
     // the caller wants. The renewal credential stays, so the next use can renew it.
     if (!dropKey) {
+      const droppedToken = this.minted?.accessToken ?? "";
+      const renewAtInvalidate = this.renewCredential;
       this.carriedSession = this.minted?.session ?? this.carriedSession;
       this.minted = null;
       this.epoch++;
       const key = this.key;
-      if (this.store && isWebCryptoKey(key)) this.dropStoredToken(key);
-      else this.enqueueClear();
+      if (this.store && isWebCryptoKey(key)) this.dropStoredToken(key, droppedToken, renewAtInvalidate);
       return this.tailSettled();
     }
     this.abortRenewWait();
     this.minted = null;
     this.generation++;
     this.signedOut = true;
+    this.explicitClear = true;
     this.canCreateRecord = false;
     this.carriedSession = null;
     this.clearRenewal();
@@ -847,6 +861,7 @@ export class SessionCredential {
     // A sign-out (invalidate) happened while this mint was on the wire: drop the result.
     if (gen !== this.generation) throw new NotSignedInError();
     this.signedOut = false;
+    this.explicitClear = false;
     this.minted = minted;
     return minted;
   }
@@ -1019,20 +1034,21 @@ export class SessionCredential {
       session: copySession(held.session),
       ...this.renewalRecordFields(),
     };
+    const heldExpect = this.expectHeld(exportedId, held.accessToken);
     const create = this.canCreateRecord;
     const pending = this.invokeStore(() =>
-      create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
+      create ? this.store!.save(record) : this.store!.saveIfCurrent(record, heldExpect),
     );
     const saved = await this.bounded(pending);
     if (!saved.ok) {
       // The call may still land after the timeout. A sign-out that won in the meantime
       // deletes again so the late write does not put the record back.
       void pending.then(() => {
-        void this.afterWrite(gen, epoch, create);
+        void this.afterWrite(gen, epoch, create, heldExpect);
       }, () => undefined);
       return "skip";
     }
-    await this.afterWrite(gen, epoch, create);
+    await this.afterWrite(gen, epoch, create, heldExpect);
     if (this.generation !== gen || this.signedOut) return "skip";
     if (this.epoch !== epoch) return "retry";
     return "saved";
@@ -1042,11 +1058,9 @@ export class SessionCredential {
    * After a write that landed: a fresh sign-in becomes update-only when this write is still
    * the latest one. A sign-out that won deletes again, so the write does not resurrect it.
    */
-  private async afterWrite(gen: number, epoch: number, create: boolean): Promise<void> {
+  private async afterWrite(gen: number, epoch: number, create: boolean, written: CurrentRecordExpect): Promise<void> {
     if (this.generation !== gen || this.signedOut) {
-      if (!this.minted || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
-      }
+      if (!this.minted || this.signedOut) await this.wipeLanded(written);
       return;
     }
     // A newer adopt bumped the epoch and may still need to create. Don't disarm it.
@@ -1061,43 +1075,86 @@ export class SessionCredential {
     return publicKey;
   }
 
-  /** Keeps the key in the store and removes the token. Queued behind a save already in flight. */
-  private dropStoredToken(key: DpopWebCryptoKey): void {
+  /**
+   * The record this tab may still change. A renewal credential is the match.
+   * With none, the access token is. `publicKeyId` is the one already exported.
+   */
+  private expectHeld(publicKeyId: string, accessToken: string): CurrentRecordExpect {
+    if (this.renewCredential) return { publicKeyId, renew: this.renewCredential };
+    return { publicKeyId, renew: null, accessToken };
+  }
+
+  /**
+   * Undoes a write that landed after the sign-in ended. An explicit sign-out
+   * deletes whatever is stored. A dead sign-in deletes only the record it wrote.
+   */
+  private async wipeLanded(written: CurrentRecordExpect): Promise<void> {
+    if (!this.store) return;
+    const run = this.explicitClear
+      ? () => this.store!.clear()
+      : () => this.store!.clearIfCurrent(written);
+    await this.bounded(this.invokeStore(run));
+  }
+
+  /** An explicit sign-out's follow-up delete. A dead sign-in does not use this. */
+  private async clearBecauseSignOut(): Promise<void> {
+    if (!this.store || !this.explicitClear) return;
+    await this.bounded(this.invokeStore(() => this.store!.clear()));
+  }
+
+  /**
+   * Drops the stored access token when the record is still this tab's key and
+   * credential. Another tab's rotation is left as it is. Queued behind a save
+   * already in flight.
+   */
+  private dropStoredToken(key: DpopWebCryptoKey, droppedAccessToken: string, renewAtInvalidate: string | null): void {
     const gen = this.generation;
     const privateKey = key.privateKey;
     const jwk = key.publicJwk;
+    const expectAtStart: CurrentRecordExpect | null = this.publicKeyId
+      ? (renewAtInvalidate
+        ? { publicKeyId: this.publicKeyId, renew: renewAtInvalidate }
+        : { publicKeyId: this.publicKeyId, renew: null, accessToken: droppedAccessToken })
+      : null;
     void this.enqueue(async () => {
-      if (this.generation !== gen || this.signedOut) return;
+      if (this.generation !== gen || this.signedOut) {
+        await this.clearBecauseSignOut();
+        return;
+      }
       // A newer live token landed. Its own save writes the record.
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       let publicKey = this.publicCryptoKey;
       try {
         if (!publicKey) publicKey = await importDpopPublicKey(jwk);
       } catch {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        if (expectAtStart) await this.bounded(this.invokeStore(() => this.store!.clearIfCurrent(expectAtStart)));
         return;
       }
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.clearBecauseSignOut();
         return;
       }
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       // Same export as a normal save: outside the transaction, before the store call.
       const exportedId = await publicKeyIdOf(publicKey);
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.clearBecauseSignOut();
         return;
       }
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       if (!exportedId) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        if (expectAtStart) await this.bounded(this.invokeStore(() => this.store!.clearIfCurrent(expectAtStart)));
         return;
       }
       if (this.publicKeyId === null) this.publicKeyId = exportedId;
       const samePublicKeyId = this.publicKeyId;
       if (samePublicKeyId !== exportedId) return;
+      // A renew since this invalidate adopted another credential. Writing now would
+      // blank that token. The next renew re-reads the store.
+      if (this.renewCredential !== renewAtInvalidate) return;
       // The access token is dropped. A renewal credential stays, with the session, so a
       // reload can renew. With no renewal credential the empty token is not a session.
+      // The write expects the credential this tab held, so a newer rotation is not replaced.
       const kept = this.carriedSession;
       const record: StoredSession = {
         version: STORED_SESSION_VERSION,
@@ -1108,28 +1165,28 @@ export class SessionCredential {
         session: kept ? copySession(kept) : { principal: "", vault: null, vaults: [] },
         ...this.renewalRecordFields(),
       };
+      const heldExpect: CurrentRecordExpect = renewAtInvalidate
+        ? { publicKeyId: samePublicKeyId, renew: renewAtInvalidate }
+        : { publicKeyId: samePublicKeyId, renew: null, accessToken: droppedAccessToken };
       const epoch = this.epoch;
-      const create = this.canCreateRecord;
-      const pending = this.invokeStore(() =>
-        create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
-      );
+      const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, heldExpect));
       const saved = await this.bounded(pending);
       if (!saved.ok) {
         void pending.then(() => {
           if (this.generation !== gen || this.signedOut) {
-            void this.bounded(this.invokeStore(() => this.store!.clear())).then(() => undefined, () => undefined);
+            void this.wipeLanded(heldExpect).then(() => undefined, () => undefined);
             return;
           }
-          if (create && this.epoch === epoch) this.canCreateRecord = false;
+          if (this.epoch === epoch) this.canCreateRecord = false;
           this.hadStoredRecord = true;
         }, () => undefined);
         return;
       }
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.wipeLanded(heldExpect);
         return;
       }
-      if (create && this.epoch === epoch) this.canCreateRecord = false;
+      if (this.epoch === epoch) this.canCreateRecord = false;
       this.hadStoredRecord = true;
     });
   }
@@ -1143,6 +1200,70 @@ export class SessionCredential {
       if (this.minted && !this.signedOut) return;
       await this.bounded(this.invokeStore(() => this.store!.clear()));
     });
+  }
+
+  /**
+   * This tab's sign-in is dead. The in-memory sign-in ends, the same way an
+   * explicit sign-out does. The store is cleared only when it still holds
+   * `expect`. Another tab's newer key or credential is left alone.
+   */
+  private async endDeadSignIn(expect: CurrentRecordExpect): Promise<void> {
+    this.abortRenewWait();
+    this.minted = null;
+    this.generation++;
+    this.signedOut = true;
+    this.canCreateRecord = false;
+    this.carriedSession = null;
+    this.clearRenewal();
+    this.epoch++;
+    this.inflight = null;
+    this.renewInflight = null;
+    if (!this.hostKey) {
+      this.key = null;
+      this.keyInflight = null;
+      this.publicCryptoKey = null;
+      this.publicKeyId = null;
+    }
+    this.startClearIfCurrent(expect);
+    this.enqueueClearIfCurrent(expect);
+    await this.tailSettled();
+  }
+
+  /** Starts a conditional delete before yielding, when the call itself does. Failures are swallowed. */
+  private startClearIfCurrent(expect: CurrentRecordExpect): void {
+    const store = this.store;
+    if (!store) return;
+    try {
+      const pending = store.clearIfCurrent(expect);
+      void pending.then(() => undefined, () => undefined);
+    } catch {
+      // A sync throw is the same as a rejected clear: the queued clear tries once more.
+    }
+  }
+
+  /** Deletes `expect` after anything already queued, unless a newer sign-in is now held. */
+  private enqueueClearIfCurrent(expect: CurrentRecordExpect): void {
+    if (!this.store) return;
+    const gen = this.generation;
+    void this.enqueue(async () => {
+      if (this.generation !== gen) return;
+      if (this.minted && !this.signedOut) return;
+      await this.bounded(this.invokeStore(() => this.store!.clearIfCurrent(expect)));
+    });
+  }
+
+  /**
+   * Clears a record this tab just judged unusable, and only when it is still
+   * that record. A value with no `publicKeyId` is garbage: nothing can name it,
+   * so the unconditional clear is the only way to drop it.
+   */
+  private async clearLoaded(store: SessionStore, raw: unknown): Promise<void> {
+    const expect = expectOfStored(raw);
+    if (!expect) {
+      await this.bounded(this.invokeStore(() => store.clear()));
+      return;
+    }
+    await this.bounded(this.invokeStore(() => store.clearIfCurrent(expect)));
   }
 
   /** Starts the delete before yielding, when the store's `clear` does. Failures are swallowed. */
@@ -1189,14 +1310,14 @@ export class SessionCredential {
     // A plain invalidate drops the access token and keeps the renewal credential.
     const record = full ?? storedRenewalHolding(loaded.value);
     if (!record) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, loaded.value);
       return null;
     }
     const matches = await keyPairMatches(record.keyPair.privateKey, record.keyPair.publicKey);
     const stoppedAfterPair = await this.restoreStopped(store, gen, serial);
     if (stoppedAfterPair) return stoppedAfterPair.session;
     if (!matches) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, record);
       return null;
     }
     let jwk: DpopPublicJwk | null = null;
@@ -1210,7 +1331,7 @@ export class SessionCredential {
     if (stoppedAfterJwk) return stoppedAfterJwk.session;
     // Missing id was already refused. This refuses an id that is not the stored public key.
     if (!jwk || !publicKeyId || publicKeyId !== record.publicKeyId) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, record);
       return null;
     }
     // No await between this check and the adopt, so a sign-out cannot land in between.
@@ -1222,7 +1343,7 @@ export class SessionCredential {
     const renewal = readStoredRenewal(record, this.now());
     const tokenLive = full !== null && this.tokenIsLive(record.expiresAt);
     if (!tokenLive && !renewal) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, record);
       return null;
     }
     // The clear above is the only await on the dead-token path. A sign-out or a sign-in
@@ -1305,14 +1426,17 @@ export class SessionCredential {
    * and that renewal is still in date, this renews with the adopted credential before it
    * releases the lock. When that renewal has expired, the sign-in is over.
    *
-   * A 401 ends the sign-in (the store is cleared, the token and the credential are dropped,
-   * `session` is null) and this returns null. A network error, a timeout, or a 5xx keeps the
-   * sign-in and throws {@link RenewalUnavailableError}. The same credential is presented once
-   * more within {@link RENEW_RETRY_MS}, and once more after that window. A 200 from that
-   * last try adopts the rotation. A 401 ends the sign-in. A network error, a timeout, or a
-   * 5xx records a new attempt time. A sign-out that starts while this is in flight wins:
-   * the answer is not stored, and the lock wait ends. An empty store, when this instance
-   * had a record, is another tab's sign-out: nothing is presented.
+   * A 401 ends the sign-in (the token and the credential are dropped, `session` is null)
+   * and this returns null. The stored record is cleared only when it is still the credential
+   * that was refused. A network error, a timeout, or a 5xx keeps the sign-in and throws
+   * {@link RenewalUnavailableError}. The same credential is presented once more within
+   * {@link RENEW_RETRY_MS}, and once more after that window. A 200 from that last try adopts
+   * the rotation. A 401 ends the sign-in. A network error, a timeout, or a 5xx records a
+   * new attempt time. A sign-out that starts while this is in flight wins: the answer is not
+   * stored, and the lock wait ends. An empty store, when this instance had a record, is
+   * another tab's sign-out: nothing is presented. A save of a rotation expects the credential
+   * that was presented. If the store holds a different one, the new session stays in memory
+   * and the next renew re-reads the store.
    *
    * With no `navigator.locks`, two tabs can both present the same credential. The platform
    * then ends the sign-in, and the tab that presented it second is signed out.
@@ -1560,7 +1684,9 @@ export class SessionCredential {
     // No record, and this instance had stored one: another tab signed out.
     // Do not present. A record that was never written is not this case.
     if (!stored && this.hadStoredRecord) {
-      await this.invalidate(true);
+      // The record is already gone. clearIfCurrent leaves a credential another tab
+      // may have written since this load. This tab still signs out and does not present.
+      await this.endDeadSignIn({ publicKeyId: heldKeyId, renew: heldRenew });
       return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
     }
     if (!stored || stored.publicKeyId !== heldKeyId) return { action: "post", credential: heldRenew, stored: null };
@@ -1597,8 +1723,10 @@ export class SessionCredential {
       return { action: "post", credential: renewal.renew, stored: record };
     }
     // Token inside the guard or gone, and the renewal is not live (including a
-    // renewExpiresAt that has already passed). The sign-in is over.
-    await this.invalidate(true);
+    // renewExpiresAt that has already passed). The sign-in is over. Clear only
+    // when the store still holds this dead record.
+    const expect = expectOfStored(record) ?? { publicKeyId: record.publicKeyId, renew: null, accessToken: "" };
+    await this.endDeadSignIn(expect);
     return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
   }
 
@@ -1766,18 +1894,18 @@ export class SessionCredential {
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
     if (raced.status === 401) {
-      await this.invalidate(true);
+      await this.endDeadSignIn({ publicKeyId: this.publicKeyId ?? "", renew: credential });
       return { ok: false, kind: "unauthorized" };
     }
     if (raced.status < 200 || raced.status > 299) return rearmLast();
     const parsed = parseRenewed(raced.body);
     if (!parsed) {
       // The server answered 200, so the credential we sent may be spent. Drop it.
-      // Presenting it again would end the sign-in.
-      await this.invalidate(true);
+      // Presenting it again would end the sign-in. Another tab's credential stays.
+      await this.endDeadSignIn({ publicKeyId: this.publicKeyId ?? "", renew: credential });
       return { ok: false, kind: "unauthorized" };
     }
-    return this.commitRenewal(gen, serial, parsed, signal, deadline);
+    return this.commitRenewal(gen, serial, parsed, signal, deadline, credential);
   }
 
   /**
@@ -1804,7 +1932,10 @@ export class SessionCredential {
     else delete record.renewAttemptAt;
     if (this.renewGraceUsed) record.renewGraceUsed = true;
     else delete record.renewGraceUsed;
-    const pending = this.invokeStore(() => this.store!.saveIfSameKey(record, this.publicKeyId!));
+    const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, {
+      publicKeyId: this.publicKeyId!,
+      renew: this.renewCredential,
+    }));
     const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
     if (signal.aborted || this.generation !== gen || this.signedOut) return "signed-out";
     if (this.signInSerial !== serial) return "superseded";
@@ -1893,6 +2024,7 @@ export class SessionCredential {
     next: RenewedBody,
     signal: AbortSignal,
     deadline: number,
+    presentedRenew: string,
   ): Promise<RenewAttempt> {
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
@@ -1920,22 +2052,28 @@ export class SessionCredential {
     this.carriedSession = null;
     this.minted = minted;
     const epoch = ++this.epoch;
-    const saved = await this.saveRenewedRecord(gen, serial, epoch, minted, signal, deadline);
+    const saved = await this.saveRenewedRecord(gen, serial, epoch, minted, signal, deadline, presentedRenew);
     if (saved === "signed-out") return { ok: false, kind: "signed-out" };
     if (saved === "superseded") return { ok: false, kind: "superseded" };
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
-    // A failed save keeps the new session in memory. Nothing secret is logged.
-    // The store still holds the previous credential. A reload within the retry
-    // window presents it once. After that, one last try: a refusal ends the sign-in.
+    // A failed save keeps the new session in memory. So does a save that found a
+    // different credential already stored: this tab does not overwrite another
+    // tab's rotation. The next renew re-reads the store under the lock. Nothing
+    // secret is logged. When the previous credential is still stored, a reload
+    // within the retry window presents it once. After that, one last try: a
+    // refusal ends the sign-in.
     return { ok: true, session: minted.session };
   }
 
   /**
-   * Update-only save of the rotated record. The wait is capped, like every other store
-   * call on this path. A timeout or a throw leaves the new session in memory and the
-   * previous credential in the store. A sign-out after the write deletes it again.
-   * A newer sign-in is left to its own save.
+   * Update-only save of the rotated record. The stored record must still hold
+   * `presentedRenew`, the credential this request sent. A different credential
+   * means another tab rotated: this save writes nothing, and the new session
+   * stays in memory for the next renew to re-read. The wait is capped, like
+   * every other store call on this path. A timeout or a throw leaves the new
+   * session in memory and the previous credential in the store. A sign-out
+   * after the write deletes it again. A newer sign-in is left to its own save.
    */
   private async saveRenewedRecord(
     gen: number,
@@ -1944,6 +2082,7 @@ export class SessionCredential {
     minted: Minted,
     signal: AbortSignal,
     deadline: number,
+    presentedRenew: string,
   ): Promise<"saved" | "signed-out" | "superseded" | "skipped"> {
     if (signal.aborted) return "signed-out";
     if (!this.store || !isWebCryptoKey(this.key)) return "skipped";
@@ -1972,7 +2111,9 @@ export class SessionCredential {
       ...fields,
     };
     const samePublicKeyId = this.publicKeyId;
-    const pending = this.invokeStore(() => this.store!.saveIfSameKey(record, samePublicKeyId));
+    const presentedExpect: CurrentRecordExpect = { publicKeyId: samePublicKeyId, renew: presentedRenew };
+    const writtenExpect: CurrentRecordExpect = { publicKeyId: samePublicKeyId, renew: fields.renew };
+    const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect));
     const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
     const landed = saved.ok;
     if (!landed) {
@@ -1980,20 +2121,69 @@ export class SessionCredential {
       // does not put the record back. No log: the record holds the credential.
       void pending.then(() => {
         if (this.generation !== gen || this.signedOut) {
-          void this.bounded(this.invokeStore(() => this.store!.clear())).then(() => undefined, () => undefined);
+          void this.wipeLanded(writtenExpect).then(() => undefined, () => undefined);
         }
       }, () => undefined);
     }
     if (signal.aborted || this.generation !== gen || this.signedOut) {
-      if (landed) await this.bounded(this.invokeStore(() => this.store!.clear()));
+      if (landed) await this.wipeLanded(writtenExpect);
       return "signed-out";
     }
     if (this.signInSerial !== serial || this.minted?.accessToken !== minted.accessToken) return "superseded";
     if (!landed) return "skipped";
+    // The save resolved. A store that yields between its compare and its put can
+    // still be holding the credential we presented: a stale invalidate matched
+    // that credential and committed first, and this put then aborted. IndexedDB
+    // does not yield there. Try again while that spent credential is what is stored.
+    // A different credential is another tab's rotation and is left alone.
+    const repaired = await this.repairSpentCredential(
+      gen, serial, record, presentedExpect, presentedRenew, writtenExpect, signal, deadline,
+    );
+    if (repaired === "signed-out") return "signed-out";
     if (this.epoch === epoch) this.lastWrittenEpoch = epoch;
     this.canCreateRecord = false;
     this.hadStoredRecord = true;
     return "saved";
+  }
+
+  /**
+   * Puts the rotated record again when the store still holds `presentedRenew`.
+   * Stops when the new credential is stored, the record is gone, or a different
+   * credential is there. A sign-out deletes the rotated record if this write landed.
+   */
+  private async repairSpentCredential(
+    gen: number,
+    serial: number,
+    record: StoredSession,
+    presentedExpect: CurrentRecordExpect,
+    presentedRenew: string,
+    writtenExpect: CurrentRecordExpect,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<"ok" | "signed-out"> {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const loaded = await this.bounded(this.store!.load(), this.storeWaitMs(deadline), signal);
+      if (signal.aborted || this.generation !== gen || this.signedOut) {
+        await this.wipeLanded(writtenExpect);
+        return "signed-out";
+      }
+      if (this.signInSerial !== serial) return "ok";
+      if (!loaded.ok || !loaded.value) return "ok";
+      if (loaded.value.publicKeyId !== record.publicKeyId) return "ok";
+      const storedRenew = typeof loaded.value.renew === "string" && loaded.value.renew.length > 0
+        ? loaded.value.renew
+        : null;
+      if (storedRenew === record.renew) return "ok";
+      if (storedRenew !== presentedRenew) return "ok";
+      const again = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect));
+      const saved = await this.bounded(again, this.storeWaitMs(deadline), signal);
+      if (signal.aborted || this.generation !== gen || this.signedOut) {
+        if (saved.ok) await this.wipeLanded(writtenExpect);
+        return "signed-out";
+      }
+      if (!saved.ok || this.signInSerial !== serial) return "ok";
+    }
+    return "ok";
   }
 
   private renewStopped(gen: number, serial: number): boolean {
