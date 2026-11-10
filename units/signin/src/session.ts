@@ -34,7 +34,8 @@
 //      access token is inside the guard (or `renew()` is called). The proof carries no access
 //      token. The answer replaces the token and the credential. If that answer is lost, the
 //      server accepts the previous credential once more within 60 s. This client retries it
-//      once, and only within 50 s of the first attempt.
+//      once within 45 s of the attempt, measured when the request is about to be sent, and
+//      presents it once more after that. A refusal then ends the sign-in.
 //   4. The DPoP session bridge, when the host names its URL (`dpopMintUrl`): a POST that rides the
 //      platform's session cookie and returns a token bound to this key, and the vault list with
 //      it. That re-mint is what keeps a first-party page signed in across a reload. Those pages
@@ -83,18 +84,19 @@ export const SIGN_OUT_BOUND_MS = 3_000;
 
 /**
  * How long one renew request may take. Past this, the attempt counts as lost: the server
- * may already have rotated. The same credential can be presented once more, inside
- * {@link RENEW_RETRY_MS}.
+ * may already have rotated. The same credential can be presented again inside
+ * {@link RENEW_RETRY_MS}, and once more after that.
  */
 export const RENEW_TIMEOUT_MS = 10_000;
 
 /**
- * How long after the first renew attempt that may have reached the server this client
- * will present that same credential again. The server accepts the immediately previous
- * credential once, within 60 s of the rotation. 50 s leaves room for the retry to arrive
- * inside that window. After this, the credential is not presented again.
+ * How long after a renew attempt this client presents that same credential again as the
+ * grace retry. The server accepts the immediately previous credential once, within 60 s
+ * of the rotation. 45 s leaves transit margin under that window. The comparison is made
+ * when the request is about to be sent, after the attempt mark is saved. After this
+ * window the client presents the held credential once more.
  */
-export const RENEW_RETRY_MS = 50_000;
+export const RENEW_RETRY_MS = 45_000;
 
 /**
  * How long a store call the credential is waiting on may take. Past this, the call is a storage
@@ -196,10 +198,12 @@ export class OriginNotAllowedError extends Error {
  * Thrown when a renewal did not finish and the sign-in is still held.
  *
  * A network error, a timeout, or a 5xx means the server may already have rotated.
- * This client presents that same credential once more, and only within
- * {@link RENEW_RETRY_MS} of the first attempt (`renewAttemptAt` on the stored record,
- * so a reload can retry too). After that it does not present the credential again.
- * The next presentation would likely end the sign-in. The person signs in again.
+ * Within {@link RENEW_RETRY_MS} of the recorded attempt this client presents that
+ * same credential once more. After that window it presents the credential one last
+ * time. A 200 adopts the rotation. A 401 ends the sign-in. A network error, a
+ * timeout, or a 5xx on that last try records a new attempt time, and the next try
+ * inside the window is a grace retry. The client does not keep throwing this with
+ * no request.
  */
 export class RenewalUnavailableError extends Error {
   constructor() {
@@ -375,6 +379,17 @@ export class SessionCredential {
   private renewAttemptAt: number | null = null;
   /** The one grace retry for {@link renewCredential} has been handed to the transport. */
   private renewGraceUsed = false;
+  /**
+   * The attempt mark for the presentation just handed to the transport did not land.
+   * This instance still honours its in-memory attempt, and does not present that
+   * credential again inside the same retry window. A reload does not see the mark.
+   */
+  private renewMarkFailed = false;
+  /**
+   * This instance has had its record in the store. An empty load inside renew is then
+   * another tab's sign-out. A load that fails or times out is not an empty record.
+   */
+  private hadStoredRecord = false;
   /** Aborts the in-flight renew wait. A sign-out must not sit behind that lock. */
   private renewAbort: AbortController | null = null;
   /**
@@ -619,9 +634,8 @@ export class SessionCredential {
    * first, on the same path a cookie-bridge re-mint uses. A 401 from that renew ends the
    * sign-in and throws {@link NotSignedInError}. A network error, a timeout, or a 5xx throws
    * {@link RenewalUnavailableError} and keeps the sign-in. The same credential is presented
-   * again only within {@link RENEW_RETRY_MS} of the first attempt that may have reached the
-   * server, and only once. After that this throws {@link RenewalUnavailableError} and does
-   * not send it.
+   * once more within {@link RENEW_RETRY_MS} of the recorded attempt, and once more after
+   * that window. That later presentation adopts on 200 and ends the sign-in on 401.
    *
    * @param method the HTTP method
    * @param url the absolute URL of the request; `htu` is derived from it
@@ -665,9 +679,11 @@ export class SessionCredential {
    * runs, can leave a record. That follow-up runs when the save finishes, which does not
    * happen if the page is already gone.
    *
-   * A plain `invalidate()` keeps the in-memory key and drops the stored token. The key stays
-   * in the record with an empty token, so the rejected token is not restored. `restore()`
-   * treats that record as not a session, clears it, and returns null.
+   * A plain `invalidate()` keeps the in-memory key and drops the stored access token. The
+   * renewal credential stays on the record (`renew`, `renewExpiresAt`, `origin`,
+   * `renewAttemptAt`, `renewGraceUsed`), with the session, so a reload can renew. The
+   * rejected token is not restored. A record with no renewal credential is not a session:
+   * `restore()` clears it and returns null.
    */
   invalidate(dropKey = false): Promise<void> {
     // Only a sign-out (dropKey) stops work in progress. A plain invalidate() is the re-mint
@@ -714,7 +730,8 @@ export class SessionCredential {
    * renewal credential whose `renewExpiresAt` is still in the future. That is the only request
    * this method makes. A network error, a timeout, or a 5xx from that renew throws
    * {@link RenewalUnavailableError} and leaves the record in place. The same credential is
-   * sent again only within {@link RENEW_RETRY_MS}, once. A 401 clears it and returns null.
+   * sent once more within {@link RENEW_RETRY_MS}, and once more after that. A 401 clears
+   * it and returns null. An empty access token with a live renewal credential is renewed.
    *
    * Absent, wrong version, malformed (including a missing `publicKeyId`, or one that is not
    * the stored public key's `x.y`), a key pair whose halves do not match, or a token that
@@ -1034,6 +1051,7 @@ export class SessionCredential {
     }
     // A newer adopt bumped the epoch and may still need to create. Don't disarm it.
     if (create && this.epoch === epoch) this.canCreateRecord = false;
+    this.hadStoredRecord = true;
   }
 
   private async cachedPublicKey(key: DpopWebCryptoKey): Promise<CryptoKey> {
@@ -1078,14 +1096,17 @@ export class SessionCredential {
       if (this.publicKeyId === null) this.publicKeyId = exportedId;
       const samePublicKeyId = this.publicKeyId;
       if (samePublicKeyId !== exportedId) return;
-      // Empty token and empty principal: not a session. `restore` clears it.
+      // The access token is dropped. A renewal credential stays, with the session, so a
+      // reload can renew. With no renewal credential the empty token is not a session.
+      const kept = this.carriedSession;
       const record: StoredSession = {
         version: STORED_SESSION_VERSION,
         keyPair: { publicKey, privateKey },
         publicKeyId: exportedId,
         accessToken: "",
         expiresAt: 0,
-        session: { principal: "", vault: null, vaults: [] },
+        session: kept ? copySession(kept) : { principal: "", vault: null, vaults: [] },
+        ...this.renewalRecordFields(),
       };
       const epoch = this.epoch;
       const create = this.canCreateRecord;
@@ -1100,6 +1121,7 @@ export class SessionCredential {
             return;
           }
           if (create && this.epoch === epoch) this.canCreateRecord = false;
+          this.hadStoredRecord = true;
         }, () => undefined);
         return;
       }
@@ -1108,6 +1130,7 @@ export class SessionCredential {
         return;
       }
       if (create && this.epoch === epoch) this.canCreateRecord = false;
+      this.hadStoredRecord = true;
     });
   }
 
@@ -1162,7 +1185,9 @@ export class SessionCredential {
     if (!loaded.ok) return null;
     const stoppedAfterLoad = await this.restoreStopped(store, gen, serial);
     if (stoppedAfterLoad) return stoppedAfterLoad.session;
-    const record = storedSessionRecord(loaded.value);
+    const full = storedSessionRecord(loaded.value);
+    // A plain invalidate drops the access token and keeps the renewal credential.
+    const record = full ?? storedRenewalHolding(loaded.value);
     if (!record) {
       await this.bounded(this.invokeStore(() => store.clear()));
       return null;
@@ -1195,7 +1220,7 @@ export class SessionCredential {
       return this.minted?.session ?? null;
     }
     const renewal = readStoredRenewal(record, this.now());
-    const tokenLive = this.tokenIsLive(record.expiresAt);
+    const tokenLive = full !== null && this.tokenIsLive(record.expiresAt);
     if (!tokenLive && !renewal) {
       await this.bounded(this.invokeStore(() => store.clear()));
       return null;
@@ -1211,7 +1236,9 @@ export class SessionCredential {
       }
     }
     // Adopted from the store: a later save must not create the record again.
+    // An empty load on a later renew is another tab's sign-out, not a missing save.
     this.canCreateRecord = false;
+    this.hadStoredRecord = true;
     this.publicCryptoKey = record.keyPair.publicKey;
     this.publicKeyId = publicKeyId;
     this.key = { publicJwk: jwk, privateKey: record.keyPair.privateKey };
@@ -1281,9 +1308,11 @@ export class SessionCredential {
    * A 401 ends the sign-in (the store is cleared, the token and the credential are dropped,
    * `session` is null) and this returns null. A network error, a timeout, or a 5xx keeps the
    * sign-in and throws {@link RenewalUnavailableError}. The same credential is presented once
-   * more only within {@link RENEW_RETRY_MS}. After that this throws and does not send it.
-   * A sign-out that starts while this is in flight wins: the answer is not stored, and the
-   * lock wait ends.
+   * more within {@link RENEW_RETRY_MS}, and once more after that window. A 200 from that
+   * last try adopts the rotation. A 401 ends the sign-in. A network error, a timeout, or a
+   * 5xx records a new attempt time. A sign-out that starts while this is in flight wins:
+   * the answer is not stored, and the lock wait ends. An empty store, when this instance
+   * had a record, is another tab's sign-out: nothing is presented.
    *
    * With no `navigator.locks`, two tabs can both present the same credential. The platform
    * then ends the sign-in, and the tab that presented it second is signed out.
@@ -1356,6 +1385,8 @@ export class SessionCredential {
     this.renewOrigin = null;
     this.renewAttemptAt = null;
     this.renewGraceUsed = false;
+    this.renewMarkFailed = false;
+    this.hadStoredRecord = false;
   }
 
   private installRenewal(renewal: StoredRenewal): void {
@@ -1365,6 +1396,7 @@ export class SessionCredential {
     this.renewOrigin = renewal.origin;
     this.renewAttemptAt = renewal.renewAttemptAt;
     this.renewGraceUsed = renewal.renewGraceUsed;
+    this.renewMarkFailed = false;
   }
 
   /** A token the server will still accept for sign-out: held, and not past its expiry. */
@@ -1521,9 +1553,18 @@ export class SessionCredential {
     const loaded = await this.bounded(this.store.load(), this.storeWaitMs(deadline), signal);
     if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
     if (this.renewStopped(gen, serial)) return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+    // A timed-out or thrown load is not an empty record. Posting over it could
+    // present a credential another tab has already rotated.
     if (!loaded.ok) return { action: "done", attempt: { ok: false, kind: "transient" } };
     const stored = loaded.value;
+    // No record, and this instance had stored one: another tab signed out.
+    // Do not present. A record that was never written is not this case.
+    if (!stored && this.hadStoredRecord) {
+      await this.invalidate(true);
+      return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+    }
     if (!stored || stored.publicKeyId !== heldKeyId) return { action: "post", credential: heldRenew, stored: null };
+    this.hadStoredRecord = true;
     if (typeof stored.renew !== "string" || stored.renew.length === 0 || stored.renew === heldRenew) {
       if (stored.renew === heldRenew) this.noteStoredAttempt(stored);
       return { action: "post", credential: heldRenew, stored };
@@ -1584,6 +1625,7 @@ export class SessionCredential {
     else this.clearRenewal();
     this.carriedSession = null;
     this.canCreateRecord = false;
+    this.hadStoredRecord = true;
     this.minted = {
       accessToken: record.accessToken,
       expiresAt: record.expiresAt,
@@ -1596,12 +1638,25 @@ export class SessionCredential {
     return { ok: true, session: this.minted.session };
   }
 
-  /** `first` has not been sent. `grace` is the one retry. `exhausted` must not be sent. */
-  private presentationKind(): "first" | "grace" | "exhausted" {
-    if (this.renewGraceUsed) return "exhausted";
-    if (this.renewAttemptAt === null) return "first";
-    if (this.now() - this.renewAttemptAt > RENEW_RETRY_MS) return "exhausted";
-    return "grace";
+  /**
+   * `first` has not been sent. `grace` is the one retry inside the window.
+   * `last` is the one presentation after the window. `wait` must not be sent.
+   * The attempt time and the grace flag are the ones recorded before this call,
+   * so setting them for the send does not change the decision.
+   */
+  private classifyPresentation(
+    at: number,
+    attemptAt: number | null,
+    graceUsed: boolean,
+    markFailed: boolean,
+  ): "first" | "grace" | "last" | "wait" {
+    if (attemptAt === null) return "first";
+    const inWindow = at - attemptAt <= RENEW_RETRY_MS;
+    // Grace already handed off, or this instance's mark did not persist:
+    // one presentation of an unknown outcome in this window.
+    if (inWindow && (graceUsed || markFailed)) return "wait";
+    if (inWindow) return "grace";
+    return "last";
   }
 
   private async postRenew(
@@ -1617,7 +1672,19 @@ export class SessionCredential {
     if (!origin || !key) return { ok: false, kind: "none" };
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
-    if (this.presentationKind() === "exhausted") return { ok: false, kind: "transient" };
+    const attemptBefore = this.renewAttemptAt;
+    const graceBefore = this.renewGraceUsed;
+    const markFailedBefore = this.renewMarkFailed;
+    const classify = (at: number) => this.classifyPresentation(at, attemptBefore, graceBefore, markFailedBefore);
+    const stopped = (marked: string): RenewAttempt | null => {
+      if (marked === "signed-out" || signal.aborted) return { ok: false, kind: "signed-out" };
+      if (marked === "superseded") return { ok: false, kind: "superseded" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      return null;
+    };
+    // Still inside the window after the grace retry, or after a mark that did not
+    // persist. The next call, once the window has passed, presents once more.
+    if (classify(this.now()) === "wait") return { ok: false, kind: "transient" };
     const url = `${origin}${RENEW_SIGN_IN_PATH}`;
     let proof: string;
     try {
@@ -1630,27 +1697,71 @@ export class SessionCredential {
     }
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
-    // Leave one store bound so the rotated record can still be saved inside the deadline.
-    const requestMs = Math.min(RENEW_TIMEOUT_MS, deadline - Date.now() - STORE_TIMEOUT_MS);
-    if (!(requestMs > 0)) return signal.aborted ? { ok: false, kind: "signed-out" } : { ok: false, kind: "transient" };
-    const kind = this.presentationKind();
-    if (kind === "exhausted") return { ok: false, kind: "transient" };
+    let kind = classify(this.now());
+    if (kind === "wait") return { ok: false, kind: "transient" };
     if (kind === "first") {
       this.renewAttemptAt = this.now();
       this.renewGraceUsed = false;
-    } else {
+    } else if (kind === "grace") {
       this.renewGraceUsed = true;
     }
+    const markedAttempt = this.renewAttemptAt;
+    const markedGrace = this.renewGraceUsed;
     const marked = await this.persistRenewMark(gen, serial, stored, signal, deadline);
-    if (marked === "signed-out" || signal.aborted) return { ok: false, kind: "signed-out" };
-    if (marked === "superseded") return { ok: false, kind: "superseded" };
-    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    const markStop = stopped(marked);
+    if (markStop) return markStop;
+    // The window is judged when the request is about to be sent, after the mark
+    // save. A save that crosses the window turns a grace retry into the last try.
+    kind = classify(this.now());
+    if (kind === "wait") {
+      this.renewAttemptAt = attemptBefore;
+      this.renewGraceUsed = graceBefore;
+      const undone = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      return stopped(undone) ?? { ok: false, kind: "transient" };
+    }
+    let sentAt = this.now();
+    if (kind === "first") {
+      this.renewAttemptAt = sentAt;
+      this.renewGraceUsed = false;
+    } else if (kind === "grace") {
+      this.renewGraceUsed = true;
+      if (attemptBefore !== null) this.renewAttemptAt = attemptBefore;
+      sentAt = this.renewAttemptAt ?? sentAt;
+    } else {
+      // Hold other tabs until this answer is known. A lost answer clears the hold
+      // and starts a new window, so the next try is a grace retry.
+      this.renewAttemptAt = sentAt;
+      this.renewGraceUsed = true;
+    }
+    if (this.renewAttemptAt !== markedAttempt || this.renewGraceUsed !== markedGrace) {
+      const again = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      const againStop = stopped(again);
+      if (againStop) return againStop;
+    }
+    // Leave one store bound so the rotated record can still be saved inside the deadline.
+    const requestMs = Math.min(RENEW_TIMEOUT_MS, deadline - Date.now() - STORE_TIMEOUT_MS);
+    if (!(requestMs > 0)) {
+      this.renewAttemptAt = attemptBefore;
+      this.renewGraceUsed = graceBefore;
+      const undone = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      return stopped(undone) ?? (signal.aborted ? { ok: false, kind: "signed-out" } : { ok: false, kind: "transient" });
+    }
     const send = this.opts.transport ?? fetchTransport;
     const raced = await this.awaitRenewResponse(send, url, credential, proof, signal, requestMs);
+    const rearmLast = async (): Promise<RenewAttempt> => {
+      if (kind === "last") {
+        this.renewAttemptAt = sentAt;
+        this.renewGraceUsed = false;
+        if (!signal.aborted && !this.renewStopped(gen, serial)) {
+          await this.persistRenewMark(gen, serial, stored, signal, deadline);
+        }
+      }
+      return { ok: false, kind: "transient" };
+    };
     if (!raced.ok) {
       if (raced.reason === "aborted" || signal.aborted) return { ok: false, kind: "signed-out" };
       if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
-      return { ok: false, kind: "transient" };
+      return rearmLast();
     }
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
@@ -1658,7 +1769,7 @@ export class SessionCredential {
       await this.invalidate(true);
       return { ok: false, kind: "unauthorized" };
     }
-    if (raced.status < 200 || raced.status > 299) return { ok: false, kind: "transient" };
+    if (raced.status < 200 || raced.status > 299) return rearmLast();
     const parsed = parseRenewed(raced.body);
     if (!parsed) {
       // The server answered 200, so the credential we sent may be spent. Drop it.
@@ -1671,8 +1782,10 @@ export class SessionCredential {
 
   /**
    * Writes `renewAttemptAt` before the request, so a reload during the request can retry.
-   * A storage failure is not logged and does not block the send: this page still holds the
-   * time in memory. An empty token is left as it is (a plain invalidate wrote that).
+   * A storage failure is not logged and does not block this send: this page still holds
+   * the time in memory, and it does not present that credential again inside the same
+   * window. A reload does not see the mark, and presenting then can end the sign-in.
+   * An empty token (a plain invalidate) is kept empty; the attempt fields are updated.
    */
   private async persistRenewMark(
     gen: number,
@@ -1680,11 +1793,11 @@ export class SessionCredential {
     stored: StoredSession | null,
     signal: AbortSignal,
     deadline: number,
-  ): Promise<"saved" | "skipped" | "signed-out" | "superseded"> {
+  ): Promise<"saved" | "failed" | "skipped" | "signed-out" | "superseded"> {
     if (signal.aborted) return "signed-out";
     if (this.renewStopped(gen, serial)) return this.stoppedSave(gen);
     if (!this.store || !stored || !this.publicKeyId || stored.publicKeyId !== this.publicKeyId) return "skipped";
-    if (typeof stored.accessToken !== "string" || stored.accessToken.length === 0) return "skipped";
+    if (typeof stored.accessToken !== "string") return "skipped";
     if (stored.renew !== this.renewCredential) return "skipped";
     const record: StoredSession = { ...stored, ...this.renewalRecordFields() };
     if (this.renewAttemptAt !== null) record.renewAttemptAt = this.renewAttemptAt;
@@ -1695,7 +1808,12 @@ export class SessionCredential {
     const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
     if (signal.aborted || this.generation !== gen || this.signedOut) return "signed-out";
     if (this.signInSerial !== serial) return "superseded";
-    return saved.ok ? "saved" : "skipped";
+    if (!saved.ok) {
+      this.renewMarkFailed = true;
+      return "failed";
+    }
+    this.renewMarkFailed = false;
+    return "saved";
   }
 
   /**
@@ -1808,7 +1926,8 @@ export class SessionCredential {
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
     // A failed save keeps the new session in memory. Nothing secret is logged.
-    // A reload within the server's 60 s grace can still present the stored credential once.
+    // The store still holds the previous credential. A reload within the retry
+    // window presents it once. After that, one last try: a refusal ends the sign-in.
     return { ok: true, session: minted.session };
   }
 
@@ -1873,6 +1992,7 @@ export class SessionCredential {
     if (!landed) return "skipped";
     if (this.epoch === epoch) this.lastWrittenEpoch = epoch;
     this.canCreateRecord = false;
+    this.hadStoredRecord = true;
     return "saved";
   }
 
@@ -2036,6 +2156,25 @@ function storedSessionRecord(raw: unknown): StoredSession | null {
   if (typeof record.accessToken !== "string" || record.accessToken.length === 0) return null;
   if (typeof record.expiresAt !== "number" || !Number.isFinite(record.expiresAt)) return null;
   if (!isGilbSession(record.session)) return null;
+  return record as StoredSession;
+}
+
+/**
+ * A plain `invalidate` leaves the key and the renewal credential, with an empty
+ * access token. `restore` renews that record. A record with no renewal is not this.
+ */
+function storedRenewalHolding(raw: unknown): StoredSession | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Partial<StoredSession>;
+  if (record.version !== STORED_SESSION_VERSION) return null;
+  if (!record.keyPair || typeof record.keyPair !== "object") return null;
+  if (!isSigningPrivateKey(record.keyPair.privateKey) || !isVerifyPublicKey(record.keyPair.publicKey)) return null;
+  if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
+  if (typeof record.accessToken !== "string" || record.accessToken.length > 0) return null;
+  if (!isGilbSession(record.session)) return null;
+  if (typeof record.renew !== "string" || record.renew.length === 0) return null;
+  if (typeof record.renewExpiresAt !== "string") return null;
+  if (typeof record.origin !== "string" || record.origin.length === 0) return null;
   return record as StoredSession;
 }
 

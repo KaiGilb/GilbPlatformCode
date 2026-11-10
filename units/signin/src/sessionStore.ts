@@ -51,14 +51,15 @@ export interface StoredSession {
    * one that is not the stored public key's own `x.y`.
    */
   publicKeyId: string;
-  /** Empty when a 401 dropped the token and the key was kept. Not a session `restore` adopts. */
+  /** Empty when a 401 dropped the token and the key was kept. Not a session `restore` adopts, unless `renew` is still in date: then `restore` renews. */
   accessToken: string;
   /** Epoch milliseconds. `0` when the token was dropped. */
   expiresAt: number;
   session: GilbSession;
   /**
    * Renewal credential (`rsi1.<familyId>.<secret>`). Optional. A record without it
-   * cannot be renewed. Presenting one credential twice ends the sign-in.
+   * cannot be renewed. The server accepts the immediately previous credential once,
+   * inside 60 seconds. Anything else ends the sign-in.
    */
   renew?: string;
   /** ISO-8601 expiry of {@link renew}. Optional, and absent when `renew` is absent. */
@@ -69,13 +70,15 @@ export interface StoredSession {
    */
   origin?: string;
   /**
-   * Epoch milliseconds of the first renew attempt for this credential that may have
-   * reached the server. A reload uses it to retry inside the short grace, and not after.
+   * Epoch milliseconds of the renew attempt for this credential that may have reached
+   * the server. A reload inside the retry window retries once. After that window one
+   * last try may present it again. A lost last try replaces this with the new attempt.
    */
   renewAttemptAt?: number;
   /**
-   * The one grace retry has already been handed to the transport. A later load must
-   * not present this credential again: the server accepts the previous secret only once.
+   * The grace retry for this attempt has been handed to the transport. A load inside
+   * the retry window must not present the credential again. After the window, one
+   * last try may. A lost last try clears this so the next try is a grace retry.
    */
   renewGraceUsed?: boolean;
 }
