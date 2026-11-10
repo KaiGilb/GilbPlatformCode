@@ -22,6 +22,11 @@ export interface TransportRequest {
   credentials?: RequestCredentials;
   /** Give up after this many milliseconds. */
   timeoutMs: number;
+  /**
+   * When set, the transport should abort the underlying request. A transport that
+   * ignores it still works: callers that must give up also stop waiting.
+   */
+  signal?: AbortSignal;
 }
 
 /** The part of a response the kit reads. A `fetch` `Response` satisfies it. */
@@ -46,8 +51,25 @@ export const fetchTransport: Transport = (url, req) =>
     headers: req.headers,
     body: req.body,
     credentials: req.credentials,
-    signal: AbortSignal.timeout(req.timeoutMs),
+    signal: combineAbort(AbortSignal.timeout(req.timeoutMs), req.signal),
   });
+
+/** One signal that aborts when either input aborts. A missing extra signal is the timeout alone. */
+function combineAbort(timeout: AbortSignal, extra: AbortSignal | undefined): AbortSignal {
+  if (!extra) return timeout;
+  if (extra.aborted || timeout.aborted) {
+    const already = new AbortController();
+    already.abort();
+    return already.signal;
+  }
+  const controller = new AbortController();
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  timeout.addEventListener("abort", abort, { once: true });
+  extra.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
 
 /** Per-call options shared by the kit's HTTP helpers. */
 export interface HttpOptions {

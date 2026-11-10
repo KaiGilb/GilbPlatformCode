@@ -1,15 +1,18 @@
 // Renewal and server sign-out. Fake transport, in-memory store, and a fake
 // navigator.locks installed per test. No network.
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import assert from "node:assert/strict";
 import {
   SessionCredential,
   NotSignedInError,
   RenewalUnavailableError,
   EXPIRY_GUARD_MS,
+  RENEW_RETRY_MS,
+  RENEW_TIMEOUT_MS,
   RENEW_WINDOW_MAX_SEC,
   RENEW_WINDOW_MIN_SEC,
   SIGN_OUT_BOUND_MS,
+  STORE_TIMEOUT_MS,
   STORED_SESSION_VERSION,
   type SessionStore,
   type StoredSession,
@@ -486,4 +489,461 @@ test("signOut clears even when the server hangs, and reports serverSignedOut fal
   assert.equal(store.peek(), null);
   assert.ok(elapsed >= SIGN_OUT_BOUND_MS - 500);
   assert.ok(elapsed < SIGN_OUT_BOUND_MS + 1500);
+});
+
+/** Lets a real crypto promise settle while `setTimeout` is faked. */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/**
+ * Renew route with the platform's one-shot grace: the current secret rotates, and the
+ * immediately previous secret is accepted once when `clock()` is within 60 s of that rotation.
+ * Anything older is `reuse`. `loseCount` answers are dropped after the rotation is recorded.
+ */
+function graceRenew(clock: () => number, opts?: { lose?: "throw" | number; loseCount?: number; holdFirst?: Promise<void> }) {
+  let current = OLD_RENEW;
+  let serial = 0;
+  let previous: { secret: string; at: number } | null = null;
+  let reuse = 0;
+  let lost = 0;
+  const presented: string[] = [];
+  const loseCount = opts?.loseCount ?? (opts?.lose === undefined ? 0 : 1);
+  const send: Transport = async (url, req) => {
+    if (url !== RENEW_URL) return jsonResponse(500, { error: "unexpected" });
+    const secret = (JSON.parse(req.body ?? "{}") as { renew?: unknown }).renew;
+    if (typeof secret !== "string") return jsonResponse(400, {});
+    presented.push(secret);
+    const withinGrace = previous !== null && secret === previous.secret && clock() - previous.at <= 60_000;
+    if (secret !== current && !withinGrace) {
+      reuse += 1;
+      return jsonResponse(401, { error: "Unauthorized", message: "reuse-detected" });
+    }
+    const wasCurrent = secret === current;
+    previous = { secret: current, at: clock() };
+    serial += 1;
+    current = `rsi1.fam.rot-${serial}`;
+    if (lost < loseCount && (wasCurrent || withinGrace)) {
+      lost += 1;
+      if (opts?.holdFirst && lost === 1) await opts.holdFirst;
+      if (opts?.lose === "throw") throw new TypeError("Failed to fetch");
+      return jsonResponse(typeof opts?.lose === "number" ? opts.lose : 504, { error: "lost" });
+    }
+    return jsonResponse(200, renewedBody(current));
+  };
+  return { send, presented, reuse: () => reuse, current: () => current };
+}
+
+function hangStore(inner: Mem, mode: { hangLoadAfter?: number; hangSavesAfter?: number; throwSaveAt?: number[] }): Mem {
+  let loads = 0;
+  let saves = 0;
+  return {
+    peek: () => inner.peek(),
+    async load() {
+      loads += 1;
+      if (mode.hangLoadAfter !== undefined && loads > mode.hangLoadAfter) return new Promise(() => {});
+      return inner.load();
+    },
+    save: (session) => inner.save(session),
+    async saveIfSameKey(session, samePublicKeyId) {
+      saves += 1;
+      if (mode.throwSaveAt?.includes(saves)) throw new Error("store save failed");
+      if (mode.hangSavesAfter !== undefined && saves > mode.hangSavesAfter) return new Promise(() => {});
+      return inner.saveIfSameKey(session, samePublicKeyId);
+    },
+    clear: () => inner.clear(),
+  };
+}
+
+test("a lost renew answer is presented once more within 50s and the grace server accepts it", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const server = graceRenew(() => now, { lose: "throw" });
+  const cred = new SessionCredential({ store, transport: server.send, now: () => now });
+  assert.ok(await cred.restore());
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(store.peek()?.renew, OLD_RENEW);
+  assert.equal(store.peek()?.renewAttemptAt, NOW);
+  assert.equal(store.peek()?.renewGraceUsed, undefined);
+  assert.deepEqual(server.presented, [OLD_RENEW]);
+
+  now = NOW + 50_000; // literal: the design bound, not the constant under test
+  const session = await cred.renew();
+  assert.equal(session?.principal, PRINCIPAL);
+  assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+  assert.equal(server.reuse(), 0);
+  assert.equal(store.peek()?.renew, server.current());
+  assert.equal(store.peek()?.renewAttemptAt, undefined);
+});
+
+test("a 504 from renew is the same lost answer and retries once inside the grace window", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const server = graceRenew(() => now, { lose: 504 });
+  const cred = new SessionCredential({ store, transport: server.send, now: () => now });
+  assert.ok(await cred.restore());
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  now = NOW + 50_000; // literal: the design bound, not the constant under test
+  assert.equal((await cred.renew())?.principal, PRINCIPAL);
+  assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+  assert.equal(server.reuse(), 0);
+  assert.equal(store.peek()?.renew, server.current());
+});
+
+test("a lost grace retry is not presented a third time", async () => {
+  // Still inside the 50 s window when the token enters the guard, so authHeaders would send if it were allowed.
+  const expiresAt = NOW + EXPIRY_GUARD_MS + 10_000;
+  const store = memoryStore(await seed({ expiresAt }));
+  let now = NOW;
+  const server = graceRenew(() => now, { lose: "throw", loseCount: 2 });
+  const cred = new SessionCredential({ store, transport: server.send, now: () => now });
+  assert.ok(await cred.restore());
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  assert.equal(store.peek()?.renewGraceUsed, true);
+  assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+  now = NOW + 10_000;
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), RenewalUnavailableError);
+  assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+  assert.equal(server.reuse(), 0);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(store.peek()?.renew, OLD_RENEW);
+});
+
+test("after 50s the same credential is not presented again", async () => {
+  // Live at NOW, already inside the guard at NOW+50s+1, so authHeaders still tries.
+  const expiresAt = NOW + EXPIRY_GUARD_MS + RENEW_RETRY_MS;
+  const store = memoryStore(await seed({ expiresAt }));
+  let now = NOW;
+  const server = graceRenew(() => now, { lose: "throw" });
+  const cred = new SessionCredential({ store, transport: server.send, now: () => now });
+  assert.ok(await cred.restore());
+  const token = store.peek()?.accessToken;
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  assert.equal(server.presented.length, 1);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+
+  now = NOW + RENEW_RETRY_MS + 1;
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), RenewalUnavailableError);
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  assert.deepEqual(server.presented, [OLD_RENEW]);
+  assert.equal(store.peek()?.renew, OLD_RENEW);
+  assert.equal(store.peek()?.accessToken, token);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+
+  const reloaded = new SessionCredential({ store, transport: server.send, now: () => now });
+  await assert.rejects(reloaded.restore(), RenewalUnavailableError);
+  assert.deepEqual(server.presented, [OLD_RENEW]);
+  assert.equal(store.peek()?.renew, OLD_RENEW);
+});
+
+test("a reload during a renew retries the stored attempt inside the server grace", async () => {
+  const store = memoryStore(await seed({ accessToken: "tok-old", expiresAt: NOW - 1 }));
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  const now = () => NOW;
+  const server = graceRenew(now, { lose: "throw", holdFirst: hold });
+  const locks = fakeLocks();
+  const uninstall = installLocks(locks);
+  try {
+    const first = new SessionCredential({ store, transport: server.send, now });
+    const pending = first.restore();
+    const deadline = Date.now() + 2000;
+    while (store.peek()?.renewAttemptAt !== NOW && Date.now() < deadline) await nextTurn();
+    assert.equal(store.peek()?.renewAttemptAt, NOW, "the attempt is stored before the answer");
+    assert.equal(server.presented.length, 1);
+    assert.equal(server.presented[0], OLD_RENEW);
+
+    const second = new SessionCredential({ store, transport: server.send, now });
+    const reloaded = second.restore();
+    release();
+    await assert.rejects(pending, RenewalUnavailableError);
+    const session = await reloaded;
+    assert.equal(session?.principal, PRINCIPAL);
+    assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+    assert.equal(server.reuse(), 0);
+    assert.equal(store.peek()?.renew, server.current());
+    assert.deepEqual(locks.names, [`gilb-signin-renew:${ORIGIN}`, `gilb-signin-renew:${ORIGIN}`]);
+  } finally {
+    uninstall();
+  }
+});
+
+test("a renew whose store load never settles rejects within the store bound and does not post", async () => {
+  const inner = memoryStore(await seed());
+  const store = hangStore(inner, { hangLoadAfter: 1 });
+  let now = NOW;
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => now });
+  assert.ok(await cred.restore());
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const started = Date.now();
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), RenewalUnavailableError);
+  const elapsed = Date.now() - started;
+  assert.equal(renewCalls(calls).length, 0);
+  assert.ok(elapsed >= STORE_TIMEOUT_MS - 100);
+  assert.ok(elapsed < STORE_TIMEOUT_MS + 700);
+  assert.ok(elapsed < RENEW_TIMEOUT_MS + 2 * STORE_TIMEOUT_MS);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(inner.peek()?.renew, OLD_RENEW);
+});
+
+test("a renew whose store saves never settle still returns the new token from memory", async () => {
+  const inner = memoryStore(await seed());
+  const store = hangStore(inner, { hangSavesAfter: 0 });
+  let now = NOW;
+  const answer = renewedBody();
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.ok(await cred.restore());
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const started = Date.now();
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  const elapsed = Date.now() - started;
+  assert.equal(headers.Authorization, `DPoP ${answer.token}`);
+  assert.equal(renewCalls(t.calls).length, 1);
+  assert.ok(elapsed < 2 * STORE_TIMEOUT_MS + 1000);
+  assert.ok(elapsed < RENEW_TIMEOUT_MS + 2 * STORE_TIMEOUT_MS);
+  assert.equal(inner.peek()?.renew, OLD_RENEW);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+});
+
+test("a failed save of the rotated record keeps the session and a reload within grace recovers", async () => {
+  const inner = memoryStore(await seed({ accessToken: "tok-old", expiresAt: NOW - 1 }));
+  // The attempt mark lands. The rotated save and the drain that follows it do not.
+  const store = hangStore(inner, { throwSaveAt: [2, 3] });
+  const now = () => NOW;
+  const server = graceRenew(now);
+  const logs: unknown[][] = [];
+  const prior = { log: console.log, warn: console.warn, error: console.error, info: console.info, debug: console.debug };
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  console.warn = (...args: unknown[]) => { logs.push(args); };
+  console.error = (...args: unknown[]) => { logs.push(args); };
+  console.info = (...args: unknown[]) => { logs.push(args); };
+  console.debug = (...args: unknown[]) => { logs.push(args); };
+  try {
+    const cred = new SessionCredential({ store, transport: server.send, now });
+    const session = await cred.restore();
+    assert.equal(session?.principal, PRINCIPAL);
+    assert.equal(cred.session?.principal, PRINCIPAL);
+    assert.equal(inner.peek()?.renew, OLD_RENEW);
+    assert.equal(typeof inner.peek()?.renewAttemptAt, "number");
+    assert.equal(server.presented.length, 1);
+    const spoken = JSON.stringify(logs);
+    assert.equal(spoken.includes(OLD_RENEW), false);
+    assert.equal(spoken.includes("rot-"), false);
+
+    const reloaded = new SessionCredential({ store, transport: server.send, now });
+    const again = await reloaded.restore();
+    assert.equal(again?.principal, PRINCIPAL);
+    assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
+    assert.equal(server.reuse(), 0);
+    assert.equal(inner.peek()?.renew, server.current());
+  } finally {
+    console.log = prior.log;
+    console.warn = prior.warn;
+    console.error = prior.error;
+    console.info = prior.info;
+    console.debug = prior.debug;
+  }
+});
+
+test("a renew request that never answers settles at the renew bound and keeps the credential", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  let timeoutMs = 0;
+  let entered = 0;
+  const send: Transport = async (url, req) => {
+    if (url !== RENEW_URL) return jsonResponse(500, {});
+    entered += 1;
+    timeoutMs = req.timeoutMs;
+    assert.ok(req.signal instanceof AbortSignal);
+    return new Promise(() => {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => now });
+  assert.ok(await cred.restore());
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  try {
+    now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+    let outcome: unknown = "pending";
+    const pending = cred.authHeaders("GET", "https://a.example.test/x").then(
+      (headers) => { outcome = headers; },
+      (err: unknown) => { outcome = err; },
+    );
+    const deadline = Date.now() + 2000;
+    while (entered === 0 && Date.now() < deadline) await nextTurn();
+    assert.equal(entered, 1);
+    assert.equal(timeoutMs, RENEW_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(RENEW_TIMEOUT_MS - 1);
+    assert.equal(outcome, "pending");
+    await vi.advanceTimersByTimeAsync(5);
+    await pending;
+    assert.ok(outcome instanceof RenewalUnavailableError);
+    assert.equal(cred.session?.principal, PRINCIPAL);
+    assert.equal(store.peek()?.renew, OLD_RENEW);
+    assert.equal(store.peek()?.renewAttemptAt, NOW + 3_600_000 - EXPIRY_GUARD_MS);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("signOut during a hung renew settles quickly and a later sign-in can renew", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  let renews = 0;
+  let sawRenew!: () => void;
+  const renewSeen = new Promise<void>((resolve) => { sawRenew = resolve; });
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === RENEW_URL) {
+      renews += 1;
+      if (renews === 1) {
+        sawRenew();
+        return new Promise(() => {});
+      }
+      return jsonResponse(200, renewedBody());
+    }
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(NEW_EXP),
+        principal: PRINCIPAL,
+        renew: OLD_RENEW,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url === `${ORIGIN}/lws/vaults`) {
+      return jsonResponse(200, { vaults: [{ vaultId: "https://a.example.test/vault", modes: ["read"] }], complete: true });
+    }
+    return jsonResponse(500, {});
+  };
+  const locks = fakeLocks();
+  const uninstall = installLocks(locks);
+  try {
+    const cred = new SessionCredential({ store, transport: send, now: () => now });
+    assert.ok(await cred.restore());
+    now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+    const pending = cred.authHeaders("GET", "https://a.example.test/x");
+    const settled = pending.then(() => "signed" as const, (err: unknown) => err);
+    await renewSeen;
+    const started = Date.now();
+    const signedOut = await cred.signOut(ORIGIN);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < 3500);
+    assert.equal(signedOut.serverSignedOut, true);
+    assert.ok(await settled instanceof NotSignedInError);
+    assert.equal(cred.session, null);
+    assert.equal(store.peek(), null);
+
+    const next = new SessionCredential({ store, transport: send, now: () => now });
+    await next.signInWithCode(ORIGIN, "a@example.test", "123456");
+    const session = await next.renew();
+    assert.equal(session?.principal, PRINCIPAL);
+    assert.equal(renews, 2);
+    assert.equal(store.peek()?.renew, NEW_RENEW);
+    assert.equal(calls.filter((call) => call.url === SIGN_OUT_URL).length, 1);
+  } finally {
+    uninstall();
+  }
+});
+
+test("a stored credential inside the guard is renewed with the adopted secret under the lock", async () => {
+  const store = memoryStore(await seed());
+  const adopted = "rsi1.fam.adopted-secret";
+  const answer = renewedBody("rsi1.fam.after-adopt");
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const locks = fakeLocks();
+  const uninstall = installLocks(locks);
+  try {
+    const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
+    assert.ok(await cred.restore());
+    const record = store.peek();
+    assert.ok(record);
+    record.renew = adopted;
+    record.expiresAt = NOW + EXPIRY_GUARD_MS - 1;
+    record.renewExpiresAt = LIVE_EXPIRY;
+    const session = await cred.renew();
+    assert.equal(session?.principal, PRINCIPAL);
+    const hits = renewCalls(t.calls);
+    assert.equal(hits.length, 1);
+    assert.deepEqual(JSON.parse(hits[0]!.req.body!), { renew: adopted });
+    assert.equal(store.peek()?.renew, answer.renew);
+    assert.equal(store.peek()?.accessToken, answer.token);
+    assert.deepEqual(locks.names, [`gilb-signin-renew:${ORIGIN}`]);
+  } finally {
+    uninstall();
+  }
+});
+
+test("an adopted renewal that has already expired ends the sign-in", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const t = renewTransport(() => jsonResponse(200, renewedBody()));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.ok(await cred.restore());
+  const record = store.peek();
+  assert.ok(record);
+  record.renew = "rsi1.fam.other-secret";
+  record.renewExpiresAt = new Date(NOW - 1000).toISOString();
+  record.expiresAt = NOW - 1;
+  record.accessToken = "tok-old";
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
+  assert.equal(renewCalls(t.calls).length, 0);
+  assert.equal(store.peek(), null);
+  assert.equal(cred.session, null);
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
+  assert.equal(renewCalls(t.calls).length, 0);
+});
+
+test("signOut with no token renews first and signs out with the fresh token", async () => {
+  const store = memoryStore(await seed());
+  const answer = renewedBody();
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === RENEW_URL) return jsonResponse(200, answer);
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  await cred.invalidate();
+  assert.equal(cred.session, null);
+  const result = await cred.signOut(ORIGIN);
+  assert.equal(result.serverSignedOut, true);
+  assert.equal(calls[0]?.url, RENEW_URL);
+  assert.deepEqual(JSON.parse(calls[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(calls[1]?.url, SIGN_OUT_URL);
+  assert.equal(calls[1]?.req.headers.Authorization, `DPoP ${answer.token}`);
+  assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 1);
+  assert.equal(calls.filter((call) => call.url === SIGN_OUT_URL).length, 1);
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
+});
+
+test("signOut with no token clears locally when the renew fails", async () => {
+  const store = memoryStore(await seed());
+  const calls: string[] = [];
+  const send: Transport = async (url) => {
+    calls.push(url);
+    if (url === RENEW_URL) throw new TypeError("Failed to fetch");
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  await cred.invalidate();
+  const result = await cred.signOut(ORIGIN);
+  assert.equal(result.serverSignedOut, false);
+  assert.deepEqual(calls, [RENEW_URL]);
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
 });

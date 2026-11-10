@@ -68,6 +68,16 @@ export interface StoredSession {
    * A `renew` value with no origin cannot be renewed: the client will not guess a host.
    */
   origin?: string;
+  /**
+   * Epoch milliseconds of the first renew attempt for this credential that may have
+   * reached the server. A reload uses it to retry inside the short grace, and not after.
+   */
+  renewAttemptAt?: number;
+  /**
+   * The one grace retry has already been handed to the transport. A later load must
+   * not present this credential again: the server accepts the previous secret only once.
+   */
+  renewGraceUsed?: boolean;
 }
 
 /** The persistence seam. A throwing method is a storage failure, not a failed sign-in. */
