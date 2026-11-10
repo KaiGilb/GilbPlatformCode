@@ -28,7 +28,7 @@ Finding:
   One row: `{ entityUri: "https://vault.example/base/e/06abc", body: { fileByteSize: 4096, transcodedFrom: { "@id": "https://vault.example/base/e/06xyz" } } }`.
 - What the link PATCH sends: `uploadWithThumb` and `linkFullLater` link a file with `patchRecord(<id tail of the file>, { transcodedFrom: { "@id": <address of the file it was made from> } }, <the file's address>)` (`lws-records`). The body has that one key, spelled `transcodedFrom`, and the value is the object with `@id`. The made-from file is the full copy when there is one, else the master (small copy only).
 - A failed small copy, full copy or link is only a warning (one `console.warn`), and `uploadWithThumb` still answers the master's address. The caller tells what was reached from the progress it holds: `progress.thumbLinked` is true when the small copy is stored and linked, `progress.fullEntity` is set when the full copy is stored, and `progress.masterLinked` and `progress.thumbRelinked` are true when the master and the small copy are linked to it (this unit has no `fullLinked` field). A caller that needs the small copy or the full copy must check these and send again; nothing throws for them.
-- Listing: no unit lists a vault's picture files yet. `lws-vault-sets` 0.2.1 (on its way to main in another batch) makes a caller that asks for `File` get its file rows; until it is on main, the app brings the `{ entityUri, body }` rows itself.
+- Listing, matching and ending: see "List, match and end picture files" below (`listVaultFiles`, `thumbIndexFor`, `thumbFor`, `endFile`, `endPictureFiles`, since 0.1.3).
 - `pickBySize(copies, minBytes)`: the smallest copy with `bytes >= minBytes`, else the largest; null for no copies. A viewer asks `pickBySize(copies, 0)` for the thumb and `pickBySize(copies, Infinity)` for the largest on a full screen.
 - `onCellular()`: true for `connection.type` `cellular` or `connection.saveData === true`; false for `wifi` or `ethernet`; null when the browser does not say. On iOS there is no connection object, so the app decides what null means: the plan's default is to send the full copy on Wi-Fi only, that is, to treat null as cellular.
 
@@ -74,6 +74,24 @@ const copies = buildCopyMap(fileRecords).get(idTail(master)) ?? [];
 const thumb = pickBySize(copies, 0);
 const big = pickBySize(copies, Infinity);
 ```
+
+## List, match and end picture files
+
+```ts
+import { listVaultFiles, thumbIndexFor, thumbFor, endPictureFiles } from "@kaigilb/gilbplatformcode-picture-set";
+
+// `send(method, url, init)` is the host's signed fetch; `origin` is the origin that serves the vault. This unit knows no host.
+const files = await listVaultFiles(vaultId, { origin, send });          // GET <origin>/lws/vault/<id>/files, 200 per page, offset paging, stops at 100 pages
+const thumbs = thumbIndexFor(files);                                    // master entity -> its smallest copy's entity
+const src = thumbFor(masterEntity, thumbs);                             // the copy, or the master itself when there is none
+// ... later, when the picture is removed:
+const failed = await endPictureFiles(masterEntity, [thumbs.get(masterEntity)!], { origin, send }); // [] when all were ended
+```
+
+- The listing route is `GET /lws/vault/:vaultId/files?limit=&offset=` (limit default 50, at most 200; the answer is `{ count, files }`, live files only). It has no cursor. Each file carries `entity`, `fileName`, `mediaType`, `byteSize`, `contentHash`, `storedWith`, `updatedAt`, `ended`; it does NOT carry `transcodedFrom`. `listVaultFiles(vaultId, { transcodedFrom })` asks the route's filter for the copies of one original and stamps that original on each answered file.
+- `thumbIndexFor` matches by the platform link (`transcodedFrom`, through `buildCopyMap`, smallest `byteSize` wins) for every file that has one or is named by one. Only files with no link at all are matched by the file-name rule `<base>.<ext>` and `<base>-320.<ext>`. A listing with no `transcodedFrom` anywhere therefore matches by name alone.
+- `endFile(entity, { origin, send })` sends `DELETE <origin>/files/<id>`. It resolves on 204, 200 and 404 (already ended, or not this caller's to see: the platform answers both alike) and throws a `PictureFilesError` (`status`, `message` as the platform sent it) on anything else, such as 403 for a reader without write access. `endPictureFiles` ends the master, then each copy, goes on past a failure and answers the failed ones.
+- Ending keeps the bytes: the platform destroys nothing. The file is marked ended, drops out of the live listing, and its address still serves the same bytes.
 
 ## What the host must supply
 
@@ -129,6 +147,10 @@ Changes in 0.1.2, and only these:
 
 - A failed link to the full copy is still only a warning (the call does not throw). The progress now carries `linkFailures`, one `{ which, message }` for each link that did not land, or an empty list when they all did. `which` is `"full"` for the picture itself and `"thumb"` for the small copy.
 
+Changes in 0.1.3, and only these:
+
+- New, additive: `listVaultFiles`, `thumbIndexFor`, `thumbFor`, `endFile`, `endPictureFiles`, `PictureFilesError` and the types `VaultFile`, `ListOptions`, `Send` (`src/files.ts`). No new package dependency; the host passes `origin` and a signed `send`.
+
 ## Tests
 
-84 tests in 5 files. Ported from the source app's `test/batch5.test.ts:105-123`: the four reading tests of `buildThumbMap`. The source's save tests run on the app's fake vault and are re-expressed here with `picture-upload` and `lws-records` replaced by fakes (`vi.mock`): the order of steps, the names, `onProgress` after each step with a copy, resume from `masterEntity`, `thumbEntity` and `thumbLinked`, a thumb failure warning while the master is answered. New: the file extensions, the full copy as the root (order, links, failure, resume), `linkFullLater` (with resume), `buildCopyMap` for both shapes, ties, a broken link and a cycle, `pickBySize`, each branch of `onCellular`. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
+97 tests in 6 files (13 new in `src/files.test.ts`: paging, a repeated page, the page cap, the transcodedFrom filter, a refusal, link-first matching, root shape, the name rule for unlinked files only, a linked file never matched by name, ending 204/404/403, and ending past a failure). Ported from the source app's `test/batch5.test.ts:105-123`: the four reading tests of `buildThumbMap`. The source's save tests run on the app's fake vault and are re-expressed here with `picture-upload` and `lws-records` replaced by fakes (`vi.mock`): the order of steps, the names, `onProgress` after each step with a copy, resume from `masterEntity`, `thumbEntity` and `thumbLinked`, a thumb failure warning while the master is answered. New: the file extensions, the full copy as the root (order, links, failure, resume), `linkFullLater` (with resume), `buildCopyMap` for both shapes, ties, a broken link and a cycle, `pickBySize`, each branch of `onCellular`. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
