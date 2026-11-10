@@ -55,6 +55,27 @@ describe("listVaults", () => {
     expect(r.signedCount()).toBe(1);
   });
 
+  it("keeps each vault's entity URI (the node @id) as `entity`; absent when no @id", async () => {
+    const r = rig(200, {
+      vaults: [
+        { "@id": "https://a.example.test/vault/e/ent1", vaultId: "https://a.example.test/vault", name: "a", modes: ["write"] },
+        { vaultId: "https://b.example.test/vault", name: "b", modes: ["read"] },
+      ],
+    });
+    const list = await listVaults(ORIGIN, { credential: r.credential, transport: r.transport });
+    expect(list[0]!.entity).toBe("https://a.example.test/vault/e/ent1");
+    expect(list[1]).not.toHaveProperty("entity");
+  });
+
+  it("a listed vault's entity can be sent as parentVault, exactly", async () => {
+    const ent = "https://a.example.test/vault/e/ent1";
+    const l = rig(200, { vaults: [{ "@id": ent, vaultId: "https://a.example.test/vault", modes: ["write"] }] });
+    const [parent] = await listVaults(ORIGIN, { credential: l.credential, transport: l.transport });
+    const c = rig(201, { vault: "https://k.example.test/vault/e/k", vaultId: "https://k.example.test/vault", name: "kid", represents: REP });
+    await createNamedVault(ORIGIN, { name: "kid", represents: REP, parentVault: parent!.entity }, { credential: c.credential, transport: c.transport });
+    expect(JSON.parse(c.sent[0]!.req.body as string).parentVault).toBe(ent);
+  });
+
   it("throws with the status on a non-2xx", async () => {
     const r = rig(401, { error: "unauthorized" });
     await expect(listVaults(ORIGIN, { credential: r.credential, transport: r.transport })).rejects.toMatchObject({ status: 401, platformMessage: "unauthorized" });
@@ -176,5 +197,28 @@ describe("sameVaultHost", () => {
     expect(sameVaultHost("https://abc.example.test/base", "https://abd.example.test/vault")).toBe(false);
     expect(sameVaultHost("garbage", "https://abc.example.test/vault")).toBe(false);
     expect(sameVaultHost("", "")).toBe(false);
+  });
+});
+
+describe("create-named vaultId segment (0.2.4)", () => {
+  it("returns vaultId as the platform sent it, /vault or /base, and the list fallback matches either by host", async () => {
+    for (const seg of ["/vault", "/base"]) {
+      const r = rig(201, { vaultId: `https://k.example.test${seg}`, name: "k", represents: REP });
+      const out = await createNamedVault(ORIGIN, { name: "k", represents: REP }, { credential: r.credential, transport: r.transport });
+      expect(out.vaultId).toBe(`https://k.example.test${seg}`);
+    }
+    expect(sameVaultHost("https://k.example.test/vault", "https://k.example.test/base")).toBe(true);
+  });
+
+  it("no vaultId in the answer: finds a /vault-listed vault by entity host", async () => {
+    const sent: string[] = [];
+    const credential: SignedRequestSource = { authHeaders: async () => ({ Authorization: "x", DPoP: "y" }) };
+    const transport: Transport = async (url, req) => {
+      sent.push(req.method);
+      if (req.method === "POST") return { status: 201, json: async () => ({ vault: "https://zz.example.test/base/e/1" }) };
+      return { status: 200, json: async () => ({ vaults: [{ vaultId: "https://zz.example.test/vault", name: "other", modes: ["write"] }] }) };
+    };
+    const out = await createNamedVault(ORIGIN, { name: "kid", represents: REP }, { credential, transport });
+    expect(out.vaultId).toBe("https://zz.example.test/vault");
   });
 });

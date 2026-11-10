@@ -90,7 +90,7 @@ export async function checkVaultName(
       };
     }
     const body = (await res.json()) as Record<string, unknown>;
-    return {
+    const result: CheckNameResult = {
       available: body.available === true,
       reserved: body.reserved === true,
       name: typeof body.name === "string" ? body.name : name,
@@ -99,6 +99,10 @@ export async function checkVaultName(
       suggestion: typeof body.suggestion === "string" ? body.suggestion : undefined,
       requested: name,
     };
+    // Present only when the platform sends them (GilbPlatform nameChangeReport, reserved-names.ts).
+    if (body.normalized === true) result.normalized = true;
+    if (typeof body.note === "string" && body.note) result.note = body.note;
+    return result;
   } catch {
     return {
       available: false,

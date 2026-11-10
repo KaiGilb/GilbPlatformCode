@@ -32,6 +32,10 @@ export interface CheckNameResult {
   suggestion?: string;
   /** The raw name that was sent, before the platform normalised it (`name` is the normalised one). */
   requested?: string;
+  /** true only when the platform says it changed the name (it keeps only a-z and 0-9). Absent otherwise. */
+  normalized?: true;
+  /** The platform's sentence for a changed name, e.g. "'johndeveloper-sailboats' is saved as 'johndevelopersailboats': ...". Absent when the name was not changed. */
+  note?: string;
 }
 
 export interface VerifySignInResult {

@@ -144,12 +144,12 @@ Every later `npm install` and `npm ci`, CI included, then keeps the copy. Withou
 `createNamedVault` posts once to `{origin}/base/vault/create-named` (signed, DPoP):
 
 ```
-{ "name": "<vault name>", "represents": "<GilbVeda type IRI>", "parentVault"?: "<vault id>" }
+{ "name": "<vault name>", "represents": "<GilbVeda type IRI>", "parentVault"?: "<entity of a vault from listVaults>" }
 ```
 
 `represents` is REQUIRED and must be the full IRI of a live GilbVeda type (for example a person type or your app's own type). The platform refuses a vault without one ("represents is required: ..."), and the kit throws before any network call when it is empty. Success is 201 `{ vault, vaultId, name, parent, represents, created: true }`. A refusal (400, 403, 404, 502, 503) throws `VaultRequestRefusedError` carrying `status` and `platformMessage`, the platform's `message ?? error` word for word. It is posted once and never retried: the platform has no idempotency.
 
-The platform normalises every name: lower-case, only a-z and 0-9 kept, and `user` when nothing is left. `johndeveloper-sailboats` is saved as `johndevelopersailboats`, so look it up by `normaliseVaultName("johndeveloper-sailboats")`, not by what was typed. `checkVaultName` answers the normalised `name` and the raw text in `requested`; it carries `suggestion` (a free name) and `message` only when the name is taken.
+The platform normalises every name: lower-case, only a-z and 0-9 kept, and `user` when nothing is left. `johndeveloper-sailboats` is saved as `johndevelopersailboats`, so look it up by `normaliseVaultName("johndeveloper-sailboats")`, not by what was typed. `checkVaultName` answers the normalised `name` and the raw text in `requested`; it carries `suggestion` (a free name) and `message` only when the name is taken. When the platform changed the name it also sends `normalized: true` and a `note` ("'johndeveloper-sailboats' is saved as 'johndevelopersailboats' ..."); both are returned, and absent otherwise. Show `note` to the person.
 
 ```ts
 import { checkVaultName, createNamedVault, listVaults, normaliseVaultName } from "@kaigilb/gilbplatformcode-signin/core";
@@ -164,11 +164,11 @@ console.log(made.vaultId === again?.vaultId, again?.represents, again?.isLanding
 // a vault's address is https://<name>.gilb.com/vault, e.g. https://johndevelopersailboats.gilb.com/vault
 ```
 
-The `vaultId` create-named answers is the home namespace `https://<slug>.<domain>/base`, while `listVaults` shows the same vault as `https://<slug>.<domain>/vault`. Match a made vault in `listVaults` by its normalised name or by host (`sameVaultHost(a, b)`), not by the full `vaultId` string. `vault` (the entity URI) is absent when the answer did not carry it.
+The `vaultId` create-named answers is `https://<slug>.<domain>` plus the segment the platform returns: `/vault` on production, `/base` on a single-store setup. The code assumes neither. Match a made vault in `listVaults` by its normalised name or by host (`sameVaultHost(a, b)`), not by the full `vaultId` string. `vault` (the entity URI) is absent when the answer did not carry it.
 
 The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. The kit never retries for you.
 
-`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf? }[]`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
 
 ## Do not
 
@@ -219,4 +219,10 @@ Patch release, additive only.
 - New `createNamedVault(origin, { name, represents, parentVault? }, { credential, transport? })`. `represents` is required. One post, no retry.
 - New exported error `VaultRequestRefusedError` (`status`, `platformMessage`).
 - `createNamedVault` never returns an empty `vaultId`: when a 2xx answer names none (or is not JSON), it reads `listVaults` once and returns the vault whose name is the normalised name, or throws `VaultRequestRefusedError` saying the vault was made but is not in the list yet. It never re-posts.
-- `CreatedNamedVault.complete` (true on 201, false on 202: send the same request again to finish it); `vault` is optional and left out when the answer did not carry it; new `sameVaultHost(a, b)`; `vaultId` is the `/base` namespace, not the `/vault` one `listVaults` shows.
+- `CreatedNamedVault.complete` (true on 201, false on 202: send the same request again to finish it); `vault` is optional and left out when the answer did not carry it; new `sameVaultHost(a, b)`; (corrected in 0.2.4: the segment of `vaultId` is whatever the platform returns, `/vault` on production.)
+
+## Changes in 0.2.4
+
+- `listVaults` keeps each vault's entity URI as `entity`. `createNamedVault`'s `parentVault` is that value, not a `vaultId`.
+- `checkVaultName` returns the platform's `normalized` and `note` when it sends them, so an app can tell the person their name was changed.
+- Docs: the segment of the `vaultId` create-named answers is whatever the platform returns (`/vault` on production). The unit never builds or compares a `/base` id; the fallback matches by host.
