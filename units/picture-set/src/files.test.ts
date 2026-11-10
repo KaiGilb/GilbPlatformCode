@@ -144,12 +144,17 @@ describe("endFile and endPictureFiles", () => {
     expect(log).toEqual(["DELETE https://sail.example.test/files/abcdefghij"]);
   });
 
-  test("the request is built from the entity's origin, not the caller's string (scheme from the entity)", async () => {
+  test("when hosts match, the DELETE goes to the CALLER's origin (its scheme), not the entity's", async () => {
     const log: string[] = [];
-    await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "http://sail.example.test:443/x", send: sender(() => 404, log) }).catch(() => undefined);
-    expect(log).toEqual([]); // host differs by port: refused
-    await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "http://sail.example.test", send: sender(() => 204, log) });
-    expect(log).toEqual(["DELETE https://sail.example.test/files/abcdefghij"]);
+    // dev rig: the entity says https, the app reaches the same host:port over http
+    await endFile("https://ann.localhost:5173/vault/e/abcdefghij", { origin: "http://ann.localhost:5173/", send: sender(() => 204, log) });
+    expect(log).toEqual(["DELETE http://ann.localhost:5173/files/abcdefghij"]);
+  });
+
+  test("a bare id (no host to check) goes to the caller's origin, and a 404 there counts as gone", async () => {
+    const log: string[] = [];
+    await endFile("abcdefghij", { origin: origin + "/", send: sender(() => 404, log) });
+    expect(log).toEqual([`DELETE ${origin}/files/abcdefghij`]);
   });
 
   test("an origin of another host throws, names both, and sends nothing (no silent 404)", async () => {

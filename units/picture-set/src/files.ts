@@ -149,15 +149,15 @@ export function thumbFor(master: string, index: ReadonlyMap<string, string>): st
 }
 
 /**
- * Ends one file: DELETE <the file's own origin>/files/<id of the file>. The platform DESTROYS NOTHING: the file is marked ended and its bytes
+ * Ends one file: DELETE <origin>/files/<id of the file>. The platform DESTROYS NOTHING: the file is marked ended and its bytes
  * stay at their address. Resolves on 204 or 200, and on 404 (the file is already gone, or it is not this caller's to see: the platform answers
  * both alike, so a 404 is not an error here). Any other status throws a `PictureFilesError` with the status and the platform's message (a
  * reader without write access gets 403).
  *
  * The platform finds the file at the host the request names (GilbPlatform src/routes/files.ts:767, `https://<host>/vault/e/<id>` on a user
  * vault), and answers 404 for a file that is at another host. So a DELETE sent to the wrong origin ends nothing and looks like "already
- * gone". When `fileEntity` is an absolute URL the request therefore goes to that URL's own origin, and `origin` must name the same host: when
- * it does not, this throws a `PictureFilesError` (status 0) naming both and sends nothing. A 404 counts as gone only on that own origin.
+ * gone". When `fileEntity` is an absolute URL, `origin` must name the same host (the host check is the safety; the request goes to the caller's `origin`, whose scheme is the one the app can reach): when
+ * it does not, this throws a `PictureFilesError` (status 0) naming both and sends nothing. A 404 counts as gone only when the host matched.
  * A `fileEntity` that is not an absolute URL cannot name a host: it is sent to `origin`, as before.
  */
 export async function endFile(fileEntity: string, opts: { origin: string; send: Send }): Promise<void> {
@@ -183,7 +183,7 @@ export async function endFile(fileEntity: string, opts: { origin: string; send: 
         `The file ${fileEntity} is at ${entityUrl.host}, but the origin given is ${opts.origin}. Pass the origin of the vault that holds the file.`,
       );
     }
-    target = entityUrl.origin;
+    // Hosts agree: keep the CALLER's origin, which carries the scheme the app can reach (a dev rig may say https in the entity, http on the wire).
   }
   const res = await opts.send("DELETE", `${target}/files/${encodeURIComponent(id)}`);
   if (res.status === 204 || res.status === 200 || res.status === 404) return;
