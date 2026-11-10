@@ -115,6 +115,21 @@ export interface VerifyHttpBody {
   principal?: string;
   needsVaultName?: boolean;
   suggestedName?: string;
+  /** Present only when this sign-in was issued a renewal credential. */
+  renew?: string;
+  /** ISO-8601 expiry of {@link renew}. */
+  renewExpiresAt?: string;
+}
+
+/** verify-code options. `renew` is sent only when the caller sets it. */
+export interface VerifyCodeOptions extends HttpOptions {
+  /**
+   * Ask for a cookieless renewal credential. Omitted, or not exactly true, leaves
+   * the verify-code body unchanged.
+   */
+  renew?: boolean;
+  /** Seconds the renewal stays valid. The caller has already validated the range. */
+  renewWindowSec?: number;
 }
 
 /** First-party page hosts: the platform's own pages and the dev loopback rigs. Exact match. */
@@ -161,7 +176,7 @@ export async function verifySignInCodeHttp(
   dpopJwk: object,
   name?: string,
   productName?: string,
-  opts: HttpOptions = {},
+  opts: VerifyCodeOptions = {},
 ): Promise<VerifyHttpBody> {
   const send = opts.transport ?? fetchTransport;
   let res: TransportResponse;
@@ -172,6 +187,12 @@ export async function verifySignInCodeHttp(
       dpopJwk,
     };
     if (name?.trim()) body.name = name.trim();
+    // Cookieless renewal. Absent unless the caller asked: a first-party bridge
+    // sign-in, a host-held key, and `store: false` never send these.
+    if (opts.renew === true) {
+      body.renew = true;
+      if (opts.renewWindowSec !== undefined) body.renewWindowSec = opts.renewWindowSec;
+    }
     // ⚠ Cookie only on a first-party page. GilbPlatform src/server/cors.ts does not send
     // Access-Control-Allow-Credentials for an attested third-party origin, so "include" there
     // makes the browser drop this answer. The token is already in the JSON; those pages send

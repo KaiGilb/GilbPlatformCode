@@ -26,7 +26,7 @@ Four entries:
 | `idOrigin`, `clientId`, `key` | `./machine` only. The identity origin, the registered client, its private key. |
 | `transport` | Optional on every HTTP call. Default: the global `fetch`, looked up per call. |
 
-The taking application is not the data of record. This module writes no vault facts. Browser `sessionStorage` / `localStorage` hold only a 15-minute pending mailbox key `${appId}.pendingSignInEmail`. The session token and the DPoP key are held in memory. On a cookieless page they are also kept in IndexedDB on that page's origin until the token expires; see "Stays signed in across a reload".
+The taking application is not the data of record. This module writes no vault facts. Browser `sessionStorage` / `localStorage` hold only a 15-minute pending mailbox key `${appId}.pendingSignInEmail`. The session token and the DPoP key are held in memory. On a cookieless page they are also kept in IndexedDB on that page's origin, together with the renewal credential when one was issued, for up to 14 days from last use; see "Stays signed in across a reload".
 
 ## Wire (paths join the injected origin)
 
@@ -35,7 +35,14 @@ POST {origin}/base/auth/email/request-code
 { "email": "<mailbox>", "return_to"?: "<absolute url>" }
 
 POST {origin}/base/auth/email/verify-code
-{ "email": "<mailbox>", "code": "<6 digits>", "dpopJwk": {}, "name"?: "<vault slug>" }
+{ "email": "<mailbox>", "code": "<6 digits>", "dpopJwk": {}, "name"?: "<vault slug>", "renew"?: true, "renewWindowSec"?: <seconds> }
+
+POST {origin}/base/auth/email/renew     DPoP proof only (no Authorization, no ath)
+{ "renew": "rsi1.<familyId>.<secret>" }
+→ { "token", "renew", "renewExpiresAt", "principal" }
+
+POST {origin}/base/auth/sign-out        Authorization: DPoP <token>, DPoP proof
+→ 204
 
 POST {origin}/onboard/api/name-prep
 POST {origin}/onboard/api/check-name
@@ -235,19 +242,42 @@ Only a fresh sign-in (`signInWithCode`, or `adopt` of a new token) may create or
 
 `restore()` checks that the stored private key matches the stored public key. It signs a fixed challenge with the private key and verifies that signature with the public key. A mismatch is not a session: `restore()` deletes the record and returns null.
 
+## Changes in 0.2.5
+
+Patch release, additive only.
+
+A cookieless sign-in can now last up to 14 days from last use. The access token is still the one verify-code minted. When that token is inside the 60 second guard, or already expired, the client renews it with a separate credential instead of sending the person through the code again. A renewal credential that is presented twice ends the whole sign-in, so this client never sends the same one twice, including from two tabs.
+
+- `SessionCredentialOptions.renew` defaults to true on a credential that stores. It is ignored, and `renew` / `renewWindowSec` are never sent, when `dpopMintUrl` is set, when `store` is `false`, or when the host passes `key`. `renew: false` turns renewal off.
+- `renewWindowSec`, when passed, must be an integer from 300 to 1209600. Anything else throws `TypeError` from the constructor. When it is omitted, the client sends 1209600 (14 days).
+- `signInWithCode` then sends `renew: true` and `renewWindowSec` on verify-code. The answer's `renew` and `renewExpiresAt` are kept in memory and on the stored record. The record version stays 1. A record without those fields cannot renew.
+- `restore()` renews when the stored token is inside the guard or expired and `renewExpiresAt` is still in the future. That is the only request `restore()` makes. A live token is still adopted with no request.
+- `authHeaders` renews first in that same guard, when a credential is held, on the path a cookie-bridge re-mint already used.
+- `renew()` does it when the app asks, on start-up or when the page becomes visible, so the window moves forward from last use.
+- One renewal runs at a time on a credential. Across tabs it runs inside `navigator.locks` under the name `gilb-signin-renew:` plus the sign-in origin, when that API exists. Inside the lock the client re-reads the store. If another tab already rotated this key, it adopts that record and does not call the platform. The new credential is stored before the lock is released.
+- A 401 from renew ends the sign-in: the store is cleared, the token and the credential are dropped, `session` is null, and `authHeaders` throws `NotSignedInError`. A network error or a 5xx keeps the sign-in and throws `RenewalUnavailableError` (the credential was not spent). A sign-out that lands during the request wins: the answer is discarded and not stored.
+- With no `navigator.locks`, two tabs can both present the credential. The second answer is 401 and that tab is signed out.
+- `signOut(origin)` posts `POST {origin}/base/auth/sign-out` with `Authorization: DPoP <token>` and a `DPoP` proof, waits at most 3 seconds, then runs `invalidate(true)`. The local record is deleted even when the server call fails or hangs. The result is `{ serverSignedOut }`. `invalidate(true)` itself is unchanged for existing callers.
+
 ## Stays signed in across a reload
 
 A published app is a third-party page. It gets no platform cookie, so the session bridge cannot re-mint after a reload. On that path `SessionCredential` keeps the sign-in in IndexedDB on the app's own origin.
 
-What is stored: one record in the database `gilb-signin-session`, object store `session`, key `current`. The record is version `1`. It holds the DPoP key pair as CryptoKey objects, the access token, its expiry (`expiresAt`, epoch milliseconds), and the session (`principal`, `vault`, `vaults`, `vaultsProblem`). The private key is not exported and stays non-extractable. IndexedDB structured-clones the CryptoKey objects. `publicKeyId` is the public key's JWK `x` and `y` joined by `.`, compared inside an update's transaction; `restore()` clears a record whose `publicKeyId` is missing or is not that public key.
+What is stored: one record in the database `gilb-signin-session`, object store `session`, key `current`. The record is version `1`. It holds the DPoP key pair as CryptoKey objects, the access token, its expiry (`expiresAt`, epoch milliseconds), and the session (`principal`, `vault`, `vaults`, `vaultsProblem`). When verify-code issued a renewal, the record also holds `renew` (the credential `rsi1.<familyId>.<secret>`), `renewExpiresAt` (the ISO date it stops being valid), and `origin` (the sign-in origin, no trailing slash, so a later page knows where to renew). The private key is not exported and stays non-extractable. IndexedDB structured-clones the CryptoKey objects. `publicKeyId` is the public key's JWK `x` and `y` joined by `.`, compared inside an update's transaction; `restore()` clears a record whose `publicKeyId` is missing or is not that public key. A record with no `renew` cannot be renewed.
 
-How long: until the token's own expiry. `restore()` returns the session when the token still has more than 60 seconds of life (`EXPIRY_GUARD_MS`). When the record is absent, the version is not 1, the record is malformed, the public key does not match the private key, or the token is inside that guard, `restore()` clears it and returns null. The pair check signs a fixed challenge with the stored private key and verifies it with the stored public key. No request is made and the private key is not exported. This version has no renewal. A new sign-in is the way back in after the token expires.
+How long: up to the window the app chose at sign-in, at most 14 days from the last successful renewal (`renewWindowSec`, default 1209600). The access token itself is unchanged and still dies on its own expiry. `restore()` returns the session with no request when the token still has more than 60 seconds of life (`EXPIRY_GUARD_MS`). When the token is inside that guard or already expired, and `renewExpiresAt` is still in the future, `restore()` renews instead of clearing. That renew is the only request `restore()` makes. When the record is absent, the version is not 1, the record is malformed, the public key does not match the private key, or the token cannot be used and cannot be renewed, `restore()` clears it and returns null. The pair check signs a fixed challenge with the stored private key and verifies it with the stored public key. The private key is not exported.
+
+`authHeaders` renews on that same guard when a credential is held, then signs the request with the new token. `renew()` renews when the app calls it. The proof for `POST {origin}/base/auth/email/renew` carries no access token and no `ath`. The body is `{ renew }`. A 200 replaces the token and the credential; the old credential is spent and is not sent again. The vault list already held is kept, and `principal` is taken from the answer. A 401 clears the sign-in. A network error or a 5xx leaves it in place and throws `RenewalUnavailableError`.
+
+Two tabs share one record. The renewal runs inside `navigator.locks` under `gilb-signin-renew:` plus the origin when that API exists. The client re-reads the store inside the lock. If the stored credential for this key is already a different one, another tab rotated: this tab adopts that record and does not call the platform. The rotated credential is written before the lock is released. A sign-out during an in-flight renewal wins: the answer is not stored. With no `navigator.locks`, the two tabs can both present the credential. The platform then ends the sign-in, and the tab whose request arrives second is signed out.
+
+`signOut(origin)` posts the sign-out to the server (`POST {origin}/base/auth/sign-out`, DPoP headers, at most 3 seconds), then deletes the local record the way `invalidate(true)` already did. The local delete runs even when the server call fails or never returns. `{ serverSignedOut: true }` means the server answered 204.
 
 `restore()` is a no-op when this credential is already signed in, or when a sign-in is already on the wire. It does not adopt the loaded record, does not write, and does not clear. The result is the session already held, or null if the sign-in has not returned a token yet. A sign-out during that load still wins.
 
 A store call the credential waits for gives up after 400 ms (`STORE_TIMEOUT_MS`). A timed-out save or a timed-out clear is a storage failure: the person stays signed in for this page, in memory. A timed-out load makes `restore()` return null and leaves the record where it is, so the next reload can still adopt it. `signInWithCode`, `adopt`, and `loadReachableVaults` start the save and do not wait for it. `invalidate(true)` starts the delete immediately and waits at most 400 ms. `authHeaders` does not touch the store.
 
-The private key cannot be read out as JWK or PKCS8. Any script on the app's origin can still use it, while the page is open or on a later visit, to sign DPoP proofs. An XSS in the app can do that. Sign-out (`invalidate(true)`) deletes the record. A later `restore()` then returns null.
+The private key cannot be read out as JWK or PKCS8. Any script on the app's origin can still use it, while the page is open or on a later visit, to sign DPoP proofs. The renewal credential is stored beside it: any script on the app's origin can use that credential together with the key, the same way it can use the key alone. An XSS in the app can do that. Sign-out (`signOut(origin)`, or `invalidate(true)`) deletes the record. A later `restore()` then returns null.
 
 A first-party app that passes `dpopMintUrl` stores nothing: the cookie bridge re-mints, as before. An explicit `store` passed together with `dpopMintUrl` is ignored. Nothing is written and `restore()` returns null. `store: false` stores nothing. A host-passed `key` is never stored; the host owns it. Pass `store` to replace the IndexedDB adapter, for tests or for a host that keeps the record itself, only on a credential that does not pass `dpopMintUrl`.
 
@@ -256,16 +286,20 @@ Only the save that follows a fresh sign-in (`signInWithCode`, or `adopt` of a ne
 ```ts
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 
-const session = new SessionCredential();
-const restored = await session.restore(); // no request; null when the token is inside 60 seconds or missing
+const session = new SessionCredential({ renewWindowSec: 7 * 24 * 60 * 60 }); // optional; default is 14 days
+const restored = await session.restore(); // renews only when the token is inside 60 seconds and the credential is still in date
 if (!restored) {
   // show the sign-in card, then:
   await session.signInWithCode(ORIGIN, email, code);
 }
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void session.renew();
+});
+await session.signOut(ORIGIN); // server sign-out, then the local record is deleted
 ```
 
 IndexedDB can fail (it is missing, the quota is full, the browser is in private mode, the open is blocked, or a call does not settle within 400 ms). Sign-in still works in memory. `restore()` returns null. A load that timed out does not delete the record.
 
-Sign-out starts the delete before `invalidate(true)` returns when the database is already open, so a page that closes immediately still has a delete transaction queued. IndexedDB commits that transaction asynchronously. If the browser discards the document before the commit, the record can remain. A save that was already committing can also land, and this credential deletes again when that save finishes — which does not run if the page is already gone. The next `restore()` still refuses a token inside the 60 second guard.
+Sign-out starts the delete before `invalidate(true)` returns when the database is already open, so a page that closes immediately still has a delete transaction queued. IndexedDB commits that transaction asynchronously. If the browser discards the document before the commit, the record can remain. A save that was already committing can also land, and this credential deletes again when that save finishes — which does not run if the page is already gone. The next `restore()` refuses a token inside the 60 second guard when that leftover record has no renewal credential. A leftover record that still holds a live credential is renewed. `signOut(origin)` ends the credential on the server first, so that renewal is refused and the record is then cleared.
 
 A plain `invalidate()` (the re-mint after a 401) keeps the in-memory key and drops the stored token. The key stays in the record with an empty token, so the rejected token is not what a reload adopts. `restore()` sees no usable token, clears the record, and returns null.

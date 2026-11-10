@@ -1,0 +1,489 @@
+// Renewal and server sign-out. Fake transport, in-memory store, and a fake
+// navigator.locks installed per test. No network.
+import { test } from "vitest";
+import assert from "node:assert/strict";
+import {
+  SessionCredential,
+  NotSignedInError,
+  RenewalUnavailableError,
+  EXPIRY_GUARD_MS,
+  RENEW_WINDOW_MAX_SEC,
+  RENEW_WINDOW_MIN_SEC,
+  SIGN_OUT_BOUND_MS,
+  STORED_SESSION_VERSION,
+  type SessionStore,
+  type StoredSession,
+} from "./session";
+import { generateDpopKeyPair, type DpopPublicJwk } from "./dpop";
+import type { Transport, TransportRequest, TransportResponse } from "./transport";
+
+const NOW = 1_700_000_000_000;
+const ORIGIN = "https://id.example.test";
+const PRINCIPAL = "https://id.example.test/i/p9";
+const RENEW_URL = `${ORIGIN}/base/auth/email/renew`;
+const SIGN_OUT_URL = `${ORIGIN}/base/auth/sign-out`;
+const VERIFY_URL = `${ORIGIN}/base/auth/email/verify-code`;
+const OLD_RENEW = "rsi1.fam.old-secret";
+const NEW_RENEW = "rsi1.fam.new-secret";
+const NEW_EXP = Math.floor(NOW / 1000) + 10 * 24 * 3600;
+const LIVE_EXPIRY = new Date(NOW + 14 * 24 * 3600 * 1000).toISOString();
+
+const jwt = (exp: number) =>
+  `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.sig`;
+
+const dec = (s: string) => JSON.parse(Buffer.from(s, "base64url").toString("utf8"));
+
+interface Mem extends SessionStore {
+  peek(): StoredSession | null;
+}
+
+function memoryStore(initial: StoredSession | null = null): Mem {
+  let current: StoredSession | null = initial;
+  const store: Mem = {
+    peek: () => current,
+    async load() {
+      await Promise.resolve();
+      return current ? structuredClone(current) : null;
+    },
+    async save(session) {
+      await Promise.resolve();
+      current = structuredClone(session);
+    },
+    async saveIfSameKey(session, samePublicKeyId) {
+      const seen = current;
+      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = structuredClone(session);
+    },
+    async clear() {
+      await Promise.resolve();
+      current = null;
+    },
+  };
+  return store;
+}
+
+async function seed(overrides: Partial<StoredSession> = {}): Promise<StoredSession> {
+  const key = await generateDpopKeyPair();
+  const publicKey = await crypto.subtle.importKey(
+    "jwk",
+    key.publicJwk,
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["verify"],
+  );
+  const exported = await crypto.subtle.exportKey("jwk", publicKey);
+  return {
+    version: STORED_SESSION_VERSION,
+    publicKeyId: `${exported.x}.${exported.y}`,
+    keyPair: { publicKey, privateKey: key.privateKey },
+    accessToken: jwt(Math.floor(NOW / 1000) + 3600),
+    expiresAt: NOW + 3_600_000,
+    session: {
+      principal: PRINCIPAL,
+      vault: { entity: "https://v.example.test/base/e/v1", id: "v1", name: "sam" },
+      vaults: [{ vaultId: "https://a.example.test/vault", modes: ["read", "write"] }],
+    },
+    renew: OLD_RENEW,
+    renewExpiresAt: LIVE_EXPIRY,
+    origin: ORIGIN,
+    ...overrides,
+  };
+}
+
+function jsonResponse(status: number, body: unknown): TransportResponse {
+  return { status, json: async () => body };
+}
+
+function renewedBody(renew = NEW_RENEW, principal = PRINCIPAL) {
+  return {
+    token: jwt(NEW_EXP),
+    renew,
+    renewExpiresAt: new Date(NOW + 14 * 24 * 3600 * 1000).toISOString(),
+    principal,
+  };
+}
+
+interface Call {
+  url: string;
+  req: TransportRequest;
+}
+
+/** Records every call. The renew route answers `renewAnswer`; everything else is 500. */
+function renewTransport(renewAnswer: () => Promise<TransportResponse> | TransportResponse) {
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === RENEW_URL) return renewAnswer();
+    return jsonResponse(500, { error: "unexpected" });
+  };
+  return { send, calls };
+}
+
+function installLocks(locks: { request: (name: string, callback: () => Promise<unknown>) => Promise<unknown> } | undefined): () => void {
+  const nav = (globalThis.navigator ?? (globalThis.navigator = {} as Navigator)) as Navigator & { locks?: unknown };
+  const prior = Object.getOwnPropertyDescriptor(nav, "locks");
+  Object.defineProperty(nav, "locks", { configurable: true, writable: true, value: locks });
+  return () => {
+    if (prior) Object.defineProperty(nav, "locks", prior);
+    else delete nav.locks;
+  };
+}
+
+/** Serialises callbacks per name, the way an exclusive Web Lock does. */
+function fakeLocks() {
+  const names: string[] = [];
+  const tails = new Map<string, Promise<unknown>>();
+  const locks = {
+    names,
+    request<T>(name: string, callback: () => Promise<T> | T): Promise<T> {
+      names.push(name);
+      const prev = tails.get(name) ?? Promise.resolve();
+      const run = prev.then(() => callback(), () => callback());
+      tails.set(name, run.then(() => undefined, () => undefined));
+      return run;
+    },
+  };
+  return locks;
+}
+
+function renewCalls(calls: Call[]): Call[] {
+  return calls.filter((call) => call.url === RENEW_URL);
+}
+
+test("renewWindowSec must be an integer from 300 to 1209600", () => {
+  assert.equal(RENEW_WINDOW_MIN_SEC, 300);
+  assert.equal(RENEW_WINDOW_MAX_SEC, 1_209_600);
+  new SessionCredential({ renewWindowSec: 300 });
+  new SessionCredential({ renewWindowSec: 1_209_600 });
+  for (const bad of [299, 1_209_601, 300.5, Number.NaN, Number.POSITIVE_INFINITY, 0, -1]) {
+    assert.throws(() => new SessionCredential({ renewWindowSec: bad }), TypeError);
+  }
+});
+
+test("sign-in sends renew and renewWindowSec, and stores the credential the answer returns", async () => {
+  const store = memoryStore();
+  const calls: Call[] = [];
+  const answer = renewedBody();
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, { token: jwt(Math.floor(NOW / 1000) + 3600), principal: PRINCIPAL, ...answer, renew: OLD_RENEW });
+    }
+    if (url === `${ORIGIN}/lws/vaults`) {
+      return jsonResponse(200, { vaults: [{ vaultId: "https://a.example.test/vault", modes: ["read"] }], complete: true });
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW, renewWindowSec: 600 });
+  await cred.signInWithCode(`${ORIGIN}/`, "a@example.test", "123456");
+  const body = JSON.parse(calls[0]!.req.body!) as { renew?: unknown; renewWindowSec?: unknown };
+  assert.equal(calls[0]!.url, VERIFY_URL);
+  assert.equal(body.renew, true);
+  assert.equal(body.renewWindowSec, 600);
+  const saved = store.peek();
+  assert.equal(saved?.renew, OLD_RENEW);
+  assert.equal(saved?.renewExpiresAt, answer.renewExpiresAt);
+  assert.equal(saved?.origin, ORIGIN);
+  assert.equal(saved?.version, STORED_SESSION_VERSION);
+});
+
+test("an omitted renewWindowSec is sent as 14 days", async () => {
+  const store = memoryStore();
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url.endsWith("/lws/vaults")) return jsonResponse(200, { vaults: [], complete: true });
+    return jsonResponse(200, { token: jwt(Math.floor(NOW / 1000) + 3600), principal: PRINCIPAL });
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  await cred.signInWithCode(ORIGIN, "a@example.test", "123456");
+  const body = JSON.parse(calls[0]!.req.body!) as { renew?: unknown; renewWindowSec?: unknown };
+  assert.equal(body.renew, true);
+  assert.equal(body.renewWindowSec, RENEW_WINDOW_MAX_SEC);
+});
+
+test("renew and renewWindowSec are not sent with dpopMintUrl, store false, a host key, or renew false", async () => {
+  const key = await generateDpopKeyPair();
+  const hostKey = {
+    publicJwk: key.publicJwk,
+    sign: async (input: Uint8Array) => new Uint8Array(await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      key.privateKey,
+      input as Uint8Array<ArrayBuffer>,
+    )),
+  };
+  const bodies: unknown[] = [];
+  const send: Transport = async (url, req) => {
+    if (url.endsWith("/verify-code")) bodies.push(JSON.parse(req.body!));
+    if (url.endsWith("/lws/vaults")) return jsonResponse(200, { vaults: [], complete: true });
+    if (url.endsWith("/dpop-token")) {
+      return jsonResponse(200, { access_token: "bridge", expires_in: 1800, principal: PRINCIPAL, vaults: [] });
+    }
+    return jsonResponse(200, { token: jwt(Math.floor(NOW / 1000) + 3600), principal: PRINCIPAL });
+  };
+  const cases: Array<ConstructorParameters<typeof SessionCredential>[0]> = [
+    { dpopMintUrl: `${ORIGIN}/base/auth/session/dpop-token`, store: memoryStore(), transport: send, now: () => NOW, renew: true, renewWindowSec: 600 },
+    { store: false, transport: send, now: () => NOW, renew: true, renewWindowSec: 600 },
+    { key: hostKey, store: memoryStore(), transport: send, now: () => NOW, renew: true, renewWindowSec: 600 },
+    { store: memoryStore(), transport: send, now: () => NOW, renew: false, renewWindowSec: 600 },
+  ];
+  for (const opts of cases) {
+    await new SessionCredential(opts).signInWithCode(ORIGIN, "a@example.test", "123456");
+  }
+  assert.equal(bodies.length, 4);
+  for (const body of bodies) {
+    const record = body as { renew?: unknown; renewWindowSec?: unknown };
+    assert.equal("renew" in record, false);
+    assert.equal("renewWindowSec" in record, false);
+  }
+});
+
+test("renew posts a DPoP proof for that exact URL with no ath, and stores the rotation", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const answer = renewedBody();
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.equal((await cred.restore())?.principal, PRINCIPAL);
+  assert.equal(renewCalls(t.calls).length, 0, "a live token is restored with no request");
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const headers = await cred.authHeaders("GET", "https://a.example.test/lws/vault/v1/records");
+  const hit = renewCalls(t.calls);
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0]!.url, RENEW_URL);
+  assert.equal(hit[0]!.req.method, "POST");
+  assert.equal(hit[0]!.req.headers.Authorization, undefined);
+  assert.deepEqual(JSON.parse(hit[0]!.req.body!), { renew: OLD_RENEW });
+  const proof = hit[0]!.req.headers.DPoP;
+  assert.equal(typeof proof, "string");
+  const [hh, pp, ss] = proof!.split(".");
+  const header = dec(hh!) as { jwk: DpopPublicJwk };
+  const claims = dec(pp!) as { htm?: string; htu?: string; ath?: string };
+  assert.equal(claims.htm, "POST");
+  assert.equal(claims.htu, RENEW_URL);
+  assert.equal("ath" in claims, false);
+  const pub = await crypto.subtle.importKey("jwk", header.jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  assert.equal(
+    await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, pub, Buffer.from(ss!, "base64url"), new TextEncoder().encode(`${hh}.${pp}`)),
+    true,
+  );
+  assert.equal(headers.Authorization, `DPoP ${answer.token}`);
+  const saved = store.peek();
+  assert.equal(saved?.accessToken, answer.token);
+  assert.equal(saved?.renew, NEW_RENEW);
+  assert.equal(saved?.renewExpiresAt, answer.renewExpiresAt);
+  assert.equal(saved?.session.vaults[0]?.vaultId, "https://a.example.test/vault");
+  assert.equal(cred.session?.principal, PRINCIPAL);
+});
+
+test("restore of an expired token with a live credential renews once and returns the session", async () => {
+  const store = memoryStore(await seed({
+    accessToken: "tok-expired",
+    expiresAt: NOW - 1,
+  }));
+  const answer = renewedBody(NEW_RENEW, "https://id.example.test/i/after");
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
+  const session = await cred.restore();
+  assert.equal(renewCalls(t.calls).length, 1);
+  assert.equal(session?.principal, "https://id.example.test/i/after");
+  assert.deepEqual(session?.vaults, [{ vaultId: "https://a.example.test/vault", modes: ["read", "write"] }]);
+  assert.equal(store.peek()?.renew, NEW_RENEW);
+  assert.equal(store.peek()?.accessToken, answer.token);
+  assert.equal((await cred.authHeaders("GET", "https://a.example.test/x")).Authorization, `DPoP ${answer.token}`);
+  assert.equal(renewCalls(t.calls).length, 1, "the new token is used without a second renew");
+});
+
+test("two parallel renew calls on one credential share one platform request", async () => {
+  const store = memoryStore(await seed());
+  let release!: (value: TransportResponse) => void;
+  const gate = new Promise<TransportResponse>((resolve) => { release = resolve; });
+  const t = renewTransport(() => gate);
+  const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const first = cred.renew();
+  const second = cred.renew();
+  for (let i = 0; i < 50 && renewCalls(t.calls).length === 0; i++) await new Promise((r) => setTimeout(r, 0));
+  assert.equal(renewCalls(t.calls).length, 1);
+  release(jsonResponse(200, renewedBody()));
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a?.principal, PRINCIPAL);
+  assert.equal(b, a);
+  assert.equal(renewCalls(t.calls).length, 1);
+});
+
+test("with a lock, two credentials rotate once and both end holding the new credential", async () => {
+  const store = memoryStore(await seed());
+  const locks = fakeLocks();
+  const uninstall = installLocks(locks);
+  try {
+    const answer = renewedBody();
+    const t = renewTransport(() => jsonResponse(200, answer));
+    const a = new SessionCredential({ store, transport: t.send, now: () => NOW });
+    const b = new SessionCredential({ store, transport: t.send, now: () => NOW });
+    assert.ok(await a.restore());
+    assert.ok(await b.restore());
+    const [sa, sb] = await Promise.all([a.renew(), b.renew()]);
+    assert.equal(renewCalls(t.calls).length, 1);
+    assert.deepEqual(locks.names, [`gilb-signin-renew:${ORIGIN}`, `gilb-signin-renew:${ORIGIN}`]);
+    assert.equal(sa?.principal, PRINCIPAL);
+    assert.equal(sb?.principal, PRINCIPAL);
+    assert.equal((await a.authHeaders("GET", "https://a.example.test/x")).Authorization, `DPoP ${answer.token}`);
+    assert.equal((await b.authHeaders("GET", "https://a.example.test/x")).Authorization, `DPoP ${answer.token}`);
+    assert.equal(store.peek()?.renew, NEW_RENEW);
+    assert.equal(renewCalls(t.calls).length, 1, "adopting the other tab's record does not post");
+  } finally {
+    uninstall();
+  }
+});
+
+test("without locks the second presentation of the spent credential is 401 and that credential is signed out", async () => {
+  const uninstall = installLocks(undefined);
+  try {
+    const store = memoryStore(await seed());
+    const waiting: Array<{ resolve: (value: TransportResponse) => void }> = [];
+    const calls: Call[] = [];
+    const send: Transport = async (url, req) => {
+      calls.push({ url, req });
+      if (url !== RENEW_URL) return jsonResponse(500, {});
+      return new Promise<TransportResponse>((resolve) => {
+        waiting.push({ resolve });
+        if (waiting.length === 2) {
+          waiting[0]!.resolve(jsonResponse(200, renewedBody()));
+          waiting[1]!.resolve(jsonResponse(401, { error: "Unauthorized", message: "renewal refused" }));
+        }
+      });
+    };
+    const a = new SessionCredential({ store, transport: send, now: () => NOW });
+    const b = new SessionCredential({ store, transport: send, now: () => NOW });
+    assert.ok(await a.restore());
+    assert.ok(await b.restore());
+    const [sa, sb] = await Promise.all([a.renew(), b.renew()]);
+    assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 2);
+    for (const call of calls.filter((call) => call.url === RENEW_URL)) {
+      assert.deepEqual(JSON.parse(call.req.body!), { renew: OLD_RENEW });
+    }
+    const results = [sa, sb];
+    assert.equal(results.filter((session) => session === null).length, 1);
+    assert.equal([a.session, b.session].filter((session) => session === null).length, 1);
+    const live = a.session ?? b.session;
+    assert.equal(live?.principal, PRINCIPAL);
+    assert.equal((live === a.session ? a : b).session?.principal, PRINCIPAL);
+  } finally {
+    uninstall();
+  }
+});
+
+test("a 401 from renew clears the sign-in and authHeaders throws NotSignedInError", async () => {
+  const store = memoryStore(await seed({ expiresAt: NOW - 1, accessToken: "tok-old" }));
+  const t = renewTransport(() => jsonResponse(401, { error: "Unauthorized", message: "renewal refused" }));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
+  assert.equal(await cred.restore(), null);
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
+  assert.equal(renewCalls(t.calls).length, 1, "the spent credential is not presented again");
+});
+
+test("a 5xx and a network error keep the token and the credential", async () => {
+  const first = memoryStore(await seed());
+  let now = NOW;
+  const server = renewTransport(() => jsonResponse(503, { error: "ServiceUnavailable" }));
+  const cred = new SessionCredential({ store: first, transport: server.send, now: () => now });
+  assert.ok(await cred.restore());
+  const before = first.peek();
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  await assert.rejects(cred.renew(), RenewalUnavailableError);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(first.peek()?.renew, OLD_RENEW);
+  assert.equal(first.peek()?.accessToken, before?.accessToken);
+
+  const second = memoryStore(await seed({ expiresAt: NOW - 1, accessToken: "tok-old" }));
+  const send: Transport = async () => { throw new TypeError("Failed to fetch"); };
+  const again = new SessionCredential({ store: second, transport: send, now: () => NOW });
+  await assert.rejects(again.restore(), RenewalUnavailableError);
+  assert.equal(second.peek()?.renew, OLD_RENEW);
+  assert.equal(second.peek()?.accessToken, "tok-old");
+});
+
+test("a sign-out during renew wins and the rotated credential is not stored", async () => {
+  const store = memoryStore(await seed());
+  let release!: (value: TransportResponse) => void;
+  let renewSeen: Promise<void> = Promise.resolve();
+  let markSeen!: () => void;
+  renewSeen = new Promise<void>((resolve) => { markSeen = resolve; });
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === RENEW_URL) {
+      markSeen();
+      return new Promise<TransportResponse>((resolve) => { release = resolve; });
+    }
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const pending = cred.renew();
+  await renewSeen;
+  const signedOut = await cred.signOut(ORIGIN);
+  release(jsonResponse(200, renewedBody()));
+  assert.equal(await pending, null);
+  assert.equal(signedOut.serverSignedOut, true);
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
+  assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 1);
+});
+
+test("signOut posts the sign-out and then clears", async () => {
+  const store = memoryStore(await seed());
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    assert.equal(store.peek()?.renew, OLD_RENEW, "the record is still there while the server call is in flight");
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const token = store.peek()?.accessToken;
+  const result = await cred.signOut(ORIGIN);
+  assert.equal(result.serverSignedOut, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.url, SIGN_OUT_URL);
+  assert.equal(calls[0]!.req.method, "POST");
+  const authorization = calls[0]!.req.headers.Authorization;
+  assert.equal(authorization, `DPoP ${token}`);
+  const proof = calls[0]!.req.headers.DPoP!;
+  const claims = dec(proof.split(".")[1]!) as { htm?: string; htu?: string; ath?: string };
+  assert.equal(claims.htm, "POST");
+  assert.equal(claims.htu, SIGN_OUT_URL);
+  assert.equal(typeof claims.ath, "string");
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
+});
+
+test("signOut clears even when the server hangs, and reports serverSignedOut false", async () => {
+  const store = memoryStore(await seed());
+  let sawSignOut = false;
+  const send: Transport = async (url) => {
+    if (url === SIGN_OUT_URL) {
+      sawSignOut = true;
+      return new Promise<TransportResponse>(() => {});
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const started = Date.now();
+  const result = await cred.signOut(ORIGIN);
+  const elapsed = Date.now() - started;
+  assert.equal(result.serverSignedOut, false);
+  assert.equal(sawSignOut, true);
+  assert.equal(cred.session, null);
+  assert.equal(store.peek(), null);
+  assert.ok(elapsed >= SIGN_OUT_BOUND_MS - 500);
+  assert.ok(elapsed < SIGN_OUT_BOUND_MS + 1500);
+});

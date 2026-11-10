@@ -56,6 +56,18 @@ export interface StoredSession {
   /** Epoch milliseconds. `0` when the token was dropped. */
   expiresAt: number;
   session: GilbSession;
+  /**
+   * Renewal credential (`rsi1.<familyId>.<secret>`). Optional. A record without it
+   * cannot be renewed. Presenting one credential twice ends the sign-in.
+   */
+  renew?: string;
+  /** ISO-8601 expiry of {@link renew}. Optional, and absent when `renew` is absent. */
+  renewExpiresAt?: string;
+  /**
+   * Sign-in origin the renewal is posted to, with no trailing slash. Optional.
+   * A `renew` value with no origin cannot be renewed: the client will not guess a host.
+   */
+  origin?: string;
 }
 
 /** The persistence seam. A throwing method is a storage failure, not a failed sign-in. */
