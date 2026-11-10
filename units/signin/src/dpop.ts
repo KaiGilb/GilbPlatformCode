@@ -71,8 +71,9 @@ function b64url(bytes: ArrayBuffer | Uint8Array): string {
  * Generates a DPoP key pair. The private key is NON-extractable, so a script that steals the
  * token still cannot mint a proof for it. That is the point of the sender constraint.
  *
- * ⚠ The key lives in memory and dies with the page. Persisting it (for example to
- * `localStorage`) changes its security properties and is a platform decision, not an app one.
+ * ⚠ This function does not persist the key. The session credential may place the CryptoKey
+ * objects in IndexedDB; the private key stays non-extractable and is never exported.
+ * `localStorage` is not used.
  *
  * @returns the key pair; send `publicJwk` as `dpopJwk` to verify-code
  */
