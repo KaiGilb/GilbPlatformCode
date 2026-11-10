@@ -16,5 +16,5 @@
   ],
   "newFiles": [],
   "host": [],
-  "library": { "admitted": true, "tag": "t:ScreenButton.remove", "title": "Remove control (red minus button)", "note": "Deletes the row it sits in; it calls the host and writes nothing itself. For a plain button take button." }
+  "library": {"admitted": true, "tag": "t:ScreenButton.remove", "title": "Remove control (delete button, red minus)", "note": "Deletes the row it sits in; it calls the host and writes nothing itself. For a plain button take button."}
 }

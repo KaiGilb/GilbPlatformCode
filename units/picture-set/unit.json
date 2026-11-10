@@ -41,5 +41,5 @@
     { "member": "target", "replaces": "the app's settings read by uploadPicture, src/data/pictures.ts:84" },
     { "member": "sink.progress and sink.onProgress", "replaces": "the same parameters of uploadWithThumb, src/data/plants.ts:190; the host keeps the progress" }
   ],
-  "library": { "admitted": true, "tag": "t:ImageFile.set", "title": "Picture sizes upload and copy map", "note": "Remembers what was uploaded and linked, with resume; the upload itself is picture-upload, the shrinking picture-shrink, the retry save-queue." }
+  "library": {"admitted": true, "tag": "t:ImageFile.set", "title": "Picture sizes upload and copy map (list a vault's files, thumbnail per picture, end a file)", "note": "Remembers what was uploaded and linked, with resume, and lists a vault's files, finds the thumbnail for each picture and ends a file; the upload itself is picture-upload, the shrinking picture-shrink, the retry save-queue."}
 }

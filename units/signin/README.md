@@ -2,6 +2,10 @@
 
 Reusable GilbPlatformCode login artefact. One email one-time-code card, the DPoP proof every signed-in call carries, the session credential an app holds after sign-in, and a machine agent's sign-in. Not a second login. Passkey offer is host wiring, not this unit.
 
+## What this is
+
+The email one-time-code card, the DPoP proof on every signed-in call, the session credential an app holds, a machine agent's sign-in, and creating a named vault and listing the vaults a person can reach.
+
 Four entries:
 
 | Entry | What it is | React |

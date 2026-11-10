@@ -18,7 +18,7 @@
   {
    "folder": "remove-control",
    "tag": "t:ScreenButton.remove",
-   "title": "Remove control (red minus button)",
+   "title": "Remove control (delete button, red minus)",
    "note": "Deletes the row it sits in; it calls the host and writes nothing itself. For a plain button take button.",
    "exhibit": "**What it does:** The delete control of a record card: a named button drawn as a red round minus, which calls the host's `onClick`.\n\nGitHub folder: units/remove-control\nCommit: f70b8d7dfbe779b8a4f2783f04502df566324a14\nPackage: @kaigilb/gilbplatformcode-remove-control\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
   },
