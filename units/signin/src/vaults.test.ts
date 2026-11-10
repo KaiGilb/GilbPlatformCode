@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNamedVault, listVaults, normaliseVaultName, type SignedRequestSource } from "./vaults";
+import { createNamedVault, listVaults, normaliseVaultName, sameVaultHost, type SignedRequestSource } from "./vaults";
 import { VaultRequestRefusedError } from "./types";
 import type { Transport, TransportRequest } from "./transport";
 
@@ -72,7 +72,16 @@ describe("createNamedVault", () => {
     expect(r.sent[0]!.req.method).toBe("POST");
     expect(JSON.parse(r.sent[0]!.req.body!)).toEqual({ name: "johndeveloper-sailboats", represents: REP, parentVault: "p1" });
     expect(r.sent[0]!.req.headers.Authorization).toBe("DPoP tok");
-    expect(out).toEqual({ vaultId: "v1", vault: "https://x.example.test/vault", name: "johndevelopersailboats", parent: "p1", represents: REP });
+    expect(out).toEqual({ vaultId: "v1", vault: "https://x.example.test/vault", name: "johndevelopersailboats", parent: "p1", represents: REP, complete: true });
+  });
+
+  it("202 (partial mint): complete false, fields filled, one POST, no retry", async () => {
+    const r = rig(202, { ...created, partial: true });
+    const out = await createNamedVault(ORIGIN, { name: "n", represents: REP }, { credential: r.credential, transport: r.transport });
+    expect(out.complete).toBe(false);
+    expect(out.vaultId).toBe("v1");
+    expect(out.vault).toBe(created.vault);
+    expect(r.sent).toHaveLength(1);
   });
 
   it("omits parentVault when not given", async () => {
@@ -134,6 +143,7 @@ describe("createNamedVault", () => {
       expect(out.name).toBe("johndevelopersailboats");
       expect(out.represents).toBe(REP);
       expect(out.parent).toBeUndefined();
+      expect(out).not.toHaveProperty("vault");
       expect(posts(r.sent)).toBe(1);
     });
 
@@ -157,5 +167,14 @@ describe("createNamedVault", () => {
       await expect(run(r)).rejects.toMatchObject({ platformMessage: SENTENCE });
       expect(posts(r.sent)).toBe(1);
     });
+  });
+});
+
+describe("sameVaultHost", () => {
+  it("compares hosts only", () => {
+    expect(sameVaultHost("https://abc.example.test/base", "https://abc.example.test/vault")).toBe(true);
+    expect(sameVaultHost("https://abc.example.test/base", "https://abd.example.test/vault")).toBe(false);
+    expect(sameVaultHost("garbage", "https://abc.example.test/vault")).toBe(false);
+    expect(sameVaultHost("", "")).toBe(false);
   });
 });

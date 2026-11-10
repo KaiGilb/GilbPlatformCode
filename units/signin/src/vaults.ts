@@ -149,14 +149,38 @@ export interface CreateNamedVaultBody {
   parentVault?: string;
 }
 
-/** What the platform answers (201) when it made the vault. */
+/** What the platform answers (201, or 202 when partial) when it made the vault. */
 export interface CreatedNamedVault {
+  /**
+   * The vault's id as create-named answers it: the home namespace `https://<slug>.<domain>/base`.
+   * `GET /lws/vaults` lists the same vault as `https://<slug>.<domain>/vault`, so do not compare
+   * the full strings: match a made vault in {@link listVaults} by its normalised name or with
+   * {@link sameVaultHost}.
+   */
   vaultId: string;
-  vault: string;
+  /** The new vault's entity URI. Absent when the answer did not carry it. */
+  vault?: string;
+  /**
+   * true on 201. false on 202: the mint was partial (the vault's facts are committed, the register
+   * commit did not happen). Send the same request again to finish it; this kit never retries.
+   */
+  complete: boolean;
   /** The normalised name the platform saved. */
   name: string;
   parent?: string;
   represents: string;
+}
+
+/**
+ * True when both parse as URLs with the same host. False on unparsable input.
+ * Use it to match a vault id from create-named (`.../base`) with the list's (`.../vault`).
+ */
+export function sameVaultHost(a: string, b: string): boolean {
+  try {
+    return new URL(a).host === new URL(b).host;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -167,6 +191,7 @@ export interface CreatedNamedVault {
  * @param body name, `represents` (required) and optional `parentVault`
  * @param opts the credential that signs the request, and an optional transport
  * @throws Error before any network call when `represents` is empty
+ * @returns `complete: false` on 202 (partial mint): send the same request again to finish it
  * @throws {@link VaultRequestRefusedError} (status + the platform's `message ?? error`) on non-2xx
  */
 export async function createNamedVault(
@@ -195,7 +220,10 @@ export async function createNamedVault(
   if (typeof b.vaultId !== "string" || !b.vaultId) {
     // The vault was made but the answer names no id. Never re-post: find it in the list, once.
     const wanted = normaliseVaultName(body.name);
-    const found = (await listVaults(origin, opts)).find((v) => v.name === wanted);
+    const entity = typeof b.vault === "string" ? b.vault : "";
+    const found = (await listVaults(origin, opts)).find(
+      (v) => v.name === wanted || (entity !== "" && sameVaultHost(v.vaultId, entity)),
+    );
     if (!found) {
       throw new VaultRequestRefusedError(
         "Making the vault",
@@ -203,15 +231,16 @@ export async function createNamedVault(
         "The vault was made, but the answer named no vaultId and it is not in your vault list yet. Sign in again, then look for it.",
       );
     }
-    // The list carries no vault address; the address is the origin's vault path for that id.
-    return { vaultId: found.vaultId, vault: join(origin, `/lws/vaults/${found.vaultId}`), name: wanted, represents: body.represents };
+    // The entity URI is unknown on this path: leave `vault` out, never invent one.
+    return { vaultId: found.vaultId, name: wanted, represents: body.represents, complete: res.status === 201 };
   }
   const out: CreatedNamedVault = {
     vaultId: b.vaultId,
-    vault: String(b.vault ?? ""),
     name: String(b.name ?? ""),
     represents: iri(b.represents) ?? body.represents,
+    complete: res.status === 201,
   };
+  if (typeof b.vault === "string" && b.vault) out.vault = b.vault;
   const parent = iri(b.parent);
   if (parent) out.parent = parent;
   return out;

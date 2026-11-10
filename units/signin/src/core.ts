@@ -23,7 +23,7 @@ export {
   verifySignInCodeHttp,
   credentialsForPage,
 } from "./http";
-export { normaliseVaultName, listVaults, createNamedVault, CREATE_NAMED_VAULT_PATH } from "./vaults";
+export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";
 export {
