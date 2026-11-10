@@ -85,26 +85,31 @@ export async function checkVaultName(
         available: false,
         reserved: false,
         name,
-        requested: name,
+        requested: name.trim(),
         message: `Name check failed (HTTP ${res.status}).`,
       };
     }
     const body = (await res.json()) as Record<string, unknown>;
-    return {
+    const result: CheckNameResult = {
       available: body.available === true,
       reserved: body.reserved === true,
       name: typeof body.name === "string" ? body.name : name,
       address: typeof body.address === "string" ? body.address : undefined,
       message: typeof body.message === "string" ? body.message : undefined,
       suggestion: typeof body.suggestion === "string" ? body.suggestion : undefined,
-      requested: name,
+      // The platform's `requested` is the trimmed input (nameChangeReport); else the caller's, trimmed.
+      requested: typeof body.requested === "string" ? body.requested : name.trim(),
     };
+    // Present only when the platform sends them (GilbPlatform nameChangeReport, reserved-names.ts).
+    if (body.normalized === true) result.normalized = true;
+    if (typeof body.note === "string" && body.note) result.note = body.note;
+    return result;
   } catch {
     return {
       available: false,
       reserved: false,
       name,
-      requested: name,
+      requested: name.trim(),
       message: "Could not check that name. Try again.",
     };
   }

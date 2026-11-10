@@ -55,6 +55,14 @@ describe("uploadUrl", () => {
   test("is the file door of the vault root, with the name and folder encoded", () => {
     expect(uploadUrl("x y.jpg", target)).toBe(URL_OK);
   });
+  test("an empty, blank or missing folder sends no folder key (the platform answers 400 to an empty folder=)", () => {
+    const noFolder = "https://example.test/lws/vault/https%3A%2F%2Fexample.test%2Fvault/files?name=a.jpg";
+    expect(uploadUrl("a.jpg", { ...target, folder: "" })).toBe(noFolder);
+    expect(uploadUrl("a.jpg", { ...target, folder: "  " })).toBe(noFolder);
+    const { folder: _f, ...bare } = target;
+    expect(uploadUrl("a.jpg", bare)).toBe(noFolder);
+    expect(new URL(uploadUrl("a.jpg", { ...target, folder: "" })).searchParams.has("folder")).toBe(false);
+  });
   test("the folder is the one given and is encoded", () => {
     expect(uploadUrl("a.jpg", { ...target, folder: "p/q&r" })).toBe("https://example.test/lws/vault/https%3A%2F%2Fexample.test%2Fvault/files?name=a.jpg&folder=p%2Fq%26r");
   });

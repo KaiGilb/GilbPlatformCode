@@ -40,6 +40,10 @@ export function normaliseVaultName(raw: string): string {
 
 /** One vault from `GET /lws/vaults`, with what the session list drops. */
 export interface ListedVault {
+  /**
+   * The vault's namespace id, exactly as `GET /lws/vaults` sends it (`https://<slug>.<domain>/vault`
+   * on production). Do not assume `/base` or `/vault`.
+   */
   vaultId: string;
   modes: VaultMode[];
   name?: string;
@@ -48,6 +52,18 @@ export interface ListedVault {
   isLandingVault: boolean;
   /** The parent vault's id, when this vault sits under one. */
   partOf?: string;
+  /**
+   * The parent vault's entity URI (`partOf["@id"]` on the node, GilbPlatform `ReachableVaultNode.partOf`,
+   * src/lws/vaults.ts:143). Absent when the platform sent none. Usable as `createNamedVault`'s `parentVault`.
+   */
+  partOfEntity?: string;
+  /**
+   * The vault's entity URI: the `@id` of its node in `GET /lws/vaults` (GilbPlatform
+   * `ReachableVaultNode["@id"]`, src/lws/vaults.ts). Pass this as `createNamedVault`'s `parentVault`.
+   * Absent when the platform sent no `@id` (a bare namespace with no vault entity); such a vault
+   * cannot be a parent.
+   */
+  entity?: string;
 }
 
 function join(origin: string, path: string): string {
@@ -133,8 +149,12 @@ export async function listVaults(origin: string, opts: SignedVaultOptions): Prom
     if (typeof v.name === "string") item.name = v.name;
     const rep = iri(v.represents);
     if (rep) item.represents = rep;
-    const part = (v.partOf as { vaultId?: unknown } | null | undefined)?.vaultId;
+    if (typeof v["@id"] === "string" && v["@id"]) item.entity = v["@id"];
+    const partNode = v.partOf as { vaultId?: unknown; "@id"?: unknown } | null | undefined;
+    const part = partNode?.vaultId;
     if (typeof part === "string" && part) item.partOf = part;
+    const partEnt = partNode?.["@id"];
+    if (typeof partEnt === "string" && partEnt) item.partOfEntity = partEnt;
     out.push(item);
   }
   return out;
@@ -145,17 +165,20 @@ export interface CreateNamedVaultBody {
   name: string;
   /** REQUIRED. A full, live GilbVeda type IRI the vault represents. */
   represents: string;
-  /** Make it under this vault (its id). */
+  /**
+   * Make it under this vault: the `entity` of a vault from {@link listVaults} (its `@id`), exact.
+   * Not its `vaultId`: the platform refuses that ("parentVault is not a known vault entity").
+   */
   parentVault?: string;
 }
 
 /** What the platform answers (201, or 202 when partial) when it made the vault. */
 export interface CreatedNamedVault {
   /**
-   * The vault's id as create-named answers it: the home namespace `https://<slug>.<domain>/base`.
-   * `GET /lws/vaults` lists the same vault as `https://<slug>.<domain>/vault`, so do not compare
-   * the full strings: match a made vault in {@link listVaults} by its normalised name or with
-   * {@link sameVaultHost}.
+   * The vault's id as create-named answers it: `https://<slug>.<domain>` plus a segment the platform
+   * chooses (`/vault` on production, `/base` on a single-store setup; GilbPlatform
+   * `newUserVaultSegmentPath`). This code assumes neither. To find the made vault in
+   * {@link listVaults}, match its normalised name or use {@link sameVaultHost}, not the full string.
    */
   vaultId: string;
   /** The new vault's entity URI. Absent when the answer did not carry it. */
@@ -173,7 +196,7 @@ export interface CreatedNamedVault {
 
 /**
  * True when both parse as URLs with the same host. False on unparsable input.
- * Use it to match a vault id from create-named (`.../base`) with the list's (`.../vault`).
+ * Use it to match a vault id from create-named with the list's whatever segment (`/base` or `/vault`) each carries.
  */
 export function sameVaultHost(a: string, b: string): boolean {
   try {
