@@ -139,6 +139,33 @@ npm install <path-to-the-library>/units/signin
 
 Every later `npm install` and `npm ci`, CI included, then keeps the copy. Without that line a plain install makes a link, the unit brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist". A one-off `npm install --install-links <path>` works only until the next plain install, and `npm ci` then refuses the lock file.
 
+## Make a vault for your app
+
+`createNamedVault` posts once to `{origin}/base/vault/create-named` (signed, DPoP):
+
+```
+{ "name": "<vault name>", "represents": "<GilbVeda type IRI>", "parentVault"?: "<vault id>" }
+```
+
+`represents` is REQUIRED and must be the full IRI of a live GilbVeda type (for example a person type or your app's own type). The platform refuses a vault without one ("represents is required: ..."), and the kit throws before any network call when it is empty. Success is 201 `{ vault, vaultId, name, parent, represents, created: true }`. A refusal (400, 403, 404, 502, 503) throws `VaultRequestRefusedError` carrying `status` and `platformMessage`, the platform's `message ?? error` word for word. It is posted once and never retried: the platform has no idempotency.
+
+The platform normalises every name: lower-case, only a-z and 0-9 kept, and `user` when nothing is left. `johndeveloper-sailboats` is saved as `johndevelopersailboats`, so look it up by `normaliseVaultName("johndeveloper-sailboats")`, not by what was typed. `checkVaultName` answers the normalised `name` and the raw text in `requested`; it carries `suggestion` (a free name) and `message` only when the name is taken.
+
+```ts
+import { checkVaultName, createNamedVault, listVaults, normaliseVaultName } from "@kaigilb/gilbplatformcode-signin/core";
+
+const origin = "https://<your-vault-host>";                      // injected, never baked
+const check = await checkVaultName(origin, "johndeveloper-sailboats");
+const name = check.available ? check.requested! : check.suggestion;  // suggestion only when taken
+if (!name) throw new Error(check.message);
+const made = await createNamedVault(origin, { name, represents: "<GilbVeda type IRI>" }, { credential });
+const again = (await listVaults(origin, { credential })).find((v) => v.name === normaliseVaultName(name));
+console.log(made.vaultId === again?.vaultId, again?.represents, again?.isLandingVault);
+// a vault's address is https://<name>.gilb.com/vault, e.g. https://johndevelopersailboats.gilb.com/vault
+```
+
+`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf? }[]`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+
 ## Do not
 
 - Do not sign every call for the identity host. A vault call signed that way is refused with 401 `DPoP proof htu does not match the request URI`.
@@ -177,3 +204,13 @@ A list problem never rejects the sign-in. A token with under 60 s left, and no b
 The list is stored only on the access token it was read with. A newer sign-in that replaced the token, or a plain `invalidate()` that dropped it, stores nothing and does not throw. The caller still gets the session this read built. A sign-out still throws `NotSignedInError`.
 
 A trailing slash on `origin` is stripped once, so `loadReachableVaults("https://x.test/")` requests `https://x.test/lws/vaults`.
+
+## Changes in 0.2.3
+
+Patch release, additive only.
+
+- `CheckNameResult` gains optional `suggestion` (the platform's offer when the name is taken) and `requested` (the raw name sent). `checkVaultName` fills both.
+- New `normaliseVaultName(raw)`: the platform's rule, including the `user` fallback.
+- New `listVaults(origin, { credential, transport? })`: `ListedVault[]` with name, represents, isLandingVault and partOf. The session's own vault list is unchanged.
+- New `createNamedVault(origin, { name, represents, parentVault? }, { credential, transport? })`. `represents` is required. One post, no retry.
+- New exported error `VaultRequestRefusedError` (`status`, `platformMessage`).

@@ -28,6 +28,10 @@ export interface CheckNameResult {
   name: string;
   address?: string;
   message?: string;
+  /** A free name the platform offers. Present only when the name is taken. */
+  suggestion?: string;
+  /** The raw name that was sent, before the platform normalised it (`name` is the normalised one). */
+  requested?: string;
 }
 
 export interface VerifySignInResult {
@@ -68,5 +72,20 @@ export class SignInRefusedError extends Error {
     super(`${productName} refused the sign-in (HTTP ${status}). Wait a moment, then try again.`);
     this.name = "SignInRefusedError";
     this.status = status;
+  }
+}
+
+/**
+ * A signed vault request (list vaults, create a named vault) the platform answered with a non-2xx.
+ * `platformMessage` is the platform's own `message ?? error` word for word (empty when it sent none).
+ */
+export class VaultRequestRefusedError extends Error {
+  readonly status: number;
+  readonly platformMessage: string;
+  constructor(action: string, status: number, platformMessage = "") {
+    super(`${action} refused (HTTP ${status})${platformMessage ? `: ${platformMessage}` : "."}`);
+    this.name = "VaultRequestRefusedError";
+    this.status = status;
+    this.platformMessage = platformMessage;
   }
 }
