@@ -1,0 +1,37 @@
+{
+  "name": "@kaigilb/gilbplatformcode-fake-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A fetch stand-in for the GilbPlatform that answers the platform's real routes with the platform's real shapes, holding its state in memory, for an app's tests.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../photo-ref",
+    "@kaigilb/gilbplatformcode-picture-set": "file:../picture-set",
+    "@kaigilb/gilbplatformcode-picture-upload": "file:../picture-upload",
+    "@kaigilb/gilbplatformcode-record-sync": "file:../record-sync",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-refusal-detail": "file:../refusal-detail",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-access": "file:../vault-access",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.1",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

@@ -1,12 +1,13 @@
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { boot, click, dumpDevice, reload, watchForText, type Booted } from "./helpers";
+import { boot, click, dumpDevice, reload, settled, watchForText, type Booted } from "./helpers";
 
 async function annLoadedAndSaved(): Promise<Booted> {
   const k = await boot();
   k.show();
   click("signin-ann");
   await screen.findByTestId("entry-e1");
+  await settled();
   await k.speed.currentPersist()!.flush();
   expect(await dumpDevice()).toContain("ann.example.test"); // the copy of Ann is on the device (so the checks below mean something)
   return k;
@@ -23,10 +24,11 @@ describe("T3 two people", () => {
     expect(document.body.textContent).not.toContain("Ann entry");
     click("signin-ben");
     await screen.findByText("Ben entry 1");
+    await settled();
     await k.speed.currentPersist()!.flush();
     watch.stop();
     expect(watch.seen).toEqual([]); // at no render did "Ann entry" appear
-    expect(screen.getAllByTestId(/^entry-e\d+$/)).toHaveLength(5);
+    expect(screen.getAllByTestId(/^entry-b\d+$/)).toHaveLength(5);
     expect(await dumpDevice()).not.toContain("ann.example.test");
     expect(await dumpDevice()).toContain("ben.example.test");
   });
