@@ -7,6 +7,7 @@ export {
   verifySignInCodeHttp,
   credentialsForPage,
 } from "./http";
+export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";
 export {
@@ -18,6 +19,7 @@ export {
   CodeRejectedError,
   SignInUnreachableError,
   SignInRefusedError,
+  VaultRequestRefusedError,
 } from "./types";
 export type {
   SignInApp,
@@ -26,5 +28,12 @@ export type {
   CheckNameResult,
   VerifySignInResult,
 } from "./types";
+export type {
+  ListedVault,
+  CreateNamedVaultBody,
+  CreatedNamedVault,
+  SignedRequestSource,
+  SignedVaultOptions,
+} from "./vaults";
 export type { DpopKey, DpopPublicJwk, DpopSignerKey, DpopWebCryptoKey } from "./dpop";
 export type { Transport, TransportRequest, TransportResponse, HttpOptions } from "./transport";

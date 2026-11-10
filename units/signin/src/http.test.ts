@@ -288,3 +288,30 @@ describe("artefact independence and host-agnostic body", () => {
     expect(card).toMatch(/auth\.verifyCode/);
   });
 });
+
+describe("checkVaultName — suggestion and requested (0.2.3)", () => {
+  const taken = { name: "johndevelopersailboats", available: false, reserved: false, suggestion: "johndevelopersailboats2", message: "That name is taken." };
+  const transportOf = (status: number, body: unknown): Transport => async () => ({ status, json: async () => body });
+
+  it("passes suggestion and message through when taken, and echoes the raw name as requested", async () => {
+    const r = await checkVaultName(ORIGIN_A, "johndeveloper-sailboats", { transport: transportOf(200, taken) });
+    expect(r.suggestion).toBe("johndevelopersailboats2");
+    expect(r.message).toBe("That name is taken.");
+    expect(r.name).toBe("johndevelopersailboats");
+    expect(r.requested).toBe("johndeveloper-sailboats");
+    expect(r.available).toBe(false);
+  });
+
+  it("has no suggestion when the name is free", async () => {
+    const r = await checkVaultName(ORIGIN_A, "free", { transport: transportOf(200, { name: "free", available: true, reserved: false }) });
+    expect(r.suggestion).toBeUndefined();
+    expect(r.requested).toBe("free");
+  });
+
+  it("FAILS when suggestion is dropped: the check can fail", async () => {
+    const r = await checkVaultName(ORIGIN_A, "x", { transport: transportOf(200, { ...taken, suggestion: "x2" }) });
+    // If checkVaultName stopped returning `suggestion`, this is undefined and the test goes red.
+    expect(r).toHaveProperty("suggestion", "x2");
+    expect(typeof r.suggestion).toBe("string");
+  });
+});

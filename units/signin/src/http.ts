@@ -85,6 +85,7 @@ export async function checkVaultName(
         available: false,
         reserved: false,
         name,
+        requested: name,
         message: `Name check failed (HTTP ${res.status}).`,
       };
     }
@@ -95,12 +96,15 @@ export async function checkVaultName(
       name: typeof body.name === "string" ? body.name : name,
       address: typeof body.address === "string" ? body.address : undefined,
       message: typeof body.message === "string" ? body.message : undefined,
+      suggestion: typeof body.suggestion === "string" ? body.suggestion : undefined,
+      requested: name,
     };
   } catch {
     return {
       available: false,
       reserved: false,
       name,
+      requested: name,
       message: "Could not check that name. Try again.",
     };
   }
