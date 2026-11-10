@@ -57,6 +57,14 @@ function memoryStore(): Mem {
       await Promise.resolve();
       current = structuredClone(session);
     },
+    async saveIfSameKey(session, samePublicKeyId) {
+      const seen = current;
+      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      saves.push(session.accessToken);
+      current = structuredClone(session);
+    },
     async clear() {
       enteredClears++;
       await Promise.resolve();
@@ -105,8 +113,10 @@ async function seed(overrides: Partial<StoredSession> = {}): Promise<StoredSessi
     true,
     ["verify"],
   );
+  const exported = await crypto.subtle.exportKey("jwk", publicKey);
   return {
     version: STORED_SESSION_VERSION,
+    publicKeyId: `${exported.x}.${exported.y}`,
     keyPair: { publicKey, privateKey: key.privateKey },
     accessToken: "tok-stored",
     expiresAt: NOW + 3_600_000,
@@ -139,7 +149,9 @@ test("save after sign-in stores the principal, the vaults and the non-extractabl
   assert.equal(saved.keyPair.privateKey.extractable, false);
   assert.equal(saved.keyPair.privateKey.type, "private");
   await assert.rejects(crypto.subtle.exportKey("jwk", saved.keyPair.privateKey));
-  assert.deepEqual(await publicHalf(saved), await cred.ensurePublicJwk());
+  const half = await publicHalf(saved);
+  assert.deepEqual(half, await cred.ensurePublicJwk());
+  assert.equal(saved.publicKeyId, `${half.x}.${half.y}`);
   assert.ok(store.saves.every((token) => token === t.token));
 });
 
@@ -291,6 +303,9 @@ test("restore of a malformed record returns null and clears it", async () => {
     ["bad expiry", { ...base, expiresAt: Number.NaN }],
     ["no principal", { ...base, session: { principal: "", vault: null, vaults: [] } }],
     ["vaults not an array", { ...base, session: { principal: "p", vault: null, vaults: "no" } }],
+    ["missing publicKeyId", { ...base, publicKeyId: undefined }],
+    ["empty publicKeyId", { ...base, publicKeyId: "" }],
+    ["publicKeyId does not match the public key", { ...base, publicKeyId: `${base.publicKeyId}.no` }],
   ];
   for (const [name, raw] of cases) {
     const store = memoryStore();
@@ -363,6 +378,10 @@ test("sign-out during restore stores nothing and returns null", async () => {
       });
     },
     async save(session) { current = session; },
+    async saveIfSameKey(session, samePublicKeyId) {
+      if (typeof current?.publicKeyId !== "string" || current.publicKeyId.length === 0 || current.publicKeyId !== samePublicKeyId) return;
+      current = session;
+    },
     async clear() { current = null; },
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -386,6 +405,7 @@ test("concurrent restore calls share one load", async () => {
       return new Promise((resolve) => { release = resolve; });
     },
     async save() {},
+    async saveIfSameKey() {},
     async clear() {},
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -477,6 +497,7 @@ test("a store that throws on save still lets sign-in succeed", async () => {
   const store: SessionStore = {
     async load() { return null; },
     async save() { throw new Error("quota"); },
+    async saveIfSameKey() { throw new Error("quota"); },
     async clear() { throw new Error("quota"); },
   };
   const t = codeTransport(liveVaults);
@@ -491,6 +512,7 @@ test("a store that throws on load makes restore return null", async () => {
   const store: SessionStore = {
     async load() { throw new Error("blocked"); },
     async save() { throw new Error("blocked"); },
+    async saveIfSameKey() { throw new Error("blocked"); },
     async clear() { throw new Error("blocked"); },
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -577,6 +599,36 @@ test("the indexedDB adapter keeps one record and clear removes it", async () => 
   }
 });
 
+test("saveIfSameKey writes only when the stored publicKeyId matches, in one transaction", async () => {
+  const fake = fakeIndexedDb();
+  const prior = installIndexedDb(fake.api);
+  try {
+    const store = indexedDbSessionStore("app-session");
+    const first = await seed();
+    const other = await seed({ accessToken: "tok-other" });
+    await store.saveIfSameKey(first, first.publicKeyId);
+    assert.equal(await store.load(), null, "no record yet, so an update writes nothing");
+    await store.save(first);
+    const before = fake.transactions;
+    const updated = { ...first, accessToken: "tok-updated", session: { ...first.session, principal: "p-updated" } };
+    await store.saveIfSameKey(updated, first.publicKeyId);
+    assert.equal(fake.transactions - before, 1, "the compare and the write share one transaction");
+    assert.equal((await store.load())?.accessToken, "tok-updated");
+    assert.equal((await store.load())?.session.principal, "p-updated");
+    assert.equal((await store.load())?.publicKeyId, first.publicKeyId);
+    await store.saveIfSameKey({ ...other, accessToken: "tok-replaced" }, other.publicKeyId);
+    assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
+    await store.saveIfSameKey({ ...first, accessToken: "tok-empty-id" }, "");
+    assert.equal((await store.load())?.accessToken, "tok-updated", "an empty id does not replace the record");
+    const { publicKeyId: _gone, ...withoutId } = updated;
+    await store.save({ ...withoutId, accessToken: "tok-no-id" } as StoredSession);
+    await store.saveIfSameKey({ ...first, accessToken: "tok-should-stay-out" }, first.publicKeyId);
+    assert.equal((await store.load())?.accessToken, "tok-no-id", "a record with no publicKeyId is not updated");
+  } finally {
+    installIndexedDb(prior);
+  }
+});
+
 test("the record version and the default database name are the ones the README names", () => {
   assert.equal(STORED_SESSION_VERSION, 1);
   assert.equal(SESSION_DB_NAME, "gilb-signin-session");
@@ -596,6 +648,8 @@ interface FakeDb {
   api: IDBFactory;
   opens: string[];
   durabilities: Array<string | null>;
+  /** How many `transaction()` calls the adapter has made. */
+  transactions: number;
   storeNames(db: string): string[];
   keys(db: string, store: string): string[];
   record(db: string, store: string, key: string): unknown;
@@ -605,6 +659,7 @@ function fakeIndexedDb(opts: { block?: boolean } = {}): FakeDb {
   const databases = new Map<string, { version: number; stores: Map<string, Map<string, unknown>> }>();
   const opens: string[] = [];
   const durabilities: Array<string | null> = [];
+  let transactions = 0;
 
   function request(): IDBOpenDBRequest {
     return {
@@ -629,6 +684,7 @@ function fakeIndexedDb(opts: { block?: boolean } = {}): FakeDb {
         return {};
       },
       transaction(storeName: string, _mode: string, options?: { durability?: string }) {
+        transactions++;
         durabilities.push(options?.durability ?? null);
         const records = rec.stores.get(storeName);
         if (!records) throw new Error("NotFoundError");
@@ -730,6 +786,7 @@ function fakeIndexedDb(opts: { block?: boolean } = {}): FakeDb {
     api: api as unknown as IDBFactory,
     opens,
     durabilities,
+    get transactions() { return transactions; },
     storeNames(db: string) { return [...(databases.get(db)?.stores.keys() ?? [])]; },
     keys(db: string, store: string) { return [...(databases.get(db)?.stores.get(store)?.keys() ?? [])]; },
     record(db: string, store: string, key: string) { return databases.get(db)?.stores.get(store)?.get(key); },

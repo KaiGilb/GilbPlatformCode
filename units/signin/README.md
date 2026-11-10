@@ -225,19 +225,33 @@ Patch release, additive only.
 
 Patch release, additive only.
 
-A cookieless page has no platform cookie, so the access token and the DPoP key used to die with the page. `SessionCredential` now keeps them in IndexedDB on that page's origin when no `dpopMintUrl` is set: the key as non-extractable CryptoKey objects, the token, its expiry, and the session. `restore()` adopts that record on start-up when the token still has its 60 second guard, and makes no request. Sign-out deletes the record. A storage failure leaves the in-memory sign-in working. A page that passes `dpopMintUrl`, `store: false`, or a host-held `key` stores nothing.
+A cookieless page has no platform cookie, so the access token and the DPoP key used to die with the page. `SessionCredential` now keeps them in IndexedDB on that page's origin when no `dpopMintUrl` is set: the key as non-extractable CryptoKey objects, the token, its expiry, and the session. `restore()` adopts that record on start-up when the token still has its 60 second guard, and makes no request. Sign-out deletes the record. A storage failure leaves the in-memory sign-in working. A page that passes `dpopMintUrl`, `store: false`, or a host-held `key` stores nothing. When `dpopMintUrl` is set, an explicit `store` is ignored and nothing is stored: the page re-mints from the session cookie, as before.
+
+A store call the credential waits for gives up after 400 ms (`STORE_TIMEOUT_MS`). That timeout is a storage failure. The person stays signed in for this page. `restore()` on a timed-out load returns null and does not delete the record, so a later reload can still read it. `signInWithCode`, `adopt`, and `loadReachableVaults` do not wait for the save: they start it and return. `invalidate(true)` starts the delete at once and waits at most 400 ms. `authHeaders` does not wait on the store.
+
+`restore()` does not replace a sign-in this credential already holds. If a token is already held when it is called, or a sign-in or `adopt` starts while the load is in flight, it adopts nothing, writes nothing, and clears nothing, and returns the held session (or null when that sign-in has not produced a token yet). A sign-out during `restore()` still wins: the result is null and the record is deleted.
+
+Only a fresh sign-in (`signInWithCode`, or `adopt` of a new token) may create or replace the record. Every later save from that credential, including a vault-list refresh, writes only when a record is already stored and its public key is this credential's key. If the record is gone, or it holds another key, the save writes nothing. A credential that `restore()` adopted is in that update-only state. Two tabs can share the record: when one tab signs out, the other's later save does not put the record back, and a reload stays signed out.
+
+`restore()` checks that the stored private key matches the stored public key. It signs a fixed challenge with the private key and verifies that signature with the public key. A mismatch is not a session: `restore()` deletes the record and returns null.
 
 ## Stays signed in across a reload
 
 A published app is a third-party page. It gets no platform cookie, so the session bridge cannot re-mint after a reload. On that path `SessionCredential` keeps the sign-in in IndexedDB on the app's own origin.
 
-What is stored: one record in the database `gilb-signin-session`, object store `session`, key `current`. The record is version `1`. It holds the DPoP key pair as CryptoKey objects, the access token, its expiry (`expiresAt`, epoch milliseconds), and the session (`principal`, `vault`, `vaults`, `vaultsProblem`). The private key is not exported and stays non-extractable. IndexedDB structured-clones the CryptoKey objects.
+What is stored: one record in the database `gilb-signin-session`, object store `session`, key `current`. The record is version `1`. It holds the DPoP key pair as CryptoKey objects, the access token, its expiry (`expiresAt`, epoch milliseconds), and the session (`principal`, `vault`, `vaults`, `vaultsProblem`). The private key is not exported and stays non-extractable. IndexedDB structured-clones the CryptoKey objects. `publicKeyId` is the public key's JWK `x` and `y` joined by `.`, compared inside an update's transaction; `restore()` clears a record whose `publicKeyId` is missing or is not that public key.
 
-How long: until the token's own expiry. `restore()` returns the session when the token still has more than 60 seconds of life (`EXPIRY_GUARD_MS`). When the record is absent, the version is not 1, the record is malformed, or the token is inside that guard, `restore()` clears it and returns null. This version has no renewal. A new sign-in is the way back in after the token expires.
+How long: until the token's own expiry. `restore()` returns the session when the token still has more than 60 seconds of life (`EXPIRY_GUARD_MS`). When the record is absent, the version is not 1, the record is malformed, the public key does not match the private key, or the token is inside that guard, `restore()` clears it and returns null. The pair check signs a fixed challenge with the stored private key and verifies it with the stored public key. No request is made and the private key is not exported. This version has no renewal. A new sign-in is the way back in after the token expires.
+
+`restore()` is a no-op when this credential is already signed in, or when a sign-in is already on the wire. It does not adopt the loaded record, does not write, and does not clear. The result is the session already held, or null if the sign-in has not returned a token yet. A sign-out during that load still wins.
+
+A store call the credential waits for gives up after 400 ms (`STORE_TIMEOUT_MS`). A timed-out save or a timed-out clear is a storage failure: the person stays signed in for this page, in memory. A timed-out load makes `restore()` return null and leaves the record where it is, so the next reload can still adopt it. `signInWithCode`, `adopt`, and `loadReachableVaults` start the save and do not wait for it. `invalidate(true)` starts the delete immediately and waits at most 400 ms. `authHeaders` does not touch the store.
 
 The private key cannot be read out as JWK or PKCS8. Any script on the app's origin can still use it, while the page is open or on a later visit, to sign DPoP proofs. An XSS in the app can do that. Sign-out (`invalidate(true)`) deletes the record. A later `restore()` then returns null.
 
-A first-party app that passes `dpopMintUrl` stores nothing: the cookie bridge re-mints, as before. `store: false` stores nothing. A host-passed `key` is never stored; the host owns it. Pass `store` to replace the IndexedDB adapter, for tests or for a host that keeps the record itself.
+A first-party app that passes `dpopMintUrl` stores nothing: the cookie bridge re-mints, as before. An explicit `store` passed together with `dpopMintUrl` is ignored. Nothing is written and `restore()` returns null. `store: false` stores nothing. A host-passed `key` is never stored; the host owns it. Pass `store` to replace the IndexedDB adapter, for tests or for a host that keeps the record itself, only on a credential that does not pass `dpopMintUrl`.
+
+Only the save that follows a fresh sign-in (`signInWithCode`, or `adopt` of a new token) may create the record or replace whatever was there. Later saves from that same credential — a vault-list refresh, a dropped token after a 401 — are updates. An update writes only when the stored record exists and its public key is this credential's key, compared in one readwrite transaction. If the record is missing or holds another key, the update writes nothing. `restore()` puts the credential into that update-only state. Two open tabs share one record. Tab A signs out and the record is deleted. Tab B, which restored earlier, may later refresh its vault list: that save does not put the record back. A reload stays signed out.
 
 ```ts
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
@@ -250,7 +264,7 @@ if (!restored) {
 }
 ```
 
-IndexedDB can fail (it is missing, the quota is full, the browser is in private mode, or the open is blocked). Sign-in still works in memory, and `restore()` returns null.
+IndexedDB can fail (it is missing, the quota is full, the browser is in private mode, the open is blocked, or a call does not settle within 400 ms). Sign-in still works in memory. `restore()` returns null. A load that timed out does not delete the record.
 
 Sign-out starts the delete before `invalidate(true)` returns when the database is already open, so a page that closes immediately still has a delete transaction queued. IndexedDB commits that transaction asynchronously. If the browser discards the document before the commit, the record can remain. A save that was already committing can also land, and this credential deletes again when that save finishes — which does not run if the page is already gone. The next `restore()` still refuses a token inside the 60 second guard.
 

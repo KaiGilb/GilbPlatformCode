@@ -18,7 +18,9 @@
 //
 // Where a token comes from, in this order:
 //   1. `restore()`: the record the store kept from an earlier page. No request is made. A token
-//      inside the expiry guard, a wrong version, or a malformed record is dropped.
+//      inside the expiry guard, a wrong version, a malformed record (no `publicKeyId`, or one
+//      that is not the stored public key's `x.y`), or a key pair whose halves do not match is
+//      dropped. A sign-in this credential already holds is left as it is.
 //   2. `adopt()`: the token verify-code returned (the cookieless path). verify-code returns no
 //      vault list. The session-cookie bridge below is first-party only, so a third-party app
 //      cannot learn its vaults from either answer. `signInWithCode` therefore reads
@@ -49,6 +51,22 @@ export type { SessionStore, StoredSession } from "./sessionStore";
 
 /** Re-mint when less than this much of the token's life is left (clock skew and time in flight). */
 export const EXPIRY_GUARD_MS = 60_000;
+
+/**
+ * How long a store call the credential is waiting on may take. Past this, the call is a storage
+ * failure: the in-memory sign-in stays, and a load that timed out is not treated as an empty
+ * record (the record is left in place). Sign-in does not wait on a save at all.
+ */
+export const STORE_TIMEOUT_MS = 400;
+
+/** Fixed input for the restore pair check. Not a secret, and not sent anywhere. */
+const STORED_PAIR_CHALLENGE = new TextEncoder().encode("gilb-signin-pair-check");
+
+/**
+ * Turns yielded so a store op that is already running can finish when it settles on its own.
+ * A store that never settles is not waited on: the loop ends either way.
+ */
+const STORE_FLUSH_TURNS = 12;
 
 /**
  * Lifetime assumed when a token's expiry cannot be read. Short on purpose: re-mint early rather
@@ -197,8 +215,11 @@ export interface SessionCredentialOptions {
   /**
    * Where a cookieless sign-in is kept across a reload. Omit it and, when `dpopMintUrl` is also
    * omitted and `globalThis.indexedDB` exists, the credential uses
-   * `indexedDbSessionStore(SESSION_DB_NAME)`. `false` stores nothing. A `dpopMintUrl` (the page
-   * re-mints from the session cookie) stores nothing either: that page keeps today's behaviour.
+   * `indexedDbSessionStore(SESSION_DB_NAME)`. `false` stores nothing.
+   *
+   * When `dpopMintUrl` is set, this option is ignored and nothing is stored, including when a
+   * `store` is passed as well. That page re-mints from the session cookie (first-party), which
+   * is the behaviour it already had.
    */
   store?: SessionStore | false;
   /** The clock, in epoch ms. For tests. */
@@ -235,8 +256,26 @@ export class SessionCredential {
    * was meant to delete, even when the delete has not landed yet.
    */
   private signedOut = false;
+  /**
+   * Bumped when a sign-in or `adopt` starts. `restore` captures it and compares after every
+   * await, the same way `generation` is used for sign-out: a sign-in that started while the
+   * load was in flight is not overwritten by the record the load returns.
+   */
+  private signInSerial = 0;
+  /** `signInWithCode` calls in flight. `restore` will not adopt over one. */
+  private signInsInFlight = 0;
+  /**
+   * Set by a fresh sign-in (`adopt` / verify-code) until that sign-in's record has been
+   * written. Later saves, and a credential that `restore` adopted, are update-only.
+   */
+  private canCreateRecord = false;
   /** Public CryptoKey paired with `this.key`, so a save does not import it again. */
   private publicCryptoKey: CryptoKey | null = null;
+  /**
+   * `x.y` of this credential's public key. Set once when the key pair is made or
+   * restored, and passed to an update-only save. Not recomputed inside a transaction.
+   */
+  private publicKeyId: string | null = null;
   /** Bumped whenever the held session changes, so a save writes the latest one. */
   private epoch = 0;
   /** The epoch last settled with the store (written, or deliberately not written). */
@@ -278,12 +317,16 @@ export class SessionCredential {
    * @param accessToken the DPoP-bound token
    * @param session the session it resolves
    * @param expiresAt epoch ms; read from the token's `exp` when omitted
-   * @returns a promise that settles the store write. The token is held before it resolves.
+   * @returns a promise that resolves once the token is held. The save is started and its
+   *   failure is swallowed. The promise does not wait for a store call that fails to settle,
+   *   and it does not reject: a storage failure leaves the in-memory sign-in in place.
    *   A token already inside {@link EXPIRY_GUARD_MS} is held in memory and not written.
-   *   The promise does not reject: a storage failure leaves the in-memory sign-in in place.
    */
   adopt(accessToken: string, session: GilbSession, expiresAt?: number): Promise<void> {
+    this.signInSerial++;
     this.signedOut = false;
+    // A new token may create or replace the record. Later updates from this hold are not creates.
+    this.canCreateRecord = true;
     this.minted = {
       accessToken,
       expiresAt: expiresAt ?? tokenExpiresAt(accessToken, this.now()),
@@ -291,7 +334,7 @@ export class SessionCredential {
       session,
     };
     this.markDirty();
-    return this.storeSettled();
+    return this.flushStore();
   }
 
   /**
@@ -314,9 +357,15 @@ export class SessionCredential {
     name?: string,
     productName?: string,
   ): Promise<VerifyHttpBody> {
-    // The store write finishes before this promise settles, including when the body throws:
-    // a sign-out during the code or the vault list must not lose the race to a save.
-    return this.withStore(this.signInWithCodeBody(origin, email, code, name, productName));
+    // Counted before the first await so `restore` during verify-code does not adopt a stored
+    // key over the key this call is binding the token to. The save is started, not awaited:
+    // a store that never settles must not block the sign-in the caller is waiting on.
+    this.signInsInFlight++;
+    this.signInSerial++;
+    return this.signInWithCodeBody(origin, email, code, name, productName).finally(() => {
+      this.signInsInFlight--;
+      return this.flushStore();
+    });
   }
 
   private async signInWithCodeBody(
@@ -361,7 +410,9 @@ export class SessionCredential {
    *   was on the wire (nothing is stored)
    */
   loadReachableVaults(origin: string): Promise<GilbSession> {
-    return this.withStore(this.loadReachableVaultsBody(origin));
+    // The vault-list save is started and not awaited. A store that never settles must not
+    // block the caller. The list is still applied to the held session before this resolves.
+    return this.loadReachableVaultsBody(origin).finally(() => this.flushStore());
   }
 
   private async loadReachableVaultsBody(origin: string): Promise<GilbSession> {
@@ -484,8 +535,10 @@ export class SessionCredential {
    * Drops the token so the next use re-mints. On sign-out pass `dropKey`: a new sign-in gets a
    * new key. A key the host passed in is never dropped; the host owns it.
    *
-   * The store follows. The returned promise settles that write and does not reject; the
-   * in-memory drop has already happened when this returns to the caller.
+   * The store follows. The returned promise settles that write, or gives up after
+   * {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory drop has already happened
+   * when this returns to the caller. Sign-out waits at most that long for the delete it
+   * started in this turn.
    *
    * Sign-out deletes the stored record. The delete is started before this returns, so a page
    * that closes immediately still has a delete transaction queued when the database is already
@@ -510,34 +563,49 @@ export class SessionCredential {
       const key = this.key;
       if (this.store && isWebCryptoKey(key)) this.dropStoredToken(key);
       else this.enqueueClear();
-      return this.storeSettled();
+      return this.tailSettled();
     }
     this.generation++;
     this.signedOut = true;
+    this.canCreateRecord = false;
     this.epoch++;
     this.inflight = null;
     if (!this.hostKey) {
       this.key = null;
       this.keyInflight = null;
       this.publicCryptoKey = null;
+      this.publicKeyId = null;
     }
     // Start the delete in this turn, then queue another behind any save already in `tail`.
+    // The caller waits for that chain for at most STORE_TIMEOUT_MS.
     this.startClearNow();
     this.enqueueClear();
-    return this.storeSettled();
+    return this.tailSettled();
   }
 
   /**
    * Adopts a stored sign-in, or returns null when there is nothing to adopt.
    * Makes no request. Concurrent calls share one load.
    *
-   * Absent, wrong version, malformed, or a token inside {@link EXPIRY_GUARD_MS}: the store is
-   * cleared and the result is null. A storage failure also returns null and leaves the
-   * in-memory credential as it was. A sign-out (`invalidate(true)`) that lands while the load
-   * is in flight wins: nothing is adopted and the store is cleared.
+   * Absent, wrong version, malformed (including a missing `publicKeyId`, or one that is not
+   * the stored public key's `x.y`), a key pair whose halves do not match, or a token inside
+   * {@link EXPIRY_GUARD_MS}: the store is cleared and the result is null. A storage failure,
+   * including a load that does not settle within {@link STORE_TIMEOUT_MS}, also returns null
+   * and does not clear the record. The in-memory credential is left as it was.
+   *
+   * When this credential already holds a token, or a sign-in / `adopt` is in flight or starts
+   * while the load is in flight, nothing is adopted, written, or cleared. The result is the
+   * held session, or null when the sign-in has not produced a token yet.
+   *
+   * A sign-out (`invalidate(true)`) that lands while the load is in flight wins: nothing is
+   * adopted and the store is cleared.
    */
   restore(): Promise<GilbSession | null> {
     if (!this.store) return Promise.resolve(null);
+    // A held token, or a verify-code still on the wire: do not load, and do not touch the store.
+    if (this.minted || this.signInsInFlight > 0) {
+      return Promise.resolve(this.minted?.session ?? null);
+    }
     if (!this.restoreInflight) {
       const pending = this.doRestore().finally(() => {
         if (this.restoreInflight === pending) this.restoreInflight = null;
@@ -557,6 +625,7 @@ export class SessionCredential {
     if (gen === this.generation && !this.key) {
       this.key = key;
       this.publicCryptoKey = null;
+      this.publicKeyId = publicKeyIdFromJwk(key.publicJwk);
       // `adopt` may have run before the key existed. A token is stored only with its key.
       if (this.minted && this.store && !this.signedOut) this.pokeIfDirty();
     }
@@ -623,16 +692,70 @@ export class SessionCredential {
     return minted;
   }
 
-  /** Waits for store ops already queued. No wait when this credential stores nothing, so the cookieless-free and first-party paths keep their timing. */
-  private withStore<T>(work: Promise<T>): Promise<T> {
-    if (!this.store) return work;
-    return work.finally(() => this.tail.then(() => undefined, () => undefined));
+  /**
+   * Gives a store op that is already queued a few event-loop turns to finish.
+   * Returns without waiting once those turns are spent, so a call that never settles
+   * cannot hold sign-in, adopt, or a vault-list read. Never rejects.
+   */
+  private async flushStore(): Promise<void> {
+    if (!this.store) return;
+    for (let i = 0; i < STORE_FLUSH_TURNS; i++) {
+      const tail = this.tail;
+      const settled = await new Promise<boolean>((resolve) => {
+        let done = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (value: boolean) => {
+          if (done) return;
+          done = true;
+          if (timer !== undefined) clearTimeout(timer);
+          resolve(value);
+        };
+        tail.then(() => finish(true), () => finish(true));
+        timer = setTimeout(() => finish(false), 0);
+      });
+      if (settled && this.tail === tail) return;
+    }
   }
 
-  /** The tail promise when a store is in use, otherwise an already resolved promise. Never rejects. */
-  private storeSettled(): Promise<void> {
-    if (!this.store) return Promise.resolve();
-    return this.tail.then(() => undefined, () => undefined);
+  /**
+   * Waits until the queued store ops have finished, or {@link STORE_TIMEOUT_MS} has passed.
+   * Never rejects. A timeout leaves the chain running and returns.
+   */
+  private async tailSettled(): Promise<void> {
+    if (!this.store) return;
+    for (;;) {
+      const tail = this.tail;
+      const waited = await this.bounded(tail.then(() => undefined, () => undefined));
+      if (!waited.ok) return;
+      if (this.tail === tail) return;
+    }
+  }
+
+  /** A store call, or a storage failure when it throws, rejects, or exceeds {@link STORE_TIMEOUT_MS}. */
+  private bounded<T>(work: Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result: { ok: true; value: T } | { ok: false }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      };
+      const timer = setTimeout(() => finish({ ok: false }), STORE_TIMEOUT_MS);
+      work.then(
+        (value) => finish({ ok: true, value }),
+        () => finish({ ok: false }),
+      );
+    });
+  }
+
+  /** Runs a store call. A synchronous throw becomes a rejection, same as a failed promise. */
+  private invokeStore(run: () => Promise<void>): Promise<void> {
+    try {
+      return Promise.resolve(run());
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }
 
   private tokenIsLive(expiresAt: number, freshForMs = 0): boolean {
@@ -694,7 +817,11 @@ export class SessionCredential {
     if (!isWebCryptoKey(this.key)) return this.key ? "skip" : "pending-key";
     const key = this.key;
     if (!this.tokenIsLive(minted.expiresAt)) {
-      try { await this.store.clear(); } catch { /* the in-memory token still stands */ }
+      // A fresh sign-in that we will not store must not leave the previous record.
+      // An update-only credential does not delete: the record may now be another tab's.
+      if (this.canCreateRecord) {
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
+      }
       return this.epoch === epoch ? "skip" : "retry";
     }
     let publicKey: CryptoKey;
@@ -703,33 +830,55 @@ export class SessionCredential {
     } catch {
       return "skip";
     }
+    // Exported here, before the store call. The transaction only compares this string.
+    const exportedId = await publicKeyIdOf(publicKey);
     if (this.generation !== gen || this.signedOut) return "skip";
     if (this.epoch !== epoch || this.minted !== minted) return "retry";
     const held = this.minted;
-    if (!held) return "skip";
+    if (!held || !exportedId) return "skip";
+    if (this.publicKeyId === null) this.publicKeyId = exportedId;
+    const samePublicKeyId = this.publicKeyId;
+    if (samePublicKeyId !== exportedId) return "skip";
     const record: StoredSession = {
       version: STORED_SESSION_VERSION,
       keyPair: { publicKey, privateKey: key.privateKey },
+      publicKeyId: exportedId,
       accessToken: held.accessToken,
       expiresAt: held.expiresAt,
       session: copySession(held.session),
     };
-    try {
-      await this.store.save(record);
-    } catch {
+    const create = this.canCreateRecord;
+    const pending = this.invokeStore(() =>
+      create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
+    );
+    const saved = await this.bounded(pending);
+    if (!saved.ok) {
+      // The call may still land after the timeout. A sign-out that won in the meantime
+      // deletes again so the late write does not put the record back.
+      void pending.then(() => {
+        void this.afterWrite(gen, epoch, create);
+      }, () => undefined);
       return "skip";
     }
-    // A sign-out while `save` was in flight may have deleted first. Delete again so the
-    // save does not resurrect the session. A newer sign-in (minted, not signed out) is left
-    // for the next pass.
-    if (this.generation !== gen || this.signedOut) {
-      if (!this.minted || this.signedOut) {
-        try { await this.store.clear(); } catch { /* the queued sign-out clear also runs */ }
-      }
-      return "skip";
-    }
+    await this.afterWrite(gen, epoch, create);
+    if (this.generation !== gen || this.signedOut) return "skip";
     if (this.epoch !== epoch) return "retry";
     return "saved";
+  }
+
+  /**
+   * After a write that landed: a fresh sign-in becomes update-only when this write is still
+   * the latest one. A sign-out that won deletes again, so the write does not resurrect it.
+   */
+  private async afterWrite(gen: number, epoch: number, create: boolean): Promise<void> {
+    if (this.generation !== gen || this.signedOut) {
+      if (!this.minted || this.signedOut) {
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
+      }
+      return;
+    }
+    // A newer adopt bumped the epoch and may still need to create. Don't disarm it.
+    if (create && this.epoch === epoch) this.canCreateRecord = false;
   }
 
   private async cachedPublicKey(key: DpopWebCryptoKey): Promise<CryptoKey> {
@@ -752,30 +901,58 @@ export class SessionCredential {
       try {
         if (!publicKey) publicKey = await importDpopPublicKey(jwk);
       } catch {
-        try { await this.store?.clear(); } catch { /* the in-memory key is unchanged */ }
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
         return;
       }
       if (this.generation !== gen || this.signedOut) {
-        try { await this.store?.clear(); } catch { /* sign-out wins */ }
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
         return;
       }
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
+      // Same export as a normal save: outside the transaction, before the store call.
+      const exportedId = await publicKeyIdOf(publicKey);
+      if (this.generation !== gen || this.signedOut) {
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        return;
+      }
+      if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
+      if (!exportedId) {
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        return;
+      }
+      if (this.publicKeyId === null) this.publicKeyId = exportedId;
+      const samePublicKeyId = this.publicKeyId;
+      if (samePublicKeyId !== exportedId) return;
       // Empty token and empty principal: not a session. `restore` clears it.
       const record: StoredSession = {
         version: STORED_SESSION_VERSION,
         keyPair: { publicKey, privateKey },
+        publicKeyId: exportedId,
         accessToken: "",
         expiresAt: 0,
         session: { principal: "", vault: null, vaults: [] },
       };
-      try {
-        await this.store!.save(record);
-      } catch {
+      const epoch = this.epoch;
+      const create = this.canCreateRecord;
+      const pending = this.invokeStore(() =>
+        create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
+      );
+      const saved = await this.bounded(pending);
+      if (!saved.ok) {
+        void pending.then(() => {
+          if (this.generation !== gen || this.signedOut) {
+            void this.bounded(this.invokeStore(() => this.store!.clear())).then(() => undefined, () => undefined);
+            return;
+          }
+          if (create && this.epoch === epoch) this.canCreateRecord = false;
+        }, () => undefined);
         return;
       }
       if (this.generation !== gen || this.signedOut) {
-        try { await this.store!.clear(); } catch { /* sign-out wins */ }
+        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        return;
       }
+      if (create && this.epoch === epoch) this.canCreateRecord = false;
     });
   }
 
@@ -786,7 +963,7 @@ export class SessionCredential {
     void this.enqueue(async () => {
       if (this.generation !== gen) return;
       if (this.minted && !this.signedOut) return;
-      try { await this.store!.clear(); } catch { /* best effort */ }
+      await this.bounded(this.invokeStore(() => this.store!.clear()));
     });
   }
 
@@ -813,31 +990,33 @@ export class SessionCredential {
     const store = this.store;
     if (!store) return null;
     const gen = this.generation;
+    const serial = this.signInSerial;
     // A plain invalidate or a sign-in save may still be queued. Load what it left,
-    // not the record it is about to replace. Follow the chain if a later op was queued
-    // while the earlier one was finishing.
+    // not the record it is about to replace. A store op that does not settle is a
+    // storage failure: return null and do not clear (the record may still be good).
     for (;;) {
       const tail = this.tail;
-      await tail.then(() => undefined, () => undefined);
+      const waited = await this.bounded(tail.then(() => undefined, () => undefined));
+      if (!waited.ok) return null;
       if (this.tail === tail) break;
     }
-    if (gen !== this.generation || this.signedOut) {
-      try { await store.clear(); } catch { /* sign-out already started a delete */ }
-      return null;
-    }
-    let raw: unknown;
-    try {
-      raw = await store.load();
-    } catch {
-      return null;
-    }
-    if (gen !== this.generation || this.signedOut) {
-      try { await store.clear(); } catch { /* sign-out already started a delete */ }
-      return null;
-    }
-    const record = liveStoredSession(raw, this.now());
+    const stopped = await this.restoreStopped(store, gen, serial);
+    if (stopped) return stopped.session;
+    const loaded = await this.bounded(store.load());
+    // Timeout or a thrown load: not "no record". Leave whatever is stored.
+    if (!loaded.ok) return null;
+    const stoppedAfterLoad = await this.restoreStopped(store, gen, serial);
+    if (stoppedAfterLoad) return stoppedAfterLoad.session;
+    const record = liveStoredSession(loaded.value, this.now());
     if (!record) {
-      try { await store.clear(); } catch { /* still nothing to adopt */ }
+      await this.bounded(this.invokeStore(() => store.clear()));
+      return null;
+    }
+    const matches = await keyPairMatches(record.keyPair.privateKey, record.keyPair.publicKey);
+    const stoppedAfterPair = await this.restoreStopped(store, gen, serial);
+    if (stoppedAfterPair) return stoppedAfterPair.session;
+    if (!matches) {
+      await this.bounded(this.invokeStore(() => store.clear()));
       return null;
     }
     let jwk: DpopPublicJwk | null = null;
@@ -846,17 +1025,24 @@ export class SessionCredential {
     } catch {
       jwk = null;
     }
-    if (gen !== this.generation || this.signedOut) {
-      try { await store.clear(); } catch { /* sign-out wins: store nothing */ }
+    const publicKeyId = jwk ? publicKeyIdFromJwk(jwk) : null;
+    const stoppedAfterJwk = await this.restoreStopped(store, gen, serial);
+    if (stoppedAfterJwk) return stoppedAfterJwk.session;
+    // Missing id was already refused. This refuses an id that is not the stored public key.
+    if (!jwk || !publicKeyId || publicKeyId !== record.publicKeyId) {
+      await this.bounded(this.invokeStore(() => store.clear()));
       return null;
     }
-    if (!jwk) {
-      try { await store.clear(); } catch { /* the record cannot be adopted */ }
-      return null;
-    }
-    // No await between this check and the write, so a sign-out cannot land in between.
+    // No await between this check and the adopt, so a sign-out cannot land in between.
+    // A sign-out's own delete is already running; clearing again here would be that await.
     if (gen !== this.generation || this.signedOut) return null;
+    if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
+      return this.minted?.session ?? null;
+    }
+    // Adopted from the store: a later save must not create the record again.
+    this.canCreateRecord = false;
     this.publicCryptoKey = record.keyPair.publicKey;
+    this.publicKeyId = publicKeyId;
     this.key = { publicJwk: jwk, privateKey: record.keyPair.privateKey };
     const session = copySession(record.session);
     this.minted = {
@@ -867,11 +1053,39 @@ export class SessionCredential {
     };
     return session;
   }
+
+  /**
+   * Null when this restore may still adopt. Otherwise the session to return, and this
+   * restore adopts nothing and writes nothing.
+   *
+   * Sign-out wins: the stored record is cleared and the result is null. A sign-in that
+   * started after `serial` was captured, or a token already held, keeps that session
+   * (or null when the sign-in has not produced a token yet) and does not clear.
+   *
+   * @param clearOnSignOut when false, a sign-out is not cleared from here. The adopt
+   *   that follows must not await a store call.
+   */
+  private async restoreStopped(
+    store: SessionStore,
+    gen: number,
+    serial: number,
+    clearOnSignOut = true,
+  ): Promise<{ session: GilbSession | null } | null> {
+    if (gen !== this.generation || this.signedOut) {
+      if (clearOnSignOut) await this.bounded(this.invokeStore(() => store.clear()));
+      return { session: null };
+    }
+    if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
+      return { session: this.minted?.session ?? null };
+    }
+    return null;
+  }
 }
 
 function selectStore(opts: SessionCredentialOptions): SessionStore | null {
-  // A host-passed key is never stored: the host owns it. A session-cookie bridge re-mints,
-  // so those pages keep today's behaviour. `false` is an explicit opt out.
+  // A host-passed key is never stored: the host owns it. `false` is an explicit opt out.
+  // `dpopMintUrl` stores nothing either, and an explicit `store` is ignored: the session
+  // cookie re-mints, which is the first-party behaviour.
   if (opts.key || opts.store === false || opts.dpopMintUrl) return null;
   if (opts.store) return opts.store;
   try {
@@ -906,6 +1120,21 @@ async function publicJwkOf(key: CryptoKey): Promise<DpopPublicJwk | null> {
   return { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
 }
 
+/** `x.y` of a public JWK. Empty coordinates are not an id. */
+function publicKeyIdFromJwk(jwk: { x?: unknown; y?: unknown }): string | null {
+  if (typeof jwk.x !== "string" || jwk.x.length === 0 || typeof jwk.y !== "string" || jwk.y.length === 0) return null;
+  return `${jwk.x}.${jwk.y}`;
+}
+
+/** Id of an extractable public key. Callers run this outside any IndexedDB transaction. The private key is never exported. */
+async function publicKeyIdOf(key: CryptoKey): Promise<string | null> {
+  try {
+    return publicKeyIdFromJwk(await crypto.subtle.exportKey("jwk", key));
+  } catch {
+    return null;
+  }
+}
+
 function copySession(session: GilbSession): GilbSession {
   const copy: GilbSession = {
     principal: session.principal,
@@ -930,6 +1159,9 @@ function liveStoredSession(raw: unknown, now: number): StoredSession | null {
   if (record.version !== STORED_SESSION_VERSION) return null;
   if (!record.keyPair || typeof record.keyPair !== "object") return null;
   if (!isSigningPrivateKey(record.keyPair.privateKey) || !isVerifyPublicKey(record.keyPair.publicKey)) return null;
+  // Present and non-empty. Equality with the public key's own `x.y` is checked after
+  // export, in `doRestore`, still outside any transaction.
+  if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
   if (typeof record.accessToken !== "string" || record.accessToken.length === 0) return null;
   if (typeof record.expiresAt !== "number" || !Number.isFinite(record.expiresAt)) return null;
   if (!(now < record.expiresAt - EXPIRY_GUARD_MS)) return null;
@@ -951,6 +1183,25 @@ function isVerifyPublicKey(key: unknown): key is CryptoKey {
   const alg = key.algorithm;
   if (!alg || alg.name !== "ECDSA" || !("namedCurve" in alg) || alg.namedCurve !== "P-256") return false;
   return key.usages.includes("verify");
+}
+
+/** Proves the stored halves belong together. A throw is a mismatch: the record is not adopted. */
+async function keyPairMatches(privateKey: CryptoKey, publicKey: CryptoKey): Promise<boolean> {
+  try {
+    const signature = await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      privateKey,
+      STORED_PAIR_CHALLENGE,
+    );
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      publicKey,
+      signature,
+      STORED_PAIR_CHALLENGE,
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isGilbSession(value: unknown): value is GilbSession {

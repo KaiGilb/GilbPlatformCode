@@ -6,9 +6,10 @@
 // What is stored, and what is not:
 //   - one database, one object store, one key. The record is a {@link StoredSession}.
 //   - the DPoP key is the CryptoKey OBJECTS. IndexedDB structured-clones them. The private key
-//     stays non-extractable. Nothing here calls `exportKey` on it, or writes `localStorage`.
-//   - the public key is stored the same way. It is public; the session code re-reads its JWK
-//     with `exportKey` when it adopts the record.
+//     stays non-extractable. Nothing here calls `exportKey`, or writes `localStorage`.
+//   - `publicKeyId` is the public key's JWK `x` and `y` joined by `.`. The caller computes it
+//     with `exportKey` before any transaction. An update compares that string and does not
+//     export inside one. The session code re-reads the JWK when it adopts the record.
 //
 // A later record shape bumps {@link STORED_SESSION_VERSION}. Readers refuse a version they do
 // not know rather than guessing.
@@ -44,6 +45,12 @@ export interface StoredSession {
   version: number;
   /** Public and private CryptoKey. The private key is non-extractable. */
   keyPair: CryptoKeyPair;
+  /**
+   * `x` + `.` + `y` of the public key's JWK. Computed with `exportKey` when the
+   * record is built, outside any transaction. `restore` refuses a missing id, or
+   * one that is not the stored public key's own `x.y`.
+   */
+  publicKeyId: string;
   /** Empty when a 401 dropped the token and the key was kept. Not a session `restore` adopts. */
   accessToken: string;
   /** Epoch milliseconds. `0` when the token was dropped. */
@@ -55,8 +62,16 @@ export interface StoredSession {
 export interface SessionStore {
   /** The current record, or null when nothing is stored. */
   load(): Promise<StoredSession | null>;
-  /** Replaces the one record. */
+  /** Replaces the one record. A fresh sign-in may create it. */
   save(session: StoredSession): Promise<void>;
+  /**
+   * Writes `session` only when a record is already stored and its `publicKeyId`
+   * equals `samePublicKeyId`, and that id is not empty. If the record is missing,
+   * has no id, or holds another id, this writes nothing. The IndexedDB adapter
+   * compares the strings and puts inside the same `get` success callback, so the
+   * transaction is still active and a delete that commits first is not put back.
+   */
+  saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void>;
   /** Deletes the one record. Starts the delete before it needs to wait, when it can. */
   clear(): Promise<void>;
 }
@@ -91,6 +106,11 @@ class IndexedDbSessionStore implements SessionStore {
     const tx = readwrite(db);
     tx.objectStore(SESSION_OBJECT_STORE).put(session, SESSION_RECORD_KEY);
     await transactionDone(tx);
+  }
+
+  async saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void> {
+    const db = await this.connect();
+    await putIfSamePublicKeyId(db, session, samePublicKeyId);
   }
 
   async clear(): Promise<void> {
@@ -191,6 +211,55 @@ function requestResult<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+  });
+}
+
+/**
+ * One readwrite transaction: read the record, compare `publicKeyId` with
+ * `samePublicKeyId`, and put only when both are that same non-empty string.
+ *
+ * The compare and the put run in the `get` callback with no await between them.
+ * A transaction commits once control returns to the event loop with no request
+ * in flight, so an export or any other promise here would let the put throw
+ * TransactionInactiveError and drop the update.
+ */
+function putIfSamePublicKeyId(db: IDBDatabase, session: StoredSession, samePublicKeyId: string): Promise<void> {
+  let tx: IDBTransaction;
+  try {
+    tx = readwrite(db);
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error("IndexedDB transaction failed"));
+  }
+  const objectStore = tx.objectStore(SESSION_OBJECT_STORE);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err instanceof Error ? err : new Error("IndexedDB transaction failed"));
+      else resolve();
+    };
+    tx.oncomplete = () => finish();
+    tx.onabort = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
+    tx.onerror = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
+
+    const req = objectStore.get(SESSION_RECORD_KEY);
+    req.onerror = () => finish(req.error ?? new Error("IndexedDB request failed"));
+    req.onsuccess = () => {
+      const existing = req.result as StoredSession | undefined;
+      const storedId = existing?.publicKeyId;
+      if (typeof storedId !== "string" || storedId.length === 0 || storedId !== samePublicKeyId) {
+        // No put. Resolve here: a get-only transaction has nothing left in flight,
+        // and the test double does not fire `oncomplete` unless a put or delete did.
+        finish();
+        return;
+      }
+      try {
+        objectStore.put(session, SESSION_RECORD_KEY);
+      } catch (err) {
+        finish(err);
+      }
+    };
   });
 }
 
