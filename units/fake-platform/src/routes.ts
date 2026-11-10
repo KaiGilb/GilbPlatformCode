@@ -1,5 +1,6 @@
 import type { Caller, RowAuth } from "./auth";
 import type { Core, Req } from "./http";
+import { checkName, createNamed, namePrep, requestCode, verifyCode } from "./signin";
 import { grantVault, revokeVault, vaultAcl } from "./access";
 import { endFileRoute, getFile, listFiles, uploadFile } from "./files";
 import { createRecord, deleteRecord, listRecords, patchRecord, readRecord, replaceRecord } from "./records";
@@ -23,10 +24,15 @@ export interface Route {
 
 /**
  * THE dispatch table: the only source of routes. A request no row matches is answered 404 `fake_platform_no_such_route`
- * and recorded in `violations` (the honesty rule, DESIGN.md section 5). Part 1: the vault list and the record routes. Part 2: files and grants.
+ * and recorded in `violations` (the honesty rule, DESIGN.md section 5). Part 1: the vault list and the record routes. Part 2: files and grants. Part 3: sign-in, check-name, create-named.
  */
 export const ROUTES: readonly Route[] = [
+  { row: 1, method: "POST", path: "/base/auth/email/request-code", auth: "none", mirrors: ["src/routes/email-auth.ts:289-355", "src/routes/email-auth.ts:68-82"], handler: (c, r) => requestCode(c, r) },
+  { row: 2, method: "POST", path: "/base/auth/email/verify-code", auth: "none", mirrors: ["src/routes/email-auth.ts:358-565", "src/routes/email-auth.ts:84-108"], handler: (c, r) => verifyCode(c, r) },
+  { row: 3, method: "POST", path: "/onboard/api/name-prep", auth: "none", mirrors: ["src/routes/onboarding.ts:895-926"], handler: (c, r) => namePrep(c, r) },
+  { row: 4, method: "POST", path: "/onboard/api/check-name", auth: "none", mirrors: ["src/routes/onboarding.ts:929-972", "src/auth/reserved-names.ts:18-39"], handler: (c, r) => checkName(c, r) },
   { row: 5, method: "GET", path: "/lws/vaults", auth: "floor", mirrors: ["src/lws/routes.ts:782", "src/lws/vaults.ts:563-717"], handler: listVaults },
+  { row: 6, method: "POST", path: "/base/vault/create-named", auth: "strict", mirrors: ["src/routes/vault.ts:376-417", "src/auth/create-named-vault.ts:153-520"], handler: createNamed },
   { row: 7, method: "POST", path: "/lws/vault/:vault/c", auth: "floor", mirrors: ["src/lws/routes.ts:838-876", "src/lws/routes.ts:1156-1165", "src/authz/vault-target.ts:304-324"], handler: createRecord },
   { row: 8, method: "GET", path: "/lws/r/:id", auth: "floor", mirrors: ["src/lws/routes.ts:585-593", "src/lws/routes.ts:152-215", "src/lws/resource-frame.ts:27-41"], handler: readRecord },
   { row: 9, method: "PATCH", path: "/lws/r/:id", auth: "floor", mirrors: ["src/lws/routes.ts:1026-1073", "src/lws/crud.ts:459-524"], handler: patchRecord },

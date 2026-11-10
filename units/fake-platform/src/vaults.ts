@@ -13,7 +13,7 @@ export type Reach = Set<"read" | "write">;
 /** The whole-vault modes this person holds: the owner both, a grant its mode (write brings read), nothing after `revokeAccess`. */
 export function reachOf(core: Core, caller: Caller | null, vault: Vault): Reach {
   const out: Reach = new Set();
-  if (!caller) return out;
+  if (!caller || vault.pending) return out;
   if (core.s.revoked.has(`${vault.id}\n${caller.principal}`)) return out;
   if (vault.owner === caller.principal) return new Set(["read", "write"]);
   for (const m of core.s.grants.get(vault.id)?.get(caller.principal) ?? []) {
@@ -24,6 +24,24 @@ export function reachOf(core: Core, caller: Caller | null, vault: Vault): Reach 
     }
   }
   return out;
+}
+
+export interface NewVault {
+  name: string;
+  owner: string;
+  represents: string | null;
+  partOf?: string | null;
+  host?: string;
+  pending?: boolean;
+}
+/** A vault in the fake's state: id `https://<host>/vault`, its own entity URI, a name registered to its owner. */
+export function makeVault(core: Core, n: NewVault): Vault {
+  const host = n.host ?? `${n.name}.${core.o.domain}`;
+  const id = `https://${host}/vault`;
+  if (core.s.vaults.has(id)) throw new Error(`fake-platform: vault ${id} is already seeded`);
+  const v: Vault = { id, name: n.name, host, owner: n.owner, represents: n.represents, partOf: n.partOf ?? null, entity: `https://${host}/vault/e/${core.nextId()}`, pending: n.pending ?? false };
+  core.s.vaults.set(id, v);
+  return v;
 }
 
 export function vaultByText(core: Core, text: string): Vault | null {
@@ -68,6 +86,7 @@ export function listVaults(core: Core, req: Req, caller: Caller | null): Respons
     const landing = caller !== null && [...core.s.people.values()].some((p) => p.principal === caller.principal && p.landingVaultId === v.id);
     const parent = v.partOf ? core.s.vaults.get(v.partOf) : undefined;
     vaults.push({
+      "@id": v.entity,
       vaultId: v.id,
       name: v.name,
       represents: v.represents,

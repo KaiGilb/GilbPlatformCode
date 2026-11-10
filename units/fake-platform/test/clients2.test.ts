@@ -174,7 +174,7 @@ describe("vault-access against the fake", () => {
       expect(acl.note).toMatch(/^Whole-vault grants/);
       expect(acl.edges).toEqual([]);
       expect(acl.acl.find((e) => e.principal === w.ben.principal)).toMatchObject({ levels: ["read", "write"], kind: "grant", label: null, webId: null });
-      expect(acl.acl.find((e) => e.principal === w.ann.principal)).toMatchObject({ levels: ["control"], kind: "owner-inferred" });
+      expect(acl.acl.find((e) => e.principal === w.ann.principal)).toMatchObject({ levels: ["read", "write", "control"], kind: "grant" });
     }
     signAs(await w.as(w.ben));
     expect(await fetchVaultAcl(w.annV.id)).toEqual({ controlled: false });

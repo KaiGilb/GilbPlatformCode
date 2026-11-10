@@ -15,6 +15,7 @@ describe("GET /lws/vaults (row 5)", () => {
     expect(d["@id"]).toBe("https://fake.test/lws/vaults");
     expect(d).toMatchObject({ total: 1, complete: true, incompletePeers: 0 });
     expect(d.vaults[0]).toEqual({
+      "@id": w.annV.entity,
       vaultId: "https://ann.fake.test/vault",
       name: "ann",
       represents: "https://veda.gilb.com/base/t/Person",
@@ -25,7 +26,7 @@ describe("GET /lws/vaults (row 5)", () => {
       podName: "ann",
       podNameKnown: true,
     });
-    expect(d.vaults[0]["@id"]).toBeUndefined();
+    expect(w.annV.entity).toMatch(/^https:\/\/ann\.fake\.test\/vault\/e\//);
   });
   it("lists only the vaults the caller reaches, with the modes held; a write grant brings read", async () => {
     const w = await world();

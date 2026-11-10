@@ -10,7 +10,7 @@
     "files": []
   },
   "namedChanges": [
-    "New code, written for EESpeed Round 5 (R5-C3). 0.1.0 holds parts 1 and 2: the core, the DPoP check, the vault list, the record routes, files and grants. Sign-in, check-name and create-named are DESIGN.md rows that come in a later part."
+    "New code, written for EESpeed Round 5 (R5-C3). 0.1.0 holds parts 1 to 3: the core, the DPoP check, the vault list, the record routes, files, grants, sign-in, check-name and create-named."
   ],
   "newFiles": [
     "DESIGN.md",
@@ -37,7 +37,11 @@
     "src/access.ts",
     "test/files.test.ts",
     "test/access.test.ts",
-    "test/clients2.test.ts"
+    "test/clients2.test.ts",
+    "src/signin.ts",
+    "test/signin.test.ts",
+    "test/create-named.test.ts",
+    "test/clients3.test.ts"
   ],
   "host": [],
   "library": {

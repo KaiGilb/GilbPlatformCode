@@ -6,7 +6,7 @@ A fetch stand-in for the GilbPlatform that answers the platform's real routes wi
 
 An app's tests use it in place of the live platform: `vi.stubGlobal("fetch", fake.fetch)`, seed a person, a vault and some records, and run the app's real code (`lws-records`, `record-sync`, `signin` and the rest) against it. The route table, the state model and the reasons are in `DESIGN.md`; every route cites the GilbPlatform line it mirrors.
 
-**Version 0.1.0 holds parts 1 and 2.** It answers the vault list (`GET /lws/vaults`), the record routes (create, read, patch, replace, delete, and the list by type with `since`, `after`, `include=body`, `limit`, `offset` and `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, and the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`). Sign-in, `check-name` and `create-named` are rows of `DESIGN.md` section 2 that come in a later part; until then the fake answers them `404 fake_platform_no_such_route`.
+**Version 0.1.0 holds parts 1, 2 and 3: every route of `DESIGN.md` section 2.** It answers the vault list (`GET /lws/vaults`), the record routes (create, read, patch, replace, delete, and the list by type with `since`, `after`, `include=body`, `limit`, `offset` and `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, and the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`). Sign-in is `request-code`, `verify-code`, `name-prep` and `check-name` (no credential), then `create-named`; `partialNextCreateNamed()` makes the next create-named answer 202.
 
 ## Use
 
@@ -17,7 +17,9 @@ const fake = createFakePlatform();                       // origin https://fake.
 const ann = fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
 const vault = fake.state.vaults.get(ann.landingVaultId!)!;
 fake.seedRecord(vault, { type: "Sailboat", facts: { "a:name": "Heron" } });
-const { token } = fake.signInAs(ann, { jwk: publicJwkOfYourDpopKey });   // the token is bound to that key
+const { token } = fake.signInAs(ann, { jwk: publicJwkOfYourDpopKey });   // the token is bound to that key; or sign in for real:
+//   requestSignInCode(...) then fake.pendingCode(email) as the code; fake.transport is the signin unit's transport
+const host = fake.authHost(ann);                         // a ready auth host for lws-session-bridge setLwsAuth
 vi.stubGlobal("fetch", fake.fetch);                      // the app now talks to the fake
 fake.failNext("PATCH /lws/r/:id", { status: 503 });      // the next PATCH answers 503
 fake.calls.of("POST /lws/vault/:vault/c").at(-1)?.body;  // what the app sent
@@ -25,7 +27,7 @@ fake.assertClean();                                      // throws if any reques
 ```
 
 - `fetch`, `client(origin?)` (a `{ origin, fetch }` for `record-sync`), `state`, `calls` (`all`, `of`, `last`, `count`, `clear`), `violations`, `reset()`, `offline`.
-- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `signInAs`.
+- Seeds, no request made: `takeName`, `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `signInAs`.
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
 - Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match)` (waits until the returned function is called). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
 

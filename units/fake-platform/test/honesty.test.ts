@@ -14,8 +14,8 @@ describe("the route table", () => {
     expect(PLATFORM_SHA).toMatch(/^[0-9a-f]{40}$/);
     expect(design).toContain(PLATFORM_SHA);
   });
-  it("parts 1 and 2 hold rows 5 and 7 to 16 and 18 to 20 of DESIGN section 2 (row 17 is row 9's route; row 13 is PUT and POST), each method and path once", () => {
-    expect(ROUTES.map((r) => r.row)).toEqual([5, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 18, 19, 20]);
+  it("parts 1 to 3 hold rows 1 to 16 and 18 to 20 of DESIGN section 2 (row 17 is row 9's route; row 13 is PUT and POST), each method and path once", () => {
+    expect(ROUTES.map((r) => r.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 18, 19, 20]);
     expect(new Set(ROUTES.map((r) => `${r.method} ${r.path}`)).size).toBe(ROUTES.length);
   });
   it("every row cites GilbPlatform path:line and is a row of DESIGN.md with the same method and path", () => {
@@ -35,7 +35,7 @@ describe("the route table", () => {
     }
   });
   it("matchRoute answers only rows of the table, by method and path, decoding :params", () => {
-    expect(matchRoute("GET", "/lws/vaults")!.route).toBe(ROUTES[0]);
+    expect(matchRoute("GET", "/lws/vaults")!.route).toBe(ROUTES.find((r) => r.path === "/lws/vaults"));
     expect(matchRoute("GET", "/lws/vault/https%3A%2F%2Fa.test%2Fvault/records")!.params).toEqual({ vault: "https://a.test/vault" });
     expect(matchRoute("DELETE", "/lws/vaults")).toBeNull();
     expect(matchRoute("GET", "/lws/vault//records")).toBeNull();
@@ -61,7 +61,7 @@ describe("a request no row answers", () => {
     const w = await world();
     const a = await w.as(w.ann);
     expect((await a.fetch("https://fake.test/lws/vaults", { method: "DELETE" })).status).toBe(404);
-    expect((await a.fetch("https://fake.test/base/vault/create-named", { method: "POST", ...json({ name: "x", represents: "y" }) })).status).toBe(404); // part 3
+    expect((await a.fetch("https://fake.test/base/vault/set-represents", { method: "POST", ...json({ vault: "x", represents: "y" }) })).status).toBe(404); // a platform route the fake does not build
     expect((await a.fetch(vaultUrl(w.annV, "/anything"))).status).toBe(404);
     expect(w.fake.violations).toHaveLength(3);
   });

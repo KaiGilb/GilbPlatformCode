@@ -148,7 +148,7 @@ describe('platform mode: the platform\'s own postures on /lws (src/auth/bearer-p
   it("an expired token is 401", async () => {
     const w = await world({ dpop: "platform" });
     const a = await w.as(w.ann);
-    w.clock.ms += 4000 * 1000;
+    w.clock.ms += 8 * 24 * 3600 * 1000; // the token lives 7 days (src/config/index.ts:643)
     const res = await w.fake.fetch(LIST, { headers: { authorization: `Bearer ${a.token}` } });
     expect(res.status).toBe(401);
     expect((await body(res)).message).toMatch(/expired/);

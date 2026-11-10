@@ -152,7 +152,7 @@ describe("POST /base/authz/revoke-vault (row 19)", () => {
 });
 
 describe("GET /base/consent/vault-acl (row 20)", () => {
-  it("200 { vault, scope, note, acl, edges, chainReach, unclassifiedRows }; the owner row is control, owner-inferred", async () => {
+  it("200 { vault, scope, note, acl, edges, chainReach, unclassifiedRows }; the owner row is read, write, control (the mint's self-grant plus control)", async () => {
     const w = await world();
     const a = await w.as(w.ann);
     const res = await a.fetch(ACL(w.annV.id));
@@ -162,7 +162,7 @@ describe("GET /base/consent/vault-acl (row 20)", () => {
     expect(d).toMatchObject({ vault: w.annV.id, scope: "pod", edges: [], chainReach: [], unclassifiedRows: 0 });
     expect(d.note).toMatch(/^Whole-vault grants on both planes: principal\/group grants \(and owner\/delegated control\), plus vault→vault reach edges/);
     expect(d.note).toMatch(/Does NOT include per-record grants\.$/);
-    expect(d.acl).toEqual([{ principal: w.ann.principal, levels: ["control"], label: null, webId: null, kind: "owner-inferred", labelSource: null, registered: true, viewer: "self" }]);
+    expect(d.acl).toEqual([{ principal: w.ann.principal, levels: ["read", "write", "control"], label: null, webId: null, kind: "grant", labelSource: null, registered: true, viewer: "self" }]);
   });
   it("grant rows have the eight fields, kind grant, levels in the platform's order (read, append, write, control), and the list is sorted by principal", async () => {
     const w = await world();

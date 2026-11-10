@@ -155,7 +155,7 @@ describe("reset", () => {
     release();
     const ann = w.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
     const again = w.fake.seedRecord(ann.landingVaultId!, { type: "N", facts: {} });
-    expect(again.id).toBe(opaqueId(2)); // the person took 1: the counter began again
+    expect(again.id).toBe(opaqueId(3)); // the person took 1 and the vault entity 2: the counter began again
     expect(again.seq).toBe(1);
     const key = await generateDpopKeyPair();
     const { token } = w.fake.signInAs(ann, { jwk: key.publicJwk });

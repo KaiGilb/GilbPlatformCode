@@ -14,6 +14,10 @@ export interface Vault {
   owner: string;
   represents: string | null;
   partOf: string | null;
+  /** The vault's own entity URI (the deed), the `@id` of its node in GET /lws/vaults and what create-named's `parentVault` must be. */
+  entity: string;
+  /** A partial mint (create-named answered 202): the facts exist, the owner has no reach yet; re-issuing the same request completes it. */
+  pending: boolean;
 }
 export interface FakeRecord {
   id: string;
@@ -55,12 +59,26 @@ export interface FakeState {
   records: Map<string, FakeRecord>;
   files: Map<string, FakeFile>;
   sessions: Map<string, Session>;
+  /** email to the one-time code last issued. */
+  codes: Map<string, { code: string; expiresAt: number; name?: string }>;
+  /** normalised names held by someone else (takeName). */
+  takenNames: Set<string>;
   usedProofs: Set<string>;
   /** The one position counter. */
   seq: number;
 }
 
 export type PersonRef = Person | string;
+export interface FakeAuthHost {
+  bearerHeaderFor(url: string, method?: string): Promise<Record<string, string>>;
+  dpopReadAuth(method: string, url: string): Promise<Record<string, string>>;
+  dpopWriteAuth(method: string, url: string): Promise<Record<string, string>>;
+  invalidateDpop(): void;
+  tokenManager: {
+    getSession(): Promise<{ principal: string; vault: null; vaults: { vaultId: string; modes: ("read" | "write")[] }[] }>;
+    invalidate(): void;
+  };
+}
 export type VaultRef = Vault | string;
 export type FileRef = FakeFile | string;
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -103,6 +121,14 @@ export interface FakePlatformOptions {
   undefinedTerms?: string[];
   /** Seconds a DPoP proof's `iat` may be from now. Default 60. */
   proofWindowSeconds?: number;
+  /** Fixed one-time code, or a function of the email. Default "000000". The real code is random and emailed. */
+  code?: string | ((email: string) => string);
+  /** The segment of the vault address sign-in answers (check-name `address`, create-named `vaultId`, verify-code `vaultId`): "vault" (default) or "base". SOURCE-DERIVED, NOT MEASURED ON THE WIRE: see DESIGN section 14. */
+  createNamedVaultSegment?: "base" | "vault";
+  /** A taken vault name on create-named: "refuse" (default) = 409 VaultNameTaken, the cross-store mint production runs; "suffix" = the local mint's silent name2. */
+  nameCollision?: "refuse" | "suffix";
+  /** Type IRIs create-named accepts as `represents`. Default: any https `.../base/t/<Name>` IRI. */
+  knownTypes?: string[];
   /** The file listing carries `transcodedFrom` on each file (GilbPlatform 78d1fb1d, #691, live 2026-11-10). Default true. */
   listingCarriesTranscodedFrom?: boolean;
   now?: () => number;
@@ -127,6 +153,16 @@ export interface FakePlatform {
   seedFile(v: VaultRef, f: { name: string; bytes: Uint8Array; mediaType?: string; type?: string; folders?: string[]; tags?: string[]; storedWith?: string; transcodedFrom?: FileRef; uploader?: PersonRef }): FakeFile;
   /** A master `<name>.jpg` and its small copy `<name>-320.jpg` (as picture-set names them), the copy linked to the master by `transcodedFrom`. */
   seedPicture(v: VaultRef, p: { name: string; master: Uint8Array; thumb: Uint8Array }): { master: FakeFile; thumb: FakeFile };
+  /** Someone else holds this name: check-name says taken, create-named is 409. */
+  takeName(name: string): void;
+  /** The one-time code last issued to this email by request-code (undefined when none or used). */
+  pendingCode(email: string): string | undefined;
+  /** The next `times` create-named answers are 202 (partial mint): the vault's facts exist, the name is claimed, the owner has no reach (it is not in /lws/vaults) until the identical request is sent again (then 201). */
+  partialNextCreateNamed(opts?: { times?: number }): () => void;
+  /** A `Transport` for the signin unit (its calls take `{ transport }`). */
+  transport: (url: string, init: RequestInit & { timeoutMs?: number }) => Promise<Response>;
+  /** A host for lws-session-bridge `setLwsAuth`: signs real-shaped proofs with a made-up key the token is bound to. No signature is made; the fake does not check one. */
+  authHost(p: PersonRef): FakeAuthHost;
   /** A token the fake accepts for this person. With `jwk` the token is bound to that key (and a proof must carry it). */
   signInAs(p: PersonRef, opts?: { jwk?: { kty: string; crv: string; x: string; y: string } }): { token: string; principal: string };
 

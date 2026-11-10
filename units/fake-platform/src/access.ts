@@ -17,7 +17,7 @@ const VAULT_ACL_NOTE =
 const isOpaque = (t: string): boolean => t.includes("/base/p/") || t.includes("/base/g/");
 
 export function holdsControl(core: Core, principal: string, vault: Vault): boolean {
-  if (core.s.revoked.has(`${vault.id}\n${principal}`)) return false;
+  if (vault.pending || core.s.revoked.has(`${vault.id}\n${principal}`)) return false;
   return vault.owner === principal || (core.s.grants.get(vault.id)?.get(principal)?.has("control") ?? false);
 }
 
@@ -130,8 +130,7 @@ export function revokeVault(core: Core, req: Req, caller: Caller | null): Respon
  * GET /base/consent/vault-acl?vault= — who holds what on the whole vault. 404 `{ error: "not found" }` when the caller holds no Control.
  * Mirrors: src/routes/consent.ts:119-135 (query schema :44-52, 404 :129-131, answer :134); src/authz/entity-acl.ts:452-476 (shape), :492-576 (rows: grants plus the owner's
  * control, sorted by principal, levels in LEVEL_ORDER :73), VAULT_ACL_NOTE :471-476.
- * The owner holds no stored grant in the fake, so the owner row is levels ["control"], kind "owner-inferred" (entity-acl.ts:540-555); an owner who is also granted
- * modes shows them with kind "grant".
+ * The owner holds a stored read and write self-grant from the mint (src/auth/vault-provision.ts:303-326) and control is added: levels read, write, control, kind "grant" (entity-acl.ts:540-555).
  */
 export function vaultAcl(core: Core, req: Req, caller: Caller | null): Response {
   for (const k of new Set(req.query.keys())) if (k !== "vault") return schemaRefusal("querystring must NOT have additional properties");
@@ -149,7 +148,9 @@ export function vaultAcl(core: Core, req: Req, caller: Caller | null): Response 
       stored.add(who);
     }
   }
-  (levels.get(v.owner) ?? levels.set(v.owner, new Set()).get(v.owner)!).add("control");
+  // The owner holds a stored read and write self-grant (ensureOwnerSelfGrant, src/auth/vault-provision.ts:303-326, run by every mint) and control is added for the owner (entity-acl.ts:543-547).
+  for (const m of ["read", "write", "control"] as const) (levels.get(v.owner) ?? levels.set(v.owner, new Set()).get(v.owner)!).add(m);
+  stored.add(v.owner);
   const known = new Map([...core.s.people.values()].map((p) => [p.principal, p]));
   const acl = [...levels.entries()]
     .map(([principal, set]) => ({

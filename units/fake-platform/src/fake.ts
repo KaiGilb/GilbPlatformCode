@@ -1,5 +1,7 @@
 import { authenticate, mintToken, thumbprint } from "./auth";
-import { opaqueId } from "./bytes";
+import { makeVault } from "./vaults";
+import { b64url, opaqueId, sha256, utf8 } from "./bytes";
+import { normalizeName } from "./signin";
 import { failure, json, type Core, type Req, type Resolved } from "./http";
 import { storeFile } from "./files";
 import { endRecord, entityOf, makeRecord, normaliseFacts, stamp } from "./records";
@@ -45,12 +47,17 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     domain: options.domain ?? host,
     hosts: new Set(options.hosts ?? []),
     transcodedFromInListing: options.listingCarriesTranscodedFrom ?? true,
+    segment: options.createNamedVaultSegment ?? "vault",
+    nameCollision: options.nameCollision ?? "refuse",
+    knownTypes: options.knownTypes ? new Set(options.knownTypes) : null,
+    codeOption: options.code ?? "000000",
+    partialCreate: { times: 0 },
     dpop: options.dpop ?? "strict",
     undefinedTerms: new Set((options.undefinedTerms ?? []).map((k) => k.replace(/^a:/, ""))),
     proofWindowSeconds: options.proofWindowSeconds ?? 60,
     now: options.now ?? Date.now,
   };
-  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), usedProofs: new Set(), seq: 0 };
+  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), codes: new Map(), takenNames: new Set(), usedProofs: new Set(), seq: 0 };
   let counter = 0;
   const core: Core = { o, s, nextId: () => opaqueId(++counter) };
 
@@ -173,12 +180,8 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     },
     seedVault({ name, owner, partOf, represents, host: h }) {
       const who = personOf(owner);
-      const vhost = h ?? `${name}.${o.domain}`;
-      const id = `https://${vhost}/vault`;
-      if (s.vaults.has(id)) throw new Error(`fake-platform: vault ${id} is already seeded`);
-      const v: Vault = { id, name, host: vhost, owner: who.principal, represents: represents ?? null, partOf: partOf ? vaultOf(partOf).id : null };
-      s.vaults.set(id, v);
-      if (who.landingVaultId === null) who.landingVaultId = id;
+      const v = makeVault(core, { name, owner: who.principal, represents: represents ?? null, partOf: partOf ? vaultOf(partOf).id : null, host: h });
+      if (who.landingVaultId === null) who.landingVaultId = v.id;
       return v;
     },
     seedRecord(v, r) {
@@ -214,6 +217,48 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       if (mode === "write") held.add("read"); // the platform plants the read in the same act (src/routes/authz.ts:1537-1540)
       byWho.set(personOf(who).principal, held);
       s.revoked.delete(`${vault.id}\n${personOf(who).principal}`);
+    },
+    takeName(name) {
+      s.takenNames.add(normalizeName(name));
+    },
+    pendingCode(email) {
+      return s.codes.get(email.trim().toLowerCase())?.code;
+    },
+    partialNextCreateNamed(opts = {}) {
+      o.partialCreate.times += opts.times ?? 1;
+      const n = opts.times ?? 1;
+      return () => {
+        o.partialCreate.times = Math.max(0, o.partialCreate.times - n);
+      };
+    },
+    transport: (url, init) => api.fetch(url, init),
+    authHost(p) {
+      const who = personOf(p);
+      let n = 0;
+      // a made-up EC key: the fake checks the claims and the thumbprint, never a signature
+      const fill = (tag: string): string => b64url(sha256(utf8(`${tag}${who.email}${counter}`)));
+      const jwk = { kty: "EC", crv: "P-256", x: fill("x"), y: fill("y") };
+      const { token } = api.signInAs(who, { jwk });
+      const sign = async (method: string, url: string): Promise<Record<string, string>> => {
+        const u = new URL(url);
+        const head = b64url(utf8(JSON.stringify({ alg: "ES256", typ: "dpop+jwt", jwk })));
+        const claims = b64url(utf8(JSON.stringify({ jti: `fake-${who.email}-${++n}-${o.now()}`, htm: method.toUpperCase(), htu: `https://${u.host}${u.pathname}`, iat: Math.floor(o.now() / 1000), ath: b64url(sha256(utf8(token))) })));
+        return { Authorization: `DPoP ${token}`, DPoP: `${head}.${claims}.${b64url(new Uint8Array(64))}` };
+      };
+      return {
+        bearerHeaderFor: (url, method) => sign(method ?? "GET", url),
+        dpopReadAuth: sign,
+        dpopWriteAuth: sign,
+        invalidateDpop: () => undefined,
+        tokenManager: {
+          getSession: async () => ({
+            principal: personOf(p).principal,
+            vault: null,
+            vaults: [...s.vaults.values()].filter((v) => !v.pending && (v.owner === personOf(p).principal || s.grants.get(v.id)?.has(personOf(p).principal))).map((v) => ({ vaultId: v.id, modes: ["read", "write"] as ("read" | "write")[] })),
+          }),
+          invalidate: () => undefined,
+        },
+      };
     },
     signInAs(p, opts) {
       const who = personOf(p);
@@ -288,6 +333,9 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       s.records.clear();
       s.files.clear();
       s.sessions.clear();
+      s.codes.clear();
+      s.takenNames.clear();
+      o.partialCreate.times = 0;
       s.usedProofs.clear();
       s.seq = 0;
       counter = 0;

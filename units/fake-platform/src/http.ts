@@ -9,6 +9,11 @@ export interface Resolved {
   domain: string;
   hosts: Set<string>;
   transcodedFromInListing: boolean;
+  segment: "base" | "vault";
+  nameCollision: "refuse" | "suffix";
+  knownTypes: Set<string> | null;
+  codeOption: string | ((email: string) => string);
+  partialCreate: { times: number };
   dpop: "strict" | "platform";
   undefinedTerms: Set<string>;
   proofWindowSeconds: number;

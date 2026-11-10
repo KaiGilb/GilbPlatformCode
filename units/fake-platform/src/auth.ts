@@ -2,7 +2,8 @@ import { b64url, jsonOfB64url, sha256, sha256Hex, utf8 } from "./bytes";
 import { unauthorized, type Core, type Req } from "./http";
 import type { Session } from "./types";
 
-export type RowAuth = "floor" | "strict";
+/** "floor": /lws and /files; "strict": /base/vault, /base/authz, /base/consent; "none": the sign-in family, which takes no credential. */
+export type RowAuth = "floor" | "strict" | "none";
 export interface Caller {
   principal: string;
   email: string;
@@ -19,7 +20,7 @@ export function thumbprint(jwk: { kty?: unknown; crv?: unknown; x?: unknown; y?:
 /** A JWT-shaped token the fake recognises by lookup. Mirrors the claims the platform's verifier needs (src/auth/verify.ts:375-389). */
 export function mintToken(core: Core, who: Caller, jkt: string | null): Session {
   const iat = Math.floor(core.o.now() / 1000);
-  const exp = iat + 3600;
+  const exp = iat + 7 * 24 * 3600; // 7 days: src/config/index.ts:643
   const head = b64url(utf8(JSON.stringify({ alg: "none", typ: "JWT" })));
   const body = b64url(utf8(JSON.stringify({ iss: core.o.origin, sub: who.principal, iat, exp, ...(jkt ? { cnf: { jkt } } : {}), n: core.s.sessions.size })));
   const token = `${head}.${body}.fake`;
@@ -45,6 +46,7 @@ function checkToken(core: Core, token: string): Session | string {
  * Proof claims, each refused with 401 as src/auth/verify.ts does: htm :442, htu :446, ath :464/:469, iat window :150, jti :169/:175, key binding :422.
  */
 export async function authenticate(core: Core, req: Req, rowAuth: RowAuth): Promise<Outcome> {
+  if (rowAuth === "none") return { caller: null, response: null, proof: { ok: false, reason: "no credential needed" } };
   const authz = req.headers.get("authorization");
   const proofHeader = req.headers.get("dpop");
   const strictMode = core.o.dpop === "strict";
@@ -61,7 +63,8 @@ export async function authenticate(core: Core, req: Req, rowAuth: RowAuth): Prom
   const token = (dpop ?? bearer)![1]!.trim();
   const session = checkToken(core, token);
   if (typeof session === "string") return refuse(session);
-  const caller: Caller = { principal: session.principal, email: session.email };
+  // The principal is the person's CURRENT acting principal: a first vault adopts its own address as the principal (src/routes/email-auth.ts:510-517), the token stays valid.
+  const caller: Caller = { principal: core.s.people.get(session.email)?.principal ?? session.principal, email: session.email };
   if (!dpop || !proofHeader) {
     if (rowAuth === "strict") return refuse("This route requires a DPoP proof with the token");
     return { caller, response: null, proof: { ok: false, reason: "no proof (accepted on the Bearer floor)" } };
