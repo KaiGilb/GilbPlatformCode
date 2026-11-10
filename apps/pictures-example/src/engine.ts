@@ -3,7 +3,9 @@ import { pictureFailure } from "@kaigilb/gilbplatformcode-picture-errors";
 import {
   buildCopyMap,
   linkFullLater,
+  listVaultFiles,
   onCellular,
+  PictureFilesError,
   uploadWithThumb,
   type PictureCopy,
   type ProgressSink,
@@ -144,16 +146,21 @@ export class PictureEngine {
   async loadStored(): Promise<void> {
     const { vaultOrigin, vaultRoot } = this.session;
     const url = `${vaultOrigin}/lws/vault/${encodeURIComponent(vaultRoot)}/files`;
+    // The platform lists a vault's files at this route, 50 to 200 a page by name, with `count`, and no cursor: listVaultFiles reads every page.
+    // A 403 is kept so the access-denied screen can show the server's own line.
+    let refused = null as Response | null;
+    const send = async (method: string, address: string, init: RequestInit = {}): Promise<Response> => {
+      const res = await fetch(address, { ...init, method, headers: { ...(init.headers as Record<string, string> | undefined), ...(await dpopReadAuth(method, address)) }, credentials: "omit" });
+      if (res.status === 403) refused = res.clone();
+      return res;
+    };
     try {
-      const res = await fetch(url, { method: "GET", headers: await dpopReadAuth("GET", url), credentials: "omit" });
-      if (res.status === 403) {
-        const detail: RefusalDetail = await readRefusal("GET", url, res);
-        this.publish({ refusal: { detail }, loaded: true });
-        return;
-      }
-      if (!res.ok) throw new Error(`The pictures could not be read (HTTP ${res.status}).`);
-      const json = (await res.json()) as { files?: { entity: string; body: Record<string, unknown> }[] };
-      const files = (json.files ?? []).map((f) => ({ entityUri: f.entity, body: f.body }));
+      const listed = await listVaultFiles(vaultRoot, { origin: vaultOrigin, send });
+      // newest first: the listing is by name, each file says when it was last written
+      const files = listed
+        .map((f, i) => ({ f, i }))
+        .sort((a, b) => (b.f.updatedAt ?? "").localeCompare(a.f.updatedAt ?? "") || a.i - b.i)
+        .map(({ f }) => ({ entityUri: f.entity, body: { fileByteSize: f.byteSize ?? undefined, ...(f.transcodedFrom ? { transcodedFrom: f.transcodedFrom } : {}) } as Record<string, unknown> }));
       const map = buildCopyMap(files as Parameters<typeof buildCopyMap>[0]);
       const seen = new Set<PictureCopy[]>();
       const tiles: Tile[] = [];
@@ -170,6 +177,11 @@ export class PictureEngine {
       this.stored = tiles;
       this.publish({ loaded: true });
     } catch (e) {
+      if (e instanceof PictureFilesError && e.status === 403 && refused) {
+        const detail: RefusalDetail = await readRefusal("GET", url, refused);
+        this.publish({ refusal: { detail }, loaded: true });
+        return;
+      }
       this.stored = [];
       this.publish({ loaded: true, notes: [...this.state.notes, { key: newOpId(), name: "the pictures", failure: pictureFailure(e) }] });
     }

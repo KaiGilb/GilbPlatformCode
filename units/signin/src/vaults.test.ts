@@ -215,7 +215,7 @@ describe("sameVaultHost", () => {
   });
 });
 
-describe("create-named vaultId segment (0.2.4)", () => {
+describe("create-named vaultId segment (0.2.5)", () => {
   it("returns vaultId as the platform sent it, /vault or /base, and the list fallback matches either by host", async () => {
     for (const seg of ["/vault", "/base"]) {
       const r = rig(201, { vaultId: `https://k.example.test${seg}`, name: "k", represents: REP });

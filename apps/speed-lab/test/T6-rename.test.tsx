@@ -28,7 +28,7 @@ describe("T6 rename", () => {
 
   test("T6 rename: a failed write leaves a notice with the cause until it is dismissed", async () => {
     const k = await onEntryOne();
-    k.platform.patchFailure = { status: 500, message: "the disk is full" };
+    k.platform.fake.failNext("PATCH /lws/r/:id", { status: 500, message: "the disk is full" });
     typeName("Never saved");
     click("rename-button");
     const notice = await screen.findByTestId("notice");

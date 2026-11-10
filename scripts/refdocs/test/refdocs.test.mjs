@@ -292,3 +292,216 @@ test("T16 mock run: a created web entry reads back with the website library as p
     assert.equal(rc.items["t:Beta.web doc"].readback.partOfIsLibrary, true);
   } finally { s.clean(); }
 });
+
+// ---- --refresh ---------------------------------------------------------------------------------------------------
+const RTAG = "t:Refresh.one";
+const WANT = {
+  title: "New Title (what it covers)", note: "Not the old one; take other.",
+  exhibit: "**What it does:** Does the thing.\n\nGitHub folder: units/one\nCommit: " + "a".repeat(40) + "\nPackage: @kaigilb/gilbplatformcode-one\nClone: https://github.com/KaiGilb/GilbPlatformCode.git",
+};
+// A live document that equals WANT, with changes on top; extra seeds add more documents of the same tag.
+function live(over = {}, exOver = {}) {
+  return { tag: RTAG, title: WANT.title, name: WANT.title, label: WANT.title, appliesTo: WANT.note, exhibits: [{ text: WANT.exhibit, title: WANT.title, ...exOver }], ...over };
+}
+function refreshRun(name, seeds, { env = {}, flags = ["--refresh"] } = {}) {
+  const s = sandbox(name);
+  const input = join(s.dir, "refdocs-input.json");
+  writeFileSync(input, JSON.stringify({ notice: "n", units: [{ folder: "one", tag: RTAG, title: WANT.title, note: WANT.note, exhibit: WANT.exhibit }] }));
+  writeFileSync(s.tok, TOKEN);
+  const log = join(s.dir, "requests.log");
+  const r = run(["--import", MOCK, W, "--token-file", s.tok, "--input", input, ...flags], { MOCK_SEEDS: JSON.stringify(seeds), MOCK_LOG: log, ...env });
+  const reqs = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const rc = receiptOf(r.stdout);
+  const out = { r, rc, reqs, patches: reqs.filter((q) => q.method === "PATCH"), tokGone: !existsSync(s.tok) };
+  s.clean();
+  return out;
+}
+const DOC = RTAG + " doc", EXH = RTAG + " exhibit";
+const tailOfUrl = (u) => u.split("/lws/r/")[1];
+
+test("R1 without --refresh a present tag sends no PATCH and keeps the old receipt", () => {
+  const x = refreshRun("r1", [live({ title: "Old" })], { flags: [] });
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.r.status, 1);
+  assert.deepEqual(x.rc.counts, { created: 0, "not-created": 2, unknown: 0, "never-sent": 0 });
+  assert.match(x.rc.items[DOC].reason, /tag already present/);
+});
+
+test("R2 --refresh with live equal: unchanged, no PATCH, exit 0", () => {
+  const x = refreshRun("r2", [live()]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "unchanged");
+  assert.equal(x.rc.items[EXH].state, "unchanged");
+  assert.deepEqual(x.rc.counts, { created: 0, "not-created": 0, unknown: 0, "never-sent": 0, refreshed: 0, unchanged: 2, "not-refreshed": 0 });
+  assert.equal(x.r.status, 0, x.r.stdout.slice(-400));
+  assert.ok(x.tokGone);
+  assert.ok(!x.reqs.some((q) => q.method === "POST"), "a present tag is never re-created");
+});
+
+test("R3 --refresh, title differs only: one doc PATCH with exactly title, name, label; If-Match is the served ETag; no exhibit PATCH", () => {
+  const x = refreshRun("r3", [live({ title: "Old", name: "Old", label: "Old" })]);
+  assert.equal(x.patches.length, 1);
+  const p = x.patches[0];
+  assert.deepEqual(p.body, { "a:title": WANT.title, "a:name": WANT.title, "a:label": WANT.title });
+  assert.equal(p.headers["Content-Type"], "application/merge-patch+json");
+  const tail = tailOfUrl(p.url);
+  assert.equal(p.url, "https://appbuilder.gilb.com/lws/r/" + tail);
+  assert.equal(p.headers["If-Match"], `W/"sha256:${tail}-0"`); // the mock serves exactly this ETag on GET
+  assert.equal(x.rc.items[DOC].state, "refreshed");
+  assert.equal(x.rc.items[EXH].state, "unchanged");
+  assert.equal(x.rc.counts.refreshed, 1);
+  assert.equal(x.r.status, 0, x.r.stdout.slice(-400));
+  // the GET that gave the ETag came before the PATCH
+  const gi = x.reqs.findIndex((q) => q.method === "GET" && q.url.endsWith("/lws/r/" + tail) && x.reqs.indexOf(q) > 0);
+  assert.ok(gi >= 0 && gi < x.reqs.indexOf(p));
+});
+
+test("R3b only the facts that differ are sent (the note alone)", () => {
+  const x = refreshRun("r3b", [live({ appliesTo: "old note" })]);
+  assert.equal(x.patches.length, 1);
+  assert.deepEqual(x.patches[0].body, { "a:appliesTo": WANT.note });
+});
+
+test("R4 --refresh, exhibit commit differs: exhibit PATCH with only a:referenceExhibit", () => {
+  const x = refreshRun("r4", [live({}, { text: WANT.exhibit.replace("a".repeat(40), "b".repeat(40)) })]);
+  assert.equal(x.patches.length, 1);
+  assert.deepEqual(x.patches[0].body, { "a:referenceExhibit": WANT.exhibit });
+  assert.equal(x.patches[0].headers["Content-Type"], "application/merge-patch+json");
+  assert.match(x.patches[0].headers["If-Match"], /^W\/"sha256:exseed\d+-0"$/);
+  assert.equal(x.rc.items[DOC].state, "unchanged");
+  assert.equal(x.rc.items[EXH].state, "refreshed");
+  assert.equal(x.r.status, 0, x.r.stdout.slice(-400));
+});
+
+test("R4b exhibit text and title both differ: both facts in the exhibit PATCH, document untouched", () => {
+  const x = refreshRun("r4b", [live({}, { text: WANT.exhibit + "\nextra", title: "Old" })]);
+  assert.equal(x.patches.length, 1);
+  assert.deepEqual(x.patches[0].body, { "a:referenceExhibit": WANT.exhibit, "a:title": WANT.title });
+});
+
+test("R5 exhibit not starting with the marker: not-refreshed, no PATCH, exit non-zero", () => {
+  const x = refreshRun("r5", [live({ title: "Old" }, { text: "Some hand-written text.", title: "Old" })]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.equal(x.rc.items[EXH].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /does not start with/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R6 two exhibits: not-refreshed, no PATCH, exit non-zero", () => {
+  const sd = live({ title: "Old" });
+  sd.exhibits.push({ text: WANT.exhibit, title: WANT.title });
+  const x = refreshRun("r6", [sd]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /2 exhibits/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R6b no exhibit at all: not-refreshed, no PATCH", () => {
+  const x = refreshRun("r6b", [live({ title: "Old", exhibits: [] })]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R6c two documents hold the tag: not-refreshed, no PATCH, no create", () => {
+  const x = refreshRun("r6c", [live({ title: "Old" }), live({ title: "Older" })]);
+  assert.equal(x.patches.length, 0);
+  assert.ok(!x.reqs.some((q) => q.method === "POST"));
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /2 documents/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R7 412 on the document PATCH: not-refreshed, exhibit not patched, exit non-zero", () => {
+  const x = refreshRun("r7", [live({ title: "Old" }, { text: "**What it does:** old.", title: "Old" })], { env: { MOCK_PATCH: "doc:412" } });
+  assert.equal(x.patches.length, 1, "only the document PATCH was tried");
+  assert.ok(!/exseed/.test(x.patches[0].url));
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /412.*re-run/);
+  assert.equal(x.rc.items[EXH].state, "not-refreshed");
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R7b 412 on the exhibit PATCH: exhibit not-refreshed, exit non-zero", () => {
+  const x = refreshRun("r7b", [live({}, { text: "**What it does:** old." })], { env: { MOCK_PATCH: "ex:412" } });
+  assert.equal(x.rc.items[EXH].state, "not-refreshed");
+  assert.match(x.rc.items[EXH].reason, /412/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R8 5xx on a PATCH: unknown, exit non-zero", () => {
+  const x = refreshRun("r8", [live({ title: "Old" })], { env: { MOCK_PATCH: "doc:503" } });
+  assert.equal(x.rc.items[DOC].state, "unknown");
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R8b another status on a PATCH: not-refreshed with the status and the body", () => {
+  const x = refreshRun("r8b", [live({ title: "Old" })], { env: { MOCK_PATCH: "doc:403" } });
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /403: .*forced/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R9 a 200 that did not change what is live: the readback makes the unit unknown, exit non-zero", () => {
+  const x = refreshRun("r9", [live({ title: "Old" })], { env: { MOCK_NOAPPLY: "1" } });
+  assert.equal(x.patches.length, 1);
+  assert.equal(x.rc.items[DOC].state, "unknown");
+  assert.match(x.rc.items[DOC].reason, /readback still differs/);
+  assert.equal(x.rc.counts.refreshed, 0);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R10 everything differs: both refreshed and read back; no forbidden fact is ever sent; nothing is created or deleted", () => {
+  const x = refreshRun("r10", [live({ title: "O", name: "O", label: "O", appliesTo: "o" }, { text: "**What it does:** old.", title: "O" })]);
+  assert.equal(x.patches.length, 2);
+  assert.ok(!/exseed/.test(x.patches[0].url) && /exseed/.test(x.patches[1].url), "document first, then exhibit");
+  const FORBIDDEN = ["a:unitTag", "a:partOf", "a:directReader", "a:attribution", "a:license", "a:handsOffTo"];
+  for (const p of x.patches) {
+    for (const k of Object.keys(p.body)) assert.ok(!FORBIDDEN.includes(k), k);
+    assert.ok(Object.values(p.body).every((v) => v !== null), "null is never sent");
+  }
+  assert.deepEqual(Object.keys(x.patches[0].body).sort(), ["a:appliesTo", "a:label", "a:name", "a:title"]);
+  assert.deepEqual(Object.keys(x.patches[1].body).sort(), ["a:referenceExhibit", "a:title"]);
+  assert.ok(!x.reqs.some((q) => q.method === "DELETE" || q.method === "POST" || q.method === "PUT"));
+  assert.equal(x.rc.items[DOC].state, "refreshed");
+  assert.equal(x.rc.items[EXH].state, "refreshed");
+  assert.equal(x.rc.counts.refreshed, 2);
+  assert.equal(x.r.status, 0, x.r.stdout.slice(-400));
+  assert.ok(x.tokGone);
+});
+
+test("R11 --dry-run --refresh prints the refresh note, sends and reads nothing, and still ends on the dry-run line", () => {
+  const s = sandbox("r11");
+  try {
+    writeFileSync(s.tok, TOKEN);
+    const r = run([W, "--dry-run", "--refresh", "--token-file", s.tok, "--input", s.fixture]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /dry-run --refresh: refresh decisions .* need the live listing.* nothing was sent/);
+    assert.ok(!/"state"|Bearer|"PATCH":/.test(r.stdout));
+    const lines = r.stdout.trimEnd().split("\n");
+    assert.equal(lines.at(-2), "dry-run: nothing sent, no key read");
+    const posts = (r.stdout.match(/"POST":/g) || []).length;
+    assert.equal(posts, fixtureUnits.length * 2);
+  } finally { s.clean(); }
+});
+
+test("R12 marker present but not at the start of the exhibit: not-refreshed, no PATCH, exit non-zero", () => {
+  const x = refreshRun("r12", [live({ title: "Old" }, { text: "Old text first.\n\n" + WANT.exhibit, title: "Old" })]);
+  assert.equal(x.patches.length, 0);
+  assert.equal(x.rc.items[DOC].state, "not-refreshed");
+  assert.equal(x.rc.items[EXH].state, "not-refreshed");
+  assert.match(x.rc.items[DOC].reason, /does not start with/);
+  assert.notEqual(x.r.status, 0);
+});
+
+test("R13 exhibit PATCH answers 200 but the readback still serves the old exhibit text (document equal): exhibit unknown, exit non-zero", () => {
+  const x = refreshRun("r13", [live({}, { text: WANT.exhibit.replace("a".repeat(40), "b".repeat(40)) })], { env: { MOCK_NOAPPLY: "1" } });
+  assert.equal(x.patches.length, 1);
+  assert.ok(/exseed/.test(x.patches[0].url), "only the exhibit was patched");
+  assert.equal(x.rc.items[DOC].state, "unchanged");
+  assert.equal(x.rc.items[EXH].state, "unknown");
+  assert.match(x.rc.items[EXH].reason, /readback still differs: a:referenceExhibit/);
+  assert.notEqual(x.r.status, 0);
+});

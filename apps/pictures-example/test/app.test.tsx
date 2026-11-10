@@ -79,13 +79,13 @@ describe("App", () => {
 
   test("a refused listing shows the access-denied screen with the server's line", async () => {
     const vault = setup();
-    vault.refuseList = "vault target denied: no read reach";
+    vault.fake.revokeAccess(vault.ann, vault.vault); // the owner took the access away: the platform answers 403
     const engine = newEngine(vault, async () => fakeSet());
     render(<App engine={engine} onSignOut={() => undefined} />);
     await engine.start();
     expect(await screen.findByText(/is private/)).toBeTruthy();
     expect(document.querySelector(".refusal-details")?.textContent).toContain("GET");
-    expect(document.querySelector(".refusal-details")?.textContent).toContain("HTTP 403 - vault target denied: no read reach");
+    expect(document.querySelector(".refusal-details")?.textContent).toContain(`HTTP 403 - vault target denied: the principal holds no read reach on vault ${vault.root}`);
   });
 
   test("the viewer opens on the picture that was tapped, shows the largest stored copy, and closes with Escape", async () => {

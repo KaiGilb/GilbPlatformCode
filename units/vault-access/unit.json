@@ -46,7 +46,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {
-    "admitted": false
-  }
+  "library": {"admitted": true, "tag": "t:Vault.access", "title": "Vault access (grant, revoke, share a whole vault)", "note": "Who may use a whole vault: grant, revoke, read the access list, share to view or edit. For a share of one record take lws-relations; for which vaults you can reach take reachable-vaults."}
 }

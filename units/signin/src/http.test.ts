@@ -316,7 +316,7 @@ describe("checkVaultName — suggestion and requested (0.2.3)", () => {
   });
 });
 
-describe("checkVaultName — normalized and note (0.2.4, F24)", () => {
+describe("checkVaultName — normalized and note (0.2.5, F24)", () => {
   const transportOf = (body: unknown): Transport => async () => ({ status: 200, json: async () => body });
 
   it("returns normalized and note when the platform changed the name", async () => {
@@ -336,7 +336,7 @@ describe("checkVaultName — normalized and note (0.2.4, F24)", () => {
   });
 });
 
-describe("checkVaultName — requested (0.2.4)", () => {
+describe("checkVaultName — requested (0.2.5)", () => {
   const transportOf = (body: unknown): Transport => async () => ({ status: 200, json: async () => body });
   it("returns the platform's requested when it sends one", async () => {
     const r = await checkVaultName(ORIGIN_A, "  Sail-Boats ", { transport: transportOf({ available: true, name: "sailboats", requested: "Sail-Boats" }) });

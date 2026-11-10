@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@kaigilb/gilbplatformcode-base-origin": "file:../../units/base-origin",
+    "@kaigilb/gilbplatformcode-fake-platform": "file:../../units/fake-platform",
     "@kaigilb/gilbplatformcode-lws-records": "file:../../units/lws-records",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../../units/lws-session-bridge",
     "@kaigilb/gilbplatformcode-photo-ref": "file:../../units/photo-ref",

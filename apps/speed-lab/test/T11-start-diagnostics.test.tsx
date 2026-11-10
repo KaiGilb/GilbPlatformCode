@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { boot, click, reload } from "./helpers";
+import { boot, click, reload, settled } from "./helpers";
 
 const line = () => screen.getByTestId("start-line").textContent ?? "";
 
@@ -15,6 +15,7 @@ describe("T11 start diagnostics", () => {
     expect(Number.isFinite(empty.ms)).toBe(true);
     expect(Number.isNaN(Date.parse(empty.at))).toBe(false);
     expect(line()).toMatch(/^start: disk yes, hydrated no, 0 entries, [\d.]+ ms$/);
+    await settled();
     await first.speed.currentPersist()!.flush();
 
     const second = await reload();
