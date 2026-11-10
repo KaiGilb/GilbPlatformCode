@@ -33,6 +33,7 @@ export function stamp(core: Core, r: FakeRecord): void {
 }
 export function makeRecord(core: Core, vaultId: string, type: string | undefined | null, facts: Record<string, unknown>, id?: string): FakeRecord {
   const name = type ? bareType(type) : null;
+  if (id !== undefined && (core.s.records.has(id) || core.s.files.has(id))) throw new Error(`fake-platform: id ${id} is already in use (ids are opaque and unique)`);
   const r: FakeRecord = {
     id: id ?? core.nextId(),
     vaultId,

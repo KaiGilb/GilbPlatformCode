@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { body, idOf, recUrl, vaultUrl, world, type Who, type World } from "./support";
 
 const bytes = (n: number, seed = 1): Uint8Array<ArrayBuffer> => {
@@ -120,6 +120,47 @@ describe("upload: PUT and POST /lws/vault/:vault/files (row 13)", () => {
     const w = await world();
     w.fake.grant(w.annV, w.ben, "write");
     expect((await up(w, await w.as(w.ben), "a.jpg", bytes(4))).status).toBe(201);
+  });
+});
+
+describe("upload body forms", () => {
+  it("a Blob without arrayBuffer() (jsdom's) is read through FileReader, byte for byte; a File, a typed array and an ArrayBuffer are read as they are", async () => {
+    const w = await world();
+    const a = await w.as(w.ann);
+    const data = bytes(40, 5);
+    const weak = new Blob([data], { type: "image/jpeg" });
+    Object.defineProperty(weak, "arrayBuffer", { value: undefined });
+    const real = Blob.prototype.arrayBuffer;
+    const NativeResponse = Response;
+    // jsdom's Blob is foreign to node's Response, which then reads it as the text "[object Blob]": say so here
+    vi.stubGlobal("Response", class extends NativeResponse {
+      constructor(b?: BodyInit | null, init?: ResponseInit) {
+        super(b instanceof Blob ? String(b) : b, init);
+      }
+    });
+    vi.stubGlobal("FileReader", class {
+      result: ArrayBuffer | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      error = null;
+      readAsArrayBuffer(b: Blob): void {
+        void real.call(b).then((r) => {
+          this.result = r;
+          this.onload?.();
+        });
+      }
+    });
+    try {
+      const d = await body(await up(w, a, "w.jpg", weak as never));
+      expect(d.byteSize).toBe(40);
+      expect(d.contentHash).toBe(sha(data));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const viaFile = await body(await up(w, a, "f.jpg", new File([data], "f.jpg") as never));
+    expect(viaFile.contentHash).toBe(sha(data));
+    const viaBuffer = await body(await up(w, a, "b.jpg", data.buffer.slice(0) as never));
+    expect(viaBuffer.contentHash).toBe(sha(data));
   });
 });
 

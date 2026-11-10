@@ -1,5 +1,5 @@
 // Sign-in (stand-in): two people, two buttons.
-import { PEOPLE } from "../fakePlatform";
+import { PEOPLE } from "../standin";
 
 export function SignIn({ busy, onSignIn }: { busy: boolean; onSignIn: (vault: string) => void }) {
   return (

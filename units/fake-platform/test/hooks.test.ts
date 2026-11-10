@@ -94,6 +94,26 @@ describe("hold", () => {
   });
 });
 
+describe("hold with skip", () => {
+  it("lets the first n matching requests through and holds the rest until released", async () => {
+    const w = await world();
+    const a = await w.as(w.ann);
+    const release = w.fake.hold("GET /lws/vaults", { skip: 2 });
+    expect((await a.fetch(LIST)).status).toBe(200);
+    expect((await a.fetch(LIST)).status).toBe(200);
+    let done = false;
+    const third = a.fetch(LIST).then((r) => {
+      done = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(done).toBe(false);
+    expect(w.fake.calls.of("GET /lws/vaults").map((c) => c.status)).toEqual([200, 200, "network-error"]);
+    release();
+    expect((await third).status).toBe(200);
+  });
+});
+
 describe("calls", () => {
   it("logs method, url, host, path, query, lower-case headers, parsed body, caller, status, in order", async () => {
     const w = await world();

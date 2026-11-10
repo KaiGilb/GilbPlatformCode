@@ -89,8 +89,8 @@ try {
     const dt = new DataTransfer(); dt.items.add(new File([blob], "new-photo.jpg", { type: "image/jpeg" }));
     const input = document.querySelector('input[type="file"]:not([capture])');
     input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
-    for (let i = 0; i < 80; i++) { await new Promise((r) => setTimeout(r, 100)); if (window.__fakeVault.uploads.length >= 2 && document.querySelector('[data-status="wifi"],[data-status="stored"]')) break; }
-    return JSON.stringify({ uploads: window.__fakeVault.uploads, statuses: [...document.querySelectorAll("[data-status]")].map((e) => e.dataset.status), badges: [...document.querySelectorAll(".badge")].map((e) => e.textContent), violations: window.__fakeVault.violations });
+    for (let i = 0; i < 80; i++) { await new Promise((r) => setTimeout(r, 100)); if (window.__fake.calls.of("PUT /lws/vault/:vault/files").length >= 2 && document.querySelector('[data-status="wifi"],[data-status="stored"]')) break; }
+    return JSON.stringify({ uploads: window.__fake.calls.of("PUT /lws/vault/:vault/files").map((c) => c.query.name[0]), statuses: [...document.querySelectorAll("[data-status]")].map((e) => e.dataset.status), badges: [...document.querySelectorAll(".badge")].map((e) => e.textContent), violations: window.__fake.violations });
   })()`);
   await sleep(500);
   const png4 = await cdp.send("Page.captureScreenshot", { format: "png" });

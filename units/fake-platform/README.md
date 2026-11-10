@@ -4,48 +4,73 @@
 
 A fetch stand-in for the GilbPlatform that answers the platform's real routes with the platform's real shapes, holding its state in memory, for an app's tests.
 
-An app's tests use it in place of the live platform: `vi.stubGlobal("fetch", fake.fetch)`, seed a person, a vault and some records, and run the app's real code (`lws-records`, `record-sync`, `signin` and the rest) against it. The route table, the state model and the reasons are in `DESIGN.md`; every route cites the GilbPlatform line it mirrors.
+An app's tests use it in place of the live platform: seed a person, a vault and some records, point `fetch` at it, and run the app's real code (`lws-records`, `record-sync`, `signin`, `picture-set` and the rest). `DESIGN.md` holds the route table, the state model and the reasons; every route cites the GilbPlatform line it mirrors.
 
-**Version 0.1.0 holds parts 1, 2 and 3: every route of `DESIGN.md` section 2.** It answers the vault list (`GET /lws/vaults`), the record routes (create, read, patch, replace, delete, and the list by type with `since`, `after`, `include=body`, `limit`, `offset` and `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, and the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`). Sign-in is `request-code`, `verify-code`, `name-prep` and `check-name` (no credential), then `create-named`; `partialNextCreateNamed()` makes the next create-named answer 202.
-
-## Use
+## Use it
 
 ```ts
 import { createFakePlatform } from "@kaigilb/gilbplatformcode-fake-platform";
+import { generateDpopKeyPair } from "@kaigilb/gilbplatformcode-signin";
+import { expect, test, vi } from "vitest";
 
-const fake = createFakePlatform();                       // origin https://fake.test, vault hosts <name>.fake.test
-const ann = fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
-const vault = fake.state.vaults.get(ann.landingVaultId!)!;
-fake.seedRecord(vault, { type: "Sailboat", facts: { "a:name": "Heron" } });
-const { token } = fake.signInAs(ann, { jwk: publicJwkOfYourDpopKey });   // the token is bound to that key; or sign in for real:
-//   requestSignInCode(...) then fake.pendingCode(email) as the code; fake.transport is the signin unit's transport
-const host = fake.authHost(ann);                         // a ready auth host for lws-session-bridge setLwsAuth
-vi.stubGlobal("fetch", fake.fetch);                      // the app now talks to the fake
-fake.failNext("PATCH /lws/r/:id", { status: 503 });      // the next PATCH answers 503
-fake.calls.of("POST /lws/vault/:vault/c").at(-1)?.body;  // what the app sent
-fake.assertClean();                                      // throws if any request reached no route
+test("the app lists Ann's boats", async () => {
+  const fake = createFakePlatform();                                       // origin https://fake.test, vaults at https://<name>.fake.test/vault
+  const ann = fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+  const key = await generateDpopKeyPair();                                 // the app's own DPoP key
+  const { token } = fake.signInAs(ann, { jwk: key.publicJwk });            // a token bound to that key
+  vi.stubGlobal("fetch", fake.fetch);                                      // the app's fetch is the fake
+  fake.seedRecord(ann.landingVaultId!, { type: "Sailboat", facts: { "a:name": "Heron" } });
+  const boats = await listBoats(token, key);                               // the app's own code
+  expect(boats).toHaveLength(1);
+  expect(fake.calls.of("GET /lws/vault/:vault/records")).toHaveLength(1);  // what the app sent
+  expect(fake.violations).toEqual([]);                                     // and nothing the platform does not have
+});
 ```
 
-- `fetch`, `client(origin?)` (a `{ origin, fetch }` for `record-sync`), `state`, `calls` (`all`, `of`, `last`, `count`, `clear`), `violations`, `reset()`, `offline`.
-- Seeds, no request made: `takeName`, `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `signInAs`.
+- The fake: `fetch`, `client(origin?)` (a `{ origin, fetch }` for `record-sync`), `transport` (for `signin`), `authHost(person)` (for `setLwsAuth`), `state`, `calls` (`all`, `of`, `last`, `count`, `clear`), `violations`, `assertClean()`, `offline`, `reset()`.
+- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `takeName`, `signInAs`, `pendingCode(email)` (the one-time code request-code issued).
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
-- Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match)` (waits until the returned function is called). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
+- Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match, { skip? })` (waits until the returned function is called), `partialNextCreateNamed()` (the next create-named answers 202). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
+
+What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named`, `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`).
+
+## Options
+
+| Option | Default | What it does |
+|---|---|---|
+| `origin` | `https://fake.test` | the platform origin; its host and every host under `domain` are this platform |
+| `domain` | the origin's host | vault hosts are `<name>.<domain>` |
+| `hosts` | none | extra hosts answered as this platform (a dev rig) |
+| `dpop` | `"strict"` | `"strict"`: a call without `Authorization: DPoP <token>` and a `DPoP` header is 401 on every route. `"platform"`: the platform's own postures (no header on `/lws` is an anonymous caller; a `DPoP` token without a proof is accepted) |
+| `code` | `"000000"` | the one-time code, or a function of the email (the real one is random and emailed) |
+| `createNamedVaultSegment` | `"vault"` | the segment of the vault address sign-in answers; source-derived, not measured on the wire (`DESIGN.md` section 14) |
+| `nameCollision` | `"refuse"` | a taken name on create-named: `"refuse"` 409 (the production mint) or `"suffix"` (`name2`, the local mint) |
+| `knownTypes` | any `https://…/base/t/<Name>` | the type IRIs create-named accepts as `represents` |
+| `undefinedTerms` | none | fact keys the vaults refuse with 409 |
+| `listingCarriesTranscodedFrom` | `true` | the file listing carries `transcodedFrom` per file (GilbPlatform `78d1fb1d`) |
+| `proofWindowSeconds` | `60` | how far a proof's `iat` may be from now |
+| `now`, `latencyMs` | the clock, none | the clock, and a delay for every request |
 
 ## Auth
 
-`dpop: "strict"` (the default) answers 401 `{ error: "Unauthorized", … }` on every route unless the call carries `Authorization: DPoP <token>` and a `DPoP` header. The token must be one `signInAs` issued; the principal is the one the token names. The proof's `htm`, `htu` (`https://` + host + path, even over http), `ath`, `iat`, `jti` (not used before) and key (the token's `cnf.jkt`) are checked. Signatures are not: there is no real crypto.
+In `"strict"` mode the token must be one the fake issued (`signInAs`, or `verify-code`); the principal is the one the token names. The proof's `htm`, `htu` (`https://` + host + path, even over http), `ath`, `iat`, `jti` (not used before) and key (the token's `cnf.jkt`) are checked. Signatures are not: there is no real crypto. Strict is stricter than the platform on `/lws` and `/files` on purpose, so a call that forgot to sign fails in the test.
 
-`dpop: "platform"` copies the platform: on `/lws` no header is an anonymous caller (the vault list is 200 and empty, a vault list of records 403, a record read 404, a write 403), a `DPoP` token without a proof and a `Bearer` token are accepted, and a bad token or proof is 401. Strict is stricter than the platform on purpose, so a call that forgot to sign fails in the test.
+## Not faked
 
-## What it never does
+- Real signature checking, token issuer keys, email delivery, the send guard and its caps, the failed-code lockout, the session cookie.
+- The first-day mint limit on create-named; machine, AI and review credentials; the `WrongSignInHost` refusal.
+- The ontology: `represents` is judged by a pattern or `knownTypes`; fact keys are open unless `undefinedTerms` lists them.
+- `?filter=` on the record list, `?thumbnail=`, `?face=` and `?fileType=` on an upload, `Range` on a download: each answers `400 fake_platform_not_faked`, never a silent pass.
+- Nested vaults (`scannedVaults` is the one vault), vault-to-vault reach, public and group grants, per-record shares, idempotency keys, the 8 MiB `include=body` budget.
+- Routes of the platform the code bank does not call (types, notes, selfcard, help, `/base/files`, `set-represents`, `dpop-token`): the table is closed until a client needs one.
 
-A request no route row answers, or to a host that is not this platform's, is recorded in `violations`; the first is answered `404 fake_platform_no_such_route`, the second makes `fetch` reject. It never accepts a request the platform would refuse (`t:Sailboat` as a list `type` is 400, an `http://` vault id is 400, an extra body key is 400). `filter=` on the record list, `?thumbnail=` / `?face=` / `?fileType=` on an upload and `Range` on a download answer `400 fake_platform_not_faked`: the platform has them, the fake does not.
+## The honesty rule
 
-The file listing never carries a cursor (the platform sends none): page it with `limit` (50 by default, 200 at most), `offset` and `count`.
+`ROUTES` is the only route source, and every row cites the GilbPlatform line it mirrors (`PLATFORM_SHA` is the commit it was read at). A request no row answers is recorded in `violations` and answered `404 fake_platform_no_such_route`; a request to a host that is not this platform's makes `fetch` reject and is recorded too. The fake never accepts what the platform refuses (`t:Sailboat` as a list `type` is 400, an `http://` vault id is 400, an extra body key is 400) and never invents a field the platform does not send (the file listing has no `nextCursor`). A behaviour stricter than the platform's (strict DPoP) is stated here and marked in the answer. `fake.assertClean()` throws when `violations` is not empty.
 
 ## How to take it
 
-Package: `@kaigilb/gilbplatformcode-fake-platform`. It has no dependencies of its own; it ships TypeScript source (`src/`) that your bundler compiles. Its tests run against `lws-records`, `record-sync` and `signin`, which are dev dependencies.
+Package: `@kaigilb/gilbplatformcode-fake-platform`. It has no dependencies of its own and ships TypeScript source (`src/`) that your bundler compiles; it runs in node, jsdom and a browser (an app's `dev:fake` mode can use it). Put this line in your app's own `.npmrc` so the unit is installed as a copy and not a link: `install-links=true`. Its own tests run against `lws-records`, `record-sync`, `signin`, `picture-set` and `vault-access`, which are dev dependencies.
 
 ## Where it came from
 

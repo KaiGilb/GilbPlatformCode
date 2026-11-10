@@ -72,6 +72,16 @@ describe("POST /lws/vault/:vault/c (row 7)", () => {
   });
 });
 
+describe("seedRecord", () => {
+  it("takes an id of the test's choosing; a second record with the same id is an error, not a silent overwrite", async () => {
+    const w = await world();
+    const r = w.fake.seedRecord(w.annV, { type: "N", facts: { name: "a" }, id: "e1" });
+    expect(r.id).toBe("e1");
+    expect(() => w.fake.seedRecord(w.fake.state.vaults.get(w.ben.landingVaultId!)!, { type: "N", facts: {}, id: "e1" })).toThrow(/already in use/);
+    expect(w.fake.state.records.get("e1")!.facts.name).toBe("a");
+  });
+});
+
 describe("GET /lws/r/:id (row 8)", () => {
   it("200: the document with @context, @id (the entity URI), @type and bare facts, plus the ETag the create gave", async () => {
     const w = await world();

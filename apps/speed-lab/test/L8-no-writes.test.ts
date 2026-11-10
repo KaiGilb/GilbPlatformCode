@@ -31,7 +31,6 @@ describe("L8 no write code path in live mode", () => {
   test("L8 the live graph is what we think it is: it reaches the list and the entry page, and not the stand-in or the rename page", () => {
     const names = files.map((f) => path.relative(src, f));
     expect(names).toEqual(expect.arrayContaining(["live/LiveApp.tsx", "entries.ts", "screens/Entries.tsx", "screens/LiveEntry.tsx", "speed.ts", "live/writes.ts", "live/writeJobs.ts"]));
-    expect(names).not.toContain("fakePlatform.ts");
     expect(names).not.toContain("screens/Entry.tsx");
     expect(names).not.toContain("standin.ts");
   });

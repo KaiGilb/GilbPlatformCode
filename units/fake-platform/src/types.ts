@@ -177,7 +177,8 @@ export interface FakePlatform {
 
   failNext(match: Match, f: { status: number; body?: unknown; message?: string; times?: number; skip?: number }): () => void;
   dropNext(match: Match, opts?: { times?: number; skip?: number }): () => void;
-  hold(match: Match): () => void;
+  /** Matching requests wait until the returned function is called; `skip` lets the first n through (a list whose first pages answer and the rest wait). */
+  hold(match: Match, opts?: { skip?: number }): () => void;
 
   /** Throws when a request reached no route or a foreign host. */
   assertClean(): void;

@@ -35,11 +35,11 @@ npm run typecheck && npm test && npm run build
 
 ## Stand-in (this batch only)
 
-`src/fakePlatform.ts` is NOT the platform. It answers in memory, after a delay, `GET /lws/vault/<vault>/records` (the shape `completeCopy` reads; any other query parameter answers 400) and `PATCH /lws/vault/<vault>/records/<id>` (the route form is this stand-in's own; the real platform's write differs). `src/session.ts`'s client and `src/entries.ts`'s loader are the seams to the real platform.
+The stand-in platform is the shared `fake-platform` unit (`src/standin.ts` seeds two people and their entries and signs the client with `fake.authHost`). It is NOT the platform, but it answers the platform's real routes with the platform's real shapes: `GET /lws/vault/<vault>/records` (the walk by `after=`, the `since` pass, `include=body`, `limit`, `offset`), `PATCH /lws/r/<id>` (a merge patch, `If-Match` honoured) and the sign-in family, after a delay (`?latency=`). A request no route has is recorded in `fake.violations` and answered 404. `src/session.ts`'s client and `src/entries.ts`'s loader are the seams to the real platform.
 
 ## Unit tests
 
-`test/T1` to `test/T8` (13 tests): the real units, with only the platform (the stand-in), IndexedDB (`fake-indexeddb`) and storage faked. `test/helpers.tsx` `boot()` loads the app on a fresh module registry, and `reload()` is a page reload (the device stays, the module state goes).
+`test/T1` to `test/T8`: the real units, with only the platform (the shared `fake-platform` unit), IndexedDB (`fake-indexeddb`) and storage faked. T8 checks that the app sends only requests the platform has. `test/helpers.tsx` `boot()` loads the app on a fresh module registry, and `reload()` is a page reload (the device stays, the module state goes).
 
 ## Browser proof
 

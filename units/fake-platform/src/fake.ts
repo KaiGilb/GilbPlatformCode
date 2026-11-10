@@ -34,7 +34,19 @@ async function bodyBytesOf(body: unknown): Promise<Uint8Array | null> {
   if (body instanceof URLSearchParams) return new TextEncoder().encode(body.toString());
   if (body instanceof ArrayBuffer) return new Uint8Array(body);
   if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
-  if (typeof Blob !== "undefined" && body instanceof Blob) return new Uint8Array(typeof body.arrayBuffer === "function" ? await body.arrayBuffer() : await new Response(body).arrayBuffer());
+  if (typeof Blob !== "undefined" && body instanceof Blob) {
+    if (typeof body.arrayBuffer === "function") return new Uint8Array(await body.arrayBuffer());
+    // jsdom's Blob has no arrayBuffer(); a browser's FileReader reads it (new Response(blob) would read it as text).
+    if (typeof FileReader !== "undefined") {
+      return new Promise<Uint8Array>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(body);
+      });
+    }
+    return new Uint8Array(await new Response(body).arrayBuffer());
+  }
   return new TextEncoder().encode(String(body));
 }
 
@@ -64,7 +76,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
   const calls: Call[] = [];
   const violations: string[] = [];
   let rules: Rule[] = [];
-  let holds: { test: (m: string, p: string) => boolean; gate: Promise<void>; release: () => void }[] = [];
+  let holds: { test: (m: string, p: string) => boolean; gate: Promise<void>; release: () => void; skip: number }[] = [];
   let callNo = 0;
 
   const callsApi: Calls = {
@@ -151,7 +163,14 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
         return json(rule.status, rule.body ?? { error: "Injected", message: rule.message ?? `The fake answered ${rule.status} on purpose.` });
       }
       rules = rules.filter((r) => r.times > 0 || r.skip > 0);
-      for (const h of holds) if (h.test(method, url.pathname)) await h.gate;
+      for (const h of holds) {
+        if (!h.test(method, url.pathname)) continue;
+        if (h.skip > 0) {
+          h.skip -= 1; // the first `skip` matching requests go through
+          continue;
+        }
+        await h.gate;
+      }
 
       const found = matchRoute(method, url.pathname);
       if (!found) {
@@ -306,12 +325,12 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
         rules = rules.filter((r) => r !== rule);
       };
     },
-    hold(match) {
+    hold(match, opts = {}) {
       let release: () => void = () => undefined;
       const gate = new Promise<void>((r) => {
         release = r;
       });
-      const h = { test: matcher(match), gate, release };
+      const h = { test: matcher(match), gate, release, skip: opts.skip ?? 0 };
       holds.push(h);
       return () => {
         holds = holds.filter((x) => x !== h);

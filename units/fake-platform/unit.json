@@ -45,6 +45,9 @@
   ],
   "host": [],
   "library": {
-    "admitted": false
+    "admitted": true,
+    "tag": "t:Vault.fake",
+    "title": "Fake platform (test stand-in: sign-in, records, files, grants)",
+    "note": "For tests only, never in an app's shipped code: it keeps state in memory and checks no signatures. To call the platform take lws-records, signin, picture-set or vault-access."
   }
 }

@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { ANN, boot, click, dumpDevice, panel, reload } from "./helpers";
+import { ANN, boot, click, dumpDevice, panel, reload, settled } from "./helpers";
 
 describe("T2 device", () => {
   test("T2 device: after a reload the rows come from the device before the stand-in answers", async () => {
@@ -8,6 +8,7 @@ describe("T2 device", () => {
     first.show();
     click("signin-ann");
     await screen.findByTestId("entry-e1");
+    await settled();
     await first.speed.currentPersist()!.flush(); // let the disk save (no timer: flushed by hand)
     expect(await dumpDevice()).toContain("Ann entry 30"); // it is on the device
 
