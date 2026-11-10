@@ -26,7 +26,7 @@ Four entries:
 | `idOrigin`, `clientId`, `key` | `./machine` only. The identity origin, the registered client, its private key. |
 | `transport` | Optional on every HTTP call. Default: the global `fetch`, looked up per call. |
 
-The taking application is not the data of record. This module writes no vault facts. Browser `sessionStorage` / `localStorage` hold only a 15-minute pending mailbox key `${appId}.pendingSignInEmail`. The session token and the DPoP key live in memory only.
+The taking application is not the data of record. This module writes no vault facts. Browser `sessionStorage` / `localStorage` hold only a 15-minute pending mailbox key `${appId}.pendingSignInEmail`. The session token and the DPoP key are held in memory. On a cookieless page they are also kept in IndexedDB on that page's origin until the token expires; see "Stays signed in across a reload".
 
 ## Wire (paths join the injected origin)
 
@@ -81,7 +81,7 @@ Every authenticated call carries two headers: `Authorization: DPoP <token>` and 
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 
 const session = new SessionCredential({
-  dpopMintUrl: `${ORIGIN}/base/auth/session/dpop-token`, // optional: keeps a sign-in across reloads
+  dpopMintUrl: `${ORIGIN}/base/auth/session/dpop-token`, // optional: first-party only, re-mints from the session cookie
 });
 await session.signInWithCode(ORIGIN, email, code);       // verify-code with the credential's own key
 const headers = await session.authHeaders("GET", url);   // Authorization + a fresh DPoP proof
@@ -89,7 +89,7 @@ const headers = await session.authHeaders("GET", url);   // Authorization + a fr
 
 - One DPoP key per credential. The kit makes it (private half non-extractable), or the host passes `key` for a key the kit cannot hold, such as a Secure Enclave signer: `{ publicJwk, sign }`, where `sign` returns a raw 64-byte ES256 signature. A DER signature is refused with an error that says DER.
 - Concurrent callers share one mint. It re-mints inside a 60 s guard band. A token whose expiry cannot be read counts as lasting 5 minutes. `authHeaders(method, url, freshForMs)` re-mints first when the token would not last `freshForMs`.
-- `invalidate()` is the re-mint after a 401. `invalidate(true)` is sign-out: a mint already on the wire is dropped, and a kit-made key is replaced. A host-passed key is never dropped.
+- `invalidate()` is the re-mint after a 401. It keeps the in-memory key and drops the stored token. `invalidate(true)` is sign-out: a mint already on the wire is dropped, a kit-made key is replaced, and the stored record is deleted. A host-passed key is never dropped and never stored.
 - Never cache `authHeaders`. Each proof is single-use.
 - `signInWithCode` then calls `loadReachableVaults(origin)`: `GET {origin}/lws/vaults`, one fresh proof, cookies omitted. A trailing slash on `origin` is removed. Modes narrow to read and write; an entry with no `vaultId` is dropped. `principal` and `vault` stay as they were. A list problem does not throw: the request was unreachable, not 2xx, not readable, `vaults` was not an array, `complete` was false, or the proof could not be built because the token runs out inside the 60 s guard. The vaults stay as they were when no list was read, and `session.vaultsProblem` is the sentence. The list is stored only on the token the read started with. A sign-out while the proof is built or while the request is on the wire throws `NotSignedInError` and stores nothing. A newer sign-in, or a plain `invalidate()`, stores nothing and does not throw.
 - After a code sign-in the session holds each reachable vault's `vaultId` and `modes`. For names, parents and the landing flag, call `listReachableVaults` (units/reachable-vaults).
@@ -173,7 +173,7 @@ The platform answers 202 instead of 201 when the mint is partial: the vault's fa
 ## Do not
 
 - Do not sign every call for the identity host. A vault call signed that way is refused with 401 `DPoP proof htu does not match the request URI`.
-- Do not persist the DPoP key or the token to `localStorage`. That is a platform decision, not an app one.
+- Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
 
@@ -220,3 +220,52 @@ Patch release, additive only.
 - New exported error `VaultRequestRefusedError` (`status`, `platformMessage`).
 - `createNamedVault` never returns an empty `vaultId`: when a 2xx answer names none (or is not JSON), it reads `listVaults` once and returns the vault whose name is the normalised name, or throws `VaultRequestRefusedError` saying the vault was made but is not in the list yet. It never re-posts.
 - `CreatedNamedVault.complete` (true on 201, false on 202: send the same request again to finish it); `vault` is optional and left out when the answer did not carry it; new `sameVaultHost(a, b)`; `vaultId` is the `/base` namespace, not the `/vault` one `listVaults` shows.
+
+## Changes in 0.2.4
+
+Patch release, additive only.
+
+A cookieless page has no platform cookie, so the access token and the DPoP key used to die with the page. `SessionCredential` now keeps them in IndexedDB on that page's origin when no `dpopMintUrl` is set: the key as non-extractable CryptoKey objects, the token, its expiry, and the session. `restore()` adopts that record on start-up when the token still has its 60 second guard, and makes no request. Sign-out deletes the record. A storage failure leaves the in-memory sign-in working. A page that passes `dpopMintUrl`, `store: false`, or a host-held `key` stores nothing. When `dpopMintUrl` is set, an explicit `store` is ignored and nothing is stored: the page re-mints from the session cookie, as before.
+
+A store call the credential waits for gives up after 400 ms (`STORE_TIMEOUT_MS`). That timeout is a storage failure. The person stays signed in for this page. `restore()` on a timed-out load returns null and does not delete the record, so a later reload can still read it. `signInWithCode`, `adopt`, and `loadReachableVaults` do not wait for the save: they start it and return. `invalidate(true)` starts the delete at once and waits at most 400 ms. `authHeaders` does not wait on the store.
+
+`restore()` does not replace a sign-in this credential already holds. If a token is already held when it is called, or a sign-in or `adopt` starts while the load is in flight, it adopts nothing, writes nothing, and clears nothing, and returns the held session (or null when that sign-in has not produced a token yet). A sign-out during `restore()` still wins: the result is null and the record is deleted.
+
+Only a fresh sign-in (`signInWithCode`, or `adopt` of a new token) may create or replace the record. Every later save from that credential, including a vault-list refresh, writes only when a record is already stored and its public key is this credential's key. If the record is gone, or it holds another key, the save writes nothing. A credential that `restore()` adopted is in that update-only state. Two tabs can share the record: when one tab signs out, the other's later save does not put the record back, and a reload stays signed out.
+
+`restore()` checks that the stored private key matches the stored public key. It signs a fixed challenge with the private key and verifies that signature with the public key. A mismatch is not a session: `restore()` deletes the record and returns null.
+
+## Stays signed in across a reload
+
+A published app is a third-party page. It gets no platform cookie, so the session bridge cannot re-mint after a reload. On that path `SessionCredential` keeps the sign-in in IndexedDB on the app's own origin.
+
+What is stored: one record in the database `gilb-signin-session`, object store `session`, key `current`. The record is version `1`. It holds the DPoP key pair as CryptoKey objects, the access token, its expiry (`expiresAt`, epoch milliseconds), and the session (`principal`, `vault`, `vaults`, `vaultsProblem`). The private key is not exported and stays non-extractable. IndexedDB structured-clones the CryptoKey objects. `publicKeyId` is the public key's JWK `x` and `y` joined by `.`, compared inside an update's transaction; `restore()` clears a record whose `publicKeyId` is missing or is not that public key.
+
+How long: until the token's own expiry. `restore()` returns the session when the token still has more than 60 seconds of life (`EXPIRY_GUARD_MS`). When the record is absent, the version is not 1, the record is malformed, the public key does not match the private key, or the token is inside that guard, `restore()` clears it and returns null. The pair check signs a fixed challenge with the stored private key and verifies it with the stored public key. No request is made and the private key is not exported. This version has no renewal. A new sign-in is the way back in after the token expires.
+
+`restore()` is a no-op when this credential is already signed in, or when a sign-in is already on the wire. It does not adopt the loaded record, does not write, and does not clear. The result is the session already held, or null if the sign-in has not returned a token yet. A sign-out during that load still wins.
+
+A store call the credential waits for gives up after 400 ms (`STORE_TIMEOUT_MS`). A timed-out save or a timed-out clear is a storage failure: the person stays signed in for this page, in memory. A timed-out load makes `restore()` return null and leaves the record where it is, so the next reload can still adopt it. `signInWithCode`, `adopt`, and `loadReachableVaults` start the save and do not wait for it. `invalidate(true)` starts the delete immediately and waits at most 400 ms. `authHeaders` does not touch the store.
+
+The private key cannot be read out as JWK or PKCS8. Any script on the app's origin can still use it, while the page is open or on a later visit, to sign DPoP proofs. An XSS in the app can do that. Sign-out (`invalidate(true)`) deletes the record. A later `restore()` then returns null.
+
+A first-party app that passes `dpopMintUrl` stores nothing: the cookie bridge re-mints, as before. An explicit `store` passed together with `dpopMintUrl` is ignored. Nothing is written and `restore()` returns null. `store: false` stores nothing. A host-passed `key` is never stored; the host owns it. Pass `store` to replace the IndexedDB adapter, for tests or for a host that keeps the record itself, only on a credential that does not pass `dpopMintUrl`.
+
+Only the save that follows a fresh sign-in (`signInWithCode`, or `adopt` of a new token) may create the record or replace whatever was there. Later saves from that same credential — a vault-list refresh, a dropped token after a 401 — are updates. An update writes only when the stored record exists and its public key is this credential's key, compared in one readwrite transaction. If the record is missing or holds another key, the update writes nothing. `restore()` puts the credential into that update-only state. Two open tabs share one record. Tab A signs out and the record is deleted. Tab B, which restored earlier, may later refresh its vault list: that save does not put the record back. A reload stays signed out.
+
+```ts
+import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
+
+const session = new SessionCredential();
+const restored = await session.restore(); // no request; null when the token is inside 60 seconds or missing
+if (!restored) {
+  // show the sign-in card, then:
+  await session.signInWithCode(ORIGIN, email, code);
+}
+```
+
+IndexedDB can fail (it is missing, the quota is full, the browser is in private mode, the open is blocked, or a call does not settle within 400 ms). Sign-in still works in memory. `restore()` returns null. A load that timed out does not delete the record.
+
+Sign-out starts the delete before `invalidate(true)` returns when the database is already open, so a page that closes immediately still has a delete transaction queued. IndexedDB commits that transaction asynchronously. If the browser discards the document before the commit, the record can remain. A save that was already committing can also land, and this credential deletes again when that save finishes — which does not run if the page is already gone. The next `restore()` still refuses a token inside the 60 second guard.
+
+A plain `invalidate()` (the re-mint after a 401) keeps the in-memory key and drops the stored token. The key stays in the record with an empty token, so the rejected token is not what a reload adopts. `restore()` sees no usable token, clears the record, and returns null.
