@@ -24,7 +24,10 @@ export function setup(opts: { cellular?: boolean | null; readOnly?: boolean } = 
   forgetPictures();
   setQueueStore(memoryStore());
   configureApp(ORIGIN);
-  const fake = createFakePlatform({ origin: ORIGIN });
+  // A clock that moves one millisecond at every reading: files written one after another never share an updatedAt, so "newest first" has one answer
+  // however fast or slow the machine is (the grid orders by updatedAt; equal times fall back to the platform's name order).
+  let clock = Date.now();
+  const fake = createFakePlatform({ origin: ORIGIN, now: () => (clock += 1) });
   const ann = fake.seedPerson({ email: "ann@example.test" });
   const owner = opts.readOnly ? fake.seedPerson({ email: "ben@example.test" }) : ann;
   const vault = fake.seedVault({ name: "ann", owner, host: new URL(ORIGIN).host });

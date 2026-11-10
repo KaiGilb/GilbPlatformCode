@@ -43,10 +43,14 @@ describe("P first page early", () => {
     k.platform.failAfter(ANN, 2);
     k.show();
     click("signin-ann");
-    await screen.findByTestId("partial-error");
-    expect(screen.getByTestId("partial-error").textContent).toMatch(/^Showing at least 200 entries; could not load the rest: .+/);
-    expect(rows()).toHaveLength(200);
-    expect(screen.getByTestId("refresh")).toBeTruthy(); // Refresh stays
+    // The state is transient: after the failed page the app starts the list again (a second `head` request follows), which clears the rows. So every part
+    // of it is asserted in ONE waitFor, which passes the first time they hold together; finding the element first and asserting after left a gap
+    // that a loaded machine stretched past the restart (the flake this replaces).
+    await waitFor(() => {
+      expect(screen.getByTestId("partial-error").textContent).toMatch(/^Showing at least 200 entries; could not load the rest: .+/);
+      expect(rows()).toHaveLength(200);
+      expect(screen.getByTestId("refresh")).toBeTruthy(); // Refresh stays
+    });
   });
 
   test("P3 entry page: an id beyond the preview says 'Loading…', never 'not found'; after the full list it is found, and a missing id is said to be missing", async () => {
