@@ -335,3 +335,20 @@ describe("checkVaultName — normalized and note (0.2.4, F24)", () => {
     expect(r).not.toHaveProperty("note");
   });
 });
+
+describe("checkVaultName — requested (0.2.4)", () => {
+  const transportOf = (body: unknown): Transport => async () => ({ status: 200, json: async () => body });
+  it("returns the platform's requested when it sends one", async () => {
+    const r = await checkVaultName(ORIGIN_A, "  Sail-Boats ", { transport: transportOf({ available: true, name: "sailboats", requested: "Sail-Boats" }) });
+    expect(r.requested).toBe("Sail-Boats");
+  });
+  it("else the caller's input, trimmed", async () => {
+    const r = await checkVaultName(ORIGIN_A, "  Sail-Boats ", { transport: transportOf({ available: true, name: "sailboats" }) });
+    expect(r.requested).toBe("Sail-Boats");
+  });
+  it("a failed check also carries the trimmed input", async () => {
+    const r = await checkVaultName(ORIGIN_A, " x ", { transport: async () => ({ status: 500, json: async () => ({}) }) });
+    expect(r.requested).toBe("x");
+  });
+});
+

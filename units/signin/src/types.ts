@@ -30,7 +30,7 @@ export interface CheckNameResult {
   message?: string;
   /** A free name the platform offers. Present only when the name is taken. */
   suggestion?: string;
-  /** The raw name that was sent, before the platform normalised it (`name` is the normalised one). */
+  /** The name as the platform read it, trimmed, before it normalised it (`name` is the normalised one). The caller's input trimmed when the platform sends none. */
   requested?: string;
   /** true only when the platform says it changed the name (it keeps only a-z and 0-9). Absent otherwise. */
   normalized?: true;

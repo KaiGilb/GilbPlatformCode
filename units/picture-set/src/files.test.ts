@@ -61,6 +61,24 @@ describe("listVaultFiles", () => {
   });
 });
 
+describe("a listing that carries transcodedFrom (production, 78d1fb1d)", () => {
+  test("listVaultFiles keeps each entry's transcodedFrom (null for a non-copy), and thumbIndexFor uses it over the name rule", async () => {
+    const master = { entity: E("master"), fileName: "rose.jpg", byteSize: 5000, transcodedFrom: null };
+    // the copy's NAME does not follow the -320 rule; only the platform link ties it to the master
+    const copy = { entity: E("copy"), fileName: "whatever.webp", byteSize: 100, transcodedFrom: master.entity };
+    const send = async () => json({ count: 2, files: [master, copy] });
+    const got = await listVaultFiles("v", { origin, send });
+    expect(got.map((x) => x.transcodedFrom)).toEqual([null, master.entity]);
+    expect(thumbFor(master.entity, thumbIndexFor(got))).toBe(copy.entity);
+  });
+
+  test("when the listing has no transcodedFrom the name rule still matches", () => {
+    const m = f("rose", { fileName: "rose.jpg", byteSize: 5000 });
+    const c = f("small", { fileName: "rose-320.jpg", byteSize: 100 });
+    expect(thumbFor(m.entity, thumbIndexFor([m, c]))).toBe(c.entity);
+  });
+});
+
 describe("thumbIndexFor", () => {
   test("uses transcodedFrom; the smallest copy wins", () => {
     const master = f("master", { byteSize: 5000 });
@@ -117,6 +135,43 @@ describe("endFile and endPictureFiles", () => {
     await endFile(E("one"), { origin: origin + "/", send: sender(() => 204, log) });
     await endFile(E("two"), { origin, send: sender(() => 404) });
     expect(log).toEqual([`DELETE ${origin}/files/onexxxxxxx`]);
+  });
+
+  test("the DELETE goes to the entity's own origin (scheme and host from the entity URI)", async () => {
+    const log: string[] = [];
+    // entity written in the real /vault form, caller's origin the same host with a trailing slash
+    await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "https://sail.example.test/", send: sender(() => 204, log) });
+    expect(log).toEqual(["DELETE https://sail.example.test/files/abcdefghij"]);
+  });
+
+  test("the request is built from the entity's origin, not the caller's string (scheme from the entity)", async () => {
+    const log: string[] = [];
+    await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "http://sail.example.test:443/x", send: sender(() => 404, log) }).catch(() => undefined);
+    expect(log).toEqual([]); // host differs by port: refused
+    await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "http://sail.example.test", send: sender(() => 204, log) });
+    expect(log).toEqual(["DELETE https://sail.example.test/files/abcdefghij"]);
+  });
+
+  test("an origin of another host throws, names both, and sends nothing (no silent 404)", async () => {
+    const log: string[] = [];
+    const err = await endFile("https://sail.example.test/vault/e/abcdefghij", { origin: "https://id.example.test", send: sender(() => 404, log) }).catch((e) => e);
+    expect(err).toBeInstanceOf(PictureFilesError);
+    expect(err.message).toContain("sail.example.test");
+    expect(err.message).toContain("https://id.example.test");
+    expect(log).toEqual([]);
+  });
+
+  test("an unparsable origin with an entity URL throws and sends nothing", async () => {
+    const log: string[] = [];
+    await expect(endFile(E("one"), { origin: "not a url", send: sender(() => 204, log) })).rejects.toBeInstanceOf(PictureFilesError);
+    expect(log).toEqual([]);
+  });
+
+  test("endPictureFiles reports a wrong-origin entity as failed and sends nothing for it", async () => {
+    const log: string[] = [];
+    const failed = await endPictureFiles(E("master"), ["https://other.example.test/vault/e/copyaxxxxx"], { origin, send: sender(() => 204, log) });
+    expect(log).toEqual([`DELETE ${origin}/files/masterxxxx`]);
+    expect(failed.map((x) => x.entity)).toEqual(["https://other.example.test/vault/e/copyaxxxxx"]);
   });
 
   test("403 throws with the platform's message", async () => {

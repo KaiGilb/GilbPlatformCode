@@ -168,7 +168,7 @@ The `vaultId` create-named answers is `https://<slug>.<domain>` plus the segment
 
 The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. The kit never retries for you.
 
-`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
 
 ## Do not
 
@@ -225,4 +225,6 @@ Patch release, additive only.
 
 - `listVaults` keeps each vault's entity URI as `entity`. `createNamedVault`'s `parentVault` is that value, not a `vaultId`.
 - `checkVaultName` returns the platform's `normalized` and `note` when it sends them, so an app can tell the person their name was changed.
+- `checkVaultName.requested` is the platform's `requested` (trimmed) when it sends one, else the caller's input trimmed.
+- `listVaults` also returns `partOfEntity`, the parent's entity URI (`partOf["@id"]`), when the platform sends it. `partOf` is unchanged.
 - Docs: the segment of the `vaultId` create-named answers is whatever the platform returns (`/vault` on production). The unit never builds or compares a `/base` id; the fallback matches by host.

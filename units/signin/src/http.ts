@@ -85,7 +85,7 @@ export async function checkVaultName(
         available: false,
         reserved: false,
         name,
-        requested: name,
+        requested: name.trim(),
         message: `Name check failed (HTTP ${res.status}).`,
       };
     }
@@ -97,7 +97,8 @@ export async function checkVaultName(
       address: typeof body.address === "string" ? body.address : undefined,
       message: typeof body.message === "string" ? body.message : undefined,
       suggestion: typeof body.suggestion === "string" ? body.suggestion : undefined,
-      requested: name,
+      // The platform's `requested` is the trimmed input (nameChangeReport); else the caller's, trimmed.
+      requested: typeof body.requested === "string" ? body.requested : name.trim(),
     };
     // Present only when the platform sends them (GilbPlatform nameChangeReport, reserved-names.ts).
     if (body.normalized === true) result.normalized = true;
@@ -108,7 +109,7 @@ export async function checkVaultName(
       available: false,
       reserved: false,
       name,
-      requested: name,
+      requested: name.trim(),
       message: "Could not check that name. Try again.",
     };
   }

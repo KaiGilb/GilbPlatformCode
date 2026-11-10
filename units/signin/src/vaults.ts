@@ -53,6 +53,11 @@ export interface ListedVault {
   /** The parent vault's id, when this vault sits under one. */
   partOf?: string;
   /**
+   * The parent vault's entity URI (`partOf["@id"]` on the node, GilbPlatform `ReachableVaultNode.partOf`,
+   * src/lws/vaults.ts:143). Absent when the platform sent none. Usable as `createNamedVault`'s `parentVault`.
+   */
+  partOfEntity?: string;
+  /**
    * The vault's entity URI: the `@id` of its node in `GET /lws/vaults` (GilbPlatform
    * `ReachableVaultNode["@id"]`, src/lws/vaults.ts). Pass this as `createNamedVault`'s `parentVault`.
    * Absent when the platform sent no `@id` (a bare namespace with no vault entity); such a vault
@@ -145,8 +150,11 @@ export async function listVaults(origin: string, opts: SignedVaultOptions): Prom
     const rep = iri(v.represents);
     if (rep) item.represents = rep;
     if (typeof v["@id"] === "string" && v["@id"]) item.entity = v["@id"];
-    const part = (v.partOf as { vaultId?: unknown } | null | undefined)?.vaultId;
+    const partNode = v.partOf as { vaultId?: unknown; "@id"?: unknown } | null | undefined;
+    const part = partNode?.vaultId;
     if (typeof part === "string" && part) item.partOf = part;
+    const partEnt = partNode?.["@id"];
+    if (typeof partEnt === "string" && partEnt) item.partOfEntity = partEnt;
     out.push(item);
   }
   return out;

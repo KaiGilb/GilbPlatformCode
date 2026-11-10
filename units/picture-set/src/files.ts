@@ -21,10 +21,11 @@ export type VaultFile = {
   /** true for an ended file (only seen when the listing asks for `lifecycle` ended or all). */
   ended?: boolean;
   /**
-   * The original this file was made from. The platform's listing does NOT carry it on each entry; it is set here only when the listing was
-   * asked with `transcodedFrom` (every file then answered is a copy of that original), or when the caller adds it from record rows.
+   * The original this file was made from. Production lists it on each entry (`transcodedFrom`, an entity URI, or null for a file that is not
+   * a copy; GilbPlatform src/read/file-browse.ts:129-133, since 78d1fb1d / #691). It is kept as the platform sent it. When the listing was
+   * asked with the `transcodedFrom` filter, it is set to that original on each answered file. A caller may also add it from record rows.
    */
-  transcodedFrom?: string;
+  transcodedFrom?: string | null;
 };
 
 /** A refusal from the vault: the HTTP status and the platform's own message, word for word (the body text when it carries no message). */
@@ -148,15 +149,43 @@ export function thumbFor(master: string, index: ReadonlyMap<string, string>): st
 }
 
 /**
- * Ends one file: DELETE <origin>/files/<id of the file>. The platform DESTROYS NOTHING: the file is marked ended and its bytes stay at their
- * address. Resolves on 204 or 200, and on 404 (the file is already gone, or it is not this caller's to see: the platform answers both alike,
- * so a 404 is not an error here). Any other status throws a `PictureFilesError` with the status and the platform's message (a reader without
- * write access gets 403). `origin` is the origin that serves the file's vault; this unit does not derive it.
+ * Ends one file: DELETE <the file's own origin>/files/<id of the file>. The platform DESTROYS NOTHING: the file is marked ended and its bytes
+ * stay at their address. Resolves on 204 or 200, and on 404 (the file is already gone, or it is not this caller's to see: the platform answers
+ * both alike, so a 404 is not an error here). Any other status throws a `PictureFilesError` with the status and the platform's message (a
+ * reader without write access gets 403).
+ *
+ * The platform finds the file at the host the request names (GilbPlatform src/routes/files.ts:767, `https://<host>/vault/e/<id>` on a user
+ * vault), and answers 404 for a file that is at another host. So a DELETE sent to the wrong origin ends nothing and looks like "already
+ * gone". When `fileEntity` is an absolute URL the request therefore goes to that URL's own origin, and `origin` must name the same host: when
+ * it does not, this throws a `PictureFilesError` (status 0) naming both and sends nothing. A 404 counts as gone only on that own origin.
+ * A `fileEntity` that is not an absolute URL cannot name a host: it is sent to `origin`, as before.
  */
 export async function endFile(fileEntity: string, opts: { origin: string; send: Send }): Promise<void> {
   const id = entityIdTail(fileEntity);
   if (!id) throw new PictureFilesError(0, `Not a file address: ${fileEntity}`);
-  const res = await opts.send("DELETE", `${trimOrigin(opts.origin)}/files/${encodeURIComponent(id)}`);
+  let target = trimOrigin(opts.origin);
+  let entityUrl: URL | null = null;
+  try {
+    entityUrl = new URL(fileEntity);
+  } catch {
+    /* not an absolute URL: no host to read */
+  }
+  if (entityUrl && entityUrl.host) {
+    let given: string | null = null;
+    try {
+      given = new URL(opts.origin).host;
+    } catch {
+      /* unparsable origin */
+    }
+    if (given !== entityUrl.host) {
+      throw new PictureFilesError(
+        0,
+        `The file ${fileEntity} is at ${entityUrl.host}, but the origin given is ${opts.origin}. Pass the origin of the vault that holds the file.`,
+      );
+    }
+    target = entityUrl.origin;
+  }
+  const res = await opts.send("DELETE", `${target}/files/${encodeURIComponent(id)}`);
   if (res.status === 204 || res.status === 200 || res.status === 404) return;
   throw await refusal(res);
 }

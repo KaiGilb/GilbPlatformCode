@@ -67,6 +67,21 @@ describe("listVaults", () => {
     expect(list[1]).not.toHaveProperty("entity");
   });
 
+  it("keeps the parent's entity URI as partOfEntity (partOf.@id); partOf stays the parent's vaultId", async () => {
+    const r = rig(200, {
+      vaults: [
+        { vaultId: "k", modes: ["read"], partOf: { "@id": "https://p.example.test/vault/e/p1", vaultId: "p" } },
+        { vaultId: "j", modes: ["read"], partOf: { vaultId: "p" } },
+        { vaultId: "i", modes: ["read"], partOf: null },
+      ],
+    });
+    const [k, j, i] = await listVaults(ORIGIN, { credential: r.credential, transport: r.transport });
+    expect(k).toMatchObject({ partOf: "p", partOfEntity: "https://p.example.test/vault/e/p1" });
+    expect(j!.partOf).toBe("p");
+    expect(j).not.toHaveProperty("partOfEntity");
+    expect(i).not.toHaveProperty("partOfEntity");
+  });
+
   it("a listed vault's entity can be sent as parentVault, exactly", async () => {
     const ent = "https://a.example.test/vault/e/ent1";
     const l = rig(200, { vaults: [{ "@id": ent, vaultId: "https://a.example.test/vault", modes: ["write"] }] });
