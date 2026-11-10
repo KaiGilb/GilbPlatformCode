@@ -998,8 +998,9 @@ test("a renew whose store saves never settle still returns the new token from me
 
 test("a failed save of the rotated record keeps the session and a reload within grace recovers", async () => {
   const inner = memoryStore(await seed({ accessToken: "tok-old", expiresAt: NOW - 1 }));
-  // The attempt mark lands. The rotated save and the drain that follows it do not.
-  const store = hangStore(inner, { throwSaveAt: [2, 3] });
+  // The attempt mark lands. The rotated save, the in-lock retry, and the drain do not,
+  // so a reload before the background save still presents the previous credential.
+  const store = hangStore(inner, { throwSaveAt: [2, 3, 4] });
   const now = () => NOW;
   const server = graceRenew(now);
   const logs: unknown[][] = [];
@@ -1283,7 +1284,7 @@ test("a rotation save retries when a stale invalidate commits during the save ga
     },
     async saveIfCurrent(session, expect) {
       const seen = current;
-      if (!recordIsCurrent(seen, expect)) return;
+      if (!recordIsCurrent(seen, expect)) return false;
       // The first put of the rotated credential yields, the way a store can
       // between its compare and its put. A stale invalidate commits in that gap.
       const rotation = session.renew !== OLD_RENEW && session.accessToken !== "";
@@ -1291,20 +1292,22 @@ test("a rotation save retries when a stale invalidate commits during the save ga
         heldRotation = true;
         holding = true;
         await hold;
-        if (current !== seen) return;
+        if (current !== seen) return false;
         current = structuredClone(session);
-        return;
+        return true;
       }
       await Promise.resolve();
-      if (current !== seen) return;
+      if (current !== seen) return false;
       current = structuredClone(session);
+      return true;
     },
     async clearIfCurrent(expect) {
       const seen = current;
-      if (!recordIsCurrent(seen, expect)) return;
+      if (!recordIsCurrent(seen, expect)) return false;
       await Promise.resolve();
-      if (current !== seen) return;
+      if (current !== seen) return false;
       current = null;
+      return true;
     },
     async clear() {
       await Promise.resolve();
@@ -1508,11 +1511,12 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
     load: () => inner.load(),
     save: (session) => inner.save(session),
     async saveIfCurrent(session, expect) {
-      await inner.saveIfCurrent(session, expect);
+      const wrote = await inner.saveIfCurrent(session, expect);
       if (typeof session.renew === "string" && session.renew !== OLD_RENEW && session.accessToken.length > 0) {
         rotationSaves += 1;
         if (rotationSaves === 1) noteBSave();
       }
+      return wrote;
     },
     clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
     clear: () => inner.clear(),

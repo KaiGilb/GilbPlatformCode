@@ -85,16 +85,21 @@ export interface StoredSession {
 }
 
 /**
- * The record a tab may still change: the one it holds.
+ * The record a tab may still change.
  * `publicKeyId` is always compared, and it must be a non-empty string.
- * `renew`, when the property is present, must be the stored credential.
- * `null` or `""` means the stored record has no renewal credential.
+ * `renewAnyOf`, when the property is present, matches when the stored renewal
+ * credential is one of those strings: this tab's current credential, or a
+ * credential this tab already spent by a successful rotation. `renew` is then
+ * not compared.
+ * `renew`, when `renewAnyOf` is absent and the property is present, must be the
+ * stored credential. `null` or `""` means the stored record has no renewal credential.
  * `accessToken`, when the property is present, must be the stored access token.
  * A record with no renewal credential is matched on that token.
  */
 export interface CurrentRecordExpect {
   publicKeyId: string;
   renew?: string | null;
+  renewAnyOf?: readonly string[];
   accessToken?: string;
 }
 
@@ -108,7 +113,10 @@ export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect):
   if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
   const record = existing as Partial<StoredSession>;
   if (record.publicKeyId !== expect.publicKeyId) return false;
-  if ("renew" in expect) {
+  if (expect.renewAnyOf !== undefined) {
+    const stored = typeof record.renew === "string" && record.renew.length > 0 ? record.renew : "";
+    if (stored.length === 0 || !expect.renewAnyOf.includes(stored)) return false;
+  } else if ("renew" in expect) {
     const stored = typeof record.renew === "string" && record.renew.length > 0 ? record.renew : null;
     const want = typeof expect.renew === "string" && expect.renew.length > 0 ? expect.renew : null;
     if (stored !== want) return false;
@@ -145,17 +153,19 @@ export interface SessionStore {
   /**
    * Writes `session` only when the stored record is still {@link recordIsCurrent}
    * for `expect`. A missing record, another key, or another credential writes
-   * nothing. The IndexedDB adapter compares every given field and puts inside
-   * the same `get` success callback, so the transaction is still active and a
-   * delete that commits first is not put back.
+   * nothing and resolves `false`. `true` means the put was made. The IndexedDB
+   * adapter compares every given field and puts inside the same `get` success
+   * callback, so the transaction is still active and a delete that commits
+   * first is not put back.
    */
-  saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<void>;
+  saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<boolean>;
   /**
    * Deletes the one record only when it is still {@link recordIsCurrent} for
-   * `expect`. Another key or credential is left in place. The IndexedDB adapter
-   * compares and deletes inside the same `get` success callback.
+   * `expect`. Another key or credential is left in place and this resolves
+   * `false`. `true` means the delete was made. The IndexedDB adapter compares
+   * and deletes inside the same `get` success callback.
    */
-  clearIfCurrent(expect: CurrentRecordExpect): Promise<void>;
+  clearIfCurrent(expect: CurrentRecordExpect): Promise<boolean>;
   /** Deletes the one record. Starts the delete before it needs to wait, when it can. */
   clear(): Promise<void>;
 }
@@ -192,16 +202,16 @@ class IndexedDbSessionStore implements SessionStore {
     await transactionDone(tx);
   }
 
-  async saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<void> {
+  async saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<boolean> {
     const db = await this.connect();
-    await mutateIfCurrent(db, expect, (objectStore) => {
+    return mutateIfCurrent(db, expect, (objectStore) => {
       objectStore.put(session, SESSION_RECORD_KEY);
     });
   }
 
-  async clearIfCurrent(expect: CurrentRecordExpect): Promise<void> {
+  async clearIfCurrent(expect: CurrentRecordExpect): Promise<boolean> {
     const db = await this.connect();
-    await mutateIfCurrent(db, expect, (objectStore) => {
+    return mutateIfCurrent(db, expect, (objectStore) => {
       objectStore.delete(SESSION_RECORD_KEY);
     });
   }
@@ -320,7 +330,7 @@ function mutateIfCurrent(
   db: IDBDatabase,
   expect: CurrentRecordExpect,
   mutate: (objectStore: IDBObjectStore) => void,
-): Promise<void> {
+): Promise<boolean> {
   let tx: IDBTransaction;
   try {
     tx = readwrite(db);
@@ -330,13 +340,13 @@ function mutateIfCurrent(
   const objectStore = tx.objectStore(SESSION_OBJECT_STORE);
   return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (err?: unknown) => {
+    const finish = (err?: unknown, wrote = false) => {
       if (settled) return;
       settled = true;
       if (err) reject(err instanceof Error ? err : new Error("IndexedDB transaction failed"));
-      else resolve();
+      else resolve(wrote);
     };
-    tx.oncomplete = () => finish();
+    tx.oncomplete = () => finish(undefined, true);
     tx.onabort = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
     tx.onerror = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
 
@@ -344,10 +354,10 @@ function mutateIfCurrent(
     req.onerror = () => finish(req.error ?? new Error("IndexedDB request failed"));
     req.onsuccess = () => {
       if (!recordIsCurrent(req.result, expect)) {
-        // No mutation. Resolve here: a get-only transaction has nothing left in
-        // flight, and the test double does not fire `oncomplete` unless a put
-        // or delete did.
-        finish();
+        // No mutation. Resolve false here: a get-only transaction has nothing
+        // left in flight, and the test double does not fire `oncomplete` unless
+        // a put or delete did.
+        finish(undefined, false);
         return;
       }
       try {

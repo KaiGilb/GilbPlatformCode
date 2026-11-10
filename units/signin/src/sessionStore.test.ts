@@ -628,11 +628,30 @@ test("saveIfCurrent writes only when the stored key and credential match, in one
     await store.save(first);
     const before = fake.transactions;
     const updated = { ...first, accessToken: "tok-updated", session: { ...first.session, principal: "p-updated" } };
-    await store.saveIfCurrent(updated, keyOnly);
+    assert.equal(await store.saveIfCurrent(updated, keyOnly), true);
     assert.equal(fake.transactions - before, 1, "the compare and the write share one transaction");
     assert.equal((await store.load())?.accessToken, "tok-updated");
     assert.equal((await store.load())?.session.principal, "p-updated");
     assert.equal((await store.load())?.publicKeyId, first.publicKeyId);
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...first, accessToken: "tok-from-spent", renew: "rsi1.fam.s2" },
+        { publicKeyId: first.publicKeyId, renewAnyOf: ["rsi1.fam.s2", first.renew!] },
+      ),
+      true,
+      "a credential this tab already spent is still current",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...first, accessToken: "tok-other-tab", renew: "rsi1.fam.s3" },
+        { publicKeyId: first.publicKeyId, renewAnyOf: ["rsi1.fam.s3"] },
+      ),
+      false,
+      "another tab's credential is not current",
+    );
+    assert.equal((await store.load())?.accessToken, "tok-from-spent");
+    await store.save(updated);
     await store.saveIfCurrent({ ...other, accessToken: "tok-replaced" }, { publicKeyId: other.publicKeyId, renew: other.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
     await store.saveIfCurrent(
@@ -675,7 +694,7 @@ test("clearIfCurrent deletes only the record it names, in one transaction", asyn
     assert.equal(await store.load(), null);
     await store.save(first);
     const before = fake.transactions;
-    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.other" });
+    assert.equal(await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.other" }), false);
     assert.equal(fake.transactions - before, 1, "the compare and the skipped delete share one transaction");
     assert.equal((await store.load())?.renew, "rsi1.fam.s1");
     await store.clearIfCurrent({ publicKeyId: "other-key", renew: "rsi1.fam.s1" });
