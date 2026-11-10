@@ -160,6 +160,22 @@ describe("PATCH /lws/r/:id (row 9)", () => {
     const etag = (await a.fetch(recUrl(w.annV, id))).headers.get("etag")!;
     expect((await patch(a, recUrl(w.annV, id), { n: 2 }, { "if-match": `W/${etag}` })).status).toBe(200);
   });
+  it("an If-Match LIST: one tag equal to the current ETag is enough, in any position; a list of only stale tags is 412 (src/lws/crud.ts:421-429)", async () => {
+    const w = await world();
+    const { a, id, res } = await made(w);
+    const cur = res.headers.get("etag")!;
+    const stale1 = '"sha256:' + "0".repeat(64) + '"';
+    const stale2 = '"sha256:' + "1".repeat(64) + '"';
+    const first = await patch(a, recUrl(w.annV, id), { n: 1 }, { "if-match": `${stale1}, ${cur}` });
+    expect(first.status).toBe(200);
+    const cur2 = first.headers.get("etag")!;
+    expect((await patch(a, recUrl(w.annV, id), { n: 2 }, { "if-match": `${cur2},${stale1}` })).status).toBe(200);
+    const cur3 = (await a.fetch(recUrl(w.annV, id))).headers.get("etag")!;
+    expect((await patch(a, recUrl(w.annV, id), { n: 3 }, { "if-match": `${stale1}, ${cur3} , ${stale2}` })).status).toBe(200);
+    const none = await patch(a, recUrl(w.annV, id), { n: 4 }, { "if-match": `${stale1}, ${stale2}` });
+    expect(none.status).toBe(412);
+    expect(w.fake.state.records.get(id)!.facts.n).toBe(3);
+  });
   it("404 when absent, ended, or the caller cannot read it", async () => {
     const w = await world();
     const { a, id } = await made(w);
@@ -205,6 +221,18 @@ describe("PUT /lws/r/:id (row 10)", () => {
     expect(w.fake.state.records.get(id)!.facts).toEqual({ name: "Z" });
     const same = await put(a, recUrl(w.annV, id), { facts: { name: "Z" } }, { "if-match": first.headers.get("etag")! });
     expect(same.status).toBe(200);
+  });
+  it("an If-Match LIST: one tag equal to the current ETag is enough, a list of only stale tags is 412", async () => {
+    const w = await world();
+    const { a, id, res } = await made(w);
+    const cur = res.headers.get("etag")!;
+    const stale = '"sha256:' + "0".repeat(64) + '"';
+    expect((await put(a, recUrl(w.annV, id), { facts: { name: "A" } }, { "if-match": `${stale}, ${cur}` })).status).toBe(201);
+    const cur2 = (await a.fetch(recUrl(w.annV, id))).headers.get("etag")!;
+    expect((await put(a, recUrl(w.annV, id), { facts: { name: "A" } }, { "if-match": `${cur2},${stale}` })).status).toBe(200);
+    const none = await put(a, recUrl(w.annV, id), { facts: { name: "B" } }, { "if-match": `${stale}, "sha256:${"2".repeat(64)}"` });
+    expect(none.status).toBe(412);
+    expect(w.fake.state.records.get(id)!.facts.name).toBe("A");
   });
   it("412 on a stale tag, and on * or any tag for a record that does not exist", async () => {
     const w = await world();

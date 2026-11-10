@@ -31,6 +31,12 @@ export interface FakeRecord {
   endedSeq: number | null;
   endedAt: string | null;
 }
+/** A file: a record (so PATCH and GET /lws/r/:id reach it) plus its bytes. Its describing facts are the platform's a:file* slugs, bare. */
+export interface FakeFile extends FakeRecord {
+  bytes: Uint8Array;
+  /** The identity the platform hashes from the file facts: same value, same file (not served). */
+  identity: string;
+}
 export interface Session {
   token: string;
   principal: string;
@@ -47,6 +53,7 @@ export interface FakeState {
   /** `<vault id>\n<principal>` of every access the owner took away. */
   revoked: Set<string>;
   records: Map<string, FakeRecord>;
+  files: Map<string, FakeFile>;
   sessions: Map<string, Session>;
   usedProofs: Set<string>;
   /** The one position counter. */
@@ -55,6 +62,7 @@ export interface FakeState {
 
 export type PersonRef = Person | string;
 export type VaultRef = Vault | string;
+export type FileRef = FakeFile | string;
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type Match = `${Method} ${string}` | RegExp;
 
@@ -95,6 +103,8 @@ export interface FakePlatformOptions {
   undefinedTerms?: string[];
   /** Seconds a DPoP proof's `iat` may be from now. Default 60. */
   proofWindowSeconds?: number;
+  /** The file listing carries `transcodedFrom` on each file (GilbPlatform 78d1fb1d, #691, live 2026-11-10). Default true. */
+  listingCarriesTranscodedFrom?: boolean;
   now?: () => number;
   latencyMs?: () => number;
 }
@@ -113,6 +123,10 @@ export interface FakePlatform {
   seedVault(v: { name: string; owner: PersonRef; partOf?: VaultRef; represents?: string; host?: string }): Vault;
   seedRecord(v: VaultRef, r: { type?: string; facts: Record<string, unknown>; id?: string }): FakeRecord;
   grant(v: VaultRef, who: PersonRef, mode: GrantMode): void;
+  /** Put a file in a vault with no request. `transcodedFrom` is a file or its entity URI. */
+  seedFile(v: VaultRef, f: { name: string; bytes: Uint8Array; mediaType?: string; type?: string; folders?: string[]; tags?: string[]; storedWith?: string; transcodedFrom?: FileRef; uploader?: PersonRef }): FakeFile;
+  /** A master `<name>.jpg` and its small copy `<name>-320.jpg` (as picture-set names them), the copy linked to the master by `transcodedFrom`. */
+  seedPicture(v: VaultRef, p: { name: string; master: Uint8Array; thumb: Uint8Array }): { master: FakeFile; thumb: FakeFile };
   /** A token the fake accepts for this person. With `jwk` the token is bound to that key (and a proof must carry it). */
   signInAs(p: PersonRef, opts?: { jwk?: { kty: string; crv: string; x: string; y: string } }): { token: string; principal: string };
 

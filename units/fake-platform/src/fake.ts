@@ -1,7 +1,8 @@
 import { authenticate, mintToken, thumbprint } from "./auth";
 import { opaqueId } from "./bytes";
 import { failure, json, type Core, type Req, type Resolved } from "./http";
-import { endRecord, makeRecord, normaliseFacts, stamp } from "./records";
+import { storeFile } from "./files";
+import { endRecord, entityOf, makeRecord, normaliseFacts, stamp } from "./records";
 import { matchRoute } from "./routes";
 import type { Call, Calls, FakePlatform, FakePlatformOptions, FakeState, GrantMode, Match, Person, PersonRef, Vault, VaultRef } from "./types";
 
@@ -25,14 +26,14 @@ interface Rule {
   skip: number;
 }
 
-async function bodyTextOf(body: unknown): Promise<string | null> {
+async function bodyBytesOf(body: unknown): Promise<Uint8Array | null> {
   if (body === undefined || body === null) return null;
-  if (typeof body === "string") return body;
-  if (body instanceof URLSearchParams) return body.toString();
-  if (typeof Blob !== "undefined" && body instanceof Blob) return typeof body.text === "function" ? body.text() : new TextDecoder().decode(await new Response(body).arrayBuffer());
-  if (body instanceof ArrayBuffer) return new TextDecoder().decode(body);
-  if (ArrayBuffer.isView(body)) return new TextDecoder().decode(body as ArrayBufferView);
-  return String(body);
+  if (typeof body === "string") return new TextEncoder().encode(body);
+  if (body instanceof URLSearchParams) return new TextEncoder().encode(body.toString());
+  if (body instanceof ArrayBuffer) return new Uint8Array(body);
+  if (ArrayBuffer.isView(body)) return new Uint8Array(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
+  if (typeof Blob !== "undefined" && body instanceof Blob) return new Uint8Array(typeof body.arrayBuffer === "function" ? await body.arrayBuffer() : await new Response(body).arrayBuffer());
+  return new TextEncoder().encode(String(body));
 }
 
 export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatform {
@@ -43,12 +44,13 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     host,
     domain: options.domain ?? host,
     hosts: new Set(options.hosts ?? []),
+    transcodedFromInListing: options.listingCarriesTranscodedFrom ?? true,
     dpop: options.dpop ?? "strict",
     undefinedTerms: new Set((options.undefinedTerms ?? []).map((k) => k.replace(/^a:/, ""))),
     proofWindowSeconds: options.proofWindowSeconds ?? 60,
     now: options.now ?? Date.now,
   };
-  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), sessions: new Map(), usedProofs: new Set(), seq: 0 };
+  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), usedProofs: new Set(), seq: 0 };
   let counter = 0;
   const core: Core = { o, s, nextId: () => opaqueId(++counter) };
 
@@ -98,7 +100,9 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       const method = (init.method ?? (isReq ? (input as Request).method : "GET")).toUpperCase();
       if (api.offline) throw new TypeError("Failed to fetch (fake platform: offline)");
       const headers = new Headers(init.headers ?? (isReq ? (input as Request).headers : undefined));
-      const bodyText = await bodyTextOf(init.body ?? (isReq ? await (input as Request).clone().text() : undefined));
+      const bodyBytes = await bodyBytesOf(init.body ?? (isReq ? new Uint8Array(await (input as Request).clone().arrayBuffer()) : undefined));
+      const bodyText = bodyBytes === null ? null : new TextDecoder().decode(bodyBytes);
+      const jsonish = (headers.get("content-type") ?? "json").toLowerCase().includes("json");
       const call: Call = {
         n: ++callNo,
         method,
@@ -114,9 +118,9 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       };
       for (const [k, v] of url.searchParams) (call.query[k] ??= []).push(v);
       try {
-        call.body = bodyText === null ? undefined : JSON.parse(bodyText);
+        call.body = bodyText === null ? undefined : jsonish ? JSON.parse(bodyText) : bodyBytes;
       } catch {
-        call.body = bodyText ?? undefined;
+        call.body = bodyBytes ?? undefined;
       }
       calls.push(call);
 
@@ -148,7 +152,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
         call.status = 404;
         return failure(404, "fake_platform_no_such_route", `fake-platform answers no route ${method} ${url.pathname}; the platform route table has no such row.`);
       }
-      const req: Req = { method, url, path: url.pathname, host: url.host, query: url.searchParams, headers, bodyText, params: found.params };
+      const req: Req = { method, url, path: url.pathname, host: url.host, query: url.searchParams, headers, bodyText, bodyBytes, params: found.params };
       const auth = await authenticate(core, req, found.route.auth);
       call.proof = auth.proof;
       if (auth.caller) call.as = { principal: auth.caller.principal, email: auth.caller.email };
@@ -179,6 +183,27 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     },
     seedRecord(v, r) {
       return makeRecord(core, vaultOf(v).id, r.type, r.facts, r.id);
+    },
+    seedFile(v, f) {
+      const vault = vaultOf(v);
+      const link = f.transcodedFrom === undefined ? undefined : typeof f.transcodedFrom === "string" ? f.transcodedFrom : entityOf(core, f.transcodedFrom);
+      const { file } = storeFile(core, vault, {
+        name: f.name,
+        bytes: f.bytes,
+        mediaType: (f.mediaType ?? "application/octet-stream").toLowerCase(),
+        type: f.type,
+        folders: [...(f.folders ?? [])].sort(),
+        tags: [...(f.tags ?? [])].sort(),
+        storedWith: f.storedWith,
+        by: f.uploader ? personOf(f.uploader).principal : vault.owner,
+        transcodedFrom: link,
+      });
+      return file;
+    },
+    seedPicture(v, p) {
+      const master = api.seedFile(v, { name: `${p.name}.jpg`, bytes: p.master, mediaType: "image/jpeg", type: "ImageFile" });
+      const thumb = api.seedFile(v, { name: `${p.name}-320.jpg`, bytes: p.thumb, mediaType: "image/jpeg", type: "ImageFile", transcodedFrom: master });
+      return { master, thumb };
     },
     grant(v, who, mode: GrantMode) {
       const vault = vaultOf(v);
@@ -261,6 +286,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       s.grants.clear();
       s.revoked.clear();
       s.records.clear();
+      s.files.clear();
       s.sessions.clear();
       s.usedProofs.clear();
       s.seq = 0;

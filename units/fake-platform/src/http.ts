@@ -8,6 +8,7 @@ export interface Resolved {
   host: string;
   domain: string;
   hosts: Set<string>;
+  transcodedFromInListing: boolean;
   dpop: "strict" | "platform";
   undefinedTerms: Set<string>;
   proofWindowSeconds: number;
@@ -28,6 +29,8 @@ export interface Req {
   headers: Headers;
   /** The body as text when it was text or bytes; null when none. */
   bodyText: string | null;
+  /** The body's bytes; null when none. */
+  bodyBytes: Uint8Array | null;
   params: Record<string, string>;
 }
 

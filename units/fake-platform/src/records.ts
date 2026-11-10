@@ -95,7 +95,8 @@ function envelope(req: Req): { type?: string; facts: Record<string, unknown> } |
 
 /** Whether a request addressed `host` reaches the record: the platform routes a dereference by the host the request names (src/lws/routes.ts:588,1034). */
 function recordAt(core: Core, req: Req, id: string): FakeRecord | null {
-  const r = core.s.records.get(id);
+  // A file is an entity too: PATCH /lws/r/<file id> is how picture-set links a copy to its master (src/lws/routes.ts:1037-1040 resolves any entity id under the host).
+  const r = core.s.records.get(id) ?? core.s.files.get(id);
   if (!r) return null;
   return core.s.vaults.get(r.vaultId)!.host === req.host ? r : null;
 }

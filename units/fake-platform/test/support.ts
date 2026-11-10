@@ -8,6 +8,8 @@ export interface Who {
   key: DpopKey;
   headers(method: string, url: string): Promise<Record<string, string>>;
   fetch(url: string, init?: RequestInit): Promise<Response>;
+  /** picture-set's `Send`: (method, url, init). */
+  send(method: string, url: string, init?: RequestInit): Promise<Response>;
 }
 
 export interface World {
@@ -31,15 +33,17 @@ export async function world(opts: FakePlatformOptions = {}): Promise<World> {
     const key = await generateDpopKeyPair();
     const { token } = fake.signInAs(p, { jwk: key.publicJwk });
     const headers = async (method: string, url: string) => ({ ...(await dpopHeaders(key, token, method, url)) });
+    const doFetch = async (url: string, init: RequestInit = {}) => {
+      const method = (init.method ?? "GET").toUpperCase();
+      return fake.fetch(url, { ...init, method, headers: { ...(init.headers as Record<string, string> | undefined), ...(await headers(method, url)) } });
+    };
     return {
       person: p,
       token,
       key,
       headers,
-      fetch: async (url, init = {}) => {
-        const method = (init.method ?? "GET").toUpperCase();
-        return fake.fetch(url, { ...init, method, headers: { ...(init.headers as Record<string, string> | undefined), ...(await headers(method, url)) } });
-      },
+      fetch: doFetch,
+      send: (method, url, init = {}) => doFetch(url, { ...init, method }),
     };
   };
   return { fake, ann, ben, cat, annV, as, clock };

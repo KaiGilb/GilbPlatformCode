@@ -6,7 +6,7 @@ A fetch stand-in for the GilbPlatform that answers the platform's real routes wi
 
 An app's tests use it in place of the live platform: `vi.stubGlobal("fetch", fake.fetch)`, seed a person, a vault and some records, and run the app's real code (`lws-records`, `record-sync`, `signin` and the rest) against it. The route table, the state model and the reasons are in `DESIGN.md`; every route cites the GilbPlatform line it mirrors.
 
-**Version 0.1.0 is part 1.** It answers the vault list (`GET /lws/vaults`) and the record routes (create, read, patch, replace, delete, and the list by type with `since`, `after`, `include=body`, `limit`, `offset` and `lifecycle=ended`). Sign-in, `check-name`, `create-named`, files and grants are rows of `DESIGN.md` section 2 that come in later parts; until then the fake answers them `404 fake_platform_no_such_route`.
+**Version 0.1.0 holds parts 1 and 2.** It answers the vault list (`GET /lws/vaults`), the record routes (create, read, patch, replace, delete, and the list by type with `since`, `after`, `include=body`, `limit`, `offset` and `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, and the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`). Sign-in, `check-name` and `create-named` are rows of `DESIGN.md` section 2 that come in a later part; until then the fake answers them `404 fake_platform_no_such_route`.
 
 ## Use
 
@@ -25,7 +25,7 @@ fake.assertClean();                                      // throws if any reques
 ```
 
 - `fetch`, `client(origin?)` (a `{ origin, fetch }` for `record-sync`), `state`, `calls` (`all`, `of`, `last`, `count`, `clear`), `violations`, `reset()`, `offline`.
-- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `grant`, `signInAs`.
+- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `signInAs`.
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
 - Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match)` (waits until the returned function is called). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
 
@@ -37,7 +37,9 @@ fake.assertClean();                                      // throws if any reques
 
 ## What it never does
 
-A request no route row answers, or to a host that is not this platform's, is recorded in `violations`; the first is answered `404 fake_platform_no_such_route`, the second makes `fetch` reject. It never accepts a request the platform would refuse (`t:Sailboat` as a list `type` is 400, an `http://` vault id is 400, an extra body key is 400). `filter=` on the record list answers `400 fake_platform_not_faked` in this part.
+A request no route row answers, or to a host that is not this platform's, is recorded in `violations`; the first is answered `404 fake_platform_no_such_route`, the second makes `fetch` reject. It never accepts a request the platform would refuse (`t:Sailboat` as a list `type` is 400, an `http://` vault id is 400, an extra body key is 400). `filter=` on the record list, `?thumbnail=` / `?face=` / `?fileType=` on an upload and `Range` on a download answer `400 fake_platform_not_faked`: the platform has them, the fake does not.
+
+The file listing never carries a cursor (the platform sends none): page it with `limit` (50 by default, 200 at most), `offset` and `count`.
 
 ## How to take it
 

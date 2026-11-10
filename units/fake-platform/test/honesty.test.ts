@@ -14,8 +14,8 @@ describe("the route table", () => {
     expect(PLATFORM_SHA).toMatch(/^[0-9a-f]{40}$/);
     expect(design).toContain(PLATFORM_SHA);
   });
-  it("part 1 holds exactly rows 5, 7, 8, 9, 10, 11, 12 of DESIGN section 2, each once", () => {
-    expect(ROUTES.map((r) => r.row)).toEqual([5, 7, 8, 9, 10, 11, 12]);
+  it("parts 1 and 2 hold rows 5 and 7 to 16 and 18 to 20 of DESIGN section 2 (row 17 is row 9's route; row 13 is PUT and POST), each method and path once", () => {
+    expect(ROUTES.map((r) => r.row)).toEqual([5, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 18, 19, 20]);
     expect(new Set(ROUTES.map((r) => `${r.method} ${r.path}`)).size).toBe(ROUTES.length);
   });
   it("every row cites GilbPlatform path:line and is a row of DESIGN.md with the same method and path", () => {
@@ -61,7 +61,7 @@ describe("a request no row answers", () => {
     const w = await world();
     const a = await w.as(w.ann);
     expect((await a.fetch("https://fake.test/lws/vaults", { method: "DELETE" })).status).toBe(404);
-    expect((await a.fetch("https://fake.test/base/vault/create-named", { method: "POST", ...json({ name: "x", represents: "y" }) })).status).toBe(404);
+    expect((await a.fetch("https://fake.test/base/vault/create-named", { method: "POST", ...json({ name: "x", represents: "y" }) })).status).toBe(404); // part 3
     expect((await a.fetch(vaultUrl(w.annV, "/anything"))).status).toBe(404);
     expect(w.fake.violations).toHaveLength(3);
   });
