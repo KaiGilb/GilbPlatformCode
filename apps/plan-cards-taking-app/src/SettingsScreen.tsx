@@ -1,3 +1,4 @@
+import { PlanButtonRow } from "@kaigilb/gilbplatformcode-plan-button-row";
 import { useState } from "react";
 import { EMPTY_SETTINGS, settingsProblems, type AppSettings } from "./settings";
 
@@ -46,15 +47,18 @@ export function SettingsScreen({ initial, onSave, onCancel }: { initial: AppSett
         </ul>
       )}
       {/* Mac order (RuleUiActionRowMacOrder): right-aligned, Cancel left of the primary, "Save settings" rightmost.
-          This app's host-agnostic check does not admit the plan-button-row unit, so the order is built here with inline layout. */}
-      <div data-plan-button-row="" style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-        {onCancel && (
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-        )}
-        <button type="submit">Save settings</button>
-      </div>
+          This app has no Tailwind, so the row's layout is also passed inline. */}
+      <PlanButtonRow
+        style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}
+        cancel={
+          onCancel ? (
+            <button type="button" onClick={onCancel}>
+              Cancel
+            </button>
+          ) : undefined
+        }
+        primary={<button type="submit">Save settings</button>}
+      />
     </form>
   );
 }
