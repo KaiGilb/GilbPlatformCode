@@ -40,7 +40,7 @@ import { spawn, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.1.8";
+export const BRIDGE_BUILD = "0.1.9";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -432,7 +432,8 @@ export function checkSubscriptionLogin(claudeBin = "claude", env = process.env, 
     });
 }
 const MAX_BODY = 2 * 1024 * 1024;
-const TOOL_WAIT_MS = 15 * 60 * 1000;
+// Matches the longest hand-off the connector allows (HOP_MAX_MS_BY_ROLE in gilb-connector).
+const TOOL_WAIT_MS = 30 * 60 * 1000;
 const MAX_TURNS_AT_ONCE = 4;
 /** How many nested hand-offs one turn may have running at once. */
 export const MAX_HANDOFFS_AT_ONCE = 4;
@@ -442,7 +443,7 @@ const PARENT_CALL_ID = /^[0-9a-f]{16}$/;
 // turn and its hops draw on one round ceiling (TURN_MAX_MODEL_ROUNDS = 240 on the server, which refuses past it too).
 export const TURN_MAX_TOOL_CALLS = 240;
 // A hand-off may run this long before the bridge stops it (its parent turn gets an error for that tool call).
-export const HOP_MAX_MS = 15 * 60 * 1000;
+export const HOP_MAX_MS = 30 * 60 * 1000;
 // How long the Claude CLI is told to wait for one tool call (MCP_TOOL_TIMEOUT): the longest hand-off plus a minute.
 /** A pending tool call tells the CLI "still working" this often (MCP notifications/progress), so its idle cut never fires. */
 export const PROGRESS_EVERY_MS = 15 * 1000;

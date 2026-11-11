@@ -259,10 +259,10 @@ describe("constants", () => {
   it("uses the page client's hand-off sentence, a 15 minute hop, and four at once", () => {
     expect(NOT_CONNECTED).toBe(SENTENCE);
     expect(HAND_OFF_FAILED_NEXT).toBe(NEXT);
-    expect(HOP_MAX_MS).toBe(15 * 60 * 1000);
+    expect(HOP_MAX_MS).toBe(30 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.5.13");
+    expect(CONNECTOR_VERSION).toBe("0.5.14");
   });
 });
 
@@ -573,7 +573,7 @@ describe("hand-off", () => {
     expect(log[0].argv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json"]));
     expect(log[0].system).toBe("You are Jackfruit.");
     expect(log[0].prompt).toBe(
-      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.",
+      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.",
     );
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
     expect(mcp.mcpServers.GilbPlatform.command).toBe(process.execPath);
@@ -955,7 +955,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.13" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.14" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-gilb-connector",
-  "version": "0.5.13",
+  "version": "0.5.14",
   "private": true,
   "type": "module",
   "description": "A stdio MCP server that lets Claude Code and Claudian use Kai-Zen and the other GilbPlatform agents on GilbPlatform vaults, signed in as a Connected AI by default.",
