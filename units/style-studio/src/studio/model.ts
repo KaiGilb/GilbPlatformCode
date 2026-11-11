@@ -24,23 +24,7 @@ export function withColors(sheet: StyleSheet, light: Palette, dark: Palette, sou
   return { ...sheet, palette, dark: pickInput(dark), paletteSource: source };
 }
 
-export function defaultSheet(): StyleSheet {
-  const seed = "#3b6fd4";
-  const light = paletteFromSeed(seed, { mode: "light", harmony: "analogous" });
-  const dark = paletteFromSeed(seed, { mode: "dark", harmony: "analogous" });
-  return {
-    version: 1,
-    name: "My app style",
-    mode: "system",
-    palette: pickInput(light),
-    dark: pickInput(dark),
-    paletteSource: { kind: "seed", seed },
-    fonts: { sans: { family: "System Sans", source: "system" }, baseSizePx: 16, scaleRatio: 1.25 },
-    shape: { radius: 10, shadow: "soft", density: "comfortable" },
-    button: "filled",
-    window: "card",
-  };
-}
+export { defaultSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 
 export function sheetFromSeed(sheet: StyleSheet, seed: string, harmony: Harmony): StyleSheet {
   const light = paletteFromSeed(seed, { mode: "light", harmony });

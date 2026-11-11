@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-runtime",
   "package": "@kaigilb/gilbplatformcode-style-runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "purpose": "`loadStyle({ fetchRemote, fallbackUrl, cacheKey })` reads the app's style sheet, validates it, and keeps exactly one `<style id=\"gilb-style\">` in `<head>`.",
   "source": {
     "repo": "KaiGilb/gilb-style",
@@ -19,13 +19,17 @@
   "namedChanges": [
     "the source's tests moved from `test/` to `src/` with their imports made relative to the file; the shared sheet fixture is `src/fixtures.ts`;",
     "`@types/culori` is a dependency, not a dev dependency, because the unit is installed as TypeScript source and the app type-checks it;",
-    "no source line changed."
+    "no source line changed in the files taken; 0.2.0 adds the vault reader (`loadStyleFromVault`, `makeVaultFetchRemote`, `recordsToSheet`) moved here from `style-studio`, with `defaultSheet` and the list of bundled font names."
   ],
   "newFiles": [
     "src/index.ts",
     "src/example.test.ts",
     "src/theme.test.ts",
     "src/hostAgnostic.test.ts",
+    "src/vault.ts",
+    "src/vault.test.ts",
+    "src/defaultSheet.ts",
+    "src/fontNames.ts",
     "scripts/check-host-agnostic.mjs",
     "examples/style.tokens.json"
   ],
