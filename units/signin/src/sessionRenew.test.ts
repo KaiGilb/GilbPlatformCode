@@ -10,6 +10,7 @@ import {
   familyOf,
   isFamilyEndedMarker,
   isSignedOutMarker,
+  isStoredSession,
   RENEW_TIMEOUT_MS,
   RENEW_WINDOW_MAX_SEC,
   RENEW_WINDOW_MIN_SEC,
@@ -17,6 +18,7 @@ import {
   STORE_TIMEOUT_MS,
   STORED_SESSION_VERSION,
   recordIsCurrent,
+  type SessionSlot,
   type SessionStore,
   type StoredSession,
 } from "./session";
@@ -466,16 +468,18 @@ test("a sign-out during renew wins and the rotated credential is not stored", as
   assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 1);
 });
 
-test("signOut posts the sign-out and then clears", async () => {
+test("signOut writes the marker and then posts the sign-out", async () => {
   const store = memoryStore(await seed());
   const calls: Call[] = [];
+  let cred!: SessionCredential;
   const send: Transport = async (url, req) => {
     calls.push({ url, req });
-    assert.equal(store.peek()?.renew, OLD_RENEW, "the record is still there while the server call is in flight");
+    expectSignedOut(store.peek());
+    assert.equal(cred.session, null, "the in-memory sign-in is already cleared while the server call is in flight");
     if (url === SIGN_OUT_URL) return jsonResponse(204, {});
     return jsonResponse(500, {});
   };
-  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  cred = new SessionCredential({ store, transport: send, now: () => NOW });
   assert.ok(await cred.restore());
   const token = store.peek()?.accessToken;
   const result = await cred.signOut(ORIGIN);
@@ -497,9 +501,11 @@ test("signOut posts the sign-out and then clears", async () => {
 test("signOut writes a signed-out marker even when the server hangs, and reports serverSignedOut false", async () => {
   const store = memoryStore(await seed());
   let sawSignOut = false;
+  let during: unknown = null;
   const send: Transport = async (url) => {
     if (url === SIGN_OUT_URL) {
       sawSignOut = true;
+      during = store.peek();
       return new Promise<TransportResponse>(() => {});
     }
     return jsonResponse(500, {});
@@ -507,19 +513,133 @@ test("signOut writes a signed-out marker even when the server hangs, and reports
   const cred = new SessionCredential({ store, transport: send, now: () => NOW });
   assert.ok(await cred.restore());
   const started = Date.now();
-  const result = await cred.signOut(ORIGIN);
+  const pending = cred.signOut(ORIGIN);
+  const deadline = Date.now() + 1000;
+  while (!sawSignOut && Date.now() < deadline) await nextTurn();
+  assert.equal(sawSignOut, true, "the server call started");
+  expectSignedOut(during);
+  expectSignedOut(store.peek());
+  assert.equal(cred.session, null);
+  // The server call never completes. A fresh page already restores null.
+  const fresh = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.equal(await fresh.restore(), null);
+  expectSignedOut(store.peek());
+  const result = await pending;
   const elapsed = Date.now() - started;
   assert.equal(result.serverSignedOut, false);
-  assert.equal(sawSignOut, true);
   assert.equal(cred.session, null);
   expectSignedOut(store.peek());
   assert.ok(elapsed >= SIGN_OUT_BOUND_MS - 500);
-  assert.ok(elapsed < SIGN_OUT_BOUND_MS + 1500);
+  assert.ok(elapsed < SIGN_OUT_BOUND_MS + 500, `elapsed ${elapsed}`);
+});
+
+test("a fresh sign-in right after signOut is not overwritten when saves land out of order", async () => {
+  for (let trial = 0; trial < 8; trial++) {
+    const store = reorderingStore(trial);
+    let era = 0;
+    const send: Transport = async (url) => {
+      if (url === VERIFY_URL) {
+        era += 1;
+        return jsonResponse(200, {
+          token: jwt(Math.floor(NOW / 1000) + 3600),
+          principal: `${PRINCIPAL}-${era}`,
+          renew: `rsi1.f${era}.secret`,
+          renewExpiresAt: LIVE_EXPIRY,
+        });
+      }
+      if (url === `${ORIGIN}/lws/vaults`) return jsonResponse(200, { vaults: [], complete: true });
+      if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+      return jsonResponse(500, {});
+    };
+    const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+    await cred.signInWithCode(ORIGIN, "a@example.test", "123456");
+    await waitUntilStored(store);
+    assert.ok(isStoredSession(store.peek()), `trial ${trial} signed in`);
+    store.arm();
+    if (trial % 2 === 0) {
+      const signedOut = await cred.signOut(ORIGIN);
+      assert.equal(signedOut.serverSignedOut, true);
+    } else {
+      await cred.invalidate(true);
+    }
+    assert.equal(store.active(), 0, `trial ${trial} marker writes settled before sign-out resolved`);
+    expectSignedOut(store.peek());
+    await cred.signInWithCode(ORIGIN, "a@example.test", "654321");
+    await waitUntilStored(store);
+    await sleep(50);
+    const slot = store.peek();
+    assert.ok(isStoredSession(slot), `trial ${trial} fresh sign-in kept the slot`);
+    assert.equal(slot.session.principal, `${PRINCIPAL}-2`);
+  }
 });
 
 /** Lets a real crypto promise settle while `setTimeout` is faked. */
 function nextTurn(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface ReorderingStore extends SessionStore {
+  peek(): SessionSlot | null;
+  /** Later writes wait 0–30 ms and can finish out of order. */
+  arm(): void;
+  settle(): Promise<void>;
+  active(): number;
+}
+
+/** In-memory store whose armed writes apply after a short, uneven delay. */
+function reorderingStore(trial: number): ReorderingStore {
+  let current: SessionSlot | null = null;
+  const flights: Promise<void>[] = [];
+  let active = 0;
+  let armed = false;
+  let n = 0;
+  const write = (next: SessionSlot | null): Promise<void> => {
+    n += 1;
+    const ms = armed ? ((trial + 1) * (n + 3) * 5) % 31 : 0;
+    active += 1;
+    const p = sleep(ms).then(() => {
+      current = next === null ? null : structuredClone(next);
+      active -= 1;
+    });
+    flights.push(p.then(() => undefined, () => undefined));
+    return p;
+  };
+  return {
+    peek: () => current,
+    arm() { armed = true; },
+    settle: () => Promise.all(flights).then(() => undefined),
+    active: () => active,
+    async load() {
+      return current ? structuredClone(current) : null;
+    },
+    save(session) {
+      return write(session);
+    },
+    async saveIfCurrent(session, expect) {
+      if (!recordIsCurrent(current, expect)) return false;
+      await write(session);
+      return true;
+    },
+    async clearIfCurrent(expect) {
+      if (!recordIsCurrent(current, expect)) return false;
+      await write(null);
+      return true;
+    },
+    async clear() {
+      await write(null);
+    },
+  };
+}
+
+async function waitUntilStored(store: ReorderingStore): Promise<void> {
+  for (let i = 0; i < 40 && !(isStoredSession(store.peek()) && store.active() === 0); i++) {
+    await store.settle();
+    await sleep(5);
+  }
 }
 
 /**

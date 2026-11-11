@@ -86,8 +86,9 @@ export const RENEW_SIGN_IN_PATH = "/base/auth/email/renew";
 export const SIGN_OUT_PATH = "/base/auth/sign-out";
 
 /**
- * How long `signOut` waits for the server before it clears the local sign-in anyway.
- * The server call is best-effort. A hang must not leave the person signed in on this device.
+ * How long `signOut` waits for the server. The signed-out marker is already written,
+ * and the in-memory sign-in is already cleared, before this wait starts. The server
+ * call is best-effort. A hang must not keep `signOut` from settling.
  */
 export const SIGN_OUT_BOUND_MS = 3_000;
 
@@ -387,7 +388,10 @@ export class SessionCredential {
   private draining = false;
   /** The drain stopped because the DPoP key did not exist yet. The next key pokes it. */
   private waitingForKey = false;
-  /** Store ops in order. A sign-out's marker put is queued behind a save already in this chain. */
+  /**
+   * Store ops in order. A sign-out's marker puts stay on this chain until they
+   * settle, ahead of a later save in this instance.
+   */
   private tail: Promise<void> = Promise.resolve();
   private restoreInflight: Promise<GilbSession | null> | null = null;
   /** One renewal at a time on this credential. A second caller waits for it. */
@@ -707,10 +711,12 @@ export class SessionCredential {
    * Drops the token so the next use re-mints. On sign-out pass `dropKey`: a new sign-in gets a
    * new key. A key the host passed in is never dropped; the host owns it.
    *
-   * The store follows. The returned promise settles that write, or gives up after
-   * {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory drop has already happened
-   * when this returns to the caller. Sign-out waits at most that long for the delete it
-   * started in this turn.
+   * The store follows. The returned promise settles when the marker write has, or
+   * gives up after {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory
+   * drop has already happened when this returns to the caller. Sign-out waits at
+   * most that long for the marker put it started in this turn. That put stays on
+   * the store queue until it settles, so a later save in this instance is not
+   * overwritten by it.
    *
    * Sign-out replaces the slot with a signed-out marker (`{ kind: "signed-out", at }`).
    * The put is started before this returns, so a page that closes immediately still has
@@ -720,8 +726,9 @@ export class SessionCredential {
    * marker put then replaces its record, when both stay queued. A save that starts its
    * transaction after the marker put, and then the page is discarded before the follow-up
    * marker put runs, can leave a record. That follow-up runs when the save finishes, which
-   * does not happen if the page is already gone. The marker holds no credential and no key.
-   * Only a fresh sign-in replaces it.
+   * does not happen if the page is already gone. The first put is on the same chain as
+   * that follow-up. It is not left running beside it. The marker holds no credential
+   * and no key. Only a fresh sign-in replaces it.
    *
    * A plain `invalidate()` keeps the in-memory key and drops the stored access token only
    * when the stored record is still this tab's key and credential. The renewal credential
@@ -763,10 +770,12 @@ export class SessionCredential {
       this.publicCryptoKey = null;
       this.publicKeyId = null;
     }
-    // Put the signed-out marker in this turn, then again behind any save already in `tail`.
-    // The caller waits for that chain for at most STORE_TIMEOUT_MS.
-    this.startSignedOutMark();
-    this.enqueueSignedOutMark();
+    // The marker put starts in this turn, then again behind any save already in `tail`.
+    // Both stay on `tail` until they settle. The caller waits at most STORE_TIMEOUT_MS.
+    // A later save in this instance is queued behind them, so it cannot be replaced
+    // by this sign-out's marker.
+    const started = this.startSignedOutMark();
+    this.enqueueSignedOutMark(started);
     return this.tailSettled();
   }
 
@@ -1304,14 +1313,26 @@ export class SessionCredential {
     });
   }
 
-  /** Puts the signed-out marker after anything already queued, unless a newer sign-in is now held. */
-  private enqueueSignedOutMark(): void {
+  /**
+   * Follow-up marker put, behind anything already queued. The queue does not
+   * move on until this put and `started` have both settled. A later save in
+   * this instance is queued behind them, so this sign-out's marker cannot
+   * replace a fresh sign-in that starts after the caller is released.
+   * A newer sign-in skips the follow-up put. `started` is still awaited,
+   * because that put was already handed to the store.
+   */
+  private enqueueSignedOutMark(started: Promise<void>): void {
     if (!this.store) return;
+    const store = this.store;
     const gen = this.generation;
     void this.enqueue(async () => {
-      if (this.generation !== gen) return;
-      if (this.minted && !this.signedOut) return;
-      await this.bounded(this.invokeStore(() => this.store!.save(this.signedOutMarker())));
+      try {
+        if (this.generation !== gen) return;
+        if (this.minted && !this.signedOut) return;
+        await this.invokeStore(() => store.save(this.signedOutMarker()));
+      } finally {
+        await started;
+      }
     });
   }
 
@@ -1418,16 +1439,15 @@ export class SessionCredential {
     await this.bounded(this.invokeStore(() => store.clearIfCurrent(expect)));
   }
 
-  /** Starts the signed-out put before yielding, when the store's `save` does. Failures are swallowed. */
-  private startSignedOutMark(): void {
+  /**
+   * Starts the signed-out put in this turn, when the store's `save` does.
+   * The promise is that put. It rejects nothing. The caller chains it onto
+   * `tail` so it cannot land after a later save in this instance.
+   */
+  private startSignedOutMark(): Promise<void> {
     const store = this.store;
-    if (!store) return;
-    try {
-      const pending = store.save(this.signedOutMarker());
-      void pending.then(() => undefined, () => undefined);
-    } catch {
-      // A sync throw is the same as a rejected save: the queued marker tries once more.
-    }
+    if (!store) return Promise.resolve();
+    return this.invokeStore(() => store.save(this.signedOutMarker())).then(() => undefined, () => undefined);
   }
 
   private enqueue(op: () => Promise<void>): Promise<void> {
@@ -1644,14 +1664,19 @@ export class SessionCredential {
   }
 
   /**
-   * Ends the sign-in on the server, then locally. The signed-out marker is always written,
-   * including when the server call fails, is refused, or does not finish within {@link SIGN_OUT_BOUND_MS}.
+   * Ends the sign-in locally, then on the server. The signed-out marker is written,
+   * and the in-memory sign-in is cleared, before the server call. The marker is
+   * written even when that call fails, is refused, or does not finish within
+   * {@link SIGN_OUT_BOUND_MS}. A page that closes during the call already has the
+   * marker on this device.
    *
    * The server call is `POST {origin}/base/auth/sign-out` with `Authorization: DPoP <token>`
-   * and a fresh `DPoP` proof. A token that is still before its expiry is sent as it is. When
-   * no usable token is held and a renewal credential is still in date, this renews first,
-   * inside the renew bounds, and signs out with the fresh token. If that renew fails, the
-   * slot still becomes a signed-out marker and `serverSignedOut` is false.
+   * and a fresh `DPoP` proof. The token and the key are kept only for that call.
+   * A token that is still before its expiry is sent as it is. When no usable token
+   * is held and a renewal credential is still in date, this renews first, inside
+   * the renew bounds, then writes the marker, and signs out with the fresh token.
+   * If that renew fails, the slot still becomes a signed-out marker and
+   * `serverSignedOut` is false.
    *
    * A renew lock this page is holding or waiting on is released. This does not wait for it.
    *
@@ -1661,19 +1686,26 @@ export class SessionCredential {
   async signOut(origin: string): Promise<{ serverSignedOut: boolean }> {
     // Before any other wait: a hung renew must not keep the origin lock.
     this.abortRenewWait();
-    let serverSignedOut = false;
+    // Renew while the sign-in is still in memory. The marker is written before
+    // the server call, so the token this call will send has to be captured first.
+    let held: { accessToken: string; key: DpopKey } | null = null;
     try {
-      if (this.tokenUsableForSignOut()) {
-        serverSignedOut = await this.tryServerSignOut(origin);
-      } else if (this.renewalIsLive()) {
-        const renewed = await this.renewForSignOut();
-        if (renewed && this.tokenUsableForSignOut()) serverSignedOut = await this.tryServerSignOut(origin);
+      if (!this.tokenUsableForSignOut() && this.renewalIsLive()) {
+        await this.renewForSignOut();
+      }
+      if (this.tokenUsableForSignOut() && this.minted && this.key) {
+        held = { accessToken: this.minted.accessToken, key: this.key };
       }
     } catch {
-      serverSignedOut = false;
+      held = null;
     }
     await this.invalidate(true);
-    return { serverSignedOut };
+    if (!held) return { serverSignedOut: false };
+    try {
+      return { serverSignedOut: await this.tryServerSignOut(origin, held.accessToken, held.key) };
+    } catch {
+      return { serverSignedOut: false };
+    }
   }
 
   /** True when this credential stores and the app did not turn renewal off. */
@@ -2787,23 +2819,18 @@ export class SessionCredential {
   }
 
   /**
-   * Best-effort server sign-out. Errors, refusals, and a call that outlives
+   * Best-effort server sign-out of a token already captured. The in-memory
+   * sign-in is already cleared. Errors, refusals, and a call that outlives
    * {@link SIGN_OUT_BOUND_MS} are `false`. Never throws.
    */
-  private async tryServerSignOut(origin: string): Promise<boolean> {
-    const minted = this.minted;
-    const key = this.key;
-    if (!minted || !key) return false;
-    const gen = this.generation;
+  private async tryServerSignOut(origin: string, accessToken: string, key: DpopKey): Promise<boolean> {
     const url = `${normaliseOrigin(origin)}${SIGN_OUT_PATH}`;
     let headers: { Authorization: string; DPoP: string };
     try {
-      headers = await dpopHeaders(key, minted.accessToken, "POST", url);
+      headers = await dpopHeaders(key, accessToken, "POST", url);
     } catch {
       return false;
     }
-    // A sign-out that already started (a second call) must not send the token again.
-    if (gen !== this.generation || this.signedOut || this.minted !== minted) return false;
     const send = this.opts.transport ?? fetchTransport;
     const attempt = send(url, {
       method: "POST",
