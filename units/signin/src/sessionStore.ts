@@ -9,9 +9,9 @@
 //     stays non-extractable. Nothing here calls `exportKey`, or writes `localStorage`.
 //   - `publicKeyId` is the public key's JWK `x` and `y` joined by `.`. The caller computes it
 //     with `exportKey` before any transaction. An update compares that string and, when the
-//     tab holds a renewal, the server's `renewExpiresAt` as a number. The stored ISO time is
-//     parsed in the `get` callback. Nothing awaits inside the transaction. The session code
-//     re-reads the JWK when it adopts the record.
+//     tab holds a renewal, the family id and the server's `renewExpiresAt` as a number. The
+//     family id and the stored ISO time are parsed in the `get` callback. Nothing awaits
+//     inside the transaction. The session code re-reads the JWK when it adopts the record.
 //
 // A later record shape bumps {@link STORED_SESSION_VERSION}. Readers refuse a version they do
 // not know rather than guessing.
@@ -92,11 +92,18 @@ export interface StoredSession {
  * key is another sign-in. A missing record is not current.
  *
  * When `renewExpiresAt` is a finite number, that number is this tab's credential
- * time (epoch milliseconds). The stored record may be written or cleared only when
- * its `renewExpiresAt` is strictly earlier, or when it holds exactly `renew`
- * (the same credential: a mark, or a dropped access token). A later time is left
- * alone. An equal time with a different credential is left alone. The compare is
- * numeric. The stored ISO string is parsed here, and this function does not await.
+ * time (epoch milliseconds). The time orders credentials only inside one family.
+ * The stored record may be written or cleared when it holds exactly `renew`
+ * (the same credential: a mark, or a dropped access token), or when it is the
+ * same family and its `renewExpiresAt` is strictly earlier. A later time is left
+ * alone. An equal time with a different credential of that family is left alone.
+ * Another family is left alone. A stored credential with no parsable family id
+ * is left alone. The compare is numeric. The stored ISO string and the stored
+ * family are parsed here, and this function does not await.
+ *
+ * `family` is that id, parsed once by {@link familyOf} before the transaction.
+ * When `family` is omitted, the id is `familyOf(renew)` so the same helper still
+ * decides. The order uses the server's times only.
  *
  * When `renewExpiresAt` is absent, the record has no renewal order. `renew`, when
  * present, must be the stored credential (`null` or `""` means none). `accessToken`,
@@ -105,6 +112,8 @@ export interface StoredSession {
 export interface CurrentRecordExpect {
   publicKeyId: string;
   renew?: string | null;
+  /** Family id of `renew`. Null when `renew` has no parsable family. */
+  family?: string | null;
   renewExpiresAt?: number;
   accessToken?: string;
 }
@@ -114,6 +123,27 @@ export function renewExpiresAtMs(value: unknown): number | null {
   if (typeof value !== "string" || value.length === 0) return null;
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Family id of a renewal credential, or null when `renew` is not
+ * `rsi1.<familyId>.<secret>`. The id is the middle segment. An empty segment
+ * is not an id. This is the only parse. It does not await, so the IndexedDB
+ * `get` callback can call it.
+ */
+export function familyOf(renew: unknown): string | null {
+  if (typeof renew !== "string") return null;
+  const first = renew.indexOf(".");
+  if (first !== 4 || renew.slice(0, 4) !== "rsi1") return null;
+  const second = renew.indexOf(".", first + 1);
+  if (second <= first + 1 || second >= renew.length - 1) return null;
+  return renew.slice(first + 1, second);
+}
+
+/** The family the time order applies to. `family` on the expect wins; otherwise {@link familyOf}. */
+function expectFamily(expect: CurrentRecordExpect): string | null {
+  if ("family" in expect) return typeof expect.family === "string" && expect.family.length > 0 ? expect.family : null;
+  return familyOf(expect.renew);
 }
 
 function renewSecret(value: unknown): string {
@@ -134,6 +164,9 @@ export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect):
     const want = renewSecret(expect.renew);
     const have = renewSecret(record.renew);
     if (want.length > 0 && have === want) return true;
+    const storedFamily = familyOf(record.renew);
+    const wantFamily = expectFamily(expect);
+    if (storedFamily === null || wantFamily === null || storedFamily !== wantFamily) return false;
     const storedAt = renewExpiresAtMs(record.renewExpiresAt);
     if (storedAt === null) return false;
     return storedAt < expect.renewExpiresAt;
@@ -159,9 +192,10 @@ export function expectOfStored(raw: unknown): CurrentRecordExpect | null {
   const record = raw as Partial<StoredSession>;
   if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
   if (typeof record.renew === "string" && record.renew.length > 0) {
+    const family = familyOf(record.renew);
     const at = renewExpiresAtMs(record.renewExpiresAt);
-    if (at === null) return { publicKeyId: record.publicKeyId, renew: record.renew };
-    return { publicKeyId: record.publicKeyId, renew: record.renew, renewExpiresAt: at };
+    if (at === null) return { publicKeyId: record.publicKeyId, renew: record.renew, family };
+    return { publicKeyId: record.publicKeyId, renew: record.renew, renewExpiresAt: at, family };
   }
   return {
     publicKeyId: record.publicKeyId,
@@ -178,8 +212,9 @@ export interface SessionStore {
   save(session: StoredSession): Promise<void>;
   /**
    * Writes `session` only when the stored record is still {@link recordIsCurrent}
-   * for `expect`. A missing record, another key, a later `renewExpiresAt`, or an
-   * equal time with a different credential writes nothing and resolves `false`.
+   * for `expect`. A missing record, another key, another family, a credential
+   * with no family id, a later `renewExpiresAt`, or an equal time with a
+   * different credential writes nothing and resolves `false`.
    * `true` means the put was made. The IndexedDB adapter compares and puts inside
    * the same `get` success callback, so the transaction is still active and a
    * delete that commits first is not put back.
@@ -187,8 +222,9 @@ export interface SessionStore {
   saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<boolean>;
   /**
    * Deletes the one record only when it is still {@link recordIsCurrent} for
-   * `expect`. Another key, a later `renewExpiresAt`, or an equal time with a
-   * different credential is left in place and this resolves `false`. `true`
+   * `expect`. Another key, another family, a credential with no family id, a
+   * later `renewExpiresAt`, or an equal time with a different credential is
+   * left in place and this resolves `false`. `true`
    * means the delete was made. The IndexedDB adapter compares and deletes
    * inside the same `get` success callback.
    */

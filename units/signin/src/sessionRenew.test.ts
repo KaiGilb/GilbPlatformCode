@@ -1200,6 +1200,94 @@ test("an older stored credential is replaced and this tab presents its own", asy
   assert.equal(cred.session?.principal, PRINCIPAL);
 });
 
+test("another family on the same key is not adopted and its record is not overwritten", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const answer = renewedBody("rsi1.fam.next");
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.ok(await cred.restore());
+  const held = store.peek();
+  assert.ok(held);
+  const otherPrincipal = "https://id.example.test/i/p2";
+  const otherExpiry = new Date(Date.parse(LIVE_EXPIRY) + 60_000).toISOString();
+  await store.save({
+    ...held,
+    renew: "rsi1.f2.s1",
+    renewExpiresAt: otherExpiry,
+    accessToken: jwt(Math.floor(NOW / 1000) + 10 * 3600),
+    expiresAt: NOW + 10 * 3_600_000,
+    session: { ...held.session, principal: otherPrincipal },
+  });
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  const hits = renewCalls(t.calls);
+  assert.equal(hits.length, 1);
+  assert.deepEqual(JSON.parse(hits[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(headers.Authorization, `DPoP ${answer.token}`);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(store.peek()?.renew, "rsi1.f2.s1");
+  assert.equal(store.peek()?.renewExpiresAt, otherExpiry);
+  assert.equal(store.peek()?.session.principal, otherPrincipal);
+  const fresh = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.equal((await fresh.restore())?.principal, otherPrincipal);
+  assert.equal(renewCalls(t.calls).length, 1, "the fresh page adopts family 2 and does not present");
+});
+
+test("a dead family does not clear another family's record", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const t = renewTransport(() => jsonResponse(401, { error: "Unauthorized" }));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.ok(await cred.restore());
+  const held = store.peek();
+  assert.ok(held);
+  const otherPrincipal = "https://id.example.test/i/p2";
+  const otherExpiry = new Date(NOW + 7 * 24 * 3600 * 1000).toISOString();
+  await store.save({
+    ...held,
+    renew: "rsi1.f2.s1",
+    renewExpiresAt: otherExpiry,
+    accessToken: jwt(Math.floor(NOW / 1000) + 10 * 3600),
+    expiresAt: NOW + 10 * 3_600_000,
+    session: { ...held.session, principal: otherPrincipal },
+  });
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
+  assert.equal(renewCalls(t.calls).length, 1);
+  assert.deepEqual(JSON.parse(renewCalls(t.calls)[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(cred.session, null);
+  assert.equal(store.peek()?.renew, "rsi1.f2.s1");
+  assert.equal(store.peek()?.session.principal, otherPrincipal);
+  const fresh = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.equal((await fresh.restore())?.principal, otherPrincipal);
+  assert.equal(renewCalls(t.calls).length, 1, "family 2 stays signed in and is not presented");
+});
+
+test("an equal server time is stored as the server sent it and does not replace a tie", async () => {
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const tied = "rsi1.fam.tied-secret";
+  const answer = {
+    token: jwt(NEW_EXP),
+    renew: "rsi1.fam.after-tie",
+    renewExpiresAt: LIVE_EXPIRY,
+    principal: PRINCIPAL,
+  };
+  const t = renewTransport(() => jsonResponse(200, answer));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.ok(await cred.restore());
+  const held = store.peek();
+  assert.ok(held);
+  await store.save({ ...held, renew: tied, renewExpiresAt: LIVE_EXPIRY });
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  assert.equal(headers.Authorization, `DPoP ${answer.token}`);
+  assert.deepEqual(JSON.parse(renewCalls(t.calls)[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(store.peek()?.renew, tied);
+  assert.equal(store.peek()?.renewExpiresAt, LIVE_EXPIRY);
+});
+
 test("signOut with no token renews first and signs out with the fresh token", async () => {
   const store = memoryStore(await seed());
   const answer = renewedBody();

@@ -11,6 +11,7 @@ import {
   SESSION_OBJECT_STORE,
   SESSION_RECORD_KEY,
   indexedDbSessionStore,
+  familyOf,
   recordIsCurrent,
   type CurrentRecordExpect,
   type SessionStore,
@@ -673,6 +674,33 @@ test("saveIfCurrent writes only when the stored key and credential match, in one
       "the same credential is still current",
     );
     assert.equal((await store.load())?.accessToken, "tok-same");
+    const otherFamilyAt = later + 5_000;
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-other-family", renew: "rsi1.f2.s1", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.f2.s1", renewExpiresAt: otherFamilyAt, family: "f2" },
+      ),
+      false,
+      "another family is not written over, even when its time is later",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-over-legacy", renew: "rsi1.fam.s3", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: otherFamilyAt, family: "fam" },
+      ),
+      true,
+    );
+    await store.save({ ...storedEarlier, renew: "legacy-credential", renewExpiresAt: new Date(earlier).toISOString() });
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-should-not-legacy", renew: "rsi1.fam.s4", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s4", renewExpiresAt: otherFamilyAt, family: "fam" },
+      ),
+      false,
+      "a credential with no family id is not written over",
+    );
+    assert.equal((await store.load())?.renew, "legacy-credential");
     await store.save(updated);
     await store.saveIfCurrent({ ...other, accessToken: "tok-replaced" }, { publicKeyId: other.publicKeyId, renew: other.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
@@ -765,32 +793,85 @@ test("clearIfCurrent deletes only the record it names, in one transaction", asyn
       "the same credential is cleared",
     );
     assert.equal(await store.load(), null);
+    await store.save({ ...ordered, renew: "rsi1.f2.kept", renewExpiresAt: new Date(olderAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.f1.dead", renewExpiresAt: newerAt, family: "f1" }),
+      false,
+      "another family is not cleared, even when its time is earlier",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.f2.kept");
+    await store.save({ ...ordered, renew: "legacy-credential", renewExpiresAt: new Date(olderAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s9", renewExpiresAt: newerAt, family: "fam" }),
+      false,
+      "a credential with no family id is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "legacy-credential");
     await store.clear();
   } finally {
     installIndexedDb(prior);
   }
 });
 
-test("recordIsCurrent orders one family by renewExpiresAt", () => {
+test("familyOf reads the middle segment of rsi1.<familyId>.<secret>", () => {
+  assert.equal(familyOf("rsi1.fam.s1"), "fam");
+  assert.equal(familyOf("rsi1.f1.s2"), "f1");
+  assert.equal(familyOf("rsi1.fam.s1.extra"), "fam");
+  assert.equal(familyOf("rsi1.fam"), null);
+  assert.equal(familyOf("rsi1.fam."), null);
+  assert.equal(familyOf("rsi1..secret"), null);
+  assert.equal(familyOf("nope.fam.s1"), null);
+  assert.equal(familyOf(""), null);
+  assert.equal(familyOf(null), null);
+  assert.equal(familyOf(undefined), null);
+});
+
+test("recordIsCurrent orders one family by renewExpiresAt and leaves another family alone", () => {
   const rec = {
     publicKeyId: "k",
     renew: "rsi1.fam.s1",
     renewExpiresAt: new Date(1_000).toISOString(),
     accessToken: "t",
   };
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s1", renewExpiresAt: 1_000 }), true);
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), true);
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s0", renewExpiresAt: 500 }), false);
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000 }), false);
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
-  assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
-  assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
+  const fam = { family: "fam" };
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s1", renewExpiresAt: 1_000, ...fam }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s0", renewExpiresAt: 500, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
   assert.equal(
-    recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }),
+    recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
     false,
   );
   assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "t" }), true);
   assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "other" }), false);
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "f2" }),
+    false,
+    "a later time of another family is not current",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000 }),
+    false,
+    "a missing family field is read from the credential",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "fam" }),
+    true,
+    "the family on the expect is the one compared",
+  );
+  assert.equal(
+    recordIsCurrent({ ...rec, renew: "legacy-credential" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
+    false,
+    "a credential with no family id is not this family",
+  );
+  assert.equal(
+    recordIsCurrent({ ...rec, renew: "legacy-credential" }, { publicKeyId: "k", renew: "legacy-credential", renewExpiresAt: 2_000, family: null }),
+    true,
+    "the same unparsable credential is still an exact match",
+  );
 });
 
 test("the record version and the default database name are the ones the README names", () => {
