@@ -11,6 +11,12 @@ import {
   SESSION_OBJECT_STORE,
   SESSION_RECORD_KEY,
   indexedDbSessionStore,
+  familyOf,
+  isFamilyEndedMarker,
+  isSignedOutMarker,
+  recordIsCurrent,
+  type CurrentRecordExpect,
+  type SessionSlot,
   type SessionStore,
   type StoredSession,
 } from "./session";
@@ -38,32 +44,44 @@ interface Mem extends SessionStore {
   clearCount: number;
   /** How many times `clear` had been entered, read synchronously. */
   readonly enteredClears: number;
+  /** How many times `save` had been entered, read synchronously. */
+  readonly enteredSaves: number;
 }
 
 function memoryStore(): Mem {
-  let current: StoredSession | null = null;
+  let current: SessionSlot | null = null;
   let enteredClears = 0;
+  let enteredSaves = 0;
   const saves: string[] = [];
   const store: Mem = {
     saves,
     get clearCount() { return enteredClears; },
     get enteredClears() { return enteredClears; },
+    get enteredSaves() { return enteredSaves; },
     async load() {
       await Promise.resolve();
       return current ? structuredClone(current) : null;
     },
     async save(session) {
-      saves.push(session.accessToken);
+      enteredSaves++;
+      if (session && typeof session === "object" && "accessToken" in session && typeof session.accessToken === "string") saves.push(session.accessToken);
       await Promise.resolve();
       current = structuredClone(session);
     },
-    async saveIfSameKey(session, samePublicKeyId) {
+    async saveIfCurrent(session, expect) {
       const seen = current;
-      if (typeof seen?.publicKeyId !== "string" || seen.publicKeyId.length === 0 || seen.publicKeyId !== samePublicKeyId) return;
+      if (!recordIsCurrent(seen, expect)) return;
       await Promise.resolve();
       if (current !== seen) return;
       saves.push(session.accessToken);
       current = structuredClone(session);
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return;
+      await Promise.resolve();
+      if (current !== seen) return;
+      current = null;
     },
     async clear() {
       enteredClears++;
@@ -324,22 +342,25 @@ test("restore of an empty store returns null", async () => {
   assert.equal(cred.session, null);
 });
 
-test("sign-out clears the store and starts the clear before it returns", async () => {
+test("sign-out writes a signed-out marker and starts that put before it returns", async () => {
   const store = memoryStore();
   const t = codeTransport(liveVaults);
   const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
   await cred.signInWithCode(ORIGIN, "a@example.test", "123456");
-  const before = store.enteredClears;
+  const before = store.enteredSaves;
   const pending = cred.invalidate(true);
-  assert.ok(store.enteredClears > before, "clear entered before invalidate returned");
+  assert.ok(store.enteredSaves > before, "the marker put entered before invalidate returned");
   await pending;
   assert.equal(cred.session, null);
-  assert.equal(await store.load(), null);
+  const slot = await store.load();
+  assert.ok(isSignedOutMarker(slot));
+  assert.equal(slot.at, NOW);
   const again = new SessionCredential({ store, now: () => NOW });
   assert.equal(await again.restore(), null);
+  assert.ok(isSignedOutMarker(await store.load()), "restore keeps the signed-out marker");
 });
 
-test("a sign-out while the vault list is on the wire leaves the store empty", async () => {
+test("a sign-out while the vault list is on the wire leaves a signed-out marker", async () => {
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   let listed = false;
@@ -361,10 +382,12 @@ test("a sign-out while the vault list is on the wire leaves the store empty", as
   release();
   await assert.rejects(pending, NotSignedInError);
   assert.equal(cred.session, null);
-  assert.equal(await store.load(), null);
+  const slot = await store.load();
+  assert.ok(isSignedOutMarker(slot));
+  assert.equal(slot.at, NOW);
 });
 
-test("sign-out during restore stores nothing and returns null", async () => {
+test("sign-out during restore returns null and keeps the signed-out marker", async () => {
   const record = await seed();
   let current: StoredSession | null = record;
   let release!: () => void;
@@ -378,9 +401,13 @@ test("sign-out during restore stores nothing and returns null", async () => {
       });
     },
     async save(session) { current = session; },
-    async saveIfSameKey(session, samePublicKeyId) {
-      if (typeof current?.publicKeyId !== "string" || current.publicKeyId.length === 0 || current.publicKeyId !== samePublicKeyId) return;
+    async saveIfCurrent(session, expect) {
+      if (!recordIsCurrent(current, expect)) return;
       current = session;
+    },
+    async clearIfCurrent(expect) {
+      if (!recordIsCurrent(current, expect)) return;
+      current = null;
     },
     async clear() { current = null; },
   };
@@ -392,7 +419,7 @@ test("sign-out during restore stores nothing and returns null", async () => {
   release();
   assert.equal(await pending, null);
   assert.equal(cred.session, null);
-  assert.equal(current, null);
+  assert.ok(isSignedOutMarker(current), "restore does not wipe the signed-out marker");
 });
 
 test("concurrent restore calls share one load", async () => {
@@ -405,7 +432,8 @@ test("concurrent restore calls share one load", async () => {
       return new Promise((resolve) => { release = resolve; });
     },
     async save() {},
-    async saveIfSameKey() {},
+    async saveIfCurrent() {},
+    async clearIfCurrent() {},
     async clear() {},
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -497,7 +525,8 @@ test("a store that throws on save still lets sign-in succeed", async () => {
   const store: SessionStore = {
     async load() { return null; },
     async save() { throw new Error("quota"); },
-    async saveIfSameKey() { throw new Error("quota"); },
+    async saveIfCurrent() { throw new Error("quota"); },
+    async clearIfCurrent() { throw new Error("quota"); },
     async clear() { throw new Error("quota"); },
   };
   const t = codeTransport(liveVaults);
@@ -512,7 +541,8 @@ test("a store that throws on load makes restore return null", async () => {
   const store: SessionStore = {
     async load() { throw new Error("blocked"); },
     async save() { throw new Error("blocked"); },
-    async saveIfSameKey() { throw new Error("blocked"); },
+    async saveIfCurrent() { throw new Error("blocked"); },
+    async clearIfCurrent() { throw new Error("blocked"); },
     async clear() { throw new Error("blocked"); },
   };
   const cred = new SessionCredential({ store, now: () => NOW });
@@ -599,34 +629,315 @@ test("the indexedDB adapter keeps one record and clear removes it", async () => 
   }
 });
 
-test("saveIfSameKey writes only when the stored publicKeyId matches, in one transaction", async () => {
+test("saveIfCurrent writes only when the stored key and credential match, in one transaction", async () => {
   const fake = fakeIndexedDb();
   const prior = installIndexedDb(fake.api);
   try {
     const store = indexedDbSessionStore("app-session");
-    const first = await seed();
-    const other = await seed({ accessToken: "tok-other" });
-    await store.saveIfSameKey(first, first.publicKeyId);
+    const first = await seed({ renew: "rsi1.fam.s1" });
+    const other = await seed({ accessToken: "tok-other", renew: "rsi1.fam.other" });
+    const keyOnly: CurrentRecordExpect = { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" };
+    await store.saveIfCurrent(first, keyOnly);
     assert.equal(await store.load(), null, "no record yet, so an update writes nothing");
     await store.save(first);
     const before = fake.transactions;
     const updated = { ...first, accessToken: "tok-updated", session: { ...first.session, principal: "p-updated" } };
-    await store.saveIfSameKey(updated, first.publicKeyId);
+    assert.equal(await store.saveIfCurrent(updated, keyOnly), true);
     assert.equal(fake.transactions - before, 1, "the compare and the write share one transaction");
     assert.equal((await store.load())?.accessToken, "tok-updated");
     assert.equal((await store.load())?.session.principal, "p-updated");
     assert.equal((await store.load())?.publicKeyId, first.publicKeyId);
-    await store.saveIfSameKey({ ...other, accessToken: "tok-replaced" }, other.publicKeyId);
+    const earlier = Date.parse(new Date(NOW).toISOString());
+    const later = earlier + 1_000;
+    const storedEarlier = { ...first, renewExpiresAt: new Date(earlier).toISOString() };
+    await store.save(storedEarlier);
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-from-older", renew: "rsi1.fam.s2", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: later },
+      ),
+      true,
+      "an earlier renewExpiresAt for the same key may be replaced",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-should-not", renew: "rsi1.fam.s1", renewExpiresAt: new Date(earlier).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1", renewExpiresAt: earlier },
+      ),
+      false,
+      "a later renewExpiresAt is not replaced",
+    );
+    assert.equal((await store.load())?.accessToken, "tok-from-older");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-tie", renew: "rsi1.fam.s3", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: later },
+      ),
+      false,
+      "an equal renewExpiresAt with a different credential is not replaced",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-same", renew: "rsi1.fam.s2", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: later },
+      ),
+      true,
+      "the same credential is still current",
+    );
+    assert.equal((await store.load())?.accessToken, "tok-same");
+    const otherFamilyAt = later + 5_000;
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-other-family", renew: "rsi1.f2.s1", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.f2.s1", renewExpiresAt: otherFamilyAt, family: "f2" },
+      ),
+      false,
+      "another family is not written over, even when its time is later",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-over-legacy", renew: "rsi1.fam.s3", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: otherFamilyAt, family: "fam" },
+      ),
+      true,
+    );
+    await store.save({ ...storedEarlier, renew: "legacy-credential", renewExpiresAt: new Date(earlier).toISOString() });
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-should-not-legacy", renew: "rsi1.fam.s4", renewExpiresAt: new Date(otherFamilyAt).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s4", renewExpiresAt: otherFamilyAt, family: "fam" },
+      ),
+      false,
+      "a credential with no family id is not written over",
+    );
+    assert.equal((await store.load())?.renew, "legacy-credential");
+    await store.save(updated);
+    await store.saveIfCurrent({ ...other, accessToken: "tok-replaced" }, { publicKeyId: other.publicKeyId, renew: other.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
-    await store.saveIfSameKey({ ...first, accessToken: "tok-empty-id" }, "");
+    await store.saveIfCurrent(
+      { ...first, accessToken: "tok-other-renew", renew: "rsi1.fam.s2" },
+      { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2" },
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s1", "a different renew credential does not replace the record");
+    await store.saveIfCurrent({ ...first, accessToken: "tok-empty-id" }, { publicKeyId: "", renew: first.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "an empty id does not replace the record");
     const { publicKeyId: _gone, ...withoutId } = updated;
     await store.save({ ...withoutId, accessToken: "tok-no-id" } as StoredSession);
-    await store.saveIfSameKey({ ...first, accessToken: "tok-should-stay-out" }, first.publicKeyId);
+    await store.saveIfCurrent({ ...first, accessToken: "tok-should-stay-out" }, keyOnly);
     assert.equal((await store.load())?.accessToken, "tok-no-id", "a record with no publicKeyId is not updated");
+
+    const tokenOnly = await seed({ accessToken: "tok-plain" });
+    delete tokenOnly.renew;
+    await store.save(tokenOnly);
+    await store.saveIfCurrent(
+      { ...tokenOnly, accessToken: "tok-plain-next" },
+      { publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" },
+    );
+    assert.equal((await store.load())?.accessToken, "tok-plain-next", "a record with no renew matches its access token");
+    await store.saveIfCurrent(
+      { ...tokenOnly, accessToken: "tok-should-stay-out" },
+      { publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" },
+    );
+    assert.equal((await store.load())?.accessToken, "tok-plain-next", "a different access token does not replace a record with no renew");
   } finally {
     installIndexedDb(prior);
   }
+});
+
+test("clearIfCurrent deletes only the record it names, in one transaction", async () => {
+  const fake = fakeIndexedDb();
+  const prior = installIndexedDb(fake.api);
+  try {
+    const store = indexedDbSessionStore("app-session");
+    const first = await seed({ renew: "rsi1.fam.s1", accessToken: "tok-1" });
+    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" });
+    assert.equal(await store.load(), null);
+    await store.save(first);
+    const before = fake.transactions;
+    assert.equal(await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.other" }), false);
+    assert.equal(fake.transactions - before, 1, "the compare and the skipped delete share one transaction");
+    assert.equal((await store.load())?.renew, "rsi1.fam.s1");
+    await store.clearIfCurrent({ publicKeyId: "other-key", renew: "rsi1.fam.s1" });
+    assert.equal((await store.load())?.accessToken, "tok-1");
+    await store.clearIfCurrent({ publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1" });
+    assert.equal(await store.load(), null, "the matching credential is deleted");
+
+    const tokenOnly = await seed({ accessToken: "tok-plain" });
+    delete tokenOnly.renew;
+    await store.save(tokenOnly);
+    await store.clearIfCurrent({ publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-other" });
+    assert.equal((await store.load())?.accessToken, "tok-plain");
+    await store.clearIfCurrent({ publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" });
+    assert.equal(await store.load(), null);
+
+    const olderAt = Date.parse(new Date(NOW).toISOString());
+    const newerAt = olderAt + 1_000;
+    const ordered = await seed({
+      renew: "rsi1.fam.s1",
+      renewExpiresAt: new Date(olderAt).toISOString(),
+      accessToken: "tok-ordered",
+    });
+    await store.save(ordered);
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: newerAt }),
+      true,
+      "an earlier renewExpiresAt for the same key may be cleared",
+    );
+    assert.equal(await store.load(), null);
+    await store.save({ ...ordered, renew: "rsi1.fam.s2", renewExpiresAt: new Date(newerAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s1", renewExpiresAt: olderAt }),
+      false,
+      "a later renewExpiresAt is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: newerAt }),
+      false,
+      "an equal renewExpiresAt with a different credential is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: newerAt }),
+      true,
+      "the same credential is cleared",
+    );
+    assert.equal(await store.load(), null);
+    await store.save({ ...ordered, renew: "rsi1.f2.kept", renewExpiresAt: new Date(olderAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.f1.dead", renewExpiresAt: newerAt, family: "f1" }),
+      false,
+      "another family is not cleared, even when its time is earlier",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.f2.kept");
+    await store.save({ ...ordered, renew: "legacy-credential", renewExpiresAt: new Date(olderAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s9", renewExpiresAt: newerAt, family: "fam" }),
+      false,
+      "a credential with no family id is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "legacy-credential");
+    await store.clear();
+  } finally {
+    installIndexedDb(prior);
+  }
+});
+
+test("familyOf reads the middle segment of rsi1.<familyId>.<secret>", () => {
+  assert.equal(familyOf("rsi1.fam.s1"), "fam");
+  assert.equal(familyOf("rsi1.f1.s2"), "f1");
+  assert.equal(familyOf("rsi1.fam.s1.extra"), "fam");
+  assert.equal(familyOf("rsi1.fam"), null);
+  assert.equal(familyOf("rsi1.fam."), null);
+  assert.equal(familyOf("rsi1..secret"), null);
+  assert.equal(familyOf("nope.fam.s1"), null);
+  assert.equal(familyOf(""), null);
+  assert.equal(familyOf(null), null);
+  assert.equal(familyOf(undefined), null);
+});
+
+test("recordIsCurrent orders one family by renewExpiresAt and leaves another family alone", () => {
+  const rec = {
+    publicKeyId: "k",
+    renew: "rsi1.fam.s1",
+    renewExpiresAt: new Date(1_000).toISOString(),
+    accessToken: "t",
+  };
+  const fam = { family: "fam" };
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s1", renewExpiresAt: 1_000, ...fam }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s0", renewExpiresAt: 500, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(undefined, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  const signedOut = { kind: "signed-out" as const, at: 1 };
+  const otherEnded = { kind: "family-ended" as const, family: "f2", publicKeyId: "k" };
+  const ownEnded = { kind: "family-ended" as const, family: "fam", publicKeyId: "k" };
+  assert.equal(
+    recordIsCurrent(signedOut, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
+    false,
+    "a signed-out marker is never replaced by an update",
+  );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
+    true,
+    "a live record may replace another family's family-ended marker",
+  );
+  assert.equal(
+    recordIsCurrent(ownEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
+    false,
+    "a family-ended marker of this family is not current",
+  );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
+    false,
+    "without the flag a family-ended marker is left alone",
+  );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "", renew: "rsi1.fam.s2", replaceOtherFamilyEnded: true }),
+    false,
+    "an empty publicKeyId never writes over a marker",
+  );
+  assert.equal(isSignedOutMarker(signedOut), true);
+  assert.equal(isFamilyEndedMarker(otherEnded), true);
+  assert.equal(isSignedOutMarker(otherEnded), false);
+  assert.equal(isFamilyEndedMarker(signedOut), false);
+  assert.equal(
+    recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
+    false,
+  );
+  assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "t" }), true);
+  assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "other" }), false);
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "f2" }),
+    false,
+    "a later time of another family is not current",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000 }),
+    false,
+    "a missing family field is read from the credential",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "fam" }),
+    true,
+    "the family on the expect is the one compared",
+  );
+  assert.equal(
+    recordIsCurrent({ ...rec, renew: "legacy-credential" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
+    false,
+    "a credential with no family id is not this family",
+  );
+  assert.equal(
+    recordIsCurrent({ ...rec, renew: "legacy-credential" }, { publicKeyId: "k", renew: "legacy-credential", renewExpiresAt: 2_000, family: null }),
+    true,
+    "the same unparsable credential is still an exact match",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    true,
+    "the credential just presented is current even when the times are equal",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 500, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    true,
+    "the credential just presented is current even when its time is later",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s3", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s2" }),
+    false,
+    "an equal time holding any other credential is not current",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    false,
+    "a different key is not current even when it holds the presented credential",
+  );
 });
 
 test("the record version and the default database name are the ones the README names", () => {

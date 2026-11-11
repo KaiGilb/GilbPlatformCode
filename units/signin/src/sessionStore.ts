@@ -8,17 +8,19 @@
 //   - the DPoP key is the CryptoKey OBJECTS. IndexedDB structured-clones them. The private key
 //     stays non-extractable. Nothing here calls `exportKey`, or writes `localStorage`.
 //   - `publicKeyId` is the public key's JWK `x` and `y` joined by `.`. The caller computes it
-//     with `exportKey` before any transaction. An update compares that string and does not
-//     export inside one. The session code re-reads the JWK when it adopts the record.
+//     with `exportKey` before any transaction. An update compares that string and, when the
+//     tab holds a renewal, the family id and the server's `renewExpiresAt` as a number. The
+//     family id and the stored ISO time are parsed in the `get` callback. Nothing awaits
+//     inside the transaction. The session code re-reads the JWK when it adopts the record.
 //
 // A later record shape bumps {@link STORED_SESSION_VERSION}. Readers refuse a version they do
 // not know rather than guessing.
 //
-// Page close: IndexedDB commits a transaction asynchronously. `clear` starts the delete
-// transaction before it yields when the database is already open, so a sign-out has a delete
-// queued even if the caller never awaits. If the browser discards the document before that
-// transaction commits, or a save transaction created after the delete commits later, the
-// record can remain. That limit is the browser's, and it is called out on `invalidate(true)`.
+// Page close: IndexedDB commits a transaction asynchronously. A sign-out puts a signed-out
+// marker, and that put starts before the first wait when the database is already open, so
+// the marker is queued even if the caller never awaits. If the browser discards the document
+// before that transaction commits, the previous value can remain. That limit is the
+// browser's, and it is called out on `invalidate(true)`.
 
 import type { GilbSession } from "./session";
 
@@ -51,27 +53,284 @@ export interface StoredSession {
    * one that is not the stored public key's own `x.y`.
    */
   publicKeyId: string;
-  /** Empty when a 401 dropped the token and the key was kept. Not a session `restore` adopts. */
+  /** Empty when a 401 dropped the token and the key was kept. Not a session `restore` adopts, unless `renew` is still in date: then `restore` renews. */
   accessToken: string;
   /** Epoch milliseconds. `0` when the token was dropped. */
   expiresAt: number;
   session: GilbSession;
+  /**
+   * Renewal credential (`rsi1.<familyId>.<secret>`). Optional. A record without it
+   * cannot be renewed. The server accepts the immediately previous credential once,
+   * inside 60 seconds. Anything else ends the sign-in.
+   */
+  renew?: string;
+  /** ISO-8601 expiry of {@link renew}. Optional, and absent when `renew` is absent. */
+  renewExpiresAt?: string;
+  /**
+   * Sign-in origin the renewal is posted to, with no trailing slash. Optional.
+   * A `renew` value with no origin cannot be renewed: the client will not guess a host.
+   */
+  origin?: string;
+  /**
+   * Epoch milliseconds of the renew attempt for this credential that may have reached
+   * the server. A reload inside the retry window retries once. After that window one
+   * last try may present it again. A lost last try replaces this with the new attempt.
+   */
+  renewAttemptAt?: number;
+  /**
+   * The grace retry for this attempt has been handed to the transport. A load inside
+   * the retry window must not present the credential again. After the window, one
+   * last try may. A lost last try clears this so the next try is a grace retry.
+   */
+  renewGraceUsed?: boolean;
+}
+
+/**
+ * The person signed out. The slot holds this instead of a sign-in. It has no
+ * credential and no key. `at` is the client clock when this tab signed out.
+ * Only a fresh sign-in's unconditional save replaces it.
+ */
+export interface SignedOutMarker {
+  kind: "signed-out";
+  at: number;
+}
+
+/**
+ * This tab's own family died (a renew 401, or a renewal that had already
+ * expired). Written only when the slot still held that family's record.
+ * No credential and no key. Another family's marker means nothing to this tab.
+ */
+export interface FamilyEndedMarker {
+  kind: "family-ended";
+  family: string;
+  publicKeyId: string;
+}
+
+/** Why the slot holds no sign-in. An empty slot is not one of these. */
+export type SessionMarker = SignedOutMarker | FamilyEndedMarker;
+
+/** The one slot: a sign-in record, or a marker that says why there is no sign-in. */
+export type SessionSlot = StoredSession | SessionMarker;
+
+/** True when `value` is a signed-out marker. A marker is not a sign-in record. */
+export function isSignedOutMarker(value: unknown): value is SignedOutMarker {
+  if (!value || typeof value !== "object") return false;
+  const marker = value as Partial<SignedOutMarker>;
+  return marker.kind === "signed-out" && typeof marker.at === "number" && Number.isFinite(marker.at);
+}
+
+/** True when `value` is a family-ended marker. A marker is not a sign-in record. */
+export function isFamilyEndedMarker(value: unknown): value is FamilyEndedMarker {
+  if (!value || typeof value !== "object") return false;
+  const marker = value as Partial<FamilyEndedMarker>;
+  return marker.kind === "family-ended"
+    && typeof marker.family === "string"
+    && marker.family.length > 0
+    && typeof marker.publicKeyId === "string"
+    && marker.publicKeyId.length > 0;
+}
+
+/** True when `value` is a version-1 sign-in record, not a marker and not empty. */
+export function isStoredSession(value: unknown): value is StoredSession {
+  if (!value || typeof value !== "object") return false;
+  if (isSignedOutMarker(value) || isFamilyEndedMarker(value)) return false;
+  const record = value as Partial<StoredSession>;
+  return record.version === STORED_SESSION_VERSION
+    && typeof record.publicKeyId === "string"
+    && record.publicKeyId.length > 0;
+}
+
+/**
+ * The record a tab may still change on its own behalf.
+ *
+ * `publicKeyId` is always compared, and it must be a non-empty string. A different
+ * key is another sign-in. A missing record is not current.
+ *
+ * When `renewExpiresAt` is a finite number, that number is this tab's credential
+ * time (epoch milliseconds). The time orders credentials only inside one family.
+ * The stored record may be written or cleared when it holds exactly `renew`
+ * (the same credential: a mark, or a dropped access token), or when it is the
+ * same family and its `renewExpiresAt` is strictly earlier. A later time is left
+ * alone. An equal time with a different credential of that family is left alone,
+ * unless that credential is `presentedRenew`: the secret this tab just presented
+ * on its own rotation. That record is known spent and may be replaced whatever
+ * its time. Any other credential at an equal time stays.
+ * Another family is left alone. A stored credential with no parsable family id
+ * is left alone. The compare is numeric. The stored ISO string and the stored
+ * family are parsed here, and this function does not await.
+ *
+ * `family` is that id, parsed once by {@link familyOf} before the transaction.
+ * When `family` is omitted, the id is `familyOf(renew)` so the same helper still
+ * decides. The order uses the server's times only.
+ *
+ * When `renewExpiresAt` is absent, the record has no renewal order. `renew`, when
+ * present, must be the stored credential (`null` or `""` means none). `accessToken`,
+ * when present, must be the stored access token.
+ *
+ * An empty slot is not current. It means nothing was written, and it is not a
+ * sign-out. A signed-out marker is not current: an update never replaces it.
+ * A family-ended marker is not current, unless `replaceOtherFamilyEnded` is set
+ * and the marker names a different family. That is a live tab writing its own
+ * record over another family's death. A marker of this same family is not current.
+ * A missing `publicKeyId` is never a write.
+ */
+export interface CurrentRecordExpect {
+  publicKeyId: string;
+  renew?: string | null;
+  /** Family id of `renew`. Null when `renew` has no parsable family. */
+  family?: string | null;
+  renewExpiresAt?: number;
+  /**
+   * The renewal secret this tab just presented and rotated away from.
+   * When the stored record holds exactly this secret, the same key, and the
+   * same family, it may be replaced whatever its `renewExpiresAt`. An equal
+   * time that holds any other secret is still left alone.
+   */
+  presentedRenew?: string;
+  accessToken?: string;
+  /**
+   * A live tab may replace a family-ended marker of a different family with its
+   * own record. Never set when deleting, or when writing a marker.
+   */
+  replaceOtherFamilyEnded?: boolean;
+}
+
+/** Epoch milliseconds of a `renewExpiresAt` value, or null when it is not a time. */
+export function renewExpiresAtMs(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Family id of a renewal credential, or null when `renew` is not
+ * `rsi1.<familyId>.<secret>`. The id is the middle segment. An empty segment
+ * is not an id. This is the only parse. It does not await, so the IndexedDB
+ * `get` callback can call it.
+ */
+export function familyOf(renew: unknown): string | null {
+  if (typeof renew !== "string") return null;
+  const first = renew.indexOf(".");
+  if (first !== 4 || renew.slice(0, 4) !== "rsi1") return null;
+  const second = renew.indexOf(".", first + 1);
+  if (second <= first + 1 || second >= renew.length - 1) return null;
+  return renew.slice(first + 1, second);
+}
+
+/** The family the time order applies to. `family` on the expect wins; otherwise {@link familyOf}. */
+function expectFamily(expect: CurrentRecordExpect): string | null {
+  if ("family" in expect) return typeof expect.family === "string" && expect.family.length > 0 ? expect.family : null;
+  return familyOf(expect.renew);
+}
+
+function renewSecret(value: unknown): string {
+  return typeof value === "string" && value.length > 0 ? value : "";
+}
+
+/**
+ * True when `existing` is a record this tab may still change.
+ * A missing slot is not current. A signed-out marker is not current.
+ * A family-ended marker is current only for a live record of a different
+ * family, and only when the expect asks to replace that marker.
+ * Callers can run this inside one IndexedDB `get` callback: it does not await.
+ */
+export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect): boolean {
+  if (isSignedOutMarker(existing)) return false;
+  if (isFamilyEndedMarker(existing)) {
+    if (expect.replaceOtherFamilyEnded !== true) return false;
+    if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
+    const wantFamily = expectFamily(expect);
+    if (wantFamily !== null && wantFamily === existing.family) return false;
+    return true;
+  }
+  if (existing == null) return false;
+  if (typeof existing !== "object") return false;
+  if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
+  const record = existing as Partial<StoredSession>;
+  if (record.publicKeyId !== expect.publicKeyId) return false;
+  if (typeof expect.renewExpiresAt === "number" && Number.isFinite(expect.renewExpiresAt)) {
+    const want = renewSecret(expect.renew);
+    const have = renewSecret(record.renew);
+    if (want.length > 0 && have === want) return true;
+    const storedFamily = familyOf(record.renew);
+    const wantFamily = expectFamily(expect);
+    if (storedFamily === null || wantFamily === null || storedFamily !== wantFamily) return false;
+    // This tab's own predecessor. Known spent. The time does not matter.
+    const presented = renewSecret(expect.presentedRenew);
+    if (presented.length > 0 && have === presented) return true;
+    const storedAt = renewExpiresAtMs(record.renewExpiresAt);
+    if (storedAt === null) return false;
+    return storedAt < expect.renewExpiresAt;
+  }
+  if ("renew" in expect) {
+    const have = renewSecret(record.renew);
+    const want = renewSecret(expect.renew);
+    if ((have.length > 0 ? have : null) !== (want.length > 0 ? want : null)) return false;
+  }
+  if ("accessToken" in expect && record.accessToken !== expect.accessToken) return false;
+  return true;
+}
+
+/**
+ * The identity of a stored record, for a later conditional clear.
+ * Null when the value has no `publicKeyId` to compare.
+ * A renewal credential carries its `renewExpiresAt` when that time parses,
+ * so a later credential is not cleared and an earlier one can be.
+ * With no renewal credential, the access token is the match.
+ */
+export function expectOfStored(raw: unknown): CurrentRecordExpect | null {
+  if (!raw || typeof raw !== "object") return null;
+  if (isSignedOutMarker(raw) || isFamilyEndedMarker(raw)) return null;
+  const record = raw as Partial<StoredSession>;
+  if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
+  if (typeof record.renew === "string" && record.renew.length > 0) {
+    const family = familyOf(record.renew);
+    const at = renewExpiresAtMs(record.renewExpiresAt);
+    if (at === null) return { publicKeyId: record.publicKeyId, renew: record.renew, family };
+    return { publicKeyId: record.publicKeyId, renew: record.renew, renewExpiresAt: at, family };
+  }
+  return {
+    publicKeyId: record.publicKeyId,
+    renew: null,
+    accessToken: typeof record.accessToken === "string" ? record.accessToken : "",
+  };
 }
 
 /** The persistence seam. A throwing method is a storage failure, not a failed sign-in. */
 export interface SessionStore {
-  /** The current record, or null when nothing is stored. */
-  load(): Promise<StoredSession | null>;
-  /** Replaces the one record. A fresh sign-in may create it. */
-  save(session: StoredSession): Promise<void>;
+  /** The slot: a sign-in record, a marker, or null when nothing has been written. */
+  load(): Promise<SessionSlot | null>;
   /**
-   * Writes `session` only when a record is already stored and its `publicKeyId`
-   * equals `samePublicKeyId`, and that id is not empty. If the record is missing,
-   * has no id, or holds another id, this writes nothing. The IndexedDB adapter
-   * compares the strings and puts inside the same `get` success callback, so the
-   * transaction is still active and a delete that commits first is not put back.
+   * Replaces the slot. A fresh sign-in uses this, and so does an explicit
+   * sign-out when it writes a signed-out marker. The IndexedDB adapter starts
+   * the put before its first wait when the database is already open.
    */
-  saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void>;
+  save(session: SessionSlot): Promise<void>;
+  /**
+   * Writes `session` only when the stored slot is still {@link recordIsCurrent}
+   * for `expect`. A missing slot writes nothing. A signed-out marker writes
+   * nothing. A family-ended marker of another family is replaced only when
+   * `expect.replaceOtherFamilyEnded` is set. Another key, another family, a
+   * credential with no family id, a later `renewExpiresAt`, or an equal time
+   * with a different credential writes nothing and resolves `false`.
+   * `expect.presentedRenew`, the secret this tab just presented, is replaced
+   * whatever its time.
+   * `true` means the put was made. The IndexedDB adapter compares and puts inside
+   * the same `get` success callback, so the transaction is still active and a
+   * delete that commits first is not put back. A marker put this way holds no
+   * credential and no key.
+   */
+  saveIfCurrent(session: SessionSlot, expect: CurrentRecordExpect): Promise<boolean>;
+  /**
+   * Deletes the one record only when it is still {@link recordIsCurrent} for
+   * `expect`. Another key, another family, a credential with no family id, a
+   * later `renewExpiresAt`, or an equal time with a different credential is
+   * left in place and this resolves `false`. `presentedRenew` names the secret
+   * this tab just presented: that record may be deleted whatever its time. `true`
+   * means the delete was made. The IndexedDB adapter compares and deletes
+   * inside the same `get` success callback.
+   */
+  clearIfCurrent(expect: CurrentRecordExpect): Promise<boolean>;
   /** Deletes the one record. Starts the delete before it needs to wait, when it can. */
   clear(): Promise<void>;
 }
@@ -94,23 +353,39 @@ class IndexedDbSessionStore implements SessionStore {
 
   constructor(private readonly name: string) {}
 
-  async load(): Promise<StoredSession | null> {
+  async load(): Promise<SessionSlot | null> {
     const db = await this.connect();
     const tx = db.transaction(SESSION_OBJECT_STORE, "readonly");
-    const value = await requestResult<StoredSession | undefined>(tx.objectStore(SESSION_OBJECT_STORE).get(SESSION_RECORD_KEY));
+    const value = await requestResult<SessionSlot | undefined>(tx.objectStore(SESSION_OBJECT_STORE).get(SESSION_RECORD_KEY));
     return value ?? null;
   }
 
-  async save(session: StoredSession): Promise<void> {
-    const db = await this.connect();
-    const tx = readwrite(db);
-    tx.objectStore(SESSION_OBJECT_STORE).put(session, SESSION_RECORD_KEY);
-    await transactionDone(tx);
+  async save(session: SessionSlot): Promise<void> {
+    // Already open: create the put before the first wait, so a sign-out's marker
+    // is queued even when the caller does not await.
+    if (this.db) {
+      await putSlot(this.db, session);
+      return;
+    }
+    if (this.opening) {
+      await putSlot(await this.opening, session);
+      return;
+    }
+    await putSlot(await this.connect(), session);
   }
 
-  async saveIfSameKey(session: StoredSession, samePublicKeyId: string): Promise<void> {
+  async saveIfCurrent(session: SessionSlot, expect: CurrentRecordExpect): Promise<boolean> {
     const db = await this.connect();
-    await putIfSamePublicKeyId(db, session, samePublicKeyId);
+    return mutateIfCurrent(db, expect, (objectStore) => {
+      objectStore.put(session, SESSION_RECORD_KEY);
+    });
+  }
+
+  async clearIfCurrent(expect: CurrentRecordExpect): Promise<boolean> {
+    const db = await this.connect();
+    return mutateIfCurrent(db, expect, (objectStore) => {
+      objectStore.delete(SESSION_RECORD_KEY);
+    });
   }
 
   async clear(): Promise<void> {
@@ -207,6 +482,12 @@ function deleteRecord(db: IDBDatabase): Promise<void> {
   return transactionDone(tx);
 }
 
+function putSlot(db: IDBDatabase, value: SessionSlot): Promise<void> {
+  const tx = readwrite(db);
+  tx.objectStore(SESSION_OBJECT_STORE).put(value, SESSION_RECORD_KEY);
+  return transactionDone(tx);
+}
+
 function requestResult<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
@@ -215,15 +496,19 @@ function requestResult<T>(req: IDBRequest<T>): Promise<T> {
 }
 
 /**
- * One readwrite transaction: read the record, compare `publicKeyId` with
- * `samePublicKeyId`, and put only when both are that same non-empty string.
+ * One readwrite transaction: read the record, compare every field on `expect`,
+ * and put or delete only when the stored record is still that one.
  *
- * The compare and the put run in the `get` callback with no await between them.
- * A transaction commits once control returns to the event loop with no request
- * in flight, so an export or any other promise here would let the put throw
- * TransactionInactiveError and drop the update.
+ * The compare and the mutation run in the `get` callback with no await between
+ * them. A transaction commits once control returns to the event loop with no
+ * request in flight, so an export or any other promise here would let the
+ * mutation throw TransactionInactiveError and drop the update.
  */
-function putIfSamePublicKeyId(db: IDBDatabase, session: StoredSession, samePublicKeyId: string): Promise<void> {
+function mutateIfCurrent(
+  db: IDBDatabase,
+  expect: CurrentRecordExpect,
+  mutate: (objectStore: IDBObjectStore) => void,
+): Promise<boolean> {
   let tx: IDBTransaction;
   try {
     tx = readwrite(db);
@@ -233,29 +518,28 @@ function putIfSamePublicKeyId(db: IDBDatabase, session: StoredSession, samePubli
   const objectStore = tx.objectStore(SESSION_OBJECT_STORE);
   return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (err?: unknown) => {
+    const finish = (err?: unknown, wrote = false) => {
       if (settled) return;
       settled = true;
       if (err) reject(err instanceof Error ? err : new Error("IndexedDB transaction failed"));
-      else resolve();
+      else resolve(wrote);
     };
-    tx.oncomplete = () => finish();
+    tx.oncomplete = () => finish(undefined, true);
     tx.onabort = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
     tx.onerror = () => finish(tx.error ?? new Error("IndexedDB transaction failed"));
 
     const req = objectStore.get(SESSION_RECORD_KEY);
     req.onerror = () => finish(req.error ?? new Error("IndexedDB request failed"));
     req.onsuccess = () => {
-      const existing = req.result as StoredSession | undefined;
-      const storedId = existing?.publicKeyId;
-      if (typeof storedId !== "string" || storedId.length === 0 || storedId !== samePublicKeyId) {
-        // No put. Resolve here: a get-only transaction has nothing left in flight,
-        // and the test double does not fire `oncomplete` unless a put or delete did.
-        finish();
+      if (!recordIsCurrent(req.result, expect)) {
+        // No mutation. Resolve false here: a get-only transaction has nothing
+        // left in flight, and the test double does not fire `oncomplete` unless
+        // a put or delete did.
+        finish(undefined, false);
         return;
       }
       try {
-        objectStore.put(session, SESSION_RECORD_KEY);
+        mutate(objectStore);
       } catch (err) {
         finish(err);
       }

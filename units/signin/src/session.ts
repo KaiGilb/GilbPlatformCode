@@ -12,47 +12,105 @@
 //   - the current access token, its expiry, and the session it resolved (principal, landing
 //     vault, reachable vaults). On the cookieless path the reachable vaults are not in the token
 //     response: they are read from `GET /lws/vaults` ({@link REACHABLE_VAULTS_PATH}).
-//   - on the cookieless path, the same key and token in {@link SessionStore}, so a reload can
-//     call `restore()` and keep the sign-in until the token's own expiry. The private key is
-//     stored as a CryptoKey, never exported. A host-passed key is never stored.
+//   - on the cookieless path, the same key and token in {@link SessionStore}, plus the renewal
+//     credential when verify-code issued one. A reload calls `restore()`. A token that still has
+//     its guard is adopted with no request. A token inside the guard, or already expired, is
+//     renewed when the stored credential is still in date. The private key is stored as a
+//     CryptoKey, never exported. A host-passed key is never stored.
 //
 // Where a token comes from, in this order:
-//   1. `restore()`: the record the store kept from an earlier page. No request is made. A token
-//      inside the expiry guard, a wrong version, a malformed record (no `publicKeyId`, or one
-//      that is not the stored public key's `x.y`), or a key pair whose halves do not match is
-//      dropped. A sign-in this credential already holds is left as it is.
+//   1. `restore()`: the record the store kept from an earlier page. A live token is adopted and
+//      no request is made. A token inside the expiry guard or already expired is renewed instead
+//      of cleared when the record holds a renewal credential that is still in date. That renew
+//      is the only request `restore` makes. A wrong version, a malformed record (no `publicKeyId`,
+//      or one that is not the stored public key's `x.y`), or a key pair whose halves do not match
+//      is dropped. A sign-in this credential already holds is left as it is.
 //   2. `adopt()`: the token verify-code returned (the cookieless path). verify-code returns no
 //      vault list. The session-cookie bridge below is first-party only, so a third-party app
 //      cannot learn its vaults from either answer. `signInWithCode` therefore reads
 //      `GET /lws/vaults` on the same origin the code was verified at, with a DPoP proof and no
 //      cookies.
-//   3. The DPoP session bridge, when the host names its URL (`dpopMintUrl`): a POST that rides the
+//   3. Renewal (`POST {origin}/base/auth/email/renew`), when a renewal credential is held and the
+//      access token is inside the guard (or `renew()` is called). The proof carries no access
+//      token. The answer replaces the token and the credential. If that answer is lost, the
+//      server accepts the previous credential once more within 60 s. This client retries it
+//      once within 45 s of the attempt, measured when the request is about to be sent, and
+//      presents it once more after that. A refusal then ends the sign-in.
+//   4. The DPoP session bridge, when the host names its URL (`dpopMintUrl`): a POST that rides the
 //      platform's session cookie and returns a token bound to this key, and the vault list with
 //      it. That re-mint is what keeps a first-party page signed in across a reload. Those pages
-//      store nothing here. A third-party page cannot use the bridge.
+//      store nothing here, and they never send a renewal. A third-party page cannot use the bridge.
 //
 // ⛔ Nothing here names a host. The host passes every URL. (Checked by
 // `scripts/check-host-agnostic.mjs`.)
-// ⛔ Nothing here signs a DPoP proof itself. `dpopHeaders` in `./dpop` is the one way.
+// ⛔ Nothing here signs a DPoP proof itself. `dpopHeaders` in `./dpop` signs a request that
+//    carries a token. Renewal has no token on the request, so that call uses `dpopProof` with
+//    no access token: the platform refuses a proof that carries `ath`.
 
-import { dpopHeaders, generateDpopKeyPair, type DpopKey, type DpopPublicJwk, type DpopWebCryptoKey } from "./dpop";
+import { dpopHeaders, dpopProof, generateDpopKeyPair, type DpopKey, type DpopPublicJwk, type DpopWebCryptoKey } from "./dpop";
 import { fetchTransport, type Transport, type TransportResponse } from "./transport";
 import { verifySignInCodeHttp, type VerifyHttpBody } from "./http";
 import { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 import {
   indexedDbSessionStore,
+  expectOfStored,
+  familyOf,
+  isFamilyEndedMarker,
+  isSignedOutMarker,
+  isStoredSession,
+  renewExpiresAtMs,
   SESSION_DB_NAME,
   STORED_SESSION_VERSION,
+  type CurrentRecordExpect,
+  type FamilyEndedMarker,
   type SessionStore,
+  type SignedOutMarker,
   type StoredSession,
 } from "./sessionStore";
 
-export { indexedDbSessionStore, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
-export type { SessionStore, StoredSession } from "./sessionStore";
+export { indexedDbSessionStore, expectOfStored, familyOf, isFamilyEndedMarker, isSignedOutMarker, isStoredSession, recordIsCurrent, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
+export type { CurrentRecordExpect, FamilyEndedMarker, SessionMarker, SessionSlot, SessionStore, SignedOutMarker, StoredSession } from "./sessionStore";
 export { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 
 /** Re-mint when less than this much of the token's life is left (clock skew and time in flight). */
 export const EXPIRY_GUARD_MS = 60_000;
+
+/** Shortest renewal window verify-code will accept, in seconds. */
+export const RENEW_WINDOW_MIN_SEC = 300;
+
+/** Longest renewal window, in seconds. 14 days. Also the window sent when the app does not choose one. */
+export const RENEW_WINDOW_MAX_SEC = 1_209_600;
+
+/** `POST {origin}/base/auth/email/renew`. A wire path: do not rename. */
+export const RENEW_SIGN_IN_PATH = "/base/auth/email/renew";
+
+/** `POST {origin}/base/auth/sign-out`. A wire path: do not rename. */
+export const SIGN_OUT_PATH = "/base/auth/sign-out";
+
+/**
+ * How long `signOut` waits for the server. The signed-out marker is already written,
+ * and the in-memory sign-in is already cleared, before this wait starts. A store
+ * slower than {@link STORE_TIMEOUT_MS} may still be landing that write. The server
+ * call is best-effort. A hang must not keep `signOut` from settling. A failed or
+ * hung call leaves the server family live until its window ends.
+ */
+export const SIGN_OUT_BOUND_MS = 3_000;
+
+/**
+ * How long one renew request may take. Past this, the attempt counts as lost: the server
+ * may already have rotated. The same credential can be presented again inside
+ * {@link RENEW_RETRY_MS}, and once more after that.
+ */
+export const RENEW_TIMEOUT_MS = 10_000;
+
+/**
+ * How long after a renew attempt this client presents that same credential again as the
+ * grace retry. The server accepts the immediately previous credential once, within 60 s
+ * of the rotation. 45 s leaves transit margin under that window. The comparison is made
+ * when the request is about to be sent, after the attempt mark is saved. After this
+ * window the client presents the held credential once more.
+ */
+export const RENEW_RETRY_MS = 45_000;
 
 /**
  * How long a store call the credential is waiting on may take. Past this, the call is a storage
@@ -60,6 +118,21 @@ export const EXPIRY_GUARD_MS = 60_000;
  * record (the record is left in place). Sign-in does not wait on a save at all.
  */
 export const STORE_TIMEOUT_MS = 400;
+
+/**
+ * A rotation save that threw or timed out is tried again after these delays,
+ * then on every later call. The first delay is long enough that a reload in
+ * between can still see the previous credential.
+ */
+const ROTATION_HEAL_DELAYS_MS = [500, 2_000, 5_000];
+
+/**
+ * Immediate store errors while saving a rotation, before the lock is released.
+ * A save that does not settle is tried twice, not this many: each wait is the
+ * store bound. A throw is cheap, and the other tab presents whatever is stored
+ * once this lock is released.
+ */
+const ROTATION_SAVE_ATTEMPTS = 8;
 
 /** Fixed input for the restore pair check. Not a secret, and not sent anywhere. */
 const STORED_PAIR_CHALLENGE = new TextEncoder().encode("gilb-signin-pair-check");
@@ -154,6 +227,24 @@ export class OriginNotAllowedError extends Error {
 }
 
 /**
+ * Thrown when a renewal did not finish and the sign-in is still held.
+ *
+ * A network error, a timeout, or a 5xx means the server may already have rotated.
+ * Within {@link RENEW_RETRY_MS} of the recorded attempt this client presents that
+ * same credential once more. After that window it presents the credential one last
+ * time. A 200 adopts the rotation. A 401 ends the sign-in. A network error, a
+ * timeout, or a 5xx on that last try records a new attempt time, and the next try
+ * inside the window is a grace retry. The client does not keep throwing this with
+ * no request.
+ */
+export class RenewalUnavailableError extends Error {
+  constructor() {
+    super("The sign-in could not be renewed just now. It is still in place. Try again shortly, or sign in again.");
+    this.name = "RenewalUnavailableError";
+  }
+}
+
+/**
  * Narrows wire modes to read and write. Any other mode (append, control) is dropped, not passed
  * on as an unknown grant.
  *
@@ -229,6 +320,18 @@ export interface SessionCredentialOptions {
   store?: SessionStore | false;
   /** The clock, in epoch ms. For tests. */
   now?: () => number;
+  /**
+   * Ask verify-code for a renewal credential. Defaults to true when this credential stores
+   * (cookieless). Ignored, and never sent, when `dpopMintUrl` is set, when `store` is false,
+   * or when `key` is a host-held key. `false` turns renewal off on a credential that stores.
+   */
+  renew?: boolean;
+  /**
+   * How long the renewal stays valid, in seconds. An integer from {@link RENEW_WINDOW_MIN_SEC}
+   * to {@link RENEW_WINDOW_MAX_SEC}. Anything else throws {@link TypeError} from the constructor.
+   * Omitted, the client asks for {@link RENEW_WINDOW_MAX_SEC} (14 days).
+   */
+  renewWindowSec?: number;
 }
 
 interface Minted {
@@ -257,8 +360,12 @@ export class SessionCredential {
    */
   private generation = 0;
   /**
-   * Set by sign-out. `restore` on this same instance must not adopt a record the sign-out
-   * was meant to delete, even when the delete has not landed yet.
+   * This instance has no sign-in. An explicit sign-out sets it together with
+   * {@link explicitClear}. A dead sign-in (renew 401, expired renewal, or a
+   * signed-out marker this tab observed) sets it alone: `authHeaders` and
+   * `renew` refuse until `restore` or a new sign-in. `restore` on that dead
+   * instance is a fresh page load and does not write. `restore` after an
+   * explicit sign-out returns null and does not write either.
    */
   private signedOut = false;
   /**
@@ -267,6 +374,14 @@ export class SessionCredential {
    * load was in flight is not overwritten by the record the load returns.
    */
   private signInSerial = 0;
+  /**
+   * Bumped when a sign-in starts: `signInWithCode`, `adopt`, `restore` once it has
+   * adopted a record, or a cookie-bridge re-mint (`authHeaders` → `mint` installing
+   * a token). An in-flight `signOut` records this at its start and a later call
+   * joins only while it is unchanged. Not {@link signInSerial}: a renew treats a serial
+   * change as superseded, and a `restore` during that renew must still adopt.
+   */
+  private signInGeneration = 0;
   /** `signInWithCode` calls in flight. `restore` will not adopt over one. */
   private signInsInFlight = 0;
   /**
@@ -288,14 +403,96 @@ export class SessionCredential {
   private draining = false;
   /** The drain stopped because the DPoP key did not exist yet. The next key pokes it. */
   private waitingForKey = false;
-  /** Store ops in order. A sign-out's clear is queued behind a save already in this chain. */
+  /**
+   * Store ops in order. A sign-out's marker puts stay on this chain, ahead of a
+   * later save, but each wait gives up after {@link STORE_TIMEOUT_MS}. A hung
+   * put does not block a later save.
+   */
   private tail: Promise<void> = Promise.resolve();
   private restoreInflight: Promise<GilbSession | null> | null = null;
+  /** One renewal at a time on this credential. A second caller waits for it. */
+  private renewInflight: Promise<RenewAttempt> | null = null;
+  /**
+   * One sign-out at a time on this credential. A later call joins this promise when
+   * no sign-in has started since it began, instead of aborting the renew it is using.
+   * Cleared when it settles.
+   */
+  private signOutInflight: Promise<{ serverSignedOut: boolean }> | null = null;
+  /** {@link signInGeneration} when {@link signOutInflight} began. */
+  private signOutJoinedGeneration = 0;
+  /**
+   * One sign-out renew per credential string, across instances. The second
+   * sign-out joins it, so a spent credential is presented once. Dropped when
+   * that request settles.
+   */
+  private static signOutRenewals = new Map<string, Promise<{ accessToken: string; key: DpopKey } | null>>();
+  /** The renewal credential currently held. It is sent at most once. */
+  private renewCredential: string | null = null;
+  /**
+   * Secrets this tab presented and rotated away from on a 200. They are spent.
+   * This tab does not present them again and does not adopt a record that holds one.
+   */
+  private rotatedAway = new Set<string>();
+  /**
+   * The secret the latest successful rotation presented. A save of the new
+   * credential may replace the record that still holds this one, whatever its time.
+   */
+  private rotatedPredecessor: string | null = null;
+  /** The server's `renewExpiresAt` text, kept so the store round-trips it. */
+  private renewExpiresAt: string | null = null;
+  /** Epoch ms of {@link renewExpiresAt}. Null when no credential is held. */
+  private renewExpiresAtMs: number | null = null;
+  /** Sign-in origin, no trailing slash. The renew URL and the cross-tab lock use it. */
+  private renewOrigin: string | null = null;
+  /**
+   * Epoch ms of the first attempt for {@link renewCredential} that may have reached
+   * the server. Null until that attempt is handed to the transport.
+   */
+  private renewAttemptAt: number | null = null;
+  /** The one grace retry for {@link renewCredential} has been handed to the transport. */
+  private renewGraceUsed = false;
+  /**
+   * The attempt mark for the presentation just handed to the transport did not land.
+   * This instance still honours its in-memory attempt, and does not present that
+   * credential again inside the same retry window. A reload does not see the mark.
+   */
+  private renewMarkFailed = false;
+  /** Rotated record a failed save still has to land. Null when nothing is outstanding. */
+  private rotationHealRecord: StoredSession | null = null;
+  private rotationHealExpect: CurrentRecordExpect | null = null;
+  private rotationHealEpoch = 0;
+  private rotationHealGen = 0;
+  /** Index into {@link ROTATION_HEAL_DELAYS_MS}. At the length, later calls retry. */
+  private rotationHealAttempt = 0;
+  private rotationHealTimer: ReturnType<typeof setTimeout> | null = null;
+  private rotationHealRunning = false;
+  /**
+   * Set only by an explicit sign-out (`invalidate(true)` / `signOut`). A late write
+   * from this sign-in then puts the signed-out marker back. `restore` on this
+   * instance returns null and does not touch the slot, so a later sign-in another
+   * tab saved stays stored. A sign-in that died does not set this.
+   */
+  private explicitClear = false;
+  /** Client time of this instance's explicit sign-out. Both marker writes use it. */
+  private signedOutAt: number | null = null;
+  /** Aborts the in-flight renew wait. A sign-out must not sit behind that lock. */
+  private renewAbort: AbortController | null = null;
+  /**
+   * Vault list to keep when a renewal replaces the token and `minted` is null
+   * (restore of an expired token, or a plain `invalidate`). Not a sign-in by itself.
+   */
+  private carriedSession: GilbSession | null = null;
+  /**
+   * While greater than zero, the store drain does not write. Renewal holds this across
+   * its own save so a stale record cannot land on top of the rotated credential.
+   */
+  private storeHeld = 0;
   private readonly hostKey: boolean;
   private readonly store: SessionStore | null;
   private readonly opts: SessionCredentialOptions;
 
   constructor(opts: SessionCredentialOptions = {}) {
+    if (opts.renewWindowSec !== undefined) assertRenewWindowSec(opts.renewWindowSec);
     this.opts = opts;
     this.key = opts.key ?? null;
     this.hostKey = Boolean(opts.key);
@@ -329,7 +526,9 @@ export class SessionCredential {
    */
   adopt(accessToken: string, session: GilbSession, expiresAt?: number): Promise<void> {
     this.signInSerial++;
+    this.noteSignIn();
     this.signedOut = false;
+    this.explicitClear = false;
     // A new token may create or replace the record. Later updates from this hold are not creates.
     this.canCreateRecord = true;
     this.minted = {
@@ -367,6 +566,7 @@ export class SessionCredential {
     // a store that never settles must not block the sign-in the caller is waiting on.
     this.signInsInFlight++;
     this.signInSerial++;
+    this.noteSignIn();
     return this.signInWithCodeBody(origin, email, code, name, productName).finally(() => {
       this.signInsInFlight--;
       return this.flushStore();
@@ -386,6 +586,9 @@ export class SessionCredential {
     const jwk = await this.ensurePublicJwk();
     const body = await verifySignInCodeHttp(origin, email, code, jwk, name, productName, {
       transport: this.opts.transport,
+      ...(this.renewalWanted()
+        ? { renew: true as const, renewWindowSec: this.opts.renewWindowSec ?? RENEW_WINDOW_MAX_SEC }
+        : {}),
     });
     if (gen !== this.generation) throw new NotSignedInError();
     if (!body.token || !body.principal) {
@@ -393,6 +596,9 @@ export class SessionCredential {
       if (body.needsVaultName) return body;
       throw new NotSignedInError();
     }
+    // Set before `adopt` starts the save, so the first record carries the credential.
+    // A sign-in that was not issued one drops whatever this credential held before.
+    this.rememberRenewal(origin, body.renew, body.renewExpiresAt);
     this.adopt(body.token, { principal: body.principal, vault: null, vaults: [] });
     // verify-code carries no vault list, and the cookie bridge is first-party only.
     // A list problem stays signed in; a sign-out while that read is on the wire still rejects.
@@ -512,6 +718,13 @@ export class SessionCredential {
    * The `Authorization` and `DPoP` headers for one request. The proof is fresh on every call:
    * the server refuses a reused `jti`, so never cache the result.
    *
+   * When the held token is inside the guard and a renewal credential is held, this renews
+   * first, on the same path a cookie-bridge re-mint uses. A 401 from that renew ends the
+   * sign-in and throws {@link NotSignedInError}. A network error, a timeout, or a 5xx throws
+   * {@link RenewalUnavailableError} and keeps the sign-in. The same credential is presented
+   * once more within {@link RENEW_RETRY_MS} of the recorded attempt, and once more after
+   * that window. That later presentation adopts on 200 and ends the sign-in on 401.
+   *
    * @param method the HTTP method
    * @param url the absolute URL of the request; `htu` is derived from it
    * @param freshForMs re-mint first unless the token lives at least this long (a long agent turn)
@@ -540,72 +753,107 @@ export class SessionCredential {
    * Drops the token so the next use re-mints. On sign-out pass `dropKey`: a new sign-in gets a
    * new key. A key the host passed in is never dropped; the host owns it.
    *
-   * The store follows. The returned promise settles that write, or gives up after
-   * {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory drop has already happened
-   * when this returns to the caller. Sign-out waits at most that long for the delete it
-   * started in this turn.
+   * The store follows. The returned promise settles when the marker write has, or
+   * gives up after {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory
+   * drop has already happened when this returns to the caller. Sign-out waits at
+   * most that long for the marker put it started in this turn. That put, and the
+   * follow-up behind it, each give up after the same bound, so a put that never
+   * settles cannot block a later save. A put that lands after a fresh sign-in
+   * writes that sign-in again.
    *
-   * Sign-out deletes the stored record. The delete is started before this returns, so a page
-   * that closes immediately still has a delete transaction queued when the database is already
-   * open. IndexedDB commits asynchronously. If the browser discards the document before the
-   * commit, the record can remain. A save transaction created before the delete runs first and
-   * the delete then removes its record, when both stay queued. A save that starts its
-   * transaction after the delete, and then the page is discarded before the follow-up delete
-   * runs, can leave a record. That follow-up runs when the save finishes, which does not
-   * happen if the page is already gone.
+   * Sign-out replaces the slot with a signed-out marker (`{ kind: "signed-out", at }`).
+   * The put is started before this returns, so a page that closes immediately still has
+   * that transaction queued when the database is already open. IndexedDB commits
+   * asynchronously. If the browser discards the document before the commit, the previous
+   * record can remain. A save transaction created before the marker put runs first, and the
+   * marker put then replaces its record, when both stay queued. A save that starts its
+   * transaction after the marker put, and then the page is discarded before the follow-up
+   * marker put runs, can leave a record. That follow-up runs when the save finishes, which
+   * does not happen if the page is already gone. The first put is on the same chain as
+   * that follow-up. It is not left running beside it. The marker holds no credential
+   * and no key. Only a fresh sign-in replaces it.
    *
-   * A plain `invalidate()` keeps the in-memory key and drops the stored token. The key stays
-   * in the record with an empty token, so the rejected token is not restored. `restore()`
-   * treats that record as not a session, clears it, and returns null.
+   * A plain `invalidate()` keeps the in-memory key and drops the stored access token only
+   * when the stored record is still this tab's key and credential. The renewal credential
+   * stays on that record (`renew`, `renewExpiresAt`, `origin`, `renewAttemptAt`,
+   * `renewGraceUsed`), with the session, so a reload can renew. If another tab has rotated,
+   * the write does nothing: this tab adopts the newer record on its next renew. The
+   * rejected token is not restored. A record with no renewal credential is not a session:
+   * `restore()` clears it and returns null.
    */
   invalidate(dropKey = false): Promise<void> {
-    this.minted = null;
     // Only a sign-out (dropKey) stops work in progress. A plain invalidate() is the re-mint
     // after a 401: the sign-in is still live, so a mint already under way is the fresh token
-    // the caller wants.
+    // the caller wants. The renewal credential stays, so the next use can renew it.
     if (!dropKey) {
+      const droppedToken = this.minted?.accessToken ?? "";
+      const renewAtInvalidate = this.renewCredential;
+      this.carriedSession = this.minted?.session ?? this.carriedSession;
+      this.minted = null;
       this.epoch++;
       const key = this.key;
-      if (this.store && isWebCryptoKey(key)) this.dropStoredToken(key);
-      else this.enqueueClear();
+      if (this.store && isWebCryptoKey(key)) this.dropStoredToken(key, droppedToken, renewAtInvalidate);
       return this.tailSettled();
     }
+    this.abortRenewWait();
+    this.minted = null;
     this.generation++;
     this.signedOut = true;
+    this.explicitClear = true;
+    this.signedOutAt = this.now();
     this.canCreateRecord = false;
+    this.carriedSession = null;
+    this.clearRenewal();
     this.epoch++;
     this.inflight = null;
+    this.renewInflight = null;
     if (!this.hostKey) {
       this.key = null;
       this.keyInflight = null;
       this.publicCryptoKey = null;
       this.publicKeyId = null;
     }
-    // Start the delete in this turn, then queue another behind any save already in `tail`.
-    // The caller waits for that chain for at most STORE_TIMEOUT_MS.
-    this.startClearNow();
-    this.enqueueClear();
+    // The marker put starts in this turn, then again behind any save already in `tail`.
+    // Each wait gives up after STORE_TIMEOUT_MS, so a hung put releases the chain.
+    // The caller waits at most that long. A later save is queued behind those waits.
+    const started = this.startSignedOutMark();
+    this.enqueueSignedOutMark(started);
     return this.tailSettled();
   }
 
   /**
    * Adopts a stored sign-in, or returns null when there is nothing to adopt.
-   * Makes no request. Concurrent calls share one load.
+   * Concurrent calls share one load.
+   *
+   * A token that still has more than {@link EXPIRY_GUARD_MS} of life is adopted and no request
+   * is made. A token inside that guard, or already expired, is renewed when the record holds a
+   * renewal credential whose `renewExpiresAt` is still in the future. That is the only request
+   * this method makes. A network error, a timeout, or a 5xx from that renew throws
+   * {@link RenewalUnavailableError} and leaves the record in place. The same credential is
+   * sent once more within {@link RENEW_RETRY_MS}, and once more after that. A 401 clears
+   * it and returns null. An empty access token with a live renewal credential is renewed.
    *
    * Absent, wrong version, malformed (including a missing `publicKeyId`, or one that is not
-   * the stored public key's `x.y`), a key pair whose halves do not match, or a token inside
-   * {@link EXPIRY_GUARD_MS}: the store is cleared and the result is null. A storage failure,
-   * including a load that does not settle within {@link STORE_TIMEOUT_MS}, also returns null
-   * and does not clear the record. The in-memory credential is left as it was.
+   * the stored public key's `x.y`), a key pair whose halves do not match, or a token that
+   * cannot be used and cannot be renewed: the store is cleared and the result is null. A storage
+   * failure, including a load that does not settle within {@link STORE_TIMEOUT_MS}, also returns
+   * null and does not clear the record. The in-memory credential is left as it was.
    *
    * When this credential already holds a token, or a sign-in / `adopt` is in flight or starts
    * while the load is in flight, nothing is adopted, written, or cleared. The result is the
    * held session, or null when the sign-in has not produced a token yet.
    *
    * A sign-out (`invalidate(true)`) that lands while the load is in flight wins: nothing is
-   * adopted and the store is cleared.
+   * adopted, and this call does not delete a record another tab wrote afterwards. The slot
+   * holds the signed-out marker unless a later fresh sign-in replaced it.
+   *
+   * When this instance's own sign-in has died, and the person did not sign out, this is
+   * the same as `restore` on a fresh page. It loads the store and adopts a valid record
+   * of any family. It does not clear unconditionally. `authHeaders` and `renew` keep
+   * refusing until this call, or a new sign-in, succeeds.
    */
   restore(): Promise<GilbSession | null> {
+    this.touchRotationHeal();
     if (!this.store) return Promise.resolve(null);
     // A held token, or a verify-code still on the wire: do not load, and do not touch the store.
     if (this.minted || this.signInsInFlight > 0) {
@@ -637,9 +885,28 @@ export class SessionCredential {
     return this.key ?? key;
   }
 
-  private async getMinted(freshForMs = 0): Promise<Minted> {
+  private async getMinted(freshForMs = 0, reread = false): Promise<Minted> {
+    this.touchRotationHeal();
     if (this.minted && this.tokenIsLive(this.minted.expiresAt, freshForMs)) {
       return this.minted;
+    }
+    // Same moment the cookie bridge would re-mint. A held renewal credential is used instead,
+    // including after a plain invalidate() dropped the token and kept the key.
+    if (this.renewalIsLive()) {
+      const result = await this.renewNow();
+      if (this.minted && this.tokenIsLive(this.minted.expiresAt, freshForMs)) return this.minted;
+      if (result.ok) {
+        if (this.minted) return this.minted;
+        throw new NotSignedInError();
+      }
+      if (result.kind === "superseded") {
+        if (this.minted) return this.minted;
+        // A plain invalidate during the renew dropped the token and left the credential.
+        // The sign-in is still live. Re-read once after this renew has settled.
+        if (!reread && !this.signedOut && this.renewalIsLive()) return this.getMinted(freshForMs, true);
+      }
+      if (result.kind === "transient") throw new RenewalUnavailableError();
+      throw new NotSignedInError();
     }
     if (!this.inflight) {
       const pending: Promise<Minted> = this.mint(this.generation).finally(() => {
@@ -697,7 +964,11 @@ export class SessionCredential {
     };
     // A sign-out (invalidate) happened while this mint was on the wire: drop the result.
     if (gen !== this.generation) throw new NotSignedInError();
+    // A cookie-bridge re-mint is a sign-in. A sign-out that began before it must
+    // not swallow the sign-out of the token this mint just installed.
+    this.noteSignIn();
     this.signedOut = false;
+    this.explicitClear = false;
     this.minted = minted;
     return minted;
   }
@@ -741,17 +1012,26 @@ export class SessionCredential {
     }
   }
 
-  /** A store call, or a storage failure when it throws, rejects, or exceeds {@link STORE_TIMEOUT_MS}. */
-  private bounded<T>(work: Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+  /**
+   * A store call, or a storage failure when it throws, rejects, or exceeds `ms`
+   * (default {@link STORE_TIMEOUT_MS}). An aborted `signal` is the same failure,
+   * so a sign-out does not keep waiting.
+   */
+  private bounded<T>(work: Promise<T>, ms = STORE_TIMEOUT_MS, signal?: AbortSignal): Promise<{ ok: true; value: T } | { ok: false }> {
+    if (signal?.aborted || !(ms > 0)) return Promise.resolve({ ok: false });
     return new Promise((resolve) => {
       let settled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const finish = (result: { ok: true; value: T } | { ok: false }) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer !== undefined) clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
         resolve(result);
       };
-      const timer = setTimeout(() => finish({ ok: false }), STORE_TIMEOUT_MS);
+      const onAbort = () => finish({ ok: false });
+      timer = setTimeout(() => finish({ ok: false }), ms);
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
       work.then(
         (value) => finish({ ok: true, value }),
         () => finish({ ok: false }),
@@ -760,7 +1040,7 @@ export class SessionCredential {
   }
 
   /** Runs a store call. A synchronous throw becomes a rejection, same as a failed promise. */
-  private invokeStore(run: () => Promise<void>): Promise<void> {
+  private invokeStore<T>(run: () => Promise<T>): Promise<T> {
     try {
       return Promise.resolve(run());
     } catch (err) {
@@ -787,7 +1067,7 @@ export class SessionCredential {
 
   /** One drain at a time. A change that lands during it is written before the drain finishes. */
   private poke(): void {
-    if (!this.store || this.draining) return;
+    if (!this.store || this.draining || this.storeHeld > 0) return;
     this.draining = true;
     void this.enqueue(async () => {
       try {
@@ -808,6 +1088,8 @@ export class SessionCredential {
         this.waitingForKey = true;
         return;
       }
+      // Renewal is writing the rotated record itself. Stop, and let it poke when it releases.
+      if (outcome === "held") return;
       this.waitingForKey = false;
       if (outcome === "retry") continue;
       if (this.epoch === epoch) this.lastWrittenEpoch = epoch;
@@ -819,8 +1101,9 @@ export class SessionCredential {
    * A token inside the guard is not written, and a previous record is cleared so a reload
    * cannot restore a session this credential no longer holds.
    */
-  private async writeCurrent(gen: number, epoch: number): Promise<"saved" | "skip" | "pending-key" | "retry"> {
+  private async writeCurrent(gen: number, epoch: number): Promise<"saved" | "skip" | "pending-key" | "retry" | "held"> {
     if (!this.store || this.generation !== gen || this.signedOut) return "skip";
+    if (this.storeHeld > 0) return "held";
     if (this.epoch !== epoch) return "retry";
     const minted = this.minted;
     if (!minted) return "skip";
@@ -856,21 +1139,38 @@ export class SessionCredential {
       accessToken: held.accessToken,
       expiresAt: held.expiresAt,
       session: copySession(held.session),
+      ...this.renewalRecordFields(),
     };
+    const heldExpect = this.ownWrite(this.expectHeld(exportedId, held.accessToken));
     const create = this.canCreateRecord;
     const pending = this.invokeStore(() =>
-      create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
+      create ? this.store!.save(record).then(() => true) : this.store!.saveIfCurrent(record, heldExpect),
     );
     const saved = await this.bounded(pending);
     if (!saved.ok) {
       // The call may still land after the timeout. A sign-out that won in the meantime
-      // deletes again so the late write does not put the record back.
-      void pending.then(() => {
-        void this.afterWrite(gen, epoch, create);
+      // deletes again so the late write does not put the record back. A refused compare
+      // resolves false and is not a landed write. A throw or a timeout of a renewal
+      // record is retried until it lands or another tab's credential is in the store.
+      if (!create && this.renewCredential) this.scheduleRotationHeal(record, heldExpect, epoch, gen);
+      void pending.then((value) => {
+        if (value === false) {
+          this.cancelRotationHeal();
+          return;
+        }
+        this.cancelRotationHeal();
+        void this.afterWrite(gen, epoch, create, heldExpect);
       }, () => undefined);
       return "skip";
     }
-    await this.afterWrite(gen, epoch, create);
+    if (saved.value === false) {
+      // The store holds a later credential, a tie with a different one, or no record.
+      // Stop. A later retry would overwrite another tab, or put back a sign-out.
+      this.cancelRotationHeal();
+      return "skip";
+    }
+    this.cancelRotationHeal();
+    await this.afterWrite(gen, epoch, create, heldExpect);
     if (this.generation !== gen || this.signedOut) return "skip";
     if (this.epoch !== epoch) return "retry";
     return "saved";
@@ -878,13 +1178,11 @@ export class SessionCredential {
 
   /**
    * After a write that landed: a fresh sign-in becomes update-only when this write is still
-   * the latest one. A sign-out that won deletes again, so the write does not resurrect it.
+   * the latest one. A sign-out that won puts the signed-out marker again, so the write does not resurrect it.
    */
-  private async afterWrite(gen: number, epoch: number, create: boolean): Promise<void> {
+  private async afterWrite(gen: number, epoch: number, create: boolean, written: CurrentRecordExpect): Promise<void> {
     if (this.generation !== gen || this.signedOut) {
-      if (!this.minted || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
-      }
+      if (!this.minted || this.signedOut) await this.wipeLanded(written);
       return;
     }
     // A newer adopt bumped the epoch and may still need to create. Don't disarm it.
@@ -898,95 +1196,334 @@ export class SessionCredential {
     return publicKey;
   }
 
-  /** Keeps the key in the store and removes the token. Queued behind a save already in flight. */
-  private dropStoredToken(key: DpopWebCryptoKey): void {
+  /**
+   * The record this tab may still change. A renewal is ordered by the server's
+   * `renewExpiresAt` inside one family: an earlier stored time of that family
+   * may be replaced, and the same credential may be updated. Another family is
+   * not changed. With no renewal, the access token is the match.
+   * `publicKeyId` is the one already exported.
+   */
+  private expectHeld(publicKeyId: string, accessToken: string): CurrentRecordExpect {
+    if (this.renewCredential) return this.renewExpect(publicKeyId, this.renewCredential);
+    return { publicKeyId, renew: null, accessToken };
+  }
+
+  /**
+   * This tab's credential, its family, and its server time. The family is parsed
+   * once here. The time lets a write replace an earlier credential of that same
+   * family. Without a time, the credential string is an exact match.
+   */
+  private renewExpect(publicKeyId: string, renew: string): CurrentRecordExpect {
+    const family = familyOf(renew);
+    const at = this.renewExpiresAtMs;
+    if (typeof at === "number" && Number.isFinite(at)) return { publicKeyId, renew, renewExpiresAt: at, family };
+    return { publicKeyId, renew, family };
+  }
+
+  /**
+   * The expect for a save of this tab's own record. A family-ended marker of
+   * another family may be replaced. A present record is still the family compare.
+   * A signed-out marker is not replaced. The credential this tab just presented,
+   * when it is the same family, may be replaced whatever its time.
+   */
+  private saveExpect(publicKeyId: string, renew: string): CurrentRecordExpect {
+    const expect = this.ownWrite(this.renewExpect(publicKeyId, renew));
+    const prior = this.rotatedPredecessor;
+    if (prior && prior !== renew && familyOf(prior) !== null && familyOf(prior) === expect.family) {
+      expect.presentedRenew = prior;
+    }
+    return expect;
+  }
+
+  /** A live record may replace another family's family-ended marker. A marker write does not use this. */
+  private ownWrite(expect: CurrentRecordExpect): CurrentRecordExpect {
+    return { ...expect, replaceOtherFamilyEnded: true };
+  }
+
+  /** The signed-out marker for this instance. `at` is the clock captured at sign-out. */
+  private signedOutMarker(): SignedOutMarker {
+    return { kind: "signed-out", at: this.signedOutAt ?? this.now() };
+  }
+
+  /**
+   * Family-ended marker for `expect`, or null when the credential has no family id.
+   * A marker holds no credential and no key.
+   */
+  private familyEndedMarker(expect: CurrentRecordExpect): FamilyEndedMarker | null {
+    const family = "family" in expect && typeof expect.family === "string" && expect.family.length > 0
+      ? expect.family
+      : familyOf(expect.renew);
+    if (!family || typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return null;
+    return { kind: "family-ended", family, publicKeyId: expect.publicKeyId };
+  }
+
+  /**
+   * Undoes a write that landed after the sign-in ended. An explicit sign-out
+   * puts the signed-out marker back. A dead sign-in puts the family-ended
+   * marker back only when the slot still holds that family's record.
+   */
+  private async wipeLanded(written: CurrentRecordExpect): Promise<void> {
+    if (!this.store) return;
+    if (this.explicitClear) {
+      await this.bounded(this.saveSignedOutMarker());
+      return;
+    }
+    await this.putFamilyEnded(written);
+  }
+
+  /** An explicit sign-out's follow-up marker. A dead sign-in does not use this. */
+  private async clearBecauseSignOut(): Promise<void> {
+    if (!this.store || !this.explicitClear) return;
+    await this.bounded(this.saveSignedOutMarker());
+  }
+
+  /**
+   * Drops the stored access token when the record is still this tab's key and
+   * credential. Another tab's rotation is left as it is. Queued behind a save
+   * already in flight.
+   */
+  private dropStoredToken(key: DpopWebCryptoKey, droppedAccessToken: string, renewAtInvalidate: string | null): void {
     const gen = this.generation;
     const privateKey = key.privateKey;
     const jwk = key.publicJwk;
+    const expectAtStart: CurrentRecordExpect | null = this.publicKeyId
+      ? (renewAtInvalidate
+        ? this.renewExpect(this.publicKeyId, renewAtInvalidate)
+        : { publicKeyId: this.publicKeyId, renew: null, accessToken: droppedAccessToken })
+      : null;
     void this.enqueue(async () => {
-      if (this.generation !== gen || this.signedOut) return;
+      if (this.generation !== gen || this.signedOut) {
+        await this.clearBecauseSignOut();
+        return;
+      }
       // A newer live token landed. Its own save writes the record.
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       let publicKey = this.publicCryptoKey;
       try {
         if (!publicKey) publicKey = await importDpopPublicKey(jwk);
       } catch {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        if (expectAtStart) await this.bounded(this.invokeStore(() => this.store!.clearIfCurrent(expectAtStart)));
         return;
       }
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.clearBecauseSignOut();
         return;
       }
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       // Same export as a normal save: outside the transaction, before the store call.
       const exportedId = await publicKeyIdOf(publicKey);
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.clearBecauseSignOut();
         return;
       }
       if (this.minted && this.tokenIsLive(this.minted.expiresAt)) return;
       if (!exportedId) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        if (expectAtStart) await this.bounded(this.invokeStore(() => this.store!.clearIfCurrent(expectAtStart)));
         return;
       }
       if (this.publicKeyId === null) this.publicKeyId = exportedId;
       const samePublicKeyId = this.publicKeyId;
       if (samePublicKeyId !== exportedId) return;
-      // Empty token and empty principal: not a session. `restore` clears it.
+      // A renew since this invalidate adopted another credential. Writing now would
+      // blank that token. The next renew re-reads the store.
+      if (this.renewCredential !== renewAtInvalidate) return;
+      // The access token is dropped. A renewal credential stays, with the session, so a
+      // reload can renew. With no renewal credential the empty token is not a session.
+      // The write expects the credential this tab held, so a newer rotation is not replaced.
+      const kept = this.carriedSession;
       const record: StoredSession = {
         version: STORED_SESSION_VERSION,
         keyPair: { publicKey, privateKey },
         publicKeyId: exportedId,
         accessToken: "",
         expiresAt: 0,
-        session: { principal: "", vault: null, vaults: [] },
+        session: kept ? copySession(kept) : { principal: "", vault: null, vaults: [] },
+        ...this.renewalRecordFields(),
       };
+      const heldExpect: CurrentRecordExpect = this.ownWrite(renewAtInvalidate
+        ? this.renewExpect(samePublicKeyId, renewAtInvalidate)
+        : { publicKeyId: samePublicKeyId, renew: null, accessToken: droppedAccessToken });
       const epoch = this.epoch;
-      const create = this.canCreateRecord;
-      const pending = this.invokeStore(() =>
-        create ? this.store!.save(record) : this.store!.saveIfSameKey(record, samePublicKeyId),
-      );
+      const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, heldExpect));
       const saved = await this.bounded(pending);
+      const landed = () => {
+        if (this.epoch === epoch) this.canCreateRecord = false;
+      };
       if (!saved.ok) {
-        void pending.then(() => {
+        void pending.then((value) => {
+          if (value === false) return;
           if (this.generation !== gen || this.signedOut) {
-            void this.bounded(this.invokeStore(() => this.store!.clear())).then(() => undefined, () => undefined);
+            void this.wipeLanded(heldExpect).then(() => undefined, () => undefined);
             return;
           }
-          if (create && this.epoch === epoch) this.canCreateRecord = false;
+          landed();
         }, () => undefined);
         return;
       }
+      if (saved.value === false) return;
       if (this.generation !== gen || this.signedOut) {
-        await this.bounded(this.invokeStore(() => this.store!.clear()));
+        await this.wipeLanded(heldExpect);
         return;
       }
-      if (create && this.epoch === epoch) this.canCreateRecord = false;
+      landed();
     });
   }
 
-  /** Deletes the record after anything already queued, unless a newer sign-in is now held. */
-  private enqueueClear(): void {
+  /**
+   * Follow-up marker put, behind anything already queued. The follow-up put and
+   * the wait for `started` each give up after {@link STORE_TIMEOUT_MS}, so a
+   * hung put releases the chain. A later save in this instance can then run.
+   * A newer sign-in skips the follow-up put. `started` is still awaited, up to
+   * that bound, because that put was already handed to the store.
+   */
+  private enqueueSignedOutMark(started: Promise<void>): void {
+    if (!this.store) return;
+    const gen = this.generation;
+    void this.enqueue(async () => {
+      try {
+        if (this.generation !== gen) return;
+        if (this.minted && !this.signedOut) return;
+        await this.bounded(this.saveSignedOutMarker());
+      } finally {
+        await this.bounded(started);
+      }
+    });
+  }
+
+  /**
+   * This tab's sign-in is dead. The in-memory sign-in ends, so `authHeaders`
+   * and `renew` refuse until `restore` or a new sign-in. This is not an explicit
+   * sign-out: {@link explicitClear} stays unset, and a later `restore` loads the
+   * store the way a fresh page does. The slot becomes a family-ended marker only
+   * when it still holds this family's record. Another tab's newer key, another
+   * family, a signed-out marker, or another credential is left alone.
+   */
+  private async endDeadSignIn(expect: CurrentRecordExpect): Promise<void> {
+    this.endMemory();
+    this.startFamilyEnded(expect);
+    this.enqueueFamilyEnded(expect);
+    await this.tailSettled();
+  }
+
+  /**
+   * The slot says the person signed out. End this tab's in-memory sign-in and
+   * do not write. A fresh sign-in (`canCreateRecord`) does not call this: its
+   * unconditional save is what replaces the marker.
+   */
+  private async endObservedSignOut(): Promise<void> {
+    this.endMemory();
+    await this.tailSettled();
+  }
+
+  /** Drops the in-memory sign-in. Does not touch the store. */
+  private endMemory(): void {
+    this.abortRenewWait();
+    this.minted = null;
+    this.generation++;
+    this.signedOut = true;
+    this.canCreateRecord = false;
+    this.carriedSession = null;
+    this.clearRenewal();
+    this.epoch++;
+    this.inflight = null;
+    this.renewInflight = null;
+    if (!this.hostKey) {
+      this.key = null;
+      this.keyInflight = null;
+      this.publicCryptoKey = null;
+      this.publicKeyId = null;
+    }
+  }
+
+  /** Starts the family-ended put before yielding, when the call itself does. Failures are swallowed. */
+  private startFamilyEnded(expect: CurrentRecordExpect): void {
+    const store = this.store;
+    if (!store) return;
+    try {
+      const pending = this.familyEndedWrite(store, expect);
+      void pending.then(() => undefined, () => undefined);
+    } catch {
+      // A sync throw is the same as a rejected write: the queued write tries once more.
+    }
+  }
+
+  /** Puts the family-ended marker after anything already queued, unless a newer sign-in is now held. */
+  private enqueueFamilyEnded(expect: CurrentRecordExpect): void {
     if (!this.store) return;
     const gen = this.generation;
     void this.enqueue(async () => {
       if (this.generation !== gen) return;
       if (this.minted && !this.signedOut) return;
-      await this.bounded(this.invokeStore(() => this.store!.clear()));
+      await this.putFamilyEnded(expect);
     });
   }
 
-  /** Starts the delete before yielding, when the store's `clear` does. Failures are swallowed. */
-  private startClearNow(): void {
+  /**
+   * Replaces this family's record with a family-ended marker. No family id:
+   * delete that record instead, which leaves an empty slot. An empty slot has
+   * no sign-out meaning. A signed-out marker and another family's record are
+   * left alone, because the compare is the same one a delete used.
+   */
+  private familyEndedWrite(store: SessionStore, expect: CurrentRecordExpect): Promise<boolean> {
+    const marker = this.familyEndedMarker(expect);
+    if (!marker) return store.clearIfCurrent(expect);
+    return store.saveIfCurrent(marker, expect);
+  }
+
+  private async putFamilyEnded(expect: CurrentRecordExpect): Promise<void> {
+    if (!this.store) return;
     const store = this.store;
-    if (!store) return;
-    try {
-      const pending = store.clear();
-      void pending.then(() => undefined, () => undefined);
-    } catch {
-      // A sync throw is the same as a rejected clear: the queued clear tries once more.
+    await this.bounded(this.invokeStore(() => this.familyEndedWrite(store, expect)));
+  }
+
+  /**
+   * Clears a record this tab just judged unusable, and only when it is still
+   * that record. A marker stays: it is not garbage, and deleting it would
+   * forget why the slot holds no sign-in. A value with no `publicKeyId` is
+   * garbage: nothing can name it, so the unconditional clear is the only way
+   * to drop it. That leaves an empty slot, which has no sign-out meaning.
+   */
+  private async clearLoaded(store: SessionStore, raw: unknown): Promise<void> {
+    if (isSignedOutMarker(raw) || isFamilyEndedMarker(raw)) return;
+    const expect = expectOfStored(raw);
+    if (!expect) {
+      await this.bounded(this.invokeStore(() => store.clear()));
+      return;
     }
+    await this.bounded(this.invokeStore(() => store.clearIfCurrent(expect)));
+  }
+
+  /**
+   * Starts the signed-out put in this turn, when the store's `save` does.
+   * The returned promise settles when that put does, or after
+   * {@link STORE_TIMEOUT_MS}. It rejects nothing. The caller chains the wait
+   * onto `tail`. The put itself is not cancelled: if it lands after a fresh
+   * sign-in, that sign-in is written again.
+   */
+  private startSignedOutMark(): Promise<void> {
+    if (!this.store) return Promise.resolve();
+    return this.bounded(this.saveSignedOutMarker()).then(() => undefined);
+  }
+
+  /**
+   * Hands the signed-out marker to the store. The promise settles with the put
+   * and rejects nothing. A put that lands after a fresh sign-in in this same
+   * generation writes that sign-in again, so the late marker does not keep the slot.
+   */
+  private saveSignedOutMarker(): Promise<void> {
+    const store = this.store;
+    if (!store) return Promise.resolve();
+    const gen = this.generation;
+    const pending = this.invokeStore(() => store.save(this.signedOutMarker()));
+    void pending.then(() => {
+      if (this.generation !== gen) return;
+      if (!this.minted || this.signedOut) return;
+      // The marker landed on top of a sign-in that started after it was handed
+      // to the store. That sign-in is what replaces a signed-out marker.
+      this.canCreateRecord = true;
+      this.markDirty();
+    }, () => undefined);
+    return pending.then(() => undefined, () => undefined);
   }
 
   private enqueue(op: () => Promise<void>): Promise<void> {
@@ -1017,16 +1554,21 @@ export class SessionCredential {
     if (!loaded.ok) return null;
     const stoppedAfterLoad = await this.restoreStopped(store, gen, serial);
     if (stoppedAfterLoad) return stoppedAfterLoad.session;
-    const record = liveStoredSession(loaded.value, this.now());
+    // A marker is not a session. Leave it where it is. An empty slot means
+    // nothing was written: it is not a sign-out, and there is nothing to clear.
+    if (loaded.value == null || isSignedOutMarker(loaded.value) || isFamilyEndedMarker(loaded.value)) return null;
+    const full = storedSessionRecord(loaded.value);
+    // A plain invalidate drops the access token and keeps the renewal credential.
+    const record = full ?? storedRenewalHolding(loaded.value);
     if (!record) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, loaded.value);
       return null;
     }
     const matches = await keyPairMatches(record.keyPair.privateKey, record.keyPair.publicKey);
     const stoppedAfterPair = await this.restoreStopped(store, gen, serial);
     if (stoppedAfterPair) return stoppedAfterPair.session;
     if (!matches) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, record);
       return null;
     }
     let jwk: DpopPublicJwk | null = null;
@@ -1040,7 +1582,7 @@ export class SessionCredential {
     if (stoppedAfterJwk) return stoppedAfterJwk.session;
     // Missing id was already refused. This refuses an id that is not the stored public key.
     if (!jwk || !publicKeyId || publicKeyId !== record.publicKeyId) {
-      await this.bounded(this.invokeStore(() => store.clear()));
+      await this.clearLoaded(store, record);
       return null;
     }
     // No await between this check and the adopt, so a sign-out cannot land in between.
@@ -1049,11 +1591,57 @@ export class SessionCredential {
     if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
       return this.minted?.session ?? null;
     }
+    const renewal = readStoredRenewal(record, this.now());
+    // This tab already rotated away from the stored secret. Adopting it would
+    // present a spent credential. Keep the successor this tab still holds.
+    if (renewal && this.knowsRotatedAway(renewal.renew)) {
+      if (this.renewCredential && !this.knowsRotatedAway(this.renewCredential) && this.renewalIsLive()) {
+        if (!this.carriedSession && isGilbSession(record.session)) this.carriedSession = copySession(record.session);
+        const result = await this.renewNow();
+        if (gen !== this.generation || this.signedOut) return null;
+        if (serial !== this.signInSerial || this.signInsInFlight > 0) return this.session;
+        if (result.ok) return result.session;
+        if (result.kind === "transient") throw new RenewalUnavailableError();
+        return this.session;
+      }
+      return null;
+    }
+    const tokenLive = full !== null && this.tokenIsLive(record.expiresAt);
+    if (!tokenLive && !renewal) {
+      await this.clearLoaded(store, record);
+      return null;
+    }
+    // The clear above is the only await on the dead-token path. A sign-out or a sign-in
+    // that landed during it wins: do not install the key over it.
+    if (!tokenLive) {
+      if (gen !== this.generation || this.signedOut) return null;
+      if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
+        // `this.session`, not `this.minted?.session`: the check above already narrowed
+        // `minted` to null for the type checker, and a sign-in during the clear can hold one.
+        return this.session;
+      }
+    }
     // Adopted from the store: a later save must not create the record again.
+    // A sign-out that began before this adopt does not swallow a later sign-out.
+    this.noteSignIn();
     this.canCreateRecord = false;
     this.publicCryptoKey = record.keyPair.publicKey;
     this.publicKeyId = publicKeyId;
     this.key = { publicJwk: jwk, privateKey: record.keyPair.privateKey };
+    if (renewal) this.installRenewal(renewal);
+    else this.clearRenewal();
+    if (!tokenLive) {
+      // The only request restore makes: the access token is inside the guard or expired,
+      // and the renewal credential is still in date.
+      this.carriedSession = copySession(record.session);
+      const result = await this.renewNow();
+      if (gen !== this.generation || this.signedOut) return null;
+      if (serial !== this.signInSerial || this.signInsInFlight > 0) return this.session;
+      if (result.ok) return result.session;
+      if (result.kind === "transient") throw new RenewalUnavailableError();
+      if (result.kind === "superseded") return this.session;
+      return null;
+    }
     const session = copySession(record.session);
     this.minted = {
       accessToken: record.accessToken,
@@ -1068,27 +1656,1444 @@ export class SessionCredential {
    * Null when this restore may still adopt. Otherwise the session to return, and this
    * restore adopts nothing and writes nothing.
    *
-   * Sign-out wins: the stored record is cleared and the result is null. A sign-in that
-   * started after `serial` was captured, or a token already held, keeps that session
-   * (or null when the sign-in has not produced a token yet) and does not clear.
-   *
-   * @param clearOnSignOut when false, a sign-out is not cleared from here. The adopt
-   *   that follows must not await a store call.
+   * An explicit sign-out wins: the result is null and the slot is not touched.
+   * A later record another tab wrote stays. A dead sign-in does not write either.
+   * When this restore started after that death, the death flag is dropped and the
+   * load continues, the same as a fresh page. A death that lands during this load
+   * adopts nothing from the snapshot and does not write. A sign-in that started
+   * after `serial` was captured, or a token already held, keeps that session (or
+   * null when the sign-in has not produced a token yet) and does not write.
    */
   private async restoreStopped(
-    store: SessionStore,
+    _store: SessionStore,
     gen: number,
     serial: number,
-    clearOnSignOut = true,
   ): Promise<{ session: GilbSession | null } | null> {
-    if (gen !== this.generation || this.signedOut) {
-      if (clearOnSignOut) await this.bounded(this.invokeStore(() => store.clear()));
+    if (this.explicitClear) return { session: null };
+    if (gen !== this.generation) {
+      if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
+        return { session: this.minted?.session ?? null };
+      }
       return { session: null };
     }
+    if (this.signedOut) this.signedOut = false;
     if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
       return { session: this.minted?.session ?? null };
     }
     return null;
+  }
+
+  /**
+   * Renews the held sign-in now. `restore()` on start-up, and `authHeaders` when the token
+   * is near expiry, are the paths an app should use. Calling this on every visibility change
+   * presents the credential more often than it needs to.
+   *
+   * One flight per credential. Across tabs, the flight runs inside
+   * `navigator.locks` (`gilb-signin-renew:` plus the origin) when that API exists. Inside the
+   * lock the store is re-read. A different credential for this same key and the same
+   * family means another tab already rotated. Its token is adopted when it is outside the
+   * 60 s guard. When it is not, and that renewal is still in date, this renews with the
+   * adopted credential before it releases the lock. When that renewal has expired, the
+   * sign-in is over. A record of another family is not adopted: this tab renews its own
+   * credential.
+   *
+   * A 401 ends the sign-in (the token and the credential are dropped, `session` is null)
+   * and this returns null. The stored record becomes a family-ended marker only when it
+   * is still that family's record. A network error, a timeout, or a 5xx keeps the sign-in and throws
+   * {@link RenewalUnavailableError}. The same credential is presented once more within
+   * {@link RENEW_RETRY_MS}, and once more after that window. A 200 from that last try adopts
+   * the rotation. A 401 ends the sign-in. A network error, a timeout, or a 5xx records a
+   * new attempt time. A sign-out that starts while this is in flight wins: the answer is not
+   * stored, and the lock wait ends. A signed-out marker means the person signed out:
+   * this tab ends its sign-in and does not write over the marker. A family-ended marker of
+   * this tab's own family is the same as a 401. A family-ended marker of another family
+   * means nothing here: this tab may write its own record over that marker and stays
+   * signed in. An empty slot means nothing was written. It is not a sign-out. This tab
+   * keeps its sign-in and does not fill the empty slot. A save
+   * may replace the stored record
+   * when it is the same family and its `renewExpiresAt` is earlier than this tab's,
+   * when it holds exactly this tab's credential, or when it holds the credential
+   * this tab just presented. That predecessor is replaced whatever its time.
+   * A later time is left alone. An equal
+   * time with any other credential is left alone. Another family is left alone. The
+   * order uses the server's times only. The new session stays in memory. On the next
+   * renew, a stored credential of this family with a later time is adopted, and an
+   * earlier one is written over with the credential this tab holds. A different family
+   * is not adopted. A save that throws or times out is retried in
+   * the background, writing the credential and token this tab holds when the retry runs,
+   * until it lands or the compare refuses it. A plain `invalidate()` during this call
+   * leaves the sign-in live. This reads once more so it does not return null while that
+   * credential is still live. A `restore()` in that gap can adopt the stored record.
+   * The request presents the credential held after that adopt.
+   *
+   * With no `navigator.locks`, two tabs can both present the same credential. The platform
+   * then ends the sign-in, and the tab that presented it second is signed out.
+   *
+   * @returns the session after renewal, the session already held when nothing needed renewing,
+   *   or null when the sign-in is over
+   */
+  async renew(): Promise<GilbSession | null> {
+    return this.renewCalling(false);
+  }
+
+  /**
+   * One call of {@link renew}. A plain `invalidate()` during the attempt leaves
+   * the sign-in live and `session` null. Re-read once, the same way `getMinted`
+   * does, so this does not return null while the credential is still live.
+   */
+  private async renewCalling(reread: boolean): Promise<GilbSession | null> {
+    this.touchRotationHeal();
+    if (!this.renewalIsLive()) {
+      return this.minted && this.tokenIsLive(this.minted.expiresAt) ? this.session : null;
+    }
+    const result = await this.renewNow();
+    if (result.ok) return result.session;
+    if (result.kind === "transient") throw new RenewalUnavailableError();
+    if (result.kind === "superseded") {
+      if (this.session) return this.session;
+      if (!reread && !this.signedOut && this.renewalIsLive()) return this.renewCalling(true);
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * Ends the sign-in locally, then on the server. The signed-out marker is written,
+   * and the in-memory sign-in is cleared, before the server call. The marker is
+   * written even when that call fails, is refused, or does not finish within
+   * {@link SIGN_OUT_BOUND_MS}. A page that closes during the call already has the
+   * marker on this device once that write has settled. A store slower than
+   * {@link STORE_TIMEOUT_MS} may still be landing the marker when the call is sent.
+   * A failed or hung call leaves the server family live until its window ends.
+   * The person is signed out on this device.
+   *
+   * The server call is `POST {origin}/base/auth/sign-out` with `Authorization: DPoP <token>`
+   * and a fresh `DPoP` proof. The token and the key are kept only for that call.
+   * A token that is still before its expiry is sent as it is. When no usable token
+   * is held and a renewal credential is still in date, that credential and its key
+   * are captured, the marker is written, and the in-memory sign-in is cleared
+   * first. The renew then uses the captured credential and does not write the
+   * rotated record, so the slot does not hold the full record during that wait.
+   * The server sign-out uses the fresh token. If that renew fails, the marker is
+   * already written and `serverSignedOut` is false.
+   *
+   * Overlapping calls join the in-flight sign-out only when no sign-in has started
+   * since that sign-out began. A sign-in is `signInWithCode`, `adopt`, a `restore`
+   * that adopted a record, or a cookie-bridge re-mint (`authHeaders` → `mint`
+   * installing a token). This records the sign-in generation at the start. While
+   * that generation is unchanged, the server is told once and every joined caller
+   * receives that same result. A call after a sign-in has started waits for the
+   * in-flight sign-out to settle, then runs its own: the marker, and the server
+   * call with the new sign-in's token and key.
+   *
+   * A renew lock this page is holding or waiting on is released. This does not wait for it.
+   *
+   * @param origin the sign-in service origin, no trailing slash required
+   * @returns whether the server recorded the sign-out (HTTP 204)
+   */
+  async signOut(origin: string): Promise<{ serverSignedOut: boolean }> {
+    const inflight = this.signOutInflight;
+    if (inflight && this.signInGeneration === this.signOutJoinedGeneration) return inflight;
+    if (inflight) {
+      await inflight.then(() => undefined, () => undefined);
+      return this.signOut(origin);
+    }
+    return this.beginSignOut(origin);
+  }
+
+  /**
+   * Starts one sign-out flight. The promise is published before {@link performSignOut}
+   * waits, so a second call in that gap joins this flight instead of starting another.
+   */
+  private beginSignOut(origin: string): Promise<{ serverSignedOut: boolean }> {
+    this.signOutJoinedGeneration = this.signInGeneration;
+    let resolveOut!: (value: { serverSignedOut: boolean }) => void;
+    let rejectOut!: (reason: unknown) => void;
+    const pending = new Promise<{ serverSignedOut: boolean }>((resolve, reject) => {
+      resolveOut = resolve;
+      rejectOut = reject;
+    });
+    this.signOutInflight = pending;
+    void this.performSignOut(origin).then(resolveOut, rejectOut).finally(() => {
+      if (this.signOutInflight === pending) this.signOutInflight = null;
+    });
+    return pending;
+  }
+
+  /** One sign-out flight. A join does not reach this. A sign-in since the flight began does, after that flight settles. */
+  private async performSignOut(origin: string): Promise<{ serverSignedOut: boolean }> {
+    // Before any other wait: a hung renew must not keep the origin lock.
+    // A second sign-out joins {@link signOutInflight} when no sign-in has started
+    // since this flight began, and does not reach this.
+    this.abortRenewWait();
+    // Captured before the marker clear. The renew, when one is needed, runs
+    // after that clear and must not read the in-memory sign-in back.
+    const held = this.captureSignOutMaterial();
+    await this.invalidate(true);
+    let token = held.token;
+    if (!token && held.renewal) {
+      token = await this.renewCapturedForSignOut(held.renewal);
+    }
+    if (!token) return { serverSignedOut: false };
+    try {
+      return { serverSignedOut: await this.tryServerSignOut(origin, token.accessToken, token.key) };
+    } catch {
+      return { serverSignedOut: false };
+    }
+  }
+
+  /**
+   * The token to send, or the renewal to exchange for one. Read before
+   * `invalidate(true)` drops both. A usable token wins: the renewal is not sent.
+   */
+  private captureSignOutMaterial(): {
+    token: { accessToken: string; key: DpopKey } | null;
+    renewal: { credential: string; key: DpopKey; origin: string } | null;
+  } {
+    const key = this.key;
+    if (this.tokenUsableForSignOut() && this.minted && key) {
+      return { token: { accessToken: this.minted.accessToken, key }, renewal: null };
+    }
+    if (key && this.renewCredential && this.renewOrigin && this.renewalIsLive()) {
+      return {
+        token: null,
+        renewal: { credential: this.renewCredential, key, origin: this.renewOrigin },
+      };
+    }
+    return { token: null, renewal: null };
+  }
+
+  /** A sign-in started. A later `signOut` does not join a flight that began before this. */
+  private noteSignIn(): void {
+    this.signInGeneration++;
+  }
+
+  /** True when this credential stores and the app did not turn renewal off. */
+  private renewalWanted(): boolean {
+    return this.store !== null && this.opts.renew !== false;
+  }
+
+  /** True when this tab already rotated away from `renew` and must not present it. */
+  private knowsRotatedAway(renew: string | null): boolean {
+    return renew !== null && renew.length > 0 && this.rotatedAway.has(renew);
+  }
+
+  /** A credential that can still be presented: held, in date, and we still have its key. */
+  private renewalIsLive(): boolean {
+    return this.renewCredential !== null
+      && this.renewOrigin !== null
+      && this.renewExpiresAtMs !== null
+      && this.key !== null
+      && this.now() < this.renewExpiresAtMs;
+  }
+
+  private clearRenewal(): void {
+    this.renewCredential = null;
+    this.renewExpiresAt = null;
+    this.renewExpiresAtMs = null;
+    this.renewOrigin = null;
+    this.renewAttemptAt = null;
+    this.renewGraceUsed = false;
+    this.renewMarkFailed = false;
+    this.cancelRotationHeal();
+  }
+
+  private installRenewal(renewal: StoredRenewal): void {
+    this.renewCredential = renewal.renew;
+    this.renewExpiresAt = renewal.renewExpiresAt;
+    this.renewExpiresAtMs = renewal.expiresAtMs;
+    this.renewOrigin = renewal.origin;
+    this.renewAttemptAt = renewal.renewAttemptAt;
+    this.renewGraceUsed = renewal.renewGraceUsed;
+    this.renewMarkFailed = false;
+  }
+
+  /** A token the server will still accept for sign-out: held, and not past its expiry. */
+  private tokenUsableForSignOut(): boolean {
+    return this.minted !== null && this.key !== null && this.now() < this.minted.expiresAt;
+  }
+
+  /**
+   * One renew of a credential captured for sign-out. The marker is already
+   * written and the in-memory sign-in is already clear. Nothing from the answer
+   * is stored: the slot stays the marker while this request is in flight.
+   * Two sign-outs of the same credential, including on two instances, share one
+   * request so the spent credential is not presented twice.
+   */
+  private renewCapturedForSignOut(
+    captured: { credential: string; key: DpopKey; origin: string },
+  ): Promise<{ accessToken: string; key: DpopKey } | null> {
+    const existing = SessionCredential.signOutRenewals.get(captured.credential);
+    if (existing) return existing;
+    const pending = this.postCapturedRenew(captured).finally(() => {
+      if (SessionCredential.signOutRenewals.get(captured.credential) === pending) {
+        SessionCredential.signOutRenewals.delete(captured.credential);
+      }
+    });
+    SessionCredential.signOutRenewals.set(captured.credential, pending);
+    return pending;
+  }
+
+  /** Posts the captured credential under the renew lock. Does not write the store. */
+  private postCapturedRenew(
+    captured: { credential: string; key: DpopKey; origin: string },
+  ): Promise<{ accessToken: string; key: DpopKey } | null> {
+    const controller = new AbortController();
+    return this.withOriginLock(captured.origin, controller.signal, async () => {
+      const url = `${normaliseOrigin(captured.origin)}${RENEW_SIGN_IN_PATH}`;
+      let proof: string;
+      try {
+        proof = await dpopProof(captured.key, "POST", url);
+      } catch {
+        return null;
+      }
+      const send = this.opts.transport ?? fetchTransport;
+      const raced = await this.awaitRenewResponse(
+        send,
+        url,
+        captured.credential,
+        proof,
+        controller.signal,
+        RENEW_TIMEOUT_MS,
+      );
+      if (!raced.ok || raced.status < 200 || raced.status > 299) return null;
+      const parsed = parseRenewed(raced.body);
+      if (!parsed) return null;
+      const expiresAt = tokenExpiresAt(parsed.token, this.now());
+      if (!(this.now() < expiresAt)) return null;
+      return { accessToken: parsed.token, key: captured.key };
+    }, null);
+  }
+
+  /**
+   * Keeps a verify-code renewal, or drops any previous one when this sign-in was not issued one.
+   * Called before `adopt` starts the save.
+   */
+  private rememberRenewal(origin: string, renew: unknown, renewExpiresAt: unknown): void {
+    this.clearRenewal();
+    if (!this.renewalWanted()) return;
+    if (typeof renew !== "string" || renew.length === 0) return;
+    if (typeof renewExpiresAt !== "string") return;
+    const expiresAtMs = Date.parse(renewExpiresAt);
+    if (!Number.isFinite(expiresAtMs)) return;
+    this.installRenewal({
+      renew,
+      renewExpiresAt,
+      expiresAtMs,
+      origin: normaliseOrigin(origin),
+      renewAttemptAt: null,
+      renewGraceUsed: false,
+    });
+  }
+
+  private renewalRecordFields(): {
+    renew: string;
+    renewExpiresAt: string;
+    origin: string;
+    renewAttemptAt?: number;
+    renewGraceUsed?: true;
+  } | Record<string, never> {
+    if (!this.renewCredential || !this.renewExpiresAt || !this.renewOrigin) return {};
+    return {
+      renew: this.renewCredential,
+      renewExpiresAt: this.renewExpiresAt,
+      origin: this.renewOrigin,
+      ...(this.renewAttemptAt !== null ? { renewAttemptAt: this.renewAttemptAt } : {}),
+      ...(this.renewGraceUsed ? { renewGraceUsed: true as const } : {}),
+    };
+  }
+
+  /**
+   * One renewal. Callers share {@link renewInflight}. The body runs under the cross-tab lock
+   * when `navigator.locks` exists.
+   */
+  private renewNow(): Promise<RenewAttempt> {
+    if (this.renewInflight) return this.renewInflight;
+    if (!this.renewOrigin || !this.renewalIsLive()) return Promise.resolve({ ok: false, kind: "none" });
+    const gen = this.generation;
+    const serial = this.signInSerial;
+    const origin = this.renewOrigin;
+    const controller = new AbortController();
+    this.renewAbort = controller;
+    const pending = this.withRenewLock(origin, controller.signal, () => this.renewLocked(gen, serial, controller.signal)).finally(() => {
+      if (this.renewInflight === pending) this.renewInflight = null;
+      if (this.renewAbort === controller) this.renewAbort = null;
+    });
+    this.renewInflight = pending;
+    return pending;
+  }
+
+  /** Ends the in-flight renew wait and detaches it so a later renew can start. */
+  private abortRenewWait(): void {
+    this.renewAbort?.abort();
+    this.renewInflight = null;
+  }
+
+  private withRenewLock(origin: string, signal: AbortSignal, run: () => Promise<RenewAttempt>): Promise<RenewAttempt> {
+    return this.withOriginLock(origin, signal, run, { ok: false, kind: "signed-out" });
+  }
+
+  /**
+   * Runs `run` under `gilb-signin-renew:` plus the origin when `navigator.locks`
+   * exists. An aborted `signal` resolves `onAbort` and does not call `run`.
+   */
+  private withOriginLock<T>(origin: string, signal: AbortSignal, run: () => Promise<T>, onAbort: T): Promise<T> {
+    const invoke = (): Promise<T> => (signal.aborted ? Promise.resolve(onAbort) : run());
+    let locks: LockManager | null = null;
+    try {
+      locks = globalThis.navigator?.locks ?? null;
+    } catch {
+      locks = null;
+    }
+    if (!locks || typeof locks.request !== "function") return invoke();
+    const name = `gilb-signin-renew:${origin}`;
+    // Test doubles take (name, callback). The browser also takes `{ signal }`, which
+    // aborts the wait to acquire the lock. An abort after the lock is granted does
+    // not end the callback: `run` watches `signal` and returns.
+    const request = locks.request.bind(locks) as LockManager["request"];
+    const pending = request.length >= 2
+      ? request(name, invoke)
+      : request(name, { signal }, invoke);
+    return Promise.resolve(pending).then(
+      (value) => value,
+      (err: unknown) => {
+        if (signal.aborted) return onAbort;
+        throw err;
+      },
+    );
+  }
+
+  /**
+   * Holds the store drain, re-reads the record, and either adopts another tab's rotation
+   * or posts a credential. Store waits and the request are bounded, so the lock callback
+   * settles within {@link RENEW_TIMEOUT_MS} plus two {@link STORE_TIMEOUT_MS} even when
+   * the store or the request never resolves. A sign-out aborts the wait.
+   */
+  private async renewLocked(gen: number, serial: number, signal: AbortSignal): Promise<RenewAttempt> {
+    const deadline = Date.now() + RENEW_TIMEOUT_MS + 2 * STORE_TIMEOUT_MS;
+    this.storeHeld++;
+    try {
+      if (signal.aborted) return { ok: false, kind: "signed-out" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      const tail = await this.tailFinished(signal);
+      if (signal.aborted || tail === "aborted") return { ok: false, kind: "signed-out" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      if (tail === "timeout") return { ok: false, kind: "transient" };
+      const heldRenew = this.renewCredential;
+      const heldKeyId = this.publicKeyId;
+      if (!heldRenew || !this.renewOrigin || !this.key) return { ok: false, kind: "none" };
+      const next = await this.rotationFromStore(gen, serial, heldRenew, heldKeyId, signal, deadline);
+      if (next.action === "done") return next.attempt;
+      if (signal.aborted) return { ok: false, kind: "signed-out" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      return await this.postRenew(gen, serial, next.credential, next.stored, signal, deadline);
+    } finally {
+      this.storeHeld--;
+      if (!this.signedOut && this.store && this.epoch !== this.lastWrittenEpoch) this.poke();
+    }
+  }
+
+  /** How long the next store wait may take without passing `deadline`. */
+  private storeWaitMs(deadline: number): number {
+    return Math.min(STORE_TIMEOUT_MS, deadline - Date.now());
+  }
+
+  /**
+   * The credential to present after an await. `captured` is the one read before that
+   * await. A restore can adopt a stored record while this renew is in flight; the
+   * secret captured earlier is then the one that must not be sent.
+   */
+  private credentialHeldForRenew(
+    gen: number,
+    serial: number,
+    captured: string,
+    heldKeyId: string | null,
+  ): string | "stopped" | "moved" {
+    if (this.renewStopped(gen, serial) || this.renewCredential === null) return "stopped";
+    if (this.renewCredential !== captured || this.publicKeyId !== heldKeyId) return "moved";
+    return captured;
+  }
+
+  /**
+   * Another tab's record, adopted or renewed under this same lock, or a post of the
+   * credential this tab already holds. A store timeout does not post: another tab may
+   * have rotated, and this tab cannot see it.
+   */
+  private async rotationFromStore(
+    gen: number,
+    serial: number,
+    heldRenew: string,
+    heldKeyId: string | null,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<RenewNext> {
+    if (!this.store || !heldKeyId) return { action: "post", credential: heldRenew, stored: null };
+    const loaded = await this.bounded(this.store.load(), this.storeWaitMs(deadline), signal);
+    if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+    if (this.renewStopped(gen, serial)) return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+    // A timed-out or thrown load is not an empty record. Posting over it could
+    // present a credential another tab has already rotated.
+    if (!loaded.ok) return { action: "done", attempt: { ok: false, kind: "transient" } };
+    const stored = loaded.value;
+    // A plain invalidate drops the token without stopping this renew. A restore
+    // during the load can adopt the stored record. The secret captured at the
+    // start of the lock is then not the one this tab holds, and sending it would
+    // present a credential the server has already replaced.
+    const heldNow = this.credentialHeldForRenew(gen, serial, heldRenew, heldKeyId);
+    if (heldNow === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+    if (heldNow === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+    const slot = stored;
+    // The person signed out. A tab that is not in the middle of its own fresh
+    // sign-in ends, and it does not write over the marker. The fresh sign-in's
+    // unconditional save is the only write that replaces it.
+    if (isSignedOutMarker(slot)) {
+      if (this.canCreateRecord || this.signInsInFlight > 0) {
+        return { action: "post", credential: heldNow, stored: null };
+      }
+      await this.endObservedSignOut();
+      return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+    }
+    // This family's death is the same as a 401. Another family's death means
+    // nothing here: write this tab's own record over that marker and continue.
+    if (isFamilyEndedMarker(slot)) {
+      const own = familyOf(heldNow);
+      if (own !== null && slot.family === own) {
+        await this.endDeadSignIn(this.renewExpect(heldKeyId, heldNow));
+        return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+      }
+      await this.writeHeldOverOlder(gen, serial, signal, deadline);
+      if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+      const afterMarker = this.credentialHeldForRenew(gen, serial, heldNow, heldKeyId);
+      if (afterMarker === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+      if (afterMarker === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+      return { action: "post", credential: afterMarker, stored: null };
+    }
+    // An empty slot means nothing was written. It is not a sign-out. Keep the
+    // sign-in and present this tab's own credential. An update does not fill it.
+    if (!isStoredSession(slot)) return { action: "post", credential: heldNow, stored: null };
+    if (slot.publicKeyId !== heldKeyId) return { action: "post", credential: heldNow, stored: null };
+    const storedRenew = typeof slot.renew === "string" && slot.renew.length > 0 ? slot.renew : null;
+    if (storedRenew && storedRenew !== heldNow) {
+      const storedFamily = familyOf(storedRenew);
+      const heldFamily = familyOf(heldNow);
+      // Another family, or a credential with no family id. Do not adopt it and
+      // do not write over it. Renew the credential this tab holds.
+      if (storedFamily === null || heldFamily === null || storedFamily !== heldFamily) {
+        return { action: "post", credential: heldNow, stored: null };
+      }
+      // This tab already rotated away from the stored secret. It is spent.
+      // Replace that record whatever its time. Do not adopt it and do not present it.
+      if (this.knowsRotatedAway(storedRenew)) {
+        await this.writeHeldOverOlder(gen, serial, signal, deadline);
+        if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+        const afterSpent = this.credentialHeldForRenew(gen, serial, heldNow, heldKeyId);
+        if (afterSpent === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+        if (afterSpent === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+        return { action: "post", credential: afterSpent, stored: null };
+      }
+      const storedAt = renewExpiresAtMs(slot.renewExpiresAt);
+      const heldAt = this.renewExpiresAtMs;
+      // A later server time is a newer credential of this family. Adopt it. Do not present ours.
+      if (storedAt !== null && heldAt !== null && storedAt > heldAt) {
+        return this.adoptOrRenewStored(gen, serial, slot);
+      }
+      // An earlier server time is an older credential, often one this tab already
+      // rotated and failed to save. Write the current record over it and continue.
+      if (storedAt !== null && heldAt !== null && storedAt < heldAt) {
+        await this.writeHeldOverOlder(gen, serial, signal, deadline);
+        if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+        const afterWrite = this.credentialHeldForRenew(gen, serial, heldNow, heldKeyId);
+        if (afterWrite === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+        if (afterWrite === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+        return { action: "post", credential: afterWrite, stored: null };
+      }
+      // Equal time, or no time to compare, and a different credential. It is not
+      // newer. Do not adopt it and do not write over it.
+      return { action: "post", credential: heldNow, stored: null };
+    }
+    if (storedRenew === heldNow) this.noteStoredAttempt(slot);
+    return { action: "post", credential: heldNow, stored: slot };
+  }
+
+  /**
+   * Copies an attempt recorded by a reload or another tab for the credential we still hold.
+   * The earlier timestamp wins. A grace retry already sent is remembered.
+   */
+  private noteStoredAttempt(stored: StoredSession): void {
+    if (stored.renewGraceUsed === true) this.renewGraceUsed = true;
+    const at = stored.renewAttemptAt;
+    if (typeof at === "number" && Number.isFinite(at) && (this.renewAttemptAt === null || at < this.renewAttemptAt)) {
+      this.renewAttemptAt = at;
+    }
+  }
+
+  /** The other tab's record is the one to adopt or to renew. Our previous credential is not sent. */
+  private async adoptOrRenewStored(gen: number, serial: number, record: StoredSession): Promise<RenewNext> {
+    if (this.renewStopped(gen, serial)) return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+    const renewal = readStoredRenewal(record, this.now());
+    if (this.storedTokenOutsideGuard(record)) {
+      return { action: "done", attempt: this.adoptRotatedRecord(gen, serial, record, renewal) };
+    }
+    if (renewal) {
+      this.installRenewal(renewal);
+      if (isGilbSession(record.session)) this.carriedSession = copySession(record.session);
+      return { action: "post", credential: renewal.renew, stored: record };
+    }
+    // Token inside the guard or gone, and the renewal is not live (including a
+    // renewExpiresAt that has already passed). The sign-in is over. Clear only
+    // when the store still holds this dead record.
+    const expect = expectOfStored(record) ?? { publicKeyId: record.publicKeyId, renew: null, accessToken: "" };
+    await this.endDeadSignIn(expect);
+    return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+  }
+
+  private storedTokenOutsideGuard(record: StoredSession): boolean {
+    return typeof record.accessToken === "string"
+      && record.accessToken.length > 0
+      && typeof record.expiresAt === "number"
+      && Number.isFinite(record.expiresAt)
+      && isGilbSession(record.session)
+      && this.tokenIsLive(record.expiresAt);
+  }
+
+  private adoptRotatedRecord(
+    gen: number,
+    serial: number,
+    record: StoredSession,
+    renewal: StoredRenewal | null,
+  ): RenewAttempt {
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    if (!isGilbSession(record.session)) return { ok: false, kind: "transient" };
+    if (typeof record.accessToken !== "string" || record.accessToken.length === 0) return { ok: false, kind: "transient" };
+    if (typeof record.expiresAt !== "number" || !Number.isFinite(record.expiresAt)) return { ok: false, kind: "transient" };
+    if (renewal) this.installRenewal(renewal);
+    else this.clearRenewal();
+    this.carriedSession = null;
+    this.canCreateRecord = false;
+    this.minted = {
+      accessToken: record.accessToken,
+      expiresAt: record.expiresAt,
+      jkt: "",
+      session: copySession(record.session),
+    };
+    // The store already holds this record. Do not write it again.
+    this.epoch++;
+    this.lastWrittenEpoch = this.epoch;
+    return { ok: true, session: this.minted.session };
+  }
+
+  /**
+   * `first` has not been sent. `grace` is the one retry inside the window.
+   * `last` is the one presentation after the window. `wait` must not be sent.
+   * The attempt time and the grace flag are the ones recorded before this call,
+   * so setting them for the send does not change the decision.
+   */
+  private classifyPresentation(
+    at: number,
+    attemptAt: number | null,
+    graceUsed: boolean,
+    markFailed: boolean,
+  ): "first" | "grace" | "last" | "wait" {
+    if (attemptAt === null) return "first";
+    const inWindow = at - attemptAt <= RENEW_RETRY_MS;
+    // Grace already handed off, or this instance's mark did not persist:
+    // one presentation of an unknown outcome in this window.
+    if (inWindow && (graceUsed || markFailed)) return "wait";
+    if (inWindow) return "grace";
+    return "last";
+  }
+
+  private async postRenew(
+    gen: number,
+    serial: number,
+    credential: string,
+    stored: StoredSession | null,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<RenewAttempt> {
+    const origin = this.renewOrigin;
+    const key = this.key;
+    if (!origin || !key) return { ok: false, kind: "none" };
+    if (signal.aborted) return { ok: false, kind: "signed-out" };
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    // This tab already got a 200 for this secret. Presenting it again ends the family.
+    if (this.knowsRotatedAway(credential)) return { ok: false, kind: "unauthorized" };
+    const attemptBefore = this.renewAttemptAt;
+    const graceBefore = this.renewGraceUsed;
+    const markFailedBefore = this.renewMarkFailed;
+    const classify = (at: number) => this.classifyPresentation(at, attemptBefore, graceBefore, markFailedBefore);
+    const stopped = (marked: string): RenewAttempt | null => {
+      if (marked === "signed-out" || signal.aborted) return { ok: false, kind: "signed-out" };
+      if (marked === "superseded") return { ok: false, kind: "superseded" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      // The mark save awaits. A restore in that gap adopts another credential.
+      // Do not send the one this call captured.
+      if (this.renewCredential !== credential) return { ok: false, kind: "superseded" };
+      return null;
+    };
+    // Still inside the window after the grace retry, or after a mark that did not
+    // persist. The next call, once the window has passed, presents once more.
+    if (classify(this.now()) === "wait") return { ok: false, kind: "transient" };
+    const url = `${origin}${RENEW_SIGN_IN_PATH}`;
+    let proof: string;
+    try {
+      // No access token: the platform refuses a proof that carries `ath`.
+      proof = await dpopProof(key, "POST", url);
+    } catch {
+      if (signal.aborted) return { ok: false, kind: "signed-out" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      return { ok: false, kind: "transient" };
+    }
+    if (signal.aborted) return { ok: false, kind: "signed-out" };
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    if (this.renewCredential !== credential) return { ok: false, kind: "superseded" };
+    let kind = classify(this.now());
+    if (kind === "wait") return { ok: false, kind: "transient" };
+    if (kind === "first") {
+      this.renewAttemptAt = this.now();
+      this.renewGraceUsed = false;
+    } else if (kind === "grace") {
+      this.renewGraceUsed = true;
+    }
+    const markedAttempt = this.renewAttemptAt;
+    const markedGrace = this.renewGraceUsed;
+    const marked = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+    const markStop = stopped(marked);
+    if (markStop) return markStop;
+    // The window is judged when the request is about to be sent, after the mark
+    // save. A save that crosses the window turns a grace retry into the last try.
+    kind = classify(this.now());
+    if (kind === "wait") {
+      this.renewAttemptAt = attemptBefore;
+      this.renewGraceUsed = graceBefore;
+      const undone = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      return stopped(undone) ?? { ok: false, kind: "transient" };
+    }
+    let sentAt = this.now();
+    if (kind === "first") {
+      this.renewAttemptAt = sentAt;
+      this.renewGraceUsed = false;
+    } else if (kind === "grace") {
+      this.renewGraceUsed = true;
+      if (attemptBefore !== null) this.renewAttemptAt = attemptBefore;
+      sentAt = this.renewAttemptAt ?? sentAt;
+    } else {
+      // Hold other tabs until this answer is known. A lost answer clears the hold
+      // and starts a new window, so the next try is a grace retry.
+      this.renewAttemptAt = sentAt;
+      this.renewGraceUsed = true;
+    }
+    if (this.renewAttemptAt !== markedAttempt || this.renewGraceUsed !== markedGrace) {
+      const again = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      const againStop = stopped(again);
+      if (againStop) return againStop;
+    }
+    // Leave one store bound so the rotated record can still be saved inside the deadline.
+    const requestMs = Math.min(RENEW_TIMEOUT_MS, deadline - Date.now() - STORE_TIMEOUT_MS);
+    if (!(requestMs > 0)) {
+      this.renewAttemptAt = attemptBefore;
+      this.renewGraceUsed = graceBefore;
+      const undone = await this.persistRenewMark(gen, serial, stored, signal, deadline);
+      return stopped(undone) ?? (signal.aborted ? { ok: false, kind: "signed-out" } : { ok: false, kind: "transient" });
+    }
+    const send = this.opts.transport ?? fetchTransport;
+    const raced = await this.awaitRenewResponse(send, url, credential, proof, signal, requestMs);
+    const rearmLast = async (): Promise<RenewAttempt> => {
+      if (kind === "last") {
+        this.renewAttemptAt = sentAt;
+        this.renewGraceUsed = false;
+        if (!signal.aborted && !this.renewStopped(gen, serial)) {
+          await this.persistRenewMark(gen, serial, stored, signal, deadline);
+        }
+      }
+      return { ok: false, kind: "transient" };
+    };
+    if (!raced.ok) {
+      if (raced.reason === "aborted" || signal.aborted) return { ok: false, kind: "signed-out" };
+      if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+      return rearmLast();
+    }
+    if (signal.aborted) return { ok: false, kind: "signed-out" };
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    if (raced.status === 401) {
+      await this.endDeadSignIn(this.renewExpect(this.publicKeyId ?? "", credential));
+      return { ok: false, kind: "unauthorized" };
+    }
+    if (raced.status < 200 || raced.status > 299) return rearmLast();
+    const parsed = parseRenewed(raced.body);
+    if (!parsed) {
+      // The server answered 200, so the credential we sent may be spent. Drop it.
+      // Presenting it again would end the sign-in. Another tab's credential stays.
+      await this.endDeadSignIn(this.renewExpect(this.publicKeyId ?? "", credential));
+      return { ok: false, kind: "unauthorized" };
+    }
+    return this.commitRenewal(gen, serial, parsed, signal, deadline);
+  }
+
+  /**
+   * Writes `renewAttemptAt` before the request, so a reload during the request can retry.
+   * A storage failure is not logged and does not block this send: this page still holds
+   * the time in memory, and it does not present that credential again inside the same
+   * window. A reload does not see the mark, and presenting then can end the sign-in.
+   * An empty token (a plain invalidate) is kept empty; the attempt fields are updated.
+   */
+  private async persistRenewMark(
+    gen: number,
+    serial: number,
+    stored: StoredSession | null,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<"saved" | "failed" | "skipped" | "signed-out" | "superseded"> {
+    if (signal.aborted) return "signed-out";
+    if (this.renewStopped(gen, serial)) return this.stoppedSave(gen);
+    if (!this.store || !stored || !this.publicKeyId || stored.publicKeyId !== this.publicKeyId) return "skipped";
+    if (typeof stored.accessToken !== "string") return "skipped";
+    if (stored.renew !== this.renewCredential) return "skipped";
+    const record: StoredSession = { ...stored, ...this.renewalRecordFields() };
+    if (this.renewAttemptAt !== null) record.renewAttemptAt = this.renewAttemptAt;
+    else delete record.renewAttemptAt;
+    if (this.renewGraceUsed) record.renewGraceUsed = true;
+    else delete record.renewGraceUsed;
+    const pending = this.invokeStore(() => this.store!.saveIfCurrent(
+      record,
+      this.ownWrite(this.renewExpect(this.publicKeyId!, this.renewCredential!)),
+    ));
+    const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
+    if (signal.aborted || this.generation !== gen || this.signedOut) return "signed-out";
+    if (this.signInSerial !== serial) return "superseded";
+    if (!saved.ok || saved.value === false) {
+      this.renewMarkFailed = true;
+      return "failed";
+    }
+    this.renewMarkFailed = false;
+    return "saved";
+  }
+
+  /**
+   * Waits for one renew response for at most `ms`. The transport is given `signal` so a
+   * transport that honours it aborts; the wait ends either way. A timeout is a lost answer
+   * (the server may have rotated). A parent abort is a sign-out.
+   */
+  private awaitRenewResponse(
+    send: Transport,
+    url: string,
+    credential: string,
+    proof: string,
+    parent: AbortSignal,
+    ms: number,
+  ): Promise<{ ok: true; status: number; body: unknown } | { ok: false; reason: "lost" | "aborted" }> {
+    if (parent.aborted) return Promise.resolve({ ok: false, reason: "aborted" });
+    if (!(ms > 0)) return Promise.resolve({ ok: false, reason: "lost" });
+    const attempt = new AbortController();
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (result: { ok: true; status: number; body: unknown } | { ok: false; reason: "lost" | "aborted" }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        parent.removeEventListener("abort", onParent);
+        resolve(result);
+      };
+      const onParent = () => {
+        attempt.abort();
+        finish({ ok: false, reason: "aborted" });
+      };
+      const timer = setTimeout(() => {
+        attempt.abort();
+        finish({ ok: false, reason: "lost" });
+      }, ms);
+      parent.addEventListener("abort", onParent, { once: true });
+      let pending: Promise<TransportResponse>;
+      try {
+        pending = send(url, {
+          method: "POST",
+          credentials: "omit",
+          headers: { DPoP: proof, "Content-Type": "application/json" },
+          body: JSON.stringify({ renew: credential }),
+          timeoutMs: ms,
+          signal: attempt.signal,
+        });
+      } catch {
+        finish({ ok: false, reason: parent.aborted ? "aborted" : "lost" });
+        return;
+      }
+      pending.then(
+        async (res) => {
+          let body: unknown = null;
+          if (res.status >= 200 && res.status < 300) {
+            try {
+              body = await res.json();
+            } catch {
+              body = null;
+            }
+          }
+          if (parent.aborted) finish({ ok: false, reason: "aborted" });
+          else finish({ ok: true, status: res.status, body });
+        },
+        () => finish({ ok: false, reason: parent.aborted ? "aborted" : "lost" }),
+      );
+    });
+  }
+
+  /**
+   * Adopts the rotated token and credential, and writes them before the caller releases
+   * the lock. The record is built before the save awaits. A sign-out or a newer sign-in
+   * that wins during the save is not left stored.
+   */
+  private async commitRenewal(
+    gen: number,
+    serial: number,
+    next: RenewedBody,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<RenewAttempt> {
+    if (signal.aborted) return { ok: false, kind: "signed-out" };
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    const prior = this.minted?.session ?? this.carriedSession;
+    const session: GilbSession = prior
+      ? { ...copySession(prior), principal: next.principal }
+      : { principal: next.principal, vault: null, vaults: [] };
+    const expiresAtMs = Date.parse(next.renewExpiresAt);
+    const renewExpiresAtIso = next.renewExpiresAt;
+    const minted: Minted = {
+      accessToken: next.token,
+      expiresAt: tokenExpiresAt(next.token, this.now()),
+      jkt: "",
+      session,
+    };
+    // No await between the stop-check above and these writes. The new credential has
+    // not been sent, so the attempt clock starts over. The server has spent the
+    // credential we presented. That secret is not presented again. The save that
+    // follows may replace the record that still holds it, whatever the times.
+    // An equal time that holds any other credential is not moved. The save may still fail.
+    const presented = this.renewCredential;
+    if (presented && presented !== next.renew) {
+      this.rotatedAway.add(presented);
+      this.rotatedPredecessor = presented;
+    }
+    this.installRenewal({
+      renew: next.renew,
+      renewExpiresAt: renewExpiresAtIso,
+      expiresAtMs,
+      origin: this.renewOrigin ?? "",
+      renewAttemptAt: null,
+      renewGraceUsed: false,
+    });
+    this.carriedSession = null;
+    this.minted = minted;
+    const epoch = ++this.epoch;
+    const saved = await this.saveRenewedRecord(gen, serial, epoch, minted, signal, deadline);
+    if (saved === "signed-out") return { ok: false, kind: "signed-out" };
+    if (saved === "superseded") return { ok: false, kind: "superseded" };
+    if (signal.aborted) return { ok: false, kind: "signed-out" };
+    if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    // A failed save keeps the new session in memory. A save that found another
+    // tab's credential writes nothing. A throw or a timeout is retried in the
+    // background. Nothing secret is logged. A reload before that retry lands,
+    // within 60 seconds of this rotation, is recovered by the server's one
+    // acceptance of the previous credential. After that, the reload can present
+    // the spent credential and the sign-in may end.
+    return { ok: true, session: minted.session };
+  }
+
+  /**
+   * The store holds an earlier credential for this key. Write the current record
+   * over it and do not adopt that credential. A token inside the guard is still
+   * written: leaving the earlier credential stored is what presents it later.
+   */
+  private async writeHeldOverOlder(
+    gen: number,
+    serial: number,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<void> {
+    if (!this.store || !this.minted || !this.renewCredential || !isWebCryptoKey(this.key)) return;
+    if (signal.aborted || this.renewStopped(gen, serial)) return;
+    const minted = this.minted;
+    if (minted.accessToken.length === 0) return;
+    const epoch = this.epoch;
+    let publicKey: CryptoKey;
+    try {
+      publicKey = await this.cachedPublicKey(this.key);
+    } catch {
+      return;
+    }
+    const exportedId = await publicKeyIdOf(publicKey);
+    if (signal.aborted || this.renewStopped(gen, serial)) return;
+    if (!exportedId || this.publicKeyId !== exportedId || this.minted !== minted) return;
+    const fields = this.renewalRecordFields();
+    if (!("renew" in fields)) return;
+    const record: StoredSession = {
+      version: STORED_SESSION_VERSION,
+      keyPair: { publicKey, privateKey: this.key.privateKey },
+      publicKeyId: exportedId,
+      accessToken: minted.accessToken,
+      expiresAt: minted.expiresAt,
+      session: copySession(minted.session),
+      ...fields,
+    };
+    const expect = this.saveExpect(exportedId, fields.renew);
+    const wipeExpect = this.renewExpect(exportedId, fields.renew);
+    const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, expect));
+    const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
+    if (signal.aborted || this.generation !== gen || this.signedOut) {
+      if (saved.ok && saved.value !== false) await this.wipeLanded(wipeExpect);
+      return;
+    }
+    if (!saved.ok) {
+      this.scheduleRotationHeal(record, expect, epoch, gen);
+      return;
+    }
+    if (saved.value === false) {
+      if (this.rotationHealRecord === null || this.rotationHealRecord.renew === record.renew) this.cancelRotationHeal();
+      return;
+    }
+    this.settleRotationSave(epoch, fields.renew);
+  }
+
+  /**
+   * Update-only save of the rotated record. The stored record may hold this tab's
+   * new credential, the credential this tab just presented, or the same key and
+   * the same family with an earlier `renewExpiresAt`. The presented credential
+   * is replaced whatever its time. A later time, an equal time with any other
+   * credential, or another family writes nothing. The wait is capped,
+   * like every other store call on this path. A timeout or a throw leaves the new
+   * session in memory. A throw is tried several times inside the lock. A save that
+   * does not settle is tried once more. Then the background heal retries it.
+   * A sign-out after the write deletes it again. A newer sign-in is left to its own
+   * save. `false` is not success.
+   */
+  private async saveRenewedRecord(
+    gen: number,
+    serial: number,
+    epoch: number,
+    minted: Minted,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<"saved" | "signed-out" | "superseded" | "skipped"> {
+    if (signal.aborted) return "signed-out";
+    if (!this.store || !isWebCryptoKey(this.key)) return "skipped";
+    let publicKey: CryptoKey;
+    try {
+      publicKey = await this.cachedPublicKey(this.key);
+    } catch {
+      if (signal.aborted) return "signed-out";
+      return this.renewStopped(gen, serial) ? this.stoppedSave(gen) : "skipped";
+    }
+    const exportedId = await publicKeyIdOf(publicKey);
+    if (signal.aborted || this.generation !== gen || this.signedOut) return "signed-out";
+    if (this.signInSerial !== serial) return "superseded";
+    if (!exportedId || !this.minted || this.minted.accessToken !== minted.accessToken) return "superseded";
+    if (this.publicKeyId === null) this.publicKeyId = exportedId;
+    if (this.publicKeyId !== exportedId) return "skipped";
+    const fields = this.renewalRecordFields();
+    if (!("renew" in fields)) return "skipped";
+    const record: StoredSession = {
+      version: STORED_SESSION_VERSION,
+      keyPair: { publicKey, privateKey: this.key.privateKey },
+      publicKeyId: exportedId,
+      accessToken: minted.accessToken,
+      expiresAt: minted.expiresAt,
+      session: copySession(minted.session),
+      ...fields,
+    };
+    const samePublicKeyId = this.publicKeyId;
+    const presentedExpect = this.saveExpect(samePublicKeyId, fields.renew);
+    const writtenExpect = this.renewExpect(samePublicKeyId, fields.renew);
+    const watchLate = (late: Promise<boolean>) => {
+      void late.then((value) => {
+        if (value === false) {
+          if (this.rotationHealRecord === null || this.rotationHealRecord.renew === record.renew) this.cancelRotationHeal();
+          return;
+        }
+        if (this.generation !== gen || this.signedOut) {
+          void this.wipeLanded(writtenExpect).then(() => undefined, () => undefined);
+          return;
+        }
+        this.settleRotationSave(epoch, record.renew);
+      }, () => undefined);
+    };
+    // A throw rejects at once. A hang stays pending until the store bound. The
+    // flag tells those apart so a hang is not retried for every attempt.
+    const beginSave = () => {
+      let rejected = false;
+      const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect)).then(
+        (value) => value,
+        (err: unknown) => {
+          rejected = true;
+          throw err;
+        },
+      );
+      return { pending, rejected: () => rejected };
+    };
+    let tracked = beginSave();
+    let pending = tracked.pending;
+    let saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
+    let made = 1;
+    while (
+      !saved.ok
+      && made < ROTATION_SAVE_ATTEMPTS
+      && !signal.aborted
+      && this.generation === gen
+      && !this.signedOut
+      && this.storeWaitMs(deadline) > 0
+      && (made < 2 || tracked.rejected())
+    ) {
+      const first = pending;
+      tracked = beginSave();
+      pending = tracked.pending;
+      saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
+      // The earlier call may still land after its timeout. A sign-out then deletes it again.
+      watchLate(first);
+      made += 1;
+    }
+    if (signal.aborted || this.generation !== gen || this.signedOut) {
+      if (saved.ok && saved.value !== false) await this.wipeLanded(writtenExpect);
+      else if (!saved.ok) watchLate(pending);
+      return "signed-out";
+    }
+    if (this.signInSerial !== serial || this.minted?.accessToken !== minted.accessToken) {
+      if (saved.ok && saved.value === false) {
+        if (this.rotationHealRecord === null || this.rotationHealRecord.renew === record.renew) this.cancelRotationHeal();
+      } else if (saved.ok && saved.value === true) {
+        this.settleRotationSave(epoch, record.renew);
+      }
+      return "superseded";
+    }
+    if (!saved.ok) {
+      this.scheduleRotationHeal(record, presentedExpect, epoch, gen);
+      watchLate(pending);
+      return "skipped";
+    }
+    // The save resolved. A store that yields between its compare and its put can
+    // still be holding an earlier credential of this family. IndexedDB does not
+    // yield there. Try again while that earlier time, or the credential this tab
+    // just presented, is what is stored. A later time, an equal time with any
+    // other credential, or another family is left alone. `false` is a refusal.
+    // The server's time is not moved.
+    const repaired = await this.repairSpentCredential(
+      gen, serial, record, presentedExpect, writtenExpect, signal, deadline,
+    );
+    if (repaired === "signed-out") return "signed-out";
+    if (this.signInSerial !== serial || this.minted?.accessToken !== minted.accessToken) return "superseded";
+    if (repaired !== "landed") {
+      if (this.rotationHealRecord === null || this.rotationHealRecord.renew === record.renew) this.cancelRotationHeal();
+      return "skipped";
+    }
+    this.settleRotationSave(epoch, record.renew);
+    return "saved";
+  }
+
+  /**
+   * Puts the rotated record again when the store still holds an earlier credential
+   * of this same family. The bound is how many times a yielding store is retried,
+   * not a limit on how many credentials a tab may replace. Stops when the new
+   * credential is stored, the record is gone, another family is stored, or a
+   * later credential of this family is there, or an equal time holding any
+   * credential other than the one this tab just presented. That presented
+   * credential is replaced whatever its time. A sign-out
+   * deletes the rotated record if this write landed.
+   */
+  private async repairSpentCredential(
+    gen: number,
+    serial: number,
+    record: StoredSession,
+    presentedExpect: CurrentRecordExpect,
+    writtenExpect: CurrentRecordExpect,
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<"landed" | "refused" | "signed-out"> {
+    const heldAt = renewExpiresAtMs(record.renewExpiresAt);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const loaded = await this.bounded(this.store!.load(), this.storeWaitMs(deadline), signal);
+      if (signal.aborted || this.generation !== gen || this.signedOut) {
+        await this.wipeLanded(writtenExpect);
+        return "signed-out";
+      }
+      if (this.signInSerial !== serial) return "refused";
+      if (!loaded.ok) return "refused";
+      const slot = loaded.value;
+      if (isSignedOutMarker(slot)) return "refused";
+      if (isFamilyEndedMarker(slot)) {
+        const heldFamily = familyOf(record.renew);
+        if (heldFamily !== null && slot.family === heldFamily) return "refused";
+        const again = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect));
+        const saved = await this.bounded(again, this.storeWaitMs(deadline), signal);
+        if (signal.aborted || this.generation !== gen || this.signedOut) {
+          if (saved.ok && saved.value !== false) await this.wipeLanded(writtenExpect);
+          return "signed-out";
+        }
+        if (this.signInSerial !== serial) return "refused";
+        if (saved.ok && saved.value !== false) return "landed";
+        return "refused";
+      }
+      if (!isStoredSession(slot)) return "refused";
+      if (slot.publicKeyId !== record.publicKeyId) return "refused";
+      const storedRenew = typeof slot.renew === "string" && slot.renew.length > 0
+        ? slot.renew
+        : null;
+      if (storedRenew === record.renew) return "landed";
+      const storedFamily = familyOf(slot.renew);
+      const heldFamily = familyOf(record.renew);
+      if (storedFamily === null || heldFamily === null || storedFamily !== heldFamily) return "refused";
+      const storedAt = renewExpiresAtMs(slot.renewExpiresAt);
+      const presented = typeof presentedExpect.presentedRenew === "string" ? presentedExpect.presentedRenew : "";
+      const ownPredecessor = presented.length > 0 && storedRenew === presented;
+      // No credential, a later time, an equal time with any other credential, or a time we cannot read.
+      // The credential this tab just presented is replaced whatever its time.
+      if (!ownPredecessor && (!storedRenew || storedAt === null || heldAt === null || storedAt >= heldAt)) return "refused";
+      const again = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect));
+      const saved = await this.bounded(again, this.storeWaitMs(deadline), signal);
+      if (signal.aborted || this.generation !== gen || this.signedOut) {
+        if (saved.ok && saved.value !== false) await this.wipeLanded(writtenExpect);
+        return "signed-out";
+      }
+      if (this.signInSerial !== serial) return "refused";
+      if (!saved.ok) {
+        this.scheduleRotationHeal(record, presentedExpect, this.epoch, gen);
+        return "refused";
+      }
+      // `false` is a refusal: the next load sees whatever is stored now.
+      // `true` is the write. `undefined` is a store that does not say, so the next load confirms.
+      if (saved.value === false) continue;
+      if (saved.value === true) return "landed";
+    }
+    return "refused";
+  }
+
+  /** The rotated record is in the store. Stop retrying that save. */
+  private settleRotationSave(epoch: number, renew: string | undefined): void {
+    if (this.epoch === epoch) this.lastWrittenEpoch = epoch;
+    this.canCreateRecord = false;
+    if (!renew || this.rotationHealRecord === null || this.rotationHealRecord.renew === renew) {
+      this.cancelRotationHeal();
+    }
+  }
+
+  /**
+   * Remembers a rotated record whose save threw or timed out. Tries again after
+   * 0.5 s, 2 s, and 5 s, then on later calls, until the write lands or the
+   * compare refuses it.
+   */
+  private scheduleRotationHeal(record: StoredSession, expect: CurrentRecordExpect, epoch: number, gen: number): void {
+    if (this.signedOut || this.generation !== gen || !this.renewCredential) return;
+    if (record.renew !== this.renewCredential) return;
+    this.rotationHealRecord = record;
+    this.rotationHealExpect = expect;
+    this.rotationHealEpoch = epoch;
+    this.rotationHealGen = gen;
+    if (this.rotationHealTimer !== null) return;
+    if (this.rotationHealAttempt >= ROTATION_HEAL_DELAYS_MS.length) return;
+    this.armRotationHealTimer();
+  }
+
+  private armRotationHealTimer(): void {
+    const delay = ROTATION_HEAL_DELAYS_MS[this.rotationHealAttempt];
+    if (delay === undefined || this.rotationHealTimer !== null) return;
+    const timer = setTimeout(() => {
+      this.rotationHealTimer = null;
+      this.rotationHealAttempt += 1;
+      void this.runRotationHeal();
+    }, delay);
+    this.rotationHealTimer = timer;
+    (timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  private cancelRotationHeal(): void {
+    if (this.rotationHealTimer !== null) clearTimeout(this.rotationHealTimer);
+    this.rotationHealTimer = null;
+    this.rotationHealAttempt = 0;
+    this.rotationHealRecord = null;
+    this.rotationHealExpect = null;
+  }
+
+  /** After the timed delays, a later call tries the outstanding rotation save. */
+  private touchRotationHeal(): void {
+    if (this.rotationHealRunning || this.rotationHealTimer !== null) return;
+    if (!this.rotationHealRecord || this.rotationHealAttempt < ROTATION_HEAL_DELAYS_MS.length) return;
+    void this.runRotationHeal();
+  }
+
+  private async runRotationHeal(): Promise<void> {
+    if (this.rotationHealRunning) return;
+    const scheduled = this.rotationHealRecord;
+    const gen = this.rotationHealGen;
+    const epoch = this.rotationHealEpoch;
+    if (!scheduled?.renew || !this.store || !this.renewOrigin) {
+      this.cancelRotationHeal();
+      return;
+    }
+    // The credential moved on, or this tab no longer has a time to order by.
+    if (this.signedOut || this.generation !== gen || this.renewCredential !== scheduled.renew || this.renewExpiresAtMs === null) {
+      this.cancelRotationHeal();
+      return;
+    }
+    this.rotationHealRunning = true;
+    try {
+      await this.runRotationHealBody(scheduled, gen, epoch);
+    } finally {
+      this.rotationHealRunning = false;
+    }
+  }
+
+  /**
+   * The heal write. The record is built when the heal runs, from the credential
+   * and token in memory now.
+   */
+  private async runRotationHealBody(scheduled: StoredSession, gen: number, epoch: number): Promise<void> {
+    if (this.signedOut || this.generation !== gen || this.renewCredential !== scheduled.renew || this.renewExpiresAtMs === null || !scheduled.renew) {
+      if (this.signedOut || this.rotationHealRecord === scheduled) this.cancelRotationHeal();
+      return;
+    }
+    // Write the credential and token held now. A plain invalidate between the
+    // schedule and this run must not put the rejected access token back.
+    const record = this.recordHeldNow(scheduled);
+    const expect = this.saveExpect(record.publicKeyId, scheduled.renew);
+    const wipeExpect = this.renewExpect(record.publicKeyId, scheduled.renew);
+    {
+      const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, expect));
+      const saved = await this.bounded(pending);
+      if (this.signedOut || this.generation !== gen) {
+        if (saved.ok && saved.value !== false && this.renewCredential === scheduled.renew) {
+          await this.wipeLanded(this.renewExpect(record.publicKeyId, scheduled.renew));
+        }
+        if (this.signedOut || this.rotationHealRecord === scheduled) this.cancelRotationHeal();
+        return;
+      }
+      if (!saved.ok) {
+        this.armRotationHealTimer();
+        return;
+      }
+      if (saved.value === false) {
+        if (this.rotationHealRecord === scheduled) this.cancelRotationHeal();
+        return;
+      }
+      // The write carried a token, and a plain invalidate has since dropped it.
+      // Blank the record before this heal stops, so the rejected token does not stay.
+      if (record.accessToken.length > 0 && (!this.minted || this.minted.accessToken.length === 0) && this.renewCredential === scheduled.renew) {
+        const blank = this.recordHeldNow(scheduled);
+        if (blank.accessToken.length === 0) {
+          const blanked = await this.bounded(this.invokeStore(() => this.store!.saveIfCurrent(blank, wipeExpect)));
+          if (this.signedOut || this.generation !== gen) {
+            if (blanked.ok && blanked.value !== false && this.renewCredential === scheduled.renew) {
+              await this.wipeLanded(wipeExpect);
+            }
+            if (this.signedOut || this.rotationHealRecord === scheduled) this.cancelRotationHeal();
+            return;
+          }
+          if (!blanked.ok) {
+            this.armRotationHealTimer();
+            return;
+          }
+          if (blanked.value === false) {
+            if (this.rotationHealRecord === scheduled) this.cancelRotationHeal();
+            return;
+          }
+        }
+      }
+      this.settleRotationSave(epoch, scheduled.renew);
+    }
+  }
+
+  /**
+   * The record a background heal should write: the credential still held, and the
+   * access token held at this moment. A plain invalidate has no minted token, so
+   * the stored token is empty and the renewal stays.
+   */
+  private recordHeldNow(basis: StoredSession): StoredSession {
+    const minted = this.minted;
+    const publicKey = this.publicCryptoKey ?? basis.keyPair.publicKey;
+    const privateKey = isWebCryptoKey(this.key) ? this.key.privateKey : basis.keyPair.privateKey;
+    const publicKeyId = this.publicKeyId ?? basis.publicKeyId;
+    const renewal = this.renewalRecordFields();
+    if (minted && minted.accessToken.length > 0) {
+      return {
+        version: STORED_SESSION_VERSION,
+        keyPair: { publicKey, privateKey },
+        publicKeyId,
+        accessToken: minted.accessToken,
+        expiresAt: minted.expiresAt,
+        session: copySession(minted.session),
+        ...renewal,
+      };
+    }
+    const session = this.carriedSession ? copySession(this.carriedSession) : copySession(basis.session);
+    return {
+      version: STORED_SESSION_VERSION,
+      keyPair: { publicKey, privateKey },
+      publicKeyId,
+      accessToken: "",
+      expiresAt: 0,
+      session,
+      ...renewal,
+    };
+  }
+
+  private renewStopped(gen: number, serial: number): boolean {
+    return this.generation !== gen || this.signedOut || this.signInSerial !== serial;
+  }
+
+  private stoppedRenewAttempt(gen: number): RenewAttempt {
+    if (this.generation !== gen || this.signedOut) return { ok: false, kind: "signed-out" };
+    return { ok: false, kind: "superseded" };
+  }
+
+  private stoppedSave(gen: number): "signed-out" | "superseded" {
+    return this.generation !== gen || this.signedOut ? "signed-out" : "superseded";
+  }
+
+  /**
+   * Waits out store ops already queued, for at most {@link STORE_TIMEOUT_MS}.
+   * A timeout is a storage failure. The caller does not post over a save it could not see finish.
+   */
+  private async tailFinished(signal: AbortSignal): Promise<"done" | "timeout" | "aborted"> {
+    const deadline = Date.now() + STORE_TIMEOUT_MS;
+    for (;;) {
+      if (signal.aborted) return "aborted";
+      const tail = this.tail;
+      const remaining = deadline - Date.now();
+      if (!(remaining > 0)) return "timeout";
+      const waited = await this.bounded(tail.then(() => undefined, () => undefined), remaining, signal);
+      if (signal.aborted) return "aborted";
+      if (!waited.ok) return "timeout";
+      if (this.tail === tail) return "done";
+    }
+  }
+
+  /**
+   * Best-effort server sign-out of a token already captured. The in-memory
+   * sign-in is already cleared. Errors, refusals, and a call that outlives
+   * {@link SIGN_OUT_BOUND_MS} are `false`. Never throws.
+   */
+  private async tryServerSignOut(origin: string, accessToken: string, key: DpopKey): Promise<boolean> {
+    const url = `${normaliseOrigin(origin)}${SIGN_OUT_PATH}`;
+    let headers: { Authorization: string; DPoP: string };
+    try {
+      headers = await dpopHeaders(key, accessToken, "POST", url);
+    } catch {
+      return false;
+    }
+    const send = this.opts.transport ?? fetchTransport;
+    const attempt = send(url, {
+      method: "POST",
+      credentials: "omit",
+      headers: { ...headers },
+      timeoutMs: SIGN_OUT_BOUND_MS,
+    }).then(
+      (res) => res.status === 204,
+      () => false,
+    );
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (value: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(false), SIGN_OUT_BOUND_MS);
+      attempt.then(finish, () => finish(false));
+    });
   }
 }
 
@@ -1162,8 +3167,12 @@ function copySession(session: GilbSession): GilbSession {
   return copy;
 }
 
-/** A record `restore` can adopt. Anything else is cleared. */
-function liveStoredSession(raw: unknown, now: number): StoredSession | null {
+/**
+ * A stored record with a usable key and token. The token may already be inside the guard:
+ * `restore` renews it when {@link readStoredRenewal} finds a credential that is still in date,
+ * and clears it otherwise.
+ */
+function storedSessionRecord(raw: unknown): StoredSession | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Partial<StoredSession>;
   if (record.version !== STORED_SESSION_VERSION) return null;
@@ -1174,9 +3183,99 @@ function liveStoredSession(raw: unknown, now: number): StoredSession | null {
   if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
   if (typeof record.accessToken !== "string" || record.accessToken.length === 0) return null;
   if (typeof record.expiresAt !== "number" || !Number.isFinite(record.expiresAt)) return null;
-  if (!(now < record.expiresAt - EXPIRY_GUARD_MS)) return null;
   if (!isGilbSession(record.session)) return null;
   return record as StoredSession;
+}
+
+/**
+ * A plain `invalidate` leaves the key and the renewal credential, with an empty
+ * access token. `restore` renews that record. A record with no renewal is not this.
+ */
+function storedRenewalHolding(raw: unknown): StoredSession | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Partial<StoredSession>;
+  if (record.version !== STORED_SESSION_VERSION) return null;
+  if (!record.keyPair || typeof record.keyPair !== "object") return null;
+  if (!isSigningPrivateKey(record.keyPair.privateKey) || !isVerifyPublicKey(record.keyPair.publicKey)) return null;
+  if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
+  if (typeof record.accessToken !== "string" || record.accessToken.length > 0) return null;
+  if (!isGilbSession(record.session)) return null;
+  if (typeof record.renew !== "string" || record.renew.length === 0) return null;
+  if (typeof record.renewExpiresAt !== "string") return null;
+  if (typeof record.origin !== "string" || record.origin.length === 0) return null;
+  return record as StoredSession;
+}
+
+/** A renewal credential `restore` or a cross-tab adopt can still present. */
+interface StoredRenewal {
+  renew: string;
+  renewExpiresAt: string;
+  expiresAtMs: number;
+  origin: string;
+  /** First attempt that may have reached the server, or null when this credential has not been sent. */
+  renewAttemptAt: number | null;
+  /** The one grace retry was already handed to the transport. */
+  renewGraceUsed: boolean;
+}
+
+/** What the lock body does after it has re-read the store. */
+type RenewNext =
+  | { action: "done"; attempt: RenewAttempt }
+  | { action: "post"; credential: string; stored: StoredSession | null };
+
+/** What one renewal attempt produced. `superseded` leaves a newer sign-in in place. */
+type RenewAttempt =
+  | { ok: true; session: GilbSession }
+  | { ok: false; kind: "unauthorized" | "transient" | "signed-out" | "superseded" | "none" };
+
+/** The four fields a 200 from the renew route must carry. */
+interface RenewedBody {
+  token: string;
+  renew: string;
+  renewExpiresAt: string;
+  principal: string;
+}
+
+function assertRenewWindowSec(value: number): void {
+  if (!Number.isSafeInteger(value) || value < RENEW_WINDOW_MIN_SEC || value > RENEW_WINDOW_MAX_SEC) {
+    throw new TypeError("renewWindowSec must be an integer from 300 to 1209600 seconds");
+  }
+}
+
+function normaliseOrigin(origin: string): string {
+  return origin.replace(/\/+$/, "");
+}
+
+function readStoredRenewal(record: StoredSession, now: number): StoredRenewal | null {
+  if (typeof record.renew !== "string" || record.renew.length === 0) return null;
+  if (typeof record.renewExpiresAt !== "string") return null;
+  const expiresAtMs = Date.parse(record.renewExpiresAt);
+  if (!Number.isFinite(expiresAtMs) || !(now < expiresAtMs)) return null;
+  if (typeof record.origin !== "string" || record.origin.length === 0) return null;
+  const attemptAt = record.renewAttemptAt;
+  return {
+    renew: record.renew,
+    renewExpiresAt: record.renewExpiresAt,
+    expiresAtMs,
+    origin: normaliseOrigin(record.origin),
+    renewAttemptAt: typeof attemptAt === "number" && Number.isFinite(attemptAt) ? attemptAt : null,
+    renewGraceUsed: record.renewGraceUsed === true,
+  };
+}
+
+function parseRenewed(body: unknown): RenewedBody | null {
+  if (!body || typeof body !== "object") return null;
+  const record = body as Record<string, unknown>;
+  if (typeof record.token !== "string" || record.token.length === 0) return null;
+  if (typeof record.renew !== "string" || record.renew.length === 0) return null;
+  if (typeof record.renewExpiresAt !== "string" || !Number.isFinite(Date.parse(record.renewExpiresAt))) return null;
+  if (typeof record.principal !== "string" || record.principal.length === 0) return null;
+  return {
+    token: record.token,
+    renew: record.renew,
+    renewExpiresAt: record.renewExpiresAt,
+    principal: record.principal,
+  };
 }
 
 function isSigningPrivateKey(key: unknown): key is CryptoKey {
