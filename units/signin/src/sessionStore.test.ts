@@ -633,24 +633,46 @@ test("saveIfCurrent writes only when the stored key and credential match, in one
     assert.equal((await store.load())?.accessToken, "tok-updated");
     assert.equal((await store.load())?.session.principal, "p-updated");
     assert.equal((await store.load())?.publicKeyId, first.publicKeyId);
+    const earlier = Date.parse(new Date(NOW).toISOString());
+    const later = earlier + 1_000;
+    const storedEarlier = { ...first, renewExpiresAt: new Date(earlier).toISOString() };
+    await store.save(storedEarlier);
     assert.equal(
       await store.saveIfCurrent(
-        { ...first, accessToken: "tok-from-spent", renew: "rsi1.fam.s2" },
-        { publicKeyId: first.publicKeyId, renewAnyOf: ["rsi1.fam.s2", first.renew!] },
+        { ...storedEarlier, accessToken: "tok-from-older", renew: "rsi1.fam.s2", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: later },
       ),
       true,
-      "a credential this tab already spent is still current",
+      "an earlier renewExpiresAt for the same key may be replaced",
     );
     assert.equal((await store.load())?.renew, "rsi1.fam.s2");
     assert.equal(
       await store.saveIfCurrent(
-        { ...first, accessToken: "tok-other-tab", renew: "rsi1.fam.s3" },
-        { publicKeyId: first.publicKeyId, renewAnyOf: ["rsi1.fam.s3"] },
+        { ...storedEarlier, accessToken: "tok-should-not", renew: "rsi1.fam.s1", renewExpiresAt: new Date(earlier).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s1", renewExpiresAt: earlier },
       ),
       false,
-      "another tab's credential is not current",
+      "a later renewExpiresAt is not replaced",
     );
-    assert.equal((await store.load())?.accessToken, "tok-from-spent");
+    assert.equal((await store.load())?.accessToken, "tok-from-older");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-tie", renew: "rsi1.fam.s3", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: later },
+      ),
+      false,
+      "an equal renewExpiresAt with a different credential is not replaced",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.saveIfCurrent(
+        { ...storedEarlier, accessToken: "tok-same", renew: "rsi1.fam.s2", renewExpiresAt: new Date(later).toISOString() },
+        { publicKeyId: first.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: later },
+      ),
+      true,
+      "the same credential is still current",
+    );
+    assert.equal((await store.load())?.accessToken, "tok-same");
     await store.save(updated);
     await store.saveIfCurrent({ ...other, accessToken: "tok-replaced" }, { publicKeyId: other.publicKeyId, renew: other.renew });
     assert.equal((await store.load())?.accessToken, "tok-updated", "a different publicKeyId does not replace the record");
@@ -709,10 +731,66 @@ test("clearIfCurrent deletes only the record it names, in one transaction", asyn
     assert.equal((await store.load())?.accessToken, "tok-plain");
     await store.clearIfCurrent({ publicKeyId: tokenOnly.publicKeyId, renew: null, accessToken: "tok-plain" });
     assert.equal(await store.load(), null);
+
+    const olderAt = Date.parse(new Date(NOW).toISOString());
+    const newerAt = olderAt + 1_000;
+    const ordered = await seed({
+      renew: "rsi1.fam.s1",
+      renewExpiresAt: new Date(olderAt).toISOString(),
+      accessToken: "tok-ordered",
+    });
+    await store.save(ordered);
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: newerAt }),
+      true,
+      "an earlier renewExpiresAt for the same key may be cleared",
+    );
+    assert.equal(await store.load(), null);
+    await store.save({ ...ordered, renew: "rsi1.fam.s2", renewExpiresAt: new Date(newerAt).toISOString() });
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s1", renewExpiresAt: olderAt }),
+      false,
+      "a later renewExpiresAt is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s3", renewExpiresAt: newerAt }),
+      false,
+      "an equal renewExpiresAt with a different credential is not cleared",
+    );
+    assert.equal((await store.load())?.renew, "rsi1.fam.s2");
+    assert.equal(
+      await store.clearIfCurrent({ publicKeyId: ordered.publicKeyId, renew: "rsi1.fam.s2", renewExpiresAt: newerAt }),
+      true,
+      "the same credential is cleared",
+    );
+    assert.equal(await store.load(), null);
     await store.clear();
   } finally {
     installIndexedDb(prior);
   }
+});
+
+test("recordIsCurrent orders one family by renewExpiresAt", () => {
+  const rec = {
+    publicKeyId: "k",
+    renew: "rsi1.fam.s1",
+    renewExpiresAt: new Date(1_000).toISOString(),
+    accessToken: "t",
+  };
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s1", renewExpiresAt: 1_000 }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), true);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s0", renewExpiresAt: 500 }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000 }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
+  assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
+  assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }), false);
+  assert.equal(
+    recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000 }),
+    false,
+  );
+  assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "t" }), true);
+  assert.equal(recordIsCurrent({ publicKeyId: "k", accessToken: "t" }, { publicKeyId: "k", renew: null, accessToken: "other" }), false);
 });
 
 test("the record version and the default database name are the ones the README names", () => {

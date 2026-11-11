@@ -44,7 +44,9 @@ class Family {
     return {
       token: jwt(exp),
       renew: this.cur,
-      renewExpiresAt: new Date(this.now() + 14 * 24 * 3600 * 1000).toISOString(),
+      // `n` keeps each issue strictly later when the test clock does not move.
+      // The server serialises one family, so a later rotation has a later time.
+      renewExpiresAt: new Date(this.now() + 14 * 24 * 3600 * 1000 + this.n).toISOString(),
     };
   }
 
@@ -187,7 +189,9 @@ test("a reload after the healed rotation save stays signed in", async () => {
 
 test("a rotation save that keeps failing is retried in the background", async () => {
   let now = T0;
-  let left = 3;
+  // In-lock throw attempts, plus the drain that follows the lock. The store
+  // accepts the save after those, which is the background heal.
+  let left = 9;
   const family = new Family(() => now);
   const store = boolStore((session) =>
     session.renew === "rsi1.fam.s2" && session.accessToken !== "" && left > 0 && (left -= 1, true),
@@ -196,7 +200,7 @@ test("a rotation save that keeps failing is retried in the background", async ()
   try {
     now += 100_000;
     assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
-    assert.equal(store.peek()?.renew, "rsi1.fam.s1", "the rotation save, its retry, and the drain all threw");
+    assert.equal(store.peek()?.renew, "rsi1.fam.s1", "the in-lock throws and the drain left the earlier credential stored");
     assert.equal(left, 0);
     await sleep(80);
     assert.equal(store.peek()?.renew, "rsi1.fam.s1");
@@ -239,6 +243,8 @@ test("a failed rotation save does not overwrite another tab's newer credential",
             foreign.renew = "rsi1.fam.s9";
             foreign.accessToken = "tok-other-tab";
             foreign.expiresAt = now + 3_600_000;
+            // Later than this tab's rotation, so the time order leaves it alone.
+            foreign.renewExpiresAt = new Date(now + 15 * 24 * 3600 * 1000).toISOString();
             current = foreign;
           }
           return false;
@@ -354,9 +360,9 @@ test("a plain invalidate during a renew does not throw NotSignedInError while th
   await cred.invalidate(true);
 });
 
-test("a renew before the rotation heal lands does not present this tab's own spent credential", async () => {
+test("a renew before the rotation heal lands does not present an earlier stored credential", async () => {
   // The rotated save throws until the test allows it, and the heal timers never run,
-  // so the next renew still reads s1: the credential this tab already spent.
+  // so the next renew still reads s1. s1's renewExpiresAt is earlier, so it is not adopted.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   let now = T0;
   let blockRotated = true;
@@ -391,5 +397,349 @@ test("a renew before the rotation heal lands does not present this tab's own spe
   } finally {
     await cred?.invalidate(true);
     vi.useRealTimers();
+  }
+});
+
+/** Exclusive lock, the way `navigator.locks` serialises one renew name. */
+function installSerialLocks(): () => void {
+  const tails = new Map<string, Promise<unknown>>();
+  const request = (name: string, a: unknown, b?: unknown): Promise<unknown> => {
+    const cb = (typeof a === "function" ? a : b) as () => Promise<unknown>;
+    const prev = tails.get(name) ?? Promise.resolve();
+    const run = prev.then(() => cb(), () => cb());
+    tails.set(name, run.then(() => undefined, () => undefined));
+    return run;
+  };
+  const nav = (globalThis.navigator ?? (globalThis.navigator = {} as Navigator)) as Navigator & { locks?: unknown };
+  const prior = Object.getOwnPropertyDescriptor(nav, "locks");
+  Object.defineProperty(nav, "locks", { configurable: true, writable: true, value: { request } });
+  return () => {
+    if (prior) Object.defineProperty(nav, "locks", prior);
+    else delete nav.locks;
+  };
+}
+
+test("failing rotation saves through K=8 recover without reuse", async () => {
+  for (const K of [1, 3, 4, 5, 6, 8]) {
+    let now = T0;
+    let down = false;
+    const family = new Family(() => now);
+    const store = boolStore(() => down);
+    const cred = await signIn(store, family, () => now);
+    try {
+      const first = store.peek()?.renew;
+      down = true;
+      for (let i = 0; i < K; i++) {
+        now += 100_000;
+        assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization, `K=${K} step ${i}`);
+      }
+      assert.equal(store.peek()?.renew, first, `K=${K}: the store stayed on the first credential`);
+      assert.equal(family.reuse, 0, `K=${K}`);
+      assert.equal(family.ended, false, `K=${K}`);
+      down = false;
+      now += 100_000;
+      assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization, `K=${K} recovery`);
+      assert.equal(family.reuse, 0, `K=${K} after recovery`);
+      assert.equal(family.ended, false, `K=${K} after recovery`);
+      assert.equal(store.peek()?.renew, family.cur, `K=${K}: the store caught the newer credential`);
+      const fresh = new SessionCredential({ store, transport: family.transport, now: () => now });
+      assert.equal((await fresh.restore())?.principal, PRINCIPAL, `K=${K}`);
+      assert.equal(family.reuse, 0, `K=${K} fresh`);
+      await fresh.invalidate(true);
+    } finally {
+      await cred.invalidate(true);
+    }
+  }
+});
+
+test("a background heal after K=5 failed rotation saves writes the current credential", async () => {
+  let now = T0;
+  let down = false;
+  const family = new Family(() => now);
+  const store = boolStore(() => down);
+  const cred = await signIn(store, family, () => now);
+  try {
+    down = true;
+    for (let i = 0; i < 5; i++) {
+      now += 100_000;
+      assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+    }
+    assert.equal(store.peek()?.renew, "rsi1.fam.s1");
+    assert.equal(family.cur, "rsi1.fam.s6");
+    const presented = family.presentations.length;
+    down = false;
+    await sleep(800);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s6", "the heal wrote the credential held in memory");
+    assert.equal(family.presentations.length, presented, "the heal does not present");
+    assert.equal(family.reuse, 0);
+    assert.equal(family.ended, false);
+    const fresh = new SessionCredential({ store, transport: family.transport, now: () => now });
+    assert.equal((await fresh.restore())?.principal, PRINCIPAL);
+    assert.equal(family.reuse, 0);
+    await fresh.invalidate(true);
+  } finally {
+    await cred.invalidate(true);
+  }
+});
+
+test("a store that throws three rotation saves and then works is written before the other tab's grace expires", async () => {
+  const uninstall = installSerialLocks();
+  try {
+    let now = T0;
+    let throwsLeft = 3;
+    const family = new Family(() => now);
+    const store = boolStore((session) =>
+      session.renew === "rsi1.fam.s2" && session.accessToken !== "" && throwsLeft > 0 && (throwsLeft -= 1, true),
+    );
+    const a = await signIn(store, family, () => now);
+    const b = new SessionCredential({ store, transport: family.transport, now: () => now });
+    try {
+      assert.equal((await b.restore())?.principal, PRINCIPAL);
+      now += 100_000;
+      assert.ok((await a.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+      assert.equal(family.cur, "rsi1.fam.s2");
+      assert.equal(store.peek()?.renew, "rsi1.fam.s2");
+      assert.equal(throwsLeft, 0);
+      // Past the server's 60 s grace. The background heal has not had its 0.5 s.
+      now += 90_000;
+      assert.ok((await b.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+      assert.equal(family.reuse, 0);
+      assert.equal(family.ended, false);
+      assert.equal(family.presentations.at(-1), "rsi1.fam.s2");
+      assert.equal(store.peek()?.renew, "rsi1.fam.s3");
+    } finally {
+      await a.invalidate(true);
+      await b.invalidate(true);
+    }
+  } finally {
+    uninstall();
+  }
+});
+
+test("two tabs keep the later credential after a failing store", async () => {
+  const uninstall = installSerialLocks();
+  try {
+    for (const gap of [0, 20_000, 59_000]) {
+      let now = T0;
+      let down = false;
+      const family = new Family(() => now);
+      const store = boolStore(() => down);
+      const a = await signIn(store, family, () => now);
+      const b = new SessionCredential({ store, transport: family.transport, now: () => now });
+      try {
+        assert.equal((await b.restore())?.principal, PRINCIPAL);
+        down = true;
+        now += 100_000;
+        assert.ok((await a.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+        assert.equal(family.cur, "rsi1.fam.s2");
+        assert.equal(store.peek()?.renew, "rsi1.fam.s1");
+        now += gap;
+        assert.ok((await b.authHeaders("GET", `${ORIGIN}/x`)).Authorization, `gap ${gap}`);
+        assert.equal(family.cur, "rsi1.fam.s3", `gap ${gap}`);
+        assert.equal(family.reuse, 0, `gap ${gap}`);
+        assert.equal(store.peek()?.renew, "rsi1.fam.s1", `gap ${gap}: saves were down`);
+        down = false;
+        await sleep(800);
+        assert.equal(store.peek()?.renew, "rsi1.fam.s3", `gap ${gap}: the store ends on the later credential`);
+        const before = family.presentations.length;
+        assert.equal((await a.renew())?.principal, PRINCIPAL, `gap ${gap}`);
+        assert.equal(family.presentations.length, before, `gap ${gap}: A adopts s3`);
+        assert.equal(store.peek()?.renew, "rsi1.fam.s3", `gap ${gap}`);
+        assert.equal(family.reuse, 0, `gap ${gap}`);
+        now += 100_000;
+        assert.ok((await a.authHeaders("GET", `${ORIGIN}/x`)).Authorization, `gap ${gap}`);
+        assert.ok((await b.authHeaders("GET", `${ORIGIN}/x`)).Authorization, `gap ${gap}`);
+        assert.equal(family.reuse, 0, `gap ${gap}: both keep working`);
+        assert.equal(family.ended, false, `gap ${gap}`);
+        assert.equal(a.session?.principal, PRINCIPAL);
+        assert.equal(b.session?.principal, PRINCIPAL);
+      } finally {
+        await a.invalidate(true);
+        await b.invalidate(true);
+      }
+    }
+  } finally {
+    uninstall();
+  }
+});
+
+test("a restore during renew adopts the stored credential and does not present the old secret", async () => {
+  const uninstall = installSerialLocks();
+  let now = T0;
+  let holdRenewLoad = false;
+  let releaseRenewLoad!: () => void;
+  const renewLoadHeld = new Promise<void>((resolve) => { releaseRenewLoad = resolve; });
+  let entered!: () => void;
+  const inside = new Promise<void>((resolve) => { entered = resolve; });
+  let current: StoredSession | null = null;
+  const store: Mem = {
+    peek: () => current,
+    async load() {
+      await Promise.resolve();
+      if (holdRenewLoad) {
+        holdRenewLoad = false;
+        entered();
+        await renewLoadHeld;
+      }
+      return current ? structuredClone(current) : null;
+    },
+    async save(session) {
+      await Promise.resolve();
+      current = structuredClone(session);
+    },
+    async saveIfCurrent(session, expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return false;
+      await Promise.resolve();
+      if (current !== seen) return false;
+      current = structuredClone(session);
+      return true;
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return false;
+      await Promise.resolve();
+      if (current !== seen) return false;
+      current = null;
+      return true;
+    },
+    async clear() {
+      await Promise.resolve();
+      current = null;
+    },
+  };
+  const family = new Family(() => now);
+  const a = await signIn(store, family, () => now);
+  const b = new SessionCredential({ store, transport: family.transport, now: () => now });
+  try {
+    assert.equal((await b.restore())?.principal, PRINCIPAL);
+    // Two rotations. s1 is no longer the previous credential, so presenting it is reuse.
+    assert.equal((await a.renew())?.principal, PRINCIPAL);
+    assert.equal((await a.renew())?.principal, PRINCIPAL);
+    assert.equal(family.cur, "rsi1.fam.s3");
+    assert.equal(store.peek()?.renew, "rsi1.fam.s3");
+    const presented = family.presentations.slice();
+    holdRenewLoad = true;
+    const pending = b.renew();
+    const gate = await Promise.race([
+      inside.then(() => "held" as const),
+      sleep(2000).then(() => "timeout" as const),
+    ]);
+    assert.equal(gate, "held");
+    await b.invalidate();
+    // The rotated token is still outside the guard, so restore adopts it and does not renew.
+    assert.equal((await b.restore())?.principal, PRINCIPAL);
+    releaseRenewLoad();
+    assert.equal((await pending)?.principal, PRINCIPAL);
+    assert.equal(family.reuse, 0);
+    assert.equal(family.ended, false);
+    assert.deepEqual(family.presentations, presented);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s3");
+  } finally {
+    releaseRenewLoad();
+    await a.invalidate(true);
+    await b.invalidate(true);
+    uninstall();
+  }
+});
+
+test("a heal after a plain invalidate does not restore the dropped token", async () => {
+  let now = T0;
+  let down = false;
+  const family = new Family(() => now);
+  const store = boolStore(() => down);
+  const cred = await signIn(store, family, () => now);
+  try {
+    const original = store.peek()?.accessToken;
+    assert.ok(original);
+    down = true;
+    now += 100_000;
+    assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s1");
+    assert.equal(store.peek()?.accessToken, original);
+    await cred.invalidate();
+    assert.equal(cred.session, null);
+    down = false;
+    await sleep(800);
+    const rec = store.peek();
+    assert.ok(rec);
+    assert.equal(rec.accessToken, "");
+    assert.equal(rec.renew, "rsi1.fam.s2");
+    assert.notEqual(rec.accessToken, original);
+    const fresh = new SessionCredential({ store, transport: family.transport, now: () => now });
+    assert.equal((await fresh.restore())?.principal, PRINCIPAL);
+    assert.equal(family.reuse, 0);
+    assert.equal(family.ended, false);
+    assert.notEqual(store.peek()?.accessToken, original);
+    await fresh.invalidate(true);
+  } finally {
+    await cred.invalidate(true);
+  }
+});
+
+test("renew() is not null while the sign-in is live", async () => {
+  let now = T0;
+  const family = new Family(() => now);
+  let current: StoredSession | null = null;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  let entered!: () => void;
+  const inside = new Promise<void>((resolve) => { entered = resolve; });
+  let held = false;
+  const store: Mem = {
+    peek: () => current,
+    async load() {
+      await Promise.resolve();
+      return current ? structuredClone(current) : null;
+    },
+    async save(session) {
+      await Promise.resolve();
+      current = structuredClone(session);
+    },
+    async saveIfCurrent(session, expect) {
+      if (!held && session.renew === "rsi1.fam.s2" && session.accessToken !== "") {
+        held = true;
+        entered();
+        await hold;
+      }
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return false;
+      await Promise.resolve();
+      if (current !== seen) return false;
+      current = structuredClone(session);
+      return true;
+    },
+    async clearIfCurrent(expect) {
+      const seen = current;
+      if (!recordIsCurrent(seen, expect)) return false;
+      await Promise.resolve();
+      if (current !== seen) return false;
+      current = null;
+      return true;
+    },
+    async clear() {
+      await Promise.resolve();
+      current = null;
+    },
+  };
+  const cred = await signIn(store, family, () => now);
+  try {
+    now += 100_000;
+    const pending = cred.renew();
+    const gate = await Promise.race([
+      inside.then(() => "held" as const),
+      sleep(2000).then(() => "timeout" as const),
+    ]);
+    assert.equal(gate, "held");
+    await cred.invalidate();
+    release();
+    const session = await pending;
+    assert.ok(session);
+    assert.equal(session.principal, PRINCIPAL);
+    assert.equal(family.reuse, 0);
+    assert.equal(family.ended, false);
+    assert.equal(cred.session?.principal, PRINCIPAL);
+  } finally {
+    await cred.invalidate(true);
   }
 });

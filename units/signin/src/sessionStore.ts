@@ -8,9 +8,10 @@
 //   - the DPoP key is the CryptoKey OBJECTS. IndexedDB structured-clones them. The private key
 //     stays non-extractable. Nothing here calls `exportKey`, or writes `localStorage`.
 //   - `publicKeyId` is the public key's JWK `x` and `y` joined by `.`. The caller computes it
-//     with `exportKey` before any transaction. An update compares that string, and the renewal
-//     credential or access token it was given, and does not export inside one. The session
-//     code re-reads the JWK when it adopts the record.
+//     with `exportKey` before any transaction. An update compares that string and, when the
+//     tab holds a renewal, the server's `renewExpiresAt` as a number. The stored ISO time is
+//     parsed in the `get` callback. Nothing awaits inside the transaction. The session code
+//     re-reads the JWK when it adopts the record.
 //
 // A later record shape bumps {@link STORED_SESSION_VERSION}. Readers refuse a version they do
 // not know rather than guessing.
@@ -85,41 +86,62 @@ export interface StoredSession {
 }
 
 /**
- * The record a tab may still change.
- * `publicKeyId` is always compared, and it must be a non-empty string.
- * `renewAnyOf`, when the property is present, matches when the stored renewal
- * credential is one of those strings: this tab's current credential, or a
- * credential this tab already spent by a successful rotation. `renew` is then
- * not compared.
- * `renew`, when `renewAnyOf` is absent and the property is present, must be the
- * stored credential. `null` or `""` means the stored record has no renewal credential.
- * `accessToken`, when the property is present, must be the stored access token.
- * A record with no renewal credential is matched on that token.
+ * The record a tab may still change on its own behalf.
+ *
+ * `publicKeyId` is always compared, and it must be a non-empty string. A different
+ * key is another sign-in. A missing record is not current.
+ *
+ * When `renewExpiresAt` is a finite number, that number is this tab's credential
+ * time (epoch milliseconds). The stored record may be written or cleared only when
+ * its `renewExpiresAt` is strictly earlier, or when it holds exactly `renew`
+ * (the same credential: a mark, or a dropped access token). A later time is left
+ * alone. An equal time with a different credential is left alone. The compare is
+ * numeric. The stored ISO string is parsed here, and this function does not await.
+ *
+ * When `renewExpiresAt` is absent, the record has no renewal order. `renew`, when
+ * present, must be the stored credential (`null` or `""` means none). `accessToken`,
+ * when present, must be the stored access token.
  */
 export interface CurrentRecordExpect {
   publicKeyId: string;
   renew?: string | null;
-  renewAnyOf?: readonly string[];
+  renewExpiresAt?: number;
   accessToken?: string;
 }
 
+/** Epoch milliseconds of a `renewExpiresAt` value, or null when it is not a time. */
+export function renewExpiresAtMs(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function renewSecret(value: unknown): string {
+  return typeof value === "string" && value.length > 0 ? value : "";
+}
+
 /**
- * True when `existing` is the record `expect` names.
- * Every field present on `expect` is compared. A missing record is not current.
- * Callers can run this inside one IndexedDB `get` callback: it does not await.
+ * True when `existing` is a record this tab may still change.
+ * A missing record is not current. Callers can run this inside one IndexedDB
+ * `get` callback: it does not await.
  */
 export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect): boolean {
   if (!existing || typeof existing !== "object") return false;
   if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
   const record = existing as Partial<StoredSession>;
   if (record.publicKeyId !== expect.publicKeyId) return false;
-  if (expect.renewAnyOf !== undefined) {
-    const stored = typeof record.renew === "string" && record.renew.length > 0 ? record.renew : "";
-    if (stored.length === 0 || !expect.renewAnyOf.includes(stored)) return false;
-  } else if ("renew" in expect) {
-    const stored = typeof record.renew === "string" && record.renew.length > 0 ? record.renew : null;
-    const want = typeof expect.renew === "string" && expect.renew.length > 0 ? expect.renew : null;
-    if (stored !== want) return false;
+  if (typeof expect.renewExpiresAt === "number" && Number.isFinite(expect.renewExpiresAt)) {
+    const want = renewSecret(expect.renew);
+    const have = renewSecret(record.renew);
+    if (want.length > 0 && have === want) return true;
+    const storedAt = renewExpiresAtMs(record.renewExpiresAt);
+    if (storedAt === null) return false;
+    return storedAt < expect.renewExpiresAt;
+  }
+  if ("renew" in expect) {
+    const have = renewSecret(record.renew);
+    const want = renewSecret(expect.renew);
+    if ((have.length > 0 ? have : null) !== (want.length > 0 ? want : null)) return false;
   }
   if ("accessToken" in expect && record.accessToken !== expect.accessToken) return false;
   return true;
@@ -128,14 +150,18 @@ export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect):
 /**
  * The identity of a stored record, for a later conditional clear.
  * Null when the value has no `publicKeyId` to compare.
- * A renewal credential is the match. With none, the access token is.
+ * A renewal credential carries its `renewExpiresAt` when that time parses,
+ * so a later credential is not cleared and an earlier one can be.
+ * With no renewal credential, the access token is the match.
  */
 export function expectOfStored(raw: unknown): CurrentRecordExpect | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Partial<StoredSession>;
   if (typeof record.publicKeyId !== "string" || record.publicKeyId.length === 0) return null;
   if (typeof record.renew === "string" && record.renew.length > 0) {
-    return { publicKeyId: record.publicKeyId, renew: record.renew };
+    const at = renewExpiresAtMs(record.renewExpiresAt);
+    if (at === null) return { publicKeyId: record.publicKeyId, renew: record.renew };
+    return { publicKeyId: record.publicKeyId, renew: record.renew, renewExpiresAt: at };
   }
   return {
     publicKeyId: record.publicKeyId,
@@ -152,18 +178,19 @@ export interface SessionStore {
   save(session: StoredSession): Promise<void>;
   /**
    * Writes `session` only when the stored record is still {@link recordIsCurrent}
-   * for `expect`. A missing record, another key, or another credential writes
-   * nothing and resolves `false`. `true` means the put was made. The IndexedDB
-   * adapter compares every given field and puts inside the same `get` success
-   * callback, so the transaction is still active and a delete that commits
-   * first is not put back.
+   * for `expect`. A missing record, another key, a later `renewExpiresAt`, or an
+   * equal time with a different credential writes nothing and resolves `false`.
+   * `true` means the put was made. The IndexedDB adapter compares and puts inside
+   * the same `get` success callback, so the transaction is still active and a
+   * delete that commits first is not put back.
    */
   saveIfCurrent(session: StoredSession, expect: CurrentRecordExpect): Promise<boolean>;
   /**
    * Deletes the one record only when it is still {@link recordIsCurrent} for
-   * `expect`. Another key or credential is left in place and this resolves
-   * `false`. `true` means the delete was made. The IndexedDB adapter compares
-   * and deletes inside the same `get` success callback.
+   * `expect`. Another key, a later `renewExpiresAt`, or an equal time with a
+   * different credential is left in place and this resolves `false`. `true`
+   * means the delete was made. The IndexedDB adapter compares and deletes
+   * inside the same `get` success callback.
    */
   clearIfCurrent(expect: CurrentRecordExpect): Promise<boolean>;
   /** Deletes the one record. Starts the delete before it needs to wait, when it can. */

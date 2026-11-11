@@ -106,11 +106,15 @@ function jsonResponse(status: number, body: unknown): TransportResponse {
   return { status, json: async () => body };
 }
 
+// Each successful rotation is strictly later than the seed and than the previous answer.
+// An equal `renewExpiresAt` with a different credential is not written.
+let issuedRenewAt = NOW + 14 * 24 * 3600 * 1000;
 function renewedBody(renew = NEW_RENEW, principal = PRINCIPAL) {
+  issuedRenewAt += 1_000;
   return {
     token: jwt(NEW_EXP),
     renew,
-    renewExpiresAt: new Date(NOW + 14 * 24 * 3600 * 1000).toISOString(),
+    renewExpiresAt: new Date(issuedRenewAt).toISOString(),
     principal,
   };
 }
@@ -998,9 +1002,9 @@ test("a renew whose store saves never settle still returns the new token from me
 
 test("a failed save of the rotated record keeps the session and a reload within grace recovers", async () => {
   const inner = memoryStore(await seed({ accessToken: "tok-old", expiresAt: NOW - 1 }));
-  // The attempt mark lands. The rotated save, the in-lock retry, and the drain do not,
+  // The attempt mark lands. The in-lock throw attempts and the drain do not,
   // so a reload before the background save still presents the previous credential.
-  const store = hangStore(inner, { throwSaveAt: [2, 3, 4] });
+  const store = hangStore(inner, { throwSaveAt: [2, 3, 4, 5, 6, 7, 8, 9, 10] });
   const now = () => NOW;
   const server = graceRenew(now);
   const logs: unknown[][] = [];
@@ -1151,7 +1155,13 @@ test("a stored credential inside the guard is renewed with the adopted secret un
     assert.ok(record);
     record.renew = adopted;
     record.expiresAt = NOW + EXPIRY_GUARD_MS - 1;
-    record.renewExpiresAt = LIVE_EXPIRY;
+    // Later than the credential this tab restored, so the record is adopted.
+    // The answer is later than this record, so the rotation save can land.
+    const adoptedAt = Date.parse(LIVE_EXPIRY) + 60_000;
+    record.renewExpiresAt = new Date(adoptedAt).toISOString();
+    if (Date.parse(answer.renewExpiresAt) <= adoptedAt) {
+      answer.renewExpiresAt = new Date(adoptedAt + 1_000).toISOString();
+    }
     const session = await cred.renew();
     assert.equal(session?.principal, PRINCIPAL);
     const hits = renewCalls(t.calls);
@@ -1165,10 +1175,13 @@ test("a stored credential inside the guard is renewed with the adopted secret un
   }
 });
 
-test("an adopted renewal that has already expired ends the sign-in", async () => {
+test("an older stored credential is replaced and this tab presents its own", async () => {
+  // A later server time cannot already be in the past while this tab's credential is live.
+  // An earlier time is not adopted: this tab writes its record over it and presents its own.
   const store = memoryStore(await seed());
   let now = NOW;
-  const t = renewTransport(() => jsonResponse(200, renewedBody()));
+  const answer = renewedBody();
+  const t = renewTransport(() => jsonResponse(200, answer));
   const cred = new SessionCredential({ store, transport: t.send, now: () => now });
   assert.ok(await cred.restore());
   const record = store.peek();
@@ -1178,12 +1191,13 @@ test("an adopted renewal that has already expired ends the sign-in", async () =>
   record.expiresAt = NOW - 1;
   record.accessToken = "tok-old";
   now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
-  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
-  assert.equal(renewCalls(t.calls).length, 0);
-  assert.equal(store.peek(), null);
-  assert.equal(cred.session, null);
-  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
-  assert.equal(renewCalls(t.calls).length, 0);
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  assert.ok(headers.Authorization.startsWith("DPoP "));
+  const hits = renewCalls(t.calls);
+  assert.equal(hits.length, 1);
+  assert.deepEqual(JSON.parse(hits[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(store.peek()?.renew, answer.renew);
+  assert.equal(cred.session?.principal, PRINCIPAL);
 });
 
 test("signOut with no token renews first and signs out with the fresh token", async () => {
@@ -1476,6 +1490,7 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
   let current = OLD_RENEW;
   let previous: string | null = null;
   let serial = 0;
+  let issuedAt = Date.parse(LIVE_EXPIRY);
   const issued: string[] = [];
   const accept = (presented: string): { renew: string; token: string } | null => {
     const grace = previous !== null && presented === previous;
@@ -1485,7 +1500,8 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
     current = `rsi1.fam.rot-${serial}`;
     const token = jwt(NEW_EXP);
     issued.push(current);
-    return { renew: current, token };
+    issuedAt += 1_000;
+    return { renew: current, token, renewExpiresAt: new Date(issuedAt).toISOString() };
   };
   const send: Transport = async (url, req) => {
     if (url !== RENEW_URL) return jsonResponse(500, {});
@@ -1501,7 +1517,7 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
     return jsonResponse(200, {
       token: accepted.token,
       renew: accepted.renew,
-      renewExpiresAt: LIVE_EXPIRY,
+      renewExpiresAt: accepted.renewExpiresAt,
       principal: PRINCIPAL,
     });
   };
@@ -1535,7 +1551,9 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
     assert.equal(sessionA?.principal, PRINCIPAL);
     assert.deepEqual(issued, ["rsi1.fam.rot-1", "rsi1.fam.rot-2"]);
     assert.equal(store.peek()?.renew, "rsi1.fam.rot-2", "A's later save does not replace B's rotation");
-    assert.equal(rotationSaves, 2);
+    // Both rotations are saved once. A's older credential may be offered again by the
+    // drain after the compare refuses it. That call does not replace rot-2.
+    assert.ok(rotationSaves >= 2);
     const before = requests;
     assert.equal((await a.renew())?.principal, PRINCIPAL);
     assert.equal(requests, before, "A's next renew adopts B's record and does not present");
