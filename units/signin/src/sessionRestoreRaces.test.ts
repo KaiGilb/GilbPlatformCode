@@ -2,7 +2,7 @@
 // a second tab writing a signed-out record back, and a key pair whose halves do not match.
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { SessionCredential, STORE_TIMEOUT_MS, STORED_SESSION_VERSION, recordIsCurrent, type SessionStore, type StoredSession } from "./session";
+import { SessionCredential, STORE_TIMEOUT_MS, STORED_SESSION_VERSION, isSignedOutMarker, recordIsCurrent, type SessionStore, type StoredSession } from "./session";
 import { generateDpopKeyPair } from "./dpop";
 import type { Transport } from "./transport";
 
@@ -157,29 +157,30 @@ test("signInWithCode settles while a save never resolves", async () => {
   assert.equal(headers.Authorization.startsWith("DPoP "), true);
 });
 
-test("invalidate(true) settles while a clear never resolves", async () => {
+test("invalidate(true) settles while a marker save never resolves", async () => {
   const hang = new Promise<never>(() => {});
-  let clears = 0;
+  let saves = 0;
   const store: SessionStore = {
     async load() {
       return null;
     },
-    async save() {},
-    async saveIfCurrent() {},
-    async clearIfCurrent() {},
-    clear: () => {
-      clears++;
+    save: () => {
+      saves++;
       return hang;
     },
+    async saveIfCurrent() {},
+    async clearIfCurrent() {},
+    async clear() {},
   };
   const cred = new SessionCredential({ store, transport: transportFor("https://id.example.test/i/A"), now: () => NOW });
   await cred.signInWithCode(ORIGIN, "a@x.test", "123456");
+  const before = saves;
   const out = await Promise.race([
     cred.invalidate(true).then(() => "out-done" as const),
     sleep(STORE_TIMEOUT_MS + 250).then(() => "out-hung" as const),
   ]);
   assert.equal(out, "out-done");
-  assert.ok(clears > 0, "the clear is started before the wait gives up");
+  assert.ok(saves > before, "the marker save is started before the wait gives up");
   assert.equal(cred.session, null);
 });
 
@@ -231,9 +232,9 @@ test("a second tab's vault refresh does not resurrect a record the first tab sig
   const b = new SessionCredential({ store, transport, now: () => NOW });
   assert.ok(await b.restore());
   await a.invalidate(true);
-  assert.equal(store.peek(), null, "after A signs out the store is empty");
+  assert.ok(isSignedOutMarker(store.peek()), "after A signs out the slot holds a signed-out marker");
   await b.loadReachableVaults(ORIGIN);
-  assert.equal(store.peek(), null, "B's later save must not put the signed-out record back");
+  assert.ok(isSignedOutMarker(store.peek()), "B's later save must not replace the signed-out marker");
 });
 
 test("restore of a mismatched key pair returns null and clears the record", async () => {

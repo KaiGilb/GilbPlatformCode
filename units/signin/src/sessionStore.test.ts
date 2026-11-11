@@ -12,8 +12,11 @@ import {
   SESSION_RECORD_KEY,
   indexedDbSessionStore,
   familyOf,
+  isFamilyEndedMarker,
+  isSignedOutMarker,
   recordIsCurrent,
   type CurrentRecordExpect,
+  type SessionSlot,
   type SessionStore,
   type StoredSession,
 } from "./session";
@@ -41,22 +44,27 @@ interface Mem extends SessionStore {
   clearCount: number;
   /** How many times `clear` had been entered, read synchronously. */
   readonly enteredClears: number;
+  /** How many times `save` had been entered, read synchronously. */
+  readonly enteredSaves: number;
 }
 
 function memoryStore(): Mem {
-  let current: StoredSession | null = null;
+  let current: SessionSlot | null = null;
   let enteredClears = 0;
+  let enteredSaves = 0;
   const saves: string[] = [];
   const store: Mem = {
     saves,
     get clearCount() { return enteredClears; },
     get enteredClears() { return enteredClears; },
+    get enteredSaves() { return enteredSaves; },
     async load() {
       await Promise.resolve();
       return current ? structuredClone(current) : null;
     },
     async save(session) {
-      saves.push(session.accessToken);
+      enteredSaves++;
+      if (session && typeof session === "object" && "accessToken" in session && typeof session.accessToken === "string") saves.push(session.accessToken);
       await Promise.resolve();
       current = structuredClone(session);
     },
@@ -334,22 +342,25 @@ test("restore of an empty store returns null", async () => {
   assert.equal(cred.session, null);
 });
 
-test("sign-out clears the store and starts the clear before it returns", async () => {
+test("sign-out writes a signed-out marker and starts that put before it returns", async () => {
   const store = memoryStore();
   const t = codeTransport(liveVaults);
   const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
   await cred.signInWithCode(ORIGIN, "a@example.test", "123456");
-  const before = store.enteredClears;
+  const before = store.enteredSaves;
   const pending = cred.invalidate(true);
-  assert.ok(store.enteredClears > before, "clear entered before invalidate returned");
+  assert.ok(store.enteredSaves > before, "the marker put entered before invalidate returned");
   await pending;
   assert.equal(cred.session, null);
-  assert.equal(await store.load(), null);
+  const slot = await store.load();
+  assert.ok(isSignedOutMarker(slot));
+  assert.equal(slot.at, NOW);
   const again = new SessionCredential({ store, now: () => NOW });
   assert.equal(await again.restore(), null);
+  assert.ok(isSignedOutMarker(await store.load()), "restore keeps the signed-out marker");
 });
 
-test("a sign-out while the vault list is on the wire leaves the store empty", async () => {
+test("a sign-out while the vault list is on the wire leaves a signed-out marker", async () => {
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   let listed = false;
@@ -371,10 +382,12 @@ test("a sign-out while the vault list is on the wire leaves the store empty", as
   release();
   await assert.rejects(pending, NotSignedInError);
   assert.equal(cred.session, null);
-  assert.equal(await store.load(), null);
+  const slot = await store.load();
+  assert.ok(isSignedOutMarker(slot));
+  assert.equal(slot.at, NOW);
 });
 
-test("sign-out during restore stores nothing and returns null", async () => {
+test("sign-out during restore returns null and keeps the signed-out marker", async () => {
   const record = await seed();
   let current: StoredSession | null = record;
   let release!: () => void;
@@ -406,7 +419,7 @@ test("sign-out during restore stores nothing and returns null", async () => {
   release();
   assert.equal(await pending, null);
   assert.equal(cred.session, null);
-  assert.equal(current, null);
+  assert.ok(isSignedOutMarker(current), "restore does not wipe the signed-out marker");
 });
 
 test("concurrent restore calls share one load", async () => {
@@ -842,21 +855,38 @@ test("recordIsCurrent orders one family by renewExpiresAt and leaves another fam
   assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
   assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
   assert.equal(recordIsCurrent(undefined, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  const signedOut = { kind: "signed-out" as const, at: 1 };
+  const otherEnded = { kind: "family-ended" as const, family: "f2", publicKeyId: "k" };
+  const ownEnded = { kind: "family-ended" as const, family: "fam", publicKeyId: "k" };
   assert.equal(
-    recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, allowAbsent: true }),
-    true,
-    "an empty store may be filled when the caller says the absence was not this family's sign-out",
-  );
-  assert.equal(
-    recordIsCurrent(undefined, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, allowAbsent: true }),
-    true,
-  );
-  assert.equal(recordIsCurrent(null, { publicKeyId: "", renew: "rsi1.fam.s2", allowAbsent: true }), false);
-  assert.equal(
-    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "f2", allowAbsent: true }),
+    recordIsCurrent(signedOut, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
     false,
-    "a present record of another family is still not written",
+    "a signed-out marker is never replaced by an update",
   );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
+    true,
+    "a live record may replace another family's family-ended marker",
+  );
+  assert.equal(
+    recordIsCurrent(ownEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, replaceOtherFamilyEnded: true }),
+    false,
+    "a family-ended marker of this family is not current",
+  );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
+    false,
+    "without the flag a family-ended marker is left alone",
+  );
+  assert.equal(
+    recordIsCurrent(otherEnded, { publicKeyId: "", renew: "rsi1.fam.s2", replaceOtherFamilyEnded: true }),
+    false,
+    "an empty publicKeyId never writes over a marker",
+  );
+  assert.equal(isSignedOutMarker(signedOut), true);
+  assert.equal(isFamilyEndedMarker(otherEnded), true);
+  assert.equal(isSignedOutMarker(otherEnded), false);
+  assert.equal(isFamilyEndedMarker(signedOut), false);
   assert.equal(
     recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
     false,

@@ -8,6 +8,8 @@ import {
   RenewalUnavailableError,
   EXPIRY_GUARD_MS,
   familyOf,
+  isFamilyEndedMarker,
+  isSignedOutMarker,
   RENEW_TIMEOUT_MS,
   RENEW_WINDOW_MAX_SEC,
   RENEW_WINDOW_MIN_SEC,
@@ -39,6 +41,15 @@ const dec = (s: string) => JSON.parse(Buffer.from(s, "base64url").toString("utf8
 
 interface Mem extends SessionStore {
   peek(): StoredSession | null;
+}
+
+function expectSignedOut(slot: unknown): void {
+  assert.ok(isSignedOutMarker(slot), "the slot holds a signed-out marker");
+}
+
+function expectFamilyEnded(slot: unknown, family: string): void {
+  assert.ok(isFamilyEndedMarker(slot), "the slot holds a family-ended marker");
+  assert.equal(slot.family, family);
 }
 
 function memoryStore(initial: StoredSession | null = null): Mem {
@@ -391,13 +402,16 @@ test("without locks the second presentation of the spent credential is 401 and t
   }
 });
 
-test("a 401 from renew clears the sign-in and authHeaders throws NotSignedInError", async () => {
-  const store = memoryStore(await seed({ expiresAt: NOW - 1, accessToken: "tok-old" }));
+test("a 401 from renew ends the sign-in and leaves a family-ended marker", async () => {
+  const seeded = await seed({ expiresAt: NOW - 1, accessToken: "tok-old" });
+  const store = memoryStore(seeded);
   const t = renewTransport(() => jsonResponse(401, { error: "Unauthorized", message: "renewal refused" }));
   const cred = new SessionCredential({ store, transport: t.send, now: () => NOW });
   assert.equal(await cred.restore(), null);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  const slot = store.peek();
+  expectFamilyEnded(slot, "fam");
+  assert.equal(isFamilyEndedMarker(slot) ? slot.publicKeyId : "", seeded.publicKeyId);
   await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
   assert.equal(renewCalls(t.calls).length, 1, "the spent credential is not presented again");
 });
@@ -448,7 +462,7 @@ test("a sign-out during renew wins and the rotated credential is not stored", as
   assert.equal(await pending, null);
   assert.equal(signedOut.serverSignedOut, true);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectSignedOut(store.peek());
   assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 1);
 });
 
@@ -477,10 +491,10 @@ test("signOut posts the sign-out and then clears", async () => {
   assert.equal(claims.htu, SIGN_OUT_URL);
   assert.equal(typeof claims.ath, "string");
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectSignedOut(store.peek());
 });
 
-test("signOut clears even when the server hangs, and reports serverSignedOut false", async () => {
+test("signOut writes a signed-out marker even when the server hangs, and reports serverSignedOut false", async () => {
   const store = memoryStore(await seed());
   let sawSignOut = false;
   const send: Transport = async (url) => {
@@ -498,7 +512,7 @@ test("signOut clears even when the server hangs, and reports serverSignedOut fal
   assert.equal(result.serverSignedOut, false);
   assert.equal(sawSignOut, true);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectSignedOut(store.peek());
   assert.ok(elapsed >= SIGN_OUT_BOUND_MS - 500);
   assert.ok(elapsed < SIGN_OUT_BOUND_MS + 1500);
 });
@@ -642,7 +656,7 @@ test("after the retry window a lost answer is presented once more and a reuse 40
   assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
   assert.equal(server.reuse(), 1);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectFamilyEnded(store.peek(), "fam");
   assert.equal(await cred.renew(), null);
   await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
   assert.deepEqual(server.presented, [OLD_RENEW, OLD_RENEW]);
@@ -710,7 +724,7 @@ test("45_000 after a lost answer is the grace retry and 45_001 is the last try",
   assert.equal(lastServer.presented.length, 3);
   assert.equal(lastServer.reuse(), 1);
   assert.equal(lastCred.session, null);
-  assert.equal(lastStore.peek(), null);
+  expectFamilyEnded(lastStore.peek(), "fam");
   assert.equal(await lastCred.renew(), null);
   assert.equal(lastServer.presented.length, 3);
 });
@@ -785,7 +799,7 @@ test("a reload after a failed attempt mark can present and end the sign-in", asy
   assert.equal(server.presented.length, 2);
   assert.equal(server.reuse(), 1);
   assert.equal(reloaded.session, null);
-  assert.equal(inner.peek(), null);
+  expectFamilyEnded(inner.peek(), "fam");
 });
 
 test("a plain invalidate keeps the renewal and a reload renews", async () => {
@@ -822,7 +836,7 @@ test("a plain invalidate keeps the renewal and a reload renews", async () => {
   assert.ok((store.peek()?.accessToken.length ?? 0) > 0);
 });
 
-test("an emptied store is a sign-out and nothing is presented", async () => {
+test("an empty store means nothing: the live tab stays signed in and does not refill it", async () => {
   const store = memoryStore(await seed());
   let now = NOW;
   const presented: string[] = [];
@@ -835,11 +849,14 @@ test("an emptied store is a sign-out and nothing is presented", async () => {
   assert.equal(presented.length, 0);
   await store.clear();
   now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
-  assert.equal(await cred.renew(), null);
-  await assert.rejects(cred.authHeaders("GET", "https://a.example.test/x"), NotSignedInError);
-  assert.equal(presented.length, 0);
-  assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  const session = await cred.renew();
+  assert.equal(session?.principal, PRINCIPAL);
+  assert.equal(presented.length, 1, "the live credential is presented; an empty slot is not a sign-out");
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  assert.equal(store.peek(), null, "an update does not fill an empty slot");
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  assert.ok(headers.Authorization.startsWith("DPoP "));
+  assert.equal(presented.length, 1);
 });
 
 test("a store load that throws is not an empty record", async () => {
@@ -1128,7 +1145,7 @@ test("signOut during a hung renew settles quickly and a later sign-in can renew"
     assert.equal(signedOut.serverSignedOut, true);
     assert.ok(await settled instanceof NotSignedInError);
     assert.equal(cred.session, null);
-    assert.equal(store.peek(), null);
+    expectSignedOut(store.peek());
 
     const next = new SessionCredential({ store, transport: send, now: () => now });
     await next.signInWithCode(ORIGIN, "a@example.test", "123456");
@@ -1312,10 +1329,10 @@ test("signOut with no token renews first and signs out with the fresh token", as
   assert.equal(calls.filter((call) => call.url === RENEW_URL).length, 1);
   assert.equal(calls.filter((call) => call.url === SIGN_OUT_URL).length, 1);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectSignedOut(store.peek());
 });
 
-test("signOut with no token clears locally when the renew fails", async () => {
+test("signOut with no token leaves a signed-out marker when the renew fails", async () => {
   const store = memoryStore(await seed());
   const calls: string[] = [];
   const send: Transport = async (url) => {
@@ -1331,7 +1348,7 @@ test("signOut with no token clears locally when the renew fails", async () => {
   assert.equal(result.serverSignedOut, false);
   assert.deepEqual(calls, [RENEW_URL]);
   assert.equal(cred.session, null);
-  assert.equal(store.peek(), null);
+  expectSignedOut(store.peek());
 });
 
 test("a stale plain invalidate does not replace a newer rotation", async () => {
@@ -1512,7 +1529,7 @@ test("a renew 401 does not clear another tab's newer sign-in", async () => {
   }
 });
 
-test("an explicit sign-out still empties the store and the other tab does not present", async () => {
+test("an explicit sign-out leaves a signed-out marker and the other tab does not present", async () => {
   const store = memoryStore();
   let now = NOW;
   const aRenew = "rsi1.fam.a-secret";
@@ -1557,12 +1574,16 @@ test("an explicit sign-out still empties the store and the other tab does not pr
     assert.equal(store.peek()?.renew, bRenew);
     const signedOut = await a.signOut(ORIGIN);
     assert.equal(signedOut.serverSignedOut, true);
-    assert.equal(store.peek(), null, "explicit sign-out clears whatever the store holds");
+    expectSignedOut(store.peek());
     assert.equal(await b.renew(), null);
-    assert.equal(bPresented, 0, "B signs out from the empty store without presenting");
+    assert.equal(bPresented, 0, "B sees the signed-out marker and does not present");
     await assert.rejects(b.authHeaders("GET", `${ORIGIN}/x`), NotSignedInError);
     assert.equal(bPresented, 0);
     assert.equal(b.session, null);
+    expectSignedOut(store.peek());
+    const fresh = new SessionCredential({ store, transport: bSend, now: () => now });
+    assert.equal(await fresh.restore(), null);
+    expectSignedOut(store.peek());
   } finally {
     uninstall();
   }
@@ -1705,7 +1726,7 @@ test("a dead tab's restore adopts another family's live sign-in and leaves it st
   }
 });
 
-test("restore after an explicit sign-out stays empty and does not adopt a later sign-in", async () => {
+test("restore after an explicit sign-out returns null and does not wipe a later sign-in", async () => {
   const store = memoryStore();
   let now = NOW;
   const vaults = jsonResponse(200, { vaults: [], complete: true });
@@ -1732,7 +1753,7 @@ test("restore after an explicit sign-out stays empty and does not adopt a later 
     await signedOut.signInWithCode(ORIGIN, "a@example.test", "123456");
     assert.equal((await signedOut.signOut(ORIGIN)).serverSignedOut, true);
     assert.equal(await signedOut.restore(), null);
-    assert.equal(store.peek(), null);
+    expectSignedOut(store.peek());
     const other = new SessionCredential({
       store,
       transport: send("rsi1.f2.secret", "https://id.example.test/i/p2"),
@@ -1741,10 +1762,12 @@ test("restore after an explicit sign-out stays empty and does not adopt a later 
     await other.signInWithCode(ORIGIN, "b@example.test", "123456");
     assert.equal(store.peek()?.renew, "rsi1.f2.secret");
     assert.equal(await signedOut.restore(), null);
-    assert.equal(store.peek(), null, "this instance's sign-out does not re-adopt a record it was clearing");
+    assert.equal(store.peek()?.renew, "rsi1.f2.secret", "this instance's restore does not wipe a later sign-in");
     await store.save(await seed({ renew: "rsi1.f2.again" }));
     assert.equal(await signedOut.restore(), null);
-    assert.equal(store.peek(), null);
+    assert.equal(store.peek()?.renew, "rsi1.f2.again");
+    const fresh = new SessionCredential({ store, transport: send("rsi1.f2.again", PRINCIPAL), now: () => now });
+    assert.equal((await fresh.restore())?.principal, PRINCIPAL);
   } finally {
     uninstall();
   }
@@ -1799,8 +1822,7 @@ test("an empty store left by another family does not sign out a tab whose family
   assert.equal(stayed?.principal, PRINCIPAL);
   assert.equal(renewCalls(t.calls).length, 2, "the live family is presented; the empty store is not a sign-out");
   assert.deepEqual(JSON.parse(renewCalls(t.calls)[1]!.req.body!), { renew: "rsi1.fam.kept" });
-  assert.equal(familyOf(store.peek()?.renew), "fam");
-  assert.equal(store.peek()?.renew, second.renew);
+  assert.equal(store.peek(), null, "an update does not fill an empty slot");
   const headers = await cred.authHeaders("GET", `${ORIGIN}/x`);
   assert.equal(headers.Authorization, `DPoP ${second.token}`);
   assert.equal(renewCalls(t.calls).length, 2);
