@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "name": "Default app style",
+  "mode": "system",
+  "palette": {
+    "accent": "#3b6fd4",
+    "paper": "#f1f5fe",
+    "ink": "#1c222b",
+    "surface": "#f7faff",
+    "lines": "#1c222b",
+    "ok": "#21763c",
+    "warn": "#865900",
+    "bad": "#9c4438",
+    "onAccent": "#ffffff"
+  },
+  "dark": {
+    "accent": "#3b6fd4",
+    "paper": "#0d0f15",
+    "ink": "#e1e8f6",
+    "surface": "#15181e",
+    "lines": "#e1e8f6",
+    "ok": "#73c385",
+    "warn": "#daa24f",
+    "bad": "#f09080",
+    "onAccent": "#ffffff"
+  },
+  "paletteSource": {
+    "kind": "seed",
+    "seed": "#3b6fd4"
+  },
+  "fonts": {
+    "sans": {
+      "family": "System Sans",
+      "source": "system"
+    },
+    "baseSizePx": 16,
+    "scaleRatio": 1.25
+  },
+  "shape": {
+    "radius": 10,
+    "shadow": "soft",
+    "density": "comfortable"
+  },
+  "button": "filled",
+  "window": "card"
+}

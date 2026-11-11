@@ -1,0 +1,108 @@
+/* Everything here is scoped under .gs-studio. The preview gets its look only from CSS variables set inline on .gs-preview. */
+.gs-studio { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1f2328; background: #f6f7f8; padding: 16px; box-sizing: border-box; }
+.gs-studio *, .gs-studio *::before, .gs-studio *::after { box-sizing: border-box; }
+.gs-studio .gs-layout { display: grid; grid-template-columns: minmax(340px, 440px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 899px) { .gs-studio .gs-layout { grid-template-columns: minmax(0, 1fr); } }
+.gs-studio .gs-controls { background: #fff; border: 1px solid #d0d5da; border-radius: 8px; overflow: hidden; }
+.gs-studio .gs-previewcol { position: sticky; top: 8px; min-width: 0; }
+@media (max-width: 899px) { .gs-studio .gs-previewcol { position: static; } }
+.gs-studio .gs-previewbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.gs-studio .gs-tablist { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 6px 0; background: #eceef0; border-bottom: 1px solid #d0d5da; }
+.gs-studio [role="tab"] { appearance: none; border: 1px solid transparent; border-bottom: 0; background: transparent; color: #444b52; padding: 6px 10px; border-radius: 6px 6px 0 0; font: inherit; cursor: pointer; }
+.gs-studio [role="tab"][aria-selected="true"] { background: #fff; color: #111; border-color: #d0d5da; font-weight: 600; margin-bottom: -1px; }
+.gs-studio [role="tab"]:focus-visible, .gs-studio button:focus-visible, .gs-studio input:focus-visible, .gs-studio select:focus-visible, .gs-studio [role="listbox"]:focus-visible { outline: 2px solid #1f5fbf; outline-offset: 2px; }
+.gs-studio [role="tabpanel"] { padding: 14px; display: grid; gap: 12px; }
+.gs-studio h3.gs-h { margin: 0; font-size: 15px; }
+.gs-studio .gs-field { display: grid; gap: 4px; }
+.gs-studio .gs-inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.gs-studio .gs-note { color: #59636e; font-size: 12px; margin: 0; }
+.gs-studio .gs-error { color: #8a1c1c; font-size: 13px; margin: 0; }
+.gs-studio .gs-live { min-height: 1.4em; margin: 8px 0 0; }
+.gs-studio .gs-live ul { margin: 0; padding-left: 18px; color: #8a1c1c; }
+.gs-studio input[type="text"], .gs-studio input[type="url"], .gs-studio select { font: inherit; padding: 6px 8px; border: 1px solid #aab1b8; border-radius: 6px; background: #fff; color: #1f2328; min-width: 0; }
+.gs-studio .gs-btn-ui { font: inherit; padding: 6px 12px; border: 1px solid #aab1b8; border-radius: 6px; background: #f3f4f6; color: #1f2328; cursor: pointer; }
+.gs-studio .gs-btn-ui:hover:not(:disabled) { background: #e6e8eb; }
+.gs-studio .gs-btn-ui:disabled { color: #8b949e; cursor: not-allowed; }
+.gs-studio .gs-btn-ui.gs-primary { background: #1f2328; color: #fff; border-color: #1f2328; }
+.gs-studio .gs-btn-ui.gs-primary:disabled { background: #d0d5da; color: #59636e; border-color: #d0d5da; }
+.gs-studio .gs-listbox { max-height: 280px; overflow: auto; border: 1px solid #aab1b8; border-radius: 6px; background: #fff; }
+.gs-studio .gs-group-label { position: sticky; top: 0; background: #eceef0; padding: 4px 8px; font-weight: 600; font-size: 12px; }
+.gs-studio .gs-group-label small { display: block; font-weight: 400; color: #59636e; }
+.gs-studio [role="option"] { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 8px; cursor: pointer; }
+.gs-studio [role="option"][aria-selected="true"] { background: #dde8fb; }
+.gs-studio [role="option"].gs-active { outline: 2px solid #1f5fbf; outline-offset: -2px; }
+.gs-studio .gs-strip { display: inline-flex; border: 1px solid #aab1b8; border-radius: 4px; overflow: hidden; flex: none; }
+.gs-studio .gs-strip span { width: 18px; height: 18px; display: block; }
+.gs-studio .gs-chiprow { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.gs-studio .gs-chipui { border: 1px solid #aab1b8; border-radius: 999px; padding: 2px 10px; background: #f3f4f6; font-size: 12px; }
+.gs-studio .gs-swatchbtn { width: 32px; height: 32px; border-radius: 6px; border: 2px solid #aab1b8; cursor: pointer; padding: 0; }
+.gs-studio .gs-swatchbtn[aria-pressed="true"] { border-color: #111; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1f5fbf; }
+.gs-studio .gs-samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.gs-studio .gs-sample { border: 2px solid transparent; border-radius: 8px; padding: 0; background: none; cursor: pointer; text-align: left; font: inherit; }
+.gs-studio .gs-sample[aria-pressed="true"] { border-color: #1f5fbf; }
+.gs-studio .gs-sample-body { padding: 10px; display: grid; gap: 8px; justify-items: start; }
+.gs-studio .gs-sample-caption { font-size: 12px; padding: 2px 6px; color: #1f2328; display: block; }
+.gs-studio .gs-winstage { background: linear-gradient(135deg, #ff5f6d, #ffc371 40%, #47c9e5 75%, #7b4dff); padding: 14px; border-radius: 8px; }
+.gs-studio table.gs-report { border-collapse: collapse; width: 100%; font-size: 13px; }
+.gs-studio table.gs-report th, .gs-studio table.gs-report td { border-bottom: 1px solid #d0d5da; padding: 4px 6px; text-align: left; }
+.gs-studio .gs-logo-thumb { max-height: 64px; max-width: 100%; border: 1px dashed #aab1b8; padding: 4px; background: #fff; }
+
+/* ---- the preview: styled only by its own variables ---- */
+.gs-studio .gs-preview {
+  --paper-2: color-mix(in srgb, var(--paper) 94%, var(--ink));
+  --ink-soft: color-mix(in srgb, var(--ink) 78%, var(--paper));
+  --accent-ink: color-mix(in srgb, var(--accent) 82%, var(--ink));
+  background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: var(--gs-font-size);
+  border: 1px solid #d0d5da; border-radius: 8px; overflow: hidden; min-width: 0;
+}
+.gs-studio .gs-preview code, .gs-studio .gs-preview .gs-mono { font-family: var(--mono); }
+.gs-studio .gp-header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: var(--gs-space) calc(var(--gs-space) * 2); background: var(--surface); border-bottom: 1px solid color-mix(in srgb, var(--lines) 16%, transparent); }
+.gs-studio .gp-logo { max-height: 28px; max-width: 120px; display: block; }
+.gs-studio .gp-logo-ph { width: 24px; height: 24px; border-radius: var(--r-sm); background: var(--accent); display: inline-block; }
+.gs-studio .gp-app { font-family: var(--gs-font-heading, var(--serif)); font-size: calc(var(--gs-font-size) * var(--gs-scale)); }
+.gs-studio .gp-nav { display: flex; gap: 12px; margin-left: auto; }
+.gs-studio .gp-nav a { color: var(--ink); text-decoration: none; padding: 2px 0; border-bottom: 2px solid transparent; }
+.gs-studio .gp-nav a[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+.gs-studio .gp-main { padding: calc(var(--gs-space) * 2); display: grid; gap: calc(var(--gs-space) * 2); }
+.gs-studio .gp-h1 { margin: 0; font-family: var(--gs-font-heading, var(--serif)); font-size: calc(var(--gs-font-size) * var(--gs-scale) * var(--gs-scale) * var(--gs-scale)); line-height: 1.15; }
+.gs-studio .gp-h2 { margin: 0; font-family: var(--gs-font-heading, var(--serif)); font-size: calc(var(--gs-font-size) * var(--gs-scale)); font-weight: 600; }
+.gs-studio .gp-p { margin: 0; }
+.gs-studio .gp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: calc(var(--gs-space) * 2); }
+.gs-studio .gp-window { background: var(--gs-window-bg); border: var(--gs-window-border); box-shadow: var(--gs-window-shadow); border-radius: var(--gs-window-radius); backdrop-filter: var(--gs-window-backdrop); padding: calc(var(--gs-space) * 2); display: grid; gap: var(--gs-space); align-content: start; }
+.gs-studio .gp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.gs-studio .gp-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; font-size: 0.85em; font-weight: 600; background: var(--paper); }
+.gs-studio .gp-ok { color: var(--ok); } .gs-studio .gp-warn { color: var(--warn); } .gs-studio .gp-bad { color: var(--bad); }
+.gs-studio .gp-swatches { display: flex; align-items: flex-end; gap: 4px; height: 44px; }
+.gs-studio .gp-swatches span { flex: 1; border-radius: var(--r-sm); }
+.gs-studio .gp-form { display: grid; gap: 6px; }
+.gs-studio .gp-form label { font-size: 0.9em; color: var(--ink-soft); }
+.gs-studio .gp-input { min-height: var(--gs-control-h); padding: 0 var(--gs-space); border: 1px solid color-mix(in srgb, var(--lines) 40%, transparent); border-radius: var(--r-md); background: var(--paper); color: var(--ink); font: inherit; width: 100%; }
+.gs-studio .gp-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.gs-studio .gp-table { width: 100%; border-collapse: collapse; }
+.gs-studio .gp-table th, .gs-studio .gp-table td { text-align: left; padding: var(--gs-space); border-bottom: 1px solid color-mix(in srgb, var(--lines) 16%, transparent); }
+.gs-studio .gs-btn { display: inline-flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; line-height: 1.2; font: inherit; font-weight: 600; min-height: var(--gs-control-h); padding: 0 calc(var(--gs-space) * 3); background: var(--gs-button-bg); color: var(--gs-button-fg); border: var(--gs-button-border); border-radius: var(--gs-button-radius); cursor: pointer; }
+.gs-studio .gs-btn:hover { background: var(--gs-button-hover-bg); }
+.gs-studio .gs-btn--secondary { background: transparent; color: var(--ink); border: 1px solid color-mix(in srgb, var(--lines) 40%, transparent); }
+.gs-studio .gs-btn--secondary:hover { background: var(--paper-2); }
+.gs-studio .gs-btn--danger { background: var(--bad); color: var(--paper); border: 1px solid transparent; }
+.gs-studio .gs-btn--danger:hover { background: color-mix(in srgb, var(--bad) 88%, var(--ink)); }
+
+@media (min-width: 900px) { .gs-studio .gs-listbox { min-height: 420px; max-height: 70vh; } }
+.gs-studio .gs-filterrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.gs-studio .gs-filterrow .gs-field { flex: 1 1 160px; }
+
+/* Fonts tab */
+.gs-studio .gs-slots { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.gs-studio .gs-slots button { text-align: left; padding: 6px 10px; border: 1px solid #c6ccd2; border-radius: 6px; background: #fff; cursor: pointer; font: inherit; }
+.gs-studio .gs-slots button[aria-pressed="true"] { border-color: #0969da; box-shadow: 0 0 0 2px #0969da33; }
+.gs-studio .gs-slots small { display: block; color: #59636e; }
+.gs-studio .gs-fontlist { max-height: 340px; overflow: auto; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; margin: 6px 0; }
+.gs-studio .gs-fontrow { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 0; border-bottom: 1px solid #eceef0; background: transparent; cursor: pointer; text-align: left; font-size: 17px; color: #1f2328; }
+.gs-studio .gs-fontrow:hover, .gs-studio .gs-fontrow:focus-visible { background: #f0f4f8; }
+.gs-studio .gs-fontrow[aria-pressed="true"] { background: #ddf4ff; }
+.gs-studio .gs-fontrow small { font: 12px system-ui, sans-serif; color: #59636e; white-space: nowrap; }
+.gs-studio .gs-seg { display: inline-flex; }
+.gs-studio .gs-seg button { padding: 6px 12px; border: 1px solid #c6ccd2; background: #fff; cursor: pointer; font: inherit; margin-left: -1px; }
+.gs-studio .gs-seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.gs-studio .gs-seg button:last-child { border-radius: 0 6px 6px 0; }
+.gs-studio .gs-seg button[aria-pressed="true"] { background: #0969da; color: #fff; border-color: #0969da; }
