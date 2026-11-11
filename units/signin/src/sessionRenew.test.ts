@@ -1947,3 +1947,188 @@ test("an empty store left by another family does not sign out a tab whose family
   assert.equal(headers.Authorization, `DPoP ${second.token}`);
   assert.equal(renewCalls(t.calls).length, 2);
 });
+
+/** A store whose Nth signed-out `save` never settles. Other saves land. */
+function hangMarkerStore(initial: StoredSession, hangIdx: number[]): Mem & { saves(): number } {
+  const inner = memoryStore(initial);
+  let n = 0;
+  return {
+    peek: () => inner.peek(),
+    saves: () => n,
+    async load() {
+      return inner.load();
+    },
+    async save(session) {
+      if (isSignedOutMarker(session)) {
+        n += 1;
+        if (hangIdx.includes(n)) return new Promise<void>(() => {});
+      }
+      return inner.save(session);
+    },
+    saveIfCurrent: (session, expect) => inner.saveIfCurrent(session, expect),
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
+    clear: () => inner.clear(),
+  };
+}
+
+const freshSignInTransport = (renew = "rsi1.fam2.fresh"): Transport => async (url) => {
+  if (url === VERIFY_URL) {
+    return jsonResponse(200, {
+      token: jwt(Math.floor(NOW / 1000) + 7200),
+      principal: PRINCIPAL,
+      renew,
+      renewExpiresAt: new Date(NOW + 14 * 24 * 3600 * 1000 + 5_000).toISOString(),
+    });
+  }
+  if (url === `${ORIGIN}/lws/vaults`) {
+    return jsonResponse(200, { vaults: [{ vaultId: "https://a.example.test/vault", modes: ["read"] }], complete: true });
+  }
+  if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+  return jsonResponse(500, {});
+};
+
+test("a marker put that never settles does not block a later sign-in", async () => {
+  for (const hangIdx of [[1], [2], [1, 2]]) {
+    const store = hangMarkerStore(await seed(), hangIdx);
+    const cred = new SessionCredential({ store, transport: freshSignInTransport(), now: () => NOW });
+    assert.ok(await cred.restore());
+    const started = Date.now();
+    await cred.signOut(ORIGIN);
+    assert.ok(Date.now() - started < STORE_TIMEOUT_MS + 1_000, `hang ${hangIdx}: signOut stayed bounded`);
+    await cred.signInWithCode(ORIGIN, "a@example.test", "1");
+    await sleep(600);
+    const slot = store.peek();
+    assert.ok(isStoredSession(slot), `hang ${hangIdx}: the fresh sign-in is stored`);
+    assert.equal(slot.renew, "rsi1.fam2.fresh");
+    const fresh = new SessionCredential({ store, transport: freshSignInTransport(), now: () => NOW });
+    assert.equal((await fresh.restore())?.principal, PRINCIPAL, `hang ${hangIdx}: a fresh page signs in`);
+  }
+});
+
+test("a marker put slower than the bound does not keep the slot after a fresh sign-in", async () => {
+  const inner = memoryStore(await seed());
+  let n = 0;
+  const store: Mem = {
+    peek: () => inner.peek(),
+    load: () => inner.load(),
+    async save(session) {
+      if (isSignedOutMarker(session)) {
+        n += 1;
+        if (n === 1) await sleep(STORE_TIMEOUT_MS + 120);
+      }
+      return inner.save(session);
+    },
+    saveIfCurrent: (session, expect) => inner.saveIfCurrent(session, expect),
+    clearIfCurrent: (expect) => inner.clearIfCurrent(expect),
+    clear: () => inner.clear(),
+  };
+  const cred = new SessionCredential({ store, transport: freshSignInTransport(), now: () => NOW });
+  assert.ok(await cred.restore());
+  await cred.signOut(ORIGIN);
+  await cred.signInWithCode(ORIGIN, "a@example.test", "1");
+  await sleep(STORE_TIMEOUT_MS + 400);
+  const slot = store.peek();
+  assert.ok(isStoredSession(slot), "the late marker is not the final slot");
+  assert.equal(slot.renew, "rsi1.fam2.fresh");
+  const fresh = new SessionCredential({ store, transport: freshSignInTransport(), now: () => NOW });
+  assert.equal((await fresh.restore())?.principal, PRINCIPAL);
+});
+
+test("overlapping signOut calls share one renew and one server sign-out", async () => {
+  let now = NOW;
+  const store = memoryStore(await seed());
+  let renews = 0;
+  let signOuts = 0;
+  const answer = renewedBody();
+  const send: Transport = async (url) => {
+    if (url === RENEW_URL) {
+      renews += 1;
+      await sleep(80);
+      return jsonResponse(200, answer);
+    }
+    if (url === SIGN_OUT_URL) {
+      signOuts += 1;
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => now });
+  assert.ok(await cred.restore());
+  now = NOW + 3_700_000;
+  const [a, b] = await Promise.all([cred.signOut(ORIGIN), cred.signOut(ORIGIN)]);
+  assert.equal(a.serverSignedOut, true);
+  assert.equal(b.serverSignedOut, true);
+  assert.equal(renews, 1, "the renewal credential is presented once");
+  assert.equal(signOuts, 1, "the server sign-out is sent once");
+  assert.equal(cred.session, null);
+  expectSignedOut(store.peek());
+  const again = await cred.signOut(ORIGIN);
+  assert.equal(again.serverSignedOut, false);
+  assert.equal(renews, 1);
+  assert.equal(signOuts, 1);
+});
+
+test("overlapping signOut calls with a live token share the server result", async () => {
+  const store = memoryStore(await seed());
+  let signOuts = 0;
+  const send: Transport = async (url) => {
+    if (url === SIGN_OUT_URL) {
+      signOuts += 1;
+      await sleep(40);
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const [a, b] = await Promise.all([cred.signOut(ORIGIN), cred.signOut(ORIGIN)]);
+  assert.equal(a.serverSignedOut, true);
+  assert.equal(b.serverSignedOut, true);
+  assert.equal(signOuts, 1);
+  expectSignedOut(store.peek());
+});
+
+test("signOut with no token writes the marker before the renew", async () => {
+  const store = memoryStore(await seed());
+  const answer = renewedBody();
+  let release!: (value: TransportResponse) => void;
+  let duringRenew: unknown = "not-yet";
+  let sessionDuring: unknown = "not-yet";
+  let cred!: SessionCredential;
+  const calls: Call[] = [];
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === RENEW_URL) {
+      duringRenew = store.peek();
+      sessionDuring = cred.session;
+      return new Promise<TransportResponse>((resolve) => { release = resolve; });
+    }
+    if (url === SIGN_OUT_URL) {
+      expectSignedOut(store.peek());
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  await cred.invalidate();
+  const pending = cred.signOut(ORIGIN);
+  const deadline = Date.now() + 1_000;
+  while (duringRenew === "not-yet" && Date.now() < deadline) await nextTurn();
+  expectSignedOut(duringRenew);
+  assert.equal(sessionDuring, null, "the in-memory sign-in is clear while the renew is in flight");
+  expectSignedOut(store.peek());
+  const recordDuring = JSON.stringify(duringRenew);
+  assert.equal(recordDuring.includes(OLD_RENEW), false);
+  release(jsonResponse(200, answer));
+  const result = await pending;
+  assert.equal(result.serverSignedOut, true);
+  assert.equal(calls[0]?.url, RENEW_URL);
+  assert.deepEqual(JSON.parse(calls[0]!.req.body!), { renew: OLD_RENEW });
+  assert.equal(calls[1]?.url, SIGN_OUT_URL);
+  assert.equal(calls[1]?.req.headers.Authorization, `DPoP ${answer.token}`);
+  assert.equal(cred.session, null);
+  expectSignedOut(store.peek());
+  assert.equal(JSON.stringify(store.peek()).includes(answer.token), false);
+  assert.equal(JSON.stringify(store.peek()).includes(answer.renew), false);
+});

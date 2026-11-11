@@ -87,8 +87,10 @@ export const SIGN_OUT_PATH = "/base/auth/sign-out";
 
 /**
  * How long `signOut` waits for the server. The signed-out marker is already written,
- * and the in-memory sign-in is already cleared, before this wait starts. The server
- * call is best-effort. A hang must not keep `signOut` from settling.
+ * and the in-memory sign-in is already cleared, before this wait starts. A store
+ * slower than {@link STORE_TIMEOUT_MS} may still be landing that write. The server
+ * call is best-effort. A hang must not keep `signOut` from settling. A failed or
+ * hung call leaves the server family live until its window ends.
  */
 export const SIGN_OUT_BOUND_MS = 3_000;
 
@@ -389,13 +391,25 @@ export class SessionCredential {
   /** The drain stopped because the DPoP key did not exist yet. The next key pokes it. */
   private waitingForKey = false;
   /**
-   * Store ops in order. A sign-out's marker puts stay on this chain until they
-   * settle, ahead of a later save in this instance.
+   * Store ops in order. A sign-out's marker puts stay on this chain, ahead of a
+   * later save, but each wait gives up after {@link STORE_TIMEOUT_MS}. A hung
+   * put does not block a later save.
    */
   private tail: Promise<void> = Promise.resolve();
   private restoreInflight: Promise<GilbSession | null> | null = null;
   /** One renewal at a time on this credential. A second caller waits for it. */
   private renewInflight: Promise<RenewAttempt> | null = null;
+  /**
+   * One sign-out at a time on this credential. A second call joins this promise
+   * instead of aborting the renew the first call is using. Cleared when it settles.
+   */
+  private signOutInflight: Promise<{ serverSignedOut: boolean }> | null = null;
+  /**
+   * One sign-out renew per credential string, across instances. The second
+   * sign-out joins it, so a spent credential is presented once. Dropped when
+   * that request settles.
+   */
+  private static signOutRenewals = new Map<string, Promise<{ accessToken: string; key: DpopKey } | null>>();
   /** The renewal credential currently held. It is sent at most once. */
   private renewCredential: string | null = null;
   /** The server's `renewExpiresAt` text, kept so the store round-trips it. */
@@ -714,9 +728,10 @@ export class SessionCredential {
    * The store follows. The returned promise settles when the marker write has, or
    * gives up after {@link STORE_TIMEOUT_MS}, and does not reject. The in-memory
    * drop has already happened when this returns to the caller. Sign-out waits at
-   * most that long for the marker put it started in this turn. That put stays on
-   * the store queue until it settles, so a later save in this instance is not
-   * overwritten by it.
+   * most that long for the marker put it started in this turn. That put, and the
+   * follow-up behind it, each give up after the same bound, so a put that never
+   * settles cannot block a later save. A put that lands after a fresh sign-in
+   * writes that sign-in again.
    *
    * Sign-out replaces the slot with a signed-out marker (`{ kind: "signed-out", at }`).
    * The put is started before this returns, so a page that closes immediately still has
@@ -771,9 +786,8 @@ export class SessionCredential {
       this.publicKeyId = null;
     }
     // The marker put starts in this turn, then again behind any save already in `tail`.
-    // Both stay on `tail` until they settle. The caller waits at most STORE_TIMEOUT_MS.
-    // A later save in this instance is queued behind them, so it cannot be replaced
-    // by this sign-out's marker.
+    // Each wait gives up after STORE_TIMEOUT_MS, so a hung put releases the chain.
+    // The caller waits at most that long. A later save is queued behind those waits.
     const started = this.startSignedOutMark();
     this.enqueueSignedOutMark(started);
     return this.tailSettled();
@@ -1209,7 +1223,7 @@ export class SessionCredential {
   private async wipeLanded(written: CurrentRecordExpect): Promise<void> {
     if (!this.store) return;
     if (this.explicitClear) {
-      await this.bounded(this.invokeStore(() => this.store!.save(this.signedOutMarker())));
+      await this.bounded(this.saveSignedOutMarker());
       return;
     }
     await this.putFamilyEnded(written);
@@ -1218,7 +1232,7 @@ export class SessionCredential {
   /** An explicit sign-out's follow-up marker. A dead sign-in does not use this. */
   private async clearBecauseSignOut(): Promise<void> {
     if (!this.store || !this.explicitClear) return;
-    await this.bounded(this.invokeStore(() => this.store!.save(this.signedOutMarker())));
+    await this.bounded(this.saveSignedOutMarker());
   }
 
   /**
@@ -1314,24 +1328,22 @@ export class SessionCredential {
   }
 
   /**
-   * Follow-up marker put, behind anything already queued. The queue does not
-   * move on until this put and `started` have both settled. A later save in
-   * this instance is queued behind them, so this sign-out's marker cannot
-   * replace a fresh sign-in that starts after the caller is released.
-   * A newer sign-in skips the follow-up put. `started` is still awaited,
-   * because that put was already handed to the store.
+   * Follow-up marker put, behind anything already queued. The follow-up put and
+   * the wait for `started` each give up after {@link STORE_TIMEOUT_MS}, so a
+   * hung put releases the chain. A later save in this instance can then run.
+   * A newer sign-in skips the follow-up put. `started` is still awaited, up to
+   * that bound, because that put was already handed to the store.
    */
   private enqueueSignedOutMark(started: Promise<void>): void {
     if (!this.store) return;
-    const store = this.store;
     const gen = this.generation;
     void this.enqueue(async () => {
       try {
         if (this.generation !== gen) return;
         if (this.minted && !this.signedOut) return;
-        await this.invokeStore(() => store.save(this.signedOutMarker()));
+        await this.bounded(this.saveSignedOutMarker());
       } finally {
-        await started;
+        await this.bounded(started);
       }
     });
   }
@@ -1441,13 +1453,35 @@ export class SessionCredential {
 
   /**
    * Starts the signed-out put in this turn, when the store's `save` does.
-   * The promise is that put. It rejects nothing. The caller chains it onto
-   * `tail` so it cannot land after a later save in this instance.
+   * The returned promise settles when that put does, or after
+   * {@link STORE_TIMEOUT_MS}. It rejects nothing. The caller chains the wait
+   * onto `tail`. The put itself is not cancelled: if it lands after a fresh
+   * sign-in, that sign-in is written again.
    */
   private startSignedOutMark(): Promise<void> {
+    if (!this.store) return Promise.resolve();
+    return this.bounded(this.saveSignedOutMarker()).then(() => undefined);
+  }
+
+  /**
+   * Hands the signed-out marker to the store. The promise settles with the put
+   * and rejects nothing. A put that lands after a fresh sign-in in this same
+   * generation writes that sign-in again, so the late marker does not keep the slot.
+   */
+  private saveSignedOutMarker(): Promise<void> {
     const store = this.store;
     if (!store) return Promise.resolve();
-    return this.invokeStore(() => store.save(this.signedOutMarker())).then(() => undefined, () => undefined);
+    const gen = this.generation;
+    const pending = this.invokeStore(() => store.save(this.signedOutMarker()));
+    void pending.then(() => {
+      if (this.generation !== gen) return;
+      if (!this.minted || this.signedOut) return;
+      // The marker landed on top of a sign-in that started after it was handed
+      // to the store. That sign-in is what replaces a signed-out marker.
+      this.canCreateRecord = true;
+      this.markDirty();
+    }, () => undefined);
+    return pending.then(() => undefined, () => undefined);
   }
 
   private enqueue(op: () => Promise<void>): Promise<void> {
@@ -1668,15 +1702,23 @@ export class SessionCredential {
    * and the in-memory sign-in is cleared, before the server call. The marker is
    * written even when that call fails, is refused, or does not finish within
    * {@link SIGN_OUT_BOUND_MS}. A page that closes during the call already has the
-   * marker on this device.
+   * marker on this device once that write has settled. A store slower than
+   * {@link STORE_TIMEOUT_MS} may still be landing the marker when the call is sent.
+   * A failed or hung call leaves the server family live until its window ends.
+   * The person is signed out on this device.
    *
    * The server call is `POST {origin}/base/auth/sign-out` with `Authorization: DPoP <token>`
    * and a fresh `DPoP` proof. The token and the key are kept only for that call.
    * A token that is still before its expiry is sent as it is. When no usable token
-   * is held and a renewal credential is still in date, this renews first, inside
-   * the renew bounds, then writes the marker, and signs out with the fresh token.
-   * If that renew fails, the slot still becomes a signed-out marker and
-   * `serverSignedOut` is false.
+   * is held and a renewal credential is still in date, that credential and its key
+   * are captured, the marker is written, and the in-memory sign-in is cleared
+   * first. The renew then uses the captured credential and does not write the
+   * rotated record, so the slot does not hold the full record during that wait.
+   * The server sign-out uses the fresh token. If that renew fails, the marker is
+   * already written and `serverSignedOut` is false.
+   *
+   * Overlapping calls join the in-flight sign-out. The server is told once, and
+   * every caller receives that same result.
    *
    * A renew lock this page is holding or waiting on is released. This does not wait for it.
    *
@@ -1684,28 +1726,55 @@ export class SessionCredential {
    * @returns whether the server recorded the sign-out (HTTP 204)
    */
   async signOut(origin: string): Promise<{ serverSignedOut: boolean }> {
+    const inflight = this.signOutInflight;
+    if (inflight) return inflight;
+    const pending = this.performSignOut(origin).finally(() => {
+      if (this.signOutInflight === pending) this.signOutInflight = null;
+    });
+    this.signOutInflight = pending;
+    return pending;
+  }
+
+  /** The one in-flight sign-out. Callers share {@link signOutInflight}. */
+  private async performSignOut(origin: string): Promise<{ serverSignedOut: boolean }> {
     // Before any other wait: a hung renew must not keep the origin lock.
+    // A second sign-out joins {@link signOutInflight} and does not reach this.
     this.abortRenewWait();
-    // Renew while the sign-in is still in memory. The marker is written before
-    // the server call, so the token this call will send has to be captured first.
-    let held: { accessToken: string; key: DpopKey } | null = null;
-    try {
-      if (!this.tokenUsableForSignOut() && this.renewalIsLive()) {
-        await this.renewForSignOut();
-      }
-      if (this.tokenUsableForSignOut() && this.minted && this.key) {
-        held = { accessToken: this.minted.accessToken, key: this.key };
-      }
-    } catch {
-      held = null;
-    }
+    // Captured before the marker clear. The renew, when one is needed, runs
+    // after that clear and must not read the in-memory sign-in back.
+    const held = this.captureSignOutMaterial();
     await this.invalidate(true);
-    if (!held) return { serverSignedOut: false };
+    let token = held.token;
+    if (!token && held.renewal) {
+      token = await this.renewCapturedForSignOut(held.renewal);
+    }
+    if (!token) return { serverSignedOut: false };
     try {
-      return { serverSignedOut: await this.tryServerSignOut(origin, held.accessToken, held.key) };
+      return { serverSignedOut: await this.tryServerSignOut(origin, token.accessToken, token.key) };
     } catch {
       return { serverSignedOut: false };
     }
+  }
+
+  /**
+   * The token to send, or the renewal to exchange for one. Read before
+   * `invalidate(true)` drops both. A usable token wins: the renewal is not sent.
+   */
+  private captureSignOutMaterial(): {
+    token: { accessToken: string; key: DpopKey } | null;
+    renewal: { credential: string; key: DpopKey; origin: string } | null;
+  } {
+    const key = this.key;
+    if (this.tokenUsableForSignOut() && this.minted && key) {
+      return { token: { accessToken: this.minted.accessToken, key }, renewal: null };
+    }
+    if (key && this.renewCredential && this.renewOrigin && this.renewalIsLive()) {
+      return {
+        token: null,
+        renewal: { credential: this.renewCredential, key, origin: this.renewOrigin },
+      };
+    }
+    return { token: null, renewal: null };
   }
 
   /** True when this credential stores and the app did not turn renewal off. */
@@ -1748,10 +1817,56 @@ export class SessionCredential {
     return this.minted !== null && this.key !== null && this.now() < this.minted.expiresAt;
   }
 
-  /** Renew so sign-out has a token. A failure here is not thrown: the caller clears locally. */
-  private async renewForSignOut(): Promise<boolean> {
-    const result = await this.renewNow();
-    return result.ok && this.tokenUsableForSignOut();
+  /**
+   * One renew of a credential captured for sign-out. The marker is already
+   * written and the in-memory sign-in is already clear. Nothing from the answer
+   * is stored: the slot stays the marker while this request is in flight.
+   * Two sign-outs of the same credential, including on two instances, share one
+   * request so the spent credential is not presented twice.
+   */
+  private renewCapturedForSignOut(
+    captured: { credential: string; key: DpopKey; origin: string },
+  ): Promise<{ accessToken: string; key: DpopKey } | null> {
+    const existing = SessionCredential.signOutRenewals.get(captured.credential);
+    if (existing) return existing;
+    const pending = this.postCapturedRenew(captured).finally(() => {
+      if (SessionCredential.signOutRenewals.get(captured.credential) === pending) {
+        SessionCredential.signOutRenewals.delete(captured.credential);
+      }
+    });
+    SessionCredential.signOutRenewals.set(captured.credential, pending);
+    return pending;
+  }
+
+  /** Posts the captured credential under the renew lock. Does not write the store. */
+  private postCapturedRenew(
+    captured: { credential: string; key: DpopKey; origin: string },
+  ): Promise<{ accessToken: string; key: DpopKey } | null> {
+    const controller = new AbortController();
+    return this.withOriginLock(captured.origin, controller.signal, async () => {
+      const url = `${normaliseOrigin(captured.origin)}${RENEW_SIGN_IN_PATH}`;
+      let proof: string;
+      try {
+        proof = await dpopProof(captured.key, "POST", url);
+      } catch {
+        return null;
+      }
+      const send = this.opts.transport ?? fetchTransport;
+      const raced = await this.awaitRenewResponse(
+        send,
+        url,
+        captured.credential,
+        proof,
+        controller.signal,
+        RENEW_TIMEOUT_MS,
+      );
+      if (!raced.ok || raced.status < 200 || raced.status > 299) return null;
+      const parsed = parseRenewed(raced.body);
+      if (!parsed) return null;
+      const expiresAt = tokenExpiresAt(parsed.token, this.now());
+      if (!(this.now() < expiresAt)) return null;
+      return { accessToken: parsed.token, key: captured.key };
+    }, null);
   }
 
   /**
@@ -1819,8 +1934,15 @@ export class SessionCredential {
   }
 
   private withRenewLock(origin: string, signal: AbortSignal, run: () => Promise<RenewAttempt>): Promise<RenewAttempt> {
-    const signedOut = (): RenewAttempt => ({ ok: false, kind: "signed-out" });
-    const invoke = (): Promise<RenewAttempt> => (signal.aborted ? Promise.resolve(signedOut()) : run());
+    return this.withOriginLock(origin, signal, run, { ok: false, kind: "signed-out" });
+  }
+
+  /**
+   * Runs `run` under `gilb-signin-renew:` plus the origin when `navigator.locks`
+   * exists. An aborted `signal` resolves `onAbort` and does not call `run`.
+   */
+  private withOriginLock<T>(origin: string, signal: AbortSignal, run: () => Promise<T>, onAbort: T): Promise<T> {
+    const invoke = (): Promise<T> => (signal.aborted ? Promise.resolve(onAbort) : run());
     let locks: LockManager | null = null;
     try {
       locks = globalThis.navigator?.locks ?? null;
@@ -1839,7 +1961,7 @@ export class SessionCredential {
     return Promise.resolve(pending).then(
       (value) => value,
       (err: unknown) => {
-        if (signal.aborted) return signedOut();
+        if (signal.aborted) return onAbort;
         throw err;
       },
     );
