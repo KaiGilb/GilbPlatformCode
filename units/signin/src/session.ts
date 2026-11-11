@@ -369,6 +369,13 @@ export class SessionCredential {
    * load was in flight is not overwritten by the record the load returns.
    */
   private signInSerial = 0;
+  /**
+   * Bumped when a sign-in starts: `signInWithCode`, `adopt`, or `restore` once it has
+   * adopted a record. An in-flight `signOut` records this at its start and a later call
+   * joins only while it is unchanged. Not {@link signInSerial}: a renew treats a serial
+   * change as superseded, and a `restore` during that renew must still adopt.
+   */
+  private signInGeneration = 0;
   /** `signInWithCode` calls in flight. `restore` will not adopt over one. */
   private signInsInFlight = 0;
   /**
@@ -400,10 +407,13 @@ export class SessionCredential {
   /** One renewal at a time on this credential. A second caller waits for it. */
   private renewInflight: Promise<RenewAttempt> | null = null;
   /**
-   * One sign-out at a time on this credential. A second call joins this promise
-   * instead of aborting the renew the first call is using. Cleared when it settles.
+   * One sign-out at a time on this credential. A later call joins this promise when
+   * no sign-in has started since it began, instead of aborting the renew it is using.
+   * Cleared when it settles.
    */
   private signOutInflight: Promise<{ serverSignedOut: boolean }> | null = null;
+  /** {@link signInGeneration} when {@link signOutInflight} began. */
+  private signOutJoinedGeneration = 0;
   /**
    * One sign-out renew per credential string, across instances. The second
    * sign-out joins it, so a spent credential is presented once. Dropped when
@@ -500,6 +510,7 @@ export class SessionCredential {
    */
   adopt(accessToken: string, session: GilbSession, expiresAt?: number): Promise<void> {
     this.signInSerial++;
+    this.noteSignIn();
     this.signedOut = false;
     this.explicitClear = false;
     // A new token may create or replace the record. Later updates from this hold are not creates.
@@ -539,6 +550,7 @@ export class SessionCredential {
     // a store that never settles must not block the sign-in the caller is waiting on.
     this.signInsInFlight++;
     this.signInSerial++;
+    this.noteSignIn();
     return this.signInWithCodeBody(origin, email, code, name, productName).finally(() => {
       this.signInsInFlight--;
       return this.flushStore();
@@ -1566,6 +1578,8 @@ export class SessionCredential {
       }
     }
     // Adopted from the store: a later save must not create the record again.
+    // A sign-out that began before this adopt does not swallow a later sign-out.
+    this.noteSignIn();
     this.canCreateRecord = false;
     this.publicCryptoKey = record.keyPair.publicKey;
     this.publicKeyId = publicKeyId;
@@ -1717,8 +1731,13 @@ export class SessionCredential {
    * The server sign-out uses the fresh token. If that renew fails, the marker is
    * already written and `serverSignedOut` is false.
    *
-   * Overlapping calls join the in-flight sign-out. The server is told once, and
-   * every caller receives that same result.
+   * Overlapping calls join the in-flight sign-out only when no sign-in has started
+   * since that sign-out began. A sign-in is `signInWithCode`, `adopt`, or a `restore`
+   * that adopted a record. This records the sign-in generation at the start. While
+   * that generation is unchanged, the server is told once and every joined caller
+   * receives that same result. A call after a sign-in has started waits for the
+   * in-flight sign-out to settle, then runs its own: the marker, and the server
+   * call with the new sign-in's token and key.
    *
    * A renew lock this page is holding or waiting on is released. This does not wait for it.
    *
@@ -1727,18 +1746,38 @@ export class SessionCredential {
    */
   async signOut(origin: string): Promise<{ serverSignedOut: boolean }> {
     const inflight = this.signOutInflight;
-    if (inflight) return inflight;
-    const pending = this.performSignOut(origin).finally(() => {
-      if (this.signOutInflight === pending) this.signOutInflight = null;
+    if (inflight && this.signInGeneration === this.signOutJoinedGeneration) return inflight;
+    if (inflight) {
+      await inflight.then(() => undefined, () => undefined);
+      return this.signOut(origin);
+    }
+    return this.beginSignOut(origin);
+  }
+
+  /**
+   * Starts one sign-out flight. The promise is published before {@link performSignOut}
+   * waits, so a second call in that gap joins this flight instead of starting another.
+   */
+  private beginSignOut(origin: string): Promise<{ serverSignedOut: boolean }> {
+    this.signOutJoinedGeneration = this.signInGeneration;
+    let resolveOut!: (value: { serverSignedOut: boolean }) => void;
+    let rejectOut!: (reason: unknown) => void;
+    const pending = new Promise<{ serverSignedOut: boolean }>((resolve, reject) => {
+      resolveOut = resolve;
+      rejectOut = reject;
     });
     this.signOutInflight = pending;
+    void this.performSignOut(origin).then(resolveOut, rejectOut).finally(() => {
+      if (this.signOutInflight === pending) this.signOutInflight = null;
+    });
     return pending;
   }
 
-  /** The one in-flight sign-out. Callers share {@link signOutInflight}. */
+  /** One sign-out flight. A join does not reach this. A sign-in since the flight began does, after that flight settles. */
   private async performSignOut(origin: string): Promise<{ serverSignedOut: boolean }> {
     // Before any other wait: a hung renew must not keep the origin lock.
-    // A second sign-out joins {@link signOutInflight} and does not reach this.
+    // A second sign-out joins {@link signOutInflight} when no sign-in has started
+    // since this flight began, and does not reach this.
     this.abortRenewWait();
     // Captured before the marker clear. The renew, when one is needed, runs
     // after that clear and must not read the in-memory sign-in back.
@@ -1775,6 +1814,11 @@ export class SessionCredential {
       };
     }
     return { token: null, renewal: null };
+  }
+
+  /** A sign-in started. A later `signOut` does not join a flight that began before this. */
+  private noteSignIn(): void {
+    this.signInGeneration++;
   }
 
   /** True when this credential stores and the app did not turn renewal off. */

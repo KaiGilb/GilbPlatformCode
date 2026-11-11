@@ -2088,6 +2088,84 @@ test("overlapping signOut calls with a live token share the server result", asyn
   expectSignedOut(store.peek());
 });
 
+test("a signOut after a new sign-in does not join an earlier in-flight sign-out", async () => {
+  const seeded = await seed();
+  const oldToken = seeded.accessToken;
+  const newToken = jwt(Math.floor(NOW / 1000) + 7200);
+  assert.notEqual(newToken, oldToken);
+  const store = memoryStore(seeded);
+  const seen: string[] = [];
+  let release!: () => void;
+  const send: Transport = async (url, req) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: newToken,
+        principal: PRINCIPAL,
+        renew: "rsi1.fam2.fresh",
+        renewExpiresAt: new Date(NOW + 14 * 24 * 3600 * 1000 + 5_000).toISOString(),
+      });
+    }
+    if (url === `${ORIGIN}/lws/vaults`) {
+      return jsonResponse(200, { vaults: [{ vaultId: "https://a.example.test/vault", modes: ["read"] }], complete: true });
+    }
+    if (url === SIGN_OUT_URL) {
+      seen.push(req.headers.Authorization);
+      if (seen.length === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.ok(await cred.restore());
+  const first = cred.signOut(ORIGIN);
+  const deadline = Date.now() + 1_000;
+  while (seen.length < 1 && Date.now() < deadline) await nextTurn();
+  assert.deepEqual(seen, [`DPoP ${oldToken}`]);
+  await cred.signInWithCode(ORIGIN, "a@example.test", "1");
+  assert.equal(cred.session?.principal, PRINCIPAL);
+  const second = cred.signOut(ORIGIN);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.serverSignedOut, true);
+  assert.equal(b.serverSignedOut, true);
+  assert.deepEqual(seen, [`DPoP ${oldToken}`, `DPoP ${newToken}`]);
+  assert.equal(cred.session, null);
+  expectSignedOut(store.peek());
+  const fresh = new SessionCredential({ store, transport: send, now: () => NOW });
+  assert.equal(await fresh.restore(), null);
+});
+
+test("a signOut after adopt does not join an earlier in-flight sign-out", async () => {
+  const key = await generateDpopKeyPair();
+  const oldToken = jwt(Math.floor(NOW / 1000) + 3600);
+  const newToken = jwt(Math.floor(NOW / 1000) + 7200);
+  const session = { principal: PRINCIPAL, vault: null, vaults: [] };
+  const seen: string[] = [];
+  let release!: () => void;
+  const send: Transport = async (url, req) => {
+    if (url === SIGN_OUT_URL) {
+      seen.push(req.headers.Authorization);
+      if (seen.length === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ key, store: false, transport: send, now: () => NOW });
+  await cred.adopt(oldToken, session);
+  const first = cred.signOut(ORIGIN);
+  const deadline = Date.now() + 1_000;
+  while (seen.length < 1 && Date.now() < deadline) await nextTurn();
+  assert.deepEqual(seen, [`DPoP ${oldToken}`]);
+  await cred.adopt(newToken, session);
+  const second = cred.signOut(ORIGIN);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.serverSignedOut, true);
+  assert.equal(b.serverSignedOut, true);
+  assert.deepEqual(seen, [`DPoP ${oldToken}`, `DPoP ${newToken}`]);
+  assert.equal(cred.session, null);
+});
+
 test("signOut with no token writes the marker before the renew", async () => {
   const store = memoryStore(await seed());
   const answer = renewedBody();
