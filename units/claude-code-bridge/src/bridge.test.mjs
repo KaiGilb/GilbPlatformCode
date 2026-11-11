@@ -1259,7 +1259,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.8", billing: "claude-subscription", relay: true });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.1.9", billing: "claude-subscription", relay: true });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });

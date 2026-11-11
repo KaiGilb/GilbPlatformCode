@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HAND_OFF_FAILED_NEXT, hopTimeoutAnswer, startConnector } from "../connector/gilb-connector.mjs";
+import { HAND_OFF_FAILED_NEXT, HOP_MAX_MS, HOP_MAX_MS_BY_ROLE, MCP_TOOL_TIMEOUT_MS, childEnv, hopMaxFor, hopTimeoutAnswer, startConnector } from "../connector/gilb-connector.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const FAKE_CLAUDE = join(HERE, "fake-claude.mjs");
@@ -148,7 +148,7 @@ function readLog(file) {
 
 /** The paragraph a non-Concept child is given. `minutes` is the limit, already rounded. */
 function timeLimitParagraph(minutes) {
-  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
 }
 
 const hopOf = (id, role, task) => ({ id, system: "You are " + role + ".", task, tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }], role, answer: { role, summary: "s" } });
@@ -328,4 +328,44 @@ describe("a hand-off that runs out of time", () => {
     expect(answer.done_before_stop.join("\n")).not.toContain("OVERFLOW");
     expect(answer.last_words).toBe("z".repeat(1500));
   }, 20000);
+});
+
+describe("hand-off time per role", () => {
+  const LONG = ["Agent.VDT", "Agent.Outcome", "Agent.Outcome.Business", "Agent.Outcome.Owner", "Agent.Outcome.Stakeholder", "Agent.Outcome.Product", "Agent.Architect", "Agent.Scaling", "Agent.ValueDeliveryStep"];
+  const MIN = 60 * 1000;
+
+  it("the map gives level agents 30 minutes and every other role 15", () => {
+    for (const role of LONG) expect(hopMaxFor(role), role).toBe(30 * MIN);
+    expect(hopMaxFor("agent.outcome.stakeholder")).toBe(30 * MIN);
+    for (const role of ["Agent.Concept", "Jackfruit", "Kai-Zen", "Agent.Outcome.Other", ""]) expect(hopMaxFor(role), role).toBe(15 * MIN);
+    expect(HOP_MAX_MS).toBe(30 * MIN);
+    expect(Math.max(...Object.values(HOP_MAX_MS_BY_ROLE))).toBe(HOP_MAX_MS);
+  });
+
+  it("the MCP wait is at least the longest hand-off plus a minute", () => {
+    expect(MCP_TOOL_TIMEOUT_MS).toBeGreaterThanOrEqual(Math.max(...Object.values(HOP_MAX_MS_BY_ROLE)) + 60 * 1000);
+    expect(childEnv({ PATH: "/bin" }).MCP_TOOL_TIMEOUT).toBe(String(MCP_TOOL_TIMEOUT_MS));
+  });
+
+  it("the timeout answer names the role's own minutes", () => {
+    expect(JSON.parse(hopTimeoutAnswer("Agent.VDT", hopMaxFor("Agent.VDT"))).partial).toContain("after 30 minutes");
+    expect(JSON.parse(hopTimeoutAnswer("Jackfruit", hopMaxFor("Jackfruit"))).partial).toContain("after 15 minutes");
+  });
+
+  it("the injected paragraph names the role's minutes, keeps required reads, and Agent.Concept gets none", async () => {
+    for (const [role, minutes] of [["Agent.Outcome.Stakeholder", 30], ["Agent.VDT", 30], ["Jackfruit", 15]]) {
+      const logFile = join(scratch(), `${minutes}.log`);
+      const platform = await hopDoor(role, "Do the records.");
+      const box = connect({ origin: platform.origin, env: meEnv({ FAKE_CLAUDE_LOG: logFile }) });
+      expect((await run(box, role)).result.isError).toBe(false);
+      const prompt = readLog(logFile)[0].prompt;
+      expect(prompt, role).toBe(`Do the records.${timeLimitParagraph(minutes)}`);
+      expect(prompt).toContain("Do the reads your job requires first");
+    }
+    const conceptLog = join(scratch(), "concept2.log");
+    const concept = await hopDoor("Agent.Concept", "Mint one concept.");
+    const conceptBox = connect({ origin: concept.origin, env: meEnv({ FAKE_CLAUDE_LOG: conceptLog }) });
+    await run(conceptBox, "Agent.Concept");
+    expect(readLog(conceptLog)[0].prompt).toBe("Mint one concept.");
+  }, 30000);
 });

@@ -96,7 +96,7 @@ function world({ startWorks = true, foreignBridge = false, regFails = false, stu
       }
     }
   };
-  const hello = async (port) => (ports.has(port) || (foreignBridge && port === 47821) ? { bridge: "gilb-claude-code-bridge", build: "0.1.8" } : null);
+  const hello = async (port) => (ports.has(port) || (foreignBridge && port === 47821) ? { bridge: "gilb-claude-code-bridge", build: "0.1.9" } : null);
   const deps = {
     launchctl: async () => {
       throw new Error("launchctl must not run on Windows");
@@ -253,7 +253,7 @@ describe("--status on Windows", () => {
     expect(out.ok).toBe(true);
     expect(out.message).toContain(`Installed:  yes (start-up entry ${DEFAULT_LABEL})`);
     expect(out.message).toContain("Running:    yes (supervisor pid 4242, bridge pid 4343)");
-    expect(out.message).toContain("Answering:  yes, http://127.0.0.1:47821 (build 0.1.8)");
+    expect(out.message).toContain("Answering:  yes, http://127.0.0.1:47821 (build 0.1.9)");
     expect(out.message).toContain("Billing:    Claude subscription, plan max");
     expect(out.message).toContain(`Log:        ${LOCAL}\\bridge.log`);
   });

@@ -110,7 +110,7 @@ async function scenario(name, { home, label, port }) {
     installed = true;
     check(inst.status === 0 && /starts when you log in and restarts if it stops/.test(inst.stdout), "--install succeeded and says it starts at login and restarts");
     const h = await hello(port);
-    check(h?.bridge === "gilb-claude-code-bridge" && h.build === "0.1.8", `hello answers right after --install, no logout (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+    check(h?.bridge === "gilb-claude-code-bridge" && h.build === "0.1.9", `hello answers right after --install, no logout (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
     check((Date.now() - t0) < 20000, "within 20 seconds");
     check(/node ("\$HOME\\[^"]*"|'[^']*') --code/.test(inst.stdout), "the commands printed are PowerShell commands ($HOME form or single-quoted path)");
 
@@ -130,7 +130,7 @@ async function scenario(name, { home, label, port }) {
     // ---- status
     const st = run(["--status", ...flags, ...portFlag]);
     say(st.stdout);
-    check(/Installed:  yes/.test(st.stdout) && /Running:    yes \(supervisor pid \d+, bridge pid \d+\)/.test(st.stdout) && /build 0\.1\.8/.test(st.stdout), "--status: installed, running, build 0.1.8");
+    check(/Installed:  yes/.test(st.stdout) && /Running:    yes \(supervisor pid \d+, bridge pid \d+\)/.test(st.stdout) && /build 0\.1\.8/.test(st.stdout), "--status: installed, running, build 0.1.9");
 
     // ---- code, pair, one turn
     const code = run(["--code", ...flags, ...portFlag]);

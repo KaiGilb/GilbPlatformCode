@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.13";
+export const CONNECTOR_VERSION = "0.5.14";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -83,7 +83,7 @@ function hopLimitMinutes(hopMaxMs) {
  */
 function hopTimeLimitParagraph(hopMaxMs) {
     const minutes = hopLimitMinutes(hopMaxMs);
-    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. If the job will not fit, do the first part, then stop and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
 }
 const TOOL_CALLS_MAX = 60;
 const TOOL_CALL_CHARS = 200;
@@ -163,6 +163,10 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000];
 function isTransientStatus(status) {
     return status === 502 || status === 503 || status === 504 || (status >= 520 && status <= 524);
 }
+/** A write got no answer, or a 5xx: it may have run, and it is not sent again. */
+function unknownOutcomeText(tool, what) {
+    return `${tool} got no answer from GilbPlatform (${what}) and may or may not have run. It was not sent again. Read it back before sending it again.`;
+}
 /** The sentence for a platform that is down or restarting. `what` is the HTTP status or the network error. */
 function unreachableMessage(what) {
     return `GilbPlatform is restarting or out of reach just now (${what}). Try again in a minute.`;
@@ -175,8 +179,31 @@ const ASSERTION_LIFETIME_SEC = 60;
 const CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 const PRIVATE_KEY_FILE = "private.pem";
 const CLIENT_ID_FILE = "client-id";
-/** How long one hand-off may run. The page client's bridge uses the same limit. */
-export const HOP_MAX_MS = 15 * 60 * 1000;
+/** How long a hand-off may run unless its role is listed in HOP_MAX_MS_BY_ROLE. */
+export const HOP_MAX_MS_DEFAULT = 15 * 60 * 1000;
+/** The longer limit, for the level agents that read a lot before they write. */
+const HOP_MAX_MS_LONG = 30 * 60 * 1000;
+/** Role names as normalised below (lower case, letters and digits only). Agent.Concept is not listed: it keeps the default. */
+export const HOP_MAX_MS_BY_ROLE = {
+    agentvdt: HOP_MAX_MS_LONG,
+    agentoutcome: HOP_MAX_MS_LONG,
+    agentoutcomebusiness: HOP_MAX_MS_LONG,
+    agentoutcomeowner: HOP_MAX_MS_LONG,
+    agentoutcomestakeholder: HOP_MAX_MS_LONG,
+    agentoutcomeproduct: HOP_MAX_MS_LONG,
+    agentarchitect: HOP_MAX_MS_LONG,
+    agentscaling: HOP_MAX_MS_LONG,
+    agentvaluedeliverystep: HOP_MAX_MS_LONG,
+};
+/** The longest any hand-off may run. The page client's bridge uses the same limit. */
+export const HOP_MAX_MS = Math.max(HOP_MAX_MS_DEFAULT, ...Object.values(HOP_MAX_MS_BY_ROLE));
+/** How long a hand-off to this role may run: its own limit, else the default. */
+export function hopMaxFor(role) {
+    const key = role.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return Object.prototype.hasOwnProperty.call(HOP_MAX_MS_BY_ROLE, key) ? HOP_MAX_MS_BY_ROLE[key] : HOP_MAX_MS_DEFAULT;
+}
+/** Tools that only read. A restart's timeout or 5xx on one of these may be tried again; nothing was written. */
+export const READ_ONLY_TOOLS = new Set(["read_record", "list_records", "list_vaults", "list_projects"]);
 /** How many hand-offs may run at once. */
 export const MAX_HOPS_AT_ONCE = 4;
 /** How many times one process starts a fresh platform turn after the server refused a call at a turn limit. */
@@ -191,8 +218,8 @@ const TURN_LIMIT_HOPS = "this turn has handed over as many times as one turn may
 const HOP_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 /** A pending tools/call that asked for progress is told "still working" this often. */
 export const PROGRESS_EVERY_MS = 15 * 1000;
-/** How long the Claude CLI is told to wait for one MCP tool call: the longest hand-off, plus a minute. */
-export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000;
+/** How long the Claude CLI is told to wait for one MCP tool call: the longest hand-off of any role, plus a minute. */
+export const MCP_TOOL_TIMEOUT_MS = HOP_MAX_MS + 60 * 1000; // HOP_MAX_MS is the maximum across roles
 const TURN_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const PROFILE_NAME = /^[A-Za-z0-9._-]{1,40}$/;
 const USER_TEXT_MAX = 24_000;
@@ -256,6 +283,9 @@ export class CliError extends Error {
 }
 class PlatformError extends Error {
     status;
+    /** A write got no answer (a timeout, a reset): it may have run. A refused connection never sets this. */
+    maybeRan = false;
+    what = "no answer";
     constructor(status, message) {
         super(message);
         this.name = "PlatformError";
@@ -1509,7 +1539,8 @@ export function startConnector(opts) {
         throw new Error("turnId does not match the platform pattern.");
     let userText = opts.userText !== undefined && opts.userText.trim() !== "" ? opts.userText : DEFAULT_USER_TEXT;
     const progressEveryMs = opts.progressEveryMs !== undefined && opts.progressEveryMs >= 5 ? opts.progressEveryMs : PROGRESS_EVERY_MS;
-    const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
+    const hopMaxOverride = opts.hopMaxMs;
+    const hopMaxOf = (role) => hopMaxOverride ?? hopMaxFor(role);
     const retryDelays = opts.retryDelaysMs ?? RETRY_DELAYS_MS;
     const maxHops = opts.maxHops ?? MAX_HOPS_AT_ONCE;
     const selfFile = opts.selfFile ?? fileURLToPath(import.meta.url);
@@ -1666,8 +1697,12 @@ export function startConnector(opts) {
         };
         const settle = async () => {
             const out = await retrying(send, (r) => (repeatable ? true : r.status === 0 && neverArrived(lastNetwork)), signal);
-            if (out.status === 0)
-                throw new PlatformError(0, unreachableMessage(networkWhat(lastNetwork)));
+            if (out.status === 0) {
+                const down = new PlatformError(0, unreachableMessage(networkWhat(lastNetwork)));
+                down.what = networkWhat(lastNetwork);
+                down.maybeRan = !repeatable && !neverArrived(lastNetwork);
+                throw down;
+            }
             if (repeatable && isTransientStatus(out.status))
                 throw new PlatformError(out.status, unreachableMessage(`HTTP ${out.status}`));
             return out;
@@ -1921,7 +1956,7 @@ export function startConnector(opts) {
             timer = setTimeout(() => {
                 child.kill("SIGTERM");
                 finish(() => reject(new HopTimeoutError(progress)));
-            }, hopMaxMs);
+            }, hopMaxOf(hop.role));
             // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
             timer.unref();
             child.on("error", (err) => finish(() => reject(new Error(`Could not start Claude Code: ${err.message}`))));
@@ -1944,7 +1979,7 @@ export function startConnector(opts) {
                 }
             });
             stdin.on("error", () => undefined);
-            stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxMs)}`);
+            stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
         });
     }
     /**
@@ -2005,7 +2040,7 @@ export function startConnector(opts) {
             // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
             const isConcept = conceptHop(shaped.role);
             if (err instanceof HopTimeoutError && !isConcept)
-                return toolResult(hopTimeoutAnswer(shaped.role, hopMaxMs, err.progress), true);
+                return toolResult(hopTimeoutAnswer(shaped.role, hopMaxOf(shaped.role), err.progress), true);
             return failedHop(shaped.role, reason, closed.cut);
         }
         finally {
@@ -2064,7 +2099,15 @@ export function startConnector(opts) {
         if (!hopMode)
             toolCallsSent += 1;
         const sentTurn = turnId;
-        const res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal);
+        let res;
+        try {
+            res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal, READ_ONLY_TOOLS.has(name));
+        }
+        catch (err) {
+            if (err instanceof PlatformError && err.maybeRan)
+                return toolResult(JSON.stringify({ error: unknownOutcomeText(name, err.what) }), true);
+            throw err;
+        }
         if (signal.aborted)
             return CANCELLED;
         // Hop mode forwards the door's answer. A no-reach answer is not remembered: the next call tries again.
@@ -2078,6 +2121,10 @@ export function startConnector(opts) {
             const sentence = aiNotBound(aiClientId);
             say(sentence);
             return toolResult(sentence, true);
+        }
+        if (isTransientStatus(res.status) && !READ_ONLY_TOOLS.has(name)) {
+            // The proxy answered 5xx for a write: it may have run. It is never sent again by this connector.
+            return toolResult(JSON.stringify({ error: unknownOutcomeText(name, `HTTP ${res.status}`) }), true);
         }
         if (res.status < 200 || res.status >= 300) {
             return toolResult(JSON.stringify({ error: errorText(res.status, res.body, `${name} could not run`) }), true);

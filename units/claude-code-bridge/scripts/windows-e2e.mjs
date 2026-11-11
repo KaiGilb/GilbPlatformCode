@@ -88,7 +88,7 @@ async function scenario(label, claudeArg, extraEnv = {}) {
     check(codeOut.includes(`Pairing code: ${code}`), `--code prints the same code (${code})`);
 
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    check(hello.bridge === "gilb-claude-code-bridge" && hello.build === "0.1.8", "hello answers, build 0.1.8");
+    check(hello.bridge === "gilb-claude-code-bridge" && hello.build === "0.1.9", "hello answers, build 0.1.9");
     const pair = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) });
     const { secret } = await pair.json();
     check(pair.status === 200 && typeof secret === "string", "paired");
