@@ -72,13 +72,13 @@ test("T3 mock run ok", () => {
     const r = mockRun(s);
     // Exit is 1, not 0: the writer sets failed=true when it skips an already-present tag (unchanged b16 behaviour).
     assert.equal(r.status, 1, r.stdout.slice(-500));
-    // 44 units x 2 items = 88; t:Value.graph is the one seeded exact tag -> 2 not-created; 43 x 2 = 86 created.
+    // 46 units x 2 items = 92; t:Value.graph is the one seeded exact tag -> 2 not-created; 45 x 2 = 90 created.
     const expectSkipped = fixtureUnits.filter((u) => u.tag === "t:Value.graph").length;
     assert.equal(expectSkipped, 1);
     const n = fixtureUnits.length;
     const rc = receiptOf(r.stdout);
     assert.deepEqual(rc.counts, { created: (n - expectSkipped) * 2, "not-created": expectSkipped * 2, unknown: 0, "never-sent": 0 });
-    assert.deepEqual(rc.counts, { created: 86, "not-created": 2, unknown: 0, "never-sent": 0 });
+    assert.deepEqual(rc.counts, { created: 90, "not-created": 2, unknown: 0, "never-sent": 0 });
     assert.ok(!existsSync(s.tok));
     assert.match(r.stdout, /key file deleted/);
   } finally { s.clean(); }
@@ -116,7 +116,7 @@ test("T6 badpartof -> every made unit unknown", () => {
     const rc = receiptOf(r.stdout);
     const docs = Object.entries(rc.items).filter(([k]) => k.endsWith(" doc") && !rc.items[k].reason?.includes("already present"));
     const made = docs.filter(([, v]) => v.state !== "not-created");
-    assert.equal(made.length, 43);
+    assert.equal(made.length, 45);
     assert.ok(made.every(([, v]) => v.state === "unknown"));
     assert.ok(!existsSync(s.tok));
   } finally { s.clean(); }
@@ -153,7 +153,11 @@ test("T9 build-input offline is byte-identical to the b16 input", () => {
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout.split("\n")[0], new RegExp("^" + FIXTURE_MAIN + " at [0-9a-f]{40}$"));
   const got = readFileSync(join(OUT, "refdocs-input.json"));
-  assert.ok(got.equals(readFileSync(FIXTURE_SRC)), "built input differs from the fixture");
+  // Units added to the fixture after the pin are not on main at the pin, so the build leaves them out; compare without them.
+  const ADDED_AFTER_PIN = new Set(["style-runtime", "style-studio"]);
+  const fx = JSON.parse(readFileSync(FIXTURE_SRC, "utf8"));
+  const atPin = Buffer.from(JSON.stringify({ ...fx, units: fx.units.filter((u) => !ADDED_AFTER_PIN.has(u.folder)) }, null, 1) + "\n");
+  assert.ok(got.equals(atPin), "built input differs from the fixture");
 });
 
 test("T9b a run on 900e918 (after unit.json moved the pins) differs from the fixture", () => {

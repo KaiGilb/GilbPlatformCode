@@ -308,6 +308,20 @@
    "title": "Development Resource card",
    "note": "The whole Development Resource card (Budget, Resource Owner); it is the Value card for t:Resource. Built on plan-card. Plan.DevelopmentResource",
    "exhibit": "**What it does:** The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.\n\nGitHub folder: units/resource-card\nCommit: bd038a94d907e668d8f8ac63bcea2e64de9fbdc8\nPackage: @kaigilb/gilbplatformcode-resource-card\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "style-runtime",
+   "tag": "t:AppStyleSheet.runtime",
+   "title": "Apply the app's style at start (style tokens)",
+   "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default.",
+   "exhibit": "**What it does:** `loadStyle({ fetchRemote, fallbackUrl, cacheKey })` reads the app's style sheet, validates it, and keeps exactly one `<style id=\"gilb-style\">` in `<head>`.\n\nGitHub folder: units/style-runtime\nCommit: d0d3cb756074f71faffddf756d5d1d334ec85c4f\nPackage: @kaigilb/gilbplatformcode-style-runtime\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
+  },
+  {
+   "folder": "style-studio",
+   "tag": "t:AppStyleSheet.studio",
+   "title": "App Style Studio (choose the app's style before building)",
+   "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault. A developer tool, taken once.",
+   "exhibit": "**What it does:** `<StyleStudio />` is a React screen for choosing the app's colours, fonts, buttons, windows and logo before building, and `saveStyle` writes the result to the app's resource vault.\n\nGitHub folder: units/style-studio\nCommit: d0d3cb756074f71faffddf756d5d1d334ec85c4f\nPackage: @kaigilb/gilbplatformcode-style-studio\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
   }
  ]
 }
