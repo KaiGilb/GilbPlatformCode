@@ -84,6 +84,9 @@ function listen(plan, toolPlan = {}) {
         tools: [
           { name: "list_vaults", description: "List.", inputSchema: { type: "object", properties: {} } },
           { name: "make_thing", description: "Write.", inputSchema: { type: "object", properties: {} } },
+          { name: "read_plan_card", description: "Read.", inputSchema: { type: "object", properties: {} } },
+          { name: "write_plan_card", description: "Write.", inputSchema: { type: "object", properties: {} } },
+          { name: "write_plan_table", description: "Write.", inputSchema: { type: "object", properties: {} } },
           { name: "read_record", description: "Read.", inputSchema: { type: "object", properties: {} } },
           { name: "list_records", description: "Read.", inputSchema: { type: "object", properties: {} } },
         ],
@@ -137,7 +140,7 @@ function connect(origin, retryDelaysMs = [5, 5, 5], extra = {}) {
   });
   opened.push({ session, input, output });
   let nextId = 1;
-  const call = (name) => {
+  const call = (name, args = {}) => {
     const id = nextId++;
     const result = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`no answer for ${name}`)), 8000);
@@ -146,7 +149,7 @@ function connect(origin, retryDelaysMs = [5, 5, 5], extra = {}) {
         resolve(msg);
       });
     });
-    input.write(JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } }) + "\n");
+    input.write(JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }) + "\n");
     return result;
   };
   const cancel = (requestId) => input.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId } }) + "\n");
@@ -282,7 +285,7 @@ describe("reads ride out a restart; writes never resend", () => {
 
   it("the sets: reads are repeatable, writes are not", async () => {
     const { READ_ONLY_TOOLS } = await import("../connector/gilb-connector.mjs");
-    expect([...READ_ONLY_TOOLS].sort()).toEqual(["list_projects", "list_records", "list_vaults", "read_record"]);
+    expect([...READ_ONLY_TOOLS].sort()).toEqual(["list_predicates", "list_projects", "list_records", "list_types", "list_vaults", "read_plan_card", "read_plan_table", "read_record"]);
     expect(READ_ONLY_TOOLS.has("make_thing")).toBe(false);
   });
 
@@ -314,5 +317,38 @@ describe("reads ride out a restart; writes never resend", () => {
     await new Promise((r) => setTimeout(r, 1500));
     expect(hit(platform, "read_record")).toBe(1);
     void pending;
+  });
+
+  it("read_plan_card rides out a reset and a 502 (three requests)", async () => {
+    captureStderr();
+    const platform = await listen({}, { read_plan_card: ["reset", 502] });
+    const out = await connect(platform.origin).call("read_plan_card");
+    expect(out.result.isError).toBe(false);
+    expect(hit(platform, "read_plan_card")).toBe(3);
+  });
+
+  it("write_plan_card and write_plan_table with mode check are retried", async () => {
+    captureStderr();
+    const platform = await listen({}, { write_plan_card: [502], write_plan_table: ["reset", 502] });
+    const box = connect(platform.origin);
+    const card = await box.call("write_plan_card", { mode: "check" });
+    expect(card.result.isError).toBe(false);
+    expect(hit(platform, "write_plan_card")).toBe(2);
+    const table = await box.call("write_plan_table", { mode: "check" });
+    expect(table.result.isError).toBe(false);
+    expect(hit(platform, "write_plan_table")).toBe(3);
+  });
+
+  it("write_plan_card with no mode (a write) and a 502 is sent once and says to read it back", async () => {
+    captureStderr();
+    const platform = await listen({}, { write_plan_card: [502, 502] });
+    const out = await connect(platform.origin).call("write_plan_card", { tag: "x" });
+    expect(out.result.isError).toBe(true);
+    expect(JSON.parse(text(out)).error).toBe(UNKNOWN("write_plan_card", "HTTP 502"));
+    expect(hit(platform, "write_plan_card")).toBe(1);
+    const other = await listen({}, { write_plan_card: [502, 502] });
+    const out2 = await connect(other.origin).call("write_plan_card", { mode: "write" });
+    expect(JSON.parse(text(out2)).error).toBe(UNKNOWN("write_plan_card", "HTTP 502"));
+    expect(hit(other, "write_plan_card")).toBe(1);
   });
 });

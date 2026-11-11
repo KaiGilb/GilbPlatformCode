@@ -10,6 +10,7 @@ export {
   HOP_MAX_MS_BY_ROLE,
   HOP_MAX_MS_DEFAULT,
   READ_ONLY_TOOLS,
+  isRepeatableCall,
   hopMaxFor,
   MAX_HOPS_AT_ONCE,
   NOT_CONNECTED,

@@ -252,7 +252,33 @@ export function hopMaxFor(role: string): number {
   return Object.prototype.hasOwnProperty.call(HOP_MAX_MS_BY_ROLE, key) ? (HOP_MAX_MS_BY_ROLE[key] as number) : HOP_MAX_MS_DEFAULT;
 }
 /** Tools that only read. A restart's timeout or 5xx on one of these may be tried again; nothing was written. */
-export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set(["read_record", "list_records", "list_vaults", "list_projects"]);
+export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "read_record", // GilbPlatform src/ai/vault-tools.ts:593
+  "list_records", // GilbPlatform src/ai/vault-tools.ts:566
+  "list_vaults", // GilbPlatform src/ai/vault-tools.ts:554
+  "list_projects", // the tool list offered to the connector (read-only by its description)
+  "read_plan_card", // GilbPlatform src/ai/plan-card-tools.ts:47 (READ_PLAN_CARD)
+  "read_plan_table", // GilbPlatform src/ai/plan-card-tools.ts:50 (READ_PLAN_TABLE)
+  "list_types", // GilbPlatform src/ai/vault-tools.ts:618
+  "list_predicates", // GilbPlatform src/ai/vault-tools.ts:675
+]);
+/** Write tools that have a check mode. With mode "check" they write nothing (GilbPlatform src/ai/plan-card-tools.ts:402), so they may be repeated. */
+const CHECKABLE_WRITE_TOOLS: ReadonlySet<string> = new Set(["write_plan_card", "write_plan_table"]);
+function argsObject(args: unknown): Record<string, unknown> | null {
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : null;
+}
+/** A call that only reads, or a check-mode call (`mode === "check"`, plan-card-tools.ts:402): a restart's failure may be tried again. */
+export function isRepeatableCall(name: string, args: unknown): boolean {
+  if (READ_ONLY_TOOLS.has(name)) return true;
+  return CHECKABLE_WRITE_TOOLS.has(name) && argsObject(args)?.mode === "check";
+}
 /** How many hand-offs may run at once. */
 export const MAX_HOPS_AT_ONCE = 4;
 /** How many times one process starts a fresh platform turn after the server refused a call at a turn limit. */
@@ -2263,9 +2289,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal, resent = false): Promise<ToolResult | typeof CANCELLED> {
     if (!hopMode) toolCallsSent += 1;
     const sentTurn = turnId;
+    const repeatableCall = isRepeatableCall(name, args);
     let res: { status: number; body: unknown };
     try {
-      res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal, READ_ONLY_TOOLS.has(name));
+      res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal, repeatableCall);
     } catch (err) {
       if (err instanceof PlatformError && err.maybeRan) return toolResult(JSON.stringify({ error: unknownOutcomeText(name, err.what) }), true);
       throw err;
@@ -2283,7 +2310,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       say(sentence);
       return toolResult(sentence, true);
     }
-    if (isTransientStatus(res.status) && !READ_ONLY_TOOLS.has(name)) {
+    if (isTransientStatus(res.status) && !repeatableCall) {
       // The proxy answered 5xx for a write: it may have run. It is never sent again by this connector.
       return toolResult(JSON.stringify({ error: unknownOutcomeText(name, `HTTP ${res.status}`) }), true);
     }
