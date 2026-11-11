@@ -51,14 +51,14 @@ describe("the real signin unit against the fake, end to end", () => {
     expect(cred.session).toMatchObject({ vaults: [] });
 
     const check = await checkVaultName(origin, "My-Boat", t);
-    expect(check).toEqual({ available: true, reserved: false, name: "myboat", requested: "My-Boat", address: "https://myboat.fake.test/vault", message: undefined, suggestion: undefined });
+    expect(check).toEqual({ available: true, reserved: false, name: "myboat", requested: "My-Boat", address: "https://myboat.fake.test/vault", message: undefined, suggestion: undefined, normalized: true, note: "'My-Boat' is saved as 'myboat': a vault name keeps only a–z and 0–9." });
 
     const made = await createNamedVault(origin, { name: "My-Boat", represents: PERSON }, { credential: cred, ...t });
     expect(made).toMatchObject({ complete: true, name: "myboat", vaultId: "https://myboat.fake.test/vault", represents: PERSON });
     expect(made.vault).toBe(w.fake.state.vaults.get(made.vaultId)!.entity);
 
     const vaults = await listVaults(origin, { credential: cred, ...t });
-    expect(vaults).toEqual([{ vaultId: "https://myboat.fake.test/vault", modes: ["read", "write"], isLandingVault: true, name: "myboat", represents: PERSON }]);
+    expect(vaults).toEqual([{ vaultId: "https://myboat.fake.test/vault", modes: ["read", "write"], isLandingVault: true, name: "myboat", represents: PERSON, entity: made.vault }]);
 
     lwsAuthFor(cred);
     const rec = await createRecord(vaults[0]!.vaultId, "t:Sailboat", { name: "Heron" });
@@ -122,23 +122,26 @@ describe("the real signin unit against the fake, end to end", () => {
     await expect(createNamedVault(origin, { name: "x", represents: "" }, { credential: cred, transport: transport as never })).rejects.toThrow(/represents/);
     expect(w.fake.calls.count()).toBe(before);
   });
-  it("CLIENT FINDING (reported, not copied): the client documents parentVault as 'its id' and ListedVault drops the vault's @id; the platform wants the vault ENTITY URI, so a parent given as listed is refused 400", async () => {
+  it("listVaults keeps the vault's entity URI (signin 0.2.5); a vaultId as parent is 400; the sign-up landing vault's entity as parent is 403 (not minted by the caller); a vault the caller minted is a parent", async () => {
     const t = { transport: transport as never };
     const { cred } = await signIn(w.ann.email);
     const [ann] = await listVaults(origin, { credential: cred, ...t });
-    expect("@id" in ann!).toBe(false); // the entity URI is not kept
+    expect(ann!.entity).toBe(w.annV.entity);
     const err = await createNamedVault(origin, { name: "child", represents: PERSON, parentVault: ann!.vaultId }, { credential: cred, ...t }).then(() => null, (e: unknown) => e);
     expect(err).toMatchObject({ status: 400 });
     expect((err as VaultRequestRefusedError).platformMessage).toBe(`parentVault is not a known vault entity: ${w.annV.id}`);
-    const ok = await createNamedVault(origin, { name: "child", represents: PERSON, parentVault: w.annV.entity }, { credential: cred, ...t });
-    expect(ok.parent).toBe(w.annV.entity);
+    const landing = await createNamedVault(origin, { name: "child", represents: PERSON, parentVault: w.annV.entity }, { credential: cred, ...t }).then(() => null, (e: unknown) => e);
+    expect(landing).toMatchObject({ status: 403 });
+    expect((landing as VaultRequestRefusedError).platformMessage).toBe(`You do not own parent vault ${w.annV.entity} — nest only under vaults you have minted`);
+    const first = await createNamedVault(origin, { name: "first", represents: PERSON }, { credential: cred, ...t });
+    const ok = await createNamedVault(origin, { name: "child", represents: PERSON, parentVault: first.vault }, { credential: cred, ...t });
+    expect(ok.parent).toBe(first.vault);
   });
-  it("CLIENT FINDING: checkVaultName keeps `requested` but drops the platform's `normalized` and `note`, so the card cannot show 'saved as ...' from the platform's own sentence", async () => {
+  it("checkVaultName keeps the platform's `normalized` and `note` (signin 0.2.4), so the card can show 'saved as ...' from the platform's own sentence", async () => {
     const raw = await (await w.fake.fetch(`${origin}/onboard/api/check-name`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "zz-eespeed-r5-probe" }) })).json();
     expect(raw).toMatchObject({ normalized: true, note: expect.stringContaining("is saved as 'zzeespeedr5probe'") });
     const viaClient = await checkVaultName(origin, "zz-eespeed-r5-probe", { transport: transport as never });
-    expect("normalized" in viaClient || "note" in viaClient).toBe(false);
-    expect(viaClient).toMatchObject({ name: "zzeespeedr5probe", requested: "zz-eespeed-r5-probe" });
+    expect(viaClient).toMatchObject({ name: "zzeespeedr5probe", requested: "zz-eespeed-r5-probe", normalized: true, note: raw.note });
   });
   it("a record write by someone with no reach is lws-records' RecordForbiddenError (the new person cannot write in ann's vault)", async () => {
     const { cred } = await signIn();

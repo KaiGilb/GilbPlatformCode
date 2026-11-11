@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VAULT_ID_RE, principalGranteeProblem, vaultIdProblem } from "./vaultAddress";
+import { VAULT_ID_RE, principalGranteeProblem, vaultAddressFromName, vaultIdProblem, vaultNameProblem } from "./vaultAddress";
 
 describe("vaultIdProblem", () => {
   it("accepts a host ending in /base or /vault, with an optional port, and trims", () => {
@@ -49,5 +49,33 @@ describe("principalGranteeProblem", () => {
     expect(principalGranteeProblem("name", "https://desk.example.test/vault")).toBe(
       "Use a full https:// vault address — e.g. https://desk.example.test/vault.",
     );
+  });
+});
+
+describe("vaultNameProblem", () => {
+  it("accepts a bare name, trimmed, in any case", () => {
+    for (const n of ["anna", " Anna ", "my-club", "a", "a1", "x".repeat(63)]) expect(vaultNameProblem(n), n).toBeNull();
+  });
+  it("refuses blank, an email, and what is not one DNS label", () => {
+    expect(vaultNameProblem("  ")).toBe("Enter a vault name.");
+    expect(vaultNameProblem("anna@example.test")).toBe("Type their GilbPlatform vault name or address (not an email)");
+    for (const n of ["-anna", "anna-", "an na", "anna.club", "anna/vault", "x".repeat(64), "ånna"]) expect(vaultNameProblem(n), n).toMatch(/^A vault name uses only/);
+  });
+});
+
+describe("vaultAddressFromName", () => {
+  it("composes https://<name>.<apex>/vault, lower-cased", () => {
+    expect(vaultAddressFromName("anna", "platform.example.test")).toBe("https://anna.platform.example.test/vault");
+    expect(vaultAddressFromName(" Anna ", "Platform.Example.Test")).toBe("https://anna.platform.example.test/vault");
+    expect(vaultAddressFromName("anna", "localhost:5173")).toBe("https://anna.localhost:5173/vault");
+  });
+  it("the result passes vaultIdProblem", () => {
+    expect(vaultIdProblem(vaultAddressFromName("my-club", "platform.example.test")!)).toBeNull();
+  });
+  it("is null for a name vaultNameProblem refuses", () => {
+    for (const n of ["", "anna@example.test", "-x", "a b", "a.b"]) expect(vaultAddressFromName(n, "platform.example.test"), n).toBeNull();
+  });
+  it("is null for an apex that is not a bare host (an origin, a path, an empty string)", () => {
+    for (const a of ["", "https://platform.example.test", "platform.example.test/vault", "platform example", "-x.test"]) expect(vaultAddressFromName("anna", a), a).toBeNull();
   });
 });

@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import {
   SessionCredential,
   NotSignedInError,
+  RequestRefusedError,
+  isRequestFault,
+  platformSentenceOf,
   OriginNotAllowedError,
   readSessionVaults,
   narrowVaultModes,
@@ -610,4 +613,64 @@ test("a sign-out while the vault list is on the wire leaves no session", async (
   release();
   await assert.rejects(pending, NotSignedInError);
   assert.equal(cred.session, null);
+});
+
+// --- 401 is not always "your sign-in ran out" (platformRefusal.ts) ---
+
+test("a 401 that says the token is bad keeps NotSignedInError, with the platform's sentence on it", async () => {
+  const sentence = "Invalid access token: \"exp\" claim timestamp check failed";
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: fakeTransport([{ status: 401, body: { error: "Unauthorized", message: sentence } }]).send });
+  await assert.rejects(cred.getSession(), (e: unknown) => {
+    assert.ok(e instanceof NotSignedInError);
+    assert.equal(e.platformSentence, sentence);
+    assert.match(e.message, /^Your sign-in needs refreshing/);
+    return true;
+  });
+});
+
+test("a 401 with no body keeps today's NotSignedInError and has no platformSentence", async () => {
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: fakeTransport([{ status: 401 }]).send });
+  await assert.rejects(cred.getSession(), (e: unknown) => e instanceof NotSignedInError && e.platformSentence === undefined);
+});
+
+test("a 401 that names the DPoP proof is RequestRefusedError with the platform's sentence, not NotSignedInError", async () => {
+  const sentence = "DPoP proof htu does not match the request URI";
+  const cred = new SessionCredential({ dpopMintUrl: MINT_URL, transport: fakeTransport([{ status: 401, body: { error: "Unauthorized", message: sentence } }]).send });
+  await assert.rejects(cred.getSession(), (e: unknown) => {
+    assert.ok(e instanceof RequestRefusedError);
+    assert.ok(!(e instanceof NotSignedInError));
+    assert.equal(e.platformSentence, sentence);
+    assert.equal(e.message, `The platform refused this request: ${sentence}`);
+    return true;
+  });
+});
+
+test("isRequestFault: every verify.ts proof sentence is a request fault except the bound-key one", () => {
+  for (const s of [
+    "Invalid DPoP proof: DPoP proof typ must be dpop+jwt",
+    "DPoP proof htm does not match the request method",
+    "DPoP proof htu does not match the request URI",
+    "DPoP proof has no iat",
+    "DPoP proof iat is outside the freshness window",
+    "DPoP proof ath claim is malformed",
+    "DPoP proof ath does not match the presented access token",
+    "DPoP proof has no jti (replay protection requires it)",
+    "DPoP proof has already been used (replay rejected)",
+    "Unsupported Authorization scheme (expected Bearer or DPoP)",
+  ]) assert.equal(isRequestFault(s), true, s);
+  for (const s of [
+    "DPoP proof key does not match the token's bound key (cnf.jkt)",
+    "Malformed access token: x",
+    "Untrusted token issuer: x is not in the trusted-issuer allow-list",
+    "Invalid access token: x",
+    "Access token is not DPoP-bound (no cnf.jkt)",
+    "Access token has no subject (sub) principal",
+    undefined,
+  ]) assert.equal(isRequestFault(s), false, String(s));
+});
+
+test("platformSentenceOf reads message from a parsed body or its text, and nothing else", () => {
+  assert.equal(platformSentenceOf({ error: "Unauthorized", message: " hi " }), "hi");
+  assert.equal(platformSentenceOf('{"message":"hi"}'), "hi");
+  for (const b of [undefined, null, "not json", [], {}, { message: "" }, { message: 4 }]) assert.equal(platformSentenceOf(b), undefined);
 });

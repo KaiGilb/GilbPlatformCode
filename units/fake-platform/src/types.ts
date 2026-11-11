@@ -16,6 +16,12 @@ export interface Vault {
   partOf: string | null;
   /** The vault's own entity URI (the deed), the `@id` of its node in GET /lws/vaults and what create-named's `parentVault` must be. */
   entity: string;
+  /**
+   * The email of the person who minted this vault through create-named, else null. Only a vault minted that way may be a
+   * `parentVault` for that person: the sign-up landing vault, a seeded vault and a vault another person minted are not
+   * (GilbPlatform src/routes/vault.ts:522 and :738, "nest only under vaults you have minted").
+   */
+  mintedBy: string | null;
   /** A partial mint (create-named answered 202): the facts exist, the owner has no reach yet; re-issuing the same request completes it. */
   pending: boolean;
 }

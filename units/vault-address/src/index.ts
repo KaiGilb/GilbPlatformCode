@@ -1,1 +1,1 @@
-export { VAULT_ID_RE, principalGranteeProblem, vaultIdProblem } from "./vaultAddress";
+export { VAULT_ID_RE, principalGranteeProblem, vaultAddressFromName, vaultIdProblem, vaultNameProblem } from "./vaultAddress";

@@ -32,7 +32,7 @@ test("the app lists Ann's boats", async () => {
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
 - Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match, { skip? })` (waits until the returned function is called), `partialNextCreateNamed()` (the next create-named answers 202). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
 
-What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named`, `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`).
+What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named` (a `parentVault` must be a vault the caller MINTED through create-named: the sign-up landing vault, a seeded vault and another person's vault are 403 `You do not own parent vault <entity> — nest only under vaults you have minted`, GilbPlatform `src/routes/vault.ts:522` and `:738`; `Vault.mintedBy` is the email of the minter, null for a landing or seeded vault), `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`).
 
 ## Options
 
@@ -53,7 +53,7 @@ What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-nam
 
 ## Auth
 
-In `"strict"` mode the token must be one the fake issued (`signInAs`, or `verify-code`); the principal is the one the token names. The proof's `htm`, `htu` (`https://` + host + path, even over http), `ath`, `iat`, `jti` (not used before) and key (the token's `cnf.jkt`) are checked. Signatures are not: there is no real crypto. Strict is stricter than the platform on `/lws` and `/files` on purpose, so a call that forgot to sign fails in the test.
+In `"strict"` mode the token must be one the fake issued (`signInAs`, or `verify-code`); the principal is the one the token names. The proof's `htm`, `htu` (`https://` + the request's host + its path as sent, percent-escapes kept, query dropped, even over http; a mismatch is 401 `{"error":"Unauthorized","message":"DPoP proof htu does not match the request URI"}`, verify.ts:319), `ath`, `iat`, `jti` (not used before) and key (the token's `cnf.jkt`) are checked. Signatures are not: there is no real crypto. Strict is stricter than the platform on `/lws` and `/files` on purpose, so a call that forgot to sign fails in the test.
 
 ## Not faked
 
@@ -75,3 +75,9 @@ Package: `@kaigilb/gilbplatformcode-fake-platform`. It has no dependencies of it
 ## Where it came from
 
 New code, written for the next app-building AI in EESpeed Round 5 (R5-C3). Repository `KaiGilb/GilbPlatformCode`, commit `73cc3dcf821ed0e80ffaf6a75bbd04491c5ecea7` (the main that holds `lws-records`, `record-sync`, `signin` and `vault-access` as the tests import them). No source file was copied. The routes mirror GilbPlatform at commit `619aca557597b1bc50dd6e1340ebc274039be9c2`.
+
+## Changes in 0.1.1
+
+- create-named: `parentVault` must be a vault the caller minted through create-named (`Vault.mintedBy`). The landing vault of a sign-up and a seeded vault are refused with the platform's 403 sentence (it used to accept any vault the caller owned, so an app's tests passed and its first live sign-in failed).
+- The DPoP `htu` check was already there; it now has a test for the encoded vault path with a query and for the exact 401 body.
+- Four tests that asserted client behaviour fixed in `signin` 0.2.4/0.2.5, `picture-set` 0.1.4 and `picture-upload` 0.2.1 (`CLIENT FINDING` and `CLIENT CAVEAT`) were failing on main; they now assert the fixed behaviour.

@@ -78,8 +78,8 @@ function adoptFirstVault(core: Core, p: Person, v: Vault): void {
   v.owner = v.id;
 }
 
-function mintFor(core: Core, p: Person, v: { name: string; represents: string | null; partOf?: string | null; pending?: boolean }): Vault {
-  const made = makeVault(core, { name: v.name, owner: p.principal, represents: v.represents, partOf: v.partOf ?? null, pending: v.pending });
+function mintFor(core: Core, p: Person, v: { name: string; represents: string | null; partOf?: string | null; pending?: boolean; mintedBy?: string }): Vault {
+  const made = makeVault(core, { name: v.name, owner: p.principal, represents: v.represents, partOf: v.partOf ?? null, pending: v.pending, mintedBy: v.mintedBy });
   if (!made.pending) adoptFirstVault(core, p, made);
   return made;
 }
@@ -251,7 +251,9 @@ export function createNamed(core: Core, req: Req, caller: Caller | null): Respon
   if (typeof o.parentVault === "string") {
     parent = [...core.s.vaults.values()].find((x) => x.entity === o.parentVault && !x.pending) ?? null;
     if (!parent) return badRequest(`parentVault is not a known vault entity: ${o.parentVault}`);
-    if (parent.owner !== person.principal) return forbidden(`You do not own parent vault ${o.parentVault} — nest only under vaults you have minted`);
+    // Minted by the caller through create-named, not merely owned: the landing vault of a sign-up is owned and is refused
+    // (GilbPlatform src/routes/vault.ts:522 for a cross-store vault, :738 for a local one: the same sentence).
+    if (parent.mintedBy !== person.email) return forbidden(`You do not own parent vault ${o.parentVault} — nest only under vaults you have minted`);
   } else if (person.landingVaultId !== null) {
     parent = core.s.vaults.get(person.landingVaultId) ?? null;
   }
@@ -279,8 +281,9 @@ export function createNamed(core: Core, req: Req, caller: Caller | null): Respon
     adoptFirstVault(core, person, vault);
     vault.partOf = parent?.id ?? null;
     vault.represents = represents;
+    vault.mintedBy = person.email;
   } else {
-    vault = mintFor(core, person, { name: finalName, represents, partOf: parent?.id ?? null, pending: partial });
+    vault = mintFor(core, person, { name: finalName, represents, partOf: parent?.id ?? null, pending: partial, mintedBy: person.email });
   }
   const vaultId = addressFor(core, vault.name);
   if (partial) {

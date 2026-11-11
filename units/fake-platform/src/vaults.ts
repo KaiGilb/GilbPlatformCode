@@ -33,13 +33,15 @@ export interface NewVault {
   partOf?: string | null;
   host?: string;
   pending?: boolean;
+  /** The email of the person who minted it through create-named. */
+  mintedBy?: string | null;
 }
 /** A vault in the fake's state: id `https://<host>/vault`, its own entity URI, a name registered to its owner. */
 export function makeVault(core: Core, n: NewVault): Vault {
   const host = n.host ?? `${n.name}.${core.o.domain}`;
   const id = `https://${host}/vault`;
   if (core.s.vaults.has(id)) throw new Error(`fake-platform: vault ${id} is already seeded`);
-  const v: Vault = { id, name: n.name, host, owner: n.owner, represents: n.represents, partOf: n.partOf ?? null, entity: `https://${host}/vault/e/${core.nextId()}`, pending: n.pending ?? false };
+  const v: Vault = { id, name: n.name, host, owner: n.owner, represents: n.represents, partOf: n.partOf ?? null, entity: `https://${host}/vault/e/${core.nextId()}`, pending: n.pending ?? false, mintedBy: n.mintedBy ?? null };
   core.s.vaults.set(id, v);
   return v;
 }

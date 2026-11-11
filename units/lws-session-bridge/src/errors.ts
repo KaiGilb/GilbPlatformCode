@@ -15,9 +15,25 @@
  *      be exchanged for a token, so the copy now says that and names the one action that helps.
  * ⛔ Do not shorten this back to a bare class-name-ish phrase; it is the sentence a person reads. */
 export class NotSignedInError extends Error {
-  constructor() {
+  /** The platform's own sentence when the 401 body carried one. The message a person reads does not change. */
+  readonly platformSentence?: string;
+  constructor(platformSentence?: string) {
     super("Your sign-in needs refreshing — sign in again, then try once more");
     this.name = "NotSignedInError";
+    if (platformSentence !== undefined) this.platformSentence = platformSentence;
+  }
+}
+
+/** Thrown on a 401 whose sentence names a fault in the REQUEST (a DPoP proof htu/htm/iat/jti/ath fault), not in the sign-in.
+ * The token is kept: dropping it would sign the person out for a fault a new sign-in does not fix. Which sentences mean
+ * which, with GilbPlatform `src/auth/verify.ts` lines: the signin unit's `src/platformRefusal.ts`. */
+export class RequestRefusedError extends Error {
+  readonly platformSentence: string;
+  readonly status = 401;
+  constructor(platformSentence: string) {
+    super(`The platform refused this request: ${platformSentence}`);
+    this.name = "RequestRefusedError";
+    this.platformSentence = platformSentence;
   }
 }
 

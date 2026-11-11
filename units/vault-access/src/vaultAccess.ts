@@ -18,6 +18,12 @@ export type VaultGrantMode = "read" | "write" | "append" | "control";
 
 export const VAULT_GRANT_MODES: readonly VaultGrantMode[] = ["read", "write", "append", "control"] as const;
 
+/**
+ * The sentence a refused grant or revoke (403) carries. A host that reads the access list (a 404 for a caller without Control,
+ * `{ controlled: false }`) shows the same sentence, so a person sees one wording for one fact.
+ */
+export const NO_CONTROL = "You don't hold Control on this vault, so you can't change who can access it.";
+
 /** Which register produced an ACL row's `label`. A label with no source is an invented one. */
 export type PrincipalLabelSource =
   | "vault-name"
@@ -176,7 +182,7 @@ async function postGrant(
   const body = await readJson(res);
   const msg =
     res.status === 403
-      ? "You don't hold Control on this vault, so you can't change who can access it."
+      ? NO_CONTROL
       : serverErrorText(res.status, body, "Could not change vault access");
   throw new VaultAccessError(res.status, msg);
 }

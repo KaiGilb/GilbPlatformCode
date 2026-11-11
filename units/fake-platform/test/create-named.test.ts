@@ -234,3 +234,42 @@ describe("helpers", () => {
     expect((await check()).available).toBe(true);
   });
 });
+
+describe("parentVault must be a vault the caller MINTED (GilbPlatform src/routes/vault.ts:522 and :738)", () => {
+  const sentence = (e: string) => `You do not own parent vault ${e} — nest only under vaults you have minted`;
+  it("the caller's own sign-up landing vault is owned but not minted: 403 with the platform's exact sentence, nothing is made", async () => {
+    const w = await world();
+    const a = await w.as(w.ann);
+    const res = await make(a, { name: "club", represents: CLUB, parentVault: w.annV.entity });
+    expect(res.status).toBe(403);
+    expect(await body(res)).toMatchObject({ message: sentence(w.annV.entity) });
+    expect(w.fake.state.vaults.size).toBe(2);
+  });
+  it("a seeded vault the caller owns is not minted either", async () => {
+    const w = await world();
+    const seeded = w.fake.seedVault({ name: "seeded", owner: w.ann, represents: CLUB });
+    const res = await make(await w.as(w.ann), { name: "club", represents: CLUB, parentVault: seeded.entity });
+    expect(res.status).toBe(403);
+    expect((await body(res)).message).toBe(sentence(seeded.entity));
+  });
+  it("a vault the caller minted through create-named is a parent; someone else's minted vault is not", async () => {
+    const w = await world();
+    const a = await w.as(w.ann);
+    const b = await w.as(w.ben);
+    const first = await body(await make(a, { name: "first", represents: CLUB }));
+    expect(w.fake.state.vaults.get(first.vaultId)!.mintedBy).toBe("ann@example.test");
+    expect((await make(a, { name: "second", represents: CLUB, parentVault: first.vault })).status).toBe(201);
+    const stolen = await make(b, { name: "third", represents: CLUB, parentVault: first.vault });
+    expect(stolen.status).toBe(403);
+    expect((await body(stolen)).message).toBe(sentence(first.vault));
+  });
+  it("a vault minted by a completed partial (202, then the same request) counts as minted", async () => {
+    const w = await world();
+    const a = await w.as(w.ann);
+    w.fake.partialNextCreateNamed();
+    await make(a, { name: "club", represents: CLUB });
+    const done = await body(await make(a, { name: "club", represents: CLUB }));
+    expect((await make(a, { name: "sub", represents: CLUB, parentVault: done.vault })).status).toBe(201);
+  });
+});
+

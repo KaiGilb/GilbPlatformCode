@@ -137,7 +137,8 @@ export function webpSupported(): Promise<boolean> {
 }
 
 export type PictureSetOptions = {
-  sizes?: { thumb?: number; screen?: number; full?: number };
+  /** `sizes.full: false` makes no full copy at all (no encode): `full` is null in the answer. */
+  sizes?: { thumb?: number; screen?: number; full?: number | false };
   type?: PictureType | "auto";
   quality?: { thumb?: number; screen?: number; full?: number };
 };
@@ -146,10 +147,11 @@ export type PictureSet = { thumb: Blob; screen: Blob; full: Blob | null; width: 
 
 /**
  * One decode, three copies of the same picture, not cropped: thumb (320, q0.72), screen (1600, q0.82) and full (4096, q0.9).
- * `full` is null when the original's longest edge is at most `screen`. Every copy is re-encoded from a canvas, so no metadata survives.
+ * `full` is null when the original's longest edge is at most `screen`, or when `sizes.full` is `false` (no full copy is encoded). Every copy is re-encoded from a canvas, so no metadata survives.
  */
 export async function makePictureSet(file: Blob, options: PictureSetOptions = {}): Promise<PictureSet> {
-  const edge = { thumb: options.sizes?.thumb ?? 320, screen: options.sizes?.screen ?? 1600, full: options.sizes?.full ?? 4096 };
+  const noFull = options.sizes?.full === false;
+  const edge = { thumb: options.sizes?.thumb ?? 320, screen: options.sizes?.screen ?? 1600, full: options.sizes?.full === false ? 0 : (options.sizes?.full ?? 4096) };
   const q = { thumb: options.quality?.thumb ?? 0.72, screen: options.quality?.screen ?? 0.82, full: options.quality?.full ?? 0.9 };
   const d = await decode(file).catch((e: unknown) => {
     throw e instanceof PictureUnreadableError ? e : new PictureUnreadableError();
@@ -160,7 +162,7 @@ export async function makePictureSet(file: Blob, options: PictureSetOptions = {}
     const type: PictureType = wanted === "auto" ? ((await webpSupported()) ? "image/webp" : "image/jpeg") : wanted;
     const thumb = await encode(d, edge.thumb, q.thumb, type);
     const screen = await encode(d, edge.screen, q.screen, type);
-    const full = Math.max(d.width, d.height) <= edge.screen ? null : await encode(d, edge.full, q.full, type);
+    const full = noFull || Math.max(d.width, d.height) <= edge.screen ? null : await encode(d, edge.full, q.full, type);
     return { thumb, screen, full, width: d.width, height: d.height, type };
   } finally {
     d.release();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NotSignedInError, OriginNotAllowedError } from "./errors";
+import { NotSignedInError, OriginNotAllowedError, RequestRefusedError } from "./errors";
 
 describe("NotSignedInError", () => {
   it("is an Error named NotSignedInError with the sentence a person reads", () => {
@@ -30,5 +30,21 @@ describe("OriginNotAllowedError", () => {
   it("the two classes are distinct types", () => {
     expect(new OriginNotAllowedError("x")).not.toBeInstanceOf(NotSignedInError);
     expect(new NotSignedInError()).not.toBeInstanceOf(OriginNotAllowedError);
+  });
+});
+
+describe("RequestRefusedError and the platform sentence", () => {
+  it("NotSignedInError keeps its sentence and carries the platform's when given", () => {
+    expect(new NotSignedInError().platformSentence).toBeUndefined();
+    const e = new NotSignedInError("Invalid access token: expired");
+    expect(e.platformSentence).toBe("Invalid access token: expired");
+    expect(e.message).toBe("Your sign-in needs refreshing — sign in again, then try once more");
+  });
+  it("RequestRefusedError says the platform refused the request, with its sentence, and is not a NotSignedInError", () => {
+    const e = new RequestRefusedError("DPoP proof htu does not match the request URI");
+    expect(e.name).toBe("RequestRefusedError");
+    expect(e.message).toBe("The platform refused this request: DPoP proof htu does not match the request URI");
+    expect(e.platformSentence).toBe("DPoP proof htu does not match the request URI");
+    expect(e).not.toBeInstanceOf(NotSignedInError);
   });
 });

@@ -55,7 +55,7 @@ POST {dpopMintUrl}            credentials: include, X-Base-Csrf: 1
 → { "access_token", "expires_in"?, "cnf"?: { "jkt" }, "principal", "vault"?, "vaults"?: [{ "vaultId", "modes" }] }
 ```
 
-401 is `NotSignedInError`. 403 is `OriginNotAllowedError` (this app's origin is not admitted). A 2xx with no token is refused.
+401 is `NotSignedInError` when the platform says the token is bad (or sends no body). A 401 that names the request's DPoP proof (htu, htm, iat, jti, ath, an invalid proof, an unsupported scheme) is `RequestRefusedError` ("The platform refused this request: <sentence>"): the sign-in is fine, the request is wrong. Both carry the platform's sentence as `platformSentence`. The sentence lists, with `verify.ts` lines, are in `src/platformRefusal.ts`. 403 is `OriginNotAllowedError` (this app's origin is not admitted). A 2xx with no token is refused.
 
 Reachable vaults after a code sign-in (`./session`). verify-code returns no vault list, and the bridge above is first-party only, so a third-party app reads the list itself:
 
@@ -172,7 +172,7 @@ The `vaultId` create-named answers is `https://<slug>.<domain>` plus the segment
 
 The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. The kit never retries for you.
 
-`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. The parent must also be a vault the caller MINTED: the live platform answers any other parent with 403 `You do not own parent vault <entity> — nest only under vaults you have minted` (GilbPlatform `src/routes/vault.ts:522` and `:738`). The sign-up landing vault is not minted by the caller in this sense, so to make an app vault, create it top-level (no `parentVault`) unless the caller minted the parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
 
 ## Do not
 
@@ -283,3 +283,8 @@ Patch release, additive only.
 - `checkVaultName.requested` is the platform's `requested` (trimmed) when it sends one, else the caller's input trimmed.
 - `listVaults` also returns `partOfEntity`, the parent's entity URI (`partOf["@id"]`), when the platform sends it. `partOf` is unchanged.
 - Docs: the segment of the `vaultId` create-named answers is whatever the platform returns (`/vault` on production). The unit never builds or compares a `/base` id; the fallback matches by host.
+
+## Changes in 0.2.6
+
+- A 401 is not always "your sign-in ran out". The platform's `{"error","message"}` body is read: `NotSignedInError` gains `platformSentence`; a 401 whose sentence names a DPoP proof fault is the new `RequestRefusedError` ("The platform refused this request: <sentence>", with `platformSentence`). New exports `isRequestFault`, `platformSentenceOf`, `RequestRefusedError` (from `.` and `./session`). The session mint is the only 401 this unit reads itself; a caller that drops the token on its own 401 should use `isRequestFault` first (`lws-session-bridge` `errorForUnauthorized` does).
+- README: `createNamedVault`'s `parentVault` must be a vault the caller minted.

@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetBaseOrigin, resetSystemVaultHosts, setBaseOrigin, setSystemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
 import { SessionCredential, type GilbSession } from "@kaigilb/gilbplatformcode-signin/session";
-import { NotSignedInError, OriginNotAllowedError } from "./errors";
+import { NotSignedInError, OriginNotAllowedError, RequestRefusedError } from "./errors";
 import { lwsAuthFromSession } from "./fromSession";
 import { bearerHeaderFor, dpopReadAuth, dpopWriteAuth, invalidateDpop, resetLwsAuth, setLwsAuth, tokenManager } from "./lwsAuth";
 
@@ -197,6 +197,21 @@ describe("error mapping", () => {
     const transport: Transport = async () => ({ status: 401, json: async () => ({}) });
     setLwsAuth(lwsAuthFromSession(new SessionCredential({ dpopMintUrl: `${ORIGIN}/mint`, transport })));
     await expect(dpopReadAuth("GET", platformUrl)).rejects.toBeInstanceOf(NotSignedInError);
+  });
+  it("a 401 that says the token is invalid keeps the platform's sentence on the app's NotSignedInError", async () => {
+    const transport: Transport = async () => ({ status: 401, json: async () => ({ error: "Unauthorized", message: "Invalid access token: expired" }) });
+    setLwsAuth(lwsAuthFromSession(new SessionCredential({ dpopMintUrl: `${ORIGIN}/mint`, transport })));
+    const e = await dpopReadAuth("GET", platformUrl).then(() => null, (x: unknown) => x);
+    expect(e).toBeInstanceOf(NotSignedInError);
+    expect((e as NotSignedInError).platformSentence).toBe("Invalid access token: expired");
+  });
+  it("a 401 that names the DPoP proof becomes the app's RequestRefusedError, not NotSignedInError", async () => {
+    const transport: Transport = async () => ({ status: 401, json: async () => ({ error: "Unauthorized", message: "DPoP proof htu does not match the request URI" }) });
+    setLwsAuth(lwsAuthFromSession(new SessionCredential({ dpopMintUrl: `${ORIGIN}/mint`, transport })));
+    const e = await dpopReadAuth("GET", platformUrl).then(() => null, (x: unknown) => x);
+    expect(e).toBeInstanceOf(RequestRefusedError);
+    expect(e).not.toBeInstanceOf(NotSignedInError);
+    expect((e as Error).message).toBe("The platform refused this request: DPoP proof htu does not match the request URI");
   });
   it("a 403 from the mint becomes the app's OriginNotAllowedError, carrying the sign-in unit's sentence as its detail", async () => {
     const transport: Transport = async () => ({ status: 403, json: async () => ({}) });

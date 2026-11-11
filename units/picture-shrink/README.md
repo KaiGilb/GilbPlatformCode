@@ -21,7 +21,7 @@ The browser does the work: `createImageBitmap(file, { imageOrientation: "from-im
 |---|---|---|
 | `sizes.thumb` | 320 | longest edge of the thumbnail |
 | `sizes.screen` | 1600 | longest edge of the screen copy; also the line below which `full` is `null` |
-| `sizes.full` | 4096 | longest edge of the full copy (never enlarged) |
+| `sizes.full` | 4096 | longest edge of the full copy (never enlarged); `false` makes no full copy: nothing is encoded for it and `full` is `null` (since 0.2.1), for an app that keeps only the screen copy and the thumbnail |
 | `quality.thumb` | 0.72 | encoder quality of the thumbnail |
 | `quality.screen` | 0.82 | encoder quality of the screen copy |
 | `quality.full` | 0.9 | encoder quality of the full copy |
@@ -114,3 +114,7 @@ Changes in 0.2.0, and only these (all additive; with no option given, `makePictu
 ## Tests
 
 85 tests in 4 files (39 in 3 files for 0.1.0, unchanged except the exports list; `src/pictureSet.test.ts` has the 0.2.0 tests, each in a fresh module so the WebP memo and the HEIC decoder start clean). New, written for this unit: sizes (4000x3000, 800x600 not enlarged, 3000x4000, 10000x1 and 1x10000), quality, the `createImageBitmap` option, one decode for `makePictures`, the `<img>` fallback and its revoke, the unreadable cases (load error, zero width or height, `toBlob` null, no 2d context), and one release per decode, also when encoding throws. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory. The source app had no test for these functions.
+
+## Changes in 0.2.1
+
+- `sizes.full: false` skips the full copy: no encode is paid and `full` is `null`. The default (4096) is unchanged. An app that kept only a screen copy and a thumbnail had to pass `sizes.full: 1` and discard a one-pixel encode.
