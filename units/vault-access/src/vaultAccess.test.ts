@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { grantVaultAccess, fetchVaultAcl, revokeVaultAccess, shareVault, unshareVault, VaultAccessError } from "./index";
+import { grantVaultAccess, fetchVaultAcl, NO_CONTROL, revokeVaultAccess, shareVault, unshareVault, VaultAccessError } from "./index";
 import { jsonResponse, setUp, stubFetch, tearDown, type Seen } from "../test/support";
 
 const VAULT = "https://ann.platform.example.test/vault";
@@ -50,6 +50,12 @@ describe("grantVaultAccess", () => {
       status: 403,
       message: CONTROL,
     });
+  });
+
+  it("exports NO_CONTROL, the same sentence the 403 carries, so a host does not copy it", async () => {
+    expect(NO_CONTROL).toBe(CONTROL);
+    stubFetch(() => jsonResponse({ error: "Forbidden" }, 403));
+    await expect(grantVaultAccess(VAULT, GRANTEE, "read")).rejects.toMatchObject({ message: NO_CONTROL });
   });
 
   it("drops the credential on 401 and says to re-authorize", async () => {

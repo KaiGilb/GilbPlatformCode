@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/fake-platform",
   "package": "@kaigilb/gilbplatformcode-fake-platform",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A fetch stand-in for the GilbPlatform that answers the platform's real routes with the platform's real shapes, holding its state in memory, for an app's tests.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.1.1. create-named refuses a parentVault the caller did not mint (403, the platform's sentence; Vault.mintedBy); tests for the htu check on an encoded vault path; four stale client tests updated",
     "New code, written for EESpeed Round 5 (R5-C3). 0.1.0 holds parts 1 to 3: the core, the DPoP check, the vault list, the record routes, files, grants, sign-in, check-name and create-named."
   ],
   "newFiles": [
@@ -48,6 +49,6 @@
     "admitted": true,
     "tag": "t:Vault.fake",
     "title": "Fake platform (test stand-in: sign-in, records, files, grants)",
-    "note": "For tests only, never in an app's shipped code: it keeps state in memory and checks no signatures. To call the platform take lws-records, signin, picture-set or vault-access."
+    "note": "For tests only, never in an app's shipped code: it keeps state in memory and checks no signatures. To call the platform take lws-records, signin, picture-set or vault-access. Refuses a parentVault the caller did not mint, as the platform does."
   }
 }

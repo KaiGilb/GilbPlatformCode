@@ -44,6 +44,23 @@ describe("makePictureSet sizes", () => {
     expect(r.full).toBeInstanceOf(Blob);
     expect([r.width, r.height, r.type]).toEqual([4000, 3000, "image/jpeg"]);
   });
+  test("sizes.full: false on a 4000x3000 original: full is null and only the thumb and the screen copy are encoded", async () => {
+    bitmapOf(4000, 3000);
+    const r = await u.makePictureSet(file(), { sizes: { screen: 1600, thumb: 320, full: false } });
+    expect(r.full).toBeNull();
+    expect(r.thumb).toBeInstanceOf(Blob);
+    expect(r.screen).toBeInstanceOf(Blob);
+    expect(sizes()).toEqual([[320, 240], [1600, 1200]]);
+  });
+  test("sizes.full: false leaves the other sizes and the default alone; with it left out the full copy is still made", async () => {
+    bitmapOf(6000, 4000);
+    await u.makePictureSet(file(), { sizes: { full: false } });
+    expect(sizes()).toEqual([[320, 213], [1600, 1067]]);
+    rig.blobCalls.length = 0;
+    bitmapOf(6000, 4000);
+    expect((await u.makePictureSet(file())).full).toBeInstanceOf(Blob);
+    expect(sizes()[2]).toEqual([4096, 2731]);
+  });
   test("6000x4000: full is cut to 4096x2731", async () => {
     bitmapOf(6000, 4000);
     await u.makePictureSet(file());

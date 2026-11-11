@@ -66,6 +66,18 @@ describe("proof claims (src/auth/verify.ts), in both modes", () => {
           expect((await body(res)).message).toMatch(/htu/);
         }
       });
+      it("htu: the query is dropped, the path is compared as sent (percent-escapes kept), and the 401 body is the platform's {error,message} (verify.ts:319)", async () => {
+        const w = await world({ dpop: mode });
+        const a = await w.as(w.ann);
+        const enc = `https://ann.fake.test/lws/vault/${encodeURIComponent("https://ann.fake.test/vault")}/records`;
+        expect((await a.fetch(`${enc}?type=Sailboat&include=body`)).status).toBe(200);
+        for (const bad of [`https://ann.fake.test/lws/vault/${decodeURIComponent(encodeURIComponent("https://ann.fake.test/vault"))}/records`, `https://fake.test/lws/vault/${encodeURIComponent("https://ann.fake.test/vault")}/records`]) {
+          const proof = await dpopProof(a.key, "GET", bad, a.token);
+          const res = await w.fake.fetch(enc, { headers: { authorization: `DPoP ${a.token}`, dpop: proof } });
+          expect(res.status, bad).toBe(401);
+          expect(await body(res)).toMatchObject({ error: "Unauthorized", message: "DPoP proof htu does not match the request URI" });
+        }
+      });
       it("htu is https:// plus the host even when the request went over http", async () => {
         const w = await world({ dpop: mode, hosts: ["localhost:5173"] });
         const a = await w.as(w.ann);

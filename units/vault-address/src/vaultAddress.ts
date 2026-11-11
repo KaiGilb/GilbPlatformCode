@@ -64,3 +64,35 @@ export function principalGranteeProblem(
   }
   return null;
 }
+
+/** A vault name is one DNS label: letters, digits and hyphens, not starting or ending with a hyphen, at most 63 characters. */
+const NAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
+/** The host a vault's apex is: letters, digits, dots and hyphens, with an optional port. No scheme, no path. */
+const APEX_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::\d+)?$/i;
+
+/**
+ * Null when `name` is a bare vault name (such as `anna`), otherwise a sentence. An email is refused with its own sentence:
+ * a person is reached by their vault, not their email.
+ */
+export function vaultNameProblem(name: string): string | null {
+  const n = name.trim();
+  if (n === "") return "Enter a vault name.";
+  if (n.includes("@")) return "Type their GilbPlatform vault name or address (not an email)";
+  if (!NAME_RE.test(n)) return "A vault name uses only letters, digits and hyphens, does not start or end with a hyphen, and has at most 63 characters.";
+  return null;
+}
+
+/**
+ * The vault address for a bare name under an apex host: `vaultAddressFromName("Anna", "platform.example.test")` is
+ * `https://anna.platform.example.test/vault`. The name is trimmed and lower-cased and must pass {@link vaultNameProblem}; `apex` is a host
+ * (optionally with a port), not an origin. The composed address must also pass {@link vaultIdProblem}.
+ *
+ * @returns the address, or null when the name or the apex is not valid (ask {@link vaultNameProblem} for the sentence)
+ */
+export function vaultAddressFromName(name: string, apex: string): string | null {
+  if (vaultNameProblem(name) !== null) return null;
+  const host = apex.trim();
+  if (!APEX_RE.test(host)) return null;
+  const address = `https://${name.trim().toLowerCase()}.${host.toLowerCase()}/vault`;
+  return vaultIdProblem(address) === null ? address : null;
+}

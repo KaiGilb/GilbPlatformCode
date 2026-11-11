@@ -81,6 +81,7 @@ const big = pickBySize(copies, Infinity);
 import { listVaultFiles, thumbIndexFor, thumbFor, endPictureFiles } from "@kaigilb/gilbplatformcode-picture-set";
 
 // `send(method, url, init)` is the host's signed fetch; `origin` is the origin that serves the vault. This unit knows no host.
+// A ready one: `signedSend()` from `lws-session-bridge` (GET and HEAD signed as reads, other methods as writes, from the host set with `setLwsAuth`).
 const files = await listVaultFiles(vaultId, { origin, send });          // GET <origin>/lws/vault/<id>/files, 200 per page, offset paging, stops at 100 pages
 const thumbs = thumbIndexFor(files);                                    // master entity -> its smallest copy's entity
 const src = thumbFor(masterEntity, thumbs);                             // the copy, or the master itself when there is none
@@ -159,3 +160,7 @@ Changes in 0.1.4, and only these:
 ## Tests
 
 105 tests in 6 files (8 new in 0.1.4: the DELETE to the entity's own origin, a wrong or unparsable origin sending nothing, the same through `endPictureFiles`, a listed `transcodedFrom` used over the name rule, the name rule when it is absent; 13 new in `src/files.test.ts`: paging, a repeated page, the page cap, the transcodedFrom filter, a refusal, link-first matching, root shape, the name rule for unlinked files only, a linked file never matched by name, ending 204/404/403, and ending past a failure). Ported from the source app's `test/batch5.test.ts:105-123`: the four reading tests of `buildThumbMap`. The source's save tests run on the app's fake vault and are re-expressed here with `picture-upload` and `lws-records` replaced by fakes (`vi.mock`): the order of steps, the names, `onProgress` after each step with a copy, resume from `masterEntity`, `thumbEntity` and `thumbLinked`, a thumb failure warning while the master is answered. New: the file extensions, the full copy as the root (order, links, failure, resume), `linkFullLater` (with resume), `buildCopyMap` for both shapes, ties, a broken link and a cycle, `pickBySize`, each branch of `onCellular`. `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units; it writes to the OS temp directory.
+
+## Changes in 0.1.5
+
+- README and one test only. The signed `send` the file calls take is `signedSend()` in `lws-session-bridge` (0.1.2), not a function of this unit: this unit takes a `send` and depends on no credential seam, and a dependency to `lws-session-bridge` would add a peer to every app that takes it. A host no longer writes that sender by hand. `src/signedSend.test.ts` runs `listVaultFiles` over it.

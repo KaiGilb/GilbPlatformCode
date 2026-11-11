@@ -2,17 +2,19 @@
 
 import {
   NotSignedInError as SigninNotSignedInError,
+  RequestRefusedError as SigninRequestRefusedError,
   OriginNotAllowedError as SigninOriginNotAllowedError,
   type GilbSession,
   type SessionCredential,
 } from "@kaigilb/gilbplatformcode-signin/session";
 import { proofHtu } from "./proofHtu";
-import { NotSignedInError, OriginNotAllowedError } from "./errors";
+import { NotSignedInError, OriginNotAllowedError, RequestRefusedError } from "./errors";
 import type { LwsAuthHost, LwsSession } from "./lwsAuth";
 
 /** The sign-in unit's own errors become the app's: the client tests `instanceof` against these. Any other error passes as it is. */
 function mapError(e: unknown): unknown {
-  if (e instanceof SigninNotSignedInError) return new NotSignedInError();
+  if (e instanceof SigninNotSignedInError) return new NotSignedInError(e.platformSentence);
+  if (e instanceof SigninRequestRefusedError) return new RequestRefusedError(e.platformSentence);
   if (e instanceof SigninOriginNotAllowedError) return new OriginNotAllowedError(e.message);
   return e;
 }

@@ -109,19 +109,20 @@ describe("picture-set and picture-upload against the fake", () => {
     const failed = await endPictureFiles(`https://ann.fake.test/vault/e/${m.master.id}`, [`https://ann.fake.test/vault/e/${m.thumb.id}`], { origin: VAULT_ORIGIN, send });
     expect(failed).toHaveLength(2);
   });
-  it("CLIENT CAVEAT (reported, not copied): endFile aimed at the platform origin instead of the vault's origin gets the platform's 404, which the client reads as 'already gone'; the file is NOT ended", async () => {
+  it("endFile aimed at the platform origin instead of the vault's origin is refused by the client before any request (picture-set 0.1.4); the file is NOT ended", async () => {
     const ann = await w.as(w.ann);
     const f = w.fake.seedFile(w.annV, { name: "a.jpg", bytes: bytes(3) });
-    await endFile(`https://ann.fake.test/vault/e/${f.id}`, { origin: w.fake.origin, send: ann.send });
-    expect(w.fake.calls.last()!.status).toBe(404);
+    const before = w.fake.calls.count();
+    await expect(endFile(`https://ann.fake.test/vault/e/${f.id}`, { origin: w.fake.origin, send: ann.send })).rejects.toBeInstanceOf(PictureFilesError);
+    expect(w.fake.calls.count()).toBe(before);
     expect(w.fake.state.files.get(f.id)!.endedSeq).toBeNull();
   });
-  it("CLIENT CAVEAT: an empty folder in the UploadTarget is a 400 from the platform (an empty path), surfaced as PictureUploadError", async () => {
+  it("an empty folder in the UploadTarget is not sent (picture-upload 0.2.1): the upload is filed nowhere and succeeds", async () => {
     signAs(await w.as(w.ann));
-    const err = await uploadPicture(new Blob([bytes(5)], { type: "image/jpeg" }), "a.jpg", target("")).then(() => null, (e: unknown) => e);
-    expect(err).toBeInstanceOf(PictureUploadError);
-    expect((err as PictureUploadError).status).toBe(400);
-    expect((err as PictureUploadError).body).toMatch(/empty path/);
+    await uploadPicture(new Blob([bytes(5)], { type: "image/jpeg" }), "a.jpg", target(""));
+    const put = w.fake.calls.last()!;
+    expect(put.status).toBe(201);
+    expect(put.url).not.toContain("folder=");
   });
   it("a reader's upload is picture-upload's NoAccessError path (403), a stranger the same", async () => {
     w.fake.grant(w.annV, w.ben, "read");

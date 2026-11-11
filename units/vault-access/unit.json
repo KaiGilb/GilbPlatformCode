@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-access",
   "package": "@kaigilb/gilbplatformcode-vault-access",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -36,6 +36,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.2. `NO_CONTROL` (the 403 sentence) is exported; the message a 403 gives is unchanged",
     "The imports: `vaultOriginOf` from `@kaigilb/gilbplatformcode-vault-origin-rule`; `dpopReadAuth`, `dpopWriteAuth` and `invalidateDpop` from `@kaigilb/gilbplatformcode-lws-session-bridge`; `serverErrorText` from `@kaigilb/gilbplatformcode-server-error`. In the source these are `./config`, `./dpop` and `./serverError`. The three URL constants are functions in this file, built from `vaultOriginOf` at each call.",
     "The short-WebID example on `VaultAclEntry` named a host. The example is removed. No code changed.",
     "Comments: cycle, ticket and person tags are removed.",
@@ -46,5 +47,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {"admitted": true, "tag": "t:Vault.access", "title": "Vault access (grant, revoke, share a whole vault)", "note": "Who may use a whole vault: grant, revoke, read the access list, share to view or edit. For a share of one record take lws-relations; for which vaults you can reach take reachable-vaults."}
+  "library": {"admitted": true, "tag": "t:Vault.access", "title": "Vault access (grant, revoke, share a whole vault)", "note": "Who may use a whole vault: grant, revoke, read the access list, share to view or edit. For a share of one record take lws-relations; for which vaults you can reach take reachable-vaults. Exports the Control refusal sentence (NO_CONTROL)."}
 }

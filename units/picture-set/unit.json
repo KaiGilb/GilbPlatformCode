@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-set",
   "package": "@kaigilb/gilbplatformcode-picture-set",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "purpose": "Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -16,6 +16,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.5. README only (and one test): the ready signed `send` for the file calls is `signedSend()` in lws-session-bridge 0.1.2, kept out of this unit so it takes no new peer",
     "0.1.4. endFile sends the DELETE to the entity URI's own origin and throws (no request) when the origin given names another host; VaultFile.transcodedFrom may be null and is kept from the listing",
     "0.1.3. new src/files.ts: listVaultFiles, thumbIndexFor, thumbFor, endFile, endPictureFiles, PictureFilesError (host passes origin and a signed send; no new dependency)",
     "0.1.2. a failed link to the full copy still only warns, and the progress carries linkFailures (which full or thumb, and the message), empty when every link landed",
@@ -36,7 +37,8 @@
     "src/hostAgnostic.test.ts",
     "scripts/check-host-agnostic.mjs",
     "src/files.ts",
-    "src/files.test.ts"
+    "src/files.test.ts",
+    "src/signedSend.test.ts"
   ],
   "host": [
     { "member": "target", "replaces": "the app's settings read by uploadPicture, src/data/pictures.ts:84" },
