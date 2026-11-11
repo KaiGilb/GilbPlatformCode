@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-graph-node-id",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Stable ids for a relation node and a pendant node. A record id must not collide with either.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

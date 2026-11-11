@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-background-jobs",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A store of background jobs that outlive the page that started them: one flight per key, one lane per workspace, never retried, failures kept as notices, and an unfinished-action record that survives a reload and is never run again.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

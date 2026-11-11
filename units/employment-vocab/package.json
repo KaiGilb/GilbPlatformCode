@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-vocab",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The ontology spellings an employment is read and written under, asked by term name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-field-row",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One click-to-edit text field row on a card: shows the value, becomes an input on a click, commits on Enter or leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

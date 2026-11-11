@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-key",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one test \"is this type the type named X\", so every Plan unit compares types the same way: a default key from the type's name, replaceable by a host that has its own type registry.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

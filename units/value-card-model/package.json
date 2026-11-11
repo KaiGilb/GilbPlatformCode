@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-card-model",
   "version": "0.3.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Value card's data, read and built from records: the Value's facts, its child records (Scale, qualifiers, levels, meters), the level-line text, numbers and dates. Pure functions over the stored wire shapes.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-signin",
   "version": "0.2.6",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "GilbPlatformCode sign-in unit. Email one-time-code card, DPoP proofs, the session credential an app holds after sign-in, and a machine agent's sign-in. Host injects app / origin / auth / returnTo. No vault host baked. No captive vault store.",
@@ -12,6 +13,7 @@
     "./machine": "./src/machine.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

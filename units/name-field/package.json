@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-name-field",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The two searchable name fields. Any other profile type is not one.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

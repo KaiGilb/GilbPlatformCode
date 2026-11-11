@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-access",
   "version": "0.1.2",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

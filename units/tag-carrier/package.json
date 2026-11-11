@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-tag-carrier",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which stored tag a record holds, and on which field. Absence is only when both fields are empty.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

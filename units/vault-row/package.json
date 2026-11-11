@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-row",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The row for one vault id, and the vault a session starts in. An id has no first-row fallback.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-picker",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A search-and-pick box for records: debounced search, grouped hits, \"nothing found\", an incomplete-answer note with Try again, and mouse picking. The caller decides what is searched; the host provides the query hook once.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

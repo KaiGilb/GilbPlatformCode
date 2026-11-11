@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-open-popups",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one registry of what is open (create dialogs and portalled popovers), so Escape, Tab and outside-click go to the top-most one.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

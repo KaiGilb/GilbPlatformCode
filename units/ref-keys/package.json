@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-ref-keys",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Spellings of the same person id, and whether a row is a card field.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

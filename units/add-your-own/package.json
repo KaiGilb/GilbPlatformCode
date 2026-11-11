@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-add-your-own",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws the \"+ Add your own\" button and its inline form for a merged card.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

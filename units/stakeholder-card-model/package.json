@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-card-model",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The pure rules of a Stakeholder card: which fields it shows for a kind, how a party's name is read and saved, and which term a field is.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

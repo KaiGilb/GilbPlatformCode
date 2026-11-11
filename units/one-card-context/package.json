@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-one-card-context",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Holds the merged person card for the rows below it, so a card group can draw a person's rows beside the holder's.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

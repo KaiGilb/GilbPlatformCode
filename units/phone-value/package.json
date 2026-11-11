@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-phone-value",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws a phone number with its country, and lets the holder type one.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

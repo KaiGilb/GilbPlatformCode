@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-instruction-prefix",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Finds a leading tag token in instruction text. Does not decide that the tag is real.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

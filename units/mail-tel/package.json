@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-mail-tel",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "mailto and tel prefixes. The prefix is case-sensitive. Spaces in a phone are removed only when adding tel.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

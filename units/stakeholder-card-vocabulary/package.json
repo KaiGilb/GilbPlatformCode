@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-card-vocabulary",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads and keeps the vocabulary the Stakeholder card needs from the ontology master: the field sets per kind and the reference rules, as query options a page can share.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

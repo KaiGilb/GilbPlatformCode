@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-origin",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The origin of an entity address. The same host keeps the origin the caller passed, scheme included.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

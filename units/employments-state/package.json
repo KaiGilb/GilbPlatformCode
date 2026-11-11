@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employments-state",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The state of a person's employments: load, add, edit and remove one at a time, each write queued.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-cache-kit",
   "version": "0.3.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Plan card's record cache: one writer for a row in every list and read that holds it, the membership finds of a card's lines with their pins and drops, and the picker search, all over one query client.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-speed-kit",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The speed units of a GilbPlatform app behind one entry: each unit under its own name, and one small glue that wires the person hub, the session cache, the background jobs, the prefetch registry and the device store to one app name, with a clean sign-out.",
@@ -9,6 +10,7 @@
     "./complete-copy": "./src/completeCopy.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

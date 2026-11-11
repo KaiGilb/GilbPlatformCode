@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-date-rules",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The year range a level date may take, and the checks for a typed date: a real calendar day, and whether a date field may be written.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

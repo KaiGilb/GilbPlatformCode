@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-prefs-choice",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which saved theme and language win. A newer language row must not wipe a dark theme.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

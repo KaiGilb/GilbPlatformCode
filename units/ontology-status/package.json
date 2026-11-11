@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-ontology-status",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A write-side status word. Retired and withdrawn become Deprecated. Suggested is the fallback.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

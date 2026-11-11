@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-hands-off",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Links to other records. A short name with a colon is not saved as a link.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

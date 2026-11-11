@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-not-a-person",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether an error is the ruling that this principal is not a person.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

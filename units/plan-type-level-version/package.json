@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-type-level-version",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one line every Plan card shows first: Type, Level and Version, with the plain/constraint type switch and the level chooser.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

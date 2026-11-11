@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-direct-shares",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Readers and writers named on this record. Not the rest of access.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

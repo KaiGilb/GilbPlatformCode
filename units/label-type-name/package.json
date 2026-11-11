@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-label-type-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A type name from a label. The rest of each word is not lowercased. A non-ASCII letter is a break.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

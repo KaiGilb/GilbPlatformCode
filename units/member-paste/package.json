@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-member-paste",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Splits a member box into entries. A comma splits. It does not decide who is a person.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

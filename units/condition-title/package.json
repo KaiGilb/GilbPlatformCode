@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-condition-title",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The title of one condition, trimmed, and the stored names of the entry and exit lists.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

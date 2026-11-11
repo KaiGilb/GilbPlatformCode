@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-lws-relations",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Writing, reading and ending the relations between two records in a vault over the platform's relation interface, and the share acts and link-plane checks a relation write goes through.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

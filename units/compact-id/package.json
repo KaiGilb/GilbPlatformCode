@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-compact-id",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Turns a short base: address into a full address. A short address is not already full.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

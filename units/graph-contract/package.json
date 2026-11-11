@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-graph-contract",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "What a click and a double-click do on a graph. Named experiences share one surface.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-spec-kind",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which card type a Value, Function, or Solution form stores. A bare word stays a bare word.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

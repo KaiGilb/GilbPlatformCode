@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-format",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Short file sizes, short dates, and a full date with time. A missing date stays blank.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

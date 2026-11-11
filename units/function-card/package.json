@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-function-card",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The whole Function card: one component that draws the Plan card of a record of type Function or Function Constraint, with the lines of that type in order, every read and write supplied by the host.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

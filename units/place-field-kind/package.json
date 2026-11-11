@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-field-kind",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether one address field is a street, a place, or neither. Both at once is neither.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

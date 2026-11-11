@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-prefs-signature",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The wire signature of one preference payload. The same facts match. Key order does not.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

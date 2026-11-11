@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-history-value",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A short reading of one stored value. A long value is cut. A name is not fetched.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

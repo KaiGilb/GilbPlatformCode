@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-rows",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Edits a person's Email, Phone, Social and Skills rows, any number of each.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

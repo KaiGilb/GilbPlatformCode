@@ -73,3 +73,7 @@ node scripts/drift.mjs ... --fail-on-drift                         # exit 1 when
 ```
 
 It reads each source file at the unit's `source.commit` and at `--to` with `git show` (read only) and reports each unit as `unchanged` or `drifted`; it never prints a source line. Exit `0` means it ran, `1` only with `--fail-on-drift`, `2` when it could not run. It needs a local clone of the private app repo; CI does not run it.
+
+## Licence
+
+This repository is under the GilbPlatformCode Licence (see `LICENSE`): you may copy, change and ship the units in apps that run on GilbPlatform. Third-party parts keep their own licences.

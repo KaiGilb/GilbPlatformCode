@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-panes",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Left, centre, and right regions. Drag either divider. The host remembers the widths.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

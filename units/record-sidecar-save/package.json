@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-sidecar-save",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Saves one record's changes one at a time against its served version.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-person-ruling-key",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One spelling for a remembered person ruling, and the fail-open admit once that ruling is known.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

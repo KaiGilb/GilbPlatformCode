@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-qualifier-values",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The values a level holds for one qualifier, as a list, and the inverse that packs a list back into the stored form. ALL is exclusive.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

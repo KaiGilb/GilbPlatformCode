@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-line",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One line of place names the host already resolved. Joined with a middle dot. Not a count.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

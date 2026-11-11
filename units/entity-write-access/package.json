@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-entity-write-access",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Remembers, for this page, which entities refused a write, and tells a screen whether it may write one.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

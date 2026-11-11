@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-text-filter",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Keeps a row when every word of the query appears in its fields, optionally ignoring accents, and keeps every row for an empty query.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

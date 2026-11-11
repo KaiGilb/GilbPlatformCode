@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-birthday-picker",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Picks a birthday from day, month and an optional year, with no free text.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

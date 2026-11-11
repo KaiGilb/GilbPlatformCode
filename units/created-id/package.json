@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-created-id",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The id of a step that was minted but not confirmed in the list. Any other error has no id.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

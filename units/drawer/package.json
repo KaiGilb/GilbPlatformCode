@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-drawer",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A slide-over panel from the left or the right, for a narrow window. Escape, the backdrop, or Close shuts it, and focus comes back.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

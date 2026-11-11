@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-person-connections",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads which of a holder's circles each person is placed in, and resolves a person's public card.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

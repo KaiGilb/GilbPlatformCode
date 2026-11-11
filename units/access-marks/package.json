@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-access-marks",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Read, write, append, and control icons. Shape carries the meaning. A write-only vault does not get a read icon.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

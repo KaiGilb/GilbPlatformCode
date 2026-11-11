@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-working-set-store",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The browser-local index of which records and files this device has touched in each vault, so a list can draw its rows before the vault answers.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

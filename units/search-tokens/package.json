@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-search-tokens",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The words in a search box, for display and ordering. Not the match that keeps a person.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

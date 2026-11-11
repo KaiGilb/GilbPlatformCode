@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-main-tag",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Gives the main tag of a record, or of a page of records, read from the platform in one call per record and one call per fifty records, kept in one shared cache that a tag change refreshes at once.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

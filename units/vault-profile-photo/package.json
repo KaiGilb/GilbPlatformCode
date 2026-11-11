@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-profile-photo",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Finds a vault's profile photo and loads it, and makes the vault's own card when it has none.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

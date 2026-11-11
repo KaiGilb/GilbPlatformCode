@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-card-fact-edge",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The synthetic link between a card field and a person. Not a stored relation.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

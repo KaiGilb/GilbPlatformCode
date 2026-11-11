@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-role-label",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A role value shown with spaces. An empty role is the word Member.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

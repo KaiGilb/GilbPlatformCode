@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-levels-io",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads every level of a project's vault page by page, writes the four default levels once when the vault has none, and adds one level, for the level chooser of a Plan card.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

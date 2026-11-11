@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-remove-control",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one delete control of a record card: a red round minus button with an accessible name, drawn in front of the row it removes.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

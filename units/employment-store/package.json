@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-store",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads, creates and patches the employment entities of a person's record: one t:Employment per employment.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-updated-line",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one line a page shows while it revalidates and after, a note for a copy that could not be brought up to date, and a refresh button's feedback in plain words.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

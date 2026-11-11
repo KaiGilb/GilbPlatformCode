@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-plane",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which rows are not content. A file is hidden on the register and kept for a relation.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

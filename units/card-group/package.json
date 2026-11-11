@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-card-group",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One framed group of a record card: a titled frame with an icon that holds its items, hidden in presentation when empty, registered with the card's mode so an add chooser can list it, with the pick-then-focus behaviour.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-standard-href",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A link that opens one standard in the standards editor. The host passes the editor's address.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

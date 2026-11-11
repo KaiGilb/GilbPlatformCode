@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-rank",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Ranks a search hit. The exact name comes before a word that only contains the letters.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-file-download-outcome",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Downloads a vault file and says what happened, without throwing.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

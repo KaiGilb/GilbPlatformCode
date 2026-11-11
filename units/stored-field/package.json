@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stored-field",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A field under two spellings, and a process name taken only from facts that are present.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

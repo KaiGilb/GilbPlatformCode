@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-impacts-model",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A Solution's impacts on Values and Development Resources as pure functions: one t:ImpactOn relation per pair, the numbers on the relation, the words shown for them and the facts stored.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-folder-public-words",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sentence when a public folder could not make something public. Only the first failure is quoted.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

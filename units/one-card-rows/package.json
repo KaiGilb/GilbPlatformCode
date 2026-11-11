@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-one-card-rows",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws the rows of a merged person card: their rows shaded and marked, your rows plain, the legend and the foot.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

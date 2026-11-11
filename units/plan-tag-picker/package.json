@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-tag-picker",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

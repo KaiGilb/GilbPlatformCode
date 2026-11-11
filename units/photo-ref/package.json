@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-photo-ref",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which file a stored photo reference names, and the absolute address its bytes live at, on the door the record was read through.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

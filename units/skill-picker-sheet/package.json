@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-skill-picker-sheet",
   "version": "0.1.2",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lets the holder pick a skill from the catalogue, with its depth, in a sheet.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

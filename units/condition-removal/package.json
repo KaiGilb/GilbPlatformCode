@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-condition-removal",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether one condition left the served list, by content. Order is part of the check.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

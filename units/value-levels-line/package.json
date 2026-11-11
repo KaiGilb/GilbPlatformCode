@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-levels-line",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws and edits the Levels line of a Value card: every level (Fail, Survival, Past, Status, Tolerable, Goal or on a Development Resource Budget, Wish, or a word of your own) as one line with its number, date, qualifiers, conditions, source and note, with the kind menu, paste of many level lines, and the move of older stored lists, giving every change up whole through onChange.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

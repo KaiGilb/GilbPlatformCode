@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-entity-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The name a row shows, the slug a name box binds to, and the label a write copies. Three questions.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

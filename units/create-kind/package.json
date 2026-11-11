@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-create-kind",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which create-list a node kind belongs on. Relation, attribute, and scale are not on it.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

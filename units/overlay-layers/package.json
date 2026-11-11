@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-overlay-layers",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One order for which popup paints above which. The picker is always on top.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

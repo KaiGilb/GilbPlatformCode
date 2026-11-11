@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-curie",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The type from a JSON-LD value, as t:Name when the address says so.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

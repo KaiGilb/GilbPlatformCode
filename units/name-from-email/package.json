@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-name-from-email",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A first and last name from an email, or nothing. A messy address is not guessed.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

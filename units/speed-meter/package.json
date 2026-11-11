@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-speed-meter",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "An in-memory meter of the requests an app received and answered, how long a page took to paint, and how long a write took.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

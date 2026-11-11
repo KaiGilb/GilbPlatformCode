@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-person-create",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Makes a person record in a named vault, finds candidate people first, and refreshes the lists afterwards.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

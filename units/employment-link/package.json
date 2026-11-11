@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-link",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The two links of an employment to an organization record and to the person, written together or not at all.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

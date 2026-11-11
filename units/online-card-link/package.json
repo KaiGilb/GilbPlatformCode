@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-online-card-link",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reading the link that joins a holder's record of a person to that person's own online card, from the record's served facts.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

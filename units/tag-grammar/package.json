@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-tag-grammar",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Parses, formats and checks record tags against the ontology's grammar and write rule.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

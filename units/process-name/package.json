@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-process-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The name a process document states. A miss is blank. The id is not a name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

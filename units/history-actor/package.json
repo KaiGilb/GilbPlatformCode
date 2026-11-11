@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-history-actor",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Who is named on a change, from the address alone. A person is not looked up.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

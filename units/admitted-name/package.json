@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-admitted-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The name a profile may publish. An unadmitted field is skipped. The rung is not the test.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

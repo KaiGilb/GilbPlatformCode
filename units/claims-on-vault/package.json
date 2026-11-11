@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-claims-on-vault",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which claims belong on this seat vault. A claim with no vault id stays. The claim id is not trimmed.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

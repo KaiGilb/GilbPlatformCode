@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-stakeholder-io",
   "version": "0.2.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The reads and writes behind the Stakeholder, Authority and Resource Owner lines of a Plan card: finding records to link, writing and ending an Authority, the stakeholder kinds the master serves, the person Authorities of a record, a record's relations, and the name a link shows.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

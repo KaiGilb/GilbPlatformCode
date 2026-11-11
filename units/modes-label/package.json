@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-modes-label",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The words for a mode set. Both modes are one sentence. Append is not a word here.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

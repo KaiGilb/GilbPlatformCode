@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-menu-place",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Puts a menu in the visible band. Below the anchor if it fits, otherwise above.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

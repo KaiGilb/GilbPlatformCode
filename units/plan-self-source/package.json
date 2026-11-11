@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-self-source",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The signed-in person's own card as the source of what they write: the finding of that card in their landing vault, read once and kept by the page's query cache, and the hook that answers the card's address or nothing.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

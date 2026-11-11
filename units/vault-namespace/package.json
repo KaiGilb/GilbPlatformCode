@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-namespace",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The vault root from an entity address, and an entity address under a vault root.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

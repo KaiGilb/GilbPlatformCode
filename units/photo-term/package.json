@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-photo-term",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The profile-photo term's read spellings and its one write spelling, read from the GilbVeda master at run time. No app keeps a list.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

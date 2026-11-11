@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-edges",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The ordered employment edges on a person's record, changed as stored now and written one key at a time.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

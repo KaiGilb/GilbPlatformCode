@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-added-by",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Shows who added a record and lets the holder switch a note between private and shared.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

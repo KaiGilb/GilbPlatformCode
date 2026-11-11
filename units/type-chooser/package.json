@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-chooser",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A search-and-pick list for a GilbVeda type: a search box, planes (things, functions, values), options with their definitions, a detail view, and a note when more terms match than are shown. The caller provides the search.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

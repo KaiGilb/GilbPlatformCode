@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-addressable-slug",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether a served key is a slug this app can prefix. A foreign predicate is not one.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

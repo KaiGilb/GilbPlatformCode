@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-flag-image",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws a country's flag, or a neutral globe when there is none.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

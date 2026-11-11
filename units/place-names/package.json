@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-names",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads the names of catalogue places, one answer per place: named, missing, or not read.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

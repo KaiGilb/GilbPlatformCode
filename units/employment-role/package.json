@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-role",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The dates and place on one employment, with three states of current (true, false, never said).",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

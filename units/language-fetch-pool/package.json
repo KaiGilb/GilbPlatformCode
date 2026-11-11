@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-language-fetch-pool",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads language and flag data with at most eight requests at once and a time limit on each.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

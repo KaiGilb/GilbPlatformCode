@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-home-dial",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Finds the holder's home country calling code, to prefill a new phone number.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-write",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether this session may write one record. A reader grant is not a write ban when the same frame says this session stored the row.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

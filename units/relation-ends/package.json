@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-relation-ends",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The source end and the target end of a relation document already read.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-history-events",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One line per save from a term's change rows. The history itself is not loaded.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

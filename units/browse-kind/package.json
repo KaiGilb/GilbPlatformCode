@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-browse-kind",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Type, function, or value from a term document already read. Relation stays a type.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-hops",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The term addresses inside a declared identity. A trailing slash is removed once. A foreign path is dropped.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-neighbour-hops",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "How many hops to walk from the selected record. No selection walks none.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-card-references",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Adds or removes a reference from a card field to another record, and finds the records a field may point to.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

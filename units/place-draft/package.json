@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-draft",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The address a person is filling in: its parts, the places picked into it, and the rules that move a pick through it.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

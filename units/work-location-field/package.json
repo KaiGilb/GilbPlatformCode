@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-work-location-field",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The box where a role's work place is searched in the catalogue and chosen, showing each place by name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

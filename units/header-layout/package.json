@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-header-layout",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Chooses the record card header's layout tier from its width.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

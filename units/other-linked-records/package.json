@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-other-linked-records",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lists the other records the list on screen links to this record.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

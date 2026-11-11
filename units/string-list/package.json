@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-string-list",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One string or many strings, as a list. An empty string is not an entry.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

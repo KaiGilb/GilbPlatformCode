@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-condition-tag",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The tag on one condition. A bare tag counts only for a manual condition, and only for display.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

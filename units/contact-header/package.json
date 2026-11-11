@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-header",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws a stakeholder's header: the holder's vault joined to the person, with circle chips, photo and link badge, in a wide or narrow layout.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

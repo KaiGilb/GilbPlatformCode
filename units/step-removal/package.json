@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-step-removal",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether one step id left the served list. A duplicate id still counts as present.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

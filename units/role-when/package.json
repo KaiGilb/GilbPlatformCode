@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-role-when",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A role's date line. A missing end is not the word Present.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-router-basename",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The router base path. A trailing slash is kept so a redirect cannot drop the query.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

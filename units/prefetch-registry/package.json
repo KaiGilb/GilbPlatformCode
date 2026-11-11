@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-prefetch-registry",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A registry of page warmers that start a page's cache loads before the person asks: each warmer is started once per workspace within the stale window and not while it runs, heavy ones are skipped on save-data or a slow link, and the picture count ahead follows the screen width.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

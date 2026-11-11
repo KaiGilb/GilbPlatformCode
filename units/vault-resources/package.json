@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-resources",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Creates, reads, patches and deletes a vault entity by its address, over the record doors.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

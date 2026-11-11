@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-children",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which child vaults to load. An empty choice loads the open vault only.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {
