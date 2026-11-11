@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlanButtonRow } from "./index";
 
 afterEach(cleanup);
@@ -39,5 +39,66 @@ describe("PlanButtonRow", () => {
   it("renders nothing else around the row", () => {
     const r = render(<PlanButtonRow>x</PlanButtonRow>);
     expect(r.container.children).toHaveLength(1);
+  });
+
+  it("children API: a Cancel-last row warns in dev, a Save-last row does not", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    render(
+      <PlanButtonRow>
+        <button>Save</button>
+        <button>Cancel</button>
+      </PlanButtonRow>,
+    );
+    expect(warn).toHaveBeenCalledWith("PlanButtonRow: positive action must be rightmost — RuleUiActionRowMacOrder");
+    warn.mockClear();
+    render(
+      <PlanButtonRow>
+        <button>Cancel</button>
+        <button>Save</button>
+      </PlanButtonRow>,
+    );
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+  it("children API is unchanged: the same single div, no wrapper", () => {
+    const r = render(<PlanButtonRow><button>Cancel</button><button>Save</button></PlanButtonRow>);
+    expect(r.container.querySelector("[data-plan-button-row-box]")).toBeNull();
+    expect(r.container.querySelector("[data-slot]")).toBeNull();
+  });
+});
+
+describe("PlanButtonRow structured API", () => {
+  const three = () =>
+    render(<PlanButtonRow destructive={<button>Delete</button>} cancel={<button>Cancel</button>} primary={<button>Save</button>} />);
+  it("orders the slots destructive, cancel, primary whatever the prop order", () => {
+    const r = three();
+    expect([...r.container.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Delete", "Cancel", "Save"]);
+    const r2 = render(<PlanButtonRow primary={<button>Save</button>} cancel={<button>Cancel</button>} />);
+    expect([...r2.container.querySelectorAll("[data-structured] button")].map((b) => b.textContent)).toEqual(["Cancel", "Save"]);
+  });
+  it("is right-aligned and pushes the destructive slot to the far left", () => {
+    const r = three();
+    const row = r.container.querySelector("[data-plan-button-row]") as HTMLElement;
+    expect(row.className).toContain("justify-end");
+    expect(r.container.querySelector('[data-slot="destructive"]')!.className).toContain("mr-auto");
+    expect(r.container.querySelector('[data-slot="primary"]')!.className).not.toContain("mr-auto");
+  });
+  it("shares the width equally below 360px (container query classes on every slot)", () => {
+    const r = three();
+    expect((r.container.querySelector("[data-plan-button-row-box]") as HTMLElement).className).toContain("@container");
+    for (const slot of r.container.querySelectorAll("[data-slot]")) {
+      expect(slot.className).toContain("@max-[360px]:flex-1");
+      expect(slot.className).toContain("@max-[360px]:[&>*]:w-full");
+    }
+  });
+  it("does not warn (no children)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    three();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+  it("passes a style through to the row, for a host without Tailwind", () => {
+    const r = render(<PlanButtonRow style={{ gap: 12 }} cancel={<button>Cancel</button>} primary={<button>Save</button>} />);
+    expect((r.container.querySelector("[data-plan-button-row]") as HTMLElement).style.gap).toBe("12px");
   });
 });

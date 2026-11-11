@@ -4,8 +4,8 @@
   {
    "folder": "plan-button-row",
    "tag": "t:ScreenButton.row",
-   "title": "Button row (Mac order)",
-   "note": "Only lays out buttons; for one button look take button. For the remove control take remove-control.",
+   "title": "Button row (Mac order): dialog buttons, save and cancel, form actions",
+   "note": "Mac order, required in every dialog, sheet, form and confirmation (RuleUiActionRowMacOrder): right-aligned, the positive action rightmost and the default (Return), Cancel or Close immediately left of it (Esc), a destructive or third action alone at far left. Use it for dialog buttons, save cancel rows, form actions and confirm buttons: primary, cancel and destructive slots, equal shares on a phone. Only lays out buttons; for one button look take button. For the remove control take remove-control.",
    "exhibit": "**What it does:** A right-aligned row of buttons for a card, in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.\n\nGitHub folder: units/plan-button-row\nCommit: f551b868cc397b512f22a55c1cb6f4f6a3d5e7da\nPackage: @kaigilb/gilbplatformcode-plan-button-row\nClone: https://github.com/KaiGilb/GilbPlatformCode.git"
   },
   {

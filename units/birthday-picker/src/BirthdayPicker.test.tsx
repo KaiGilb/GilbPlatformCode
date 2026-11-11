@@ -205,4 +205,18 @@ describe("BirthdayPicker", () => {
     const src = readFileSync(`${process.cwd()}/src/BirthdayPicker.tsx`, "utf8");
     expect(src).not.toContain("T.bad");
   });
+
+  it("the buttons are in the Mac order: Clear at the far left, Cancel, then Save rightmost, right-aligned", () => {
+    setup("1961-03-14");
+    const row = screen.getByTestId("birthday-actions");
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("data-testid"))).toEqual(["birthday-clear", "birthday-cancel", "birthday-save"]);
+    expect(row.style.justifyContent).toBe("flex-end");
+    expect(screen.getByTestId("birthday-clear").style.marginRight).toBe("auto");
+  });
+
+  it("without a stored value there is no Clear: Cancel, then Save rightmost", () => {
+    setup();
+    const row = screen.getByTestId("birthday-actions");
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("data-testid"))).toEqual(["birthday-cancel", "birthday-save"]);
+  });
 });

@@ -7,8 +7,8 @@
 //
 // ── SKIPPING IS A BUTTON, NOT A CANCEL ──
 // A person may select a crop, or not. The person who does not want to crop must have somewhere
-// to press that MOVES THEM FORWARD. "Use the whole picture" is that button, it sits beside the
-// other one with equal weight. ⛔ Making them cancel out of a crop dialog to skip cropping would
+// to press that MOVES THEM FORWARD. "Use the whole picture" is that button, it sits at the far left
+// of the row, a real button, not a cancel. ⛔ Making them cancel out of a crop dialog to skip cropping would
 // turn "or not" into a failure path.
 //
 // ── MOBILE FIRST, BECAUSE THAT IS WHERE IT IS USED ──
@@ -255,18 +255,20 @@ export function FaceCropper({ source, mode = "new", busy = false, onUse, onCance
           )}
         </div>
 
+        {/* Mac order (RuleUiActionRowMacOrder): right-aligned; the alternative ("Use the whole picture") alone at the far left,
+            Cancel immediately left of the primary, "Use this area" rightmost. Skipping is still a real button, not a cancel
+            — see the note at the top of this file. Narrow: the three share the width equally, same order. */}
         <div className="gp-crop__actions">
-          {/* Equal weight, on purpose — see the note at the top of this file. */}
-          <button type="button" className="gp-crop__btn" onClick={() => onUse(null)} disabled={busy}>
+          <button type="button" className="gp-crop__btn gp-crop__btn--alt" onClick={() => onUse(null)} disabled={busy}>
             Use the whole picture
+          </button>
+          <button type="button" className="gp-crop__btn" onClick={onCancel} disabled={busy}>
+            Cancel
           </button>
           <button type="button" className="gp-crop__btn gp-crop__btn--primary" onClick={useArea} disabled={busy}>
             Use this area
           </button>
         </div>
-        <button type="button" className="gp-crop__cancel" onClick={onCancel} disabled={busy}>
-          Cancel
-        </button>
       </div>
     </div>
   );
