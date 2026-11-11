@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "unit": "units/style-runtime",
+  "package": "@kaigilb/gilbplatformcode-style-runtime",
+  "version": "0.2.0",
+  "purpose": "`loadStyle({ fetchRemote, fallbackUrl, cacheKey })` reads the app's style sheet, validates it, and keeps exactly one `<style id=\"gilb-style\">` in `<head>`.",
+  "source": {
+    "repo": "KaiGilb/gilb-style",
+    "commit": "234a8fcd8bdf9022a81883ca9e5026327f64d10c",
+    "files": [
+      { "path": "src/schema.ts", "lines": null, "to": "src/schema.ts" },
+      { "path": "src/color.ts", "lines": null, "to": "src/color.ts" },
+      { "path": "src/css.ts", "lines": null, "to": "src/css.ts" },
+      { "path": "src/palette.ts", "lines": null, "to": "src/palette.ts" },
+      { "path": "src/runtime.ts", "lines": null, "to": "src/runtime.ts" },
+      { "path": "src/theme.ts", "lines": null, "to": "src/theme.ts" }
+    ]
+  },
+  "namedChanges": [
+    "the source's tests moved from `test/` to `src/` with their imports made relative to the file; the shared sheet fixture is `src/fixtures.ts`;",
+    "`@types/culori` is a dependency, not a dev dependency, because the unit is installed as TypeScript source and the app type-checks it;",
+    "no source line changed in the files taken; 0.2.0 adds the vault reader (`loadStyleFromVault`, `makeVaultFetchRemote`, `recordsToSheet`) moved here from `style-studio`, with `defaultSheet` and the list of bundled font names."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/example.test.ts",
+    "src/theme.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/vault.ts",
+    "src/vault.test.ts",
+    "src/defaultSheet.ts",
+    "src/fontNames.ts",
+    "scripts/check-host-agnostic.mjs",
+    "examples/style.tokens.json"
+  ],
+  "host": [],
+  "library": {
+    "admitted": true,
+    "tag": "t:AppStyleSheet.runtime",
+    "title": "Apply the app's style at start (style tokens)",
+    "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default."
+  }
+}

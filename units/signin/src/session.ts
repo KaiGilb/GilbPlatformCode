@@ -50,6 +50,7 @@
 import { dpopHeaders, dpopProof, generateDpopKeyPair, type DpopKey, type DpopPublicJwk, type DpopWebCryptoKey } from "./dpop";
 import { fetchTransport, type Transport, type TransportResponse } from "./transport";
 import { verifySignInCodeHttp, type VerifyHttpBody } from "./http";
+import { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 import {
   indexedDbSessionStore,
   expectOfStored,
@@ -69,6 +70,7 @@ import {
 
 export { indexedDbSessionStore, expectOfStored, familyOf, isFamilyEndedMarker, isSignedOutMarker, isStoredSession, recordIsCurrent, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
 export type { CurrentRecordExpect, FamilyEndedMarker, SessionMarker, SessionSlot, SessionStore, SignedOutMarker, StoredSession } from "./sessionStore";
+export { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 
 /** Re-mint when less than this much of the token's life is left (clock skew and time in flight). */
 export const EXPIRY_GUARD_MS = 60_000;
@@ -207,9 +209,12 @@ export interface DpopTokenResponse {
 
 /** Thrown on 401 from the bridge, or when there is no token and no bridge: no live sign-in. */
 export class NotSignedInError extends Error {
-  constructor() {
+  /** The platform's own sentence when a 401 body carried one; absent otherwise. The message a person reads does not change. */
+  readonly platformSentence?: string;
+  constructor(platformSentence?: string) {
     super("Your sign-in needs refreshing. Sign in again, then try once more.");
     this.name = "NotSignedInError";
+    if (platformSentence !== undefined) this.platformSentence = platformSentence;
   }
 }
 
@@ -925,7 +930,12 @@ export class SessionCredential {
       body: JSON.stringify({ dpopJwk: jwk }),
       timeoutMs: 15000,
     });
-    if (res.status === 401) throw new NotSignedInError();
+    if (res.status === 401) {
+      // A 401 is not always "your sign-in ran out": see platformRefusal.ts for which sentences mean which.
+      const sentence = platformSentenceOf(await res.json().catch(() => undefined));
+      if (sentence !== undefined && isRequestFault(sentence)) throw new RequestRefusedError(sentence);
+      throw new NotSignedInError(sentence);
+    }
     if (res.status === 403) throw new OriginNotAllowedError();
     if (res.status < 200 || res.status > 299) throw new Error(`DPoP token mint failed: HTTP ${res.status}`);
     let body: DpopTokenResponse;

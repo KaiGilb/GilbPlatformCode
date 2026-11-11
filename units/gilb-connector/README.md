@@ -87,6 +87,8 @@ Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx
 
 Connector 0.5.10: a hand-off that runs out of time says its writes so far are saved and the rest can be handed over again in smaller parts, instead of 'do not call this hand-off again'.
 
+Connector 0.5.14: reads now ride out a platform restart (they are tried again, then say it is restarting); a write that gets no answer says it may have run and to read it back before sending it again, and is never sent twice; level agents (VDT, Outcome, Architect, Scaling, ValueDeliveryStep) get 30 minutes per hand-off, others 15, and the time-limit note no longer tells an agent to skip required reads.
+
 Connector 0.5.13: publish puts a built folder on https://<name>.pages.dev.
 
 Connector 0.5.12: a hand-off is told its time limit, and one stopped for time returns the calls it made and its last words.

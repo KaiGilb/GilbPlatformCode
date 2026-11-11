@@ -14,12 +14,17 @@ export class PictureUploadError extends Error {
   }
 }
 
-/** Where to put the picture: the vault's origin, its root (read from the vault list, never composed) and the folder the file goes in. */
-export type UploadTarget = { vaultOrigin: string; vaultRoot: string; folder: string };
+/** Where to put the picture: the vault's origin, its root (read from the vault list, never composed) and the folder the file goes in (optional: leave it out, or empty, for an unfiled file). */
+export type UploadTarget = { vaultOrigin: string; vaultRoot: string; folder?: string };
 
-/** The upload address: `PUT <origin>/lws/vault/<encoded root>/files?name=…&folder=<encoded folder>`. */
+/**
+ * The upload address: `PUT <origin>/lws/vault/<encoded root>/files?name=…&folder=<encoded folder>`.
+ * `folder` is sent only when it is not empty or blank: the platform answers 400 to an empty `folder=`
+ * (`normalizeFolderPaths: empty path (unfiled = omit the attribute)`, GilbPlatform src/files/file-store.ts:242).
+ */
 export function uploadUrl(filename: string, target: UploadTarget): string {
-  return `${target.vaultOrigin}/lws/vault/${encodeURIComponent(target.vaultRoot)}/files?name=${encodeURIComponent(filename)}&folder=${encodeURIComponent(target.folder)}`;
+  const base = `${target.vaultOrigin}/lws/vault/${encodeURIComponent(target.vaultRoot)}/files?name=${encodeURIComponent(filename)}`;
+  return target.folder && target.folder.trim() !== "" ? `${base}&folder=${encodeURIComponent(target.folder)}` : base;
 }
 
 /** Sends the picture's bytes to the vault and answers the file entity URI. 201 (new) and 200 (identical re-upload) are both fine. */

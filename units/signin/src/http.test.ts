@@ -315,3 +315,40 @@ describe("checkVaultName — suggestion and requested (0.2.3)", () => {
     expect(typeof r.suggestion).toBe("string");
   });
 });
+
+describe("checkVaultName — normalized and note (0.2.5, F24)", () => {
+  const transportOf = (body: unknown): Transport => async () => ({ status: 200, json: async () => body });
+
+  it("returns normalized and note when the platform changed the name", async () => {
+    const note = "'johndeveloper-sailboats' is saved as 'johndevelopersailboats': a vault name keeps only a\u2013z and 0\u20139.";
+    const r = await checkVaultName(ORIGIN_A, "johndeveloper-sailboats", {
+      transport: transportOf({ available: true, reserved: false, requested: "johndeveloper-sailboats", normalized: true, note, name: "johndevelopersailboats" }),
+    });
+    expect(r.normalized).toBe(true);
+    expect(r.note).toBe(note);
+    expect(r.name).toBe("johndevelopersailboats");
+  });
+
+  it("leaves both out when the platform sent neither", async () => {
+    const r = await checkVaultName(ORIGIN_A, "free", { transport: transportOf({ available: true, reserved: false, name: "free", requested: "free" }) });
+    expect(r).not.toHaveProperty("normalized");
+    expect(r).not.toHaveProperty("note");
+  });
+});
+
+describe("checkVaultName — requested (0.2.5)", () => {
+  const transportOf = (body: unknown): Transport => async () => ({ status: 200, json: async () => body });
+  it("returns the platform's requested when it sends one", async () => {
+    const r = await checkVaultName(ORIGIN_A, "  Sail-Boats ", { transport: transportOf({ available: true, name: "sailboats", requested: "Sail-Boats" }) });
+    expect(r.requested).toBe("Sail-Boats");
+  });
+  it("else the caller's input, trimmed", async () => {
+    const r = await checkVaultName(ORIGIN_A, "  Sail-Boats ", { transport: transportOf({ available: true, name: "sailboats" }) });
+    expect(r.requested).toBe("Sail-Boats");
+  });
+  it("a failed check also carries the trimmed input", async () => {
+    const r = await checkVaultName(ORIGIN_A, " x ", { transport: async () => ({ status: 500, json: async () => ({}) }) });
+    expect(r.requested).toBe("x");
+  });
+});
+

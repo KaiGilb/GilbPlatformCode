@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE = path.join(HERE, "..", "bridge", "bridge.mjs");
+// The build the bridge reports is the package version; read it so a bump cannot be missed here.
+const BUILD = JSON.parse(fs.readFileSync(path.join(HERE, "..", "package.json"), "utf8")).version;
 const FAKE = path.join(HERE, "..", "src", "fake-claude.mjs");
 const WIN = process.platform === "win32";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,7 +90,7 @@ async function scenario(label, claudeArg, extraEnv = {}) {
     check(codeOut.includes(`Pairing code: ${code}`), `--code prints the same code (${code})`);
 
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    check(hello.bridge === "gilb-claude-code-bridge" && hello.build === "0.1.8", "hello answers, build 0.1.8");
+    check(hello.bridge === "gilb-claude-code-bridge" && hello.build === BUILD, `hello answers, build ${BUILD}`);
     const pair = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) });
     const { secret } = await pair.json();
     check(pair.status === 200 && typeof secret === "string", "paired");

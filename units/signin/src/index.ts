@@ -10,6 +10,7 @@ export {
 export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";
+export { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 export {
   loadPendingSignInEmail,
   savePendingSignInEmail,

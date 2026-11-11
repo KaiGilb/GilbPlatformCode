@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-shrink",
   "package": "@kaigilb/gilbplatformcode-picture-shrink",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Reads a picture file once and makes upright copies no larger than the sizes you ask for: JPEG or WebP, a thumbnail, a screen copy and a full copy by default, never enlarged or cropped, with an optional host decoder for HEIC.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -13,6 +13,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.1. `sizes.full: false` makes no full copy (no encode; `full` is null); the default is unchanged",
     "K1. the imports of pictures.ts (1-9) are not taken; PictureUnreadableError is local; decode and encodeJpeg stay unexported",
     "S1. encodeJpeg calls encode(d, maxEdge, quality, type) with image/jpeg, so the 0.1.0 paths give the same output; webpSupported() probes a 1x1 canvas once and remembers the answer",
     "S2. makePictureSet(file, options?) answers thumb (320, q0.72), screen (1600, q0.82) and full (4096, q0.9; null when the original's longest edge is at most screen) from one decode; type image/jpeg, image/webp or auto",
@@ -22,5 +23,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": { "admitted": true, "tag": "t:ImageFile.shrink", "title": "Picture shrink / resize (thumbnail, WebP)", "note": "Makes smaller bytes only and sends nothing; to send them take picture-upload. It is not a cropper." }
+  "library": { "admitted": true, "tag": "t:ImageFile.shrink", "title": "Picture shrink / resize (thumbnail, WebP)", "note": "Makes smaller bytes only and sends nothing; to send them take picture-upload. It is not a cropper. The full-size copy is optional (sizes.full: false)." }
 }

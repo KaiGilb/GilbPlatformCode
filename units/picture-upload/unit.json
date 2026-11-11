@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-upload",
   "package": "@kaigilb/gilbplatformcode-picture-upload",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Uploads picture bytes to a vault's file door with a request signed for that vault, and answers the stored file's address, or an error that keeps what the vault said.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -12,6 +12,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.1. uploadUrl sends folder only when not empty or blank (an empty folder= is a platform 400); UploadTarget.folder is optional",
     "U1. UploadTarget { vaultOrigin, vaultRoot, folder } replaces the app's settings; uploadUrl(filename, target) and uploadPicture(blob, filename, target); the literal plant-pictures is target.folder, now encoded",
     "U2. imports: dpopWriteAuth, NotSignedInError, invalidateDpop from lws-session-bridge; serverReasonOrNull from lws-records; NoAccessError, VaultBusyError, refusalLine from refusal-detail",
     "U3. the body is read once after the 401 check for every status other than 200 and 201; 403 throws NoAccessError with sentence and detail; 502/503/504 write one console.warn (refusal line and body.slice(0, 300)) and throw VaultBusyError as in the source; any other status throws PictureUploadError(status, text) with the source's message and body.slice(0, 2000)",

@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "unit": "units/style-studio",
+  "package": "@kaigilb/gilbplatformcode-style-studio",
+  "version": "0.2.0",
+  "purpose": "`<StyleStudio />` is a React screen for choosing the app's colours, fonts, buttons, windows and logo before building, and `saveStyle` writes the result to the app's resource vault.",
+  "source": {
+    "repo": "KaiGilb/gilb-style",
+    "commit": "234a8fcd8bdf9022a81883ca9e5026327f64d10c",
+    "files": [
+      {
+        "path": "src/ActionRow.tsx",
+        "lines": null,
+        "to": "src/ActionRow.tsx"
+      },
+      {
+        "path": "src/ThemeToggle.tsx",
+        "lines": null,
+        "to": "src/ThemeToggle.tsx"
+      },
+      {
+        "path": "scripts/build-wada.mjs",
+        "lines": null,
+        "to": "scripts/build-wada.mjs"
+      },
+      {
+        "path": "scripts/build-fonts.mjs",
+        "lines": null,
+        "to": "scripts/build-fonts.mjs"
+      },
+      {
+        "path": "vendor/wada/colors.json",
+        "lines": null,
+        "to": "vendor/wada/colors.json"
+      },
+      {
+        "path": "vendor/wada/LICENSE.md",
+        "lines": null,
+        "to": "LICENSE.md"
+      },
+      {
+        "path": "THIRD-PARTY-NOTICES.md",
+        "lines": null,
+        "to": null
+      },
+      {
+        "path": "src/studio/Preview.tsx",
+        "lines": null,
+        "to": "src/studio/Preview.tsx"
+      },
+      {
+        "path": "src/studio/StyleStudio.tsx",
+        "lines": null,
+        "to": "src/studio/StyleStudio.tsx"
+      },
+      {
+        "path": "src/studio/env.d.ts",
+        "lines": null,
+        "to": "src/studio/env.d.ts"
+      },
+      {
+        "path": "src/studio/extractClient.ts",
+        "lines": null,
+        "to": "src/studio/extractClient.ts"
+      },
+      {
+        "path": "src/studio/fonts.generated.ts",
+        "lines": null,
+        "to": "src/studio/fonts.generated.ts"
+      },
+      {
+        "path": "src/studio/fonts.ts",
+        "lines": null,
+        "to": "src/studio/fonts.ts"
+      },
+      {
+        "path": "src/studio/index.ts",
+        "lines": null,
+        "to": "src/studio/index.ts"
+      },
+      {
+        "path": "src/studio/logo.ts",
+        "lines": null,
+        "to": "src/studio/logo.ts"
+      },
+      {
+        "path": "src/studio/model.ts",
+        "lines": null,
+        "to": "src/studio/model.ts"
+      },
+      {
+        "path": "src/studio/studio.css",
+        "lines": null,
+        "to": "src/studio/studio.css"
+      },
+      {
+        "path": "src/studio/tabs.tsx",
+        "lines": null,
+        "to": "src/studio/tabs.tsx"
+      },
+      {
+        "path": "src/catalogue/classic.ts",
+        "lines": null,
+        "to": "src/catalogue/classic.ts"
+      },
+      {
+        "path": "src/catalogue/index.ts",
+        "lines": null,
+        "to": "src/catalogue/index.ts"
+      },
+      {
+        "path": "src/catalogue/pop.ts",
+        "lines": null,
+        "to": "src/catalogue/pop.ts"
+      },
+      {
+        "path": "src/catalogue/types.ts",
+        "lines": null,
+        "to": "src/catalogue/types.ts"
+      },
+      {
+        "path": "src/catalogue/wada.generated.ts",
+        "lines": null,
+        "to": "src/catalogue/wada.generated.ts"
+      },
+      {
+        "path": "src/catalogue/wada.ts",
+        "lines": null,
+        "to": "src/catalogue/wada.ts"
+      },
+      {
+        "path": "src/save/styleStore.ts",
+        "lines": null,
+        "to": "src/save/styleStore.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "the colour and sheet engine (`schema`, `color`, `css`, `palette`) is the separate unit `style-runtime`; every import of it is `@kaigilb/gilbplatformcode-style-runtime`, and `ThemeToggle` imports its theme functions from there;",
+    "**the host constant becomes an option** (RuleGhsSettingUnit): the exported `PUBLIC_GRANTEE` (a vault-host address) is removed; `publicGrantee: string` is a required field of `SaveStyleOptions` and of the `vault` prop of `StyleStudio`, and the grant call sends it as the principal;",
+    "the source's tests moved from `test/` to `src/`; the test of the dev page's demo note is not taken (the dev page is not in this unit); tests that call `saveStyle` or pass `vault` pass a `publicGrantee` of an example address;",
+    "0.2.0: the vault reader (`loadStyleFromVault`, `makeVaultFetchRemote`, `recordsToSheet`, `linkId`), `defaultSheet` and the list of bundled font names moved to `style-runtime`; this unit re-exports them, and `build-fonts.mjs` also writes the names list into `style-runtime`;",
+    "the barrel `src/index.ts` exports only this unit's own API; the engine and the theme functions come from `style-runtime`;",
+    "the check `scripts/check-host-agnostic.mjs` allows relative imports that stay inside `src/`, `dompurify`, the runtime package, React, and `@fontsource/<name>/latin-400.css` or `latin-600.css`."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/hostAgnostic.test.ts",
+    "src/fixtures.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "publicGrantee",
+      "replaces": "the constant PUBLIC_GRANTEE"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:AppStyleSheet.studio",
+    "title": "App Style Studio (choose the app's style before building)",
+    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault. A developer tool, taken once."
+  }
+}

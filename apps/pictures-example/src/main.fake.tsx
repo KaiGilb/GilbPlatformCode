@@ -2,22 +2,26 @@ import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App, forgetEverything } from "./App";
 import { PictureEngine } from "./engine";
-import { FakeVault, installFakeAuth } from "./fakeVault";
+import { createFakePlatform } from "@kaigilb/gilbplatformcode-fake-platform";
+import { setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { configureApp, deviceCacheName } from "./setup";
 import { enablePictureDeviceCache } from "@kaigilb/gilbplatformcode-signed-picture";
 
-// dev:fake: the vault and the signed-in person are both fake and live in this page. Nothing leaves it.
+// dev:fake: the platform and the signed-in person are both fake and live in this page. Nothing leaves it.
 const origin = window.location.origin;
-const root = `${origin}/vault`;
 const params = new URLSearchParams(window.location.search);
-const principal = "https://fake.example/i/ann";
+
+const fake = createFakePlatform({ origin, hosts: [window.location.host] });
+const ann = fake.seedPerson({ email: "ann@example.test" });
+const fakeVault = fake.seedVault({ name: "ann", owner: ann, host: window.location.host });
+const root = fakeVault.id; // https://<this host>/vault: a vault id is always https
+const principal = ann.principal;
 
 configureApp(origin, [window.location.hostname]);
-installFakeAuth(principal, root);
-const vault = new FakeVault({ origin, root });
-window.fetch = vault.fetch as typeof fetch; // every request in this page goes to the fake vault
-if (params.get("refuse")) vault.refuseList = "vault target denied: no read reach";
-(window as unknown as { __fakeVault: FakeVault }).__fakeVault = vault;
+setLwsAuth(fake.authHost(ann));
+window.fetch = fake.fetch as typeof fetch; // every request in this page goes to the fake platform
+if (params.get("refuse")) fake.revokeAccess(ann, fakeVault);
+(window as unknown as { __fake: typeof fake }).__fake = fake;
 
 async function seedPictures(n: number): Promise<void> {
   const colours = ["#d1495b", "#edae49", "#00798c", "#30638e", "#66a182"];
@@ -35,13 +39,13 @@ async function seedPictures(n: number): Promise<void> {
       const blob = await new Promise<Blob>((res) => c.toBlob((b) => res(b!), "image/jpeg", 0.8));
       return new Uint8Array(await blob.arrayBuffer());
     };
-    vault.seed(`seed-${i + 1}`, await make(1200, 900), await make(320, 240));
+    fake.seedPicture(fakeVault, { name: `seed-${i + 1}`, master: await make(1200, 900), thumb: await make(320, 240) });
   }
 }
 
 function Root() {
   const [signedIn, setSignedIn] = useState(true);
-  const engine = useMemo(() => new PictureEngine(vault.session(principal)), [signedIn]);
+  const engine = useMemo(() => new PictureEngine({ principal, vaultOrigin: origin, vaultRoot: root }), [signedIn]);
   useEffect(() => {
     if (!signedIn) return;
     enablePictureDeviceCache({ name: deviceCacheName(principal) });

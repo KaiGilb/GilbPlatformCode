@@ -31,6 +31,10 @@ The WebID sentence uses the host of the pasted value, then `/vault`. It does not
 
 The rejection sentence names `example`. The default example is `https://<host>/vault`. Pass the app's own example if the sentence must name a real host. This package does not contain one.
 
+`vaultNameProblem(name)` is `null` for a bare vault name (one DNS label: letters, digits, hyphens, no leading or trailing hyphen, at most 63 characters; trimmed, any case), otherwise a sentence: `Enter a vault name.`, `Type their GilbPlatform vault name or address (not an email)`, or `A vault name uses only letters, digits and hyphens, does not start or end with a hyphen, and has at most 63 characters.`
+
+`vaultAddressFromName(name, apex)` (since 0.1.1) composes `https://<name>.<apex>/vault`, with the name lower-cased and the apex a bare host (optionally with a port), for example `vaultAddressFromName("Anna", "platform.example.test")` is `https://anna.platform.example.test/vault`. It answers `null` when the name fails `vaultNameProblem`, when the apex is not a bare host, or when the result fails `vaultIdProblem`. It composes only; it does not know which segment a host uses (user vaults use `vault`). It is not a grantee rule: `vault-access` still refuses a bare-host grantee on purpose, and a host that passes a typed value on must decide itself what is a name and what is an address.
+
 ## What this is not
 
 - Not a lookup. A string can match and still not be a vault that exists.
@@ -42,7 +46,7 @@ The rejection sentence names `example`. The default example is `https://<host>/v
 Package: `@kaigilb/gilbplatformcode-vault-address`
 
 ```ts
-import { vaultIdProblem, principalGranteeProblem, VAULT_ID_RE } from "@kaigilb/gilbplatformcode-vault-address";
+import { vaultIdProblem, vaultNameProblem, vaultAddressFromName, principalGranteeProblem, VAULT_ID_RE } from "@kaigilb/gilbplatformcode-vault-address";
 
 const problem = vaultIdProblem(text);
 if (problem) show(problem);

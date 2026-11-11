@@ -189,4 +189,11 @@ describe("the crop surface", () => {
     render(<FaceCropper source={blob()} onUse={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByText(/original is kept/i)).toBeDefined();
   });
+
+  it("the action row is in the Mac order: the whole picture, Cancel, then Use this area rightmost", () => {
+    render(<FaceCropper source={blob()} onUse={vi.fn()} onCancel={vi.fn()} />);
+    const row = document.querySelector(".gp-crop__actions") as HTMLElement;
+    expect([...row.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual(["Use the whole picture", "Cancel", "Use this area"]);
+    expect(row.querySelector("button:last-child")!.className).toContain("gp-crop__btn--primary");
+  });
 });

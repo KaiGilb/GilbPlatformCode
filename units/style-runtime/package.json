@@ -1,0 +1,28 @@
+{
+  "name": "@kaigilb/gilbplatformcode-style-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Applies the app's style at start: loads one style.tokens.json, validates it, and writes the CSS custom properties with no flash.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "dependencies": {
+    "culori": "^4.0.1",
+    "@types/culori": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

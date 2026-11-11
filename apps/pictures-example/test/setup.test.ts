@@ -70,9 +70,9 @@ describe("start-up settings", () => {
     forgetPictures();
   });
 
-  test("the fake vault refuses, and records, any request to another host", async () => {
+  test("the fake platform refuses, and records, any request to another host", async () => {
     const vault = setup();
-    await expect(fetch("https://elsewhere.example/x")).rejects.toThrow(/not local/);
+    await expect(fetch("https://elsewhere.example/x")).rejects.toThrow(/not this platform/);
     expect(vault.violations).toEqual(["GET https://elsewhere.example/x"]);
   });
 });

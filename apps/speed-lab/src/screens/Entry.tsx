@@ -23,8 +23,9 @@ export function EntryPage({ ws, client, id, onBack }: { ws: string; client: Plat
       recheck: async () => ((await cache.sessionCache.refresh(key, loader)).find((e) => e.id === id)?.name === shown ? null : "the name changed since you started editing. Look again."),
       run: async () => {
         try {
-          const url = sync.routeUrl(client, `lws/vault/${sync.vaultSegment(ws)}/records/${encodeURIComponent(id)}`); // the stand-in's route form
-          const answer = await sync.request(client, "PATCH", url, { name: newName });
+          // The platform's own write: PATCH /lws/r/<id>, a JSON merge patch (GilbPlatform src/lws/routes.ts:1026); the write key is `a:name`.
+          const url = sync.routeUrl(client, `lws/r/${encodeURIComponent(id)}`);
+          const answer = await sync.request(client, "PATCH", url, { "a:name": newName }, { "content-type": "application/merge-patch+json" });
           if (answer.status !== 200) return { ok: false, message: `the platform answered ${answer.status}: ${String(answer.json?.message ?? "no reason given")}` };
         } catch (e) {
           return { ok: false, message: updated.plainWhy(e, "the platform did not answer") };

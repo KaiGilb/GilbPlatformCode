@@ -19,7 +19,7 @@ Every call goes to the vault's own host. Set the base origin to the apex, the pl
 - `fetchVaultAcl(vaultId)`: `GET /base/consent/vault-acl?vault=`. 200 is `{ controlled: true, note, acl, edges }`. 404 is `{ controlled: false }`. Each entry keeps `principal`, `levels`, `label`, `webId` and `kind`; a missing label or WebID is null, and a kind other than `owner-inferred` is `grant`. `labelSource`, `registered` and `viewer` are on the type and are not copied onto the entry (the source normalizer leaves them out).
 - `shareVault(vaultId, grantee, level)`: `level` is `"view"` or `"edit"`. A grantee that is an https URL with an empty path or "/" is refused before any request, same as `grantVaultAccess`. View grants read. Edit grants write, then reads the access list and requires the grantee the grant echoes — the platform resolves a short WebID to an opaque principal and returns that principal as `grantee` — to hold both read and write. If that echo is byte-for-byte the text that was sent, and that text is not an opaque key (`/base/p/` or `/base/g/`) and not a vault address (path `/vault` or `/base`), it throws `VaultAccessError` 400: the platform did not resolve them to a person, so the grant would reach no one. If read or write is missing, it throws `VaultAccessError` and the message names the missing level (`view` or `edit`).
 - `unshareVault(vaultId, grantee)`: revoke write, then read, then append. It does not revoke control. A bare host is still sent, so an old grant can be removed.
-- `VaultAccessError` (status and message), `VAULT_GRANT_MODES`, and the types `VaultGrantMode`, `VaultShareLevel`, `VaultAclEntry`, `VaultReachAclEntry`, `VaultAclResult`, `PrincipalLabelSource`, `PrincipalViewerRelation`.
+- `VaultAccessError` (status and message), `VAULT_GRANT_MODES`, `NO_CONTROL` (the Control sentence above, since 0.1.2: show it for a 403 or for `{ controlled: false }` instead of copying it), and the types `VaultGrantMode`, `VaultShareLevel`, `VaultAclEntry`, `VaultReachAclEntry`, `VaultAclResult`, `PrincipalLabelSource`, `PrincipalViewerRelation`.
 
 The credential is the DPoP write pair for a grant or revoke, and the DPoP read pair for the access list, both from `lws-session-bridge`. The seam sends no credential to a host outside the platform's family.
 
@@ -97,6 +97,10 @@ None. The unit holds no cache of its own.
 ## Changes in 0.1.1
 
 The grantee of a grant is the person's vault address (`/vault` or `/base`), not the vault's host. `shareVault` and `grantVaultAccess` refuse a bare host before any request. `shareVault` throws when the platform echoes a grantee it did not resolve to an opaque key or a vault address, because that grant would be stored and reach no one. `revokeVaultAccess` and `unshareVault` still send a bare host, so an old grant can be removed.
+
+## Changes in 0.1.2
+
+`NO_CONTROL`, the sentence a 403 on a grant or revoke carries, is exported. An app had copied it to show the same words for a 404 on the access list. The message a 403 gives is unchanged.
 
 ## Where it came from
 

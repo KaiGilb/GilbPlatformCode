@@ -78,7 +78,7 @@ describe("engine: add and store", () => {
 describe("engine: retry resumes", () => {
   test("a small copy that failed is tried again without uploading the picture a second time", async () => {
     const vault = setup();
-    vault.failUploads = { status: 503, times: 1, skip: 2 }; // master and full pass; the small copy fails once
+    vault.fake.failNext("PUT /lws/vault/:vault/files", { status: 503, times: 1, skip: 2 }); // master and full pass; the small copy fails once
     const engine = newEngine(vault, async () => fakeSet());
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await engine.start();
@@ -113,7 +113,7 @@ describe("engine: retry resumes", () => {
 
   test("busy: the op waits, the busy delay is 2 s then 5 s, and a later try stores it", async () => {
     const vault = setup();
-    vault.failUploads = { status: 503, times: 2 };
+    vault.fake.failNext("PUT /lws/vault/:vault/files", { status: 503, times: 2 });
     const delays: number[] = [];
     const engine = new (await import("../src/engine")).PictureEngine(vault.session("ann"), { makeSet: (async () => fakeSet()) as never, setTimer: (_f, ms) => delays.push(ms) });
     await engine.start();
@@ -131,7 +131,7 @@ describe("engine: retry resumes", () => {
 
   test("a busy answer stops the queue: the second picture is not tried while the vault is busy", async () => {
     const vault = setup();
-    vault.failUploads = { status: 503, times: 99 };
+    vault.fake.failNext("PUT /lws/vault/:vault/files", { status: 503, times: 99 });
     const engine = newEngine(vault, async () => fakeSet());
     await engine.start();
     await engine.add([file("one.jpg"), file("two.jpg")]);
@@ -141,7 +141,7 @@ describe("engine: retry resumes", () => {
 
   test("five other failures make the op stuck; Try again clears it", async () => {
     const vault = setup();
-    vault.failUploads = { status: 500, times: 99 };
+    const stopFailing = vault.fake.failNext("PUT /lws/vault/:vault/files", { status: 500, times: 99 });
     const engine = newEngine(vault, async () => fakeSet());
     await engine.start();
     await engine.add([file("x.jpg")]);
@@ -156,7 +156,7 @@ describe("engine: retry resumes", () => {
     engine.poke();
     await settle();
     expect(vault.uploads.length).toBe(tried); // a stuck op is not sent again until the person says Try again
-    vault.failUploads = null;
+    stopFailing();
     engine.tryAgain(t.key);
     await settle();
     await settle();
@@ -179,16 +179,15 @@ describe("engine: failures and people", () => {
     expect(await listOpsFor("ann")).toHaveLength(0);
   });
 
-  test("a refused upload (403) is dropped from the queue and shown as no-access with the server's line in the details", async () => {
-    const vault = setup();
-    vault.failUploads = { status: 403, times: 1, body: JSON.stringify({ message: "vault target denied: no write reach" }) };
+  test("a refused upload (403) is dropped from the queue and shown as no-access with the platform's own line in the details", async () => {
+    const vault = setup({ readOnly: true }); // ann may read this vault, not write
     const engine = newEngine(vault, async () => fakeSet());
     await engine.start();
     await engine.add([file("n.jpg")]);
     await settle();
     const snap = engine.getSnapshot();
     expect(snap.notes[0]!.failure.kind).toBe("no-access");
-    expect(snap.notes[0]!.failure.detail).toContain("vault target denied: no write reach");
+    expect(snap.notes[0]!.failure.detail).toContain(`vault target denied: the principal holds no write reach on vault ${vault.root}`);
     expect(snap.tiles).toHaveLength(0);
     expect(await listOpsFor("ann")).toHaveLength(0);
   });
