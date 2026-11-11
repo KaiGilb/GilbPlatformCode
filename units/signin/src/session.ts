@@ -370,8 +370,9 @@ export class SessionCredential {
    */
   private signInSerial = 0;
   /**
-   * Bumped when a sign-in starts: `signInWithCode`, `adopt`, or `restore` once it has
-   * adopted a record. An in-flight `signOut` records this at its start and a later call
+   * Bumped when a sign-in starts: `signInWithCode`, `adopt`, `restore` once it has
+   * adopted a record, or a cookie-bridge re-mint (`authHeaders` → `mint` installing
+   * a token). An in-flight `signOut` records this at its start and a later call
    * joins only while it is unchanged. Not {@link signInSerial}: a renew treats a serial
    * change as superseded, and a `restore` during that renew must still adopt.
    */
@@ -422,6 +423,16 @@ export class SessionCredential {
   private static signOutRenewals = new Map<string, Promise<{ accessToken: string; key: DpopKey } | null>>();
   /** The renewal credential currently held. It is sent at most once. */
   private renewCredential: string | null = null;
+  /**
+   * Secrets this tab presented and rotated away from on a 200. They are spent.
+   * This tab does not present them again and does not adopt a record that holds one.
+   */
+  private rotatedAway = new Set<string>();
+  /**
+   * The secret the latest successful rotation presented. A save of the new
+   * credential may replace the record that still holds this one, whatever its time.
+   */
+  private rotatedPredecessor: string | null = null;
   /** The server's `renewExpiresAt` text, kept so the store round-trips it. */
   private renewExpiresAt: string | null = null;
   /** Epoch ms of {@link renewExpiresAt}. Null when no credential is held. */
@@ -943,6 +954,9 @@ export class SessionCredential {
     };
     // A sign-out (invalidate) happened while this mint was on the wire: drop the result.
     if (gen !== this.generation) throw new NotSignedInError();
+    // A cookie-bridge re-mint is a sign-in. A sign-out that began before it must
+    // not swallow the sign-out of the token this mint just installed.
+    this.noteSignIn();
     this.signedOut = false;
     this.explicitClear = false;
     this.minted = minted;
@@ -1199,10 +1213,16 @@ export class SessionCredential {
   /**
    * The expect for a save of this tab's own record. A family-ended marker of
    * another family may be replaced. A present record is still the family compare.
-   * A signed-out marker is not replaced.
+   * A signed-out marker is not replaced. The credential this tab just presented,
+   * when it is the same family, may be replaced whatever its time.
    */
   private saveExpect(publicKeyId: string, renew: string): CurrentRecordExpect {
-    return this.ownWrite(this.renewExpect(publicKeyId, renew));
+    const expect = this.ownWrite(this.renewExpect(publicKeyId, renew));
+    const prior = this.rotatedPredecessor;
+    if (prior && prior !== renew && familyOf(prior) !== null && familyOf(prior) === expect.family) {
+      expect.presentedRenew = prior;
+    }
+    return expect;
   }
 
   /** A live record may replace another family's family-ended marker. A marker write does not use this. */
@@ -1562,6 +1582,20 @@ export class SessionCredential {
       return this.minted?.session ?? null;
     }
     const renewal = readStoredRenewal(record, this.now());
+    // This tab already rotated away from the stored secret. Adopting it would
+    // present a spent credential. Keep the successor this tab still holds.
+    if (renewal && this.knowsRotatedAway(renewal.renew)) {
+      if (this.renewCredential && !this.knowsRotatedAway(this.renewCredential) && this.renewalIsLive()) {
+        if (!this.carriedSession && isGilbSession(record.session)) this.carriedSession = copySession(record.session);
+        const result = await this.renewNow();
+        if (gen !== this.generation || this.signedOut) return null;
+        if (serial !== this.signInSerial || this.signInsInFlight > 0) return this.session;
+        if (result.ok) return result.session;
+        if (result.kind === "transient") throw new RenewalUnavailableError();
+        return this.session;
+      }
+      return null;
+    }
     const tokenLive = full !== null && this.tokenIsLive(record.expiresAt);
     if (!tokenLive && !renewal) {
       await this.clearLoaded(store, record);
@@ -1667,9 +1701,11 @@ export class SessionCredential {
    * signed in. An empty slot means nothing was written. It is not a sign-out. This tab
    * keeps its sign-in and does not fill the empty slot. A save
    * may replace the stored record
-   * when it is the same family and its `renewExpiresAt` is earlier than this tab's, or
-   * when it holds exactly this tab's credential. A later time is left alone. An equal
-   * time with a different credential is left alone. Another family is left alone. The
+   * when it is the same family and its `renewExpiresAt` is earlier than this tab's,
+   * when it holds exactly this tab's credential, or when it holds the credential
+   * this tab just presented. That predecessor is replaced whatever its time.
+   * A later time is left alone. An equal
+   * time with any other credential is left alone. Another family is left alone. The
    * order uses the server's times only. The new session stays in memory. On the next
    * renew, a stored credential of this family with a later time is adopted, and an
    * earlier one is written over with the credential this tab holds. A different family
@@ -1732,8 +1768,9 @@ export class SessionCredential {
    * already written and `serverSignedOut` is false.
    *
    * Overlapping calls join the in-flight sign-out only when no sign-in has started
-   * since that sign-out began. A sign-in is `signInWithCode`, `adopt`, or a `restore`
-   * that adopted a record. This records the sign-in generation at the start. While
+   * since that sign-out began. A sign-in is `signInWithCode`, `adopt`, a `restore`
+   * that adopted a record, or a cookie-bridge re-mint (`authHeaders` → `mint`
+   * installing a token). This records the sign-in generation at the start. While
    * that generation is unchanged, the server is told once and every joined caller
    * receives that same result. A call after a sign-in has started waits for the
    * in-flight sign-out to settle, then runs its own: the marker, and the server
@@ -1824,6 +1861,11 @@ export class SessionCredential {
   /** True when this credential stores and the app did not turn renewal off. */
   private renewalWanted(): boolean {
     return this.store !== null && this.opts.renew !== false;
+  }
+
+  /** True when this tab already rotated away from `renew` and must not present it. */
+  private knowsRotatedAway(renew: string | null): boolean {
+    return renew !== null && renew.length > 0 && this.rotatedAway.has(renew);
   }
 
   /** A credential that can still be presented: held, in date, and we still have its key. */
@@ -2129,6 +2171,16 @@ export class SessionCredential {
       if (storedFamily === null || heldFamily === null || storedFamily !== heldFamily) {
         return { action: "post", credential: heldNow, stored: null };
       }
+      // This tab already rotated away from the stored secret. It is spent.
+      // Replace that record whatever its time. Do not adopt it and do not present it.
+      if (this.knowsRotatedAway(storedRenew)) {
+        await this.writeHeldOverOlder(gen, serial, signal, deadline);
+        if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+        const afterSpent = this.credentialHeldForRenew(gen, serial, heldNow, heldKeyId);
+        if (afterSpent === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+        if (afterSpent === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+        return { action: "post", credential: afterSpent, stored: null };
+      }
       const storedAt = renewExpiresAtMs(slot.renewExpiresAt);
       const heldAt = this.renewExpiresAtMs;
       // A later server time is a newer credential of this family. Adopt it. Do not present ours.
@@ -2254,6 +2306,8 @@ export class SessionCredential {
     if (!origin || !key) return { ok: false, kind: "none" };
     if (signal.aborted) return { ok: false, kind: "signed-out" };
     if (this.renewStopped(gen, serial)) return this.stoppedRenewAttempt(gen);
+    // This tab already got a 200 for this secret. Presenting it again ends the family.
+    if (this.knowsRotatedAway(credential)) return { ok: false, kind: "unauthorized" };
     const attemptBefore = this.renewAttemptAt;
     const graceBefore = this.renewGraceUsed;
     const markFailedBefore = this.renewMarkFailed;
@@ -2499,9 +2553,14 @@ export class SessionCredential {
     };
     // No await between the stop-check above and these writes. The new credential has
     // not been sent, so the attempt clock starts over. The server has spent the
-    // credential we presented. The new credential keeps the server's
-    // `renewExpiresAt`. A strictly earlier stored time of the same family is
-    // what a later write replaces. An equal time is not moved. The save may still fail.
+    // credential we presented. That secret is not presented again. The save that
+    // follows may replace the record that still holds it, whatever the times.
+    // An equal time that holds any other credential is not moved. The save may still fail.
+    const presented = this.renewCredential;
+    if (presented && presented !== next.renew) {
+      this.rotatedAway.add(presented);
+      this.rotatedPredecessor = presented;
+    }
     this.installRenewal({
       renew: next.renew,
       renewExpiresAt: renewExpiresAtIso,
@@ -2584,9 +2643,10 @@ export class SessionCredential {
 
   /**
    * Update-only save of the rotated record. The stored record may hold this tab's
-   * new credential, or the same key and the same family with an earlier
-   * `renewExpiresAt`. A later time, an equal time with a different credential,
-   * or another family writes nothing. The wait is capped,
+   * new credential, the credential this tab just presented, or the same key and
+   * the same family with an earlier `renewExpiresAt`. The presented credential
+   * is replaced whatever its time. A later time, an equal time with any other
+   * credential, or another family writes nothing. The wait is capped,
    * like every other store call on this path. A timeout or a throw leaves the new
    * session in memory. A throw is tried several times inside the lock. A save that
    * does not settle is tried once more. Then the background heal retries it.
@@ -2697,9 +2757,10 @@ export class SessionCredential {
     }
     // The save resolved. A store that yields between its compare and its put can
     // still be holding an earlier credential of this family. IndexedDB does not
-    // yield there. Try again while that earlier time is what is stored. A later
-    // time, an equal time with a different credential, or another family is left
-    // alone. `false` is a refusal. The server's time is not moved.
+    // yield there. Try again while that earlier time, or the credential this tab
+    // just presented, is what is stored. A later time, an equal time with any
+    // other credential, or another family is left alone. `false` is a refusal.
+    // The server's time is not moved.
     const repaired = await this.repairSpentCredential(
       gen, serial, record, presentedExpect, writtenExpect, signal, deadline,
     );
@@ -2718,7 +2779,9 @@ export class SessionCredential {
    * of this same family. The bound is how many times a yielding store is retried,
    * not a limit on how many credentials a tab may replace. Stops when the new
    * credential is stored, the record is gone, another family is stored, or a
-   * later (or equal, different) credential of this family is there. A sign-out
+   * later credential of this family is there, or an equal time holding any
+   * credential other than the one this tab just presented. That presented
+   * credential is replaced whatever its time. A sign-out
    * deletes the rotated record if this write landed.
    */
   private async repairSpentCredential(
@@ -2764,8 +2827,11 @@ export class SessionCredential {
       const heldFamily = familyOf(record.renew);
       if (storedFamily === null || heldFamily === null || storedFamily !== heldFamily) return "refused";
       const storedAt = renewExpiresAtMs(slot.renewExpiresAt);
-      // No credential, a later time, an equal time, or a time we cannot read.
-      if (!storedRenew || storedAt === null || heldAt === null || storedAt >= heldAt) return "refused";
+      const presented = typeof presentedExpect.presentedRenew === "string" ? presentedExpect.presentedRenew : "";
+      const ownPredecessor = presented.length > 0 && storedRenew === presented;
+      // No credential, a later time, an equal time with any other credential, or a time we cannot read.
+      // The credential this tab just presented is replaced whatever its time.
+      if (!ownPredecessor && (!storedRenew || storedAt === null || heldAt === null || storedAt >= heldAt)) return "refused";
       const again = this.invokeStore(() => this.store!.saveIfCurrent(record, presentedExpect));
       const saved = await this.bounded(again, this.storeWaitMs(deadline), signal);
       if (signal.aborted || this.generation !== gen || this.signedOut) {

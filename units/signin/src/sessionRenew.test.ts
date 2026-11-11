@@ -2210,3 +2210,90 @@ test("signOut with no token writes the marker before the renew", async () => {
   assert.equal(JSON.stringify(store.peek()).includes(answer.token), false);
   assert.equal(JSON.stringify(store.peek()).includes(answer.renew), false);
 });
+
+test("an equal renewExpiresAt replaces the credential this tab just presented and that secret is not presented again", async () => {
+  // b34o f6 seed 99 F1: the server answers s2 with the same renewExpiresAt as s1.
+  // The save used to refuse the tie, the store stayed on s1, and a later call presented s1.
+  const store = memoryStore(await seed());
+  let now = NOW;
+  const answer = {
+    token: jwt(NEW_EXP),
+    renew: NEW_RENEW,
+    renewExpiresAt: LIVE_EXPIRY,
+    principal: PRINCIPAL,
+  };
+  const bodies: string[] = [];
+  const send: Transport = async (url, req) => {
+    if (url === RENEW_URL) {
+      bodies.push((JSON.parse(req.body!) as { renew: string }).renew);
+      return jsonResponse(200, answer);
+    }
+    return jsonResponse(500, {});
+  };
+  const cred = new SessionCredential({ store, transport: send, now: () => now });
+  assert.ok(await cred.restore());
+  assert.equal(store.peek()?.renew, OLD_RENEW);
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const headers = await cred.authHeaders("GET", "https://a.example.test/x");
+  assert.equal(headers.Authorization, `DPoP ${answer.token}`);
+  assert.deepEqual(bodies, [OLD_RENEW]);
+  assert.equal(store.peek()?.renew, NEW_RENEW, "the presented credential is replaced when the server time is equal");
+  assert.equal(store.peek()?.renewExpiresAt, LIVE_EXPIRY, "the server time is stored as sent");
+  // The save failed to stick: the slot is back on the spent secret. This tab must not present it.
+  const spent = store.peek();
+  assert.ok(spent);
+  await store.save({ ...spent, renew: OLD_RENEW, renewExpiresAt: LIVE_EXPIRY, accessToken: "tok-spent" });
+  await cred.invalidate();
+  now += 70_000;
+  const restored = await cred.restore();
+  assert.equal(restored?.principal, PRINCIPAL);
+  assert.deepEqual(bodies, [OLD_RENEW, NEW_RENEW]);
+  assert.equal(bodies.includes(OLD_RENEW), true);
+  assert.equal(bodies.filter((renew) => renew === OLD_RENEW).length, 1, "the spent credential is presented once");
+  assert.equal(store.peek()?.renew, NEW_RENEW);
+  assert.equal(cred.session?.principal, PRINCIPAL);
+});
+
+test("a cookie-bridge re-mint during an in-flight sign-out is its own sign-in", async () => {
+  // QA C1: sign-out is in flight, authHeaders re-mints, the second sign-out must
+  // tell the server again and leave no session.
+  const calls: Call[] = [];
+  let mints = 0;
+  const send: Transport = async (url, req) => {
+    calls.push({ url, req });
+    if (url === "https://id.example.test/mint") {
+      mints += 1;
+      return jsonResponse(200, {
+        access_token: jwt(Math.floor(NOW / 1000) + 3000 + mints),
+        principal: PRINCIPAL,
+        expires_in: 3000,
+        cnf: { jkt: "x" },
+      });
+    }
+    if (url === SIGN_OUT_URL) {
+      await sleep(80);
+      return jsonResponse(204, {});
+    }
+    return jsonResponse(500, {});
+  };
+  const key = await generateDpopKeyPair();
+  const cred = new SessionCredential({
+    key,
+    store: false,
+    dpopMintUrl: "https://id.example.test/mint",
+    transport: send,
+    now: () => NOW,
+  });
+  await cred.authHeaders("GET", "https://x.example.test/a");
+  const first = cred.signOut(ORIGIN);
+  await sleep(20);
+  const headers = await cred.authHeaders("GET", "https://x.example.test/a");
+  assert.ok(headers.Authorization.startsWith("DPoP "));
+  assert.equal(mints, 2);
+  const second = cred.signOut(ORIGIN);
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a.serverSignedOut, true);
+  assert.equal(b.serverSignedOut, true);
+  assert.equal(calls.filter((call) => call.url === SIGN_OUT_URL).length, 2);
+  assert.equal(cred.session, null);
+});

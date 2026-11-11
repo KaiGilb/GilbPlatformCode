@@ -151,7 +151,10 @@ export function isStoredSession(value: unknown): value is StoredSession {
  * The stored record may be written or cleared when it holds exactly `renew`
  * (the same credential: a mark, or a dropped access token), or when it is the
  * same family and its `renewExpiresAt` is strictly earlier. A later time is left
- * alone. An equal time with a different credential of that family is left alone.
+ * alone. An equal time with a different credential of that family is left alone,
+ * unless that credential is `presentedRenew`: the secret this tab just presented
+ * on its own rotation. That record is known spent and may be replaced whatever
+ * its time. Any other credential at an equal time stays.
  * Another family is left alone. A stored credential with no parsable family id
  * is left alone. The compare is numeric. The stored ISO string and the stored
  * family are parsed here, and this function does not await.
@@ -177,6 +180,13 @@ export interface CurrentRecordExpect {
   /** Family id of `renew`. Null when `renew` has no parsable family. */
   family?: string | null;
   renewExpiresAt?: number;
+  /**
+   * The renewal secret this tab just presented and rotated away from.
+   * When the stored record holds exactly this secret, the same key, and the
+   * same family, it may be replaced whatever its `renewExpiresAt`. An equal
+   * time that holds any other secret is still left alone.
+   */
+  presentedRenew?: string;
   accessToken?: string;
   /**
    * A live tab may replace a family-ended marker of a different family with its
@@ -245,6 +255,9 @@ export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect):
     const storedFamily = familyOf(record.renew);
     const wantFamily = expectFamily(expect);
     if (storedFamily === null || wantFamily === null || storedFamily !== wantFamily) return false;
+    // This tab's own predecessor. Known spent. The time does not matter.
+    const presented = renewSecret(expect.presentedRenew);
+    if (presented.length > 0 && have === presented) return true;
     const storedAt = renewExpiresAtMs(record.renewExpiresAt);
     if (storedAt === null) return false;
     return storedAt < expect.renewExpiresAt;
@@ -300,6 +313,8 @@ export interface SessionStore {
    * `expect.replaceOtherFamilyEnded` is set. Another key, another family, a
    * credential with no family id, a later `renewExpiresAt`, or an equal time
    * with a different credential writes nothing and resolves `false`.
+   * `expect.presentedRenew`, the secret this tab just presented, is replaced
+   * whatever its time.
    * `true` means the put was made. The IndexedDB adapter compares and puts inside
    * the same `get` success callback, so the transaction is still active and a
    * delete that commits first is not put back. A marker put this way holds no
@@ -310,7 +325,8 @@ export interface SessionStore {
    * Deletes the one record only when it is still {@link recordIsCurrent} for
    * `expect`. Another key, another family, a credential with no family id, a
    * later `renewExpiresAt`, or an equal time with a different credential is
-   * left in place and this resolves `false`. `true`
+   * left in place and this resolves `false`. `presentedRenew` names the secret
+   * this tab just presented: that record may be deleted whatever its time. `true`
    * means the delete was made. The IndexedDB adapter compares and deletes
    * inside the same `get` success callback.
    */

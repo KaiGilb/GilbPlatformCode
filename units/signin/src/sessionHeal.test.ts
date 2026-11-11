@@ -35,18 +35,29 @@ class Family {
   reuse = 0;
   presentations: string[] = [];
 
-  constructor(private readonly now: () => number, private readonly ttlSec = 120) {}
+  constructor(
+    private readonly now: () => number,
+    private readonly ttlSec = 120,
+    private readonly equalExpiry = false,
+  ) {}
+
+  /** First issue's server time, reused when `equalExpiry` is set. */
+  private fixedAt: number | null = null;
 
   private issue(): { token: string; renew: string; renewExpiresAt: string } {
     this.n += 1;
     this.cur = `rsi1.fam.s${this.n}`;
     const exp = Math.floor(this.now() / 1000) + this.ttlSec;
+    const at = this.equalExpiry
+      ? (this.fixedAt ??= this.now() + 14 * 24 * 3600 * 1000)
+      : this.now() + 14 * 24 * 3600 * 1000 + this.n;
     return {
       token: jwt(exp),
       renew: this.cur,
       // `n` keeps each issue strictly later when the test clock does not move.
       // The server serialises one family, so a later rotation has a later time.
-      renewExpiresAt: new Date(this.now() + 14 * 24 * 3600 * 1000 + this.n).toISOString(),
+      // `equalExpiry` repeats the first issue's time, the same-millisecond case.
+      renewExpiresAt: new Date(at).toISOString(),
     };
   }
 
@@ -213,6 +224,34 @@ test("a rotation save that keeps failing is retried in the background", async ()
     assert.equal(family.reuse, 0);
     assert.equal(family.ended, false);
     await fresh.invalidate(true);
+  } finally {
+    await cred.invalidate(true);
+  }
+});
+
+test("an equal renewExpiresAt rotation heals over the credential this tab presented", async () => {
+  let now = T0;
+  // In-lock throws, then the drain. The store accepts the save after those.
+  let left = 9;
+  const family = new Family(() => now, 120, true);
+  const store = boolStore((session) =>
+    session.renew === "rsi1.fam.s2" && session.accessToken !== "" && left > 0 && (left -= 1, true),
+  );
+  const cred = await signIn(store, family, () => now);
+  try {
+    const seededAt = store.peek()?.renewExpiresAt;
+    now += 100_000;
+    assert.ok((await cred.authHeaders("GET", `${ORIGIN}/x`)).Authorization);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s1", "the in-lock throws left the presented credential stored");
+    assert.equal(store.peek()?.renewExpiresAt, seededAt, "the server time did not move");
+    assert.equal(left, 0);
+    await sleep(80);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s1");
+    await sleep(700);
+    assert.equal(store.peek()?.renew, "rsi1.fam.s2", "the heal replaces the presented credential when the times are equal");
+    assert.equal(store.peek()?.renewExpiresAt, seededAt);
+    assert.equal(family.reuse, 0);
+    assert.equal(family.ended, false);
   } finally {
     await cred.invalidate(true);
   }

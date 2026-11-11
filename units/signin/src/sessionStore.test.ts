@@ -918,6 +918,26 @@ test("recordIsCurrent orders one family by renewExpiresAt and leaves another fam
     true,
     "the same unparsable credential is still an exact match",
   );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    true,
+    "the credential just presented is current even when the times are equal",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 500, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    true,
+    "the credential just presented is current even when its time is later",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.fam.s3", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s2" }),
+    false,
+    "an equal time holding any other credential is not current",
+  );
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 1_000, ...fam, presentedRenew: "rsi1.fam.s1" }),
+    false,
+    "a different key is not current even when it holds the presented credential",
+  );
 });
 
 test("the record version and the default database name are the ones the README names", () => {
