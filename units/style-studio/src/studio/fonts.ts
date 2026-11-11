@@ -1,6 +1,6 @@
 // Fonts: system stacks, plus 48 open-licence fonts from @fontsource (latin subset, weights 400 and 600 only).
 // A font file is fetched only when a font is chosen or previewed (loadFont); the default sheet uses system fonts and loads nothing.
-import type { FontRef } from "@kaigilb/gilbplatformcode-style-runtime";
+import { BUNDLED_FONT_NAMES, type FontRef } from "@kaigilb/gilbplatformcode-style-runtime";
 import { FONT_CATALOGUE, FONT_LOADERS, type CatalogueFont, type FontCategory } from "./fonts.generated";
 
 export { FONT_CATALOGUE, type CatalogueFont, type FontCategory };
@@ -45,6 +45,8 @@ export const FONT_PAIRINGS: FontPairing[] = [
 ];
 
 const BY_NAME = new Map(FONT_CATALOGUE.map((f) => [f.family.toLowerCase(), f]));
+// One list of bundled names: style-runtime's (it infers a loaded sheet's font source). The catalogue below must carry exactly these.
+export { BUNDLED_FONT_NAMES };
 export const findFont = (name: string): CatalogueFont | undefined => BY_NAME.get(name.trim().toLowerCase());
 
 /** Fonts per slot for the old role-based lists: system first, then every catalogue font. */

@@ -49,6 +49,16 @@ loadStyle({
 });
 ```
 
+To read the style from the app's operating vault (public-read records, no sign-in), use the vault reader in this unit; the Studio is not needed:
+
+```ts
+import { loadStyle, makeVaultFetchRemote } from "@kaigilb/gilbplatformcode-style-runtime";
+
+loadStyle({ cacheKey: "style:myapp", fetchRemote: makeVaultFetchRemote(sheetUrl), fallbackUrl: "/style.tokens.json" });
+```
+
+`loadStyleFromVault`, `recordsToSheet` and `makeVaultFetchRemote` are here (added in 0.2.0); the Studio re-exports them. `toFetchUrl` maps an identity URL to the URL the browser fetches.
+
 Put a copy of `examples/style.tokens.json` in your app's public folder as `/style.tokens.json` and edit it, or let the Studio write it. Then call `initTheme()` once if the app has a light/dark switch.
 
 ## Examples

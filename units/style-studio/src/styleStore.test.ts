@@ -12,6 +12,8 @@ import {
 } from "./save/styleStore";
 import { contrastReport, defaultSheet, sheetFromCatalogue, sheetFromSeed } from "./studio/model";
 import { validateStyleSheet, type StyleSheet } from "@kaigilb/gilbplatformcode-style-runtime";
+import { BUNDLED_FONT_NAMES } from "@kaigilb/gilbplatformcode-style-runtime";
+import { FONT_CATALOGUE } from "./studio/fonts";
 import { wadaPalettes } from "./catalogue/wada.generated";
 
 const BASE = "https://vault.test";
@@ -122,6 +124,12 @@ function stored(s: StyleSheet) {
 
 const PUBLIC_GRANTEE = "https://example.test/base/t/PublicGrantee";
 
+describe("one list of bundled fonts", () => {
+  it("the studio catalogue carries exactly style-runtime's bundled names, in order", () => {
+    expect(FONT_CATALOGUE.map((f) => f.family)).toEqual([...BUNDLED_FONT_NAMES]);
+  });
+});
+
 describe("wada source text", () => {
   it("matches the catalogue's own source line", () => {
     expect(wadaPalettes[0]!.source).toBe(WADA_SOURCE_WORK);
@@ -162,14 +170,6 @@ describe("round trip through a fake vault (bare-key reads)", () => {
     expect(JSON.stringify(rec)).not.toMatch(/onAccent|"a:ok"|warn/);
   });
 
-  it("recordsToSheet accepts both a: and bare keys, and @id as object or string", () => {
-    const palette = { paletteColour: [{ colourHex: "#112233", colourRole: "primary" }, { "a:colourHex": "#f0f0f0", "a:colourRole": "background" }, { colourHex: "#101010", colourRole: "text" }], paletteSource: "handPicked" };
-    const s = recordsToSheet({ palette, brandKit: { "a:brandFont": "Inter" }, sheetRecord: { "a:cornerRadius": 4, buttonStyle: "pill" } });
-    expect(s.palette).toMatchObject({ accent: "#112233", paper: "#f0f0f0", ink: "#101010" });
-    expect(s.shape.radius).toBe(4);
-    expect(s.button).toBe("pill");
-    expect(s.fonts.sans).toEqual({ family: "Inter", source: "bundled" });
-  });
 });
 
 describe("request shapes", () => {
@@ -326,17 +326,6 @@ describe("loader with hostile vault data", () => {
     }
   });
 
-  it("never throws: 404, bad JSON, missing links, a link to another site", async () => {
-    const f404 = (async () => new Response("no", { status: 404 })) as unknown as typeof fetch;
-    expect((await loadStyleFromVault({ sheetUrl: `${BASE}/e/1`, fetch: f404 })).valid).toBe(false);
-    const fBad = (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch;
-    expect((await loadStyleFromVault({ sheetUrl: `${BASE}/e/1`, fetch: fBad })).valid).toBe(false);
-    const fNoLinks = (async () => new Response(JSON.stringify({ cornerRadius: 3 }), { status: 200 })) as unknown as typeof fetch;
-    expect((await loadStyleFromVault({ sheetUrl: `${BASE}/e/1`, fetch: fNoLinks })).errors[0]).toMatch(/palette link/);
-    const fEvil = (async () => new Response(JSON.stringify({ stylePalette: { "@id": "https://evil.test/p" }, styleBrandKit: "https://evil.test/b" }), { status: 200 })) as unknown as typeof fetch;
-    expect((await loadStyleFromVault({ sheetUrl: `${BASE}/e/1`, fetch: fEvil })).errors[0]).toMatch(/another site/);
-  });
-
   it("GETs are anonymous (no authorization header)", async () => {
     const { srv, ids } = await seedVault(() => {});
     srv.log.length = 0;
@@ -421,45 +410,6 @@ describe("toFetchUrl: identity URLs mapped to fetchable URLs", () => {
     expect(wire.every((w) => w.url.startsWith(FETCHED))).toBe(true);
   });
 
-  it("load: GETs are mapped; same-origin check uses identity origins; default unchanged", async () => {
-    const urls: string[] = [];
-    const sheetId = `${IDB}/lws/vault/${VID}/e/1`;
-    const recs: Record<string, unknown> = {
-      [sheetId]: { stylePalette: { "@id": `${IDB}/lws/vault/${VID}/e/2` }, styleBrandKit: { "@id": `${IDB}/lws/vault/${VID}/e/3` } },
-      [`${IDB}/lws/vault/${VID}/e/2`]: { paletteColour: [{ colourHex: "#112233", colourRole: "primary" }, { colourHex: "#ffffff", colourRole: "background" }, { colourHex: "#111111", colourRole: "text" }] },
-      [`${IDB}/lws/vault/${VID}/e/3`]: { brandFont: "Inter" },
-    };
-    const f = (async (i: RequestInfo | URL) => {
-      urls.push(String(i));
-      return new Response(JSON.stringify(recs[toId(String(i))] ?? {}), { status: 200 });
-    }) as typeof fetch;
-    const r = await loadStyleFromVault({ sheetUrl: sheetId, fetch: f, toFetchUrl: toFetch });
-    expect(urls).toHaveLength(3);
-    expect(urls.every((u) => u.startsWith(FETCHED))).toBe(true);
-    expect(r.errors).toEqual([]);
-    expect(await makeVaultFetchRemote(sheetId, f, toFetch)()).toBeTruthy();
-    expect(urls.slice(3).every((u) => u.startsWith(FETCHED))).toBe(true);
-    urls.length = 0;
-    await loadStyleFromVault({ sheetUrl: sheetId, fetch: f });
-    expect(urls.every((u) => u.startsWith("https://"))).toBe(true);
-  });
-});
-
-describe("load: read-back @type in any served form", () => {
-  // Server read shape: a framed doc whose "@type" is "t:X", bare "X" or the full /base/t/X URI
-  // (mirrors GilbApp src/lib/base/records.ts:413-414 typeUriFromFrame, and :733 doc["@type"]).
-  it.each([["t:"], [""], ["https://veda.gilb.com/base/t/"]])("accepts @type prefix %j", async (pre) => {
-    const sheetId = `https://id.example/lws/vault/v1/e/1`;
-    const recs: Record<string, unknown> = {
-      [sheetId]: { "@type": `${pre}AppStyleSheet`, stylePalette: { "@id": `https://id.example/lws/vault/v1/e/2` }, styleBrandKit: { "@id": `https://id.example/lws/vault/v1/e/3` } },
-      [`https://id.example/lws/vault/v1/e/2`]: { "@type": `${pre}ColourPalette`, paletteColour: [{ colourHex: "#112233", colourRole: "primary" }, { colourHex: "#ffffff", colourRole: "background" }, { colourHex: "#111111", colourRole: "text" }] },
-      [`https://id.example/lws/vault/v1/e/3`]: { "@type": `${pre}BrandKit`, brandFont: "Inter" },
-    };
-    const f = (async (i: RequestInfo | URL) => new Response(JSON.stringify(recs[String(i)] ?? {}), { status: 200 })) as typeof fetch;
-    const r = await loadStyleFromVault({ sheetUrl: sheetId, fetch: f });
-    expect(r.errors).toEqual([]);
-    expect(r.sheet.fonts.sans.family).toBe("Inter");
-  });
 });
 
 describe("entity URI, not LWS resource URL", () => {
