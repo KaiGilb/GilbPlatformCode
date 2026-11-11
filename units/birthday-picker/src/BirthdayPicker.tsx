@@ -118,6 +118,7 @@ export function BirthdayPicker({ label, value, onPick, onCancel, onClear, locale
   } as const;
   const labelStyle = { display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: T.soft } as const;
   const textButton = { minHeight: TARGET, padding: "0 4px", background: "none", border: "none", fontSize: 13, fontWeight: 500, textDecoration: "underline", cursor: "pointer" } as const;
+  const share = { flex: "1 1 0", minWidth: 64, maxWidth: 120 } as const;
 
   return (
     <div
@@ -195,18 +196,20 @@ export function BirthdayPicker({ label, value, onPick, onCancel, onClear, locale
           {problem}
         </p>
       ) : null}
-      <div style={{ display: "flex", gap: 12 }}>
-        <button type="button" onClick={save} disabled={!lawful} data-testid="birthday-save" style={{ ...textButton, color: lawful ? T.ink : T.soft, fontWeight: 700, opacity: lawful ? 1 : 0.6 }}>
-          {BIRTHDAY_WORDS.save}
-        </button>
-        <button type="button" onClick={onCancel} data-testid="birthday-cancel" style={{ ...textButton, color: T.soft }}>
-          {BIRTHDAY_WORDS.cancel}
-        </button>
+      {/* Mac order (RuleUiActionRowMacOrder): right-aligned; Clear (the third action) alone at the far left, then Cancel, then Save rightmost.
+          Where the row is narrow the buttons share the width equally, same order. */}
+      <div data-testid="birthday-actions" style={{ display: "flex", flexWrap: "nowrap", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
         {onClear && raw ? (
-          <button type="button" onClick={onClear} data-testid="birthday-clear" style={{ ...textButton, color: T.ink }}>
+          <button type="button" onClick={onClear} data-testid="birthday-clear" style={{ ...textButton, ...share, marginRight: "auto", color: T.ink }}>
             {BIRTHDAY_WORDS.clear}
           </button>
         ) : null}
+        <button type="button" onClick={onCancel} data-testid="birthday-cancel" style={{ ...textButton, ...share, color: T.soft }}>
+          {BIRTHDAY_WORDS.cancel}
+        </button>
+        <button type="button" onClick={save} disabled={!lawful} data-testid="birthday-save" style={{ ...textButton, ...share, color: lawful ? T.ink : T.soft, fontWeight: 700, opacity: lawful ? 1 : 0.6 }}>
+          {BIRTHDAY_WORDS.save}
+        </button>
       </div>
     </div>
   );

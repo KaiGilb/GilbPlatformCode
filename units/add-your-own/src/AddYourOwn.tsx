@@ -203,6 +203,7 @@ export function AddYourOwn({ noun, onOpen, onSave, onCancel, message, children, 
       />
     );
   const btn = { minHeight: TARGET, borderRadius: T.radius, padding: "0 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" } as const;
+  const share = { flex: "1 1 0", minWidth: 80, maxWidth: 160 } as const;
   return (
     <form
       ref={form}
@@ -219,17 +220,20 @@ export function AddYourOwn({ noun, onOpen, onSave, onCancel, message, children, 
         <span style={{ fontSize: 12, color: T.soft }}>{ADD_OWN_WORDS.formName(noun)}</span>
         {children}
       </div>
-      <button
-        type="submit"
-        data-testid="add-own-save"
-        disabled={saving}
-        style={{ ...btn, border: `1px solid ${T.accent}`, background: T.accent, color: T.onAccent, opacity: saving ? 0.7 : 1 }}
-      >
-        {saving ? ADD_OWN_WORDS.saving : ADD_OWN_WORDS.save}
-      </button>
-      <button type="button" data-testid="add-own-cancel" disabled={saving} onClick={cancel} style={{ ...btn, border: `1px solid ${T.line}`, background: T.surface, color: T.ink }}>
-        {ADD_OWN_WORDS.cancel}
-      </button>
+      {/* Mac order (RuleUiActionRowMacOrder): right-aligned, Cancel immediately left of Save, Save rightmost. Where the row is narrow the two share the width equally, same order. */}
+      <div data-testid="add-own-actions" style={{ flexBasis: "100%", display: "flex", flexWrap: "nowrap", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" data-testid="add-own-cancel" disabled={saving} onClick={cancel} style={{ ...btn, ...share, border: `1px solid ${T.line}`, background: T.surface, color: T.ink }}>
+          {ADD_OWN_WORDS.cancel}
+        </button>
+        <button
+          type="submit"
+          data-testid="add-own-save"
+          disabled={saving}
+          style={{ ...btn, ...share, border: `1px solid ${T.accent}`, background: T.accent, color: T.onAccent, opacity: saving ? 0.7 : 1 }}
+        >
+          {saving ? ADD_OWN_WORDS.saving : ADD_OWN_WORDS.save}
+        </button>
+      </div>
       {message ? (
         <p id={msgId} role="alert" data-testid="add-own-message" style={{ flexBasis: "100%", margin: 0, fontSize: 12.5, color: T.bad }}>
           {message}

@@ -45,12 +45,16 @@ export function SettingsScreen({ initial, onSave, onCancel }: { initial: AppSett
           ))}
         </ul>
       )}
-      <button type="submit">Save settings</button>
-      {onCancel && (
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
-      )}
+      {/* Mac order (RuleUiActionRowMacOrder): right-aligned, Cancel left of the primary, "Save settings" rightmost.
+          This app's host-agnostic check does not admit the plan-button-row unit, so the order is built here with inline layout. */}
+      <div data-plan-button-row="" style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+        {onCancel && (
+          <button type="button" onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+        <button type="submit">Save settings</button>
+      </div>
     </form>
   );
 }

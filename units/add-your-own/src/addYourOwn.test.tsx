@@ -134,4 +134,13 @@ describe("AddYourOwn double-save guard", () => {
     await waitFor(() => expect(input.getAttribute("aria-invalid")).toBeNull());
     expect(input.getAttribute("aria-describedby")).toBeNull();
   });
+
+  it("the buttons are in the Mac order: Cancel, then Save rightmost, right-aligned", async () => {
+    render(<Harness onSave={() => true} />);
+    press(button());
+    await screen.findByLabelText("Email value");
+    const row = screen.getByTestId("add-own-actions");
+    expect([...row.querySelectorAll("button")].map((b) => b.getAttribute("data-testid"))).toEqual(["add-own-cancel", "add-own-save"]);
+    expect(row.style.justifyContent).toBe("flex-end");
+  });
 });

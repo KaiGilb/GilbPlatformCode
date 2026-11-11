@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/plan-button-row",
   "package": "@kaigilb/gilbplatformcode-plan-button-row",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "A right-aligned row of buttons for a card, in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -12,7 +12,8 @@
     ]
   },
   "namedChanges": [
-    "The header comment is reworded; no code change."
+    "The header comment is reworded; no code change.",
+    "Added after the copy (0.1.1): the optional primary, cancel and destructive slots, the narrow-width rule and the dev warning; the children API is unchanged."
   ],
   "newFiles": [],
   "host": [],
