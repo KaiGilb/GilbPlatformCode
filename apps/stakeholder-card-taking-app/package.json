@@ -1,6 +1,7 @@
 {
   "name": "stakeholder-card-taking-app",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A small app that takes the online stakeholder card and its ready-made GilbPlatform host from this repository, signs a person in, and draws a person from their circles as a card, with \"+ Add your own\", with no host object written.",

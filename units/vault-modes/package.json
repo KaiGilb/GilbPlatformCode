@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-modes",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Read and write kept. Append and control are dropped. A missing id is not a row.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

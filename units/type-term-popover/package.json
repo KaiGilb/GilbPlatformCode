@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-term-popover",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology. The host provides the definition reader once.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

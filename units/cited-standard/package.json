@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-cited-standard",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Every standard one checklist question cites. A single string and a list are both read.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-description-help",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The help panel for writing a Solution's or Function's Description in Keyword parts: what a Keyword is, Assumptions, sub-parts, moving, pasting many parts and sources, with examples that use the card's own tag.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

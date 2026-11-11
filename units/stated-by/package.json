@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stated-by",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Tells whether a fact was stated by a given person, comparing addresses as the platform does.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

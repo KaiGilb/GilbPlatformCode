@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-fact-items",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Changes the items of one fact of a record, with If-Match and a queue per record.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

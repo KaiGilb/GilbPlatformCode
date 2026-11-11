@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-actions",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Call, text, and email links. Does not invent a page for a bare @name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

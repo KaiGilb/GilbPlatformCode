@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-platform-fetch",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "An authenticated fetch for a platform client: it moves every URL under the platform-host rule first, then signs it for that one request with the session's DPoP proof.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

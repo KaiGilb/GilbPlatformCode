@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-command-match",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether a command label or keyword contains the query. An empty query keeps the command.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

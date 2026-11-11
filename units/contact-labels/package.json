@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-labels",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Shows the kinds and circles a person has for the holder, and lets the holder add one with '+ Relation'.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

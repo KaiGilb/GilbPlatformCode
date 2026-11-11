@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-card-write",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Value card's write layer: its levels, Scale qualifiers and their option definitions, Meters and Meter lines and the Scale record kept as lists, where one edit becomes the smallest writes (one changed item is one PATCH of its record, a new item one POST, a removed item one DELETE), with conflict handling, rollback and the migration of older stored lists. The host provides every network call and cache.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

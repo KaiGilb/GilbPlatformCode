@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-org-hierarchy",
   "version": "0.1.2",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Shows and edits an organization's parent organization and units.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

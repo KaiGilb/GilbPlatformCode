@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-display-friendly",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A short label from an email or an address. Only a /base path shows the host.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

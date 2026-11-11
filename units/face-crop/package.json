@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-face-crop",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A person marks the part of their picture that becomes their face, or uses the whole picture; the wire form of that mark; and the way back from the shown face to the master.",
@@ -9,6 +10,7 @@
     "./facecrop.css": "./src/facecrop.css"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

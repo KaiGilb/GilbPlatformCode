@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-card",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One person's employments as a framed group: company, role dates, titles; add, edit and remove.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

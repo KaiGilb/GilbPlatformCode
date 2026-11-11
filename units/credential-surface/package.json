@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-credential-surface",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether an error must be shown. These five names are not a shorter list.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

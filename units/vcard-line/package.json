@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vcard-line",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Escapes and folds one vCard line. Does not build the card.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

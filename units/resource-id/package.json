@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-resource-id",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The opaque id from a resource address. An address that is not one is returned unchanged.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

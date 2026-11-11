@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-clear",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Clears a place rung on a draft. Does not choose who can see it.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

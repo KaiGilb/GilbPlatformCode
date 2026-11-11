@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-document-rename",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The title prefill and the rename patch for a standards document. The key is the bare slug title.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

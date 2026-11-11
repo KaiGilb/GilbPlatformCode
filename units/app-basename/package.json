@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-app-basename",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The app mount with one trailing slash removed. A missing mount becomes an empty path.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

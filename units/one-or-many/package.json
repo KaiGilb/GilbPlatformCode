@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-one-or-many",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One object or a list, as a list. A single served object is not dropped.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

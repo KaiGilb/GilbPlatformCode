@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-card-facts",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The facts a Function, Solution or Value card reads and writes on the record itself: line sources, meters, status lines, the concept, and served lists, as pure functions over the stored wire shapes.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

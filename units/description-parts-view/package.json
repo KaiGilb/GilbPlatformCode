@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-description-parts-view",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Description line of a Solution or Solution Constraint: one record per Keyword part, shown as a tree; add, edit the text and source, paste many parts, move by buttons, keys or drag, remove a part with its sub-parts, all written in one queue. The host provides every read and write.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

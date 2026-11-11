@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-grantee-hits",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which reachable vaults match a name, and which the registry already offered. An address is not a match.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

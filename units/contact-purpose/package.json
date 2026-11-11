@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-purpose",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Work or Private from an email slot. A phone slot is not a purpose.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

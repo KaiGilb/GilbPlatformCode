@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-errors",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.",
@@ -9,6 +10,7 @@
     "./pictureErrors.css": "./src/pictureErrors.css"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

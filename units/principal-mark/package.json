@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-principal-mark",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A grantee is public only when the id matches exactly. The host supplies the id.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

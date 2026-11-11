@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-interest-rows",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A person card's Interests: each with its note, who added it and who sees it.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

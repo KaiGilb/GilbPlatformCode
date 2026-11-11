@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-share-refusal",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sentence for a refused share. The server's reason is kept.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

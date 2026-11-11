@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-label-hyphen",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A label made into a single hyphenated word. Not the list of relation verbs.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

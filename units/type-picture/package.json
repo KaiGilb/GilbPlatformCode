@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-picture",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A GilbVeda type's picture and nothing else: no picture, or one that fails to load, draws nothing. The host makes one picture source and provides it once.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

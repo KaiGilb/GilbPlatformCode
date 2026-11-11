@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-principal-row",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The four lines of one access row. A missing name is not the key, and silence is not a fact.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

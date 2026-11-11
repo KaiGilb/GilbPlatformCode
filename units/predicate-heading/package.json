@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-predicate-heading",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A heading made from a predicate's own spelling. Not a decision to show the field.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

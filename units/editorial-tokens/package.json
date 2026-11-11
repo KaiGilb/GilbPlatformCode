@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-editorial-tokens",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The light, dark, and colour-blind colour sheet. Five anchors; the rest is mixed from them.",
@@ -9,6 +10,7 @@
     "./tokens.css": "./src/tokens.css"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

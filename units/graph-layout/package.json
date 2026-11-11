@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-graph-layout",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Places graph cards. Directed links rank top to bottom. Nothing is stored.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

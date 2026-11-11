@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-claims-card",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Address group of a card: the list of a person's addresses, the add form, and what is said when the addresses were not all read.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

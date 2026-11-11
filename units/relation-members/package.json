@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-relation-members",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The members named on a relation. A bare word is kept only when it is an @id.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

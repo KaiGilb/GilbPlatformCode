@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-hit-details",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Says what a catalogue place is and where it is, for a list of same-named places.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

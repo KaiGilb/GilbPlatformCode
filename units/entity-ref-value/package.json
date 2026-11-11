@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-entity-ref-value",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Shows a stored reference to another record as its name, a button that opens it, with the address on a quiet second line. The host provides the hook that finds the name once.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

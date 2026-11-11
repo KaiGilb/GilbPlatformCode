@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-owned-claim",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which claims belong to one employment, and the title token inside a slot.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

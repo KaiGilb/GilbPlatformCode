@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-person-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Orders and splits a person's name fields, as the person card lays them out.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

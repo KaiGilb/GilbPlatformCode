@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-skill-uri-label",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A short label from a skill address when the catalogue gave no name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-base-record",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The record shapes the Plan units read, as types: a record as the app holds it (BaseRecord), the served document behind it (ServedDocument) and a row of the record list (GridRecord).",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

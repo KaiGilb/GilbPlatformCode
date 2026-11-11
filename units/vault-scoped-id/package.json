@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-scoped-id",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The vault id in a vault-scoped address. A missing slash is not an id.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

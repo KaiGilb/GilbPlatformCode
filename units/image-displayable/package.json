@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-image-displayable",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether the browser in front of you can paint this picture. It asks the browser; it keeps no list of formats.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

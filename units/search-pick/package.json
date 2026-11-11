@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-search-pick",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One search-and-pick behaviour. The catalogue changes. The messages do not.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

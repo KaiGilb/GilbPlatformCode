@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-session-vault-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sign-in vault name, or Unnamed vault and its id. Not the reachable-vault label.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-ref",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "An absolute address kept as a reference. A local name is not turned into an address.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

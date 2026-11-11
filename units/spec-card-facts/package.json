@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-spec-card-facts",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The facts a Value, Function, or Solution form stores, and the form fields read back. The type name is a different unit.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

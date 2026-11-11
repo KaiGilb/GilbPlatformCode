@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-page-window",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether another page should be asked for. The complete flag is not the stop.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-records-of-type",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lists every record of one type in a vault, page by page, and says when the listing stopped before the end.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

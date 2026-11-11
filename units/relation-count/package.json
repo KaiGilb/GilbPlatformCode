@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-relation-count",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which records stay in view at a hop depth from the selected record. Not a count of relations.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

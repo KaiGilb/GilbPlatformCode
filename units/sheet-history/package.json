@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-sheet-history",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Ties an open sheet to the browser's Back button.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

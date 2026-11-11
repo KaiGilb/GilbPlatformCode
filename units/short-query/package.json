@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-short-query",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sentence that says how many more letters a type search still needs. The minimum is passed in.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

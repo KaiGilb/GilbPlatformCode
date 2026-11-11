@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-button",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One button look for every app: primary, secondary, ghost, or danger. Every size keeps a 44 px tap target.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

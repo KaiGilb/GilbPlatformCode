@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-veda-labels",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads the display labels of ontology terms and attributes, once per page, and offers them to a screen.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

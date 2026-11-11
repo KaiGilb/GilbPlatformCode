@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-lws-records",
   "version": "0.4.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

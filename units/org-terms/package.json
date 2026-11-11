@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-org-terms",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Resolves the ontology spellings an organization card reads: its served terms and the employment link.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-value-line-kit",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The shared pieces of the Value card's lines: the line props, text and select editors that save on Enter or on leaving, the source control slot, the menu of qualifiers a level or meter has not set, the move button for older stored lists, and the host the lines read through.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

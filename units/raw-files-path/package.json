@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-raw-files-path",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether a value is a raw vault file path. That path is not a picture address.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

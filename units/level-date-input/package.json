@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-level-date-input",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The date field of a level's popover in the value graph: a date input that tells the host on change, Enter, blur and Escape, and shows the year alert when the host asks. The host keeps the key, the alert state and the write.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

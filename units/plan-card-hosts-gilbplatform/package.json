@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-card-hosts-gilbplatform",
   "version": "0.2.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The ready-made GilbPlatform host for the four Plan cards: one provider that sets the platform's origins and the session and mounts the fourteen host contexts, so the Value, Function, Solution and Resource cards draw, read and save with no host object written.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

@@ -1,0 +1,10 @@
+GilbPlatformCode Licence (version 1, 2026-11-11)
+Copyright © 2026 Kai Gilb. All rights reserved, except as granted below.
+
+1. Who. Anyone who builds an app that runs on GilbPlatform ("your app"), and any AI that builds it for them.
+2. What you may do. Copy any unit, example app or script from this repository into your app's own repository; change it; build it into your app; ship your app, with it, to your users; and keep it in your repository.
+3. What you may not do. Use this code in software that does not run on GilbPlatform; publish, sell or offer this code on its own, apart from your app; use this code, or any copy of it, to train or fine-tune an AI model; or remove this licence or the notices.
+4. Third-party parts. Some units contain parts under their own licences (for example fonts under OFL-1.1 and the Wada colour data under MIT), listed in that unit's THIRD-PARTY-NOTICES.md or LICENSE.md. Those parts follow their own licences, and this licence does not narrow them.
+5. No warranty. The code is provided "as is", without warranty of any kind. Kai Gilb is not liable for any claim or damage arising from its use.
+6. Ending. If you break these terms, your right to use the code ends. If your app stops running on GilbPlatform, you may no longer ship new versions of it that contain this code.
+7. The platform. The GilbPlatform standards and the platform itself remain under GilbPlatform.Licence.

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-scale-facts",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The scale fields on a relation. A bracketed date is the level date. Endpoints alone are not content.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

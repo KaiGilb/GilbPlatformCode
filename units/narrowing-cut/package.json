@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-narrowing-cut",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Apply filters the host registered. A filter that is not ready does not empty the list.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

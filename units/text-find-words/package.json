@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-text-find-words",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The two sentences under an inside-text find. Only an exact zero says nothing matched.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

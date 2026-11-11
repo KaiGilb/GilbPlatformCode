@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-pick-or-create",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Finds a holder's existing record of a person or makes one, with the tag and the duplicate guard, and says plainly what it wrote when a later step fails.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

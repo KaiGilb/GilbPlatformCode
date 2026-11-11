@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-solution-card",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The whole Solution card: one component that draws the Plan card of a record of type Solution or Solution Constraint, with the lines of that type in order, every read and write supplied by the host.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-qualifier-value-picker",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One chooser for a qualifier's value or values: the defined options with their definitions as hints, ALL (every value), a free-text Other, and Clear; several may be ticked, ALL is exclusive, Enter or leaving commits one change and Escape commits nothing.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

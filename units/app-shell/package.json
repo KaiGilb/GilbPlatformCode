@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-app-shell",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The frame of an app: three resizable regions on a wide window; below 840 px the centre alone, a bottom bar, and the side regions as drawers. The host fills the regions.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

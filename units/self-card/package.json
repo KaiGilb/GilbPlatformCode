@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-self-card",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The address of a vault's own person card, derived from the vault root the way the server derives it. No pointer needed.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

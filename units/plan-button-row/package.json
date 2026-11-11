@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-button-row",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A card's button row: right-aligned, in Mac order, the positive action rightmost. It only lays the buttons out.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

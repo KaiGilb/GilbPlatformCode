@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-claim-write",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Writes a person's addresses to the vault that holds them: create, change and remove, one request per fact, never to the place catalogue.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

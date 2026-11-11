@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-color-scheme",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Light, dark, or follow the system. The host chooses where the choice is stored.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

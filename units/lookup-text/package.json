@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-lookup-text",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The last part of a lookup tag, and the stored text with the byte-order mark removed.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

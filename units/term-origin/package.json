@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-origin",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one setting \"which origin serves the GilbVeda type documents\", so every Plan unit builds type addresses (<origin>/base/t/<Name>) the same way: the app sets it once at start-up.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

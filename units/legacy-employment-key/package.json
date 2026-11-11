@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-legacy-employment-key",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The old orgName and title keys. Index 1 has no number. An emp handle is not one of these keys.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

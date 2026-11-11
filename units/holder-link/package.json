@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-holder-link",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Whether a stored link may be read on the holder's host. A bare id may. Another host may not.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

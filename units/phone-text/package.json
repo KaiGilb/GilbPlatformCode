@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-phone-text",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Splits a stored phone at the space. Does not guess a code when there is no space.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

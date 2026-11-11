@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-card",
   "version": "0.2.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

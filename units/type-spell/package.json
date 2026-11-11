@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-type-spell",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One absolute type address from any spelling. The host supplies the address. A foreign address stays as it was.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

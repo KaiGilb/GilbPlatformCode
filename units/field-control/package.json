@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-field-control",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One field. The kind picks a short line, a long text, an email, a web address, a date, or a closed list.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

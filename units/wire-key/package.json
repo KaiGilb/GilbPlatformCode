@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-wire-key",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The read spelling of a stored attribute. One leading a: is removed. This is not a write.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-scale-doc",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads a closed scale from the document the host already fetched. Does not fetch.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

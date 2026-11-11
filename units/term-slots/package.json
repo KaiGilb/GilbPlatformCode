@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-slots",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Finds a card field by its ontology term, and reads its spelling, label and value set from the master.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

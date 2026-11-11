@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-resource-card",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src",
     "test"
   ],

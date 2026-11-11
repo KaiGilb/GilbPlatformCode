@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-annotation",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Keeps the holder's private My Note and Where / How we met about a person, saved as they type.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

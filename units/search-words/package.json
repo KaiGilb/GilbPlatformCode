@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-search-words",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Spaced words from a type name, and the queries to try when a bare name misses.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

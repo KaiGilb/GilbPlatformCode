@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-step-order",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Where a step sits, which steps a drag must rewrite, and the facts a new step writes.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

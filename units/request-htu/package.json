@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-request-htu",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The request address a proof is bound to. The query is not part of it.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

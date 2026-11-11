@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-org-employees",
   "version": "0.2.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lists an organization's employees inline and in a searchable sheet.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

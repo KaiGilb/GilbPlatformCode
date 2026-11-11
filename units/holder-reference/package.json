@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-holder-reference",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Adds a reference from a card field to another record with a version-checked write and the ontology's rules for which references are allowed.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

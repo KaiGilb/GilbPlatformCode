@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-named-type",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Bare type names for a word search. An empty list is not a search of every type.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

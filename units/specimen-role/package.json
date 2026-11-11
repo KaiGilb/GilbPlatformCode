@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-specimen-role",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The declared role line. Absence, unknown, and a known word stay different.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

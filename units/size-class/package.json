@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-size-class",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Compact, medium, or expanded, from the window width. The same three widths every app can share.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

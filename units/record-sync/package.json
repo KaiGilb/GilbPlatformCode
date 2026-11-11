@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-sync",
   "version": "0.4.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A vault's typed record list over the platform's record interface, and only what changed in it since a stored position, read through the authenticated fetch the host injects.",
@@ -9,6 +10,7 @@
     "./complete-copy": "./src/completeCopy.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

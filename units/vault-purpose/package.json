@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-purpose",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which type a new vault may represent. The sign-in seat is not a choice. Group stores CollectiveAgent.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

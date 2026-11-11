@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-address-rows",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A person record's Address section: reads the addresses, shows them as a card group, and saves, changes and removes them in the holder's vault.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

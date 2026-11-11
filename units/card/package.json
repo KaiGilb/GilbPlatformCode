@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-card",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "One card look for every app: a raised surface with a header, a title, a description, and content.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

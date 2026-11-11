@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-one-card",
   "version": "0.3.3",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

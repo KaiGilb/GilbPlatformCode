@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-field-sets",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Says which fields each kind of stakeholder offers, read from the ontology master, and which slot holds a party's name.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

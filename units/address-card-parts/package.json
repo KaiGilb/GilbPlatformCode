@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-address-card-parts",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The parts of one address on a card: a stored address as compact lines or an editor, its bound places by name, its text rows.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

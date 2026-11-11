@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-reachable-vaults",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads the vaults the signed-in person can reach, with their names, parents and landing flag, and decorates the session's vault set with them.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

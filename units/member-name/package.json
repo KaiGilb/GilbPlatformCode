@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-member-name",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "What to call one group member, and which address identifies the row. www and id are kept.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

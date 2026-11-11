@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-display",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The heading and text for one catalogue place on a card. An unresolved value stays the raw value.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

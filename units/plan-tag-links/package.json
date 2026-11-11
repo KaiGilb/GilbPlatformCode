@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-tag-links",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The link lines of a Plan card: Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System, each shown by the linked records' live tags, with the host doing every read, cache and write.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

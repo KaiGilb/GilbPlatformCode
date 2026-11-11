@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-employment-rows",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A person record's Employment section: the employments over the record's edges, in the card's modes.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

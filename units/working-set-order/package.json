@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-working-set-order",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Display order and the working-set address parameters. Not a search. The type registry is not included.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

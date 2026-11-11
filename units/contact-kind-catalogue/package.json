@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-contact-kind-catalogue",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads the master catalogue of contact kinds and the holder's own additions, with caches.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

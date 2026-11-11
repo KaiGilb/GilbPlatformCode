@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-type-field",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The Type line of a Plan card: one GilbVeda type chosen with the type chooser and shown as a chip that opens the type's definition; stored as the term address, with \"No GilbVeda type\" stored as none, and a question before an earlier concept is replaced.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

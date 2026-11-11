@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-kind-home",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Which standards home a type belongs to. Stanza is not its own home. A bad link opens Process.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

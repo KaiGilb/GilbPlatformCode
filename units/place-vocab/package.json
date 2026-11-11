@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-vocab",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Asks the ontology master how an address is spelled: the claim types, the attributes and the labels of the free-text lines.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

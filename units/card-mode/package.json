@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-card-mode",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The mode of a record card: presentation until the user clicks into a value, then edit, with a provider, the hook, the group registry for an add chooser, and the Edit, Done and plus buttons.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

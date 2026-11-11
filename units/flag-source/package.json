@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-flag-source",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads a country's flag from the geo catalogue once and keeps it on the device.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

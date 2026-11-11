@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-not-requested",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sentence for a read that was never issued. It is not the sentence for an empty vault.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

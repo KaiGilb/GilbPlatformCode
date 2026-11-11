@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-help-doc",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The building blocks of an in-app help page: a layout with a contents list, sections, steps, lists, examples, keys, notes and in-page links.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

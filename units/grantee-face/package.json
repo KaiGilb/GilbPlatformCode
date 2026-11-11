@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-grantee-face",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Loads the profile photo another person shares with the viewer.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

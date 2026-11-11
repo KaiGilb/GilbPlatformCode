@@ -1,6 +1,7 @@
 {
   "name": "plan-cards-taking-app",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A small app that takes the four Plan cards and the ready-made GilbPlatform host from this repository, signs a person in, and draws, reads and saves a card in their vault, with no host object written.",

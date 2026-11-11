@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-jwt-subject",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The sub claim from a token the caller already holds. The signature is not checked.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

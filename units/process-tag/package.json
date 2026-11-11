@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-process-tag",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The document tag on a process, and the patch that sets, clears, or refuses a rename.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

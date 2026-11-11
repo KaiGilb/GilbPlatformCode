@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-pick",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Lets a person add pictures the way their device allows: take a photo with the camera, choose one or many from the device, or paste or drop them onto the page, and hands the app the picture files.",
@@ -9,6 +10,7 @@
     "./picturePick.css": "./src/picturePick.css"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-predicate-tree",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Walk a relation tree as deep as the catalogue goes, and read a link backwards only when the catalogue supplies the words.",
   "exports": { ".": "./src/index.ts" },
-  "files": ["src"],
+  "files": ["src", "LICENSE"],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-list-reader",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads a holder's stakeholders, records and online people together, into one deduplicated list with names and photos, within a request budget.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

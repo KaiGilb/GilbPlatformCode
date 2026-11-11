@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-language-row",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws one language by its name with its country flag, never by its address.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

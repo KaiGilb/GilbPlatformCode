@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-person-field-row",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws one field of a person's own card as an editable row, with a picker where one exists.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

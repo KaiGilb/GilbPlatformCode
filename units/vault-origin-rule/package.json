@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-origin-rule",
   "version": "0.1.1",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "The one rule for which origin a vault address names and which URL may receive the app's credential, so every address and credential check answers the same way.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-sortable-tree",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "A drag-and-drop tree of rows that reorders and re-nests: it writes nothing, it reports where a dragged row was dropped.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

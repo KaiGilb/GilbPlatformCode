@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-add-information",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Offers '+ Add Information' on a record card and opens the sheet of groups to add.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

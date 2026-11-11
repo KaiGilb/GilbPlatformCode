@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-stakeholder-contact-header",
   "version": "0.1.3",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Draws a stakeholder's header with circle chips, kind chips and the vault photo.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

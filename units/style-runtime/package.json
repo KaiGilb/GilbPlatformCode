@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-style-runtime",
   "version": "0.2.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Applies the app's style at start: loads one style.tokens.json, validates it, and writes the CSS custom properties with no flash.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {

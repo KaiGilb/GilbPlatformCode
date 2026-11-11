@@ -1,6 +1,7 @@
 {
   "name": "@kaigilb/gilbplatformcode-term-view",
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "description": "Reads an ontology term the host already fetched. Does not search or write.",
@@ -8,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "files": [
+    "LICENSE",
     "src"
   ],
   "scripts": {
