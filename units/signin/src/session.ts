@@ -347,8 +347,11 @@ export class SessionCredential {
    */
   private generation = 0;
   /**
-   * Set by sign-out. `restore` on this same instance must not adopt a record the sign-out
-   * was meant to delete, even when the delete has not landed yet.
+   * This instance has no sign-in. An explicit sign-out sets it together with
+   * {@link explicitClear}. A dead sign-in (renew 401, expired renewal) sets it
+   * alone: `authHeaders` and `renew` refuse until `restore` or a new sign-in.
+   * `restore` on that dead instance is a fresh page load and does not clear.
+   * Only {@link explicitClear} makes `restore` delete the record.
    */
   private signedOut = false;
   /**
@@ -405,10 +408,23 @@ export class SessionCredential {
    */
   private renewMarkFailed = false;
   /**
-   * This instance has had its record in the store. An empty load inside renew is then
-   * another tab's sign-out. A load that fails or times out is not an empty record.
+   * This instance has had its record in the store. An empty load inside renew is
+   * another tab's sign-out only when {@link lastStoreFamily} is this tab's own
+   * family. A load that fails or times out is not an empty record.
    */
   private hadStoredRecord = false;
+  /**
+   * Family of the record this tab last saw in the store or last wrote.
+   * Undefined until that has happened. Null when that record had no family id.
+   * An empty store signs this tab out only when this is the family it still holds.
+   */
+  private lastStoreFamily: string | null | undefined = undefined;
+  /**
+   * The store was empty and the record that had been there was not this family.
+   * The next save of this tab's own record may fill that hole. A present record
+   * is still compared. Cleared once that save lands, and on sign-out or death.
+   */
+  private fillEmptyStore = false;
   /** Rotated record a failed save still has to land. Null when nothing is outstanding. */
   private rotationHealRecord: StoredSession | null = null;
   private rotationHealExpect: CurrentRecordExpect | null = null;
@@ -742,6 +758,7 @@ export class SessionCredential {
     this.generation++;
     this.signedOut = true;
     this.explicitClear = true;
+    this.fillEmptyStore = false;
     this.canCreateRecord = false;
     this.carriedSession = null;
     this.clearRenewal();
@@ -785,6 +802,11 @@ export class SessionCredential {
    *
    * A sign-out (`invalidate(true)`) that lands while the load is in flight wins: nothing is
    * adopted and the store is cleared.
+   *
+   * When this instance's own sign-in has died, and the person did not sign out, this is
+   * the same as `restore` on a fresh page. It loads the store and adopts a valid record
+   * of any family. It does not clear unconditionally. `authHeaders` and `renew` keep
+   * refusing until this call, or a new sign-in, succeeds.
    */
   restore(): Promise<GilbSession | null> {
     this.touchRotationHeal();
@@ -1114,6 +1136,8 @@ export class SessionCredential {
     // A newer adopt bumped the epoch and may still need to create. Don't disarm it.
     if (create && this.epoch === epoch) this.canCreateRecord = false;
     this.hadStoredRecord = true;
+    this.fillEmptyStore = false;
+    this.noteStoreFamily(this.renewCredential);
   }
 
   private async cachedPublicKey(key: DpopWebCryptoKey): Promise<CryptoKey> {
@@ -1145,6 +1169,32 @@ export class SessionCredential {
     const at = this.renewExpiresAtMs;
     if (typeof at === "number" && Number.isFinite(at)) return { publicKeyId, renew, renewExpiresAt: at, family };
     return { publicKeyId, renew, family };
+  }
+
+  /**
+   * The expect for a save. When the store was emptied by another family's record,
+   * the save may also fill a hole. A present record is still the family compare.
+   */
+  private saveExpect(publicKeyId: string, renew: string): CurrentRecordExpect {
+    const expect = this.renewExpect(publicKeyId, renew);
+    if (this.fillEmptyStore) expect.allowAbsent = true;
+    return expect;
+  }
+
+  /** Remember the family of a record this tab saw or wrote. Null means no family id. */
+  private noteStoreFamily(renew: unknown): void {
+    this.lastStoreFamily = familyOf(renew);
+  }
+
+  /**
+   * The empty store held this tab's own family. Another family's record, or a
+   * record whose family was never seen, is not this tab's sign-out.
+   */
+  private emptiedRecordWasOurs(heldRenew: string): boolean {
+    if (this.lastStoreFamily === undefined) return false;
+    const own = familyOf(heldRenew);
+    if (own === null || this.lastStoreFamily === null) return false;
+    return this.lastStoreFamily === own;
   }
 
   /**
@@ -1235,6 +1285,8 @@ export class SessionCredential {
       const landed = () => {
         if (this.epoch === epoch) this.canCreateRecord = false;
         this.hadStoredRecord = true;
+        this.fillEmptyStore = false;
+        this.noteStoreFamily(renewAtInvalidate);
       };
       if (!saved.ok) {
         void pending.then((value) => {
@@ -1268,16 +1320,19 @@ export class SessionCredential {
   }
 
   /**
-   * This tab's sign-in is dead. The in-memory sign-in ends, the same way an
-   * explicit sign-out does. The store is cleared only when it still holds
-   * `expect`. Another tab's newer key, another family, or another credential
-   * is left alone.
+   * This tab's sign-in is dead. The in-memory sign-in ends, so `authHeaders`
+   * and `renew` refuse until `restore` or a new sign-in. This is not an explicit
+   * sign-out: {@link explicitClear} stays unset, and a later `restore` loads the
+   * store the way a fresh page does. The store is cleared only when it still
+   * holds `expect`. Another tab's newer key, another family, or another
+   * credential is left alone.
    */
   private async endDeadSignIn(expect: CurrentRecordExpect): Promise<void> {
     this.abortRenewWait();
     this.minted = null;
     this.generation++;
     this.signedOut = true;
+    this.fillEmptyStore = false;
     this.canCreateRecord = false;
     this.carriedSession = null;
     this.clearRenewal();
@@ -1423,9 +1478,11 @@ export class SessionCredential {
       }
     }
     // Adopted from the store: a later save must not create the record again.
-    // An empty load on a later renew is another tab's sign-out, not a missing save.
+    // An empty load on a later renew is another tab's sign-out only when the
+    // record this tab last saw was its own family.
     this.canCreateRecord = false;
     this.hadStoredRecord = true;
+    this.noteStoreFamily(record.renew);
     this.publicCryptoKey = record.keyPair.publicKey;
     this.publicKeyId = publicKeyId;
     this.key = { publicJwk: jwk, privateKey: record.keyPair.privateKey };
@@ -1457,9 +1514,13 @@ export class SessionCredential {
    * Null when this restore may still adopt. Otherwise the session to return, and this
    * restore adopts nothing and writes nothing.
    *
-   * Sign-out wins: the stored record is cleared and the result is null. A sign-in that
-   * started after `serial` was captured, or a token already held, keeps that session
-   * (or null when the sign-in has not produced a token yet) and does not clear.
+   * An explicit sign-out wins: the stored record is cleared and the result is null.
+   * A dead sign-in does not clear. When this restore started after that death, the
+   * death flag is dropped and the load continues, the same as a fresh page. A death
+   * that lands during this load adopts nothing from the snapshot and does not clear.
+   * A sign-in that started after `serial` was captured, or a token already held,
+   * keeps that session (or null when the sign-in has not produced a token yet) and
+   * does not clear.
    *
    * @param clearOnSignOut when false, a sign-out is not cleared from here. The adopt
    *   that follows must not await a store call.
@@ -1470,10 +1531,17 @@ export class SessionCredential {
     serial: number,
     clearOnSignOut = true,
   ): Promise<{ session: GilbSession | null } | null> {
-    if (gen !== this.generation || this.signedOut) {
+    if (this.explicitClear) {
       if (clearOnSignOut) await this.bounded(this.invokeStore(() => store.clear()));
       return { session: null };
     }
+    if (gen !== this.generation) {
+      if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
+        return { session: this.minted?.session ?? null };
+      }
+      return { session: null };
+    }
+    if (this.signedOut) this.signedOut = false;
     if (this.minted || this.signInsInFlight > 0 || serial !== this.signInSerial) {
       return { session: this.minted?.session ?? null };
     }
@@ -1501,8 +1569,11 @@ export class SessionCredential {
    * {@link RENEW_RETRY_MS}, and once more after that window. A 200 from that last try adopts
    * the rotation. A 401 ends the sign-in. A network error, a timeout, or a 5xx records a
    * new attempt time. A sign-out that starts while this is in flight wins: the answer is not
-   * stored, and the lock wait ends. An empty store, when this instance had a record, is
-   * another tab's sign-out: nothing is presented. A save may replace the stored record
+   * stored, and the lock wait ends. An empty store, when this instance had a record
+   * and the record it last saw was its own family, is another tab's sign-out:
+   * nothing is presented. An empty store left by another family keeps this sign-in,
+   * and this tab writes its own record back when the store is still empty. A save
+   * may replace the stored record
    * when it is the same family and its `renewExpiresAt` is earlier than this tab's, or
    * when it holds exactly this tab's credential. A later time is left alone. An equal
    * time with a different credential is left alone. Another family is left alone. The
@@ -1797,14 +1868,25 @@ export class SessionCredential {
     const heldNow = this.credentialHeldForRenew(gen, serial, heldRenew, heldKeyId);
     if (heldNow === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
     if (heldNow === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
-    // No record, and this instance had stored one: another tab signed out.
-    // Do not present. A record that was never written is not this case.
+    // No record, and this instance had stored one. That is a sign-out only when
+    // the record this tab last saw or wrote was its own family. Another family's
+    // death, or a family this tab cannot name, leaves this sign-in in place.
+    // The re-save fills the hole only while it is still empty, and still refuses
+    // another family. A record that was never written is not this case.
     if (!stored && this.hadStoredRecord) {
-      // The record is already gone. clearIfCurrent leaves a credential another tab
-      // may have written since this load. This tab still signs out and does not present.
-      await this.endDeadSignIn(this.renewExpect(heldKeyId, heldNow));
-      return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+      if (this.emptiedRecordWasOurs(heldNow)) {
+        await this.endDeadSignIn(this.renewExpect(heldKeyId, heldNow));
+        return { action: "done", attempt: { ok: false, kind: "unauthorized" } };
+      }
+      this.fillEmptyStore = true;
+      await this.writeHeldOverOlder(gen, serial, signal, deadline);
+      if (signal.aborted) return { action: "done", attempt: { ok: false, kind: "signed-out" } };
+      const afterEmpty = this.credentialHeldForRenew(gen, serial, heldNow, heldKeyId);
+      if (afterEmpty === "stopped") return { action: "done", attempt: this.stoppedRenewAttempt(gen) };
+      if (afterEmpty === "moved") return { action: "done", attempt: { ok: false, kind: "superseded" } };
+      return { action: "post", credential: afterEmpty, stored: null };
     }
+    if (stored) this.noteStoreFamily(stored.renew);
     if (!stored || stored.publicKeyId !== heldKeyId) return { action: "post", credential: heldNow, stored: null };
     this.hadStoredRecord = true;
     const storedRenew = typeof stored.renew === "string" && stored.renew.length > 0 ? stored.renew : null;
@@ -1896,6 +1978,7 @@ export class SessionCredential {
     this.carriedSession = null;
     this.canCreateRecord = false;
     this.hadStoredRecord = true;
+    this.noteStoreFamily(record.renew);
     this.minted = {
       accessToken: record.accessToken,
       expiresAt: record.expiresAt,
@@ -2251,11 +2334,12 @@ export class SessionCredential {
       session: copySession(minted.session),
       ...fields,
     };
-    const expect = this.renewExpect(exportedId, fields.renew);
+    const expect = this.saveExpect(exportedId, fields.renew);
+    const wipeExpect = this.renewExpect(exportedId, fields.renew);
     const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, expect));
     const saved = await this.bounded(pending, this.storeWaitMs(deadline), signal);
     if (signal.aborted || this.generation !== gen || this.signedOut) {
-      if (saved.ok && saved.value !== false) await this.wipeLanded(this.renewExpect(exportedId, fields.renew));
+      if (saved.ok && saved.value !== false) await this.wipeLanded(wipeExpect);
       return;
     }
     if (!saved.ok) {
@@ -2315,7 +2399,7 @@ export class SessionCredential {
       ...fields,
     };
     const samePublicKeyId = this.publicKeyId;
-    const presentedExpect = this.renewExpect(samePublicKeyId, fields.renew);
+    const presentedExpect = this.saveExpect(samePublicKeyId, fields.renew);
     const writtenExpect = this.renewExpect(samePublicKeyId, fields.renew);
     const watchLate = (late: Promise<boolean>) => {
       void late.then((value) => {
@@ -2461,6 +2545,8 @@ export class SessionCredential {
     if (this.epoch === epoch) this.lastWrittenEpoch = epoch;
     this.canCreateRecord = false;
     this.hadStoredRecord = true;
+    this.fillEmptyStore = false;
+    if (renew) this.noteStoreFamily(renew);
     if (!renew || this.rotationHealRecord === null || this.rotationHealRecord.renew === renew) {
       this.cancelRotationHeal();
     }
@@ -2544,7 +2630,8 @@ export class SessionCredential {
     // Write the credential and token held now. A plain invalidate between the
     // schedule and this run must not put the rejected access token back.
     const record = this.recordHeldNow(scheduled);
-    const expect = this.renewExpect(record.publicKeyId, scheduled.renew);
+    const expect = this.saveExpect(record.publicKeyId, scheduled.renew);
+    const wipeExpect = this.renewExpect(record.publicKeyId, scheduled.renew);
     {
       const pending = this.invokeStore(() => this.store!.saveIfCurrent(record, expect));
       const saved = await this.bounded(pending);
@@ -2568,10 +2655,10 @@ export class SessionCredential {
       if (record.accessToken.length > 0 && (!this.minted || this.minted.accessToken.length === 0) && this.renewCredential === scheduled.renew) {
         const blank = this.recordHeldNow(scheduled);
         if (blank.accessToken.length === 0) {
-          const blanked = await this.bounded(this.invokeStore(() => this.store!.saveIfCurrent(blank, expect)));
+          const blanked = await this.bounded(this.invokeStore(() => this.store!.saveIfCurrent(blank, wipeExpect)));
           if (this.signedOut || this.generation !== gen) {
             if (blanked.ok && blanked.value !== false && this.renewCredential === scheduled.renew) {
-              await this.wipeLanded(expect);
+              await this.wipeLanded(wipeExpect);
             }
             if (this.signedOut || this.rotationHealRecord === scheduled) this.cancelRotationHeal();
             return;

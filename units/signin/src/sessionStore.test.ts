@@ -841,6 +841,22 @@ test("recordIsCurrent orders one family by renewExpiresAt and leaves another fam
   assert.equal(recordIsCurrent(rec, { publicKeyId: "other", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
   assert.equal(recordIsCurrent(rec, { publicKeyId: "", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
   assert.equal(recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(recordIsCurrent(undefined, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }), false);
+  assert.equal(
+    recordIsCurrent(null, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam, allowAbsent: true }),
+    true,
+    "an empty store may be filled when the caller says the absence was not this family's sign-out",
+  );
+  assert.equal(
+    recordIsCurrent(undefined, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, allowAbsent: true }),
+    true,
+  );
+  assert.equal(recordIsCurrent(null, { publicKeyId: "", renew: "rsi1.fam.s2", allowAbsent: true }), false);
+  assert.equal(
+    recordIsCurrent(rec, { publicKeyId: "k", renew: "rsi1.f2.s9", renewExpiresAt: 2_000, family: "f2", allowAbsent: true }),
+    false,
+    "a present record of another family is still not written",
+  );
   assert.equal(
     recordIsCurrent({ ...rec, renewExpiresAt: "not-a-date" }, { publicKeyId: "k", renew: "rsi1.fam.s2", renewExpiresAt: 2_000, ...fam }),
     false,

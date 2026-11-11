@@ -7,6 +7,7 @@ import {
   NotSignedInError,
   RenewalUnavailableError,
   EXPIRY_GUARD_MS,
+  familyOf,
   RENEW_TIMEOUT_MS,
   RENEW_WINDOW_MAX_SEC,
   RENEW_WINDOW_MIN_SEC,
@@ -1649,4 +1650,158 @@ test("a rotation save does not overwrite another tab's newer rotation", async ()
   } finally {
     uninstall();
   }
+});
+
+test("a dead tab's restore adopts another family's live sign-in and leaves it stored", async () => {
+  const store = memoryStore();
+  let now = NOW;
+  let verifies = 0;
+  let presented = 0;
+  const vaults = jsonResponse(200, { vaults: [], complete: true });
+  const send: Transport = async (url) => {
+    if (url === VERIFY_URL) {
+      verifies += 1;
+      const first = verifies === 1;
+      const expSec = first ? Math.floor(NOW / 1000) + 3600 : Math.floor(now / 1000) + 10 * 3600;
+      return jsonResponse(200, {
+        token: jwt(expSec),
+        principal: first ? PRINCIPAL : "https://id.example.test/i/p2",
+        renew: first ? "rsi1.f1.secret" : "rsi1.f2.secret",
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === RENEW_URL) {
+      presented += 1;
+      return jsonResponse(401, { error: "Unauthorized" });
+    }
+    return jsonResponse(500, {});
+  };
+  const uninstall = installLocks(undefined);
+  try {
+    const dead = new SessionCredential({ store, transport: send, now: () => now });
+    const first = new SessionCredential({ store, transport: send, now: () => now });
+    await first.signInWithCode(ORIGIN, "a@example.test", "123456");
+    assert.equal((await dead.restore())?.principal, PRINCIPAL);
+    now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+    await assert.rejects(dead.authHeaders("GET", `${ORIGIN}/x`), NotSignedInError);
+    assert.equal(await dead.renew(), null);
+    assert.equal(dead.session, null);
+    assert.equal(presented, 1);
+    const newer = new SessionCredential({ store, transport: send, now: () => now });
+    await newer.signInWithCode(ORIGIN, "b@example.test", "123456");
+    const liveRenew = store.peek()?.renew;
+    assert.equal(liveRenew, "rsi1.f2.secret");
+    assert.equal((await dead.restore())?.principal, "https://id.example.test/i/p2");
+    assert.equal(store.peek()?.renew, liveRenew, "the dead tab's restore does not clear the live record");
+    const headers = await dead.authHeaders("GET", `${ORIGIN}/x`);
+    assert.ok(headers.Authorization.startsWith("DPoP "));
+    assert.equal(presented, 1, "the adopted token is still live, so nothing is presented");
+    const fresh = new SessionCredential({ store, transport: send, now: () => now });
+    assert.equal((await fresh.restore())?.principal, "https://id.example.test/i/p2");
+    assert.equal(store.peek()?.renew, liveRenew);
+  } finally {
+    uninstall();
+  }
+});
+
+test("restore after an explicit sign-out stays empty and does not adopt a later sign-in", async () => {
+  const store = memoryStore();
+  let now = NOW;
+  const vaults = jsonResponse(200, { vaults: [], complete: true });
+  const send = (renew: string, principal: string): Transport => async (url) => {
+    if (url === VERIFY_URL) {
+      return jsonResponse(200, {
+        token: jwt(Math.floor(NOW / 1000) + 3600),
+        principal,
+        renew,
+        renewExpiresAt: LIVE_EXPIRY,
+      });
+    }
+    if (url.endsWith("/lws/vaults")) return vaults;
+    if (url === SIGN_OUT_URL) return jsonResponse(204, {});
+    return jsonResponse(500, {});
+  };
+  const uninstall = installLocks(undefined);
+  try {
+    const signedOut = new SessionCredential({
+      store,
+      transport: send("rsi1.f1.secret", PRINCIPAL),
+      now: () => now,
+    });
+    await signedOut.signInWithCode(ORIGIN, "a@example.test", "123456");
+    assert.equal((await signedOut.signOut(ORIGIN)).serverSignedOut, true);
+    assert.equal(await signedOut.restore(), null);
+    assert.equal(store.peek(), null);
+    const other = new SessionCredential({
+      store,
+      transport: send("rsi1.f2.secret", "https://id.example.test/i/p2"),
+      now: () => now,
+    });
+    await other.signInWithCode(ORIGIN, "b@example.test", "123456");
+    assert.equal(store.peek()?.renew, "rsi1.f2.secret");
+    assert.equal(await signedOut.restore(), null);
+    assert.equal(store.peek(), null, "this instance's sign-out does not re-adopt a record it was clearing");
+    await store.save(await seed({ renew: "rsi1.f2.again" }));
+    assert.equal(await signedOut.restore(), null);
+    assert.equal(store.peek(), null);
+  } finally {
+    uninstall();
+  }
+});
+
+test("an empty store left by another family does not sign out a tab whose family is live", async () => {
+  const inner = memoryStore(await seed());
+  // IndexedDB resolves false when the compare refuses. This double does too, so a
+  // refused save is not recorded as a write of this tab's own family.
+  const store: Mem = {
+    peek: () => inner.peek(),
+    load: () => inner.load(),
+    save: (session) => inner.save(session),
+    async saveIfCurrent(session, expect) {
+      if (!recordIsCurrent(inner.peek(), expect)) return false;
+      await inner.saveIfCurrent(session, expect);
+      return true;
+    },
+    async clearIfCurrent(expect) {
+      if (!recordIsCurrent(inner.peek(), expect)) return false;
+      await inner.clearIfCurrent(expect);
+      return true;
+    },
+    clear: () => inner.clear(),
+  };
+  let now = NOW;
+  const first = renewedBody("rsi1.fam.kept");
+  const second = renewedBody("rsi1.fam.kept-2");
+  const answers = [first, second];
+  let n = 0;
+  const t = renewTransport(() => jsonResponse(200, answers[Math.min(n++, answers.length - 1)]!));
+  const cred = new SessionCredential({ store, transport: t.send, now: () => now });
+  assert.equal((await cred.restore())?.principal, PRINCIPAL);
+  const held = store.peek();
+  assert.ok(held);
+  const otherExpiry = new Date(Date.parse(LIVE_EXPIRY) + 60_000).toISOString();
+  await store.save({
+    ...held,
+    renew: "rsi1.f2.s1",
+    renewExpiresAt: otherExpiry,
+    accessToken: jwt(Math.floor(NOW / 1000) + 10 * 3600),
+    expiresAt: NOW + 10 * 3_600_000,
+    session: { ...held.session, principal: "https://id.example.test/i/p2" },
+  });
+  now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+  const session = await cred.renew();
+  assert.equal(session?.principal, PRINCIPAL);
+  assert.equal(store.peek()?.renew, "rsi1.f2.s1", "seeing the other family does not adopt it or write over it");
+  assert.deepEqual(JSON.parse(renewCalls(t.calls)[0]!.req.body!), { renew: OLD_RENEW });
+  await store.clear();
+  const stayed = await cred.renew();
+  assert.equal(stayed?.principal, PRINCIPAL);
+  assert.equal(renewCalls(t.calls).length, 2, "the live family is presented; the empty store is not a sign-out");
+  assert.deepEqual(JSON.parse(renewCalls(t.calls)[1]!.req.body!), { renew: "rsi1.fam.kept" });
+  assert.equal(familyOf(store.peek()?.renew), "fam");
+  assert.equal(store.peek()?.renew, second.renew);
+  const headers = await cred.authHeaders("GET", `${ORIGIN}/x`);
+  assert.equal(headers.Authorization, `DPoP ${second.token}`);
+  assert.equal(renewCalls(t.calls).length, 2);
 });

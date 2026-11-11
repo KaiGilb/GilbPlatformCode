@@ -108,6 +108,11 @@ export interface StoredSession {
  * When `renewExpiresAt` is absent, the record has no renewal order. `renew`, when
  * present, must be the stored credential (`null` or `""` means none). `accessToken`,
  * when present, must be the stored access token.
+ *
+ * `allowAbsent` is the one case where a missing record may be written. A tab sets
+ * it only to put its own record back after an empty store that was not this
+ * family's sign-out. A record that is present is still decided by the family and
+ * the time order. A missing `publicKeyId` is never a write.
  */
 export interface CurrentRecordExpect {
   publicKeyId: string;
@@ -116,6 +121,11 @@ export interface CurrentRecordExpect {
   family?: string | null;
   renewExpiresAt?: number;
   accessToken?: string;
+  /**
+   * Write when the store has no record. A present record is still compared.
+   * Set only for the re-save after an empty store that was not this family's.
+   */
+  allowAbsent?: boolean;
 }
 
 /** Epoch milliseconds of a `renewExpiresAt` value, or null when it is not a time. */
@@ -152,11 +162,18 @@ function renewSecret(value: unknown): string {
 
 /**
  * True when `existing` is a record this tab may still change.
- * A missing record is not current. Callers can run this inside one IndexedDB
- * `get` callback: it does not await.
+ * A missing record is not current, unless `expect.allowAbsent` is set and
+ * `publicKeyId` is a non-empty string: that write fills an empty store and
+ * still refuses a record that is present and is not this family. Callers can
+ * run this inside one IndexedDB `get` callback: it does not await.
  */
 export function recordIsCurrent(existing: unknown, expect: CurrentRecordExpect): boolean {
-  if (!existing || typeof existing !== "object") return false;
+  if (existing == null) {
+    return expect.allowAbsent === true
+      && typeof expect.publicKeyId === "string"
+      && expect.publicKeyId.length > 0;
+  }
+  if (typeof existing !== "object") return false;
   if (typeof expect.publicKeyId !== "string" || expect.publicKeyId.length === 0) return false;
   const record = existing as Partial<StoredSession>;
   if (record.publicKeyId !== expect.publicKeyId) return false;
@@ -212,9 +229,10 @@ export interface SessionStore {
   save(session: StoredSession): Promise<void>;
   /**
    * Writes `session` only when the stored record is still {@link recordIsCurrent}
-   * for `expect`. A missing record, another key, another family, a credential
-   * with no family id, a later `renewExpiresAt`, or an equal time with a
-   * different credential writes nothing and resolves `false`.
+   * for `expect`. A missing record writes nothing, unless `expect.allowAbsent`
+   * is set. Another key, another family, a credential with no family id, a
+   * later `renewExpiresAt`, or an equal time with a different credential writes
+   * nothing and resolves `false`.
    * `true` means the put was made. The IndexedDB adapter compares and puts inside
    * the same `get` success callback, so the transaction is still active and a
    * delete that commits first is not put back.
