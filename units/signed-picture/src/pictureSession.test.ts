@@ -96,3 +96,24 @@ describe("startPictureSession", () => {
     expect(fake.calls.open).toEqual([]);
   });
 });
+
+describe("deviceCacheNameFor pins the exact name", () => {
+  // Reference hashes written out again from the algorithm definitions, not imported from the source.
+  const refDjb2 = (t: string) => {
+    let h = 5381;
+    for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return h;
+  };
+  const refFnv1a = (t: string) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 0x01000193) >>> 0;
+    return h;
+  };
+  const P = "https://id.example.test/p/ann#me";
+  test("is the prefix, then djb2 then FNV-1a, each in base 36", () => {
+    expect(deviceCacheNameFor("picturerecords", P)).toBe(`picturerecords:${refDjb2(P).toString(36)}${refFnv1a(P).toString(36)}`);
+  });
+  test("is the exact literal for a fixed principal", () => {
+    expect(deviceCacheNameFor("picturerecords", P)).toBe("picturerecords:ms1pz1a81c8j");
+  });
+});

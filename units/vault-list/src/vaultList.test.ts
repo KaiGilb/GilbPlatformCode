@@ -93,3 +93,30 @@ test("choiceLine takes other words for any of the three phrases", () => {
   expect(choiceLine({ yours: false, viewOnly: true }, { shared: "Delt", viewOnly: "Kun lesing" })).toBe("Delt · Kun lesing");
   expect(choiceLine({ yours: true, viewOnly: false }, { yours: "Din" })).toBe("Din");
 });
+
+test("an unnamed user vault at /vault is named by its first hostname label", () => {
+  expect(vaultLabel({ vaultId: "https://annhouseplants.example.test/vault" })).toBe("annhouseplants");
+});
+test("the same with a trailing slash", () => {
+  expect(vaultLabel({ vaultId: "https://annhouseplants.example.test/vault/" })).toBe("annhouseplants");
+});
+test("an unnamed /base vault still takes the first hostname label", () => {
+  expect(vaultLabel({ vaultId: "https://bilen.example.test/base/" })).toBe("bilen");
+});
+test("name wins over shortName, and shortName wins over the host label", () => {
+  const vaultId = "https://ann.example.test/vault";
+  expect(vaultLabel({ name: "Home", shortName: "short", vaultId })).toBe("Home");
+  expect(vaultLabel({ shortName: " short ", vaultId })).toBe("short");
+  expect(vaultLabel({ name: null, shortName: "short", vaultId })).toBe("short");
+});
+test("a whitespace-only name and shortName are skipped", () => {
+  expect(vaultLabel({ name: "  ", shortName: "   ", vaultId: "https://ann.example.test/vault" })).toBe("ann");
+});
+test("a non-URL vaultId of the bare word vault never comes back as just vault", () => {
+  const label = vaultLabel({ vaultId: "vault" });
+  expect(label).not.toBe("vault");
+  expect(label).toBe("Vault vault");
+});
+test("vaultChoices labels an unnamed user vault by its host label", () => {
+  expect(vaultChoices([{ vaultId: "https://ann.example.test/vault", modes: ["read"] }], () => false)[0]!.label).toBe("ann");
+});

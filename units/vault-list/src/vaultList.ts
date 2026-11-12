@@ -6,6 +6,7 @@ export interface VaultParentRef {
 export interface VaultListItem {
   vaultId: string;
   name?: string | null;
+  shortName?: string | null;
   entity?: string;
   parent?: VaultParentRef | null;
   parentAmbiguous?: boolean;
@@ -18,14 +19,20 @@ export interface VaultTreeRow {
   depth: number;
 }
 
-/** The stored name, else the first hostname label when the path is `/base`, else the last path part. */
-export function vaultLabel(vault: { name?: string | null; vaultId: string }): string {
+/**
+ * How to name a vault, first match wins: (1) the stored `name`, trimmed; (2) `shortName`, trimmed; (3) when the address path is exactly
+ * `/base` or exactly `/vault` (trailing slashes ignored), the first hostname label; (4) the last path part, never the bare words
+ * "vault" or "base" and never empty; (5) `Vault <last 8 characters of the address>`.
+ */
+export function vaultLabel(vault: { name?: string | null; shortName?: string | null; vaultId: string }): string {
   const named = vault.name?.trim();
   if (named) return named;
+  const short = vault.shortName?.trim();
+  if (short) return short;
   try {
     const u = new URL(vault.vaultId);
     const path = u.pathname.replace(/\/+$/, "") || "/";
-    if (path === "/base") {
+    if (path === "/base" || path === "/vault") {
       const label = u.hostname.split(".")[0]?.trim();
       if (label) return label;
     }
@@ -33,7 +40,8 @@ export function vaultLabel(vault: { name?: string | null; vaultId: string }): st
     /* not a URL */
   }
   const tail = vault.vaultId.slice(vault.vaultId.lastIndexOf("/") + 1);
-  return tail && tail !== "base" ? tail : `Vault ${vault.vaultId.slice(-8)}`;
+  const bare = tail.toLowerCase();
+  return tail && bare !== "vault" && bare !== "base" ? tail : `Vault ${vault.vaultId.slice(-8)}`;
 }
 
 export function canWriteVault(vault: { modes?: readonly string[] }): boolean {
@@ -170,7 +178,7 @@ export interface VaultChoice {
  * @param vaults the vaults to offer (already filtered to the app's type, if it wants only one)
  * @param isYours true for the person's own vault(s)
  */
-export function vaultChoices<V extends { vaultId: string; name?: string | null; modes?: readonly string[] }>(
+export function vaultChoices<V extends { vaultId: string; name?: string | null; shortName?: string | null; modes?: readonly string[] }>(
   vaults: readonly V[],
   isYours: (v: V) => boolean,
 ): VaultChoice[] {
