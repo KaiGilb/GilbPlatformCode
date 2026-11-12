@@ -178,7 +178,7 @@ describe("a hand-off cut by the round ceiling", () => {
     expect(typeof answer.content).toBe("string");
     expect(posts(platform).filter((rec) => rec.body.name === "run_named_role")).toHaveLength(1);
     expect(rollLines(lines)).toHaveLength(1);
-    expect(lines.join("")).toContain("(1 of 5)");
+    expect(lines.join("")).toContain(`(1 of ${MAX_TURN_ROLLS})`);
     await callTool(box);
     const next = posts(platform).at(-1);
     expect(next.body.name).toBe("read_record");
@@ -287,22 +287,22 @@ describe("a hand-off cut by the round ceiling", () => {
     for (const rec of posts(platform)) expect(rec.body.turnId).toBe(TURN);
   }, 20000);
 
-  it("c6 after five rolls a cut still says so, but rolls no sixth time", async () => {
-    expect(MAX_TURN_ROLLS).toBe(5);
+  it("c6 after MAX_TURN_ROLLS rolls a cut still says so, but rolls no more", async () => {
+    expect(MAX_TURN_ROLLS).toBe(40);
     const lines = stderrLines();
     const platform = await hopDoor(CUT);
     const box = connect({ origin: platform.origin, env: meEnv() });
-    for (let i = 0; i < 5; i++) expect(answerOf(await run(box)).cut).toBe(CUT_TEXT);
-    expect(rollLines(lines)).toHaveLength(5);
+    for (let i = 0; i < MAX_TURN_ROLLS; i++) expect(answerOf(await run(box)).cut).toBe(CUT_TEXT);
+    expect(rollLines(lines)).toHaveLength(MAX_TURN_ROLLS);
     await callTool(box);
-    const turnAfterFive = posts(platform).at(-1).body.turnId;
-    const sixth = await run(box);
-    expect(answerOf(sixth).cut).toBe(CUT_TEXT);
-    expect(rollLines(lines)).toHaveLength(5);
+    const turnAfter = posts(platform).at(-1).body.turnId;
+    const next = await run(box);
+    expect(answerOf(next).cut).toBe(CUT_TEXT);
+    expect(rollLines(lines)).toHaveLength(MAX_TURN_ROLLS);
     await callTool(box);
-    expect(posts(platform).at(-1).body.turnId).toBe(turnAfterFive);
-    expect(new Set(posts(platform).map((rec) => rec.body.turnId)).size).toBe(6);
-  }, 60000);
+    expect(posts(platform).at(-1).body.turnId).toBe(turnAfter);
+    expect(new Set(posts(platform).map((rec) => rec.body.turnId)).size).toBe(MAX_TURN_ROLLS + 1);
+  }, 120000);
 
   it("c8 a hand-off that fails and was cut: the failed answer carries CUT_TEXT, and the turn rolls", async () => {
     const lines = stderrLines();

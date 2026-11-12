@@ -331,7 +331,7 @@ describe("a hand-off that runs out of time", () => {
 });
 
 describe("hand-off time per role", () => {
-  const LONG = ["Agent.VDT", "Agent.Outcome", "Agent.Outcome.Business", "Agent.Outcome.Owner", "Agent.Outcome.Stakeholder", "Agent.Outcome.Product", "Agent.Architect", "Agent.Scaling", "Agent.ValueDeliveryStep"];
+  const LONG = ["Agent.VDT", "Agent.Outcome", "Agent.Outcome.Business", "Agent.Outcome.Owner", "Agent.Outcome.Stakeholder", "Agent.Outcome.Product", "Agent.Outcome.Solution", "Agent.Stakeholder", "Agent.Architect", "Agent.Scaling", "Agent.ValueDeliveryStep"];
   const MIN = 60 * 1000;
 
   it("the map gives level agents 30 minutes and every other role 15", () => {
