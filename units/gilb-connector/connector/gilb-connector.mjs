@@ -1131,6 +1131,8 @@ const KNOWN_FLAGS = new Set([
     "--vault",
     "--profile",
     "--claude",
+    "--hop-cli",
+    "--codex",
     "--hop",
     "--turn",
     "--hop-tools",
@@ -1153,6 +1155,8 @@ export function parseCli(argv, env = process.env) {
             as: "ai",
             name: undefined,
             claudeBin: "claude",
+            hopCli: "claude",
+            codexBin: "codex",
             hopId: undefined,
             turnId: undefined,
             hopToolsPath: undefined,
@@ -1188,6 +1192,11 @@ export function parseCli(argv, env = process.env) {
         throw new CliError("--name must be 1 to 256 characters.");
     }
     const claudeBin = oneFlag(argv, "--claude") ?? env.GILB_CONNECTOR_CLAUDE ?? "claude";
+    const codexBin = oneFlag(argv, "--codex") ?? env.GILB_CONNECTOR_CODEX ?? "codex";
+    const hopCliRaw = (oneFlag(argv, "--hop-cli") ?? env.GILB_CONNECTOR_HOP_CLI ?? "claude").trim().toLowerCase();
+    if (hopCliRaw !== "claude" && hopCliRaw !== "codex")
+        throw new CliError("--hop-cli must be claude or codex.");
+    const hopCli = hopCliRaw;
     const hopId = oneFlag(argv, "--hop") ?? (env.GILB_CONNECTOR_HOP || undefined);
     const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
     const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
@@ -1220,6 +1229,8 @@ export function parseCli(argv, env = process.env) {
         as: asMode,
         name: nameRaw?.trim(),
         claudeBin,
+        hopCli,
+        codexBin,
         hopId,
         turnId,
         hopToolsPath,
@@ -1231,13 +1242,15 @@ export function parseCli(argv, env = process.env) {
     };
 }
 function helpText() {
-    return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--upload-root DIR]... [--hop-model NAME]
+    return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--hop-cli claude|codex] [--codex PATH] [--upload-root DIR]... [--hop-model NAME]
        node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --as ai|me [--profile NAME] --agent NAME --origin URL
        node gilb-connector.mjs publish --dir DIR --name NAME [--kind app|website] [--dry-run] [--as ai|me] [--origin URL] [--profile NAME] [--worker-url URL]
 
 Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
 --upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
+--hop-cli codex runs a hand-off on the Codex CLI (signed in with ChatGPT) instead of Claude Code. Default: claude.
+--codex PATH is the Codex CLI used for a hand-off. Default: codex.
 --hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
 publish puts a built folder on https://NAME.pages.dev. It publishes unless --dry-run.
 Default agent: ${DEFAULT_AGENT}
@@ -1290,6 +1303,296 @@ function claudeArgs(system, mcpConfig, sessionId, model) {
     if (model !== undefined)
         args.push("--model", model);
     return args;
+}
+/** The Claude Code runner: today's argv, env and stream-json reading, unchanged. */
+function claudeHopRunner(claudeBin, env, hopModel, stdinText) {
+    return {
+        name: "Claude Code",
+        prepare: async ({ hop, nestedArgs }) => {
+            const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args: nestedArgs } } };
+            return {
+                command: claudeBin,
+                args: claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel),
+                env: childEnv(env),
+                stdinText: stdinText(hop),
+            };
+        },
+        newReader: () => {
+            let initOk = false;
+            let refused = false;
+            let resultText = null;
+            let resultError = null;
+            return {
+                onEvent(raw, progress, kill) {
+                    if (!raw || typeof raw !== "object")
+                        return;
+                    const event = raw;
+                    if (event.type === "system" && event.subtype === "init") {
+                        if (event.apiKeySource === "none")
+                            initOk = true;
+                        else {
+                            refused = true;
+                            kill();
+                        }
+                    }
+                    else if (event.type === "result") {
+                        if (event.is_error)
+                            resultError = `Claude Code: ${String(event.result ?? "the turn failed").slice(0, 500)}`;
+                        else
+                            resultText = String(event.result ?? "");
+                    }
+                    else if (event.type === "assistant") {
+                        noteAssistant(event.message, progress);
+                    }
+                },
+                outcome(stderr) {
+                    if (refused || !initOk)
+                        return { error: "Claude Code did not confirm that this run uses your Claude subscription, so the hand-off was stopped." };
+                    if (resultError !== null)
+                        return { error: resultError };
+                    if (resultText === null)
+                        return { error: `Claude Code stopped without an answer.${safeTail(stderr)}` };
+                    return { text: resultText };
+                },
+            };
+        },
+    };
+}
+/** Codex only ever runs a hand-off on the person's ChatGPT sign-in. The tested release line is 0.167. */
+const CODEX_TESTED_VERSION_PREFIX = "0.167.";
+const CODEX_NOT_CHATGPT = "Codex is not signed in with ChatGPT, so the hand-off was stopped. Run: codex login and choose Sign in with ChatGPT.";
+const CODEX_NO_FEATURES = "Could not read Codex's feature list, so the hand-off was stopped.";
+const CODEX_DOCTOR_TIMEOUT_MS = 60 * 1000;
+const CODEX_FEATURES_TIMEOUT_MS = 30 * 1000;
+/** Codex features a hand-off must not have: shells, other agents, browsers, plugins, memory. Never code_mode_host (the MCP tools need it). */
+export const CODEX_DISABLE_FEATURES = [
+    "shell_tool",
+    "unified_exec",
+    "apps",
+    "plugins",
+    "multi_agent",
+    "multi_agent_v2",
+    "view_image",
+    "image_generation",
+    "goals",
+    "computer_use",
+    "browser_use",
+    "browser_use_external",
+    "tool_suggest",
+    "skill_search",
+    "in_app_browser",
+    "hooks",
+    "sleep_tool",
+    "remote_plugin",
+    "incremental_tools",
+    "request_permissions_tool",
+    "write_stdin_approval",
+    "memories",
+    "collaboration_modes",
+    "default_mode_request_user_input",
+    "multi_agent_v2_dynamic_tools",
+    "agent_message_board",
+    "runtime_agent_instances",
+    "wake_on_agent_messages",
+    "enable_fanout",
+    "skill_mcp_dependency_install",
+];
+const CODEX_ENV_DENY_PREFIXES = ["OPENAI_", "AZURE_OPENAI_", "CODEX_API_"];
+/** The environment a nested `codex` gets: childEnv's, minus every OpenAI and Codex key (CODEX_API_KEY overrides the ChatGPT sign-in). CODEX_HOME stays. */
+export function codexChildEnv(env = process.env) {
+    const out = childEnv(env);
+    for (const key of Object.keys(out)) {
+        const upper = key.toUpperCase();
+        if (upper === "CODEX_API_KEY" || upper === "OPENAI_API_KEY" || CODEX_ENV_DENY_PREFIXES.some((prefix) => upper.startsWith(prefix)))
+            delete out[key];
+    }
+    return out;
+}
+/** A TOML basic string. JSON escaping is valid TOML escaping, except that TOML also wants U+007F escaped. */
+export function tomlString(value) {
+    return JSON.stringify(value).replace(/\u007f/g, "\\u007F");
+}
+export function tomlStringArray(values) {
+    return "[" + values.map(tomlString).join(", ") + "]";
+}
+/** The command that starts the Codex CLI. Every platform runs the path as given for now. */
+export function codexSpawnCommand(codexBin, _platform = process.platform) {
+    return { command: codexBin, prefixArgs: [] };
+}
+/** The argv of `codex exec` for one hand-off. The prompt comes on stdin (the last `-`); the system text is in a file, not here. */
+export function codexExecArgs(input) {
+    const args = [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--strict-config",
+        "-C",
+        input.dir,
+        "-s",
+        "read-only",
+        "-c",
+        `mcp_servers.GilbPlatform.command=${tomlString(input.nodePath ?? process.execPath)}`,
+        "-c",
+        `mcp_servers.GilbPlatform.args=${tomlStringArray(input.nestedArgs)}`,
+        "-c",
+        'mcp_servers.GilbPlatform.default_tools_approval_mode="approve"',
+        "-c",
+        "mcp_servers.GilbPlatform.startup_timeout_sec=90",
+        "-c",
+        `mcp_servers.GilbPlatform.tool_timeout_sec=${Math.ceil(MCP_TOOL_TIMEOUT_MS / 1000)}`,
+        "-c",
+        `model_instructions_file=${tomlString(input.instructionsPath)}`,
+        "-c",
+        'web_search="disabled"',
+    ];
+    for (const name of input.disable)
+        args.push("--disable", name);
+    if (input.model !== undefined)
+        args.push("-m", input.model);
+    args.push("-");
+    return args;
+}
+/** Runs a short Codex command to the end and returns its stdout, or null when it fails, times out or is aborted. */
+function captureCodex(codexBin, args, env, timeoutMs, signal) {
+    return new Promise((resolveRun) => {
+        const { command, prefixArgs } = codexSpawnCommand(codexBin);
+        let out = "";
+        let done = false;
+        let child;
+        const end = (value) => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(timer);
+            signal.removeEventListener("abort", onAbort);
+            resolveRun(value);
+        };
+        const onAbort = () => {
+            child?.kill("SIGTERM");
+            end(null);
+        };
+        const timer = setTimeout(() => {
+            child?.kill("SIGTERM");
+            end(null);
+        }, timeoutMs);
+        timer.unref();
+        try {
+            child = spawn(command, [...prefixArgs, ...args], { env, stdio: ["ignore", "pipe", "ignore"] });
+        }
+        catch {
+            end(null);
+            return;
+        }
+        if (signal.aborted)
+            onAbort();
+        else
+            signal.addEventListener("abort", onAbort, { once: true });
+        child.stdout?.on("data", (chunk) => {
+            if (out.length < 4_000_000)
+                out += chunk;
+        });
+        child.on("error", () => end(null));
+        child.on("close", (code) => end(code === 0 ? out : null));
+    });
+}
+/** The Codex runner. `features` gives the CLI's feature names (read once per process). */
+function codexHopRunner(codexBin, env, hopModel, stdinText, features) {
+    return {
+        name: "Codex",
+        prepare: async ({ hop, dir, nestedArgs, signal }) => {
+            const cenv = codexChildEnv(env);
+            // Fail closed: anything but a stored ChatGPT sign-in stops the hand-off before exec starts.
+            const doctor = await captureCodex(codexBin, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
+            let version;
+            let mode;
+            if (doctor !== null) {
+                try {
+                    const json = JSON.parse(doctor);
+                    mode = json?.checks?.auth?.credentials?.details?.["stored auth mode"];
+                    version = json?.codexVersion;
+                }
+                catch {
+                    mode = undefined;
+                }
+            }
+            if (mode !== "chatgpt")
+                throw new Error(CODEX_NOT_CHATGPT);
+            if (typeof version === "string" && version !== "") {
+                process.stderr.write(`gilb-connector: this hand-off runs on Codex ${version}.\n`);
+                if (!version.startsWith(CODEX_TESTED_VERSION_PREFIX)) {
+                    process.stderr.write(`gilb-connector: Codex ${version} is newer or older than the tested 0.167; hand-offs may behave differently.\n`);
+                }
+            }
+            const names = await features(cenv, signal);
+            if (names === null)
+                throw new Error(CODEX_NO_FEATURES);
+            const disable = CODEX_DISABLE_FEATURES.filter((name) => names.includes(name));
+            const instructionsPath = join(dir, "instructions.md");
+            writeFileSync(instructionsPath, hop.system, { mode: 0o600 });
+            const { command, prefixArgs } = codexSpawnCommand(codexBin);
+            return {
+                command,
+                args: [...prefixArgs, ...codexExecArgs({ dir, instructionsPath, nestedArgs, disable, model: hopModel })],
+                env: cenv,
+                stdinText: stdinText(hop),
+                cleanupFiles: [instructionsPath],
+            };
+        },
+        newReader: () => {
+            const seen = new Set();
+            let completed = false;
+            let failed = null;
+            let answer = null;
+            let topError = null;
+            return {
+                onEvent(raw, progress) {
+                    if (!raw || typeof raw !== "object" || Array.isArray(raw))
+                        return;
+                    const event = raw;
+                    if (event.type === "item.started" || event.type === "item.completed") {
+                        const item = event.item;
+                        if (!item || typeof item !== "object" || Array.isArray(item))
+                            return;
+                        const row = item;
+                        if (row.type === "mcp_tool_call" && typeof row.tool === "string" && row.tool !== "") {
+                            const id = typeof row.id === "string" ? row.id : undefined;
+                            const first = event.type === "item.started" || (id !== undefined && !seen.has(id));
+                            if (id !== undefined)
+                                seen.add(id);
+                            if (first && progress.toolCalls.length < TOOL_CALLS_MAX)
+                                progress.toolCalls.push(toolCallLine(row.tool, row.arguments));
+                        }
+                        else if (event.type === "item.completed" && row.type === "agent_message" && typeof row.text === "string" && row.text !== "") {
+                            progress.lastText = row.text;
+                            answer = row.text;
+                        }
+                    }
+                    else if (event.type === "turn.completed") {
+                        completed = true;
+                    }
+                    else if (event.type === "turn.failed") {
+                        const err = event.error;
+                        const message = err && typeof err === "object" ? err.message : undefined;
+                        failed = `Codex: ${String(message ?? "the turn failed").slice(0, 500)}`;
+                    }
+                    else if (event.type === "error" && typeof event.message === "string" && event.message !== "") {
+                        topError = event.message;
+                    }
+                },
+                outcome(stderr) {
+                    if (failed !== null)
+                        return { error: failed };
+                    if (!completed || answer === null) {
+                        const lead = topError !== null ? `Codex stopped without an answer: ${topError.slice(0, 300)}.` : "Codex stopped without an answer.";
+                        return { error: `${lead}${safeTail(stderr)}` };
+                    }
+                    return { text: answer };
+                },
+            };
+        },
+    };
 }
 const CANCELLED = Symbol("cancelled");
 /**
@@ -1596,6 +1899,8 @@ export function startConnector(opts) {
     const displayName = opts.name;
     const profile = asMode === "ai" ? safeProfileName(opts.profile ?? DEFAULT_AI_PROFILE) : opts.profile;
     const claudeBin = opts.claudeBin ?? "claude";
+    const hopCli = opts.hopCli === "codex" ? "codex" : "claude";
+    const codexBin = opts.codexBin ?? "codex";
     const hopId = opts.hopId;
     const hopMode = hopId !== undefined && hopId !== "";
     const hopTools = [...(opts.hopTools ?? [])];
@@ -1934,6 +2239,25 @@ export function startConnector(opts) {
     function conceptHop(role) {
         return agentIsConcept() || role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
     }
+    let codexFeatures;
+    /** The feature names `codex features list` prints, read once per process. A failure is not remembered. */
+    function readCodexFeatures(cenv, signal) {
+        if (!codexFeatures) {
+            codexFeatures = captureCodex(codexBin, ["features", "list"], cenv, CODEX_FEATURES_TIMEOUT_MS, signal).then((out) => {
+                if (out === null) {
+                    codexFeatures = undefined;
+                    return null;
+                }
+                return out
+                    .split("\n")
+                    .map((line) => line.trim().split(/\s+/)[0] ?? "")
+                    .filter((name) => name !== "");
+            });
+        }
+        return codexFeatures;
+    }
+    const hopStdin = (hop) => (conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
+    const hopRunner = hopCli === "codex" ? codexHopRunner(codexBin, env, hopModel, hopStdin, readCodexFeatures) : claudeHopRunner(claudeBin, env, hopModel, hopStdin);
     async function runChild(hop, signal) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
@@ -1947,10 +2271,17 @@ export function startConnector(opts) {
             args.push("--profile", profile);
         if (claudeBin !== "claude")
             args.push("--claude", claudeBin);
-        const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args } } };
-        const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel), {
+        let plan;
+        try {
+            plan = await hopRunner.prepare({ hop, dir, nestedArgs: args, signal });
+        }
+        catch (err) {
+            rmSync(dir, { recursive: true, force: true });
+            throw err;
+        }
+        const child = spawn(plan.command, plan.args, {
             cwd: dir,
-            env: childEnv(env),
+            env: plan.env,
             stdio: ["pipe", "pipe", "pipe"],
         });
         children.add(child);
@@ -1961,14 +2292,11 @@ export function startConnector(opts) {
             children.delete(child);
             child.kill("SIGTERM");
             rmSync(dir, { recursive: true, force: true });
-            throw new Error("Could not start Claude Code: pipes were not available.");
+            throw new Error(`Could not start ${hopRunner.name}: pipes were not available.`);
         }
         let buf = "";
         let stderr = "";
-        let initOk = false;
-        let refused = false;
-        let resultText = null;
-        let resultError = null;
+        const reader = hopRunner.newReader();
         const progress = { toolCalls: [] };
         const onAbort = () => child.kill("SIGTERM");
         if (signal.aborted)
@@ -1994,23 +2322,7 @@ export function startConnector(opts) {
                 catch {
                     continue;
                 }
-                if (event.type === "system" && event.subtype === "init") {
-                    if (event.apiKeySource === "none")
-                        initOk = true;
-                    else {
-                        refused = true;
-                        child.kill("SIGTERM");
-                    }
-                }
-                else if (event.type === "result") {
-                    if (event.is_error)
-                        resultError = `Claude Code: ${String(event.result ?? "the turn failed").slice(0, 500)}`;
-                    else
-                        resultText = String(event.result ?? "");
-                }
-                else if (event.type === "assistant") {
-                    noteAssistant(event.message, progress);
-                }
+                reader.onEvent(event, progress, () => child.kill("SIGTERM"));
             }
         });
         return await new Promise((resolve, reject) => {
@@ -2024,6 +2336,8 @@ export function startConnector(opts) {
                     clearTimeout(timer);
                 signal.removeEventListener("abort", onAbort);
                 children.delete(child);
+                for (const file of plan.cleanupFiles ?? [])
+                    rmSync(file, { force: true });
                 rmSync(dir, { recursive: true, force: true });
                 fn();
             };
@@ -2033,27 +2347,25 @@ export function startConnector(opts) {
             }, hopMaxOf(hop.role));
             // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
             timer.unref();
-            child.on("error", (err) => finish(() => reject(new Error(`Could not start Claude Code: ${err.message}`))));
+            child.on("error", (err) => finish(() => reject(new Error(`Could not start ${hopRunner.name}: ${err.message}`))));
             child.on("close", () => {
-                if (signal.aborted)
+                if (signal.aborted) {
                     finish(() => reject(new DOMException("The operation was aborted.", "AbortError")));
-                else if (refused || !initOk) {
-                    finish(() => reject(new Error("Claude Code did not confirm that this run uses your Claude subscription, so the hand-off was stopped.")));
+                    return;
                 }
-                else if (resultError !== null) {
-                    const reason = resultError;
+                const outcome = reader.outcome(stderr);
+                if ("error" in outcome) {
+                    const reason = outcome.error;
                     finish(() => reject(new Error(reason)));
                 }
-                else if (resultText === null)
-                    finish(() => reject(new Error(`Claude Code stopped without an answer.${safeTail(stderr)}`)));
                 else {
-                    const text = resultText;
+                    const text = outcome.text;
                     const created = hopCreatedNamespaces(createdFile);
                     finish(() => resolve({ text, created }));
                 }
             });
             stdin.on("error", () => undefined);
-            stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
+            stdin.end(plan.stdinText);
         });
     }
     /**
@@ -3666,6 +3978,8 @@ async function main() {
         origin: cli.origin,
         vaults: cli.vaults,
         claudeBin: cli.claudeBin,
+        hopCli: cli.hopCli,
+        codexBin: cli.codexBin,
         progressEveryMs: cli.progressEveryMs,
         env: process.env,
         selfFile: fileURLToPath(import.meta.url),

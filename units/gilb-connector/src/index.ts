@@ -18,6 +18,12 @@ export {
   aiNoGrant,
   aiNotBound,
   childEnv,
+  codexChildEnv,
+  codexExecArgs,
+  codexSpawnCommand,
+  tomlString,
+  tomlStringArray,
+  CODEX_DISABLE_FEATURES,
   parseCli,
   startConnector,
 } from "./connector.js";
