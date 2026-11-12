@@ -47,6 +47,11 @@ export interface ListedVault {
   vaultId: string;
   modes: VaultMode[];
   name?: string;
+  /**
+   * The vault's short name (its leftmost label, e.g. `annhouseplants`), read from the platform's
+   * `podName` ONLY when `podNameKnown` is true. Absent otherwise: it is never worked out of a host.
+   */
+  shortName?: string;
   /** The GilbVeda type IRI the vault represents, whichever wire form it came in. */
   represents?: string;
   isLandingVault: boolean;
@@ -147,6 +152,7 @@ export async function listVaults(origin: string, opts: SignedVaultOptions): Prom
       isLandingVault: v.isLandingVault === true,
     };
     if (typeof v.name === "string") item.name = v.name;
+    if (v.podNameKnown === true && typeof v.podName === "string" && v.podName) item.shortName = v.podName;
     const rep = iri(v.represents);
     if (rep) item.represents = rep;
     if (typeof v["@id"] === "string" && v["@id"]) item.entity = v["@id"];

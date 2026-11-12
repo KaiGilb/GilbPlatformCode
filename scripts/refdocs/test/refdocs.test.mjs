@@ -157,7 +157,11 @@ test("T9 build-input offline is byte-identical to the b16 input", () => {
   const ADDED_AFTER_PIN = new Set(["style-runtime", "style-studio"]);
   const fx = JSON.parse(readFileSync(FIXTURE_SRC, "utf8"));
   const atPin = Buffer.from(JSON.stringify({ ...fx, units: fx.units.filter((u) => !ADDED_AFTER_PIN.has(u.folder)) }, null, 1) + "\n");
-  assert.ok(got.equals(atPin), "built input differs from the fixture");
+  // Units admitted to library.json after the fixture was made, whose folders already exist at the pin: the build includes them, the fixture does not.
+  const ADMITTED_AFTER_FIXTURE = new Set(["vault-list", "vault-address", "photo-ref", "lws-session-bridge"]);
+  const built = JSON.parse(got.toString("utf8"));
+  const gotAtFixture = Buffer.from(JSON.stringify({ ...built, units: built.units.filter((u) => !ADMITTED_AFTER_FIXTURE.has(u.folder)) }, null, 1) + "\n");
+  assert.ok(gotAtFixture.equals(atPin), "built input differs from the fixture");
 });
 
 test("T9b a run on 900e918 (after unit.json moved the pins) differs from the fixture", () => {

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-session-bridge",
   "package": "@kaigilb/gilbplatformcode-lws-session-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "purpose": "The one seam through which GilbPlatform client code gets its credential headers, so the same client works with any signed-in session and never sends a credential to a host outside the platform.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -19,6 +19,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.3. new `configureLiveApp({ platformOrigin, idOrigin, systemVaultHosts?, localRigHosts?, credentialOptions? })` (src/configureLiveApp.ts): the start-up every live app repeated (base origin, system-vault hosts, a SessionCredential, setLwsAuth); additive, no new peer (base-origin was already one; the host-agnostic check now allows its import)",
     "0.1.2. `NotSignedInError` carries the platform's 401 sentence as `platformSentence`; new `RequestRefusedError` and `errorForUnauthorized(res, invalidate)` (src/unauthorized.ts): a 401 that names a DPoP proof fault keeps the token; the signin peer is ^0.2.6. New `signedSend(fetchImpl?)` (src/signedSend.ts): the signed `send` picture-set takes",
     "the sentence of `OriginNotAllowedError` (line 51): `add http://localhost:5197 to GilbPlatform's FIRST_PARTY_ORIGINS?` is `add this app's origin to GilbPlatform's FIRST_PARTY_ORIGINS?`",
     "comments that name a host are reworded, no code changed"
@@ -28,10 +29,15 @@
     "src/fromSession.ts",
     "src/index.ts",
     "src/unauthorized.ts",
-    "src/signedSend.ts"
+    "src/signedSend.ts",
+    "src/configureLiveApp.ts",
+    "src/configureLiveApp.test.ts"
   ],
   "host": [],
   "library": {
-    "admitted": false
+    "admitted": true,
+    "tag": "t:AccessCredential.live",
+    "title": "Start-up for a live app (base origin, session credential, signed fetch)",
+    "note": "configureLiveApp sets the base origin, the system-vault hosts and the session credential in one call, and the credential then signs every platform call (signedSend, dpopReadAuth, dpopWriteAuth). For the signed fetch alone take platform-fetch; the sign-in card and the credential are in signin."
   }
 }

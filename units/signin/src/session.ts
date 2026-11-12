@@ -71,6 +71,8 @@ import {
 export { indexedDbSessionStore, expectOfStored, familyOf, isFamilyEndedMarker, isSignedOutMarker, isStoredSession, recordIsCurrent, SESSION_DB_NAME, SESSION_OBJECT_STORE, SESSION_RECORD_KEY, STORED_SESSION_VERSION } from "./sessionStore";
 export type { CurrentRecordExpect, FamilyEndedMarker, SessionMarker, SessionSlot, SessionStore, SignedOutMarker, StoredSession } from "./sessionStore";
 export { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
+export { makeSignInAuth } from "./signInAuth";
+export type { MakeSignInAuthOptions } from "./signInAuth";
 
 /** Re-mint when less than this much of the token's life is left (clock skew and time in flight). */
 export const EXPIRY_GUARD_MS = 60_000;

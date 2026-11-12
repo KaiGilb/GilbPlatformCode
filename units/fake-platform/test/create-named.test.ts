@@ -235,7 +235,7 @@ describe("helpers", () => {
   });
 });
 
-describe("parentVault must be a vault the caller MINTED (GilbPlatform src/routes/vault.ts:522 and :738)", () => {
+describe("parentVault must be a vault the caller MINTED (GilbPlatform src/auth/create-named-vault.ts:312 and :571)", () => {
   const sentence = (e: string) => `You do not own parent vault ${e} — nest only under vaults you have minted`;
   it("the caller's own sign-up landing vault is owned but not minted: 403 with the platform's exact sentence, nothing is made", async () => {
     const w = await world();

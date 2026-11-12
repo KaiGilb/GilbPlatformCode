@@ -252,7 +252,7 @@ export function createNamed(core: Core, req: Req, caller: Caller | null): Respon
     parent = [...core.s.vaults.values()].find((x) => x.entity === o.parentVault && !x.pending) ?? null;
     if (!parent) return badRequest(`parentVault is not a known vault entity: ${o.parentVault}`);
     // Minted by the caller through create-named, not merely owned: the landing vault of a sign-up is owned and is refused
-    // (GilbPlatform src/routes/vault.ts:522 for a cross-store vault, :738 for a local one: the same sentence).
+    // (GilbPlatform src/auth/create-named-vault.ts:312 and :571: the same sentence).
     if (parent.mintedBy !== person.email) return forbidden(`You do not own parent vault ${o.parentVault} — nest only under vaults you have minted`);
   } else if (person.landingVaultId !== null) {
     parent = core.s.vaults.get(person.landingVaultId) ?? null;

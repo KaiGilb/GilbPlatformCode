@@ -179,7 +179,25 @@ The `vaultId` create-named answers is `https://<slug>.<domain>` plus the segment
 
 The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. The kit never retries for you.
 
-`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. The parent must also be a vault the caller MINTED: the live platform answers any other parent with 403 `You do not own parent vault <entity> — nest only under vaults you have minted` (GilbPlatform `src/routes/vault.ts:522` and `:738`). The sign-up landing vault is not minted by the caller in this sense, so to make an app vault, create it top-level (no `parentVault`) unless the caller minted the parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+`credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, shortName?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. The parent must also be a vault the caller MINTED: the live platform answers any other parent with 403 `You do not own parent vault <entity> — nest only under vaults you have minted` (GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`). The sign-up landing vault is not minted by the caller in this sense, so to make an app vault, create it top-level (no `parentVault`) unless the caller minted the parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
+
+### The `auth` for the card: `makeSignInAuth`
+
+`SignInCard` takes an `auth` (`requestCode`, `verifyCode`, `prepareName`, `checkName`, `completeNamedVault`). `makeSignInAuth` from `./session` builds it, so an app does not copy 15 lines (five apps had):
+
+```ts
+import { SessionCredential, makeSignInAuth } from "@kaigilb/gilbplatformcode-signin/session";
+
+const credential = new SessionCredential();
+const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "PictureRecords" });
+// <SignInCard app={app} auth={auth} onSignedIn={...} />
+```
+
+`origin` and `productName` are the app's (the unit holds neither). `transport` is optional. `verifyCode` runs `credential.signInWithCode`, so the credential holds the token. `completeNamedVault` rejects with "Creating a new vault is not part of <product>. Sign in with an account that already has a vault." unless you pass `createsVault: true`, which makes it resolve (the name was already sent by `verifyCode`). A wrong code is still `CodeRejectedError`.
+
+### Allowed localhost dev ports
+
+A page on `http://localhost:<port>` can sign in against a live platform only when that origin is in the platform's `FIRST_PARTY_ORIGINS` (GilbPlatform `src/config/index.ts:879`, read from the environment). In production that list holds `http://localhost:5197` and `http://localhost:5251`. Run a dev server on 5197 or 5251; any other port is refused as an origin the platform does not admit (`OriginNotAllowedError` in `./session`). Allocate the port through the dev-ports rule, not by guessing.
 
 ## Do not
 
@@ -187,6 +205,14 @@ The platform answers 202 instead of 201 when the mint is partial: the vault's fa
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.8
+
+Patch release, additive only.
+
+- New `makeSignInAuth({ credential, origin, productName, transport?, createsVault? })` in `./session` (`src/signInAuth.ts`): the `auth` the card takes. See "The `auth` for the card".
+- `ListedVault` gains `shortName?`, the platform's `podName`, read only when `podNameKnown` is true. It is never worked out of a host.
+- README: the allowed localhost dev ports, and the platform source lines for the parent rule corrected to `src/auth/create-named-vault.ts:312` and `:571`.
 
 ## Changes in 0.2.1
 

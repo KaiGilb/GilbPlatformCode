@@ -55,6 +55,21 @@ describe("listVaults", () => {
     expect(r.signedCount()).toBe(1);
   });
 
+  it("reads shortName from podName only when podNameKnown is true; never from the host", async () => {
+    const r = rig(200, {
+      vaults: [
+        { vaultId: "https://annhouseplants.example.test/vault", modes: ["write"], podName: "annhouseplants", podNameKnown: true },
+        { vaultId: "https://b.example.test/vault", modes: ["write"], podName: "bee", podNameKnown: false },
+        { vaultId: "https://c.example.test/vault", modes: ["write"], podName: "cee" },
+        { vaultId: "https://d.example.test/vault", modes: ["write"], podName: null, podNameKnown: true },
+        { vaultId: "https://e.example.test/vault", modes: ["write"], podName: "", podNameKnown: true },
+      ],
+    });
+    const list = await listVaults(ORIGIN, { credential: r.credential, transport: r.transport });
+    expect(list.map((v) => v.shortName)).toEqual(["annhouseplants", undefined, undefined, undefined, undefined]);
+    expect("shortName" in list[1]!).toBe(false);
+  });
+
   it("keeps each vault's entity URI (the node @id) as `entity`; absent when no @id", async () => {
     const r = rig(200, {
       vaults: [
