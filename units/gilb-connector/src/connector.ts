@@ -473,6 +473,8 @@ export interface StartOptions {
   hopCli?: HopCli;
   /** The Codex CLI used for a hand-off when hopCli is `codex`. Default: `codex`. */
   codexBin?: string;
+  /** Removes a hand-off's temp folder. Default: recursive rmSync. A test hook: a failure here must never fail the hand-off. */
+  removeDir?: (dir: string) => void;
   hopId?: string;
   turnId?: string;
   hopTools?: readonly ToolSpec[];
@@ -1549,13 +1551,15 @@ interface HopRunner {
 
 /** The Claude Code runner: today's argv, env and stream-json reading, unchanged. */
 function claudeHopRunner(claudeBin: string, env: NodeJS.ProcessEnv, hopModel: string | undefined, stdinText: (hop: HopShape) => string): HopRunner {
+  const scriptBin = /\.(js|mjs|cjs)$/i.test(claudeBin);
   return {
     name: "Claude Code",
     prepare: async ({ hop, nestedArgs }) => {
       const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args: nestedArgs } } };
       return {
-        command: claudeBin,
-        args: claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel),
+        // A script (fake-claude.mjs in tests) is run by node on every platform; the real claude is never a .js/.mjs/.cjs file.
+        command: scriptBin ? process.execPath : claudeBin,
+        args: [...(scriptBin ? [claudeBin] : []), ...claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel)],
         env: childEnv(env),
         stdinText: stdinText(hop),
       };
@@ -1623,6 +1627,8 @@ function codexStoredApiKey(doctor: unknown): unknown {
 const CODEX_TESTED_VERSION_PREFIX = "0.167.";
 const CODEX_NOT_CHATGPT =
   "Codex is not signed in with ChatGPT, so the hand-off was stopped. Run: codex login and choose Sign in with ChatGPT.";
+const CODEX_DOCTOR_FAILED = "Could not run codex doctor, so the hand-off was stopped.";
+const CODEX_FEATURES_UNKNOWN = "This Codex version's feature list is not one the connector knows, so the hand-off was stopped.";
 const CODEX_NO_FEATURES = "Could not read Codex's feature list, so the hand-off was stopped.";
 const CODEX_DOCTOR_TIMEOUT_MS = 60 * 1000;
 const CODEX_FEATURES_TIMEOUT_MS = 30 * 1000;
@@ -1659,16 +1665,22 @@ export const CODEX_DISABLE_FEATURES = [
   "wake_on_agent_messages",
   "enable_fanout",
   "skill_mcp_dependency_install",
+  "shell_snapshot",
+  "unified_exec_tty",
+  "browser_use_full_cdp_access",
+  "plugin_sharing",
+  "plugin_discovery_prefetch",
 ];
 
-const CODEX_ENV_DENY_PREFIXES = ["OPENAI_", "AZURE_OPENAI_", "CODEX_API_"];
+const CODEX_ENV_DENY_PREFIXES = ["OPENAI_", "AZURE_OPENAI_"];
 
-/** The environment a nested `codex` gets: childEnv's, minus every OpenAI and Codex key (CODEX_API_KEY overrides the ChatGPT sign-in). CODEX_HOME stays. */
+/** The environment a nested `codex` gets: childEnv's, minus every OpenAI key and every CODEX_ key (CODEX_API_KEY and CODEX_ACCESS_TOKEN override the ChatGPT sign-in). CODEX_HOME stays. */
 export function codexChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const out = childEnv(env);
   for (const key of Object.keys(out)) {
     const upper = key.toUpperCase();
-    if (upper === "CODEX_API_KEY" || upper === "OPENAI_API_KEY" || CODEX_ENV_DENY_PREFIXES.some((prefix) => upper.startsWith(prefix))) delete out[key];
+    if (upper === "CODEX_HOME") continue;
+    if (upper === "OPENAI_API_KEY" || upper.startsWith("CODEX_") || CODEX_ENV_DENY_PREFIXES.some((prefix) => upper.startsWith(prefix))) delete out[key];
   }
   return out;
 }
@@ -1682,6 +1694,15 @@ export function tomlStringArray(values: readonly string[]): string {
   return "[" + values.map(tomlString).join(", ") + "]";
 }
 
+/** The feature names in `codex features list`: ANSI colour, indent, bullets, CRLF and blank lines are all tolerated. */
+export function parseCodexFeatureNames(output: string): string[] {
+  return output
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^(?:\*|-|\u2022)\s+/, "").split(/\s+/)[0] ?? "")
+    .filter((name) => name !== "");
+}
+
 export const CODEX_NOT_FOUND = "Could not find Codex. Install it with npm install -g @openai/codex, or pass --codex with the full path to codex.exe.";
 
 /**
@@ -1690,12 +1711,22 @@ export const CODEX_NOT_FOUND = "Could not find Codex. Install it with npm instal
  */
 export function codexSpawnCommand(
   codexBin: string,
-  opts: { platform?: string; arch?: string; env?: NodeJS.ProcessEnv; exists?: (p: string) => boolean } = {},
+  opts: { platform?: string; arch?: string; env?: NodeJS.ProcessEnv; exists?: (p: string) => boolean; isFile?: (p: string) => boolean } = {},
 ): { command: string; prefixArgs: string[] } {
   const platform = opts.platform ?? process.platform;
   const arch = opts.arch ?? process.arch;
   const env = opts.env ?? process.env;
-  const exists = opts.exists ?? existsSync;
+  // A candidate must be a file: a folder named codex is skipped.
+  const exists =
+    opts.isFile ??
+    opts.exists ??
+    ((candidate: string) => {
+      try {
+        return statSync(candidate).isFile();
+      } catch {
+        return false;
+      }
+    });
   if (/\.(js|mjs|cjs)$/i.test(codexBin)) return { command: process.execPath, prefixArgs: [codexBin] };
   if (platform !== "win32") return { command: codexBin, prefixArgs: [] };
   if (/\.exe$/i.test(codexBin)) return { command: codexBin, prefixArgs: [] };
@@ -1712,8 +1743,9 @@ export function codexSpawnCommand(
     }
     if (found === undefined) found = codexBin;
   } else {
-    const pathVar = env.PATH ?? env.Path ?? "";
-    search: for (const folder of pathVar.split(";")) {
+    const pathVar = env.PATH || env.Path || "";
+    search: for (const rawFolder of pathVar.split(";")) {
+      const folder = rawFolder.trim().replace(/^"(.*)"$/, "$1");
       if (folder === "") continue;
       for (const ext of [".exe", ".cmd", ".ps1", ""]) {
         const candidate = p.join(folder, codexBin + ext);
@@ -1866,20 +1898,21 @@ function codexHopRunner(
       // Fail closed: anything but a stored ChatGPT sign-in stops the hand-off before exec starts.
       const spawnCmd = codexSpawnCommand(codexBin);
       const doctor = await captureCodex(spawnCmd, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
+      if (doctor === null) throw new Error(CODEX_DOCTOR_FAILED);
       let version: unknown;
       let mode: unknown;
-      let apiKeyStored = false;
-      if (doctor !== null) {
-        try {
-          const json = JSON.parse(doctor) as { codexVersion?: unknown } | null;
-          mode = codexStoredAuthMode(json);
-          apiKeyStored = codexStoredApiKey(json) === true;
-          version = json?.codexVersion;
-        } catch {
-          mode = undefined;
-        }
+      let apiKeyOk = false;
+      try {
+        const json = JSON.parse(doctor) as { codexVersion?: unknown } | null;
+        mode = codexStoredAuthMode(json);
+        // Only an absent field or an exact false passes: anything else (true, "yes", null) is refused.
+        const key = codexStoredApiKey(json);
+        apiKeyOk = key === undefined || key === false;
+        version = json?.codexVersion;
+      } catch {
+        throw new Error(CODEX_DOCTOR_FAILED);
       }
-      if (mode !== "chatgpt" || apiKeyStored) throw new Error(CODEX_NOT_CHATGPT);
+      if (mode !== "chatgpt" || !apiKeyOk) throw new Error(CODEX_NOT_CHATGPT);
       if (typeof version === "string" && version !== "") {
         process.stderr.write(`gilb-connector: this hand-off runs on Codex ${version}.\n`);
         if (!version.startsWith(CODEX_TESTED_VERSION_PREFIX)) {
@@ -1888,6 +1921,8 @@ function codexHopRunner(
       }
       const names = await features(spawnCmd, cenv, signal);
       if (names === null) throw new Error(CODEX_NO_FEATURES);
+      // Fail closed: a list the connector cannot read must not run with nothing switched off.
+      if (!names.includes("code_mode_host") || !names.includes("shell_tool")) throw new Error(CODEX_FEATURES_UNKNOWN);
       const disable = CODEX_DISABLE_FEATURES.filter((name) => names.includes(name));
       const instructionsPath = join(dir, "instructions.md");
       writeFileSync(instructionsPath, hop.system, { mode: 0o600 });
@@ -2277,6 +2312,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   const claudeBin = opts.claudeBin ?? "claude";
   const hopCli: HopCli = opts.hopCli === "codex" ? "codex" : "claude";
   const codexBin = opts.codexBin ?? "codex";
+  const removeDir =
+    opts.removeDir ?? ((dir: string) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
   const hopId = opts.hopId;
   const hopMode = hopId !== undefined && hopId !== "";
   const hopTools = [...(opts.hopTools ?? [])];
@@ -2625,10 +2662,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
           codexFeatures = undefined;
           return null;
         }
-        return out
-          .split("\n")
-          .map((line) => line.trim().split(/\s+/)[0] ?? "")
-          .filter((name) => name !== "");
+        const names = parseCodexFeatureNames(out);
+        // A list the connector cannot recognise is refused by the caller and is not remembered.
+        if (!names.includes("code_mode_host") || !names.includes("shell_tool")) codexFeatures = undefined;
+        return names;
       });
     }
     const shared = codexFeatures;
@@ -2659,11 +2696,37 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (claudeBin !== "claude") args.push("--claude", claudeBin);
     // The nested connector gives the hand-off a real clock. Concept hops get none, as before.
     if (!conceptHop(hop.role)) args.push("--hop-deadline", String(Math.floor(Date.now() + hopMaxOf(hop.role))));
+    // Never throws: a folder that cannot be removed is reported, not fatal. If the child still runs, it is tried again when the child closes.
+    const removeHopDir = (target: string, child?: ChildProcess): void => {
+      const attempt = (): string | undefined => {
+        try {
+          if (target === dir) removeDir(target);
+          else rmSync(target, { force: true, maxRetries: 5, retryDelay: 200 });
+          return undefined;
+        } catch (err) {
+          const code = (err as { code?: unknown } | null)?.code;
+          return typeof code === "string" ? code : "unknown";
+        }
+      };
+      const report = (code: string): void => {
+        process.stderr.write(`gilb-connector: could not remove the hand-off folder ${target}: ${code}\n`);
+      };
+      const first = attempt();
+      if (first === undefined) return;
+      if (child && child.exitCode === null && child.signalCode === null) {
+        child.once("close", () => {
+          const second = attempt();
+          if (second !== undefined) report(second);
+        });
+        return;
+      }
+      report(first);
+    };
     let plan: HopSpawnPlan;
     try {
       plan = await hopRunner.prepare({ hop, dir, nestedArgs: args, signal });
     } catch (err) {
-      rmSync(dir, { recursive: true, force: true });
+      removeHopDir(dir);
       throw err;
     }
     const child = spawn(plan.command, plan.args, {
@@ -2679,7 +2742,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (!stdin || !stdout || !stderrStream) {
       children.delete(child);
       killHopProcess(child);
-      rmSync(dir, { recursive: true, force: true });
+      removeHopDir(dir, child);
       throw new Error(`Could not start ${hopRunner.name}: pipes were not available.`);
     }
     let buf = "";
@@ -2718,9 +2781,13 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         if (timer !== undefined) clearTimeout(timer);
         signal.removeEventListener("abort", onAbort);
         children.delete(child);
-        for (const file of plan.cleanupFiles ?? []) rmSync(file, { force: true });
-        rmSync(dir, { recursive: true, force: true });
-        fn();
+        // Answer first: the clean-up below may be slow or fail (Windows holds a just-killed tree's folder).
+        try {
+          fn();
+        } finally {
+          for (const file of plan.cleanupFiles ?? []) removeHopDir(file, child);
+          removeHopDir(dir, child);
+        }
       };
       timer = setTimeout(() => {
         killHopProcess(child);

@@ -17,10 +17,16 @@ const out = (row) => process.stdout.write(JSON.stringify(row) + "\n");
 if (argv[0] === "doctor") {
   log({ event: "doctor", argv });
   if (process.env.FAKE_CODEX_DOCTOR_FAIL === "1") process.exit(1);
+  if (process.env.FAKE_CODEX_DOCTOR_FAIL === "garbage") {
+    process.stdout.write("this is not json\n");
+    process.exit(0);
+  }
+  // "1" true, "yes" a string, "null" null, "absent" no field; anything else false.
+  const keyMode = process.env.FAKE_CODEX_STORED_API_KEY;
   const details = {
     "auth file": "/fake/auth.json",
     "auth storage mode": "File",
-    "stored API key": process.env.FAKE_CODEX_STORED_API_KEY === "1",
+    ...(keyMode === "absent" ? {} : { "stored API key": keyMode === "1" ? true : keyMode === "yes" ? "yes" : keyMode === "null" ? null : false }),
     "stored ChatGPT tokens": true,
     "stored agent identity": false,
     "stored auth mode": process.env.FAKE_CODEX_AUTH_MODE ?? "chatgpt",
@@ -48,7 +54,17 @@ if (argv[0] === "doctor") {
   ];
   const delay = Number(process.env.FAKE_CODEX_FEATURES_DELAY_MS ?? 0);
   setTimeout(() => {
-    for (const [name, stage, on] of rows) process.stdout.write(`${name.padEnd(24)}${stage.padEnd(16)}${on}\n`);
+    const format = process.env.FAKE_CODEX_FEATURES_FORMAT ?? "plain";
+    const kept = format === "noshell" ? rows.filter((r) => r[0] !== "shell_tool") : rows;
+    const line = ([name, stage, on]) => `${name.padEnd(24)}${stage.padEnd(16)}${on}`;
+    let body = kept.map(line).join("\n") + "\n";
+    if (format === "ansi") body = kept.map((r) => `\x1b[1m${r[0]}\x1b[0m`.padEnd(30) + `${r[1].padEnd(16)}${r[2]}`).join("\n") + "\n";
+    if (format === "bullets") body = kept.map((r, i) => `${["* ", "- ", "\u2022 "][i % 3]}${line(r)}`).join("\n") + "\n";
+    if (format === "indent") body = kept.map((r) => `    ${line(r)}`).join("\n") + "\n";
+    if (format === "crlf") body = kept.map(line).join("\r\n") + "\r\n";
+    if (format === "header") body = `Features\n\n${kept.map(line).join("\n")}\n\n`;
+    if (format === "empty") body = "";
+    process.stdout.write(body);
     process.exit(0);
   }, delay > 0 ? delay : 0);
 } else if (argv[0] === "exec") {
@@ -86,9 +102,11 @@ function runExec() {
     const args = configValue("mcp_servers.GilbPlatform.args=");
     log({
       event: "exec",
+      pid: process.pid,
       argv,
       prompt,
       instructions: instructionsPath !== undefined ? fs.readFileSync(instructionsPath, "utf8") : null,
+      codexVars: Object.keys(process.env).filter((k) => k.startsWith("CODEX_") && !k.startsWith("CODEX_HOME")),
       hasCodexApiKey: "CODEX_API_KEY" in process.env,
       hasOpenaiApiKey: "OPENAI_API_KEY" in process.env,
       openaiVars: Object.keys(process.env).filter((k) => k.startsWith("OPENAI_")),

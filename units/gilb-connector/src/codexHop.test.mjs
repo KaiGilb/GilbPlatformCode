@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
 import { PassThrough } from "node:stream";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,8 @@ const TURN = "turn-codex-hop-f1";
 const HOP_A = "0123456789abcdef01234567";
 const SYSTEM = "You are Agent.Outcome. Say \"hi\" \\ and keep the secret-system-text out of argv.";
 const NOT_CHATGPT = "Codex is not signed in with ChatGPT, so the hand-off was stopped. Run: codex login and choose Sign in with ChatGPT.";
+const DOCTOR_FAILED = "Could not run codex doctor, so the hand-off was stopped.";
+const FEATURES_UNKNOWN = "This Codex version's feature list is not one the connector knows, so the hand-off was stopped.";
 const NO_FEATURES = "Could not read Codex's feature list, so the hand-off was stopped.";
 
 const closers = [];
@@ -133,6 +136,14 @@ const readLog = (file) =>
         .filter((line) => line.trim())
         .map((line) => JSON.parse(line))
     : [];
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
 const execs = (file) => readLog(file).filter((row) => row.event === "exec");
 
 function stderrLines() {
@@ -227,9 +238,27 @@ describe("a hand-off run by Codex", () => {
 
   it("c4 a doctor that fails stops the hand-off (fail closed)", async () => {
     const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_DOCTOR_FAIL: "1" } });
-    expect(JSON.parse(text(res)).reason).toBe(NOT_CHATGPT);
+    expect(JSON.parse(text(res)).reason).toBe(DOCTOR_FAILED);
     expect(execs(logFile)).toHaveLength(0);
   }, 20000);
+
+  it("c4b a doctor that prints something that is not JSON is the doctor-failed sentence, and exec never runs", async () => {
+    const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_DOCTOR_FAIL: "garbage" } });
+    expect(JSON.parse(text(res)).reason).toBe(DOCTOR_FAILED);
+    expect(execs(logFile)).toHaveLength(0);
+  }, 20000);
+
+  it("c4c a stored API key passes only when the field is absent or exactly false", async () => {
+    for (const keyMode of ["1", "yes", "null"]) {
+      const refused = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode } });
+      expect(JSON.parse(text(refused.res)).reason, keyMode).toBe(NOT_CHATGPT);
+      expect(execs(refused.logFile), keyMode).toHaveLength(0);
+    }
+    for (const keyMode of ["absent", "0"]) {
+      const ok = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode } });
+      expect(ok.res.result.isError, keyMode).toBe(false);
+    }
+  }, 60000);
 
   it("c5 a feature list that cannot be read stops the hand-off", async () => {
     const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_FEATURES_FAIL: "1" } });
@@ -237,6 +266,38 @@ describe("a hand-off run by Codex", () => {
     expect(JSON.parse(text(res)).reason).toBe(NO_FEATURES);
     expect(execs(logFile)).toHaveLength(0);
   }, 20000);
+
+  it("c5b feature lists in ANSI, bullets, indent, CRLF and header-plus-blank-line shapes give the same disables", async () => {
+    for (const format of ["plain", "ansi", "bullets", "indent", "crlf", "header"]) {
+      const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_FEATURES_FORMAT: format } });
+      expect(res.result.isError, format).toBe(false);
+      const { argv } = execs(logFile)[0];
+      expect(argv.filter((a, i) => argv[i - 1] === "--disable"), format).toEqual(["shell_tool", "apps", "goals"]);
+    }
+  }, 120000);
+
+  it("c5c an empty feature list, and one without shell_tool, are refused and exec never runs", async () => {
+    for (const format of ["empty", "noshell"]) {
+      const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_FEATURES_FORMAT: format } });
+      expect(res.result.isError, format).toBe(true);
+      expect(JSON.parse(text(res)).reason, format).toBe(FEATURES_UNKNOWN);
+      expect(execs(logFile), format).toHaveLength(0);
+    }
+  }, 60000);
+
+  it("c5d a refused feature list is not cached: the next hand-off in the same session reads it again", async () => {
+    stderrLines();
+    const logFile = join(scratch(), "codex.log");
+    const platform = await hopDoor("go");
+    const env = meEnv({ FAKE_CODEX_LOG: logFile, FAKE_CODEX_FEATURES_FORMAT: "empty" });
+    const box = connect({ origin: platform.origin, env });
+    const first = await callTool(box, "run_named_role", { role: "Agent.Outcome", task: "a" });
+    expect(JSON.parse(text(first)).reason).toBe(FEATURES_UNKNOWN);
+    env.FAKE_CODEX_FEATURES_FORMAT = "plain";
+    const second = await callTool(box, "run_named_role", { role: "Agent.Outcome", task: "a" });
+    expect(second.result.isError).toBe(false);
+    expect(readLog(logFile).filter((row) => row.event === "features").length).toBe(2);
+  }, 30000);
 
   it("c6 --disable is exactly the deny-list names the fake lists", async () => {
     const { logFile } = await handOff("go");
@@ -281,8 +342,69 @@ describe("a hand-off run by Codex", () => {
     expect(res.result.isError).toBe(true);
     expect(JSON.parse(text(res)).error).toBe("the hand-off ran out of time");
     const deadline = Date.now() + 5000;
-    while (!readLog(logFile).some((row) => row.event === "sigterm") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
-    expect(readLog(logFile).some((row) => row.event === "sigterm")).toBe(true);
+    const pid = execs(logFile)[0].pid;
+    if (process.platform !== "win32") {
+      while (!readLog(logFile).some((row) => row.event === "sigterm") && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+      expect(readLog(logFile).some((row) => row.event === "sigterm")).toBe(true);
+    } else {
+      // Windows ends a process without letting it log SIGTERM: the proof is that the fake is gone.
+      while (processAlive(pid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+      expect(processAlive(pid)).toBe(false);
+    }
+  }, 20000);
+
+  it("c11c a folder that cannot be removed does not fail a successful hand-off, and one stderr line says so", async () => {
+    const failing = (dir) => {
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    const { res, lines } = await handOff("go", { removeDir: failing });
+    expect(res.result.isError).toBe(false);
+    expect(JSON.parse(text(res)).content).toBe("tool-ok");
+    expect(lines.join("")).toMatch(/gilb-connector: could not remove the hand-off folder .*gilb-hop-.*: EBUSY\n/);
+  }, 20000);
+
+  it("c11d a folder that cannot be removed does not stop the timeout answer, and the session still stops", async () => {
+    const removed = [];
+    const failing = (dir) => {
+      removed.push(dir);
+      throw Object.assign(new Error("busy"), { code: "EBUSY" });
+    };
+    const { res, lines, logFile } = await handOff("WAITFOREVER", { hopMaxMs: 400, removeDir: failing });
+    expect(res.result.isError).toBe(true);
+    expect(JSON.parse(text(res)).error).toBe("the hand-off ran out of time");
+    // Tried at the timeout, and once more when the killed child closed.
+    const deadline = Date.now() + 5000;
+    while (removed.length < 2 && Date.now() < deadline) await sleep(50);
+    expect(removed.length).toBe(2);
+    while (!lines.join("").includes("could not remove the hand-off folder") && Date.now() < deadline) await sleep(50);
+    expect(lines.join("")).toContain("EBUSY");
+    expect(processAlive(execs(logFile)[0].pid)).toBe(false);
+  }, 20000);
+
+  it("c11e a folder that is removable on the second try (after the child closes) is removed and nothing is reported", async () => {
+    let calls = 0;
+    let real;
+    const flaky = (dir) => {
+      calls += 1;
+      real = dir;
+      if (calls === 1) throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      rmSync(dir, { recursive: true, force: true });
+    };
+    const { res, lines } = await handOff("WAITFOREVER", { hopMaxMs: 400, removeDir: flaky });
+    expect(JSON.parse(text(res)).error).toBe("the hand-off ran out of time");
+    const deadline = Date.now() + 5000;
+    while (existsSync(real ?? "") && Date.now() < deadline) await sleep(50);
+    expect(existsSync(real)).toBe(false);
+    expect(lines.join("")).not.toContain("could not remove");
+  }, 20000);
+
+  it("c11f a refused hand-off (prepare fails) with an unremovable folder still answers with its reason", async () => {
+    const failing = () => {
+      throw Object.assign(new Error("busy"), { code: "EPERM" });
+    };
+    const { res, lines } = await handOff("go", { env: { FAKE_CODEX_AUTH_MODE: "apikey" }, removeDir: failing });
+    expect(JSON.parse(text(res)).reason).toBe(NOT_CHATGPT);
+    expect(lines.join("")).toContain("EPERM");
   }, 20000);
 
   it("c11b a timed-out run reports the tool call it streamed", async () => {
@@ -350,11 +472,28 @@ describe("Codex helpers", () => {
     expect(Object.keys(out).sort()).toEqual(["CODEX_HOME", "KEEP_ME", "MCP_TOOL_TIMEOUT", "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT", "PATH"].sort());
   });
 
+  it("c14b2 every CODEX_ variable but CODEX_HOME is removed", () => {
+    const out = codexChildEnv({ PATH: "/bin", CODEX_HOME: "/h", CODEX_ACCESS_TOKEN: "t", CODEX_FOO: "x", codex_lower: "y", KEEP: "1" });
+    expect(out.CODEX_HOME).toBe("/h");
+    expect(out.CODEX_ACCESS_TOKEN).toBeUndefined();
+    expect(out.CODEX_FOO).toBeUndefined();
+    expect(out.codex_lower).toBeUndefined();
+    expect(out.KEEP).toBe("1");
+  });
+
+  it("c14b3 the deny-list names the five extra features", () => {
+    for (const name of ["shell_snapshot", "unified_exec_tty", "browser_use_full_cdp_access", "plugin_sharing", "plugin_discovery_prefetch"]) {
+      expect(CODEX_DISABLE_FEATURES).toContain(name);
+    }
+    expect(CODEX_DISABLE_FEATURES).not.toContain("daemon_auto_start");
+    expect(CODEX_DISABLE_FEATURES).not.toContain("guardian_approval");
+  });
+
   it("c14c codexExecArgs and codexSpawnCommand", () => {
     const args = codexExecArgs({ dir: "/d", instructionsPath: "/d/instructions.md", nestedArgs: ["a.mjs", "--x"], disable: ["apps"], model: "m1", nodePath: "/n/node" });
     expect(args.slice(-5)).toEqual(["--disable", "apps", "-m", "m1", "-"]);
     expect(args).toContain('mcp_servers.GilbPlatform.args=["a.mjs", "--x"]');
     expect(args).toContain('mcp_servers.GilbPlatform.command="/n/node"');
-    for (const platform of ["darwin", "linux", "win32"]) expect(codexSpawnCommand("codex", platform)).toEqual({ command: "codex", prefixArgs: [] });
+    for (const platform of ["darwin", "linux"]) expect(codexSpawnCommand("codex", { platform })).toEqual({ command: "codex", prefixArgs: [] });
   });
 });

@@ -84,6 +84,24 @@ describe("codexSpawnCommand", () => {
     expect(out).toEqual({ command: direct, prefixArgs: [] });
   });
 
+  it("an empty PATH falls through to Path", () => {
+    expect(codexSpawnCommand("codex", win([NESTED_X64, `${NPM}\\codex.cmd`], { env: { PATH: "", Path: `C:\\Windows;${NPM}` } }))).toEqual({ command: NESTED_X64, prefixArgs: [] });
+  });
+
+  it("quoted PATH entries are unquoted", () => {
+    expect(codexSpawnCommand("codex", win([NESTED_X64, `${NPM}\\codex.cmd`], { env: { PATH: `"C:\\Windows";"${NPM}"` } }))).toEqual({ command: NESTED_X64, prefixArgs: [] });
+  });
+
+  it("a folder named codex is skipped and the search continues; the default check wants a real file", () => {
+    const first = "C:\\a";
+    const files = [`${NPM}\\codex.cmd`, NESTED_X64];
+    // `C:\\a\\codex` is a directory: isFile says no for it, yes for the files.
+    const isFile = (p) => files.includes(p);
+    expect(codexSpawnCommand("codex", { platform: "win32", arch: "x64", env: { PATH: `${first};${NPM}` }, isFile, exists: () => true })).toEqual({ command: NESTED_X64, prefixArgs: [] });
+    // With the default check, nothing under a made-up Windows path is a file.
+    expect(() => codexSpawnCommand("codex", { platform: "win32", arch: "x64", env: { PATH: "Z:\\no\\such" } })).toThrow(NOT_FOUND);
+  });
+
   it("a path with a separator uses its own folder as the shim folder", () => {
     expect(codexSpawnCommand(`${NPM}\\codex`, win([`${NPM}\\codex.cmd`, NESTED_X64]))).toEqual({ command: NESTED_X64, prefixArgs: [] });
   });
@@ -262,6 +280,26 @@ describe("a real Codex hand-off through the fake", () => {
     const res = await call(box);
     expect(res.result.isError).toBe(true);
     expect(JSON.parse(text(res)).error).toBe("the hand-off ran out of time");
+  }, 30000);
+
+  it("g2b a folder that cannot be removed does not stop a successful hand-off or the session", async () => {
+    const lines = [];
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    const platform = await door("go");
+    const box = connect({
+      origin: platform.origin,
+      env: meEnv(),
+      hopMaxMs: 2 * 60 * 1000,
+      removeDir: () => {
+        throw Object.assign(new Error("busy"), { code: "EBUSY" });
+      },
+    });
+    const res = await call(box);
+    expect(res.result.isError).toBe(false);
+    expect(lines.join("")).toContain("could not remove the hand-off folder");
   }, 30000);
 
   it("g3 a hand-off cancelled while the shared feature list runs does not fail the next one", async () => {

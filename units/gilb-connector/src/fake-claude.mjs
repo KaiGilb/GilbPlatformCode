@@ -33,6 +33,7 @@ process.stdin.on("end", () => {
 async function run() {
   log({
     event: "run",
+    pid: process.pid,
     argv,
     prompt,
     system: arg("--system-prompt"),
