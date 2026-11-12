@@ -237,3 +237,66 @@ describe("input problems", () => {
     expect(api.load).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("an older read never overwrites a newer one", () => {
+  type Slot = { resolve(v: AccessView): void; reject(e: unknown): void };
+  function slowLoads() {
+    const slots: Slot[] = [];
+    const load = vi.fn<ShareApi["load"]>(
+      () => new Promise<AccessView>((resolve, reject) => { slots.push({ resolve, reject }); }),
+    );
+    return { slots, load };
+  }
+  const A = view([BEN], null);
+  const B = view([CAT], null);
+
+  it("read #2 answers B, then the slower read #1 answers A: the state stays B", async () => {
+    const { slots, load } = slowLoads();
+    const { result } = renderHook(() => useVaultShare(VAULT, { load }));
+    await waitFor(() => expect(slots).toHaveLength(1));
+    act(() => result.current.reread());
+    await waitFor(() => expect(slots).toHaveLength(2));
+    await act(async () => slots[1]!.resolve(B));
+    await act(async () => slots[0]!.resolve(A));
+    expect(result.current.state.status).toBe("ready");
+    expect(result.current.state.view).toEqual(B);
+  });
+
+  it("the sheet shows B's rows, not A's", async () => {
+    const { slots, load } = slowLoads();
+    const { rerender } = render(<VaultShareSheet vaultId={VAULT} onClose={() => {}} api={{ load }} />);
+    await waitFor(() => expect(slots).toHaveLength(1));
+    rerender(<VaultShareSheet vaultId={VAULT + "?2"} onClose={() => {}} api={{ load }} />);
+    await waitFor(() => expect(slots).toHaveLength(2));
+    await act(async () => slots[1]!.resolve(B));
+    await act(async () => slots[0]!.resolve(A));
+    expect(screen.getByText("Cat")).toBeTruthy();
+    expect(screen.queryByText("Ben")).toBeNull();
+  });
+
+  it("read #2 answers B, then read #1 REJECTS: still ready with B and no error line", async () => {
+    const { slots, load } = slowLoads();
+    const { result } = renderHook(() => useVaultShare(VAULT, { load }));
+    await waitFor(() => expect(slots).toHaveLength(1));
+    act(() => result.current.reread());
+    await waitFor(() => expect(slots).toHaveLength(2));
+    await act(async () => slots[1]!.resolve(B));
+    await act(async () => slots[0]!.reject(new Error("old read failed")));
+    expect(result.current.state.status).toBe("ready");
+    expect(result.current.state.view).toEqual(B);
+    expect(result.current.state.error).toBeNull();
+  });
+
+  it("a vaultId change: Y's read answers, then the slower X read answers: the sheet shows Y's rows", async () => {
+    const { slots, load } = slowLoads();
+    const { rerender } = render(<VaultShareSheet vaultId="https://x.fake.test/vault" onClose={() => {}} api={{ load }} />);
+    await waitFor(() => expect(slots).toHaveLength(1));
+    rerender(<VaultShareSheet vaultId="https://y.fake.test/vault" onClose={() => {}} api={{ load }} />);
+    await waitFor(() => expect(slots).toHaveLength(2));
+    expect(load).toHaveBeenLastCalledWith("https://y.fake.test/vault");
+    await act(async () => slots[1]!.resolve(B));
+    await act(async () => slots[0]!.resolve(A));
+    expect(screen.getByText("Cat")).toBeTruthy();
+    expect(screen.queryByText("Ben")).toBeNull();
+  });
+});
