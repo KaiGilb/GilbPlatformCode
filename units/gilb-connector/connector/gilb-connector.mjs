@@ -16,10 +16,10 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { appendFileSync, chmodSync, closeSync, constants, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { lstat, open, readdir } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.15";
+export const CONNECTOR_VERSION = "0.6.0";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -83,7 +83,17 @@ function hopLimitMinutes(hopMaxMs) {
  */
 function hopTimeLimitParagraph(hopMaxMs) {
     const minutes = hopLimitMinutes(hopMaxMs);
-    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
+}
+/** The "Hand-off clock" line appended to every tool answer in a hand-off that has a deadline. */
+function hopClockLine(hopStart, deadline, now) {
+    const total = Math.round((deadline - hopStart) / 60000);
+    const used = Math.floor((now - hopStart) / 60000);
+    const left = Math.max(0, Math.ceil((deadline - now) / 60000));
+    if (left <= 3) {
+        return `Hand-off clock: ${left} minutes left. Finish now: stop starting new writes and answer with what you did and what remains.`;
+    }
+    return `Hand-off clock: ${used} of ${total} minutes used, ${left} left.`;
 }
 const TOOL_CALLS_MAX = 60;
 const TOOL_CALL_CHARS = 200;
@@ -585,12 +595,12 @@ function tightenPrivateFile(file) {
     if (existsSync(file))
         chmodSync(file, 0o600);
 }
-function aiDisplayName(name) {
+export function aiDisplayName(name, hopCli = "claude") {
     const trimmed = name?.trim();
     if (trimmed)
         return trimmed.slice(0, 256);
     const host = hostname().trim() || "this computer";
-    return `Claude Code on ${host}`.slice(0, 256);
+    return `${hopCli === "codex" ? "Codex" : "Claude Code"} on ${host}`.slice(0, 256);
 }
 function safeProfileName(name) {
     if (!PROFILE_NAME.test(name) || name === "." || name === "..")
@@ -1131,10 +1141,13 @@ const KNOWN_FLAGS = new Set([
     "--vault",
     "--profile",
     "--claude",
+    "--hop-cli",
+    "--codex",
     "--hop",
     "--turn",
     "--hop-tools",
     "--hop-created",
+    "--hop-deadline",
     "--upload-root",
     "--hop-model",
     "--progress-ms",
@@ -1153,10 +1166,13 @@ export function parseCli(argv, env = process.env) {
             as: "ai",
             name: undefined,
             claudeBin: "claude",
+            hopCli: "claude",
+            codexBin: "codex",
             hopId: undefined,
             turnId: undefined,
             hopToolsPath: undefined,
             hopCreatedPath: undefined,
+            hopDeadline: undefined,
             uploadRoots: [],
             hopModel: undefined,
             progressEveryMs: PROGRESS_EVERY_MS,
@@ -1188,10 +1204,23 @@ export function parseCli(argv, env = process.env) {
         throw new CliError("--name must be 1 to 256 characters.");
     }
     const claudeBin = oneFlag(argv, "--claude") ?? env.GILB_CONNECTOR_CLAUDE ?? "claude";
+    const codexBin = oneFlag(argv, "--codex") ?? env.GILB_CONNECTOR_CODEX ?? "codex";
+    const hopCliRaw = (oneFlag(argv, "--hop-cli") ?? env.GILB_CONNECTOR_HOP_CLI ?? "claude").trim().toLowerCase();
+    if (hopCliRaw !== "claude" && hopCliRaw !== "codex")
+        throw new CliError("--hop-cli must be claude or codex.");
+    const hopCli = hopCliRaw;
     const hopId = oneFlag(argv, "--hop") ?? (env.GILB_CONNECTOR_HOP || undefined);
     const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
     const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
     const hopCreatedPath = oneFlag(argv, "--hop-created");
+    const hopDeadlineRaw = oneFlag(argv, "--hop-deadline") ?? (env.GILB_CONNECTOR_HOP_DEADLINE || undefined);
+    let hopDeadline;
+    if (hopDeadlineRaw !== undefined) {
+        const parsed = /^[0-9]+$/.test(hopDeadlineRaw) ? Number(hopDeadlineRaw) : NaN;
+        if (!Number.isSafeInteger(parsed) || parsed <= 0)
+            throw new CliError("--hop-deadline must be a time in milliseconds.");
+        hopDeadline = parsed;
+    }
     if (hopId !== undefined && !/^[0-9a-f]{24}$/.test(hopId))
         throw new CliError("--hop must be the hand-off id.");
     if (turnId !== undefined && !TURN_ID_RE.test(turnId))
@@ -1220,10 +1249,13 @@ export function parseCli(argv, env = process.env) {
         as: asMode,
         name: nameRaw?.trim(),
         claudeBin,
+        hopCli,
+        codexBin,
         hopId,
         turnId,
         hopToolsPath,
         hopCreatedPath,
+        hopDeadline,
         uploadRoots: flagValues(argv, "--upload-root").map((dir) => dir.trim()).filter((dir) => dir !== ""),
         hopModel,
         progressEveryMs,
@@ -1231,13 +1263,16 @@ export function parseCli(argv, env = process.env) {
     };
 }
 function helpText() {
-    return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--upload-root DIR]... [--hop-model NAME]
+    return `Usage: node gilb-connector.mjs [--as ai|me] [--name DISPLAY] [--agent NAME] [--origin URL] [--vault ID]... [--profile NAME] [--claude PATH] [--hop-cli claude|codex] [--codex PATH] [--upload-root DIR]... [--hop-model NAME]
        node gilb-connector.mjs --hop HOP --turn TURN --hop-tools FILE --as ai|me [--profile NAME] --agent NAME --origin URL
        node gilb-connector.mjs publish --dir DIR --name NAME [--kind app|website] [--dry-run] [--as ai|me] [--origin URL] [--profile NAME] [--worker-url URL]
 
 Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
 --upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
+--hop-cli codex runs a hand-off on the Codex CLI (signed in with ChatGPT) instead of Claude Code. Default: claude.
+--name DISPLAY is the AI's display name. Default: Claude Code on <machine>, or Codex on <machine> with --hop-cli codex.
+--codex PATH is the Codex CLI used for a hand-off. Default: codex.
 --hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
 publish puts a built folder on https://NAME.pages.dev. It publishes unless --dry-run.
 Default agent: ${DEFAULT_AGENT}
@@ -1290,6 +1325,449 @@ function claudeArgs(system, mcpConfig, sessionId, model) {
     if (model !== undefined)
         args.push("--model", model);
     return args;
+}
+/** The Claude Code runner: today's argv, env and stream-json reading, unchanged. */
+function claudeHopRunner(claudeBin, env, hopModel, stdinText) {
+    const scriptBin = /\.(js|mjs|cjs)$/i.test(claudeBin);
+    return {
+        name: "Claude Code",
+        prepare: async ({ hop, nestedArgs }) => {
+            const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args: nestedArgs } } };
+            return {
+                // A script (fake-claude.mjs in tests) is run by node on every platform; the real claude is never a .js/.mjs/.cjs file.
+                command: scriptBin ? process.execPath : claudeBin,
+                args: [...(scriptBin ? [claudeBin] : []), ...claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel)],
+                env: childEnv(env),
+                stdinText: stdinText(hop),
+            };
+        },
+        newReader: () => {
+            let initOk = false;
+            let refused = false;
+            let resultText = null;
+            let resultError = null;
+            return {
+                onEvent(raw, progress, kill) {
+                    if (!raw || typeof raw !== "object")
+                        return;
+                    const event = raw;
+                    if (event.type === "system" && event.subtype === "init") {
+                        if (event.apiKeySource === "none")
+                            initOk = true;
+                        else {
+                            refused = true;
+                            kill();
+                        }
+                    }
+                    else if (event.type === "result") {
+                        if (event.is_error)
+                            resultError = `Claude Code: ${String(event.result ?? "the turn failed").slice(0, 500)}`;
+                        else
+                            resultText = String(event.result ?? "");
+                    }
+                    else if (event.type === "assistant") {
+                        noteAssistant(event.message, progress);
+                    }
+                },
+                outcome(stderr) {
+                    if (refused || !initOk)
+                        return { error: "Claude Code did not confirm that this run uses your Claude subscription, so the hand-off was stopped." };
+                    if (resultError !== null)
+                        return { error: resultError };
+                    if (resultText === null)
+                        return { error: `Claude Code stopped without an answer.${safeTail(stderr)}` };
+                    return { text: resultText };
+                },
+            };
+        },
+    };
+}
+const isRecord = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+/** The details object of codex doctor's auth check: the flat `checks["auth.credentials"]` (Codex 0.167), else the nested `checks.auth.credentials`. */
+function codexAuthDetails(doctor) {
+    const checks = isRecord(doctor) ? doctor.checks : undefined;
+    if (!isRecord(checks))
+        return undefined;
+    const flat = checks["auth.credentials"];
+    if (isRecord(flat) && isRecord(flat.details))
+        return flat.details;
+    const auth = checks.auth;
+    const nested = isRecord(auth) ? auth.credentials : undefined;
+    return isRecord(nested) && isRecord(nested.details) ? nested.details : undefined;
+}
+/** The sign-in mode `codex doctor --json` reports ("chatgpt", "apikey", ...), or undefined when it cannot be read. */
+export function codexStoredAuthMode(doctor) {
+    const flat = isRecord(doctor) && isRecord(doctor.checks) ? doctor.checks["auth.credentials"] : undefined;
+    const flatMode = isRecord(flat) && isRecord(flat.details) ? flat.details["stored auth mode"] : undefined;
+    if (typeof flatMode === "string")
+        return flatMode;
+    const mode = codexAuthDetails(doctor)?.["stored auth mode"];
+    return typeof mode === "string" ? mode : undefined;
+}
+function codexStoredApiKey(doctor) {
+    return codexAuthDetails(doctor)?.["stored API key"];
+}
+/** Codex only ever runs a hand-off on the person's ChatGPT sign-in. The tested release line is 0.167. */
+const CODEX_TESTED_VERSION_PREFIX = "0.167.";
+const CODEX_NOT_CHATGPT = "Codex is not signed in with ChatGPT, so the hand-off was stopped. Run: codex login and choose Sign in with ChatGPT.";
+const CODEX_DOCTOR_FAILED = "Could not run codex doctor, so the hand-off was stopped.";
+const CODEX_FEATURES_UNKNOWN = "This Codex version's feature list is not one the connector knows, so the hand-off was stopped.";
+const CODEX_NO_FEATURES = "Could not read Codex's feature list, so the hand-off was stopped.";
+const CODEX_DOCTOR_TIMEOUT_MS = 60 * 1000;
+const CODEX_FEATURES_TIMEOUT_MS = 30 * 1000;
+/** Codex features a hand-off must not have: shells, other agents, browsers, plugins, memory. Never code_mode_host (the MCP tools need it). */
+export const CODEX_DISABLE_FEATURES = [
+    "shell_tool",
+    "unified_exec",
+    "apps",
+    "plugins",
+    "multi_agent",
+    "multi_agent_v2",
+    "view_image",
+    "image_generation",
+    "goals",
+    "computer_use",
+    "browser_use",
+    "browser_use_external",
+    "tool_suggest",
+    "skill_search",
+    "in_app_browser",
+    "hooks",
+    "sleep_tool",
+    "remote_plugin",
+    "incremental_tools",
+    "request_permissions_tool",
+    "write_stdin_approval",
+    "memories",
+    "collaboration_modes",
+    "default_mode_request_user_input",
+    "multi_agent_v2_dynamic_tools",
+    "agent_message_board",
+    "runtime_agent_instances",
+    "wake_on_agent_messages",
+    "enable_fanout",
+    "skill_mcp_dependency_install",
+    "shell_snapshot",
+    "unified_exec_tty",
+    "browser_use_full_cdp_access",
+    "plugin_sharing",
+    "plugin_discovery_prefetch",
+];
+const CODEX_ENV_DENY_PREFIXES = ["OPENAI_", "AZURE_OPENAI_"];
+/** The environment a nested `codex` gets: childEnv's, minus every OpenAI key and every CODEX_ key (CODEX_API_KEY and CODEX_ACCESS_TOKEN override the ChatGPT sign-in). CODEX_HOME stays. */
+export function codexChildEnv(env = process.env) {
+    const out = childEnv(env);
+    for (const key of Object.keys(out)) {
+        const upper = key.toUpperCase();
+        if (upper === "CODEX_HOME")
+            continue;
+        if (upper === "OPENAI_API_KEY" || upper.startsWith("CODEX_") || CODEX_ENV_DENY_PREFIXES.some((prefix) => upper.startsWith(prefix)))
+            delete out[key];
+    }
+    return out;
+}
+/** A TOML basic string. JSON escaping is valid TOML escaping, except that TOML also wants U+007F escaped. */
+export function tomlString(value) {
+    return JSON.stringify(value).replace(/\u007f/g, "\\u007F");
+}
+export function tomlStringArray(values) {
+    return "[" + values.map(tomlString).join(", ") + "]";
+}
+/** The feature names in `codex features list`: ANSI colour, indent, bullets, CRLF and blank lines are all tolerated. */
+export function parseCodexFeatureNames(output) {
+    return output
+        .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
+        .split(/\r?\n/)
+        .map((line) => line.trim().replace(/^(?:\*|-|\u2022)\s+/, "").split(/\s+/)[0] ?? "")
+        .filter((name) => name !== "");
+}
+export const CODEX_NOT_FOUND = "Could not find Codex. Install it with npm install -g @openai/codex, or pass --codex with the full path to codex.exe.";
+/**
+ * The command that starts the Codex CLI. On Windows the npm shim (codex.cmd) cannot be spawned without a shell,
+ * so the real codex.exe inside the npm package is found and started directly.
+ */
+export function codexSpawnCommand(codexBin, opts = {}) {
+    const platform = opts.platform ?? process.platform;
+    const arch = opts.arch ?? process.arch;
+    const env = opts.env ?? process.env;
+    // A candidate must be a file: a folder named codex is skipped.
+    const exists = opts.isFile ??
+        opts.exists ??
+        ((candidate) => {
+            try {
+                return statSync(candidate).isFile();
+            }
+            catch {
+                return false;
+            }
+        });
+    if (/\.(js|mjs|cjs)$/i.test(codexBin))
+        return { command: process.execPath, prefixArgs: [codexBin] };
+    if (platform !== "win32")
+        return { command: codexBin, prefixArgs: [] };
+    if (/\.exe$/i.test(codexBin))
+        return { command: codexBin, prefixArgs: [] };
+    const p = win32Path;
+    let found;
+    if (/[\\/]/.test(codexBin)) {
+        const folder = p.dirname(codexBin);
+        for (const ext of [".exe", ".cmd", ".ps1", ""]) {
+            const candidate = p.join(folder, p.basename(codexBin) + ext);
+            if (exists(candidate)) {
+                found = candidate;
+                break;
+            }
+        }
+        if (found === undefined)
+            found = codexBin;
+    }
+    else {
+        const pathVar = env.PATH || env.Path || "";
+        search: for (const rawFolder of pathVar.split(";")) {
+            const folder = rawFolder.trim().replace(/^"(.*)"$/, "$1");
+            if (folder === "")
+                continue;
+            for (const ext of [".exe", ".cmd", ".ps1", ""]) {
+                const candidate = p.join(folder, codexBin + ext);
+                if (exists(candidate)) {
+                    found = candidate;
+                    break search;
+                }
+            }
+        }
+    }
+    if (found !== undefined) {
+        if (/\.exe$/i.test(found))
+            return { command: found, prefixArgs: [] };
+        const d = p.dirname(found);
+        const triple = arch === "x64" ? "x86_64-pc-windows-msvc" : arch === "arm64" ? "aarch64-pc-windows-msvc" : undefined;
+        if (triple !== undefined) {
+            const exe = p.join("vendor", triple, "bin", "codex.exe");
+            const candidates = [
+                p.join(d, "node_modules", "@openai", "codex", "node_modules", "@openai", `codex-win32-${arch}`, exe),
+                p.join(d, "node_modules", "@openai", `codex-win32-${arch}`, exe),
+                p.join(d, "node_modules", "@openai", "codex", exe),
+            ];
+            for (const candidate of candidates)
+                if (exists(candidate))
+                    return { command: candidate, prefixArgs: [] };
+        }
+        const launcher = p.join(d, "node_modules", "@openai", "codex", "bin", "codex.js");
+        if (exists(launcher))
+            return { command: process.execPath, prefixArgs: [launcher] };
+    }
+    throw new Error(CODEX_NOT_FOUND);
+}
+/**
+ * Stops a hand-off process. On Windows killing the launcher leaves codex.exe running, so the whole tree goes (taskkill /T).
+ * Everywhere else it is exactly SIGTERM.
+ */
+export function killHopProcess(child, opts = {}) {
+    const platform = opts.platform ?? process.platform;
+    if (platform === "win32") {
+        if (child.pid !== undefined) {
+            try {
+                const killer = (opts.spawnFn ?? spawn)("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+                killer?.on?.("error", () => undefined);
+            }
+            catch {
+                // The plain kill below still runs.
+            }
+        }
+        try {
+            child.kill();
+        }
+        catch {
+            // Already gone.
+        }
+        return;
+    }
+    child.kill("SIGTERM");
+}
+/** The argv of `codex exec` for one hand-off. The prompt comes on stdin (the last `-`); the system text is in a file, not here. */
+export function codexExecArgs(input) {
+    const args = [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--strict-config",
+        "-C",
+        input.dir,
+        "-s",
+        "read-only",
+        "-c",
+        `mcp_servers.GilbPlatform.command=${tomlString(input.nodePath ?? process.execPath)}`,
+        "-c",
+        `mcp_servers.GilbPlatform.args=${tomlStringArray(input.nestedArgs)}`,
+        "-c",
+        'mcp_servers.GilbPlatform.default_tools_approval_mode="approve"',
+        "-c",
+        "mcp_servers.GilbPlatform.startup_timeout_sec=90",
+        "-c",
+        `mcp_servers.GilbPlatform.tool_timeout_sec=${Math.ceil(MCP_TOOL_TIMEOUT_MS / 1000)}`,
+        "-c",
+        `model_instructions_file=${tomlString(input.instructionsPath)}`,
+        "-c",
+        'web_search="disabled"',
+    ];
+    for (const name of input.disable)
+        args.push("--disable", name);
+    if (input.model !== undefined)
+        args.push("-m", input.model);
+    args.push("-");
+    return args;
+}
+/** Runs a short Codex command to the end and returns its stdout, or null when it fails, times out or is aborted. */
+function captureCodex(spawnCmd, args, env, timeoutMs, signal) {
+    return new Promise((resolveRun) => {
+        const { command, prefixArgs } = spawnCmd;
+        let out = "";
+        let done = false;
+        let child;
+        const end = (value) => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(timer);
+            signal.removeEventListener("abort", onAbort);
+            resolveRun(value);
+        };
+        const onAbort = () => {
+            if (child)
+                killHopProcess(child);
+            end(null);
+        };
+        const timer = setTimeout(() => {
+            if (child)
+                killHopProcess(child);
+            end(null);
+        }, timeoutMs);
+        timer.unref();
+        try {
+            child = spawn(command, [...prefixArgs, ...args], { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+        }
+        catch {
+            end(null);
+            return;
+        }
+        if (signal.aborted)
+            onAbort();
+        else
+            signal.addEventListener("abort", onAbort, { once: true });
+        child.stdout?.on("data", (chunk) => {
+            if (out.length < 4_000_000)
+                out += chunk;
+        });
+        child.on("error", () => end(null));
+        child.on("close", (code) => end(code === 0 ? out : null));
+    });
+}
+/** The Codex runner. `features` gives the CLI's feature names (read once per process). */
+function codexHopRunner(codexBin, env, hopModel, stdinText, features) {
+    return {
+        name: "Codex",
+        prepare: async ({ hop, dir, nestedArgs, signal }) => {
+            const cenv = codexChildEnv(env);
+            // Fail closed: anything but a stored ChatGPT sign-in stops the hand-off before exec starts.
+            const spawnCmd = codexSpawnCommand(codexBin);
+            const doctor = await captureCodex(spawnCmd, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
+            if (doctor === null)
+                throw new Error(CODEX_DOCTOR_FAILED);
+            let version;
+            let mode;
+            let apiKeyOk = false;
+            try {
+                const json = JSON.parse(doctor);
+                mode = codexStoredAuthMode(json);
+                // Only an absent field, false, or the string "false" (Codex 0.167 reports strings) passes: anything else is refused.
+                const key = codexStoredApiKey(json);
+                apiKeyOk = key === undefined || key === false || (typeof key === "string" && key.trim().toLowerCase() === "false");
+                version = json?.codexVersion;
+            }
+            catch {
+                throw new Error(CODEX_DOCTOR_FAILED);
+            }
+            if (mode !== "chatgpt" || !apiKeyOk)
+                throw new Error(CODEX_NOT_CHATGPT);
+            if (typeof version === "string" && version !== "") {
+                process.stderr.write(`gilb-connector: this hand-off runs on Codex ${version}.\n`);
+                if (!version.startsWith(CODEX_TESTED_VERSION_PREFIX)) {
+                    process.stderr.write(`gilb-connector: Codex ${version} is newer or older than the tested 0.167; hand-offs may behave differently.\n`);
+                }
+            }
+            const names = await features(spawnCmd, cenv, signal);
+            if (names === null)
+                throw new Error(CODEX_NO_FEATURES);
+            // Fail closed: a list the connector cannot read must not run with nothing switched off.
+            if (!names.includes("code_mode_host") || !names.includes("shell_tool"))
+                throw new Error(CODEX_FEATURES_UNKNOWN);
+            const disable = CODEX_DISABLE_FEATURES.filter((name) => names.includes(name));
+            const instructionsPath = join(dir, "instructions.md");
+            writeFileSync(instructionsPath, hop.system, { mode: 0o600 });
+            const { command, prefixArgs } = spawnCmd;
+            return {
+                command,
+                args: [...prefixArgs, ...codexExecArgs({ dir, instructionsPath, nestedArgs, disable, model: hopModel })],
+                env: cenv,
+                stdinText: stdinText(hop),
+                cleanupFiles: [instructionsPath],
+            };
+        },
+        newReader: () => {
+            const seen = new Set();
+            let completed = false;
+            let failed = null;
+            let answer = null;
+            let topError = null;
+            return {
+                onEvent(raw, progress) {
+                    if (!raw || typeof raw !== "object" || Array.isArray(raw))
+                        return;
+                    const event = raw;
+                    if (event.type === "item.started" || event.type === "item.completed") {
+                        const item = event.item;
+                        if (!item || typeof item !== "object" || Array.isArray(item))
+                            return;
+                        const row = item;
+                        if (row.type === "mcp_tool_call" && typeof row.tool === "string" && row.tool !== "") {
+                            const id = typeof row.id === "string" ? row.id : undefined;
+                            const first = event.type === "item.started" || (id !== undefined && !seen.has(id));
+                            if (id !== undefined)
+                                seen.add(id);
+                            if (first && progress.toolCalls.length < TOOL_CALLS_MAX)
+                                progress.toolCalls.push(toolCallLine(row.tool, row.arguments));
+                        }
+                        else if (event.type === "item.completed" && row.type === "agent_message" && typeof row.text === "string" && row.text !== "") {
+                            progress.lastText = row.text;
+                            answer = row.text;
+                        }
+                    }
+                    else if (event.type === "turn.completed") {
+                        completed = true;
+                    }
+                    else if (event.type === "turn.failed") {
+                        const err = event.error;
+                        const message = err && typeof err === "object" ? err.message : undefined;
+                        failed = `Codex: ${String(message ?? "the turn failed").slice(0, 500)}`;
+                    }
+                    else if (event.type === "error" && typeof event.message === "string" && event.message !== "") {
+                        topError = event.message;
+                    }
+                },
+                outcome(stderr) {
+                    if (failed !== null)
+                        return { error: failed };
+                    if (!completed || answer === null) {
+                        const lead = topError !== null ? `Codex stopped without an answer: ${topError.slice(0, 300)}.` : "Codex stopped without an answer.";
+                        return { error: `${lead}${safeTail(stderr)}` };
+                    }
+                    return { text: answer };
+                },
+            };
+        },
+    };
 }
 const CANCELLED = Symbol("cancelled");
 /**
@@ -1420,7 +1898,7 @@ async function openSessionCredential(input) {
             const body = {
                 clientPublicKey: jwk,
                 declaredOrigin: AI_DECLARED_ORIGIN,
-                clientDisplayName: aiDisplayName(displayName),
+                clientDisplayName: aiDisplayName(displayName, input.hopCli),
             };
             const sent = await retrying(async () => {
                 try {
@@ -1596,10 +2074,15 @@ export function startConnector(opts) {
     const displayName = opts.name;
     const profile = asMode === "ai" ? safeProfileName(opts.profile ?? DEFAULT_AI_PROFILE) : opts.profile;
     const claudeBin = opts.claudeBin ?? "claude";
+    const hopCli = opts.hopCli === "codex" ? "codex" : "claude";
+    const codexBin = opts.codexBin ?? "codex";
+    const removeDir = opts.removeDir ?? ((dir) => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
     const hopId = opts.hopId;
     const hopMode = hopId !== undefined && hopId !== "";
     const hopTools = [...(opts.hopTools ?? [])];
     const hopCreatedPath = opts.hopCreatedPath;
+    const hopStart = Date.now();
+    const hopDeadline = hopMode ? opts.hopDeadline : undefined;
     let turnId = opts.turnId ?? newTurnId();
     if (!TURN_ID_RE.test(turnId))
         throw new Error("turnId does not match the platform pattern.");
@@ -1707,6 +2190,7 @@ export function startConnector(opts) {
             asMode,
             profile,
             displayName,
+            hopCli,
             say,
             retryDelays,
             fetchImpl: fetch,
@@ -1934,6 +2418,37 @@ export function startConnector(opts) {
     function conceptHop(role) {
         return agentIsConcept() || role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
     }
+    let codexFeatures;
+    /** The feature names `codex features list` prints, read once per process. A failure is not remembered. */
+    function readCodexFeatures(spawnCmd, cenv, signal) {
+        if (!codexFeatures) {
+            // The shared call has its own timeout and no caller's signal: one cancelled hand-off must not fail the others.
+            codexFeatures = captureCodex(spawnCmd, ["features", "list"], cenv, CODEX_FEATURES_TIMEOUT_MS, new AbortController().signal).then((out) => {
+                if (out === null) {
+                    codexFeatures = undefined;
+                    return null;
+                }
+                const names = parseCodexFeatureNames(out);
+                // A list the connector cannot recognise is refused by the caller and is not remembered.
+                if (!names.includes("code_mode_host") || !names.includes("shell_tool"))
+                    codexFeatures = undefined;
+                return names;
+            });
+        }
+        const shared = codexFeatures;
+        if (signal.aborted)
+            return Promise.resolve(null);
+        return new Promise((resolveRead) => {
+            const onAbort = () => resolveRead(null);
+            signal.addEventListener("abort", onAbort, { once: true });
+            void shared.then((names) => {
+                signal.removeEventListener("abort", onAbort);
+                resolveRead(names);
+            });
+        });
+    }
+    const hopStdin = (hop) => (conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
+    const hopRunner = hopCli === "codex" ? codexHopRunner(codexBin, env, hopModel, hopStdin, readCodexFeatures) : claudeHopRunner(claudeBin, env, hopModel, hopStdin);
     async function runChild(hop, signal) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
@@ -1947,11 +2462,53 @@ export function startConnector(opts) {
             args.push("--profile", profile);
         if (claudeBin !== "claude")
             args.push("--claude", claudeBin);
-        const mcp = { mcpServers: { GilbPlatform: { command: process.execPath, args } } };
-        const child = spawn(claudeBin, claudeArgs(hop.system, JSON.stringify(mcp), randomUUID(), hopModel), {
+        // The nested connector gives the hand-off a real clock. Concept hops get none, as before.
+        if (!conceptHop(hop.role))
+            args.push("--hop-deadline", String(Math.floor(Date.now() + hopMaxOf(hop.role))));
+        // Never throws: a folder that cannot be removed is reported, not fatal. If the child still runs, it is tried again when the child closes.
+        const removeHopDir = (target, child) => {
+            const attempt = () => {
+                try {
+                    if (target === dir)
+                        removeDir(target);
+                    else
+                        rmSync(target, { force: true, maxRetries: 5, retryDelay: 200 });
+                    return undefined;
+                }
+                catch (err) {
+                    const code = err?.code;
+                    return typeof code === "string" ? code : "unknown";
+                }
+            };
+            const report = (code) => {
+                process.stderr.write(`gilb-connector: could not remove the hand-off folder ${target}: ${code}\n`);
+            };
+            const first = attempt();
+            if (first === undefined)
+                return;
+            if (child && child.exitCode === null && child.signalCode === null) {
+                child.once("close", () => {
+                    const second = attempt();
+                    if (second !== undefined)
+                        report(second);
+                });
+                return;
+            }
+            report(first);
+        };
+        let plan;
+        try {
+            plan = await hopRunner.prepare({ hop, dir, nestedArgs: args, signal });
+        }
+        catch (err) {
+            removeHopDir(dir);
+            throw err;
+        }
+        const child = spawn(plan.command, plan.args, {
             cwd: dir,
-            env: childEnv(env),
+            env: plan.env,
             stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true,
         });
         children.add(child);
         const stdin = child.stdin;
@@ -1959,18 +2516,15 @@ export function startConnector(opts) {
         const stderrStream = child.stderr;
         if (!stdin || !stdout || !stderrStream) {
             children.delete(child);
-            child.kill("SIGTERM");
-            rmSync(dir, { recursive: true, force: true });
-            throw new Error("Could not start Claude Code: pipes were not available.");
+            killHopProcess(child);
+            removeHopDir(dir, child);
+            throw new Error(`Could not start ${hopRunner.name}: pipes were not available.`);
         }
         let buf = "";
         let stderr = "";
-        let initOk = false;
-        let refused = false;
-        let resultText = null;
-        let resultError = null;
+        const reader = hopRunner.newReader();
         const progress = { toolCalls: [] };
-        const onAbort = () => child.kill("SIGTERM");
+        const onAbort = () => killHopProcess(child);
         if (signal.aborted)
             onAbort();
         else
@@ -1994,23 +2548,7 @@ export function startConnector(opts) {
                 catch {
                     continue;
                 }
-                if (event.type === "system" && event.subtype === "init") {
-                    if (event.apiKeySource === "none")
-                        initOk = true;
-                    else {
-                        refused = true;
-                        child.kill("SIGTERM");
-                    }
-                }
-                else if (event.type === "result") {
-                    if (event.is_error)
-                        resultError = `Claude Code: ${String(event.result ?? "the turn failed").slice(0, 500)}`;
-                    else
-                        resultText = String(event.result ?? "");
-                }
-                else if (event.type === "assistant") {
-                    noteAssistant(event.message, progress);
-                }
+                reader.onEvent(event, progress, () => killHopProcess(child));
             }
         });
         return await new Promise((resolve, reject) => {
@@ -2024,36 +2562,41 @@ export function startConnector(opts) {
                     clearTimeout(timer);
                 signal.removeEventListener("abort", onAbort);
                 children.delete(child);
-                rmSync(dir, { recursive: true, force: true });
-                fn();
+                // Answer first: the clean-up below may be slow or fail (Windows holds a just-killed tree's folder).
+                try {
+                    fn();
+                }
+                finally {
+                    for (const file of plan.cleanupFiles ?? [])
+                        removeHopDir(file, child);
+                    removeHopDir(dir, child);
+                }
             };
             timer = setTimeout(() => {
-                child.kill("SIGTERM");
+                killHopProcess(child);
                 finish(() => reject(new HopTimeoutError(progress)));
             }, hopMaxOf(hop.role));
             // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
             timer.unref();
-            child.on("error", (err) => finish(() => reject(new Error(`Could not start Claude Code: ${err.message}`))));
+            child.on("error", (err) => finish(() => reject(new Error(`Could not start ${hopRunner.name}: ${err.message}`))));
             child.on("close", () => {
-                if (signal.aborted)
+                if (signal.aborted) {
                     finish(() => reject(new DOMException("The operation was aborted.", "AbortError")));
-                else if (refused || !initOk) {
-                    finish(() => reject(new Error("Claude Code did not confirm that this run uses your Claude subscription, so the hand-off was stopped.")));
+                    return;
                 }
-                else if (resultError !== null) {
-                    const reason = resultError;
+                const outcome = reader.outcome(stderr);
+                if ("error" in outcome) {
+                    const reason = outcome.error;
                     finish(() => reject(new Error(reason)));
                 }
-                else if (resultText === null)
-                    finish(() => reject(new Error(`Claude Code stopped without an answer.${safeTail(stderr)}`)));
                 else {
-                    const text = resultText;
+                    const text = outcome.text;
                     const created = hopCreatedNamespaces(createdFile);
                     finish(() => resolve({ text, created }));
                 }
             });
             stdin.on("error", () => undefined);
-            stdin.end(conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
+            stdin.end(plan.stdinText);
         });
     }
     /**
@@ -2765,10 +3308,17 @@ export function startConnector(opts) {
             const result = await onToolCall(params, id);
             if (result === CANCELLED)
                 return CANCELLED;
+            if (hopDeadline !== undefined) {
+                return { ...result, content: [...result.content, { type: "text", text: hopClockLine(hopStart, hopDeadline, Date.now()) }] };
+            }
             return result;
         }
         if (method === "prompts/list")
             return { prompts: hopMode ? [] : [AGENT_PROMPT] };
+        if (method === "resources/list")
+            return { resources: [] };
+        if (method === "resources/templates/list")
+            return { resourceTemplates: [] };
         if (method === "prompts/get")
             return onGetPrompt(params);
         throw new PlatformError(-32601, `Method not found: ${method}`);
@@ -2858,7 +3408,7 @@ export function startConnector(opts) {
             stopped = true;
             inputEnded = true;
             for (const child of children)
-                child.kill("SIGTERM");
+                killHopProcess(child);
             for (const ac of calls.values())
                 ac.abort();
             checkDone();
@@ -3666,6 +4216,8 @@ async function main() {
         origin: cli.origin,
         vaults: cli.vaults,
         claudeBin: cli.claudeBin,
+        hopCli: cli.hopCli,
+        codexBin: cli.codexBin,
         progressEveryMs: cli.progressEveryMs,
         env: process.env,
         selfFile: fileURLToPath(import.meta.url),
@@ -3677,6 +4229,7 @@ async function main() {
         ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
         ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
         ...(cli.hopCreatedPath !== undefined ? { hopCreatedPath: cli.hopCreatedPath } : {}),
+        ...(cli.hopDeadline !== undefined ? { hopDeadline: cli.hopDeadline } : {}),
         ...(hopTools !== undefined ? { hopTools } : {}),
         ...(hopUserText !== undefined ? { userText: hopUserText } : {}),
     });

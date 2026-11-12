@@ -226,7 +226,7 @@ describe("AI states", () => {
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(who.result.isError).toBe(false);
     expect(toolText(who)).toBe(
-      `connector: 0.5.15\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${PERSON}\nstate: not bound\nvaults: none\n\n${aiNotBound(CLIENT_ID)}`,
+      `connector: 0.6.0\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${PERSON}\nstate: not bound\nvaults: none\n\n${aiNotBound(CLIENT_ID)}`,
     );
   });
 

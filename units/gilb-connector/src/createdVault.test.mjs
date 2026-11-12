@@ -482,7 +482,7 @@ describe("create_vault selects the vault", () => {
     expect(read.body.hop).toBeUndefined();
     expect(read.body.contentVaultIds).toEqual([ALREADY, NS, OTHER]);
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who).split("\n")[0]).toBe("connector: 0.5.15");
+    expect(toolText(who).split("\n")[0]).toBe("connector: 0.6.0");
     expect(toolText(who)).toContain(`vaults: ${ALREADY}, ${NS}, ${OTHER}`);
   }, 15000);
 

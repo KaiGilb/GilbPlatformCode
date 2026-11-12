@@ -81,6 +81,8 @@ When the person names a vault to work in, call gilbplatform_use_vault with the n
 
 A long run does not stop at the server's turn limits. When the server answers that a turn has used all its tool rounds, or has handed over as many times as one turn may, it has refused the call before running it. The connector then starts a fresh platform turn and sends the same call once more, and writes one line to stderr. It does this at most 5 times per process (after that the answer says to start a new chat), never for Agent.Concept (its mint limits are per turn and stay a brake), and never inside a hand-off, and never for a `run_named_role` whose role name contains "concept" (Agent.Concept, or a bare Concept the server may resolve to it) or looks like an address, or whose role cannot be read. A hand-off that is already running keeps its own turn.
 
+Connector 0.6.0: Codex can run hand-offs (--hop-cli codex), on the person's ChatGPT sign-in only. On Windows the connector starts codex.exe directly and stops the whole process tree when a hand-off ends. Hand-offs see a clock in every tool answer. resources/list answers an empty list.
+
 Connector 0.5.8: gilbplatform_upload_file sends to the vault's own root exactly as the platform listed it (`/vault` for a user vault, `/base` for a system vault) instead of always `/base`, which the vault door refused with 403 for a user vault.
 
 Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx or network error for about 60 s, then say the platform is restarting, never 'could not sign in'; a failed sign-in is no longer remembered.
@@ -100,6 +102,41 @@ Connector 0.5.11: whoami reports the connector version; a vault made inside a ha
 Connector 0.5.7: a hand-off that runs out of tool rounds now says its answer is partial, is closed on its own turn, and the next call starts on a fresh turn. Detail: when the server cuts a hand-off, it is closed on its own turn, and its answer carries a `cut` field saying the answer is partial. The next call then starts on a fresh turn (within the same 5-per-process limit, never for Agent.Concept, never inside a hand-off); nothing is re-sent.
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
+
+## Codex
+
+Codex can run hand-offs too. Install on macOS or Linux (replace `<address>` with the connector address your guide shows):
+
+```sh
+curl -fsSL '<address>' -o ~/.gilb-connector.mjs
+codex mcp add GilbPlatform -- node ~/.gilb-connector.mjs --hop-cli codex
+```
+
+On Windows, in PowerShell:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri '<address>' -OutFile "$HOME\.gilb-connector.mjs"
+codex mcp add GilbPlatform -- node "$HOME\.gilb-connector.mjs" --hop-cli codex
+```
+
+Then start `codex`. The AI's display name now defaults to `Codex on <machine>` with `--hop-cli codex`, so `--name` is optional. For a second AI on the same computer add `--profile NAME` (lower-case letters, digits and dashes, up to 20) and call the server `gilb-NAME`.
+
+A hand-off then runs as `codex exec` on your ChatGPT sign-in. Run `codex login` and choose Sign in with ChatGPT first. Before every hand-off the connector asks `codex doctor`, and it refuses the hand-off if Codex is on an API key or the answer cannot be read.
+
+Then open `~/.codex/config.toml` (on Windows `$HOME\.codex\config.toml`). Under `[mcp_servers.GilbPlatform]` add:
+
+```toml
+startup_timeout_sec = 90
+tool_timeout_sec = 2000
+```
+
+A hand-off can take up to 30 minutes, so Codex has to wait that long for a tool answer.
+
+Codex reads the tool list once, when it starts. After Bind, and after you switch agent, restart Codex — or turn on `mcp_tool_list_changed` under `[features]` in `~/.codex/config.toml` so Codex reads the list again by itself (a Codex feature still marked under development).
+
+Each hand-off tells the agent how much time it has used, so it stops only when time is really short.
+
+The nested Codex gets no shell, no other agents and no web search. `OPENAI_*`, `AZURE_OPENAI_*`, `CODEX_API_*` and `CODEX_API_KEY` are removed from its environment. The default stays Claude Code.
 
 ## Claudian
 
@@ -134,16 +171,18 @@ That publishes the built folder. The live address is `https://<name>.pages.dev`.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--as` | `ai` | `ai` signs in as this Connected AI. `me` signs in as this computer. |
-| `--name` | `Claude Code on <this machine's name>` | Display name sent when the AI client is registered. |
+| `--name` | `Claude Code on <this machine's name>`, or `Codex on <this machine's name>` with `--hop-cli codex` | Display name sent when the AI client is registered. |
 | `--agent` | `Kai-Zen` | Agent tag for this process |
 | `--origin` | `https://id.gilb.com` | GilbPlatform door. |
 | `--vault` | none | Vault id. Repeat the flag for more than one. |
 | `--profile` | `default` for an AI; this computer's profile for `--as me` | Which AI key to use, or which computer profile. |
 | `--claude` | `claude` | Claude Code CLI used for a hand-off |
+| `--hop-cli` | `claude` | `claude` or `codex`: which CLI runs a hand-off. `codex` runs only on a ChatGPT sign-in. |
+| `--codex` | `codex` | Codex CLI used for a hand-off |
 | `--upload-root` | the folder the connector runs in | Another folder `gilbplatform_upload_file` may read from. Repeat the flag for more than one. |
 | `--hop-model` | none | Model name for a hand-off's Claude Code, passed as `--model` (for example a faster one). 1 to 64 letters, digits, dots or dashes, starting with a letter or digit; anything else is refused at start. Unset: Claude Code's own default. Also `GILB_CONNECTOR_HOP_MODEL`. |
 
-The same settings can be given as `GILB_CONNECTOR_AS`, `GILB_CONNECTOR_NAME`, `GILB_CONNECTOR_AGENT`, `GILB_CONNECTOR_ORIGIN`, `GILB_CONNECTOR_VAULT` (comma-separated), `GILB_CONNECTOR_PROFILE`, and `GILB_CONNECTOR_CLAUDE`.
+The same settings can be given as `GILB_CONNECTOR_AS`, `GILB_CONNECTOR_NAME`, `GILB_CONNECTOR_AGENT`, `GILB_CONNECTOR_ORIGIN`, `GILB_CONNECTOR_VAULT` (comma-separated), `GILB_CONNECTOR_PROFILE`, `GILB_CONNECTOR_CLAUDE`, `GILB_CONNECTOR_HOP_CLI`, and `GILB_CONNECTOR_CODEX`.
 
 ## Build
 

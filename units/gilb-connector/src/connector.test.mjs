@@ -262,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(30 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.5.15");
+    expect(CONNECTOR_VERSION).toBe("0.6.0");
   });
 });
 
@@ -573,7 +573,7 @@ describe("hand-off", () => {
     expect(log[0].argv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json"]));
     expect(log[0].system).toBe("You are Jackfruit.");
     expect(log[0].prompt).toBe(
-      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.",
+      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line \"Hand-off clock: …\" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.",
     );
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
     expect(mcp.mcpServers.GilbPlatform.command).toBe(process.execPath);
@@ -955,7 +955,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.5.15" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.6.0" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

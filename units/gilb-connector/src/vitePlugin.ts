@@ -63,3 +63,45 @@ export function connectorInstallCommands(fileUrl: string): { download: string; a
     add: "claude mcp add --scope user GilbPlatform -- node ~/.gilb-connector.mjs",
   };
 }
+
+/** A name for a second AI on this computer: the same rule GilbApp uses. `default` is the unnamed one. */
+const CODEX_PROFILE_NAME = /^[a-z0-9][a-z0-9-]{0,19}$/;
+
+/**
+ * The lines a guide shows to put the connector into Codex, for `url` (where the app serves the connector).
+ * `shell` is `posix` (macOS, Linux) or `powershell` (Windows PowerShell 5.1 and PowerShell 7).
+ * `name` is optional: a short profile name for a second AI. Without it the server is `GilbPlatform`; with it, `gilb-<name>`
+ * and the connector gets `--profile <name>`.
+ * `configLines` go under `[mcp_servers.<server>]` in `configFile`.
+ */
+export function codexInstallCommands(
+  url: string,
+  opts: { shell: "posix" | "powershell"; name?: string },
+): { download: string; add: string; start: string; configFile: string; configLines: string[]; server: string } {
+  if (url.includes("'")) throw new Error("The connector address must not contain a quote.");
+  const name = opts.name;
+  if (name !== undefined && (!CODEX_PROFILE_NAME.test(name) || name === "default")) {
+    throw new Error("Name must be 1 to 20 lower-case letters, digits or dashes.");
+  }
+  const server = name === undefined ? "GilbPlatform" : `gilb-${name}`;
+  const tail = ` --hop-cli codex${name === undefined ? "" : ` --profile ${name}`}`;
+  const configLines = ["startup_timeout_sec = 90", "tool_timeout_sec = 2000"];
+  if (opts.shell === "powershell") {
+    return {
+      download: `Invoke-WebRequest -UseBasicParsing -Uri '${url}' -OutFile "$HOME\\.gilb-connector.mjs"`,
+      add: `codex mcp add ${server} -- node "$HOME\\.gilb-connector.mjs"${tail}`,
+      start: "codex",
+      configFile: "$HOME\\.codex\\config.toml",
+      configLines,
+      server,
+    };
+  }
+  return {
+    download: `curl -fsSL '${url}' -o ~/.gilb-connector.mjs`,
+    add: `codex mcp add ${server} -- node ~/.gilb-connector.mjs${tail}`,
+    start: "codex",
+    configFile: "~/.codex/config.toml",
+    configLines,
+    server,
+  };
+}
