@@ -115,6 +115,17 @@ function hopTimeLimitParagraph(hopMaxMs: number): string {
   return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
 }
 
+/** The "Hand-off clock" line appended to every tool answer in a hand-off that has a deadline. */
+function hopClockLine(hopStart: number, deadline: number, now: number): string {
+  const total = Math.round((deadline - hopStart) / 60000);
+  const used = Math.floor((now - hopStart) / 60000);
+  const left = Math.max(0, Math.ceil((deadline - now) / 60000));
+  if (left <= 3) {
+    return `Hand-off clock: ${left} minutes left. Finish now: stop starting new writes and answer with what you did and what remains.`;
+  }
+  return `Hand-off clock: ${used} of ${total} minutes used, ${left} left.`;
+}
+
 const TOOL_CALLS_MAX = 60;
 const TOOL_CALL_CHARS = 200;
 const LAST_WORDS_CHARS = 1500;
@@ -467,6 +478,8 @@ export interface StartOptions {
   hopTools?: readonly ToolSpec[];
   /** File this hop process appends created vault namespaces to. The main process reads it when the hop returns. */
   hopCreatedPath?: string;
+  /** Hop mode only: the time (ms since the epoch) the parent will stop this hand-off. Every tool answer then carries a clock line. */
+  hopDeadline?: number;
   userText?: string;
   progressEveryMs?: number;
   /** Waits between tries when the platform is restarting. Default: 1, 2, 4, 8, 15, 30 s. */
@@ -538,6 +551,8 @@ export interface CliOptions {
   hopToolsPath: string | undefined;
   /** File a hop process appends created vault namespaces to. Set only on the nested connector. */
   hopCreatedPath: string | undefined;
+  /** Internal. Hop mode only: the hand-off's deadline, ms since the epoch. */
+  hopDeadline: number | undefined;
   uploadRoots: string[];
   hopModel: string | undefined;
   progressEveryMs: number;
@@ -1330,6 +1345,7 @@ const KNOWN_FLAGS = new Set([
   "--turn",
   "--hop-tools",
   "--hop-created",
+  "--hop-deadline",
   "--upload-root",
   "--hop-model",
   "--progress-ms",
@@ -1355,6 +1371,7 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
       turnId: undefined,
       hopToolsPath: undefined,
       hopCreatedPath: undefined,
+      hopDeadline: undefined,
       uploadRoots: [],
       hopModel: undefined,
       progressEveryMs: PROGRESS_EVERY_MS,
@@ -1391,6 +1408,13 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
   const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
   const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
   const hopCreatedPath = oneFlag(argv, "--hop-created");
+  const hopDeadlineRaw = oneFlag(argv, "--hop-deadline") ?? (env.GILB_CONNECTOR_HOP_DEADLINE || undefined);
+  let hopDeadline: number | undefined;
+  if (hopDeadlineRaw !== undefined) {
+    const parsed = /^[0-9]+$/.test(hopDeadlineRaw) ? Number(hopDeadlineRaw) : NaN;
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new CliError("--hop-deadline must be a time in milliseconds.");
+    hopDeadline = parsed;
+  }
   if (hopId !== undefined && !/^[0-9a-f]{24}$/.test(hopId)) throw new CliError("--hop must be the hand-off id.");
   if (turnId !== undefined && !TURN_ID_RE.test(turnId)) throw new CliError("--turn must be the turn id.");
   if (hopId !== undefined && (turnId === undefined || hopToolsPath === undefined)) {
@@ -1423,6 +1447,7 @@ export function parseCli(argv: string[], env: NodeJS.ProcessEnv = process.env): 
     turnId,
     hopToolsPath,
     hopCreatedPath,
+    hopDeadline,
     uploadRoots: flagValues(argv, "--upload-root").map((dir) => dir.trim()).filter((dir) => dir !== ""),
     hopModel,
     progressEveryMs,
@@ -2225,6 +2250,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   const hopMode = hopId !== undefined && hopId !== "";
   const hopTools = [...(opts.hopTools ?? [])];
   const hopCreatedPath = opts.hopCreatedPath;
+  const hopStart = Date.now();
+  const hopDeadline = hopMode ? opts.hopDeadline : undefined;
   let turnId = opts.turnId ?? newTurnId();
   if (!TURN_ID_RE.test(turnId)) throw new Error("turnId does not match the platform pattern.");
   let userText = opts.userText !== undefined && opts.userText.trim() !== "" ? opts.userText : DEFAULT_USER_TEXT;
@@ -2598,6 +2625,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     for (const id of vaults) args.push("--vault", id);
     if (profile) args.push("--profile", profile);
     if (claudeBin !== "claude") args.push("--claude", claudeBin);
+    // The nested connector gives the hand-off a real clock. Concept hops get none, as before.
+    if (!conceptHop(hop.role)) args.push("--hop-deadline", String(Math.floor(Date.now() + hopMaxOf(hop.role))));
     let plan: HopSpawnPlan;
     try {
       plan = await hopRunner.prepare({ hop, dir, nestedArgs: args, signal });
@@ -3309,9 +3338,14 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (method === "tools/call") {
       const result = await onToolCall(params, id);
       if (result === CANCELLED) return CANCELLED;
+      if (hopDeadline !== undefined) {
+        return { ...result, content: [...result.content, { type: "text", text: hopClockLine(hopStart, hopDeadline, Date.now()) }] };
+      }
       return result;
     }
     if (method === "prompts/list") return { prompts: hopMode ? [] : [AGENT_PROMPT] };
+    if (method === "resources/list") return { resources: [] };
+    if (method === "resources/templates/list") return { resourceTemplates: [] };
     if (method === "prompts/get") return onGetPrompt(params);
     throw new PlatformError(-32601, `Method not found: ${method}`);
   }
@@ -4208,6 +4242,7 @@ async function main(): Promise<void> {
     ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
     ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
     ...(cli.hopCreatedPath !== undefined ? { hopCreatedPath: cli.hopCreatedPath } : {}),
+    ...(cli.hopDeadline !== undefined ? { hopDeadline: cli.hopDeadline } : {}),
     ...(hopTools !== undefined ? { hopTools } : {}),
     ...(hopUserText !== undefined ? { userText: hopUserText } : {}),
   });

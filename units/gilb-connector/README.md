@@ -81,7 +81,7 @@ When the person names a vault to work in, call gilbplatform_use_vault with the n
 
 A long run does not stop at the server's turn limits. When the server answers that a turn has used all its tool rounds, or has handed over as many times as one turn may, it has refused the call before running it. The connector then starts a fresh platform turn and sends the same call once more, and writes one line to stderr. It does this at most 5 times per process (after that the answer says to start a new chat), never for Agent.Concept (its mint limits are per turn and stay a brake), and never inside a hand-off, and never for a `run_named_role` whose role name contains "concept" (Agent.Concept, or a bare Concept the server may resolve to it) or looks like an address, or whose role cannot be read. A hand-off that is already running keeps its own turn.
 
-Connector 0.6.0: Codex can run hand-offs (--hop-cli codex), on the person's ChatGPT sign-in only. On Windows the connector starts codex.exe directly and stops the whole process tree when a hand-off ends.
+Connector 0.6.0: Codex can run hand-offs (--hop-cli codex), on the person's ChatGPT sign-in only. On Windows the connector starts codex.exe directly and stops the whole process tree when a hand-off ends. Hand-offs see a clock in every tool answer. resources/list answers an empty list.
 
 Connector 0.5.8: gilbplatform_upload_file sends to the vault's own root exactly as the platform listed it (`/vault` for a user vault, `/base` for a system vault) instead of always `/base`, which the vault door refused with 403 for a user vault.
 
@@ -111,7 +111,20 @@ Codex can run hand-offs too. Install:
 codex mcp add GilbPlatform -- node ~/.gilb-connector.mjs --hop-cli codex --name "Codex on <machine>"
 ```
 
-A hand-off then runs as `codex exec` on your ChatGPT sign-in. Run `codex login` and choose Sign in with ChatGPT first. Before every hand-off the connector asks `codex doctor`, and it refuses the hand-off if Codex is on an API key or the answer cannot be read. Restart Codex after Bind: Codex does not re-read the tool list by default.
+A hand-off then runs as `codex exec` on your ChatGPT sign-in. Run `codex login` and choose Sign in with ChatGPT first. Before every hand-off the connector asks `codex doctor`, and it refuses the hand-off if Codex is on an API key or the answer cannot be read.
+
+Then open `~/.codex/config.toml`. Under `[mcp_servers.GilbPlatform]` add:
+
+```toml
+startup_timeout_sec = 90
+tool_timeout_sec = 2000
+```
+
+A hand-off can take up to 30 minutes, so Codex has to wait that long for a tool answer.
+
+Codex reads the tool list once, when it starts. After Bind, and after you switch agent, restart Codex — or turn on `mcp_tool_list_changed` under `[features]` in `~/.codex/config.toml` so Codex reads the list again by itself (a Codex feature still marked under development).
+
+Each hand-off tells the agent how much time it has used, so it stops only when time is really short.
 
 The nested Codex gets no shell, no other agents and no web search. `OPENAI_*`, `AZURE_OPENAI_*`, `CODEX_API_*` and `CODEX_API_KEY` are removed from its environment. The default stays Claude Code.
 
