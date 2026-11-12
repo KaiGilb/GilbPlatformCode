@@ -101,6 +101,18 @@ Connector 0.5.7: a hand-off that runs out of tool rounds now says its answer is 
 
 A hand-off to another agent runs as a nested `claude` on your Claude subscription: its own tools, one level only, up to four at a time, each at most 15 minutes. The nested connector gets the same `--as` and `--profile`, so it uses the same AI identity.
 
+## Codex
+
+Codex can run hand-offs too. Install:
+
+```sh
+codex mcp add GilbPlatform -- node ~/.gilb-connector.mjs --hop-cli codex --name "Codex on <machine>"
+```
+
+A hand-off then runs as `codex exec` on your ChatGPT sign-in. Run `codex login` and choose Sign in with ChatGPT first. Before every hand-off the connector asks `codex doctor`, and it refuses the hand-off if Codex is on an API key or the answer cannot be read. Restart Codex after Bind: Codex does not re-read the tool list by default.
+
+The nested Codex gets no shell, no other agents and no web search. `OPENAI_*`, `AZURE_OPENAI_*`, `CODEX_API_*` and `CODEX_API_KEY` are removed from its environment. The default stays Claude Code.
+
 ## Claudian
 
 Claudian runs Claude Code. It reads the same Claude Code MCP configuration, so the `claude mcp add` line above is the Claudian install too. There is nothing else to add inside Obsidian. Open a Claudian chat and use `/mcp__GilbPlatform__agent` the same way.
@@ -140,10 +152,12 @@ That publishes the built folder. The live address is `https://<name>.pages.dev`.
 | `--vault` | none | Vault id. Repeat the flag for more than one. |
 | `--profile` | `default` for an AI; this computer's profile for `--as me` | Which AI key to use, or which computer profile. |
 | `--claude` | `claude` | Claude Code CLI used for a hand-off |
+| `--hop-cli` | `claude` | `claude` or `codex`: which CLI runs a hand-off. `codex` runs only on a ChatGPT sign-in. |
+| `--codex` | `codex` | Codex CLI used for a hand-off |
 | `--upload-root` | the folder the connector runs in | Another folder `gilbplatform_upload_file` may read from. Repeat the flag for more than one. |
 | `--hop-model` | none | Model name for a hand-off's Claude Code, passed as `--model` (for example a faster one). 1 to 64 letters, digits, dots or dashes, starting with a letter or digit; anything else is refused at start. Unset: Claude Code's own default. Also `GILB_CONNECTOR_HOP_MODEL`. |
 
-The same settings can be given as `GILB_CONNECTOR_AS`, `GILB_CONNECTOR_NAME`, `GILB_CONNECTOR_AGENT`, `GILB_CONNECTOR_ORIGIN`, `GILB_CONNECTOR_VAULT` (comma-separated), `GILB_CONNECTOR_PROFILE`, and `GILB_CONNECTOR_CLAUDE`.
+The same settings can be given as `GILB_CONNECTOR_AS`, `GILB_CONNECTOR_NAME`, `GILB_CONNECTOR_AGENT`, `GILB_CONNECTOR_ORIGIN`, `GILB_CONNECTOR_VAULT` (comma-separated), `GILB_CONNECTOR_PROFILE`, `GILB_CONNECTOR_CLAUDE`, `GILB_CONNECTOR_HOP_CLI`, and `GILB_CONNECTOR_CODEX`.
 
 ## Build
 
