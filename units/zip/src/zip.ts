@@ -41,10 +41,20 @@ function dosStamp(d: Date | undefined): { time: number; date: number } {
   };
 }
 
+/** The rules for a name, shared by writing and reading. Returns the sentence for a bad name, or null. */
+function nameProblem(name: string): string | null {
+  if (name === "") return "A file in the zip has no name.";
+  if (name.includes("\0")) return `The name "${name.replace(/\0/g, "\\0")}" has a NUL character.`;
+  if (name.startsWith("/") || name.startsWith("\\")) return `The name "${name}" starts with a slash; a zip name must be a relative path.`;
+  if (/^[A-Za-z]:/.test(name)) return `The name "${name}" starts with a drive letter; a zip name must be a relative path.`;
+  if (name.split(/[\\/]/).includes("..")) return `The name "${name}" has a ".." part; a zip name must stay inside the zip.`;
+  return null;
+}
+
 function checkName(name: string, seen: Set<string>): void {
-  if (typeof name !== "string" || name === "") throw new Error("A file in the zip has no name.");
-  if (name.startsWith("/")) throw new Error(`The name "${name}" starts with "/"; a zip name must be a relative path.`);
-  if (name.split(/[\\/]/).includes("..")) throw new Error(`The name "${name}" has a ".." part; a zip name must stay inside the zip.`);
+  if (typeof name !== "string") throw new Error("A file in the zip has no name.");
+  const problem = nameProblem(name);
+  if (problem) throw new Error(problem);
   if (seen.has(name)) throw new Error(`Two files in the zip are called "${name}".`);
   seen.add(name);
 }
@@ -125,8 +135,9 @@ const bad = (why: string): Error => new Error(`This is not a zip file I can read
 /**
  * The files of a zip made by `zipStore` (or any zip that stores without compression), read from its central directory. Each file's
  * CRC-32 is checked. Throws a plain sentence for bytes that are not a zip, a zip cut short, a CRC that does not match, a file
- * that is encrypted, or a method other than 0 (store), which it names. It never reads outside `zip`. The names come back as stored:
- * check them before writing any file to disk.
+ * that is encrypted, or a method other than 0 (store), which it names. It also refuses an unsafe name, by the rules of `zipStore`
+ * plus a leading `\\`, a drive letter and a NUL character, so a name that comes back is safe to join to a folder (zip slip). A
+ * directory entry (a name ending in `/`, no bytes) is returned like any other file. It never reads outside `zip`.
  */
 export function unzipStore(zip: Uint8Array): { name: string; bytes: Uint8Array }[] {
   const len = zip.length;
@@ -151,6 +162,7 @@ export function unzipStore(zip: Uint8Array): { name: string; bytes: Uint8Array }
 
   const out: { name: string; bytes: Uint8Array }[] = [];
   const dec = new TextDecoder();
+  const seen = new Set<string>();
   let at = cdStart;
   for (let i = 0; i < count; i++) {
     if (at + 46 > cdStart + cdSize || v.getUint32(at, true) !== SIG_CENTRAL) throw bad("a damaged file list");
@@ -166,6 +178,7 @@ export function unzipStore(zip: Uint8Array): { name: string; bytes: Uint8Array }
     if (at + 46 + nlen + xlen + clen > cdStart + cdSize) throw bad("a damaged file list");
     const name = dec.decode(zip.subarray(at + 46, at + 46 + nlen));
     at += 46 + nlen + xlen + clen;
+    checkName(name, seen);
     if (flags & ENCRYPTED) throw new Error(`The file "${name}" is encrypted; encrypted zips are not supported.`);
     if (method !== 0) {
       const how = METHOD_NAMES[method];

@@ -80,7 +80,7 @@ describe("determinism and dates", () => {
 describe("zipStore refuses", () => {
   const one = (name: string) => [{ name, bytes: bytes("x") }];
   it("an empty name", () => expect(() => zipStore(one(""))).toThrow("has no name"));
-  it("a name that starts with /", () => expect(() => zipStore(one("/etc/passwd"))).toThrow('starts with "/"'));
+  it("a name that starts with /", () => expect(() => zipStore(one("/etc/passwd"))).toThrow("starts with a slash"));
   it("a ../ part", () => {
     expect(() => zipStore(one("a/../b"))).toThrow('".." part');
     expect(() => zipStore(one("../b"))).toThrow('".." part');
@@ -107,6 +107,58 @@ describe("zipStore refuses", () => {
     expect(() => zipStore([{ name: "a", bytes: half }, { name: "b", bytes: half }])).toThrow("over 4 GiB");
   });
   it("a name too long for a zip", () => expect(() => zipStore(one("a".repeat(70000)))).toThrow("too long"));
+});
+
+/** A valid one-file zip whose name is `name`: written with a same-length placeholder, then the name bytes are patched in the local and the central header. */
+function hostile(name: string): Uint8Array {
+  const raw = enc.encode(name);
+  const z = zipStore([{ name: "x".repeat(raw.length), bytes: bytes("hi") }]);
+  z.set(raw, 30);
+  z.set(raw, z.length - 22 - raw.length);
+  return z;
+}
+
+describe("unzipStore refuses an unsafe name", () => {
+  it("accepts the patched zip when the name is fine (the helper is sound)", () => {
+    expect(unzipStore(hostile("sub/ok.txt")).map((f) => f.name)).toEqual(["sub/ok.txt"]);
+  });
+  it("../x", () => expect(() => unzipStore(hostile("../x"))).toThrow('".." part'));
+  it("a/../b", () => expect(() => unzipStore(hostile("a/../b"))).toThrow('".." part'));
+  it("a\\..\\b", () => expect(() => unzipStore(hostile("a\\..\\b"))).toThrow('".." part'));
+  it("a name that ends in ..", () => expect(() => unzipStore(hostile("a/.."))).toThrow('".." part'));
+  it("/etc/x", () => expect(() => unzipStore(hostile("/etc/x"))).toThrow("starts with a slash"));
+  it("\\x (a leading backslash)", () => expect(() => unzipStore(hostile("\\x"))).toThrow("starts with a slash"));
+  it("C:\\x (a drive prefix)", () => expect(() => unzipStore(hostile("C:\\x"))).toThrow("drive letter"));
+  it("c:x (a drive prefix with no slash)", () => expect(() => unzipStore(hostile("c:x"))).toThrow("drive letter"));
+  it("a NUL character", () => expect(() => unzipStore(hostile("a\0b"))).toThrow("NUL"));
+  it("an empty name", () => {
+    const z = zipStore([{ name: "x", bytes: bytes("hi") }]);
+    const v = new DataView(z.buffer);
+    v.setUint16(26, 0, true); // local name length
+    v.setUint16(z.length - 22 - 1 - 46 + 28, 0, true); // central name length
+    expect(() => unzipStore(z)).toThrow("has no name");
+  });
+  it("a repeated name", () => {
+    const z = zipStore([{ name: "a", bytes: bytes("1") }, { name: "b", bytes: bytes("2") }]);
+    const cd = z.length - 22 - 2 * 47;
+    z[cd + 46 + 47] = "a".charCodeAt(0); // second central name
+    z[30 + 1 + 1 + 30] = "a".charCodeAt(0); // second local name
+    expect(() => unzipStore(z)).toThrow('Two files in the zip are called "a"');
+  });
+  it("a directory entry (name ending in /, no bytes) is returned as it is", () => {
+    const back = unzipStore(zipStore([{ name: "pics/", bytes: new Uint8Array(0) }, { name: "pics/a.jpg", bytes: bytes("j") }]));
+    expect(back.map((f) => f.name)).toEqual(["pics/", "pics/a.jpg"]);
+    expect(back[0]!.bytes.length).toBe(0);
+  });
+  it("names that merely contain dots or a colon later are fine", () => {
+    expect(unzipStore(zipStore([{ name: "a..b/c:d/.hidden", bytes: bytes("x") }]))[0]!.name).toBe("a..b/c:d/.hidden");
+  });
+});
+
+describe("zipStore refuses the same names", () => {
+  it("a leading backslash, a drive prefix and a NUL", () => {
+    for (const n of ["\\x", "C:\\x", "a\0b"]) expect(() => zipStore([{ name: n, bytes: bytes("x") }])).toThrow();
+  });
 });
 
 describe("unzipStore refuses", () => {
