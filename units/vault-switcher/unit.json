@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "unit": "units/vault-switcher",
+  "package": "@kaigilb/gilbplatformcode-vault-switcher",
+  "version": "0.1.0",
+  "purpose": "A chip that shows the open vault and, on a tap, lists the vaults the person reaches, own first and shared ones labelled, and hands back the one they pick.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "19fb34ba7195055fbd0ef13e376d789756e2c9f6",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.ts",
+    "src/words.ts",
+    "src/VaultSwitcher.tsx",
+    "src/vaultSwitcher.css",
+    "src/VaultSwitcher.test.tsx",
+    "src/stylesheet.test.ts",
+    "src/exports.test.ts",
+    "src/hostAgnostic.test.ts",
+    "test/setup.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [],
+  "library": {"admitted": true, "tag": "t:Vault.switcher", "title": "Vault switcher (a chip with the open vault and a sheet to pick another)", "note": "A chip with the open vault's name; a tap opens a sheet listing the vaults the person reaches, own first, shared and view-only ones labelled, the open one marked, and calls onPick with the chosen vault. React, on modal-sheet and vault-list (vaultChoices, choiceLine). It lists with the load you pass; the list itself is reachable-vaults or signin's listVaults."}
+}
