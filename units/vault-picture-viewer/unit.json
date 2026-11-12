@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "unit": "units/vault-picture-viewer",
+  "package": "@kaigilb/gilbplatformcode-vault-picture-viewer",
+  "version": "0.1.0",
+  "purpose": "Opens a vault's pictures in the full-screen viewer: the small copy shows at once while the largest stored copy is fetched with the person's access, a picture on this device opens with no fetch, and the viewer's stylesheet is loaded for you.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode (written new from PictureRecords run 7 and run 6, local folders that are not git repositories)",
+    "commit": "19fb34ba7195055fbd0ef13e376d789756e2c9f6",
+    "files": []
+  },
+  "namedChanges": [
+    "V1. resolveSrc signs item.fileUri and answers the local URL for an item with none; openStored puts the largest copy in fileUri (run 7 chose it inside resolveSrc)",
+    "V2. openStored's thumbnail address is thumbUriOf(copies, master) ?? master (run 7 showed no stand-in while copies was null)",
+    "V3. el (focus return) is passed through to the viewer's item"
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/useVaultPictureViewer.tsx",
+    "src/useVaultPictureViewer.test.tsx",
+    "src/cssImport.test.ts",
+    "src/exports.test.ts",
+    "src/hostAgnostic.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "vaultOrigin",
+      "replaces": "session.vaultOrigin, PictureRecords run 7 app/src/plant/usePictureView.tsx:25,38"
+    },
+    {
+      "member": "copies",
+      "replaces": "the app's CopyMap state, usePictureView.tsx:24"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:Vault.pictureViewer",
+    "title": "Vault picture viewer (open a stored picture full screen, signed)",
+    "note": "Opens a vault picture in the full-screen viewer: thumbnail first, then the largest copy, both fetched signed; also a local picture with no fetch. Loads the viewer's CSS itself. Needs picture-viewer, signed-picture and picture-set."
+  }
+}
