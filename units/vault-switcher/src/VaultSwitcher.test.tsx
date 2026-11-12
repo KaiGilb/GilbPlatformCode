@@ -189,6 +189,44 @@ describe("a slow answer", () => {
   });
 });
 
+describe("a load that throws at once", () => {
+  it("is a failed load: the sentence and Try again show, nothing escapes, and Try again can then list", async () => {
+    let first = true;
+    const load = vi.fn((): Promise<readonly VaultListItem[]> => {
+      if (first) {
+        first = false;
+        throw new Error("sync boom");
+      }
+      return Promise.resolve([mine, theirs]);
+    });
+    const { chip, user } = setup({ load });
+    await user.click(chip);
+    expect((await screen.findByRole("alert")).textContent).toBe("Could not list your vaults.");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Theirs")).toBeTruthy();
+  });
+});
+
+describe("a load answering after close", () => {
+  it("sets nothing while closed, and the next open starts at loading even after the old load has answered", async () => {
+    const d1 = deferred<readonly VaultListItem[]>();
+    const d2 = deferred<readonly VaultListItem[]>();
+    const load = vi.fn<() => Promise<readonly VaultListItem[]>>().mockReturnValueOnce(d1.promise).mockReturnValueOnce(d2.promise);
+    const { chip, user } = setup({ load });
+    await user.click(chip);
+    await user.keyboard("{Escape}");
+    await act(async () => d1.resolve([theirs]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(chip);
+    expect(screen.getByRole("status").textContent).toBe("Looking for your vaults…");
+    expect(screen.queryByText("Theirs")).toBeNull();
+    await act(async () => d2.resolve([mine]));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("Mine", { selector: ".vsw-row-name" })).toBeTruthy();
+  });
+});
+
 describe("words", () => {
   it("replace the title, the chip's name, the close button and the second line", async () => {
     const { chip, user } = setup({
