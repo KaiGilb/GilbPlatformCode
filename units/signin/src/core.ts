@@ -31,6 +31,7 @@ export {
   lastUsedVault,
   rememberLastVault,
   ensureAppVault,
+  keepsPending,
   createAppVaultService,
   PartialVaultError,
 } from "./appVault";

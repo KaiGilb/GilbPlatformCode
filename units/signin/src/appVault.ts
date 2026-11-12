@@ -8,7 +8,7 @@
 // vault is made. That is why the chosen name is stored as "pending" before the first POST.
 
 import { normaliseVaultName, sameVaultHost, type CreateNamedVaultBody, type CreatedNamedVault, type ListedVault } from "./vaults";
-import { SignInUnreachableError } from "./types";
+import { VaultRequestRefusedError } from "./types";
 import type { CheckNameResult } from "./types";
 
 /** A tiny key-value store: what `localStorage` offers. Pass `null` for no memory at all. */
@@ -235,15 +235,30 @@ export function rememberLastVault(store: KeyValueStore | null, cfg: AppVaultConf
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Whether the pending name must survive an error from the create step. The rule: it is cleared ONLY
+ * when the error is a {@link VaultRequestRefusedError} with a 4xx status AND no 202 was seen for this
+ * name in this call (a definite "no" before anything was made). It is kept for everything else: an
+ * unreachable platform, a status of 500 or more, any error at all after a 202, and any unknown error.
+ * Why: the platform may have half-made the vault and holds the name for this person. If the name were
+ * forgotten, the next check-name would answer "taken, suggest name2" and a second vault would be made.
+ *
+ * @param e what the create step threw
+ * @param saw202 true when this call already got a 202 (partly made) for the name
+ * @returns true to keep the pending name, false to clear it
+ */
+export function keepsPending(e: unknown, saw202: boolean): boolean {
+  if (saw202) return true;
+  return !(e instanceof VaultRequestRefusedError && e.status >= 400 && e.status <= 499);
+}
+
+/**
  * Finds the person's own vault of the app's type, or makes it exactly once. A 202 (partly made) is
  * finished by sending the identical request again, after 2 seconds, at most 2 more times. The name
  * is remembered as pending before the first POST and is not checked again, so a half-made vault is
  * finished and never duplicated.
  *
- * Errors: a platform refusal is thrown unchanged and the pending name is cleared (the vault was not
- * made, so asking again with a fresh check is right). An unreachable platform is thrown unchanged and
- * the pending name is KEPT (the request may have reached the platform). {@link PartialVaultError}
- * keeps it too.
+ * Errors are thrown unchanged. {@link keepsPending} says whether the pending name is kept: cleared only
+ * for a 4xx refusal before any 202; kept otherwise. {@link PartialVaultError} keeps it too.
  *
  * @param deps the calls and storage
  * @param cfg the app's vault settings
@@ -276,15 +291,17 @@ export async function ensureAppVault(deps: AppVaultDeps, cfg: AppVaultConfig, pr
   const body: CreateNamedVaultBody = { name, represents: cfg.represents };
   deps.onStep?.("creating");
   let made: CreatedNamedVault;
+  let saw202 = false;
   try {
     made = await deps.create(body);
     for (let again = 0; !made.complete && again < MAX_REPOSTS; again++) {
+      saw202 = true;
       deps.onStep?.("finishing");
       await (deps.sleep ?? wait)(REPOST_DELAY_MS);
       made = await deps.create(body);
     }
   } catch (e) {
-    if (!(e instanceof SignInUnreachableError)) safeClear(store, pendingKey(cfg, principal));
+    if (!keepsPending(e, saw202)) safeClear(store, pendingKey(cfg, principal));
     throw e;
   }
   if (!made.complete) throw new PartialVaultError(name);

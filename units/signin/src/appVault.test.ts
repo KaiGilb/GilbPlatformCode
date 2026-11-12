@@ -165,15 +165,53 @@ describe("ensureAppVault (injected calls)", () => {
     expect((d.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toEqual({ name: "annhouseplants", represents: TYPE });
     expect(r).toBeInstanceOf(Error); // the re-list of this stub has no vault; the point is the body and the check count
   });
-  it("a refusal is thrown unchanged and clears the pending name; an unreachable platform keeps it", async () => {
-    const refused = new VaultRequestRefusedError("Making the vault", 409, "taken");
-    const d = deps({ create: vi.fn().mockRejectedValue(refused) });
-    await expect(ensureAppVault(d, CFG, P)).rejects.toBe(refused);
-    expect((d.store as ReturnType<typeof mem>).m.get(`app:pending:${P}`)).toBe("");
-    const off = new SignInUnreachableError();
-    const d2 = deps({ create: vi.fn().mockRejectedValue(off) });
-    await expect(ensureAppVault(d2, CFG, P)).rejects.toBe(off);
-    expect((d2.store as ReturnType<typeof mem>).m.get(`app:pending:${P}`)).toBe("annhouseplants");
+  const refused = (status: number) => new VaultRequestRefusedError("Making the vault", status, "x");
+  const pendingOf = (d: { store: unknown }) => (d.store as ReturnType<typeof mem>).m.get(`app:pending:${P}`);
+  /** A second ensure on the same store, whose create works; returns whether it re-posted the name without checking. */
+  async function nextEnsure(d: ReturnType<typeof deps>, expectChecks: number, expectName: string) {
+    const next = deps({ store: d.store, checkName: d.checkName });
+    await ensureAppVault(next, CFG, P);
+    expect(d.checkName).toHaveBeenCalledTimes(expectChecks);
+    expect(next.create).toHaveBeenCalledWith({ name: expectName, represents: TYPE });
+  }
+  it("202 then 503 on the re-post: the 503 is thrown, pending kept, the next ensure re-posts without check-name", async () => {
+    const e503 = refused(503);
+    const d = deps({ create: vi.fn().mockResolvedValueOnce(made(false)).mockRejectedValueOnce(e503) });
+    await expect(ensureAppVault(d, CFG, P)).rejects.toBe(e503);
+    expect(pendingOf(d)).toBe("annhouseplants");
+    await nextEnsure(d, 1, "annhouseplants");
+  });
+  it("500 on the FIRST post: pending kept, the next ensure re-posts without check-name", async () => {
+    const d = deps({ create: vi.fn().mockRejectedValue(refused(500)) });
+    await expect(ensureAppVault(d, CFG, P)).rejects.toThrow(/500/);
+    expect(pendingOf(d)).toBe("annhouseplants");
+    await nextEnsure(d, 1, "annhouseplants");
+  });
+  it("409 on the FIRST post (no 202): pending cleared, the next ensure checks the name again", async () => {
+    const d = deps({ create: vi.fn().mockRejectedValue(refused(409)) });
+    await expect(ensureAppVault(d, CFG, P)).rejects.toThrow(/409/);
+    expect(pendingOf(d)).toBe("");
+    await nextEnsure(d, 2, "annhouseplants");
+  });
+  it("202 then 409: pending kept", async () => {
+    const d = deps({ create: vi.fn().mockResolvedValueOnce(made(false)).mockRejectedValueOnce(refused(409)) });
+    await expect(ensureAppVault(d, CFG, P)).rejects.toThrow(/409/);
+    expect(pendingOf(d)).toBe("annhouseplants");
+  });
+  it("an unreachable platform keeps pending", async () => {
+    const d = deps({ create: vi.fn().mockRejectedValue(new SignInUnreachableError()) });
+    await expect(ensureAppVault(d, CFG, P)).rejects.toThrow();
+    expect(pendingOf(d)).toBe("annhouseplants");
+  });
+  it("after a successful make the pending value is empty; if the vault is later gone, the next ensure checks the name (no silent re-post)", async () => {
+    const d = deps();
+    await ensureAppVault(d, CFG, P);
+    expect(pendingOf(d)).toBe("");
+    expect(d.checkName).toHaveBeenCalledTimes(1);
+    const gone = deps({ store: d.store, checkName: d.checkName, list: vi.fn().mockResolvedValue([landing]) });
+    await ensureAppVault(gone, CFG, P).catch(() => undefined);
+    expect(d.checkName).toHaveBeenCalledTimes(2);
+    expect(gone.create).toHaveBeenCalledWith({ name: "annhouseplants", represents: TYPE });
   });
   it("made but not in the re-list: throws a sentence, returns no fake vault", async () => {
     const d = deps({ create: vi.fn().mockResolvedValue(made()) });

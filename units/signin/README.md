@@ -233,7 +233,7 @@ create-named answers 201 (made) or 202 (partly made). Sending the IDENTICAL requ
 3. still 202: throws `PartialVaultError` (its `vaultName` is the half-made name; not `name`, which is the Error's own field) and keeps the pending name;
 4. the next call finds a pending name and sends it again without calling check-name, whatever caused the earlier stop (a 202, a closed tab, a crash).
 
-A platform refusal is thrown unchanged and clears the pending name (nothing was made). An unreachable platform is thrown unchanged and keeps it (the request may have arrived). On success the pending name is cleared, the vault list is read again and the new vault is found by the id the answer gave (`sameVaultHost`), else by name; if the list still lacks it, a sentence is thrown rather than a made-up vault.
+Errors are thrown unchanged. The pending name is cleared ONLY when (a) the create completed (201), or (b) it threw a `VaultRequestRefusedError` with a 4xx status (400 to 499) and no 202 was seen for this name in this call: a definite "no" before anything was made. It is KEPT for an unreachable platform, any status of 500 or more, any error at all after a 202 (so 202 then 503, or 202 then 409, keeps it), and `PartialVaultError`. The rule is the exported function `keepsPending(e, saw202)`. Why: the platform may have half-made the vault, and a forgotten name makes the next check-name answer "taken, suggest name2", which makes a second vault. On success the pending name is cleared, the vault list is read again and the new vault is found by the id the answer gave (`sameVaultHost`), else by name; if the list still lacks it, a sentence is thrown rather than a made-up vault.
 
 ## Do not
 
