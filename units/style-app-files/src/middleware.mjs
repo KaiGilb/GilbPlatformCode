@@ -2,6 +2,8 @@
 import { writeStyleFiles } from "./files.mjs";
 
 const DEFAULT_MAX = 8 * 1024 * 1024;
+/** After a 413, how much more of the body is read and dropped before the connection is cut. */
+const DRAIN_MAX = 64 * 1024 * 1024;
 
 /**
  * `(req, res)` that accepts POST of `{ sheet, logoPng? }` and answers JSON `{ message, fontsWarning? }`.
@@ -24,8 +26,9 @@ export function createStudioSaveMiddleware(o) {
       return;
     }
     const tooBig = () => {
-      reply(413, { message: "The body is too large." }, { Connection: "close" });
-      res.once("finish", () => req.destroy());
+      // Answer now, then keep READING (and dropping) what still arrives: closing the socket under a client that is still sending
+      // makes it see a reset (EPIPE) instead of the 413. The drain is capped, so a client that never stops is cut off.
+      reply(413, { message: "The body is too large." });
     };
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > maxBytes) {
@@ -34,8 +37,14 @@ export function createStudioSaveMiddleware(o) {
     }
     const chunks = [];
     let size = 0;
+    let dropped = 0;
     req.on("data", (chunk) => {
-      if (replied) return; // stopped: drop what still arrives
+      if (replied) {
+        // stopped: drop what still arrives; cut off a sender that does not stop
+        dropped += chunk.length;
+        if (dropped > DRAIN_MAX) req.destroy();
+        return;
+      }
       size += chunk.length;
       if (size > maxBytes) {
         chunks.length = 0;

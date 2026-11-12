@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -46,6 +46,45 @@ describe("createStudioSaveMiddleware", () => {
     expect((await r.json()).message).toBe("The body is too large.");
     expect(publicFiles()).toEqual([]);
   });
+  it("answers 413 for a STREAMED body (chunked, no Content-Length) over maxBytes, delivered and not a reset, and writes nothing", async () => {
+    maxBytes = 1024;
+    const port = Number(new URL(url).port);
+    const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const req = request({ host: "127.0.0.1", port, path: "/__studio/save", method: "POST", headers: { "Transfer-Encoding": "chunked" } }, (res) => {
+        let body = "";
+        res.on("data", (d) => (body += d));
+        res.on("end", () => resolve({ status: res.statusCode!, body }));
+      });
+      req.on("error", reject);
+      expect(req.hasHeader("content-length")).toBe(false);
+      for (let i = 0; i < 8; i++) req.write(i === 0 ? '{"sheet":{"pad":"' + "x".repeat(495) : "x".repeat(512)); // 8 chunks of 512 B = 4096 B
+      req.end('"}}');
+    });
+    expect(result.status).toBe(413);
+    expect(JSON.parse(result.body).message).toBe("The body is too large.");
+    expect(publicFiles()).toEqual([]);
+  });
+  it("a client still sending megabytes when the limit is hit receives the 413, not a reset (EPIPE or ECONNRESET)", async () => {
+    maxBytes = 1024;
+    const port = Number(new URL(url).port);
+    const outcome = await new Promise<string>((resolve) => {
+      const req = request({ host: "127.0.0.1", port, path: "/__studio/save", method: "POST", headers: { "Transfer-Encoding": "chunked" } }, (res) => {
+        res.resume();
+        resolve(`status ${res.statusCode}`);
+      });
+      req.on("error", (e: NodeJS.ErrnoException) => resolve(`client error ${e.code}`));
+      for (let i = 0; i < 4000; i++) req.write("x".repeat(1024)); // 4 MB against a limit of 1 KB
+      req.end();
+    });
+    expect(outcome).toBe("status 413");
+    expect(publicFiles()).toEqual([]);
+  });
+  it("answers 413 for a declared Content-Length over maxBytes, over the real server, and writes nothing", async () => {
+    maxBytes = 1024;
+    const r = await post(JSON.stringify({ sheet: { pad: "x".repeat(2000) } }));
+    expect(r.status).toBe(413);
+    expect(publicFiles()).toEqual([]);
+  });
   it("a body of exactly maxBytes is accepted", async () => {
     const body = JSON.stringify({ sheet: {} });
     maxBytes = Buffer.byteLength(body);
@@ -83,6 +122,15 @@ describe("createStudioSaveMiddleware", () => {
     for (const logoPng of notPng) {
       const r = await post({ sheet, logoPng });
       expect(r.status, logoPng).toBe(400);
+    }
+    expect(publicFiles()).toEqual([]);
+  });
+  it("answers 400 and writes NOTHING when the base64 holds characters outside the alphabet, even if dropping them would leave the PNG signature", async () => {
+    const magic = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64"); // "iVBORw0KGgo="
+    expect(Buffer.from("iVBORw0KGgo!!!!", "base64").subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a"); // Buffer would accept it
+    for (const tail of ["iVBORw0KGgo!!!!", "iVBO!Rw0KGgo", magic.slice(0, 11) + " \n" + "AAAA", "iVBORw0KGgo=" + "x="]) {
+      const r = await post({ sheet, logoPng: "data:image/png;base64," + tail });
+      expect(r.status, tail).toBe(400);
     }
     expect(publicFiles()).toEqual([]);
   });

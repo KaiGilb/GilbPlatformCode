@@ -92,6 +92,33 @@ describe("exportFonts", () => {
     await exportFonts(sheetWith({ sans: { family: "Arial", source: "system" } }), { appRoot: app });
     expect(tree(path.join(app, "public/fonts"))).toEqual(["inter/extra.txt"]);
   });
+  it("never removes what a marker names outside its folder, only plain file names inside it", async () => {
+    const { app } = makeSandbox();
+    installFont(app, "inter");
+    const stale = path.join(app, "public/fonts/old");
+    mkdirSync(stale, { recursive: true });
+    writeFileSync(path.join(stale, "a.woff2"), "ours");
+    writeFileSync(path.join(stale, "mine.txt"), "not listed");
+    // from public/fonts/old: ../keep.woff2 is public/fonts/keep.woff2, ../../outside.txt is public/outside.txt, ../../../outside.txt is app/outside.txt
+    const targets = [path.join(app, "public/fonts/keep.woff2"), path.join(app, "public/outside.txt"), path.join(app, "outside.txt")];
+    for (const t of targets) writeFileSync(t, "keep");
+    writeFileSync(path.join(stale, MARKER), JSON.stringify({ files: ["../../outside.txt", "../keep.woff2", "../../../outside.txt", "sub/x.woff2", "/etc/hosts", "a.woff2"] }));
+    await exportFonts(sheetWith({ sans: { family: "Inter", source: "bundled" } }), { appRoot: app });
+    for (const t of targets) expect(readFileSync(t, "utf8"), t).toBe("keep");
+    expect(existsSync(path.join(stale, "a.woff2"))).toBe(false); // the one plain name listed
+    expect(existsSync(path.join(stale, MARKER))).toBe(false);
+    expect(readFileSync(path.join(stale, "mine.txt"), "utf8")).toBe("not listed"); // so the folder stays
+  });
+  it("a marker that is not valid JSON leaves the folder untouched, as if unmarked", async () => {
+    const app = makeApp();
+    installFont(app, "inter");
+    const stale = path.join(app, "public/fonts/old");
+    mkdirSync(stale, { recursive: true });
+    writeFileSync(path.join(stale, "a.woff2"), "x");
+    writeFileSync(path.join(stale, MARKER), "{not json");
+    await exportFonts(sheetWith({ sans: { family: "Inter", source: "bundled" } }), { appRoot: app });
+    expect(readdirSync(stale).sort()).toEqual([MARKER, "a.woff2"]);
+  });
   it("drops a weight file when the weights shrink", async () => {
     const app = makeApp();
     installFont(app, "inter");
