@@ -1593,6 +1593,32 @@ function claudeHopRunner(claudeBin: string, env: NodeJS.ProcessEnv, hopModel: st
   };
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The details object of codex doctor's auth check: the flat `checks["auth.credentials"]` (Codex 0.167), else the nested `checks.auth.credentials`. */
+function codexAuthDetails(doctor: unknown): Record<string, unknown> | undefined {
+  const checks = isRecord(doctor) ? doctor.checks : undefined;
+  if (!isRecord(checks)) return undefined;
+  const flat = checks["auth.credentials"];
+  if (isRecord(flat) && isRecord(flat.details)) return flat.details;
+  const auth = checks.auth;
+  const nested = isRecord(auth) ? auth.credentials : undefined;
+  return isRecord(nested) && isRecord(nested.details) ? nested.details : undefined;
+}
+
+/** The sign-in mode `codex doctor --json` reports ("chatgpt", "apikey", ...), or undefined when it cannot be read. */
+export function codexStoredAuthMode(doctor: unknown): string | undefined {
+  const flat = isRecord(doctor) && isRecord(doctor.checks) ? doctor.checks["auth.credentials"] : undefined;
+  const flatMode = isRecord(flat) && isRecord(flat.details) ? flat.details["stored auth mode"] : undefined;
+  if (typeof flatMode === "string") return flatMode;
+  const mode = codexAuthDetails(doctor)?.["stored auth mode"];
+  return typeof mode === "string" ? mode : undefined;
+}
+
+function codexStoredApiKey(doctor: unknown): unknown {
+  return codexAuthDetails(doctor)?.["stored API key"];
+}
+
 /** Codex only ever runs a hand-off on the person's ChatGPT sign-in. The tested release line is 0.167. */
 const CODEX_TESTED_VERSION_PREFIX = "0.167.";
 const CODEX_NOT_CHATGPT =
@@ -1842,16 +1868,18 @@ function codexHopRunner(
       const doctor = await captureCodex(spawnCmd, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
       let version: unknown;
       let mode: unknown;
+      let apiKeyStored = false;
       if (doctor !== null) {
         try {
-          const json = JSON.parse(doctor) as { codexVersion?: unknown; checks?: { auth?: { credentials?: { details?: Record<string, unknown> } } } };
-          mode = json?.checks?.auth?.credentials?.details?.["stored auth mode"];
+          const json = JSON.parse(doctor) as { codexVersion?: unknown } | null;
+          mode = codexStoredAuthMode(json);
+          apiKeyStored = codexStoredApiKey(json) === true;
           version = json?.codexVersion;
         } catch {
           mode = undefined;
         }
       }
-      if (mode !== "chatgpt") throw new Error(CODEX_NOT_CHATGPT);
+      if (mode !== "chatgpt" || apiKeyStored) throw new Error(CODEX_NOT_CHATGPT);
       if (typeof version === "string" && version !== "") {
         process.stderr.write(`gilb-connector: this hand-off runs on Codex ${version}.\n`);
         if (!version.startsWith(CODEX_TESTED_VERSION_PREFIX)) {

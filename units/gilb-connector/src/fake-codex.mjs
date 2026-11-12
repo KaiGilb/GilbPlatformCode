@@ -17,11 +17,24 @@ const out = (row) => process.stdout.write(JSON.stringify(row) + "\n");
 if (argv[0] === "doctor") {
   log({ event: "doctor", argv });
   if (process.env.FAKE_CODEX_DOCTOR_FAIL === "1") process.exit(1);
-  out({
-    schemaVersion: 1,
-    codexVersion: process.env.FAKE_CODEX_VERSION ?? "0.167.2",
-    checks: { auth: { credentials: { details: { "stored auth mode": process.env.FAKE_CODEX_AUTH_MODE ?? "chatgpt" } } } },
-  });
+  const details = {
+    "auth file": "/fake/auth.json",
+    "auth storage mode": "File",
+    "stored API key": process.env.FAKE_CODEX_STORED_API_KEY === "1",
+    "stored ChatGPT tokens": true,
+    "stored agent identity": false,
+    "stored auth mode": process.env.FAKE_CODEX_AUTH_MODE ?? "chatgpt",
+  };
+  const entry = (id, category, summary, d) => ({ id, category, status: "ok", summary, details: d, remediation: null, durationMs: 0 });
+  const checks =
+    process.env.FAKE_CODEX_DOCTOR_SHAPE === "nested"
+      ? { auth: { credentials: { details } } }
+      : {
+          "auth.credentials": entry("auth.credentials", "auth", "auth is configured", details),
+          "app_server.status": entry("app_server.status", "app_server", "app server is reachable", {}),
+          "config.load": entry("config.load", "config", "config loaded", {}),
+        };
+  out({ schemaVersion: 1, generatedAt: "2026-11-12T00:00:00Z", overallStatus: "ok", codexVersion: process.env.FAKE_CODEX_VERSION ?? "0.167.2", checks });
   process.exit(0);
 } else if (argv[0] === "features") {
   log({ event: "features", argv });
