@@ -48,3 +48,27 @@ jobs:
       - run: npm ci
       - name: Codex hand-off tests (same files as Windows)
         run: npx vitest run src/codexHop.test.mjs src/codexWindows.test.mjs
+
+  # The install commands a guide shows for Codex, run for real in the shell a person pastes them into, against the real
+  # Codex CLI, in a throwaway home. On Windows this decides which form of the `codex mcp add` line survives PowerShell.
+  commands:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, shell: powershell }
+          - { os: windows-latest, shell: pwsh }
+          - { os: macos-latest, shell: bash }
+    steps:
+      - name: Keep LF line ends
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build:connector
+      - run: npm install -g @openai/codex@0.167.2
+      - run: node scripts/codex-commands-e2e.mjs --shell ${{ matrix.shell }}
