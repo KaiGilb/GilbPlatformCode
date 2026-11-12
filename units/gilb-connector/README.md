@@ -105,15 +105,25 @@ A hand-off to another agent runs as a nested `claude` on your Claude subscriptio
 
 ## Codex
 
-Codex can run hand-offs too. Install:
+Codex can run hand-offs too. Install on macOS or Linux (replace `<address>` with the connector address your guide shows):
 
 ```sh
-codex mcp add GilbPlatform -- node ~/.gilb-connector.mjs --hop-cli codex --name "Codex on <machine>"
+curl -fsSL '<address>' -o ~/.gilb-connector.mjs
+codex mcp add GilbPlatform -- node ~/.gilb-connector.mjs --hop-cli codex
 ```
+
+On Windows, in PowerShell:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri '<address>' -OutFile "$HOME\.gilb-connector.mjs"
+codex mcp add GilbPlatform -- node "$HOME\.gilb-connector.mjs" --hop-cli codex
+```
+
+Then start `codex`. The AI's display name now defaults to `Codex on <machine>` with `--hop-cli codex`, so `--name` is optional. For a second AI on the same computer add `--profile NAME` (lower-case letters, digits and dashes, up to 20) and call the server `gilb-NAME`.
 
 A hand-off then runs as `codex exec` on your ChatGPT sign-in. Run `codex login` and choose Sign in with ChatGPT first. Before every hand-off the connector asks `codex doctor`, and it refuses the hand-off if Codex is on an API key or the answer cannot be read.
 
-Then open `~/.codex/config.toml`. Under `[mcp_servers.GilbPlatform]` add:
+Then open `~/.codex/config.toml` (on Windows `$HOME\.codex\config.toml`). Under `[mcp_servers.GilbPlatform]` add:
 
 ```toml
 startup_timeout_sec = 90
