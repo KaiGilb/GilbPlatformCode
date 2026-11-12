@@ -112,7 +112,7 @@ function hopLimitMinutes(hopMaxMs: number): number {
  */
 function hopTimeLimitParagraph(hopMaxMs: number): string {
   const minutes = hopLimitMinutes(hopMaxMs);
-  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest.`;
+  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
 }
 
 /** The "Hand-off clock" line appended to every tool answer in a hand-off that has a deadline. */

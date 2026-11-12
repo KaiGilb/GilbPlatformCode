@@ -235,6 +235,20 @@ describe("--hop-deadline", () => {
   });
 });
 
+describe("the time-limit paragraph", () => {
+  it("keeps the old first sentence and adds the trust-only-the-clock sentences", async () => {
+    const logFile = join(scratch(), "claude.log");
+    const platform = await hopDoor("Jackfruit");
+    const box = connect({ origin: platform.origin, env: meEnv({ FAKE_CLAUDE_LOG: logFile }) });
+    expect((await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit", task: "a" } })).result.isError).toBe(false);
+    const prompt = readLog(logFile).find((row) => row.event === "run").prompt;
+    expect(prompt).toContain("Time limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller.");
+    expect(prompt).toContain("so the caller can hand over the rest. Every tool answer ends with a line \"Hand-off clock: …\"");
+    expect(prompt).toContain("Trust only that clock.");
+    expect(prompt.endsWith("never say the time limit stopped you unless the clock said so.")).toBe(true);
+  }, 20000);
+});
+
 describe("resources", () => {
   it("resources/list and resources/templates/list answer empty lists, in normal and hop mode", async () => {
     const normal = connect({ origin: "http://127.0.0.1:9" });
