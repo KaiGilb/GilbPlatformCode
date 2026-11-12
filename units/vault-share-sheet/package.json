@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-share-sheet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.",
@@ -21,7 +21,7 @@
     "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
     "@kaigilb/gilbplatformcode-modal-sheet": "^0.1.0",
     "@kaigilb/gilbplatformcode-principal-row": "^0.1.0",
-    "@kaigilb/gilbplatformcode-vault-access": "^0.1.2",
+    "@kaigilb/gilbplatformcode-vault-access": "^0.1.3",
     "@kaigilb/gilbplatformcode-vault-address": "^0.1.1",
     "react": "^19.0.0"
   },

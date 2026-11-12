@@ -6,6 +6,7 @@ export {
   orderVaultsAsTree,
   vaultChoices,
   vaultLabel,
+  vaultsOfType,
   vaultRootFromList,
   writableVaults,
   type ChoiceWords,

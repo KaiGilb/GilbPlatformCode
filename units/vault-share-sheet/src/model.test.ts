@@ -95,6 +95,28 @@ describe("the rows", () => {
     expect(rows[1]!.note).toEqual(expect.any(String));
   });
 
+  it("accessRows: an entry that is registered and carries a label shows the label, never \"Principal key\"", () => {
+    const key = "https://id.example.test/base/p/abc";
+    const entry: VaultAclEntry = { principal: key, levels: ["read", "write", "control"], label: "Ann", webId: null, kind: "grant", labelSource: "vault-name", registered: true };
+    const { owner } = accessRows([entry]);
+    expect(owner?.label).toBe("Ann");
+    expect(owner?.label).not.toBe("Principal key");
+    const shared = accessRows([{ ...entry, levels: ["read"] }]).rows[0]!;
+    expect(shared.label).toBe("Ann");
+    expect(shared.note).toBe("Name reserved in the BaseID register");
+  });
+
+  it("accessRows: an owner with no label but registered true is titled \"Registered principal\" (principal-row's wording), not \"Principal key\"", () => {
+    const key = "https://id.example.test/base/p/abc";
+    const entry: VaultAclEntry = { principal: key, levels: ["read", "write", "control"], label: null, webId: null, kind: "grant", registered: true };
+    expect(accessRows([entry]).owner?.label).toBe("Registered principal");
+  });
+
+  it("accessRows: a truly unknown key (no label, registered not stated) is still \"Principal key\"", () => {
+    const entry: VaultAclEntry = { principal: "https://id.example.test/base/p/abc", levels: ["read", "write", "control"], label: null, webId: null, kind: "grant" };
+    expect(accessRows([entry]).owner?.label).toBe("Principal key");
+  });
+
   it("3. after unshare, no row remains", async () => {
     await shareTyped("ben", "edit");
     expect((await controlled()).rows).toHaveLength(1);

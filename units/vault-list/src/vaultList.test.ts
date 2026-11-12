@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { defaultWriteVaultId, orderVaultsAsTree, vaultLabel, vaultRootFromList, writableVaults } from "./vaultList";
+import { defaultWriteVaultId, orderVaultsAsTree, vaultLabel, vaultRootFromList, vaultsOfType, writableVaults } from "./vaultList";
 
 test("a name wins, otherwise the first hostname label of a /base address", () => {
   expect(vaultLabel({ name: "Home", vaultId: "https://other.example.test/base" })).toBe("Home");
@@ -119,4 +119,53 @@ test("a non-URL vaultId of the bare word vault never comes back as just vault", 
 });
 test("vaultChoices labels an unnamed user vault by its host label", () => {
   expect(vaultChoices([{ vaultId: "https://ann.example.test/vault", modes: ["read"] }], () => false)[0]!.label).toBe("ann");
+});
+
+const sheep = { vaultId: "https://a.example.test/vault", represents: "t:Flock", name: "North", shortName: "n" };
+const goat = { vaultId: "https://b.example.test/vault", represents: "t:Herd", name: "South" };
+const bare = { vaultId: "https://c.example.test/vault" };
+const suffixed = { vaultId: "https://d.example.test/vault", name: "Kai Dev Flock" };
+
+test("vaultsOfType keeps a row whose represents is the one asked", () => {
+  expect(vaultsOfType([sheep, goat], { represents: "t:Flock", keepUnknown: false })).toEqual([sheep]);
+});
+test("vaultsOfType keeps a row whose name or shortName ends with the suffix, in any case", () => {
+  const short = { vaultId: "s", shortName: "my-FLOCK" };
+  expect(vaultsOfType([suffixed, short, goat], { nameSuffix: "flock", keepUnknown: false })).toEqual([suffixed, short]);
+  expect(vaultsOfType([suffixed], { nameSuffix: "FLOCK", keepUnknown: false })).toEqual([suffixed]);
+});
+test("vaultsOfType keeps a bare row by default", () => {
+  expect(vaultsOfType([goat, bare], { represents: "t:Flock" })).toEqual([bare]);
+  expect(vaultsOfType([goat, bare], { represents: "t:Flock", keepUnknown: true })).toEqual([bare]);
+});
+test("vaultsOfType drops a bare row with keepUnknown false", () => {
+  expect(vaultsOfType([sheep, bare], { represents: "t:Flock", keepUnknown: false })).toEqual([sheep]);
+});
+test("vaultsOfType drops a row whose represents differs and whose name does not match the suffix", () => {
+  expect(vaultsOfType([goat], { represents: "t:Flock", nameSuffix: "flock" })).toEqual([]);
+});
+test("vaultsOfType drops a named row with no represents that does not match (it is not bare)", () => {
+  expect(vaultsOfType([{ vaultId: "x", name: "Other" }], { represents: "t:Flock", nameSuffix: "flock" })).toEqual([]);
+});
+test("vaultsOfType keeps a represents match even when the name does not match the suffix", () => {
+  const row = { vaultId: "y", represents: "t:Flock", name: "Something else" };
+  expect(vaultsOfType([row], { represents: "t:Flock", nameSuffix: "flock", keepUnknown: false })).toEqual([row]);
+});
+test("vaultsOfType with neither represents nor nameSuffix returns every row, as a copy", () => {
+  const rows = [sheep, goat, bare];
+  const out = vaultsOfType(rows, {});
+  expect(out).toEqual(rows);
+  expect(out).not.toBe(rows);
+  expect(vaultsOfType(rows, { keepUnknown: false })).toEqual(rows);
+});
+test("vaultsOfType does not change its input and keeps the order", () => {
+  const rows = [bare, goat, suffixed, sheep];
+  const before = JSON.stringify(rows);
+  const out = vaultsOfType(rows, { represents: "t:Flock", nameSuffix: "flock" });
+  expect(JSON.stringify(rows)).toBe(before);
+  expect(out).toEqual([bare, suffixed, sheep]);
+});
+test("vaultsOfType accepts the null name and shortName that VaultListItem allows", () => {
+  const row = { vaultId: "z", name: null, shortName: null };
+  expect(vaultsOfType([row], { represents: "t:Flock" })).toEqual([row]);
 });
