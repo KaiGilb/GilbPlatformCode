@@ -35,10 +35,10 @@ describe("the data helpers", () => {
     expect(holderCaption({ ...v, represents: "t:Organization" }, null)).toBe("Organization vault");
     expect(holderCaption({ ...v, represents: "   " }, null)).toBe("Vault");
   });
-  test("holderPersonName: the card's name trimmed, else the vault's label", () => {
+  test("holderPersonName: the card's name trimmed, else the vault's label (an unnamed /vault vault reads as its host label)", () => {
     expect(holderPersonName(vaultOf(), "  Dee Owner ")).toBe("Dee Owner");
     expect(holderPersonName(vaultOf(), "   ")).toBe("Cy Holder");
-    expect(holderPersonName(vaultOf({ name: null }), null)).toBe("vault");
+    expect(holderPersonName(vaultOf({ name: null }), null)).toBe("holder");
     expect(holderPersonName(vaultOf({ name: null, vaultId: "https://dee.example.test/base" }), null)).toBe("dee");
   });
   test("GILBAPP_CHIP_HELP is the app's sentence", () => {
