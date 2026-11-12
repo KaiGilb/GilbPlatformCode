@@ -40,6 +40,22 @@ describe("rememberVault and rememberedVault", () => {
     rememberVault(s, KEY, `${SHARED}/`);
     expect(rememberedVault(s, KEY, rows)).toBe(SHARED);
   });
+  it("two people on one browser stay apart when appKey holds the person: choice, chosen-before and dismissal", () => {
+    const s = memory();
+    const ann = "teapots:https://id.example.test/p/ann";
+    const bob = "teapots:https://id.example.test/p/bob";
+    rememberVault(s, ann, SHARED);
+    dismissOffer(s, ann, "https://cy.example.test/vault");
+    expect(rememberedVault(s, ann, rows)).toBe(SHARED);
+    expect(rememberedVault(s, bob, rows)).toBeNull();
+    expect(hasChosenVault(s, bob)).toBe(false);
+    expect(offerDismissed(s, bob, "https://cy.example.test/vault")).toBe(false);
+    rememberVault(s, bob, OWN);
+    expect(rememberedVault(s, bob, rows)).toBe(OWN);
+    expect(rememberedVault(s, ann, rows)).toBe(SHARED);
+    forgetVault(s, bob);
+    expect(rememberedVault(s, ann, rows)).toBe(SHARED);
+  });
   it("keeps one choice per appKey", () => {
     const s = memory();
     rememberVault(s, "a:ann", SHARED);

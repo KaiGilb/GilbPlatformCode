@@ -63,7 +63,7 @@ describe("exportVault", () => {
 
   it("a missing picture is reported, not thrown, and the record is still exported without a file", async () => {
     const r = await exportVault(deps({ pictureOf: (p) => (p.id === "p1" ? "u/gone" : p.picture) }));
-    expect(r.differences).toEqual(["Blue: the picture could not be read, so it is not in the export"]);
+    expect(r.differences).toEqual(["Blue: the picture could not be read: HTTP 404, so it is not in the export"]);
     expect(r.pictures).toBe(1);
     expect(r.count).toBe(3);
     const records = JSON.parse(dec.decode(fakeUnzip(r.zipBytes)[0]!.bytes));
@@ -73,8 +73,7 @@ describe("exportVault", () => {
   it("a picture that reads as 0 bytes is reported as missing", async () => {
     const r = await exportVault(deps({ bytes: async () => ({ bytes: new Uint8Array(0), type: "image/png" }) }));
     expect(r.pictures).toBe(0);
-    expect(r.differences).toHaveLength(2);
-    expect(r.differences[0]).toContain("could not be read");
+    expect(r.differences).toEqual(["Blue: the picture is empty, so it is not in the export", "Red: the picture is empty, so it is not in the export"]);
   });
 
   it("an incomplete list is reported first", async () => {
@@ -120,7 +119,7 @@ describe("exportVault", () => {
   it("two pictures that would get the same name: the second is reported, not overwritten", async () => {
     const r = await exportVault(deps({ fileName: () => "pictures/same.jpg" }));
     expect(r.files).toEqual(["records.json", "pictures/same.jpg"]);
-    expect(r.differences).toEqual(["Red: the picture could not be read, so it is not in the export"]);
+    expect(r.differences).toEqual(["Red: its file name pictures/same.jpg is used twice, so the picture is not in the export"]);
   });
 
   it("an unknown type gets .bin, and the label defaults to the id", async () => {
@@ -132,7 +131,36 @@ describe("exportVault", () => {
     const r = await exportVault(noLabel({ bytes: async () => ({ bytes: Uint8Array.from([1]), type: "" }), pictureOf: (p) => (p.id === "p1" ? "u/blue" : null) }));
     expect(r.files).toEqual(["records.json", "pictures/p1.bin"]);
     const bad = await exportVault(noLabel({ pictureOf: () => "u/none" }));
-    expect(bad.differences[0]).toBe("p1: the picture could not be read, so it is not in the export");
+    expect(bad.differences[0]).toBe("p1: the picture could not be read: HTTP 404, so it is not in the export");
+  });
+
+  it("each reason is in its own words: a read error with its message, empty, a repeated name, a name that cannot be made", async () => {
+    const r = await exportVault(
+      deps({
+        pictureOf: (p) => `u/${p.id}`,
+        bytes: async (uri) => {
+          if (uri === "u/p1") throw new TypeError("offline");
+          if (uri === "u/p2") return { bytes: new Uint8Array(0), type: "image/png" };
+          return { bytes: Uint8Array.from([1]), type: "image/png" };
+        },
+        fileName: () => "pictures/one.png",
+      }),
+    );
+    expect(r.differences).toEqual(["Blue: the picture could not be read: offline, so it is not in the export", "Green: the picture is empty, so it is not in the export"]);
+    expect(r.files).toEqual(["records.json", "pictures/one.png"]);
+    const twice = await exportVault(deps({ pictureOf: () => "u/blue", fileName: () => "pictures/one.png" }));
+    expect(twice.differences).toEqual([
+      "Green: its file name pictures/one.png is used twice, so the picture is not in the export",
+      "Red: its file name pictures/one.png is used twice, so the picture is not in the export",
+    ]);
+    const nameFails = await exportVault(deps({ fileName: () => { throw new Error("no such type"); } }));
+    expect(nameFails.differences[0]).toBe("Blue: the picture's file name could not be made: no such type, so it is not in the export");
+    expect(nameFails.pictures).toBe(0);
+  });
+
+  it("a read that throws something that is not an Error still gives its text", async () => {
+    const r = await exportVault(deps({ bytes: async () => Promise.reject("plain text") }));
+    expect(r.differences[0]).toBe("Blue: the picture could not be read: plain text, so it is not in the export");
   });
 
   it("does not change the list it was given", async () => {

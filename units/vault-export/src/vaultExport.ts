@@ -72,12 +72,13 @@ export function differences<T>(label: string, sent: T, now: T | null, fields: re
     .filter((f) => sent[f.key] !== now[f.key])
     .map((f) => `${label}: ${f.label} was ${show(sent[f.key])}, reads back ${show(now[f.key])}`);
 }
+const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const show = (v: unknown): string => (v === undefined || v === null || v === "" ? "empty" : String(v));
 
 /**
  * Exports every record of a type: the records as one file, each record's picture beside it, in one archive; then reads the archive back
  * and, when `reread` and `compare` are given, each record from the vault, and lists everything that does not match. A picture that cannot
- * be read is left out and named in `differences`; it never stops the export. The pieces (listing, bytes, zip, mapping) are all passed in.
+ * be read, is empty, or would get a file name already used is left out and named in `differences`, each in its own words; it never stops the export. The pieces (listing, bytes, zip, mapping) are all passed in.
  */
 export async function exportVault<T extends { id: string }>(deps: ExportDeps<T>): Promise<ExportResult> {
   const label = deps.label ?? ((r: T) => r.id);
@@ -94,17 +95,32 @@ export async function exportVault<T extends { id: string }>(deps: ExportDeps<T>)
     let file: string | undefined;
     const uri = deps.pictureOf(record);
     if (uri) {
+      const left = (why: string) => diffs.push(`${label(record)}: ${why}`);
+      let got: PictureBytes | null = null;
       try {
-        const { bytes, type } = await deps.bytes(uri);
-        if (bytes.length === 0) throw new Error("empty");
-        const wanted = deps.fileName ? deps.fileName(record, type) : `pictures/${slug(record.id)}.${extensionOf(type)}`;
-        if (used.has(wanted)) throw new Error(`the name ${wanted} is used twice`);
-        used.add(wanted);
-        file = wanted;
-        files.push({ name: wanted, bytes });
-        pictures++;
-      } catch {
-        diffs.push(`${label(record)}: the picture could not be read, so it is not in the export`);
+        got = await deps.bytes(uri);
+      } catch (e) {
+        left(`the picture could not be read: ${reason(e)}, so it is not in the export`);
+      }
+      if (got) {
+        if (got.bytes.length === 0) left("the picture is empty, so it is not in the export");
+        else {
+          let wanted: string | null = null;
+          try {
+            wanted = deps.fileName ? deps.fileName(record, got.type) : `pictures/${slug(record.id)}.${extensionOf(got.type)}`;
+          } catch (e) {
+            left(`the picture's file name could not be made: ${reason(e)}, so it is not in the export`);
+          }
+          if (wanted !== null) {
+            if (used.has(wanted)) left(`its file name ${wanted} is used twice, so the picture is not in the export`);
+            else {
+              used.add(wanted);
+              file = wanted;
+              files.push({ name: wanted, bytes: got.bytes });
+              pictures++;
+            }
+          }
+        }
       }
     }
     json.push(deps.toJson(record, file));

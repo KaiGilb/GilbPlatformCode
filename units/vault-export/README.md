@@ -28,7 +28,7 @@ slug(text: string): string
 ```
 
 - The archive holds the records file first, then each picture. A record with no picture, or whose picture could not be read, is still in the records file, without a file name.
-- `differences` in the answer is empty when everything checked out. It names: an incomplete list; a picture that could not be read (a failed read, 0 bytes, or a name already used); an archive that reads back with a different number of files, a missing file or a different size; an archive that cannot be read back; and, when `reread` and `compare` are given, every field that reads back different.
+- `differences` in the answer is empty when everything checked out. It names: an incomplete list; a picture left out, each in its own words (`the picture could not be read: <the error's message>`, `the picture is empty`, `its file name <x> is used twice`, `the picture's file name could not be made: <message>`); an archive that reads back with a different number of files, a missing file or a different size; an archive that cannot be read back; and, when `reread` and `compare` are given, every field that reads back different.
 - Nothing is thrown for a picture. An error from `list`, `toJson`, `zip` or `compare` is the caller's and is thrown.
 
 ## Example
@@ -63,4 +63,4 @@ New code, written for EESpeed Round 8 (batch CB4) from the run-8 app's `src/serv
 
 ## Tests
 
-`npm test` (vitest), with fakes for the listing, the mapping, the pictures and a lossless zip: the whole export and its order; an empty list; a missing picture reported and not thrown; a 0-byte picture; an incomplete list; a field that differs on read-back, a record that cannot be read back, a reread that throws; an archive that reads back short, with a file missing or not at all; the given file and records names; a name used twice; the default `.bin` and the default label; the input not changed; `differences` and `slug`.
+`npm test` (vitest), with fakes for the listing, the mapping, the pictures and a lossless zip: the whole export and its order; an empty list; a missing picture reported and not thrown, with the reason; a 0-byte picture; a name used twice; a file name that cannot be made; an incomplete list; a field that differs on read-back, a record that cannot be read back, a reread that throws; an archive that reads back short, with a file missing or not at all; the given file and records names; a name used twice; the default `.bin` and the default label; the input not changed; `differences` and `slug`.
