@@ -177,7 +177,7 @@ console.log(made.vaultId === again?.vaultId, again?.represents, again?.isLanding
 
 The `vaultId` create-named answers is `https://<slug>.<domain>` plus the segment the platform returns: `/vault` on production, `/base` on a single-store setup. The code assumes neither. Match a made vault in `listVaults` by its normalised name or by host (`sameVaultHost(a, b)`), not by the full `vaultId` string. `vault` (the entity URI) is absent when the answer did not carry it.
 
-The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. The kit never retries for you.
+The platform answers 202 instead of 201 when the mint is partial: the vault's facts are committed but the register commit did not happen. The result then has `complete: false`: send the same request again to finish it. `createNamedVault` never retries for you; `ensureAppVault` does it with the rules in "The 202 rule" below.
 
 `credential` is the `SessionCredential` the app signed in with. `listVaults(origin, { credential, transport? })` reads `GET {origin}/lws/vaults` signed the same way `loadReachableVaults` does and returns `{ vaultId, modes, name?, shortName?, represents?, isLandingVault, partOf?, partOfEntity?, entity? }[]`. `entity` is the vault's entity URI (the `@id` of its node); it is what `createNamedVault`'s `parentVault` must be, exactly. A `vaultId` is refused as a parent. The parent must also be a vault the caller MINTED: the live platform answers any other parent with 403 `You do not own parent vault <entity> — nest only under vaults you have minted` (GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`). The sign-up landing vault is not minted by the caller in this sense, so to make an app vault, create it top-level (no `parentVault`) unless the caller minted the parent. `entity` is absent for a bare namespace the platform lists without an `@id`. `represents` is a string whether the platform sent a string or `{"@id": ...}`. An entry with no `vaultId` is dropped.
 
@@ -199,12 +199,52 @@ const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "Pictu
 
 A page on `http://localhost:<port>` can sign in against a live platform only when that origin is in the platform's `FIRST_PARTY_ORIGINS` (GilbPlatform `src/config/index.ts:879`, read from the environment). In production that list holds `http://localhost:5197` and `http://localhost:5251`. Run a dev server on 5197 or 5251; any other port is refused as an origin the platform does not admit (`OriginNotAllowedError` in `./session`). Allocate the port through the dev-ports rule, not by guessing.
 
+## The app's own vault
+
+`ensureAppVault` finds the signed-in person's own vault of your app's type, or makes it exactly once. `createAppVaultService(deps, cfg)` wraps it so that `open(principal, onStep?)` holds one run per person: two calls at once (React StrictMode, two effects) share it; after it ends, success or failure, the next call runs fresh. `reset()` drops the memos. All of it is in `./core` and the main entry; no React, no new peer.
+
+```ts
+import { checkVaultName, createAppVaultService, createNamedVault, listVaults } from "@kaigilb/gilbplatformcode-signin/core";
+
+const cfg = { represents: "<GilbVeda type IRI>", nameSuffix: "houseplants", storageKey: "myapp" }; // the unit holds no IRI, no host
+const svc = createAppVaultService(
+  {
+    list: () => listVaults(origin, { credential }),
+    checkName: (n) => checkVaultName(origin, n),
+    create: (body) => createNamedVault(origin, body, { credential }),
+    onStep: (s) => setStatus(s), // "listing" | "creating" | "finishing"
+  },
+  cfg,
+);
+const { vault, vaults, created } = await svc.open(principal);
+```
+
+- **Own vault** (`findOwnAppVault`): only among vaults of the type (`vaultsOfType`, which accepts the IRI with or without one trailing "/") that the person can write. In order: (1) the id remembered for this person, if still listed; (2) a vault whose short name (else name) equals the wanted name; (3) a numbered variant: the wanted name followed only by digits (`annhouseplants2` yes, `annhouseplantsxyz` no). Several numbered variants: the lowest number wins. `GET /lws/vaults` has no owner flag, so "own" is this rule over the remembered id and the name.
+- **Wanted name** (`wantedAppVaultName`): the landing vault's short name, else its name, else the first label of its host; plus `nameSuffix`; then `normaliseVaultName`. With no landing vault it throws a sentence; it never invents a name.
+- **Memory** (`lastUsedVault`, `rememberLastVault`): per person and `storageKey`, in `<storageKey>:own:<principal>`, `<storageKey>:last:<principal>` and `<storageKey>:pending:<principal>`. The default store is `localStorage`, guarded on every read and write (Safari private mode throws); pass `store: null` for no memory. Clearing writes an empty string, which reads as nothing.
+- **Top level only.** The body is `{ name, represents }`; there is no `parentVault`. The platform refuses a parent the person did not mint.
+
+### The 202 rule
+
+create-named answers 201 (made) or 202 (partly made). Sending the IDENTICAL request again completes a 202 (GilbPlatform `src/auth/create-named-vault.ts:466-471` and `:511-517`). check-name never says "yours": for a name the person holds half-made it answers "taken, suggest name2", so asking it again after a 202 makes a second vault. So `ensureAppVault`:
+
+1. chooses the name (check-name once, taking its suggestion when taken) and stores it as **pending** before the first POST;
+2. on `complete: false` reports `"finishing"`, waits `sleep(2000)` and sends the same body again, at most 2 more times;
+3. still 202: throws `PartialVaultError` (its `vaultName` is the half-made name; not `name`, which is the Error's own field) and keeps the pending name;
+4. the next call finds a pending name and sends it again without calling check-name, whatever caused the earlier stop (a 202, a closed tab, a crash).
+
+A platform refusal is thrown unchanged and clears the pending name (nothing was made). An unreachable platform is thrown unchanged and keeps it (the request may have arrived). On success the pending name is cleared, the vault list is read again and the new vault is found by the id the answer gave (`sameVaultHost`), else by name; if the list still lacks it, a sentence is thrown rather than a made-up vault.
+
 ## Do not
 
 - Do not sign every call for the identity host. A vault call signed that way is refused with 401 `DPoP proof htu does not match the request URI`.
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.9
+
+Patch release, additive only. New `src/appVault.ts`: `ensureAppVault`, `createAppVaultService`, `findOwnAppVault`, `vaultsOfType`, `wantedAppVaultName`, `lastUsedVault`, `rememberLastVault`, `PartialVaultError`. See "The app's own vault". The create-named source refs in this README are `src/auth/create-named-vault.ts:312` and `:571`.
 
 ## Changes in 0.2.8
 

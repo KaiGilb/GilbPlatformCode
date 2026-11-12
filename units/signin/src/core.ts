@@ -24,6 +24,17 @@ export {
   credentialsForPage,
 } from "./http";
 export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
+export {
+  vaultsOfType,
+  wantedAppVaultName,
+  findOwnAppVault,
+  lastUsedVault,
+  rememberLastVault,
+  ensureAppVault,
+  createAppVaultService,
+  PartialVaultError,
+} from "./appVault";
+export type { KeyValueStore, AppVaultConfig, AppVaultDeps, AppVaultStep, AppVaultResult, AppVaultService } from "./appVault";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";
 export {
