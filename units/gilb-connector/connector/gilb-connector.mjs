@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.6.0";
+export const CONNECTOR_VERSION = "0.6.1";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -83,7 +83,7 @@ function hopLimitMinutes(hopMaxMs) {
  */
 function hopTimeLimitParagraph(hopMaxMs) {
     const minutes = hopLimitMinutes(hopMaxMs);
-    return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
+    return `\n\nTime limit. You have up to ${minutes} minutes. Do every step your standard names, including its checks and read-backs. If you cannot finish in time, stop at a step boundary and say which steps are done and which are not; never skip a check to finish sooner. Also name what you wrote (each record or table tag), so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
 }
 /** The "Hand-off clock" line appended to every tool answer in a hand-off that has a deadline. */
 function hopClockLine(hopStart, deadline, now) {
@@ -91,7 +91,7 @@ function hopClockLine(hopStart, deadline, now) {
     const used = Math.floor((now - hopStart) / 60000);
     const left = Math.max(0, Math.ceil((deadline - now) / 60000));
     if (left <= 3) {
-        return `Hand-off clock: ${left} minutes left. Finish now: stop starting new writes and answer with what you did and what remains.`;
+        return `Hand-off clock: ${left} minutes left. Stop at the next step boundary and answer with which steps are done and which are not. Never skip a check or a read-back to finish sooner.`;
     }
     return `Hand-off clock: ${used} of ${total} minutes used, ${left} left.`;
 }
@@ -246,6 +246,108 @@ export function isRepeatableCall(name, args) {
 }
 /** How many hand-offs may run at once. */
 export const MAX_HOPS_AT_ONCE = 4;
+/** The tools whose answer may open a hand-off. */
+const HAND_OFF_TOOLS = new Set(["run_named_role", "ask_agent_concept"]);
+/** How many hand-off calls may wait for a free slot (FIFO). A call beyond that is refused. */
+export const HOP_QUEUE_MAX_WAITING = 12;
+/** How long one call may wait for a free slot before it is refused. */
+export const HOP_QUEUE_MAX_WAIT_MS = 20 * 60 * 1000;
+/** "3 min 10 s", "45 s". */
+export function formatWait(ms) {
+    const total = Math.max(0, Math.round(ms / 1000));
+    const m = Math.floor(total / 60);
+    const sec = total % 60;
+    return m > 0 ? `${m} min ${sec} s` : `${sec} s`;
+}
+/**
+ * Up to `cap` hand-off slots at once. Further callers wait in FIFO order, at most `maxWaiting` of them, each for at most
+ * `maxWaitMs`. A cancelled caller leaves the line. Nothing is sent to the server while a caller waits.
+ */
+export class HopQueue {
+    cap;
+    maxWaiting;
+    maxWaitMs;
+    now;
+    open = 0;
+    line = [];
+    constructor(cap, maxWaiting = HOP_QUEUE_MAX_WAITING, maxWaitMs = HOP_QUEUE_MAX_WAIT_MS, now = Date.now) {
+        this.cap = cap;
+        this.maxWaiting = maxWaiting;
+        this.maxWaitMs = maxWaitMs;
+        this.now = now;
+    }
+    get running() {
+        return this.open;
+    }
+    get waiting() {
+        return this.line.length;
+    }
+    grant(waitedMs, queued) {
+        this.open += 1;
+        let released = false;
+        return {
+            kind: "slot",
+            waitedMs,
+            queued,
+            release: () => {
+                if (released)
+                    return;
+                released = true;
+                this.open -= 1;
+                this.drain();
+            },
+        };
+    }
+    drain() {
+        while (this.open < this.cap && this.line.length > 0) {
+            const next = this.line.shift();
+            clearTimeout(next.timer);
+            next.signal.removeEventListener("abort", next.onAbort);
+            next.settle(this.grant(this.now() - next.since, true));
+        }
+    }
+    acquire(signal) {
+        if (signal.aborted)
+            return Promise.resolve({ kind: "cancelled" });
+        if (this.open < this.cap && this.line.length === 0)
+            return Promise.resolve(this.grant(0, false));
+        if (this.line.length >= this.maxWaiting) {
+            return Promise.resolve({
+                kind: "refused",
+                reason: `Too many hand-offs: ${this.cap} are running and ${this.maxWaiting} are already waiting for a free slot (the most that may wait). Nothing was started. Wait for some to finish, then send this one again.`,
+            });
+        }
+        return new Promise((resolve) => {
+            const waiter = {
+                since: this.now(),
+                signal,
+                settle: resolve,
+                timer: setTimeout(() => {
+                    const at = this.line.indexOf(waiter);
+                    if (at < 0)
+                        return;
+                    this.line.splice(at, 1);
+                    signal.removeEventListener("abort", waiter.onAbort);
+                    resolve({
+                        kind: "refused",
+                        reason: `This hand-off waited ${formatWait(this.now() - waiter.since)} for a free hand-off slot and none came (${this.cap} were running, ${at} waiting ahead of it). Nothing was started. Send it again when fewer hand-offs are running.`,
+                    });
+                }, this.maxWaitMs),
+                onAbort: () => {
+                    const at = this.line.indexOf(waiter);
+                    if (at < 0)
+                        return;
+                    this.line.splice(at, 1);
+                    clearTimeout(waiter.timer);
+                    resolve({ kind: "cancelled" });
+                },
+            };
+            waiter.timer.unref?.();
+            signal.addEventListener("abort", waiter.onAbort, { once: true });
+            this.line.push(waiter);
+        });
+    }
+}
 /**
  * How many times one process starts a fresh platform turn after the server refused a call at a turn limit.
  * Each roll re-sends one call the platform refused BEFORE running it, so a long planning chat may go on.
@@ -2092,6 +2194,7 @@ export function startConnector(opts) {
     const hopMaxOf = (role) => hopMaxOverride ?? hopMaxFor(role);
     const retryDelays = opts.retryDelaysMs ?? RETRY_DELAYS_MS;
     const maxHops = opts.maxHops ?? MAX_HOPS_AT_ONCE;
+    const hopQueue = new HopQueue(maxHops, opts.hopQueueMax ?? HOP_QUEUE_MAX_WAITING, opts.hopQueueMaxWaitMs ?? HOP_QUEUE_MAX_WAIT_MS);
     const selfFile = opts.selfFile ?? fileURLToPath(import.meta.url);
     const hopModel = opts.hopModel !== undefined && HOP_MODEL_RE.test(opts.hopModel) ? opts.hopModel : undefined;
     let turnRolls = 0;
@@ -2712,6 +2815,28 @@ export function startConnector(opts) {
             return false;
         return !role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept");
     }
+    /**
+     * A call that opens a hand-off takes a slot BEFORE anything is sent to the server, so a waiting call has no open hop
+     * (the server's open-hop clock does not run while it waits) and is sent under the turn that is current when it starts,
+     * never under the turn it was made on. The slot is held until the hand-off is closed.
+     */
+    async function callHandOffTool(name, args, signal) {
+        const slot = await hopQueue.acquire(signal);
+        if (slot.kind === "cancelled")
+            return CANCELLED;
+        if (slot.kind === "refused") {
+            return toolResult(JSON.stringify({ error: "the Agent's run failed", reason: slot.reason, next: "Send this hand-off again when fewer are running." }), true);
+        }
+        try {
+            const result = await callPlatformTool(name, args, signal);
+            if (result === CANCELLED || !slot.queued)
+                return result;
+            return { ...result, content: [...result.content, { type: "text", text: `(waited ${formatWait(slot.waitedMs)} for a free hand-off slot)` }] };
+        }
+        finally {
+            slot.release();
+        }
+    }
     async function callPlatformTool(name, args, signal, resent = false) {
         if (!hopMode)
             toolCallsSent += 1;
@@ -3051,6 +3176,8 @@ export function startConnector(opts) {
                 await maybeRestoreChoice(ac.signal);
             if (!hopMode)
                 await maybeAutoSelect(ac.signal);
+            if (!hopMode && HAND_OFF_TOOLS.has(name))
+                return await callHandOffTool(name, args, ac.signal);
             return await callPlatformTool(name, args, ac.signal);
         }
         catch (err) {

@@ -262,7 +262,7 @@ describe("constants", () => {
     expect(HOP_MAX_MS).toBe(30 * 60 * 1000);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
     expect(DEFAULT_USER_TEXT).toBe("Work with the person in Claude Code.");
-    expect(CONNECTOR_VERSION).toBe("0.6.0");
+    expect(CONNECTOR_VERSION).toBe("0.6.1");
   });
 });
 
@@ -573,7 +573,7 @@ describe("hand-off", () => {
     expect(log[0].argv).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json"]));
     expect(log[0].system).toBe("You are Jackfruit.");
     expect(log[0].prompt).toBe(
-      "Do the records.\n\nTime limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line \"Hand-off clock: …\" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.",
+      "Do the records.\n\nTime limit. You have up to 15 minutes. Do every step your standard names, including its checks and read-backs. If you cannot finish in time, stop at a step boundary and say which steps are done and which are not; never skip a check to finish sooner. Also name what you wrote (each record or table tag), so the caller can hand over the rest. Every tool answer ends with a line \"Hand-off clock: …\" that gives the real time used and left. Trust only that clock. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.",
     );
     const mcp = JSON.parse(log[0].argv[log[0].argv.indexOf("--mcp-config") + 1]);
     expect(mcp.mcpServers.GilbPlatform.command).toBe(process.execPath);
@@ -704,7 +704,7 @@ describe("hand-off", () => {
     expect(seen.some((rec) => rec.body.name === "hop_done" && rec.body.hop.id === HOP_A)).toBe(true);
   }, 15000);
 
-  it("refuses a fifth-style extra hand-off while one is still running", async () => {
+  it("a call over the cap with no room to wait is refused before anything is sent to the server", async () => {
     const dir = mkdtempSync(join(tmpdir(), "gilb-connector-"));
     dirs.push(dir);
     const logFile = join(dir, "claude.log");
@@ -734,6 +734,7 @@ describe("hand-off", () => {
     const { request, input } = connect({
       origin: platform.origin,
       maxHops: 1,
+      hopQueueMax: 0,
       env: testEnv({ FAKE_CLAUDE_LOG: logFile }),
     });
     input.write(JSON.stringify({
@@ -745,14 +746,15 @@ describe("hand-off", () => {
     await waitFor(() => readLog(logFile).some((row) => String(row.prompt).includes("WAITFOREVER")));
     const second = await request("tools/call", { name: "run_named_role", arguments: {} }, 51);
     expect(second.result.isError).toBe(true);
-    expect(JSON.parse(toolText(second))).toEqual({
-      error: "the Agent's run failed",
-      role: "Jackfruit",
-      reason: "Too many hand-offs are running at once (1). Wait for one to finish.",
-      next: "Wait for a hand-off that is already running to finish, then try again.",
-    });
-    const closed = seen.filter((rec) => rec.body.name === "hop_done").map((rec) => rec.body.hop.id);
-    expect(closed).toEqual([HOP_B]);
+    const refusal = JSON.parse(toolText(second));
+    expect(refusal.error).toBe("the Agent's run failed");
+    expect(refusal.reason).toBe(
+      "Too many hand-offs: 1 are running and 0 are already waiting for a free slot (the most that may wait). Nothing was started. Wait for some to finish, then send this one again.",
+    );
+    expect(refusal.next).toBe("Send this hand-off again when fewer are running.");
+    // The refused call never reached the server, so no hop was opened for it and none needs closing.
+    expect(seen.filter((rec) => rec.body.name === "run_named_role")).toHaveLength(1);
+    expect(seen.filter((rec) => rec.body.name === "hop_done")).toEqual([]);
     expect(MAX_HOPS_AT_ONCE).toBe(4);
   }, 15000);
 });
@@ -955,7 +957,7 @@ describe("stdout", () => {
     expect(stdout).not.toMatch(/dpop|bearer |authorization/i);
     const byId = Object.fromEntries(lines.map((line) => JSON.parse(line)).filter((msg) => msg.id !== undefined).map((msg) => [msg.id, msg]));
     expect(byId[1].result.protocolVersion).toBe("2025-06-18");
-    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.6.0" });
+    expect(byId[1].result.serverInfo).toEqual({ name: "GilbPlatform", version: "0.6.1" });
     expect(byId[2].result.isError).toBe(true);
     expect(byId[2].result.content[0].text).toBe(SENTENCE);
     expect(byId[3].result.isError).toBe(true);

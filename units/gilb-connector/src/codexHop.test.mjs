@@ -215,7 +215,7 @@ describe("a hand-off run by Codex", () => {
     for (const bad of ["--dangerously-bypass-approvals-and-sandbox", "--yolo", "danger-full-access", "--full-auto", "--enable"]) {
       expect(argv, bad).not.toContain(bad);
     }
-    expect(prompt.startsWith("Do the records.\n\nTime limit: this hand-off is stopped after 2 minutes")).toBe(true);
+    expect(prompt.startsWith("Do the records.\n\nTime limit. You have up to 2 minutes")).toBe(true);
     expect(instructions).toBe(SYSTEM);
     expect(argv.join("\n")).not.toContain("secret-system-text");
   }, 20000);

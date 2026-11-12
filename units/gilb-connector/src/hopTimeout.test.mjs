@@ -148,7 +148,7 @@ function readLog(file) {
 
 /** The paragraph a non-Concept child is given. `minutes` is the limit, already rounded. */
 function timeLimitParagraph(minutes) {
-  return `\n\nTime limit: this hand-off is stopped after ${minutes} minutes, and whatever is unfinished then is lost to the caller. Do the reads your job requires first; never skip a required read because of the time. When the time is near, stop starting new writes, finish cleanly, and answer with what you wrote (each record or table tag) and exactly what remains, so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. Do not stop, shorten the work, or skip a required read or standard because of time while the clock shows more than 3 minutes left. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
+  return `\n\nTime limit. You have up to ${minutes} minutes. Do every step your standard names, including its checks and read-backs. If you cannot finish in time, stop at a step boundary and say which steps are done and which are not; never skip a check to finish sooner. Also name what you wrote (each record or table tag), so the caller can hand over the rest. Every tool answer ends with a line "Hand-off clock: …" that gives the real time used and left. Trust only that clock. If you stop before the work is done, give the real reason, and never say the time limit stopped you unless the clock said so.`;
 }
 
 const hopOf = (id, role, task) => ({ id, system: "You are " + role + ".", task, tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }], role, answer: { role, summary: "s" } });
@@ -352,7 +352,7 @@ describe("hand-off time per role", () => {
     expect(JSON.parse(hopTimeoutAnswer("Jackfruit", hopMaxFor("Jackfruit"))).partial).toContain("after 15 minutes");
   });
 
-  it("the injected paragraph names the role's minutes, keeps required reads, and Agent.Concept gets none", async () => {
+  it("the injected paragraph names the role's minutes, keeps every check and read-back, and Agent.Concept gets none", async () => {
     for (const [role, minutes] of [["Agent.Outcome.Stakeholder", 30], ["Agent.VDT", 30], ["Jackfruit", 15]]) {
       const logFile = join(scratch(), `${minutes}.log`);
       const platform = await hopDoor(role, "Do the records.");
@@ -360,7 +360,7 @@ describe("hand-off time per role", () => {
       expect((await run(box, role)).result.isError).toBe(false);
       const prompt = readLog(logFile)[0].prompt;
       expect(prompt, role).toBe(`Do the records.${timeLimitParagraph(minutes)}`);
-      expect(prompt).toContain("Do the reads your job requires first");
+      expect(prompt).toContain("Do every step your standard names, including its checks and read-backs.");
     }
     const conceptLog = join(scratch(), "concept2.log");
     const concept = await hopDoor("Agent.Concept", "Mint one concept.");
