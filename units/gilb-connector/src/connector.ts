@@ -12,7 +12,7 @@
 // Zero runtime dependencies. Node 18 or newer.
 // `publish` puts a built folder on https://<name>.pages.dev. It uses this file's sign-in.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   createHash,
   createPrivateKey,
@@ -31,7 +31,7 @@ import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.5.14";
+export const CONNECTOR_VERSION = "0.5.15";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -239,6 +239,8 @@ export const HOP_MAX_MS_BY_ROLE: Readonly<Record<string, number>> = {
   agentoutcomebusiness: HOP_MAX_MS_LONG,
   agentoutcomeowner: HOP_MAX_MS_LONG,
   agentoutcomestakeholder: HOP_MAX_MS_LONG,
+  agentoutcomesolution: HOP_MAX_MS_LONG,
+  agentstakeholder: HOP_MAX_MS_LONG,
   agentoutcomeproduct: HOP_MAX_MS_LONG,
   agentarchitect: HOP_MAX_MS_LONG,
   agentscaling: HOP_MAX_MS_LONG,
@@ -281,8 +283,54 @@ export function isRepeatableCall(name: string, args: unknown): boolean {
 }
 /** How many hand-offs may run at once. */
 export const MAX_HOPS_AT_ONCE = 4;
-/** How many times one process starts a fresh platform turn after the server refused a call at a turn limit. */
-export const MAX_TURN_ROLLS = 5;
+/**
+ * How many times one process starts a fresh platform turn after the server refused a call at a turn limit.
+ * Each roll re-sends one call the platform refused BEFORE running it, so a long planning chat may go on.
+ */
+export const MAX_TURN_ROLLS = 40;
+
+/** A remembered vault choice is used again only within this long. */
+export const VAULT_CHOICE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+const VAULT_CHOICE_FILE = "vault-choice.json";
+
+/** The process that started this connector (the Claude CLI of one chat) and when it started. */
+export interface ParentKey {
+  pid: number;
+  started: string;
+}
+
+/** The parent process id and its start time. null where it cannot be read (Windows, or no `ps`): then nothing is remembered. */
+export function detectParentKey(): ParentKey | null {
+  if (process.platform === "win32") return null;
+  const pid = process.ppid;
+  if (!Number.isInteger(pid) || pid <= 1) return null;
+  try {
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, LC_ALL: "C" } }).trim();
+    return out === "" ? null : { pid, started: out };
+  } catch {
+    return null;
+  }
+}
+
+interface VaultChoice {
+  client: string;
+  ppid: number;
+  started: string;
+  savedAt: number;
+  vaults: string[];
+}
+
+function readVaultChoice(file: string): VaultChoice | null {
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Partial<VaultChoice> | null;
+    if (!raw || typeof raw !== "object") return null;
+    if (typeof raw.client !== "string" || typeof raw.ppid !== "number" || typeof raw.started !== "string" || typeof raw.savedAt !== "number") return null;
+    if (!Array.isArray(raw.vaults) || !raw.vaults.every((v) => typeof v === "string")) return null;
+    return { client: raw.client, ppid: raw.ppid, started: raw.started, savedAt: raw.savedAt, vaults: raw.vaults };
+  } catch {
+    return null;
+  }
+}
 
 /** Added to a hand-off's answer when the server says the hand-off was cut by the round ceiling. */
 export const CUT_TEXT = "This hand-off ran out of tool rounds before it finished. Its answer is partial: say so, and hand the rest over again.";
@@ -427,6 +475,10 @@ export interface StartOptions {
   uploadRoots?: readonly string[];
   /** The working directory gilbplatform_upload_file reads from. Default: process.cwd(). */
   cwd?: string;
+  /** The parent process (the chat) this connector remembers the person's vault choice for. Default: read from the system; null: remember nothing. */
+  parent?: ParentKey | null;
+  /** The clock, in ms. Default: Date.now. */
+  nowMs?: () => number;
 }
 
 export interface ConnectorSession {
@@ -1793,6 +1845,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let autoVault: string | null = null;
   /** list_vaults already ran once for auto-select in this bound stretch. It does not run again. */
   let autoSelectAttempted = false;
+  /** Vaults brought back from the person's own earlier choice in this chat. whoami says so. */
+  let restoredVaults: string[] = [];
+  let restoreAttempted = false;
+  const nowMs = opts.nowMs ?? Date.now;
+  let parentKey: ParentKey | null | undefined = opts.parent;
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -1952,6 +2009,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (selected.length === 0) return "vaults: none";
     const list = selected.join(", ");
     if (selectedAutomatically) return `vaults: ${list} (selected automatically: the only vault this AI can reach)`;
+    if (restoredVaults.length > 0) return `vaults: ${list} (restored from your earlier choice in this chat: ${restoredVaults.join(", ")})`;
     return `vaults: ${list}`;
   }
 
@@ -2005,6 +2063,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         knownUnbound = false;
         // A later tool call may be the first one that can see a vault list.
         autoSelectAttempted = false;
+        restoreAttempted = false;
         // The client may already hold the local-only list. The first look, and a hop, are not a change.
         if (wasUnbound && !hopMode) {
           emit({ jsonrpc: "2.0", method: "notifications/tools/list_changed", params: {} });
@@ -2352,13 +2411,103 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       const namespace = createdVaultNamespace(result);
       if (namespace) {
         selectVault(namespace);
+        rememberChoice(namespace);
         return toolResult(result, false, [`Selected for this session: ${namespace}. Selected vaults: ${vaults.join(", ")}.`]);
       }
     }
     return toolResult(result, toolAnswerIsError(result));
   }
 
+  /** Where this chat's remembered choice lives: the AI's own profile directory. null when nothing can be remembered. */
+  function choiceFile(): string | null {
+    if (hopMode || asMode !== "ai" || !aiClientId || profile === undefined) return null;
+    const root = connectorRoot(env);
+    if (!root) return null;
+    if (parentKey === undefined) parentKey = detectParentKey();
+    if (!parentKey) return null;
+    return join(root, profile, VAULT_CHOICE_FILE);
+  }
+
+  /** The person chose this vault (gilbplatform_use_vault, or a create_vault they asked for). Remember it for this chat only. */
+  function rememberChoice(namespace: string): void {
+    const file = choiceFile();
+    if (!file || !parentKey) return;
+    try {
+      const old = readVaultChoice(file);
+      const same = old && old.client === aiClientId && old.ppid === parentKey.pid && old.started === parentKey.started && nowMs() - old.savedAt < VAULT_CHOICE_MAX_AGE_MS;
+      const kept = same ? old.vaults.filter((v) => !sameVault(v, namespace)) : [];
+      const record: VaultChoice = { client: aiClientId, ppid: parentKey.pid, started: parentKey.started, savedAt: nowMs(), vaults: [...kept, namespace] };
+      ensurePrivateDir(dirname(file));
+      writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
+      chmodSync(file, 0o600);
+    } catch {
+      // Not remembered. The selection itself stands.
+    }
+  }
+
+  function clearChoice(file: string): void {
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      // Nothing to clear.
+    }
+  }
+
+  /**
+   * Bound, nothing selected: bring back what the person chose earlier in this same chat (same parent process, same start time,
+   * under 12 hours old) and that list_vaults still shows. An automatic choice is never written, so never comes back.
+   */
+  async function maybeRestoreChoice(signal: AbortSignal): Promise<void> {
+    if (hopMode || asMode !== "ai" || !bound || restoreAttempted) return;
+    restoreAttempted = true;
+    if (vaults.some((id) => id.trim() !== "")) return;
+    const file = choiceFile();
+    if (!file || !parentKey) return;
+    const saved = readVaultChoice(file);
+    if (!saved) return;
+    if (saved.client !== aiClientId || saved.ppid !== parentKey.pid || saved.started !== parentKey.started) return;
+    if (nowMs() - saved.savedAt >= VAULT_CHOICE_MAX_AGE_MS || saved.savedAt > nowMs() + 60_000) {
+      clearChoice(file);
+      return;
+    }
+    let res: { status: number; body: unknown };
+    try {
+      res = await postPlatform(toolUrl, { ...turnFields(), name: "list_vaults", arguments: "{}" }, signal, true);
+    } catch (err) {
+      if (signal.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
+      restoreAttempted = false;
+      return;
+    }
+    if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    if (res.status < 200 || res.status >= 300) {
+      restoreAttempted = false;
+      return;
+    }
+    const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown }) : {};
+    const ids = typeof body.result === "string" ? vaultIdsFromListResult(body.result) : null;
+    if (!ids) return;
+    const back: string[] = [];
+    for (const v of saved.vaults) {
+      const listed = ids.find((id) => sameVault(id.trim(), v));
+      if (listed) back.push(listed.trim());
+    }
+    if (back.length === 0) {
+      clearChoice(file);
+      return;
+    }
+    if (back.length !== saved.vaults.length) {
+      try {
+        writeFileSync(file, JSON.stringify({ ...saved, vaults: back }), { mode: 0o600 });
+      } catch {
+        // Left as it was.
+      }
+    }
+    for (const v of back) selectVault(v);
+    restoredVaults = [...back];
+  }
+
   function selectVault(namespace: string): void {
+    restoredVaults = [];
     selectedAutomatically = false;
     if (autoVault !== null && sameVault(autoVault, namespace)) autoVault = null;
     if (!vaults.some((id) => sameVault(id, namespace))) vaults.push(namespace);
@@ -2394,6 +2543,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (!namespace) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
     // The person's allow replaces an automatic choice. It is not overwritten later.
     selectVault(namespace);
+    rememberChoice(namespace);
     return toolResult(`Using vault ${namespace} for this session. Selected vaults: ${vaults.join(", ")}.`, false);
   }
 
@@ -2452,6 +2602,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         try {
           await credential();
           if (asMode === "ai" && !bound) await refreshIdentity();
+          if (asMode === "ai" && bound) await maybeRestoreChoice(ac.signal);
         } catch (err) {
           if (asMode === "ai" && aiClientId) return toolResult(whoamiText(), false);
           throw err;
@@ -2480,6 +2631,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       if (hopMode && !hopTools.some((tool) => tool.name === name)) {
         return toolResult(JSON.stringify({ error: `Unknown tool ${name}` }), true);
       }
+      if (!hopMode) await maybeRestoreChoice(ac.signal);
       if (!hopMode) await maybeAutoSelect(ac.signal);
       return await callPlatformTool(name, args, ac.signal);
     } catch (err) {

@@ -153,7 +153,7 @@ describe("a turn out of room", () => {
     expect(sent[1].body.turnId).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
     expect(sent[1].body.name).toBe(sent[0].body.name);
     expect(sent[1].body.arguments).toBe(sent[0].body.arguments);
-    expect(lines.filter((l) => l.includes("started a new turn (1 of 5)"))).toHaveLength(1);
+    expect(lines.filter((l) => l.includes(`started a new turn (1 of ${MAX_TURN_ROLLS})`))).toHaveLength(1);
     // The next call stays on the new turn.
     const again = await callTool(box);
     expect(posts(platform)[2].body.turnId).toBe(sent[1].body.turnId);
@@ -344,23 +344,34 @@ describe("a turn out of room", () => {
     expect(sent[0].body.turnId).toBe(TURN);
   });
 
-  it("f1 the sixth limit ends with the new-chat answer and sends nothing more", async () => {
-    expect(MAX_TURN_ROLLS).toBe(5);
+  it("f1 the 41st limit ends with the new-chat answer and sends nothing more", async () => {
+    expect(MAX_TURN_ROLLS).toBe(40);
     const lines = stderrLines();
-    // limit, ok, limit, ok ... five times, then a limit with no answer behind it.
-    const platform = await scripted([ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "never"]);
+    // limit, ok, limit, ok ... MAX times, then a limit with no answer behind it.
+    const answers = [];
+    for (let i = 0; i < MAX_TURN_ROLLS; i++) answers.push(ROUNDS, "ok");
+    answers.push(ROUNDS, "never");
+    const platform = await scripted(answers);
     const box = connect({ origin: platform.origin });
-    for (let i = 0; i < 5; i++) expect(text(await callTool(box))).toBe("ok");
-    expect(posts(platform)).toHaveLength(10);
-    const sixth = await callTool(box);
-    expect(sixth.result.isError).toBe(true);
-    expect(text(sixth)).toBe(JSON.stringify({ error: "this chat has used 11 tool rounds; start a new chat to go on" }));
-    expect(posts(platform)).toHaveLength(11);
-    expect(lines.filter((l) => l.includes("started a new turn"))).toHaveLength(5);
+    for (let i = 0; i < MAX_TURN_ROLLS; i++) expect(text(await callTool(box))).toBe("ok");
+    expect(posts(platform)).toHaveLength(MAX_TURN_ROLLS * 2);
+    const last = await callTool(box);
+    expect(last.result.isError).toBe(true);
+    expect(text(last)).toBe(JSON.stringify({ error: `this chat has used ${MAX_TURN_ROLLS * 2 + 1} tool rounds; start a new chat to go on` }));
+    expect(posts(platform)).toHaveLength(MAX_TURN_ROLLS * 2 + 1);
+    expect(lines.filter((l) => l.includes("started a new turn"))).toHaveLength(MAX_TURN_ROLLS);
     const turns = new Set(posts(platform).map((rec) => rec.body.turnId));
-    expect(turns.size).toBe(6);
+    expect(turns.size).toBe(MAX_TURN_ROLLS + 1);
     expect(lines.join("")).not.toMatch(/Bearer|DPoP|token/i);
-  });
+  }, 60000);
+
+  it("f1 a run of more than five rolls goes on", async () => {
+    stderrLines();
+    const platform = await scripted([ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok", ROUNDS, "ok"]);
+    const box = connect({ origin: platform.origin });
+    for (let i = 0; i < 8; i++) expect(text(await callTool(box))).toBe("ok");
+    expect(posts(platform)).toHaveLength(16);
+  }, 30000);
 
   it("f1 a hop that is running keeps its turn; the next hop gets the new one", async () => {
     const dir = scratch();
