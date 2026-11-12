@@ -55,6 +55,14 @@ export interface Session {
   jkt: string | null;
   exp: number;
 }
+/** What the platform's website reader answers (src/style/fetch-site.ts): the colours and fonts it found, and optionally the corner radius and a logo address. */
+export interface StyleExtractResult {
+  colors: string[];
+  fonts: string[];
+  radiusPx?: number;
+  logoUrl?: string;
+}
+
 export interface FakeState {
   people: Map<string, Person>;
   vaults: Map<string, Vault>;
@@ -70,6 +78,8 @@ export interface FakeState {
   /** normalised names held by someone else (takeName). */
   takenNames: Set<string>;
   usedProofs: Set<string>;
+  /** POST /base/style/extract: the seeded answers and the per-principal call times for its rate limit. */
+  style: { seeds: Map<string, StyleExtractResult>; hits: Map<string, number[]> };
   /** The one position counter. */
   seq: number;
 }
@@ -159,6 +169,8 @@ export interface FakePlatform {
   seedFile(v: VaultRef, f: { name: string; bytes: Uint8Array; mediaType?: string; type?: string; folders?: string[]; tags?: string[]; storedWith?: string; transcodedFrom?: FileRef; uploader?: PersonRef }): FakeFile;
   /** A master `<name>.jpg` and its small copy `<name>-320.jpg` (as picture-set names them), the copy linked to the master by `transcodedFrom`. */
   seedPicture(v: VaultRef, p: { name: string; master: Uint8Array; thumb: Uint8Array }): { master: FakeFile; thumb: FakeFile };
+  /** What POST /base/style/extract answers for this exact address (the fake reads no site); an address never seeded gets a stub that depends on the address alone. */
+  seedStyle(url: string, result: StyleExtractResult): void;
   /** Someone else holds this name: check-name says taken, create-named is 409. */
   takeName(name: string): void;
   /** The one-time code last issued to this email by request-code (undefined when none or used). */

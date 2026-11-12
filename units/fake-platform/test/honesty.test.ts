@@ -14,8 +14,8 @@ describe("the route table", () => {
     expect(PLATFORM_SHA).toMatch(/^[0-9a-f]{40}$/);
     expect(design).toContain(PLATFORM_SHA);
   });
-  it("parts 1 to 3 hold rows 1 to 16 and 18 to 20 of DESIGN section 2 (row 17 is row 9's route; row 13 is PUT and POST), each method and path once", () => {
-    expect(ROUTES.map((r) => r.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 18, 19, 20]);
+  it("parts 1 to 3 and the style row hold rows 1 to 16 and 18 to 21 of DESIGN section 2 (row 17 is row 9's route; row 13 is PUT and POST), each method and path once", () => {
+    expect(ROUTES.map((r) => r.row)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16, 18, 19, 20, 21]);
     expect(new Set(ROUTES.map((r) => `${r.method} ${r.path}`)).size).toBe(ROUTES.length);
   });
   it("every row cites GilbPlatform path:line and is a row of DESIGN.md with the same method and path", () => {

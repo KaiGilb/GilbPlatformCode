@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/fake-platform",
   "package": "@kaigilb/gilbplatformcode-fake-platform",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "A fetch stand-in for the GilbPlatform that answers the platform's real routes with the platform's real shapes, holding its state in memory, for an app's tests.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.1.2. new row 21, `POST /base/style/extract` (src/style.ts): credential first (401 before the body), body limit 4096 bytes (413), schema, 10 per 60 s per principal on the fake's clock (429 `rate_limited`), `bad_url` and `address_not_allowed` 400, the answer seeded by `seedStyle(url, result)` or a stub of the address; `FakeState.style`; the row was read at GilbPlatform 0d602ce8995dc672f241aff5e276f03b98dbad1b, newer than `PLATFORM_SHA`",
     "0.1.1. create-named refuses a parentVault the caller did not mint (403, the platform's sentence; Vault.mintedBy); tests for the htu check on an encoded vault path; four stale client tests updated",
     "New code, written for EESpeed Round 5 (R5-C3). 0.1.0 holds parts 1 to 3: the core, the DPoP check, the vault list, the record routes, files, grants, sign-in, check-name and create-named."
   ],
@@ -42,7 +43,9 @@
     "src/signin.ts",
     "test/signin.test.ts",
     "test/create-named.test.ts",
-    "test/clients3.test.ts"
+    "test/clients3.test.ts",
+    "src/style.ts",
+    "test/style.test.ts"
   ],
   "host": [],
   "library": {

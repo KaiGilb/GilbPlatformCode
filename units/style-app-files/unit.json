@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "unit": "units/style-app-files",
+  "package": "@kaigilb/gilbplatformcode-style-app-files",
+  "version": "0.1.0",
+  "purpose": "Writes the app's style files on the developer's machine: the dev save endpoint for `style.tokens.json` and the logo, and the chosen fonts and `fonts.css` copied out of `@fontsource`.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "4340ee4838d77dabd5ed3f3eea9e3a2048f97fde",
+    "files": []
+  },
+  "namedChanges": [
+    "New code, written for EESpeed Round 7 (U4) from the PictureRecords run-7 `vite.config.ts` (studioSave) and `scripts/exportFonts.mjs`; plain ES modules (.mjs) with a hand-written `src/index.d.mts`, because a bin and a Vite config must run it under Node, which does not run TypeScript from node_modules;",
+    "added over the original: the PNG signature check on the logo, 413 for a body over the limit, 405 with Allow, atomic writes, the safe-name rule for a family, and a marker file so only folders this tool made are ever removed;",
+    "style-runtime is a peer for types only (`import type`); the check `scripts/check-host-agnostic.mjs` allows node:fs, node:fs/promises, node:path, node:url, node:module, node:http and `import type` from the style-runtime package."
+  ],
+  "newFiles": [
+    "src/index.mjs",
+    "src/index.d.mts",
+    "src/fonts.mjs",
+    "src/files.mjs",
+    "src/middleware.mjs",
+    "src/atomic.mjs",
+    "bin/style-app-fonts.mjs",
+    "scripts/check-host-agnostic.mjs",
+    "src/fixtures.ts",
+    "src/fonts.test.ts",
+    "src/middleware.test.ts",
+    "src/bin.test.ts",
+    "src/exports.test.ts",
+    "src/hostAgnostic.test.ts"
+  ],
+  "host": [],
+  "library": {
+    "admitted": true,
+    "tag": "t:AppStyleSheet.files",
+    "title": "App style files (dev save endpoint and font export, Node)",
+    "note": "Node only: the Vite dev middleware that writes style.tokens.json and brand-logo.png from the Studio's save, and the command and function that copy the chosen @fontsource woff2 files into public/fonts and write fonts.css. For the screen that chooses the style take style-studio; to apply it in the page take style-runtime."
+  }
+}
