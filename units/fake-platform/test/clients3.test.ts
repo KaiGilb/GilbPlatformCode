@@ -58,7 +58,7 @@ describe("the real signin unit against the fake, end to end", () => {
     expect(made.vault).toBe(w.fake.state.vaults.get(made.vaultId)!.entity);
 
     const vaults = await listVaults(origin, { credential: cred, ...t });
-    expect(vaults).toEqual([{ vaultId: "https://myboat.fake.test/vault", modes: ["read", "write"], isLandingVault: true, name: "myboat", represents: PERSON, entity: made.vault }]);
+    expect(vaults).toEqual([{ vaultId: "https://myboat.fake.test/vault", modes: ["read", "write"], isLandingVault: true, name: "myboat", shortName: "myboat", represents: PERSON, entity: made.vault }]);
 
     lwsAuthFor(cred);
     const rec = await createRecord(vaults[0]!.vaultId, "t:Sailboat", { name: "Heron" });

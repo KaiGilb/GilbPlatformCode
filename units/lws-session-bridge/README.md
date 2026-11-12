@@ -12,6 +12,12 @@ A client that reads and writes vault records has to sign each request, drop the 
 - `bearerHeaderFor(url, method?)`, `dpopReadAuth(method, url)`, `dpopWriteAuth(method, url)`: the headers of one request. Each first asks `credentialAllowedAt(url)` of `vault-origin-rule` and answers `{}` for a URL outside the platform, without asking the host. Otherwise it answers what the host answers.
 - `invalidateDpop()`, `tokenManager.invalidate()`: drop the held token so the next use signs in again.
 - `tokenManager.getSession()`: the live session as `LwsSession` (`principal`, `vault`, `vaults`).
+- `configureLiveApp({ platformOrigin, idOrigin, systemVaultHosts?, localRigHosts?, credentialOptions? })` (since 0.1.3): the start-up a live app does once. It calls `setBaseOrigin(platformOrigin)`, `setSystemVaultHosts(systemVaultHosts ?? [])`, `setLocalRigHosts(localRigHosts)` when given, makes `new SessionCredential(credentialOptions)` and calls `setLwsAuth(lwsAuthFromSession(credential))`. It answers `{ credential, idOrigin, platformOrigin }`. The two origins are the app's own constants (this unit holds no host); an empty one throws before anything is set. For the signed fetch alone take `platform-fetch`.
+
+  ```ts
+  const { credential, idOrigin } = configureLiveApp({ platformOrigin: PLATFORM_ORIGIN, idOrigin: ID_ORIGIN });
+  const auth = makeSignInAuth({ credential, origin: idOrigin, productName: "My app" }); // signin/session
+  ```
 - `dpopBoundMs()`: 10 000, the number of milliseconds a caller waits for the session before a write.
 - `errorForUnauthorized(res, invalidate)` (since 0.1.2): the error for a 401 answer. It reads the platform's `{"error","message"}` body. A message that names a DPoP proof fault (htu, htm, iat, jti, ath, an invalid proof) gives `RequestRefusedError` ("The platform refused this request: <sentence>") and the token is KEPT; any other 401, or none readable, calls `invalidate` and gives `NotSignedInError` with the platform's sentence as `platformSentence`. The sentences, with GilbPlatform `src/auth/verify.ts` lines, are in the `signin` unit's `src/platformRefusal.ts`. The default host maps the `signin` session's two errors the same way. A client's own 401 handler (for example `lws-records`' `throwForStatus`) still drops the token on any 401 until it calls this.
 - `signedSend(fetchImpl?)` (since 0.1.2): a `(method, url, init?) => Promise<Response>` that signs every request with the host set by `setLwsAuth`: GET and HEAD as a read (`dpopReadAuth`), every other method as a write (`dpopWriteAuth`), a fresh proof each time, caller headers kept, `credentials: "omit"`, a URL outside the platform sent unsigned. It is the `Send` that `picture-set`'s file calls take (`listVaultFiles`, `endFile`, `endPictureFiles`), so a host does not write that sender by hand. It lives here, not in `picture-set`, because `picture-set` does not depend on this unit (it only takes a `send`), and a dependency from it to this unit would add a peer to every app that takes the picture units.
@@ -39,6 +45,10 @@ The session fields read at the call sites: `principal` at `relationWrite.ts:304`
 The unit holds one piece of module state, the host set with `setLwsAuth`. An app must have ONE copy of it: two installed copies are two seams, and a client module that imports one is signed by the host set on the other. It reads the settings of `base-origin` through `vault-origin-rule` when a function is called. Its peers: `vault-origin-rule` (with `base-origin`) and `signin`.
 
 `src/proofHtu.ts` is a named copy of `proofHtu` from `units/request-htu/src/requestHtu.ts` at main d65985d, verbatim (token-equal with comments stripped); it is not exported from the unit.
+
+## Changes in 0.1.3
+
+Additive. New `configureLiveApp` (`src/configureLiveApp.ts`). No new peer: `base-origin`, `signin` and `vault-origin-rule` were already peers. `scripts/check-host-agnostic.mjs` allows the import of `@kaigilb/gilbplatformcode-base-origin`. Admitted to the library as `t:AccessCredential.live`.
 
 ## What this is not
 

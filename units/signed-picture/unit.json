@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/signed-picture",
   "package": "@kaigilb/gilbplatformcode-signed-picture",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out (and, if asked, a copy on the device for each person), lets only a few fetches run at once (a number the app can set), and draws a React thumbnail that loads when it nears the screen.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -14,6 +14,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.1. new, additive: `startPictureSession({ principal, deviceCachePrefix, queueLimit? })` (queue limit 6, a per-person device cache, answers the sign-out step) and `deviceCacheNameFor(prefix, principal)` (src/pictureSession.ts); no new peer",
     "G1. pictureObjectUrl takes vaultOrigin as a second parameter in place of VAULT_ORIGIN (pictures.ts:120); the cache stays keyed by fileEntityUri only",
     "G2. the demo branch (pictures.ts:113-114) is deleted",
     "G3. imports: dpopReadAuth from lws-session-bridge; entityIdTail and fileIdFromPhotoRef from photo-ref",
@@ -24,7 +25,9 @@
     "the default path is the 0.1.0 code, unchanged: with none of the new functions called the unit behaves as 0.1.0"
   ],
   "newFiles": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/pictureSession.ts",
+    "src/pictureSession.test.ts"
   ],
   "host": [
     { "member": "vaultOrigin", "replaces": "VAULT_ORIGIN from the app's config, src/data/pictures.ts:120" },

@@ -4,3 +4,7 @@ export { buildThumbMap, buildCopyMap, pickBySize, onCellular } from "./copies";
 export type { PictureCopy } from "./copies";
 export { listVaultFiles, thumbIndexFor, thumbFor, endFile, endPictureFiles, PictureFilesError } from "./files";
 export type { VaultFile, ListOptions, Send } from "./files";
+export { loadCopyMap, copiesOf, thumbUriOf, largestUriOf, copiesToEnd } from "./copyMap";
+export type { CopyMap } from "./copyMap";
+export { storePictureSet, DEFAULT_UNLINKED_WARNING } from "./storeSet";
+export type { StoredPicture } from "./storeSet";

@@ -150,3 +150,48 @@ export function vaultRootFromList(
   const byName = vaults.filter((v) => (v.name ?? "").trim().toLowerCase() === asked);
   return byName.length === 1 ? (byName[0] as { vaultId: string }).vaultId : null;
 }
+
+/** One row of a vault chooser: a vault, how to name it, whose it is, and whether it can only be read. */
+export interface VaultChoice {
+  vaultId: string;
+  /** `vaultLabel` of the vault. */
+  label: string;
+  /** `isYours` said yes for it. */
+  yours: boolean;
+  /** The vault lists no `write` mode: it can be read, not changed. */
+  viewOnly: boolean;
+}
+
+/**
+ * The rows of a vault chooser: one per vault, the person's own first, then the rest, each group in the order given. `label` is
+ * `vaultLabel`, and `viewOnly` is "no write mode" (a vault with no `modes` is view only, as `canWriteVault` reads it). The caller decides
+ * what "yours" means (a remembered vault id, a name rule), because the list carries no owner field.
+ *
+ * @param vaults the vaults to offer (already filtered to the app's type, if it wants only one)
+ * @param isYours true for the person's own vault(s)
+ */
+export function vaultChoices<V extends { vaultId: string; name?: string | null; modes?: readonly string[] }>(
+  vaults: readonly V[],
+  isYours: (v: V) => boolean,
+): VaultChoice[] {
+  const rows = vaults.map((v) => ({ vaultId: v.vaultId, label: vaultLabel(v), yours: isYours(v), viewOnly: !canWriteVault(v) }));
+  return [...rows.filter((r) => r.yours), ...rows.filter((r) => !r.yours)];
+}
+
+/** The words of a {@link choiceLine}. */
+export interface ChoiceWords {
+  yours: string;
+  shared: string;
+  viewOnly: string;
+}
+
+const DEFAULT_CHOICE_WORDS: ChoiceWords = { yours: "Yours", shared: "Shared with you", viewOnly: "View only" };
+
+/**
+ * The second line of a chooser row: "Yours" or "Shared with you", then " · View only" when the vault cannot be written.
+ * `words` replaces any of the three phrases (for another language or tone).
+ */
+export function choiceLine(c: Pick<VaultChoice, "yours" | "viewOnly">, words: Partial<ChoiceWords> = {}): string {
+  const w = { ...DEFAULT_CHOICE_WORDS, ...words };
+  return `${c.yours ? w.yours : w.shared}${c.viewOnly ? ` · ${w.viewOnly}` : ""}`;
+}

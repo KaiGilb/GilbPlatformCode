@@ -47,5 +47,5 @@
     "src/index.ts"
   ],
   "host": [],
-  "library": {"admitted": true, "tag": "t:Vault.access", "title": "Vault access (grant, revoke, share a whole vault)", "note": "Who may use a whole vault: grant, revoke, read the access list, share to view or edit. For a share of one record take lws-relations; for which vaults you can reach take reachable-vaults. Exports the Control refusal sentence (NO_CONTROL)."}
+  "library": {"admitted": true, "tag": "t:Vault.access", "title": "Vault access (grant, revoke, share a whole vault)", "note": "Who may use a whole vault: grant, revoke, read the access list, share to view or edit. For a share of one record take lws-relations; for which vaults you can reach take reachable-vaults. Exports the Control refusal sentence (NO_CONTROL). Share access grant: give a person's vault read or write on yours."}
 }

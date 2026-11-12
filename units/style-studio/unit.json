@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-studio",
   "package": "@kaigilb/gilbplatformcode-style-studio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "`<StyleStudio />` is a React screen for choosing the app's colours, fonts, buttons, windows and logo before building, and `saveStyle` writes the result to the app's resource vault.",
   "source": {
     "repo": "KaiGilb/gilb-style",
@@ -136,6 +136,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.1. new, additive: `ExtractClientOptions.credential` (anything with `authHeaders(method, url)`; it signs exactly `POST <baseUrl>/base/style/extract`, no import of signin), `splitLogo` (src/studio/splitLogo.ts) and `makeDevServerSave` (src/studio/devServerSave.ts); the README example wires From website by default",
     "the colour and sheet engine (`schema`, `color`, `css`, `palette`) is the separate unit `style-runtime`; every import of it is `@kaigilb/gilbplatformcode-style-runtime`, and `ThemeToggle` imports its theme functions from there;",
     "**the host constant becomes an option** (RuleGhsSettingUnit): the exported `PUBLIC_GRANTEE` (a vault-host address) is removed; `publicGrantee: string` is a required field of `SaveStyleOptions` and of the `vault` prop of `StyleStudio`, and the grant call sends it as the principal;",
     "the source's tests moved from `test/` to `src/`; the test of the dev page's demo note is not taken (the dev page is not in this unit); tests that call `saveStyle` or pass `vault` pass a `publicGrantee` of an example address;",
@@ -147,7 +148,10 @@
     "src/index.ts",
     "src/hostAgnostic.test.ts",
     "src/fixtures.ts",
-    "scripts/check-host-agnostic.mjs"
+    "scripts/check-host-agnostic.mjs",
+    "src/studio/splitLogo.ts",
+    "src/studio/devServerSave.ts",
+    "src/devSave.test.ts"
   ],
   "host": [
     {
@@ -159,6 +163,6 @@
     "admitted": true,
     "tag": "t:AppStyleSheet.studio",
     "title": "App Style Studio (choose the app's style before building)",
-    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault. A developer tool, taken once."
+    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault or the dev server. From website works with the app's session through makeExtractFromUrl({ baseUrl, credential }); makeDevServerSave and splitLogo save to a dev server. A developer tool, taken once."
   }
 }

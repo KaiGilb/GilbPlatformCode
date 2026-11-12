@@ -58,12 +58,31 @@ const ids = await saveStyle({ auth }, { vaultBase, vaultId, publicGrantee, sheet
 
 Then, in the app itself, take `style-runtime` and call `loadStyle` at start. Without a vault, `onSave(sheet)` gives you the sheet as JSON to keep as the app's `style.tokens.json`.
 
+The usual Studio page for an app signed in with the `signin` unit: From website works with the app's session, and Save posts to the dev server:
+
+```tsx
+import { StyleStudio, makeExtractFromUrl, makeDevServerSave } from "@kaigilb/gilbplatformcode-style-studio";
+
+// credential = the app's SessionCredential; idOrigin = the identity host the app signs in at (the app's own constant)
+const extractFromUrl = makeExtractFromUrl({ baseUrl: idOrigin, credential });
+
+<StyleStudio
+  appName="My app"
+  onSave={makeDevServerSave()}                                  // POSTs to /__studio/save (your dev middleware writes the files)
+  extractFromUrl={signedIn ? extractFromUrl : undefined}        // From website needs the person signed in
+/>
+```
+
+- `makeExtractFromUrl({ baseUrl, credential })`: `credential` is anything with `authHeaders(method, url)`, such as `SessionCredential`; no import of `signin` is needed. It signs exactly `POST <baseUrl>/base/style/extract`, the route the platform serves (DPoP, signed in, 10 reads a minute, a page's colours and fonts only). `getAuthHeaders` still works; when both are given `credential` wins.
+- `splitLogo(sheet)`: `{ sheet, logoPng? }`. The sheet without its logo data URLs (too big for a JSON file) and the primary logo as a PNG data URL.
+- `makeDevServerSave({ endpoint?, fetchImpl?, onWarning? })`: the `onSave` that POSTs `splitLogo(sheet)` to the dev server (`/__studio/save`). A non-2xx answer throws `Error(message)`, which the Studio shows in its own "failed" line. The middleware that writes `style.tokens.json` and the logo is the app's.
+
 ## What the host must supply
 
 - **`publicGrantee`** (a string, required). The address of the vault's "public" grantee: the principal that every public-read grant goes to. It is a required field of `saveStyle`'s options and of the `vault` prop. On GilbPlatform it is `https://veda.gilb.com/base/t/PublicGrantee`. The unit holds no such address itself.
 - **`vaultBase`, `vaultId`.** Where the app's resource vault is.
 - **`auth(method, url)`**, returning the headers (DPoP) for that exact request. Auth is injected; the unit never reads a key.
-- Optional: `fetch`, `toFetchUrl`, `toEntityUri` for a host whose addresses differ from the vault's; `extractFromUrl` (from `makeExtractFromUrl`) for the From website tab, which needs a server of yours that reads a page's colours.
+- Optional: `fetch`, `toFetchUrl`, `toEntityUri` for a host whose addresses differ from the vault's; `extractFromUrl` (from `makeExtractFromUrl({ baseUrl, credential })`) for the From website tab. The platform serves the page reader at `POST /base/style/extract` on the identity host, so no server of yours is needed; the person must be signed in.
 - React `^19.0.0`.
 - Wire contract (measured on GilbPlatform): create `POST {vaultBase}/lws/vault/{vaultId}/c`; replace `PUT {entityUri}` with `if-match`; public read `POST {origin}/base/authz/grant-direct`; logo `PUT .../files?name=logo.png`. A stale `etag` (412 or 428) is a `StaleEtagError`. Any failed step throws `StyleSaveError{step, status, message}` with the ids written so far in `.ids`; grants run only after every write succeeded.
 

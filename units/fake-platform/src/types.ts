@@ -19,7 +19,7 @@ export interface Vault {
   /**
    * The email of the person who minted this vault through create-named, else null. Only a vault minted that way may be a
    * `parentVault` for that person: the sign-up landing vault, a seeded vault and a vault another person minted are not
-   * (GilbPlatform src/routes/vault.ts:522 and :738, "nest only under vaults you have minted").
+   * (GilbPlatform src/auth/create-named-vault.ts:312 and :571, "nest only under vaults you have minted").
    */
   mintedBy: string | null;
   /** A partial mint (create-named answered 202): the facts exist, the owner has no reach yet; re-issuing the same request completes it. */

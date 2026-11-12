@@ -1,4 +1,5 @@
-// Client for the server's website-style reader. Auth is the host app's job: it passes getAuthHeaders (DPoP / Bearer).
+// Client for the server's website-style reader. Auth is the host app's job: it passes `credential` (anything with
+// authHeaders(method, url), such as the signin unit's SessionCredential) or getAuthHeaders (DPoP / Bearer).
 import type { ExtractResult } from "./tabs";
 
 /** An error whose message is already plain language, safe to show as is. */
@@ -11,9 +12,23 @@ export class ExtractError extends Error {
   }
 }
 
+/**
+ * Anything that signs one request: `authHeaders(method, url)` answers the headers for exactly that method and URL.
+ * The signin unit's `SessionCredential` has this shape, so it can be passed as it is; this unit imports nothing from signin.
+ */
+export interface ExtractCredential {
+  authHeaders(method: string, url: string): Promise<Record<string, string>>;
+}
+
 export interface ExtractClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  /**
+   * Signs the read: this client calls `credential.authHeaders("POST", "<baseUrl>/base/style/extract")`, the exact method and URL it then
+   * sends (the platform checks the proof against that URL). Wins over `getAuthHeaders` when both are given.
+   */
+  credential?: ExtractCredential;
+  /** A function that answers the headers itself. It must sign `POST <baseUrl>/base/style/extract`; prefer `credential`. */
   getAuthHeaders?: () => Promise<Record<string, string>>;
 }
 
@@ -34,7 +49,11 @@ export function makeExtractFromUrl(opts: ExtractClientOptions): (url: string) =>
     const doFetch = opts.fetchImpl ?? fetch;
     let res: Response;
     try {
-      const auth = opts.getAuthHeaders ? await opts.getAuthHeaders() : {};
+      const auth = opts.credential
+        ? await opts.credential.authHeaders("POST", endpoint)
+        : opts.getAuthHeaders
+          ? await opts.getAuthHeaders()
+          : {};
       res = await doFetch(endpoint, {
         method: "POST",
         credentials: "omit",

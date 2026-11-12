@@ -3,3 +3,4 @@ export * from "./lwsAuth";
 export * from "./fromSession";
 export * from "./unauthorized";
 export * from "./signedSend";
+export * from "./configureLiveApp";
