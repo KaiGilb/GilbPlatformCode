@@ -151,7 +151,8 @@
     "scripts/check-host-agnostic.mjs",
     "src/studio/splitLogo.ts",
     "src/studio/devServerSave.ts",
-    "src/devSave.test.ts"
+    "src/devSave.test.ts",
+    "src/extractFake.test.ts"
   ],
   "host": [
     {

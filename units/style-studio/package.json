@@ -75,6 +75,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@kaigilb/gilbplatformcode-fake-platform": "file:../fake-platform",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

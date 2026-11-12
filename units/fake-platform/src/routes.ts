@@ -4,6 +4,7 @@ import { checkName, createNamed, namePrep, requestCode, verifyCode } from "./sig
 import { grantVault, revokeVault, vaultAcl } from "./access";
 import { endFileRoute, getFile, listFiles, uploadFile } from "./files";
 import { createRecord, deleteRecord, listRecords, patchRecord, readRecord, replaceRecord } from "./records";
+import { styleExtract } from "./style";
 import { listVaults } from "./vaults";
 import type { Method } from "./types";
 
@@ -48,6 +49,8 @@ export const ROUTES: readonly Route[] = [
   { row: 18, method: "POST", path: "/base/authz/grant-vault", auth: "strict", mirrors: ["src/routes/authz.ts:1457-1550", "src/routes/authz.ts:638-693"], handler: grantVault },
   { row: 19, method: "POST", path: "/base/authz/revoke-vault", auth: "strict", mirrors: ["src/routes/authz.ts:1581-1616", "src/authz/vault-grant.ts:635-653"], handler: revokeVault },
   { row: 20, method: "GET", path: "/base/consent/vault-acl", auth: "strict", mirrors: ["src/routes/consent.ts:119-135", "src/authz/entity-acl.ts:452-576"], handler: vaultAcl },
+  // Row 21 was read at GilbPlatform origin/main 0d602ce8995dc672f241aff5e276f03b98dbad1b, which is newer than PLATFORM_SHA (the route is not in that tree).
+  { row: 21, method: "POST", path: "/base/style/extract", auth: "strict", mirrors: ["src/routes/style-extract.ts:38-80", "src/routes/style-extract.ts:29", "src/routes/style-extract.ts:33-36", "src/routes/style-extract.ts:18-23", "src/style/fetch-site.ts:41-58", "src/style/fetch-site.ts:189-193", "src/style/limit.ts:15-34"], handler: styleExtract },
 ];
 
 /** The row a method and path belong to, with its decoded `:params`; null when no row answers. */

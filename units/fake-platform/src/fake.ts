@@ -6,6 +6,7 @@ import { failure, json, type Core, type Req, type Resolved } from "./http";
 import { storeFile } from "./files";
 import { endRecord, entityOf, makeRecord, normaliseFacts, stamp } from "./records";
 import { matchRoute } from "./routes";
+import { newStyleState } from "./style";
 import type { Call, Calls, FakePlatform, FakePlatformOptions, FakeState, GrantMode, Match, Person, PersonRef, Vault, VaultRef } from "./types";
 
 const VEDA_PERSON = "https://veda.gilb.com/base/t/Person";
@@ -69,7 +70,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     proofWindowSeconds: options.proofWindowSeconds ?? 60,
     now: options.now ?? Date.now,
   };
-  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), codes: new Map(), takenNames: new Set(), usedProofs: new Set(), seq: 0 };
+  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), codes: new Map(), takenNames: new Set(), usedProofs: new Set(), style: newStyleState(), seq: 0 };
   let counter = 0;
   const core: Core = { o, s, nextId: () => opaqueId(++counter) };
 
@@ -237,6 +238,9 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       byWho.set(personOf(who).principal, held);
       s.revoked.delete(`${vault.id}\n${personOf(who).principal}`);
     },
+    seedStyle(url, result) {
+      s.style.seeds.set(url, { ...result, colors: [...result.colors], fonts: [...result.fonts] });
+    },
     takeName(name) {
       s.takenNames.add(normalizeName(name));
     },
@@ -356,6 +360,8 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       s.takenNames.clear();
       o.partialCreate.times = 0;
       s.usedProofs.clear();
+      s.style.seeds.clear();
+      s.style.hits.clear();
       s.seq = 0;
       counter = 0;
       callNo = 0;

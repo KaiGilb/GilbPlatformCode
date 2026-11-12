@@ -28,11 +28,11 @@ test("the app lists Ann's boats", async () => {
 ```
 
 - The fake: `fetch`, `client(origin?)` (a `{ origin, fetch }` for `record-sync`), `transport` (for `signin`), `authHost(person)` (for `setLwsAuth`), `state`, `calls` (`all`, `of`, `last`, `count`, `clear`), `violations`, `assertClean()`, `offline`, `reset()`.
-- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `grant`, `takeName`, `signInAs`, `pendingCode(email)` (the one-time code request-code issued).
+- Seeds, no request made: `seedPerson`, `seedVault`, `seedRecord`, `seedFile`, `seedPicture` (`<name>.jpg` and `<name>-320.jpg`, the copy linked to the master), `seedStyle(url, { colors, fonts })` (what the website reader answers for that address), `grant`, `takeName`, `signInAs`, `pendingCode(email)` (the one-time code request-code issued).
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
 - Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match, { skip? })` (waits until the returned function is called), `partialNextCreateNamed()` (the next create-named answers 202). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
 
-What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named` (a `parentVault` must be a vault the caller MINTED through create-named: the sign-up landing vault, a seeded vault and another person's vault are 403 `You do not own parent vault <entity> — nest only under vaults you have minted`, GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`; `Vault.mintedBy` is the email of the minter, null for a landing or seeded vault), `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) and grants (`grant-vault`, `revoke-vault`, `vault-acl`).
+What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named` (a `parentVault` must be a vault the caller MINTED through create-named: the sign-up landing vault, a seeded vault and another person's vault are 403 `You do not own parent vault <entity> — nest only under vaults you have minted`, GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`; `Vault.mintedBy` is the email of the minter, null for a landing or seeded vault), `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) grants (`grant-vault`, `revoke-vault`, `vault-acl`) and the website style reader `POST /base/style/extract` (row 21: the credential is checked before the body, a body over 4096 bytes is 413, 10 calls per 60 s per principal then 429 `rate_limited`, an address that is not https is 400 `bad_url`, a private or local one is 400 `address_not_allowed`, GilbPlatform `src/routes/style-extract.ts:29`, `:33-36`, `:38-80`; it reads no site, it answers what `seedStyle` set or a stub of the address).
 
 ## Options
 
@@ -75,6 +75,10 @@ Package: `@kaigilb/gilbplatformcode-fake-platform`. It has no dependencies of it
 ## Where it came from
 
 New code, written for the next app-building AI in EESpeed Round 5 (R5-C3). Repository `KaiGilb/GilbPlatformCode`, commit `73cc3dcf821ed0e80ffaf6a75bbd04491c5ecea7` (the main that holds `lws-records`, `record-sync`, `signin` and `vault-access` as the tests import them). No source file was copied. The routes mirror GilbPlatform at commit `619aca557597b1bc50dd6e1340ebc274039be9c2`.
+
+## Changes in 0.1.2
+
+- Row 21, `POST /base/style/extract`, for `style-studio`'s `makeExtractFromUrl`: see `DESIGN.md` row 21. The platform's 415, 502 and 504 are not faked (`failNext` makes them). The `address_not_allowed` answer is decided by the form of the name (the platform decides after DNS). This row was read at GilbPlatform `0d602ce8995dc672f241aff5e276f03b98dbad1b`, newer than the commit the other rows were read at.
 
 ## Changes in 0.1.1
 

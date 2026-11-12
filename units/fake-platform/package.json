@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-fake-platform",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "A fetch stand-in for the GilbPlatform that answers the platform's real routes with the platform's real shapes, holding its state in memory, for an app's tests.",
