@@ -21,6 +21,7 @@ export {
   codexChildEnv,
   codexExecArgs,
   codexSpawnCommand,
+  killHopProcess,
   tomlString,
   tomlStringArray,
   CODEX_DISABLE_FEATURES,

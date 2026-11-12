@@ -33,8 +33,11 @@ if (argv[0] === "doctor") {
     ["code_mode_host", "stable", "true"],
     ["fast_mode", "stable", "true"],
   ];
-  for (const [name, stage, on] of rows) process.stdout.write(`${name.padEnd(24)}${stage.padEnd(16)}${on}\n`);
-  process.exit(0);
+  const delay = Number(process.env.FAKE_CODEX_FEATURES_DELAY_MS ?? 0);
+  setTimeout(() => {
+    for (const [name, stage, on] of rows) process.stdout.write(`${name.padEnd(24)}${stage.padEnd(16)}${on}\n`);
+    process.exit(0);
+  }, delay > 0 ? delay : 0);
 } else if (argv[0] === "exec") {
   runExec();
 } else {

@@ -16,10 +16,10 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { appendFileSync, chmodSync, closeSync, constants, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { lstat, open, readdir } from "node:fs/promises";
 import { homedir, hostname, tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.5.15";
+export const CONNECTOR_VERSION = "0.6.0";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -1415,9 +1415,97 @@ export function tomlString(value) {
 export function tomlStringArray(values) {
     return "[" + values.map(tomlString).join(", ") + "]";
 }
-/** The command that starts the Codex CLI. Every platform runs the path as given for now. */
-export function codexSpawnCommand(codexBin, _platform = process.platform) {
-    return { command: codexBin, prefixArgs: [] };
+export const CODEX_NOT_FOUND = "Could not find Codex. Install it with npm install -g @openai/codex, or pass --codex with the full path to codex.exe.";
+/**
+ * The command that starts the Codex CLI. On Windows the npm shim (codex.cmd) cannot be spawned without a shell,
+ * so the real codex.exe inside the npm package is found and started directly.
+ */
+export function codexSpawnCommand(codexBin, opts = {}) {
+    const platform = opts.platform ?? process.platform;
+    const arch = opts.arch ?? process.arch;
+    const env = opts.env ?? process.env;
+    const exists = opts.exists ?? existsSync;
+    if (/\.(js|mjs|cjs)$/i.test(codexBin))
+        return { command: process.execPath, prefixArgs: [codexBin] };
+    if (platform !== "win32")
+        return { command: codexBin, prefixArgs: [] };
+    if (/\.exe$/i.test(codexBin))
+        return { command: codexBin, prefixArgs: [] };
+    const p = win32Path;
+    let found;
+    if (/[\\/]/.test(codexBin)) {
+        const folder = p.dirname(codexBin);
+        for (const ext of [".exe", ".cmd", ".ps1", ""]) {
+            const candidate = p.join(folder, p.basename(codexBin) + ext);
+            if (exists(candidate)) {
+                found = candidate;
+                break;
+            }
+        }
+        if (found === undefined)
+            found = codexBin;
+    }
+    else {
+        const pathVar = env.PATH ?? env.Path ?? "";
+        search: for (const folder of pathVar.split(";")) {
+            if (folder === "")
+                continue;
+            for (const ext of [".exe", ".cmd", ".ps1", ""]) {
+                const candidate = p.join(folder, codexBin + ext);
+                if (exists(candidate)) {
+                    found = candidate;
+                    break search;
+                }
+            }
+        }
+    }
+    if (found !== undefined) {
+        if (/\.exe$/i.test(found))
+            return { command: found, prefixArgs: [] };
+        const d = p.dirname(found);
+        const triple = arch === "x64" ? "x86_64-pc-windows-msvc" : arch === "arm64" ? "aarch64-pc-windows-msvc" : undefined;
+        if (triple !== undefined) {
+            const exe = p.join("vendor", triple, "bin", "codex.exe");
+            const candidates = [
+                p.join(d, "node_modules", "@openai", "codex", "node_modules", "@openai", `codex-win32-${arch}`, exe),
+                p.join(d, "node_modules", "@openai", `codex-win32-${arch}`, exe),
+                p.join(d, "node_modules", "@openai", "codex", exe),
+            ];
+            for (const candidate of candidates)
+                if (exists(candidate))
+                    return { command: candidate, prefixArgs: [] };
+        }
+        const launcher = p.join(d, "node_modules", "@openai", "codex", "bin", "codex.js");
+        if (exists(launcher))
+            return { command: process.execPath, prefixArgs: [launcher] };
+    }
+    throw new Error(CODEX_NOT_FOUND);
+}
+/**
+ * Stops a hand-off process. On Windows killing the launcher leaves codex.exe running, so the whole tree goes (taskkill /T).
+ * Everywhere else it is exactly SIGTERM.
+ */
+export function killHopProcess(child, opts = {}) {
+    const platform = opts.platform ?? process.platform;
+    if (platform === "win32") {
+        if (child.pid !== undefined) {
+            try {
+                const killer = (opts.spawnFn ?? spawn)("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+                killer?.on?.("error", () => undefined);
+            }
+            catch {
+                // The plain kill below still runs.
+            }
+        }
+        try {
+            child.kill();
+        }
+        catch {
+            // Already gone.
+        }
+        return;
+    }
+    child.kill("SIGTERM");
 }
 /** The argv of `codex exec` for one hand-off. The prompt comes on stdin (the last `-`); the system text is in a file, not here. */
 export function codexExecArgs(input) {
@@ -1455,9 +1543,9 @@ export function codexExecArgs(input) {
     return args;
 }
 /** Runs a short Codex command to the end and returns its stdout, or null when it fails, times out or is aborted. */
-function captureCodex(codexBin, args, env, timeoutMs, signal) {
+function captureCodex(spawnCmd, args, env, timeoutMs, signal) {
     return new Promise((resolveRun) => {
-        const { command, prefixArgs } = codexSpawnCommand(codexBin);
+        const { command, prefixArgs } = spawnCmd;
         let out = "";
         let done = false;
         let child;
@@ -1470,16 +1558,18 @@ function captureCodex(codexBin, args, env, timeoutMs, signal) {
             resolveRun(value);
         };
         const onAbort = () => {
-            child?.kill("SIGTERM");
+            if (child)
+                killHopProcess(child);
             end(null);
         };
         const timer = setTimeout(() => {
-            child?.kill("SIGTERM");
+            if (child)
+                killHopProcess(child);
             end(null);
         }, timeoutMs);
         timer.unref();
         try {
-            child = spawn(command, [...prefixArgs, ...args], { env, stdio: ["ignore", "pipe", "ignore"] });
+            child = spawn(command, [...prefixArgs, ...args], { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
         }
         catch {
             end(null);
@@ -1504,7 +1594,8 @@ function codexHopRunner(codexBin, env, hopModel, stdinText, features) {
         prepare: async ({ hop, dir, nestedArgs, signal }) => {
             const cenv = codexChildEnv(env);
             // Fail closed: anything but a stored ChatGPT sign-in stops the hand-off before exec starts.
-            const doctor = await captureCodex(codexBin, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
+            const spawnCmd = codexSpawnCommand(codexBin);
+            const doctor = await captureCodex(spawnCmd, ["doctor", "--json"], cenv, CODEX_DOCTOR_TIMEOUT_MS, signal);
             let version;
             let mode;
             if (doctor !== null) {
@@ -1525,13 +1616,13 @@ function codexHopRunner(codexBin, env, hopModel, stdinText, features) {
                     process.stderr.write(`gilb-connector: Codex ${version} is newer or older than the tested 0.167; hand-offs may behave differently.\n`);
                 }
             }
-            const names = await features(cenv, signal);
+            const names = await features(spawnCmd, cenv, signal);
             if (names === null)
                 throw new Error(CODEX_NO_FEATURES);
             const disable = CODEX_DISABLE_FEATURES.filter((name) => names.includes(name));
             const instructionsPath = join(dir, "instructions.md");
             writeFileSync(instructionsPath, hop.system, { mode: 0o600 });
-            const { command, prefixArgs } = codexSpawnCommand(codexBin);
+            const { command, prefixArgs } = spawnCmd;
             return {
                 command,
                 args: [...prefixArgs, ...codexExecArgs({ dir, instructionsPath, nestedArgs, disable, model: hopModel })],
@@ -2241,9 +2332,10 @@ export function startConnector(opts) {
     }
     let codexFeatures;
     /** The feature names `codex features list` prints, read once per process. A failure is not remembered. */
-    function readCodexFeatures(cenv, signal) {
+    function readCodexFeatures(spawnCmd, cenv, signal) {
         if (!codexFeatures) {
-            codexFeatures = captureCodex(codexBin, ["features", "list"], cenv, CODEX_FEATURES_TIMEOUT_MS, signal).then((out) => {
+            // The shared call has its own timeout and no caller's signal: one cancelled hand-off must not fail the others.
+            codexFeatures = captureCodex(spawnCmd, ["features", "list"], cenv, CODEX_FEATURES_TIMEOUT_MS, new AbortController().signal).then((out) => {
                 if (out === null) {
                     codexFeatures = undefined;
                     return null;
@@ -2254,7 +2346,17 @@ export function startConnector(opts) {
                     .filter((name) => name !== "");
             });
         }
-        return codexFeatures;
+        const shared = codexFeatures;
+        if (signal.aborted)
+            return Promise.resolve(null);
+        return new Promise((resolveRead) => {
+            const onAbort = () => resolveRead(null);
+            signal.addEventListener("abort", onAbort, { once: true });
+            void shared.then((names) => {
+                signal.removeEventListener("abort", onAbort);
+                resolveRead(names);
+            });
+        });
     }
     const hopStdin = (hop) => (conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
     const hopRunner = hopCli === "codex" ? codexHopRunner(codexBin, env, hopModel, hopStdin, readCodexFeatures) : claudeHopRunner(claudeBin, env, hopModel, hopStdin);
@@ -2283,6 +2385,7 @@ export function startConnector(opts) {
             cwd: dir,
             env: plan.env,
             stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true,
         });
         children.add(child);
         const stdin = child.stdin;
@@ -2290,7 +2393,7 @@ export function startConnector(opts) {
         const stderrStream = child.stderr;
         if (!stdin || !stdout || !stderrStream) {
             children.delete(child);
-            child.kill("SIGTERM");
+            killHopProcess(child);
             rmSync(dir, { recursive: true, force: true });
             throw new Error(`Could not start ${hopRunner.name}: pipes were not available.`);
         }
@@ -2298,7 +2401,7 @@ export function startConnector(opts) {
         let stderr = "";
         const reader = hopRunner.newReader();
         const progress = { toolCalls: [] };
-        const onAbort = () => child.kill("SIGTERM");
+        const onAbort = () => killHopProcess(child);
         if (signal.aborted)
             onAbort();
         else
@@ -2322,7 +2425,7 @@ export function startConnector(opts) {
                 catch {
                     continue;
                 }
-                reader.onEvent(event, progress, () => child.kill("SIGTERM"));
+                reader.onEvent(event, progress, () => killHopProcess(child));
             }
         });
         return await new Promise((resolve, reject) => {
@@ -2342,7 +2445,7 @@ export function startConnector(opts) {
                 fn();
             };
             timer = setTimeout(() => {
-                child.kill("SIGTERM");
+                killHopProcess(child);
                 finish(() => reject(new HopTimeoutError(progress)));
             }, hopMaxOf(hop.role));
             // The child process keeps the loop alive. The timer must not, or a finished session would wait out the full limit.
@@ -3170,7 +3273,7 @@ export function startConnector(opts) {
             stopped = true;
             inputEnded = true;
             for (const child of children)
-                child.kill("SIGTERM");
+                killHopProcess(child);
             for (const ac of calls.values())
                 ac.abort();
             checkDone();
