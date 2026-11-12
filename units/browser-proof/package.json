@@ -1,0 +1,29 @@
+{
+  "name": "@kaigilb/gilbplatformcode-browser-proof",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs an app in headless Chrome for an end-to-end proof: starts Chrome with a throwaway profile, drives the page over the DevTools Protocol, takes screenshots, collects console errors, and runs named legs that print PASS or FAIL.",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.mts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

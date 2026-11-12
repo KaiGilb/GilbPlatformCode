@@ -21,9 +21,34 @@ const strict = vaultsOfType(rows, { represents: "t:Flock", keepUnknown: false })
 const choices = vaultChoices(mine, (v) => v.vaultId === ownId);
 ```
 
+## Which vault am I in
+
+Pure functions over the app's own key-value store (`{ get(key), set(key, value), remove(key) }`, for example `localStorage` wrapped in three lines): no storage access of its own, and a store that throws is never an error (a failed read is "nothing kept", a failed write is "not kept"). `appKey` must include the signed-in person, for example `teapots:<principal>`: with the app alone in the key, two people on one browser would share one remembered vault and one dismissed offer.
+
+- `rememberVault(store, appKey, vaultId)`, `forgetVault(store, appKey)`, `hasChosenVault(store, appKey)`.
+- `rememberedVault(store, appKey, rows)`: the remembered id as `rows` list it, only while it is still in `rows` (no trailing-slash differences); else `null`.
+- `sharedOffer(rows, { ownVaultId, dismissed, chosen })`: the first row that is not the person's own, not marked `yours`, not dismissed, and none at all when `chosen` (the person already chose a vault). `dismissed` is a list of ids or a function.
+- `dismissOffer(store, appKey, vaultId)` and `offerDismissed(store, appKey, vaultId)`.
+
+```ts
+const store = { get: (k) => localStorage.getItem(k), set: (k, v) => localStorage.setItem(k, v), remove: (k) => localStorage.removeItem(k) };
+const appKey = `teapots:${principal}`;
+const id = rememberedVault(store, appKey, rows);                       // was restoreChosenVault + remembered
+rememberVault(store, appKey, picked.vaultId);                          // was remember / chooseVault's write
+const offer = sharedOffer(choices, { ownVaultId, chosen: hasChosenVault(store, appKey), dismissed: (v) => offerDismissed(store, appKey, v) }); // was findSharedOffer
+dismissOffer(store, appKey, offer.vaultId);                            // was dismissBanner
+```
+
+Replaces in run 8's `app/src/services/session.ts` (lines 182 to 254): `currentKey`, `remembered`, `remember`, `bannerKey`, `hasRememberedChoice`, `dismissBanner`, `isBannerDismissed`, and the rule inside `findSharedOffer`; about 45 lines, 8 of them stay as thin wrappers. The keys are `<appKey>:current` and `<appKey>:banner:<vaultId>`, so a choice kept by run 8's own keys (`<app>:current:<principal>`) is not found by these.
+
+### Changes in 0.1.4
+
+Added the vault-session functions above and the type `KeyValueStore`. Nothing else changed. `src/exports.test.ts` lists the exports.
+
 ### Changes in 0.1.3
 
 Added `vaultsOfType`. Nothing else changed.
+
 
 ### Changes in 0.1.2
 

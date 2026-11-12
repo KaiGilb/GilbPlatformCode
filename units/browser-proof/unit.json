@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/browser-proof",
+  "package": "@kaigilb/gilbplatformcode-browser-proof",
+  "version": "0.1.0",
+  "purpose": "Runs an app in headless Chrome for an end-to-end proof: starts Chrome with a throwaway profile, drives the page over the DevTools Protocol, takes screenshots, collects console errors, and runs named legs that print PASS or FAIL.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.mjs",
+    "src/index.d.mts",
+    "src/browserProof.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "startBrowser",
+      "replaces": "run-8 app/scripts/e2e-fake.mjs: the Chrome launch (the port, profile and spawn) and the cleanup; apps/pictures-example/scripts/browser-proof.mjs: the same"
+    },
+    {
+      "member": "CdpClient",
+      "replaces": "the Cdp class copied into e2e-fake.mjs and pictures-example browser-proof.mjs"
+    },
+    {
+      "member": "runLegs",
+      "replaces": "run-8 app/scripts/e2e-fake.mjs: leg(), shot(), the results list and the exit code"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:File.proof",
+    "title": "Browser proof (headless Chrome end-to-end harness)",
+    "note": "Node test helper, no packages, no React: startBrowser launches headless Chrome with a throwaway profile in a folder you name and gives a page (goto, eval, waitFor, screenshot, consoleErrors, key, setViewport); runLegs runs named legs, prints PASS or FAIL for each, fails a leg that logged a page error, and exits non-zero on any FAIL. Chrome and its helpers are stopped and the profile removed, even on failure. Also found as: browser test; end-to-end test; headless Chrome; e2e harness; take screenshots in a test."
+  }
+}
