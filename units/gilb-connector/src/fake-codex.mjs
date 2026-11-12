@@ -21,14 +21,17 @@ if (argv[0] === "doctor") {
     process.stdout.write("this is not json\n");
     process.exit(0);
   }
-  // "1" true, "yes" a string, "null" null, "absent" no field; anything else false.
+  // Real Codex 0.167.2 reports every details value as a string. FAKE_CODEX_DOCTOR_BOOLEANS=1 emits real booleans instead.
+  // FAKE_CODEX_STORED_API_KEY: "1" true, "yes" the string yes, "null" null, "number" 1, "absent" no field; anything else false.
   const keyMode = process.env.FAKE_CODEX_STORED_API_KEY;
+  const flag = (value) => (process.env.FAKE_CODEX_DOCTOR_BOOLEANS === "1" ? value : String(value));
+  const keyValue = keyMode === "1" ? flag(true) : keyMode === "yes" ? "yes" : keyMode === "null" ? null : keyMode === "number" ? 1 : keyMode === "padded" ? " FALSE " : flag(false);
   const details = {
     "auth file": "/fake/auth.json",
     "auth storage mode": "File",
-    ...(keyMode === "absent" ? {} : { "stored API key": keyMode === "1" ? true : keyMode === "yes" ? "yes" : keyMode === "null" ? null : false }),
-    "stored ChatGPT tokens": true,
-    "stored agent identity": false,
+    ...(keyMode === "absent" ? {} : { "stored API key": keyValue }),
+    "stored ChatGPT tokens": flag(true),
+    "stored agent identity": flag(false),
     "stored auth mode": process.env.FAKE_CODEX_AUTH_MODE ?? "chatgpt",
   };
   const entry = (id, category, summary, d) => ({ id, category, status: "ok", summary, details: d, remediation: null, durationMs: 0 });

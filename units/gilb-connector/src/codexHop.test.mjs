@@ -248,17 +248,18 @@ describe("a hand-off run by Codex", () => {
     expect(execs(logFile)).toHaveLength(0);
   }, 20000);
 
-  it("c4c a stored API key passes only when the field is absent or exactly false", async () => {
-    for (const keyMode of ["1", "yes", "null"]) {
-      const refused = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode } });
-      expect(JSON.parse(text(refused.res)).reason, keyMode).toBe(NOT_CHATGPT);
-      expect(execs(refused.logFile), keyMode).toHaveLength(0);
+  it("c4c a stored API key passes only when absent, false or the string false (any case, trimmed)", async () => {
+    for (const [keyMode, booleans] of [["1", "0"], ["1", "1"], ["yes", "0"], ["yes", "1"], ["null", "0"], ["null", "1"], ["number", "0"]]) {
+      const refused = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode, FAKE_CODEX_DOCTOR_BOOLEANS: booleans } });
+      expect(JSON.parse(text(refused.res)).reason, `${keyMode}/${booleans}`).toBe(NOT_CHATGPT);
+      expect(execs(refused.logFile), `${keyMode}/${booleans}`).toHaveLength(0);
     }
-    for (const keyMode of ["absent", "0"]) {
-      const ok = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode } });
-      expect(ok.res.result.isError, keyMode).toBe(false);
+    // The real shape (strings) is the default; booleans are the other form.
+    for (const [keyMode, booleans] of [["0", "0"], ["0", "1"], ["absent", "0"], ["padded", "0"]]) {
+      const ok = await handOff("go", { env: { FAKE_CODEX_STORED_API_KEY: keyMode, FAKE_CODEX_DOCTOR_BOOLEANS: booleans } });
+      expect(ok.res.result.isError, `${keyMode}/${booleans}`).toBe(false);
     }
-  }, 60000);
+  }, 120000);
 
   it("c5 a feature list that cannot be read stops the hand-off", async () => {
     const { res, logFile } = await handOff("go", { env: { FAKE_CODEX_FEATURES_FAIL: "1" } });

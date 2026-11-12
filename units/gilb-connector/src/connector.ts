@@ -1905,9 +1905,9 @@ function codexHopRunner(
       try {
         const json = JSON.parse(doctor) as { codexVersion?: unknown } | null;
         mode = codexStoredAuthMode(json);
-        // Only an absent field or an exact false passes: anything else (true, "yes", null) is refused.
+        // Only an absent field, false, or the string "false" (Codex 0.167 reports strings) passes: anything else is refused.
         const key = codexStoredApiKey(json);
-        apiKeyOk = key === undefined || key === false;
+        apiKeyOk = key === undefined || key === false || (typeof key === "string" && key.trim().toLowerCase() === "false");
         version = json?.codexVersion;
       } catch {
         throw new Error(CODEX_DOCTOR_FAILED);
