@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "unit": "units/zip",
+  "package": "@kaigilb/gilbplatformcode-zip",
+  "version": "0.1.0",
+  "purpose": "Writes a zip file of stored (uncompressed) files with the same bytes every time, and reads one back with every checksum checked.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.ts",
+    "src/zip.ts",
+    "src/zip.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "zipStore",
+      "replaces": "run-8 app/src/services/zip.ts: zipStore (entries named data, now bytes)"
+    },
+    {
+      "member": "unzipStore",
+      "replaces": "run-8 app/src/services/zip.ts: zipList (names, sizes and crc only; now the bytes too, with the crc checked)"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:File.zip",
+    "title": "Zip file (write stored files, read them back)",
+    "note": "Pure bytes in, bytes out, no DOM and no React: zipStore packs named files into a zip with no compression, UTF-8 names and a fixed date so the same input gives the same bytes; unzipStore reads the files back and checks each checksum; crc32. It refuses unsafe names (empty, leading /, .. parts, repeats) and anything over 4 GiB. A zip with deflate inside is refused by name of the method; for compressed zips take a library. Also found as: zip file; make a zip; pack files into an archive; unzip; read a zip; export as zip."
+  }
+}
