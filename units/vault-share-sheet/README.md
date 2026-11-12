@@ -95,4 +95,4 @@ Written for this repository in EESpeed round 7 (batch U2c) from PictureRecords r
 
 ## Tests
 
-49 tests in 5 files (`npx vitest run`): `model.test.ts` 16 (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` 14 (jsdom, injected api), `boundaries.test.ts` 3, `exports.test.ts` 2, `hostAgnostic.test.ts` 14.
+`npm test` runs every test file: `model.test.ts` (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` (jsdom, injected api, including stale-read ordering), `boundaries.test.ts`, `exports.test.ts` and `hostAgnostic.test.ts`.
