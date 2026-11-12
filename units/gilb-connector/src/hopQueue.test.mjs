@@ -416,3 +416,103 @@ describe("the real connector queues instead of refusing", () => {
     expect(platform.requests.filter((rec) => rec.body.name === "run_named_role" && !rec.body.hop)).toHaveLength(1);
   }, 30000);
 });
+
+// ---- Round 8 C2: a hop's child runs on the turn its hop was opened under ----
+
+/** The turn a logged child run was started on (the --turn of its nested connector), from the --mcp-config the fake claude saw. */
+function childTurnOf(run) {
+  const mcp = JSON.parse(run.argv[run.argv.indexOf("--mcp-config") + 1]);
+  const a = mcp.mcpServers.GilbPlatform.args;
+  return a[a.indexOf("--turn") + 1];
+}
+
+describe("a hop keeps the turn it was opened under", () => {
+  const hopOf = (id, task) => ({ id, system: "You are Jackfruit.", task, tools: [{ name: "list_records", description: "List", inputSchema: { type: "object", properties: {} } }], role: "Jackfruit", answer: { role: "Jackfruit", summary: "s" } });
+  const HOP_ONE = "a".repeat(24);
+  const HOP_TWO = "b".repeat(24);
+
+  /**
+   * The door: "one" and "two" open hops; "two"'s answer is held until `release()`; "limit" gets the server's rounds-used
+   * answer once (the connector rolls to a fresh turn and sends it again), then an ordinary answer.
+   */
+  async function raceDoor() {
+    let release = () => undefined;
+    const gate = new Promise((resolve) => (release = resolve));
+    let limited = false;
+    const platform = await listen(async (rec) => {
+      if (!rec.url.endsWith("/tool")) return { status: 404, body: { error: "no such door" } };
+      const { name } = rec.body;
+      if (name === "hop_done") return { body: { result: "closed" } };
+      if (name === "run_named_role" && !rec.body.hop) {
+        const task = JSON.parse(rec.body.arguments || "{}").task;
+        if (task === "one") return { body: { hop: hopOf(HOP_ONE, "WAITFOREVER one") } };
+        if (task === "two") {
+          await gate;
+          return { body: { hop: hopOf(HOP_TWO, "WAITFOREVER two") } };
+        }
+        if (task === "quick queued") return { body: { hop: hopOf("c".repeat(24), "quick queued") } };
+        if (task === "limit" && !limited) {
+          limited = true;
+          return { body: { result: ROUNDS } };
+        }
+        return { body: { result: "plain" } };
+      }
+      if (name === "read_record" && !limited) {
+        limited = true;
+        return { body: { result: ROUNDS } };
+      }
+      return { body: { result: "ok" } };
+    });
+    return { platform, release };
+  }
+
+  it("two hops open on T1; a third call is refused at the turn limit and rolls to T2; the second hop's child still runs on T1", async () => {
+    const logFile = join(scratch(), "claude.log");
+    const { platform, release } = await raceDoor();
+    const box = connect({ origin: platform.origin, env: { FAKE_CLAUDE_LOG: logFile } });
+    const call = (task) => box.start("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit", task } });
+    const one = call("one");
+    await until(() => runsLogged(logFile).length === 1);
+    const two = call("two");
+    await until(() => platform.requests.some((rec) => rec.body.name === "run_named_role" && JSON.parse(rec.body.arguments || "{}").task === "two"));
+    const limit = await call("limit").answer;
+    expect(limit.result.isError).toBe(false);
+    const sent = platform.requests.filter((rec) => rec.body.name === "run_named_role" && !rec.body.hop && JSON.parse(rec.body.arguments).task === "limit");
+    expect(sent).toHaveLength(2);
+    const T2 = sent[1].body.turnId;
+    expect(T2).not.toBe(TURN);
+    // Now the second hop's answer reaches the connector, after the roll.
+    release();
+    await until(() => runsLogged(logFile).length === 2);
+    const runs = runsLogged(logFile);
+    expect(childTurnOf(runs[0])).toBe(TURN);
+    expect(childTurnOf(runs[1])).toBe(TURN);
+    box.cancel(one.id);
+    box.cancel(two.id);
+  }, 30000);
+
+  it("a hop that is already open keeps its own turn for its whole life: its child, and its closing call", async () => {
+    const logFile = join(scratch(), "claude.log");
+    const { platform, release } = await raceDoor();
+    release();
+    const box = connect({ origin: platform.origin, maxHops: 1, env: { FAKE_CLAUDE_LOG: logFile } });
+    const call = (task) => box.start("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit", task } });
+    const one = call("one");
+    await until(() => runsLogged(logFile).length === 1);
+    // The hop is open on TURN. A roll happens (a read hits the turn limit), and a queued hand-off waits behind the open one.
+    const queued = call("quick queued");
+    await new Promise((r) => setTimeout(r, 150));
+    const roll = await box.start("tools/call", { name: "read_record", arguments: { id: "1" } }).answer;
+    expect(roll.result.isError).toBe(false);
+    const T2 = platform.requests.filter((rec) => rec.body.name === "read_record")[1].body.turnId;
+    expect(T2).not.toBe(TURN);
+    box.cancel(one.id);
+    const answer = await queued.answer;
+    expect(answer.result.isError).toBe(false);
+    const runs = runsLogged(logFile);
+    expect(childTurnOf(runs[0])).toBe(TURN);
+    expect(childTurnOf(runs[1])).toBe(T2);
+    const closes = platform.requests.filter((rec) => rec.body.name === "hop_done");
+    expect(closes.map((rec) => rec.body.turnId)).toEqual([TURN, T2]);
+  }, 30000);
+});

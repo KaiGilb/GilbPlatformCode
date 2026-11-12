@@ -2552,12 +2552,13 @@ export function startConnector(opts) {
     }
     const hopStdin = (hop) => (conceptHop(hop.role) ? hop.task : `${hop.task}${hopTimeLimitParagraph(hopMaxOf(hop.role))}`);
     const hopRunner = hopCli === "codex" ? codexHopRunner(codexBin, env, hopModel, hopStdin, readCodexFeatures) : claudeHopRunner(claudeBin, env, hopModel, hopStdin);
-    async function runChild(hop, signal) {
+    /** `hopTurn` is the turn the hop was opened under. The child runs, and makes every call, on that turn, whatever the main process has rolled to since. */
+    async function runChild(hop, signal, hopTurn) {
         const dir = mkdtempSync(join(tmpdir(), "gilb-hop-"));
         const toolsFile = join(dir, "tools.json");
         writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
         const createdFile = join(dir, "created-vaults");
-        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", turnId, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile, "--hop-created", createdFile];
+        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", hopTurn, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile, "--hop-created", createdFile];
         // The live list, not a copy taken at startup, so a vault selected later is passed on.
         for (const id of vaults)
             args.push("--vault", id);
@@ -2738,7 +2739,7 @@ export function startConnector(opts) {
         }
         hopsRunning += 1;
         try {
-            const ran = await runChild(shaped, signal);
+            const ran = await runChild(shaped, signal, hopTurn);
             if (signal.aborted)
                 return CANCELLED;
             const closed = await closeHop(shaped.id, hopTurn);
