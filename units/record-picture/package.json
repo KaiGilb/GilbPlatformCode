@@ -1,0 +1,58 @@
+{
+  "name": "@kaigilb/gilbplatformcode-record-picture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Links a stored picture to a record's picture fact, reads the link back, and runs the add, replace, remove and delete order so no picture file is orphaned and no record is lost.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./prepare": "./src/prepare.ts",
+    "./vault": "./src/vault.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-fake-platform": "file:../fake-platform",
+    "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-photo-ref": "file:../photo-ref",
+    "@kaigilb/gilbplatformcode-picture-pick": "file:../picture-pick",
+    "@kaigilb/gilbplatformcode-picture-set": "file:../picture-set",
+    "@kaigilb/gilbplatformcode-picture-shrink": "file:../picture-shrink",
+    "@kaigilb/gilbplatformcode-picture-upload": "file:../picture-upload",
+    "@kaigilb/gilbplatformcode-record-types": "file:../record-types",
+    "@kaigilb/gilbplatformcode-refusal-detail": "file:../refusal-detail",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.2",
+    "@kaigilb/gilbplatformcode-photo-ref": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-pick": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-set": "^0.1.6",
+    "@kaigilb/gilbplatformcode-picture-shrink": "^0.2.1",
+    "@kaigilb/gilbplatformcode-picture-upload": "^0.1.0 || ^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@kaigilb/gilbplatformcode-lws-session-bridge": { "optional": true },
+    "@kaigilb/gilbplatformcode-picture-pick": { "optional": true },
+    "@kaigilb/gilbplatformcode-picture-set": { "optional": true },
+    "@kaigilb/gilbplatformcode-picture-shrink": { "optional": true },
+    "@kaigilb/gilbplatformcode-picture-upload": { "optional": true }
+  }
+}

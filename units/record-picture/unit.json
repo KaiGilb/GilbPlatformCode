@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "unit": "units/record-picture",
+  "package": "@kaigilb/gilbplatformcode-record-picture",
+  "version": "0.1.0",
+  "purpose": "Links a stored picture to a record's picture fact and reads the link back, and runs the add, replace, remove and delete order so no picture file is orphaned and no record is lost.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "19fb34ba7195055fbd0ef13e376d789756e2c9f6",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/types.ts",
+    "src/link.ts",
+    "src/flow.ts",
+    "src/index.ts",
+    "src/prepare.ts",
+    "src/vault.ts",
+    "src/link.test.ts",
+    "src/flow.test.ts",
+    "src/prepare.test.ts",
+    "src/fake.test.ts",
+    "src/vault.test.ts",
+    "src/exports.test.ts",
+    "src/entrySurface.test.ts",
+    "src/noFactDefault.test.ts",
+    "src/hostAgnostic.test.ts",
+    "src/peerRanges.test.ts",
+    "test/world.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "fact",
+      "replaces": "the app's picture fact name (run-7 PICTURE_FACT, run-6 PICTURE_FACT); this unit holds none"
+    },
+    {
+      "member": "PictureFlowDeps",
+      "replaces": "run-7 FlowDeps (src/plant/pictureFlow.ts): the app's own record create, link, copies and delete"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:Record.picture",
+    "title": "Record picture link and flow (attach, replace, remove or delete a record's picture, with the files ended in the right order)",
+    "note": "Attaches a stored picture to a record's picture fact (a PATCH with If-Match, read back to check the link stuck, both the string and the link forms read), and runs the add, replace, remove and delete order so no picture file is orphaned: record-first or picture-first, old files ended only after the new link held, files ended before the record is deleted. Also checks a picked file (type, 25 MB) and shrinks it to a screen copy and a thumbnail with EXIF and GPS dropped, and binds picture-set to one vault. The fact name is always passed in; it holds no term. The upload itself is picture-set, the shrinking picture-shrink, the record calls lws-records."
+  }
+}
