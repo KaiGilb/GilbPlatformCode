@@ -1464,7 +1464,7 @@ Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
 --upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
 --hop-cli codex runs a hand-off on the Codex CLI (signed in with ChatGPT) instead of Claude Code. Default: claude.
---name DISPLAY is the AI's display name. Default: `Claude Code on <machine>`, or `Codex on <machine>` with --hop-cli codex.
+--name DISPLAY is the AI's display name. Default: Claude Code on <machine>, or Codex on <machine> with --hop-cli codex.
 --codex PATH is the Codex CLI used for a hand-off. Default: codex.
 --hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
 publish puts a built folder on https://NAME.pages.dev. It publishes unless --dry-run.
