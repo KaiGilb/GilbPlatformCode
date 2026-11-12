@@ -81,6 +81,8 @@ When the person names a vault to work in, call gilbplatform_use_vault with the n
 
 A long run does not stop at the server's turn limits. When the server answers that a turn has used all its tool rounds, or has handed over as many times as one turn may, it has refused the call before running it. The connector then starts a fresh platform turn and sends the same call once more, and writes one line to stderr. It does this at most 5 times per process (after that the answer says to start a new chat), never for Agent.Concept (its mint limits are per turn and stay a brake), and never inside a hand-off, and never for a `run_named_role` whose role name contains "concept" (Agent.Concept, or a bare Concept the server may resolve to it) or looks like an address, or whose role cannot be read. A hand-off that is already running keeps its own turn.
 
+Connector 0.6.0: Codex can run hand-offs (--hop-cli codex), on the person's ChatGPT sign-in only. On Windows the connector starts codex.exe directly and stops the whole process tree when a hand-off ends.
+
 Connector 0.5.8: gilbplatform_upload_file sends to the vault's own root exactly as the platform listed it (`/vault` for a user vault, `/base` for a system vault) instead of always `/base`, which the vault door refused with 403 for a user vault.
 
 Connector 0.5.9: rides out a GilbPlatform restart: sign-in and reads retry a 5xx or network error for about 60 s, then say the platform is restarting, never 'could not sign in'; a failed sign-in is no longer remembered.
