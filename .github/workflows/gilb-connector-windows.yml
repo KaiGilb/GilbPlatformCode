@@ -1,0 +1,50 @@
+name: gilb-connector-windows
+
+# Proves the Codex hand-off pieces of the connector on GitHub's Windows runners (and that macOS runs the same tests).
+# Only the two Codex test files run here: the rest of the suite still uses POSIX-only things. Nothing here is a person on a Windows PC.
+
+on:
+  pull_request:
+    paths:
+      - "units/gilb-connector/**"
+      - ".github/workflows/gilb-connector-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: units/gilb-connector
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      # The built connector file is compared byte for byte with a fresh build: keep line ends as committed.
+      - name: Keep LF line ends
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Codex hand-off tests (resolver, process-tree kill, real hand-off through the fake)
+        run: npx vitest run src/codexHop.test.mjs src/codexWindows.test.mjs
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Codex hand-off tests (same files as Windows)
+        run: npx vitest run src/codexHop.test.mjs src/codexWindows.test.mjs
