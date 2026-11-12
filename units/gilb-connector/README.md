@@ -161,7 +161,7 @@ That publishes the built folder. The live address is `https://<name>.pages.dev`.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--as` | `ai` | `ai` signs in as this Connected AI. `me` signs in as this computer. |
-| `--name` | `Claude Code on <this machine's name>` | Display name sent when the AI client is registered. |
+| `--name` | `Claude Code on <this machine's name>`, or `Codex on <this machine's name>` with `--hop-cli codex` | Display name sent when the AI client is registered. |
 | `--agent` | `Kai-Zen` | Agent tag for this process |
 | `--origin` | `https://id.gilb.com` | GilbPlatform door. |
 | `--vault` | none | Vault id. Repeat the flag for more than one. |

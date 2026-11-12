@@ -466,7 +466,7 @@ export interface StartOptions {
   profile?: string;
   /** `ai` (default) is this process's Connected AI. `me` is this computer's key. */
   as?: SignInAs;
-  /** Display name registered for the AI. Default is `Claude Code on <hostname>`. */
+  /** Display name registered for the AI. Default is `Claude Code on <hostname>`, or `Codex on <hostname>` when hopCli is `codex`. */
   name?: string;
   claudeBin?: string;
   /** Which CLI runs a hand-off: `claude` (default) or `codex`. */
@@ -822,11 +822,11 @@ function tightenPrivateFile(file: string): void {
   if (existsSync(file)) chmodSync(file, 0o600);
 }
 
-function aiDisplayName(name: string | undefined): string {
+export function aiDisplayName(name: string | undefined, hopCli: HopCli = "claude"): string {
   const trimmed = name?.trim();
   if (trimmed) return trimmed.slice(0, 256);
   const host = hostname().trim() || "this computer";
-  return `Claude Code on ${host}`.slice(0, 256);
+  return `${hopCli === "codex" ? "Codex" : "Claude Code"} on ${host}`.slice(0, 256);
 }
 
 function safeProfileName(name: string): string {
@@ -1464,6 +1464,7 @@ Default: sign in as a Connected AI (--as ai).
 --as me signs in as this computer.
 --upload-root DIR lets gilbplatform_upload_file read from DIR as well as the folder this process runs in. Repeat it for more folders.
 --hop-cli codex runs a hand-off on the Codex CLI (signed in with ChatGPT) instead of Claude Code. Default: claude.
+--name DISPLAY is the AI's display name. Default: `Claude Code on <machine>`, or `Codex on <machine>` with --hop-cli codex.
 --codex PATH is the Codex CLI used for a hand-off. Default: codex.
 --hop-model NAME runs a hand-off's Claude Code on that model (for example a faster one). Unset: Claude Code's own default.
 publish puts a built folder on https://NAME.pages.dev. It publishes unless --dry-run.
@@ -1948,6 +1949,8 @@ interface SessionOpen {
   asMode: SignInAs;
   profile: string | undefined;
   displayName: string | undefined;
+  /** Picks the default display name (`Codex on <host>` for codex). */
+  hopCli?: HopCli;
   say: (line: string) => void;
   retryDelays: readonly number[];
   fetchImpl: typeof fetch;
@@ -2064,7 +2067,7 @@ async function openSessionCredential(input: SessionOpen): Promise<SessionCred> {
       const body = {
         clientPublicKey: jwk,
         declaredOrigin: AI_DECLARED_ORIGIN,
-        clientDisplayName: aiDisplayName(displayName),
+        clientDisplayName: aiDisplayName(displayName, input.hopCli),
       };
       const sent = await retrying<{ status: number; text: string; what: string }>(async () => {
         try {
@@ -2366,6 +2369,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       asMode,
       profile,
       displayName,
+      hopCli,
       say,
       retryDelays,
       fetchImpl: fetch,
