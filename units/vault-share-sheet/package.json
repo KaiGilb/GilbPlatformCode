@@ -1,0 +1,59 @@
+{
+  "name": "@kaigilb/gilbplatformcode-vault-share-sheet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./model": "./src/model.ts",
+    "./vaultShareSheet.css": "./src/vaultShareSheet.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "^0.2.0",
+    "@kaigilb/gilbplatformcode-modal-sheet": "^0.1.0",
+    "@kaigilb/gilbplatformcode-principal-row": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vault-access": "^0.1.2",
+    "@kaigilb/gilbplatformcode-vault-address": "^0.1.1",
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@kaigilb/gilbplatformcode-modal-sheet": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-fake-platform": "file:../fake-platform",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-modal-sheet": "file:../modal-sheet",
+    "@kaigilb/gilbplatformcode-principal-row": "file:../principal-row",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-vault-access": "file:../vault-access",
+    "@kaigilb/gilbplatformcode-vault-address": "file:../vault-address",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
