@@ -58,7 +58,7 @@ None. The component keeps its state per mount.
 
 ## Where it came from
 
-Written for this repository in EESpeed round 7 (batch U3b) from PictureRecords run 7 `app/src/components/VaultChip.tsx` and `app/src/platform/vaultChoices.ts`, and run 6 `app/src/VaultChooser.tsx`. Changes from run 7: the rows come from `vault-list`'s `vaultChoices` and `choiceLine`; `onPick` gets the vault as listed; the open vault is marked and picking it does not call `onPick`; a failed load shows a fixed sentence and Try again, not the raw error message; slow loads are numbered; the dialog is `modal-sheet` (focus kept, Tab trapped, scroll locked).
+Written for this repository in EESpeed round 7 (batch U3b) from PictureRecords run 7 `app/src/components/VaultChip.tsx` and `app/src/platform/vaultChoices.ts`, and run 6 `app/src/VaultChooser.tsx`. Base commit `19fb34ba7195055fbd0ef13e376d789756e2c9f6` of `KaiGilb/GilbPlatformCode`. Changes from run 7: the rows come from `vault-list`'s `vaultChoices` and `choiceLine`; `onPick` gets the vault as listed; the open vault is marked and picking it does not call `onPick`; a failed load shows a fixed sentence and Try again, not the raw error message; slow loads are numbered; the dialog is `modal-sheet` (focus kept, Tab trapped, scroll locked).
 
 ## Tests
 
