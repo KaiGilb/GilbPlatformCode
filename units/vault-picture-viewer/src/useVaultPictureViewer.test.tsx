@@ -25,7 +25,7 @@ function Harness(p: { options: VaultPictureViewerOptions }) {
 const options = (o: Partial<VaultPictureViewerOptions> = {}): VaultPictureViewerOptions => ({ vaultOrigin: ORIGIN, copies, ...o });
 const mount = (o: Partial<VaultPictureViewerOptions> = {}) => render(<Harness options={options(o)} />);
 const filePaths = (): string[] => fake.calls.all.filter((c) => c.method === "GET" && c.path.startsWith("/files/")).map((c) => c.path);
-const openStored = async (m: string, extra: { el?: HTMLElement | null } = {}) => { await act(async () => { await api.openStored({ master: m, alt: "Ann at the lake", ...extra }); }); };
+const openStored = async (m: string, extra: { el?: HTMLElement | null; caption?: string; alt?: string } = {}) => { await act(async () => { await api.openStored({ master: m, alt: "Ann at the lake", ...extra }); }); };
 const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
 const dialog = (): HTMLElement | null => document.querySelector<HTMLElement>("[data-lightbox-viewer]");
 const imgs = (): HTMLImageElement[] => [...document.querySelectorAll<HTMLImageElement>("[data-lightbox-viewer] img")];
@@ -139,5 +139,46 @@ describe("useVaultPictureViewer", () => {
     expect(fake.calls.count()).toBe(0);
     expect(mainImg()!.getAttribute("src")).toBe("blob:local/just-picked");
     expect(mainImg()!.getAttribute("alt")).toBe("Just picked");
+  });
+
+  const caption = (): string | undefined => document.querySelector("[data-lightbox-viewer] figcaption")?.textContent ?? undefined;
+
+  it("openStored shows the caption it was given, and the alt text when it was given none", async () => {
+    mount();
+    await openStored(uri(master), { caption: "Fern on the sill", alt: "A fern" });
+    await flush();
+    expect(caption()).toBe("Fern on the sill");
+    cleanup();
+    mount();
+    await openStored(uri(master), { alt: "A fern" });
+    await flush();
+    expect(caption()).toBe("A fern");
+  });
+
+  it("openLocal shows the caption it was given, and the alt text when it was given none", async () => {
+    mount();
+    act(() => { api.openLocal({ url: "blob:local/x", alt: "A fern", caption: "Fern on the sill" }); });
+    await flush();
+    expect(caption()).toBe("Fern on the sill");
+    cleanup();
+    mount();
+    act(() => { api.openLocal({ url: "blob:local/x", alt: "A fern" }); });
+    await flush();
+    expect(caption()).toBe("A fern");
+  });
+
+  it("closing the viewer gives focus to the element openStored was given as el when nothing on the page had focus at open", async () => {
+    // picture-viewer's hook returns focus to the element that had it at open, after the viewer has given it to `el`; so `el` decides
+    // only when nothing (the body) had focus then, which is what this test sets up.
+    render(<><button id="b">b</button><Harness options={options()} /></>);
+    const b = document.getElementById("b")!;
+    expect(document.activeElement).toBe(document.body);
+    await openStored(uri(master), { el: b });
+    await flush();
+    expect(dialog()).not.toBeNull();
+    act(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); });
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(b);
   });
 });
