@@ -1,0 +1,24 @@
+/* Theme with the style-runtime variables (each has a neutral fallback): --ink, --lines, --accent, --r-lg.
+   The dialog itself is styled by modal-sheet. */
+.vsw-chip {
+  display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; max-width: 100%; padding: 0 0.875rem;
+  font: inherit; color: inherit; cursor: pointer; background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lines, #1a1a1a) 35%, transparent); border-radius: var(--r-lg, 0.5rem);
+}
+.vsw-chip:focus-visible, .vsw-row:focus-visible, .vsw-retry:focus-visible { outline: 2px solid var(--accent, #1a56db); outline-offset: 2px; }
+.vsw-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vsw-note { margin: 0.5rem 0; font-size: 0.9375rem; }
+.vsw-error { margin: 0.5rem 0; font-size: 0.9375rem; color: var(--bad, #b42318); }
+.vsw-retry {
+  font: inherit; min-height: 2.75rem; padding: 0 1rem; cursor: pointer; color: inherit; background: transparent;
+  border: 1px solid color-mix(in srgb, var(--lines, #1a1a1a) 35%, transparent); border-radius: var(--r-lg, 0.5rem);
+}
+.vsw-rows { list-style: none; margin: 0; padding: 0; }
+.vsw-row {
+  display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 2.75rem; padding: 0.5rem 0.25rem; text-align: left;
+  font: inherit; color: inherit; cursor: pointer; background: transparent; border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--lines, #1a1a1a) 15%, transparent);
+}
+.vsw-row[aria-current="true"] { font-weight: 600; box-shadow: inset 0.1875rem 0 0 var(--accent, #1a56db); padding-left: 0.75rem; }
+.vsw-row-name { overflow-wrap: anywhere; }
+.vsw-row-line { font-size: 0.875rem; opacity: 0.75; }
