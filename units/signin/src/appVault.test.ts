@@ -154,6 +154,17 @@ describe("ensureAppVault (injected calls)", () => {
     expect(d.sleep).toHaveBeenCalledTimes(2);
     expect((d.store as ReturnType<typeof mem>).m.get(`app:pending:${P}`)).toBe("annhouseplants");
   });
+  it("after a stop, the next ensure re-posts the pending name and does not check the name again", async () => {
+    const d = deps({ create: vi.fn().mockResolvedValue(made(false)) });
+    await ensureAppVault(d, CFG, P).catch(() => undefined);
+    expect(d.checkName).toHaveBeenCalledTimes(1);
+    const full = deps().create;
+    d.create = vi.fn(async (b) => full(b)) as never;
+    const r = await ensureAppVault(d, CFG, P).catch((e) => e);
+    expect(d.checkName).toHaveBeenCalledTimes(1);
+    expect((d.create as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toEqual({ name: "annhouseplants", represents: TYPE });
+    expect(r).toBeInstanceOf(Error); // the re-list of this stub has no vault; the point is the body and the check count
+  });
   it("a refusal is thrown unchanged and clears the pending name; an unreachable platform keeps it", async () => {
     const refused = new VaultRequestRefusedError("Making the vault", 409, "taken");
     const d = deps({ create: vi.fn().mockRejectedValue(refused) });
