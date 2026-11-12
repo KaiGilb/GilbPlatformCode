@@ -80,9 +80,30 @@ The other steps:
 
 `createVaultPictures({ vaultOrigin, vaultRoot, folder, send? })` binds picture-set's `loadCopyMap`, `storePictureSet` and `endPictureFiles` to one vault. `send` defaults to `signedSend()` of lws-session-bridge. `endFiles` answers the addresses that could not be ended.
 
+### vaultPictureService
+
+`vaultPictureService({ originOf, folder, send?, revoke? })` (since 0.1.1, same `"./vault"` entry) keeps one `createVaultPictures` binding and one copy map per vault, and tracks object URLs so a screen can release them. `originOf(vaultRoot)` gives the origin that serves a vault (an app passes `vaultOriginOf`); the folder comes from the caller; `revoke` defaults to `URL.revokeObjectURL`. It imports nothing new, so no new peer; fetching stays with `signed-picture`, whose URLs you `track`.
+
+- `forVault(vaultRoot)`: the binding, made once per vault. `copies(vaultRoot)`: its copy map, listed once. `fresh(vaultRoot)`: drops both, so the next call makes them again.
+- `forget(vaultRoot?)`: one vault's binding, copy map and the URLs tracked with it, or with no argument all of them.
+- `track(url, vaultRoot?)` returns the URL; `release(url)` revokes it once (a second call or an untracked URL does nothing); `releaseAll()`.
+
+```ts
+const pictures = vaultPictureService({ originOf: vaultOriginOf, folder: PICTURE_FOLDER });
+const binding = pictures.forVault(vaultId);          // was pictureBinding(vaultId)
+const map = await pictures.copies(vaultId);          // was copyMap(vaultId)
+pictures.fresh(vaultId); const now = await pictures.copies(vaultId); // was freshMap(vaultId)
+const url = pictures.track(await pictureObjectUrl(uri, origin), vaultId); pictures.release(url); // was tracked/revoke
+pictures.forget();                                    // was forgetAll's maps, bindings and tracked loop
+```
+
 ## How to take it
 
 Package `@kaigilb/gilbplatformcode-record-picture`. Install the required peers `lws-records` and `photo-ref`, plus the optional peers of each entry you import. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy.
+
+## Changes in 0.1.1
+
+Additive, in `"./vault"`: `vaultPictureService` and the types `VaultPictureService`, `VaultPictureServiceDeps`. No new peer (it uses only `createVaultPictures` and picture-set's `CopyMap` type). 10 new tests (`src/vault.test.ts`).
 
 ## Where it came from
 

@@ -1,6 +1,6 @@
 // createVaultPictures against the fake (run-7's upload tests, ported): the folder, the warning, endFiles' answer.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createVaultPictures } from "./vault";
+import { createVaultPictures, vaultPictureService, type VaultPictureServiceDeps } from "./vault";
 import { VAULT_ORIGIN, bytes, makeWorld, prepared, type World } from "../test/world";
 
 let w: World;
@@ -53,5 +53,113 @@ describe("createVaultPictures", () => {
     expect(seen[0]).toMatch(/^GET \/lws\/vault\/.+\/files$/);
     expect(w.fake.calls.last()!.status).toBe(401);
     warn.mockRestore();
+  });
+});
+
+describe("vaultPictureService", () => {
+  const make = (extra: Partial<VaultPictureServiceDeps> = {}) => {
+    const revoked: string[] = [];
+    const svc = vaultPictureService({ originOf: () => VAULT_ORIGIN, folder: "pics", revoke: (u) => revoked.push(u), ...extra });
+    return { svc, revoked };
+  };
+
+  it("forVault gives the same binding for the same vault and another for another vault", () => {
+    const { svc } = make();
+    const a = svc.forVault("https://a.example.test/vault");
+    expect(svc.forVault("https://a.example.test/vault")).toBe(a);
+    expect(svc.forVault("https://b.example.test/vault")).not.toBe(a);
+  });
+
+  it("the binding is made with the origin the caller's originOf gives for that vault, the folder, and the given send", async () => {
+    const seen: string[] = [];
+    const send = async (m: string, u: string) => (seen.push(`${m} ${u}`), new Response("{}", { status: 404 }));
+    const { svc } = make({ originOf: (v) => `${v}/origin`, send });
+    await svc.forVault("https://a.example.test/vault").loadCopies();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain("https://a.example.test/vault/origin");
+  });
+
+  it("fresh makes a new binding for that vault only and keeps the others", () => {
+    const { svc } = make();
+    const a = svc.forVault("a");
+    const b = svc.forVault("b");
+    svc.fresh("a");
+    expect(svc.forVault("a")).not.toBe(a);
+    expect(svc.forVault("b")).toBe(b);
+  });
+
+  it("copies lists once until fresh, then lists again", async () => {
+    const { svc } = make({ send: async () => new Response("{}", { status: 404 }) });
+    const m1 = svc.copies("a");
+    expect(svc.copies("a")).toBe(m1);
+    await m1;
+    svc.fresh("a");
+    expect(svc.copies("a")).not.toBe(m1);
+  });
+
+  it("forget with an argument clears that vault's binding; with none it clears all of them", () => {
+    const { svc } = make();
+    const a = svc.forVault("a");
+    const b = svc.forVault("b");
+    svc.forget("a");
+    expect(svc.forVault("a")).not.toBe(a);
+    expect(svc.forVault("b")).toBe(b);
+    const a2 = svc.forVault("a");
+    svc.forget();
+    expect(svc.forVault("a")).not.toBe(a2);
+    expect(svc.forVault("b")).not.toBe(b);
+  });
+
+  it("track returns the URL; release revokes it once and a second release does nothing", () => {
+    const { svc, revoked } = make();
+    expect(svc.track("blob:1")).toBe("blob:1");
+    svc.release("blob:1");
+    svc.release("blob:1");
+    svc.release("blob:never-tracked");
+    expect(revoked).toEqual(["blob:1"]);
+  });
+
+  it("tracking a URL twice still revokes it once", () => {
+    const { svc, revoked } = make();
+    svc.track("blob:1");
+    svc.track("blob:1");
+    svc.releaseAll();
+    svc.releaseAll();
+    expect(revoked).toEqual(["blob:1"]);
+  });
+
+  it("releaseAll revokes every tracked URL", () => {
+    const { svc, revoked } = make();
+    svc.track("blob:1");
+    svc.track("blob:2", "a");
+    svc.track("blob:3");
+    svc.release("blob:3");
+    svc.releaseAll();
+    expect(revoked.sort()).toEqual(["blob:1", "blob:2", "blob:3"]);
+  });
+
+  it("forget(vault) releases only the URLs tracked with that vault; forget() releases all", () => {
+    const { svc, revoked } = make();
+    svc.track("blob:a", "a");
+    svc.track("blob:b", "b");
+    svc.track("blob:free");
+    svc.forget("a");
+    expect(revoked).toEqual(["blob:a"]);
+    svc.forget();
+    expect(revoked.sort()).toEqual(["blob:a", "blob:b", "blob:free"]);
+  });
+
+  it("without a revoke dep it uses URL.revokeObjectURL", () => {
+    const orig = URL.revokeObjectURL;
+    const spy = vi.fn();
+    URL.revokeObjectURL = spy as unknown as typeof URL.revokeObjectURL;
+    try {
+      const svc = vaultPictureService({ originOf: () => VAULT_ORIGIN, folder: "pics" });
+      svc.track("blob:x");
+      svc.release("blob:x");
+      expect(spy).toHaveBeenCalledWith("blob:x");
+    } finally {
+      URL.revokeObjectURL = orig;
+    }
   });
 });

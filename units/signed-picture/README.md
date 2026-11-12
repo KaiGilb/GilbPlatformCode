@@ -9,6 +9,8 @@ Shows a vault picture that needs a signed request: fetches its bytes with the pe
 An `<img src>` cannot carry the request signature, so the picture is fetched with `fetch`, turned into an object URL and handed to the `<img>`.
 
 - `pictureObjectUrl(fileEntityUri, vaultOrigin)`: the picture as an object URL. The file id is `fileIdFromPhotoRef(address) ?? entityIdTail(address)` (peer `photo-ref`); the GET goes to `<vaultOrigin>/files/<encoded id>` with the headers of `dpopReadAuth("GET", url)` (peer `lws-session-bridge`) and `credentials: "omit"`. A refused read throws `The picture could not be read (HTTP <status>).`; an address with no id throws `This picture has no file address.` The promise is cached, so a second call for the same file gets the same promise and no second request. A failed fetch is removed from the cache, so the next call tries again.
+- `pictureBytes(fileEntityUri, vaultOrigin)` (since 0.2.2): the picture's raw bytes and content type, `Promise<{ bytes: Uint8Array; type: string }>`, for an app whose CSP forbids `fetch(blob:)`. It is the same read as `pictureObjectUrl` (one internal function: same file address, same signed GET, same device cache, same errors), but nothing is kept in memory.
+- `forgetPicture(fileEntityUri)` (since 0.2.2): revokes and removes the cached object URL of this one file. The cache is keyed by file address only, so a small copy or other size is its own file: forget each address. Other files stay; an unknown address does nothing.
 - `forgetPictures(options?)`: revokes every cached object URL and empties the cache. Call it on sign-out. `forgetPictures()` touches memory only; `forgetPictures({ device: true })` also deletes the device cache (below).
 - `enablePictureDeviceCache({ name })` / `disablePictureDeviceCache()`: off until you call it. When on, and where `caches` (Cache Storage) exists, `pictureObjectUrl` first looks in `caches.open(name)` for the request URL `<vaultOrigin>/files/<encoded id>`; a hit makes the object URL from the stored blob with no network call; a miss fetches as before and, when the read is ok, stores a copy (`cache.put(url, res.clone())`) before making the object URL. A storage failure (quota, private mode) is swallowed with one `console.warn` and the picture still shows. Without `caches`, enabling does nothing. `disablePictureDeviceCache()` stops using it but keeps the stored pictures. **`name` must be per person**, for example `signed-picture:<hash of the principal>`, so a second person on the same browser never sees the first one's pictures.
 - `startPictureSession({ principal, deviceCachePrefix, queueLimit? })` (since 0.2.1): the start-up at sign-in. It sets the queue limit (default 6), turns on the device cache named `deviceCacheNameFor(deviceCachePrefix, principal)`, and answers the sign-out step: `await stop()` frees every picture URL, deletes that device cache and turns the cache off (safe to call twice). An empty `principal` throws; so does a `queueLimit` that is not a whole number of at least 1 (nothing is changed then).
@@ -100,6 +102,22 @@ Named changes, and only these:
 - Comment edits: none needed beyond the file split.
 
 `src/index.ts` is new.
+
+## pictureBytes and forgetPicture
+
+Replaces an app's hand-written byte read (run 8's `masterBytes`: copied URL and header code) and its per-file `revoke` / `revokeSet`.
+
+```ts
+import { pictureBytes, forgetPicture } from "@kaigilb/gilbplatformcode-signed-picture";
+
+const { bytes, type } = await pictureBytes(masterUri, vaultOrigin); // was masterBytes(vaultId, masterUri)
+download(new Blob([bytes], { type }), "picture.jpg");
+for (const uri of [master, ...copies]) forgetPicture(uri);          // was revokeSet(master, copies)
+```
+
+## Changes in 0.2.2
+
+Additive: `pictureBytes` and `forgetPicture`. `pictureObjectUrl`'s address, signing, device cache and error code moved into one internal function that `pictureBytes` also uses; its behaviour is unchanged. No new peer. 8 new tests (`src/pictureUrl.test.ts`; 86 before, 94 after).
 
 ## Changes in 0.2.1
 

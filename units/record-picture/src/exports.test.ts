@@ -10,7 +10,7 @@ describe("the package's exports", () => {
   it('"./prepare" is exactly these values', () => {
     expect(Object.keys(prepare).sort()).toEqual(["checkPictureFile", "preparePicture"]);
   });
-  it('"./vault" is exactly this value', () => {
-    expect(Object.keys(vault)).toEqual(["createVaultPictures"]);
+  it('"./vault" is exactly these values', () => {
+    expect(Object.keys(vault).sort()).toEqual(["createVaultPictures", "vaultPictureService"]);
   });
 });

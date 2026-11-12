@@ -5,7 +5,7 @@ vi.mock("@kaigilb/gilbplatformcode-lws-session-bridge", () => ({
 }));
 
 import { dpopReadAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
-import { forgetPictures, pictureObjectUrl } from "./index";
+import { forgetPicture, forgetPictures, pictureBytes, pictureObjectUrl } from "./index";
 
 const ORIGIN = "https://example.test";
 const ok = (text = "bytes") => new Response(new Blob([text]), { status: 200 });
@@ -127,5 +127,70 @@ describe("forgetPictures", () => {
     expect(() => forgetPictures()).not.toThrow();
     await new Promise((r) => setTimeout(r, 0));
     expect(revoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("pictureBytes", () => {
+  test("returns the bytes and the content type", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "image/jpeg" } }));
+    const r = await pictureBytes("https://example.test/vault/e/file-20", ORIGIN);
+    expect(Array.from(r.bytes)).toEqual([1, 2, 3]);
+    expect(r.bytes).toBeInstanceOf(Uint8Array);
+    expect(r.type).toBe("image/jpeg");
+  });
+  test("an answer with no content type gives an empty type", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([9]), { status: 200 }));
+    expect((await pictureBytes("https://example.test/vault/e/file-21", ORIGIN)).type).toBe("");
+  });
+  test("makes the same request, URL and headers, as pictureObjectUrl", async () => {
+    await pictureObjectUrl("https://example.test/vault/e/file-22", ORIGIN);
+    await pictureBytes("https://example.test/vault/e/file-22", ORIGIN);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]).toEqual(fetchMock.mock.calls[0]);
+    expect(fetchMock.mock.calls[1]![0]).toBe("https://example.test/files/file-22");
+    expect(dpopReadAuth).toHaveBeenLastCalledWith("GET", "https://example.test/files/file-22");
+  });
+  test("a refused read throws the same sentence, an address with no id is refused before any request", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("no", { status: 404 }));
+    await expect(pictureBytes("https://example.test/vault/e/file-23", ORIGIN)).rejects.toThrow("The picture could not be read (HTTP 404).");
+    fetchMock.mockClear();
+    await expect(pictureBytes("", ORIGIN)).rejects.toThrow("This picture has no file address.");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  test("a failed fetch rejects with the fetch's error and makes no object URL", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("offline"));
+    await expect(pictureBytes("https://example.test/vault/e/file-24", ORIGIN)).rejects.toThrow("offline");
+    expect(created).toHaveLength(0);
+  });
+});
+
+describe("forgetPicture", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  test("revokes only that file's URL and leaves the others cached", async () => {
+    const a = await pictureObjectUrl("https://example.test/vault/e/file-30", ORIGIN);
+    const b = await pictureObjectUrl("https://example.test/vault/e/file-31", ORIGIN);
+    forgetPicture("https://example.test/vault/e/file-30");
+    await flush();
+    expect(revoke.mock.calls.map((c) => c[0])).toEqual([a]);
+    expect(await pictureObjectUrl("https://example.test/vault/e/file-31", ORIGIN)).toBe(b);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await pictureObjectUrl("https://example.test/vault/e/file-30", ORIGIN);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+  test("a second call, and an unknown address, do nothing", async () => {
+    await pictureObjectUrl("https://example.test/vault/e/file-32", ORIGIN);
+    forgetPicture("https://example.test/vault/e/file-32");
+    forgetPicture("https://example.test/vault/e/file-32");
+    forgetPicture("https://example.test/vault/e/never-seen");
+    await flush();
+    expect(revoke).toHaveBeenCalledTimes(1);
+  });
+  test("forgetPictures still revokes every remaining URL", async () => {
+    await pictureObjectUrl("https://example.test/vault/e/file-33", ORIGIN);
+    await pictureObjectUrl("https://example.test/vault/e/file-34", ORIGIN);
+    forgetPicture("https://example.test/vault/e/file-33");
+    forgetPictures();
+    await flush();
+    expect(revoke).toHaveBeenCalledTimes(2);
   });
 });
