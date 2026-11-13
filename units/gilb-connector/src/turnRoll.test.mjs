@@ -116,6 +116,13 @@ function meEnv(extra = {}) {
 
 const text = (msg) => msg.result.content[0].text;
 const posts = (platform) => platform.requests.filter((rec) => rec.url.endsWith("/tool"));
+/** 0.6.2: a refused call that is not re-sent (Agent.Concept) is answered with a renewed-turn note, never the bare "stop". */
+const expectRenewed = (res, why) => {
+  const answer = JSON.parse(text(res));
+  expect(answer.renewed, why).toBe(true);
+  expect(answer.next, why).toContain("was not sent again");
+  expect(answer.next, why).not.toBe(NEXT);
+};
 const callTool = (box, name = "read_record", args = { id: "1" }) => box.request("tools/call", { name, arguments: args });
 
 /** A door whose /tool answers come from a script, one per call, then the last one for ever. */
@@ -184,7 +191,8 @@ describe("a turn out of room", () => {
     const box = connect({ origin: platform.origin });
     const res = await callTool(box);
     expect(posts(platform)).toHaveLength(2);
-    expect(text(res)).toBe(ROUNDS);
+    // Not sent a third time; the turn is renewed again and the answer says what to do (0.6.2), not "stop".
+    expect(JSON.parse(text(res)).renewed).toBe(true);
   });
 
   it("f1 look-alike answers do not roll", async () => {
@@ -250,17 +258,17 @@ describe("a turn out of room", () => {
     expect(posts(platform)).toHaveLength(1);
   });
 
-  it("f1 Agent.Concept never rolls, in any spelling", async () => {
+  it("f1 Agent.Concept is never re-sent, in any spelling", async () => {
     for (const agent of ["Agent.Concept", "agent.concept", "AGENT-CONCEPT", " Agent Concept "]) {
       const platform = await scripted([ROUNDS]);
       const box = connect({ origin: platform.origin, agent });
       const res = await callTool(box);
-      expect(text(res), agent).toBe(ROUNDS);
+      expectRenewed(res, agent);
       expect(posts(platform), agent).toHaveLength(1);
     }
   });
 
-  it("f9 run_named_role with a role that folds to Agent.Concept never rolls, whichever agent the connector is on", async () => {
+  it("f9 run_named_role with a role that folds to Agent.Concept is never re-sent, whichever agent the connector is on", async () => {
     const roles = ["Agent.Concept", "agent.concept", "AGENT_CONCEPT", " agent concept ", "Agent-Concept", "AgentConcept", "Agent.Concept.v2"];
     for (const agent of ["Kai-Zen", "Jackfruit"]) {
       for (const limit of [ROUNDS, HOPS]) {
@@ -268,21 +276,21 @@ describe("a turn out of room", () => {
           const platform = await scripted([limit, "role-ok"]);
           const box = connect({ origin: platform.origin, agent });
           const res = await callTool(box, "run_named_role", { role, task: "x" });
-          expect(text(res), `${agent} ${role}`).toBe(limit);
+          expectRenewed(res, `${agent} ${role}`);
           expect(posts(platform), `${agent} ${role}`).toHaveLength(1);
         }
       }
     }
   });
 
-  it("n3 a bare Concept, or any role whose fold holds concept, never rolls", async () => {
+  it("n3 a bare Concept, or any role whose fold holds concept, is never re-sent", async () => {
     // roleMatchKey is trim, lower-case, and drop dash, underscore and space; a role is matched to a title or unit tag by that key.
     for (const role of ["Concept", "concept", "CONCEPT", " Concept ", "Con-cept", "con_cept", "the Concept agent", "Concept.v2", "Agent.Concept", "Concepts"]) {
       for (const limit of [ROUNDS, HOPS]) {
         const platform = await scripted([limit, "role-ok"]);
         const box = connect({ origin: platform.origin });
         const res = await callTool(box, "run_named_role", { role, task: "x" });
-        expect(text(res), role).toBe(limit);
+        expectRenewed(res, role);
         expect(posts(platform), role).toHaveLength(1);
       }
     }
@@ -293,12 +301,12 @@ describe("a turn out of room", () => {
       const platform = await scripted([HOPS, "role-ok"]);
       const box = connect({ origin: platform.origin });
       const res = await callTool(box, "run_named_role", args);
-      expect(text(res), String(args)).toBe(HOPS);
+      expectRenewed(res, String(args));
       expect(posts(platform), String(args)).toHaveLength(1);
     }
   });
 
-  it("f9 a role given as a record address (Agent.Concept's address, however spelled) never rolls", async () => {
+  it("f9 a role given as a record address (Agent.Concept's address, however spelled) is never re-sent", async () => {
     // A fold of an address does not equal agentconcept (the slashes, dots and ids stay in it), so the fold alone would roll.
     const address = "https://veda.example.test/base/e/06gf80rjtdw3h9q187p80kx00m";
     const folded = address.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -307,7 +315,7 @@ describe("a turn out of room", () => {
       const platform = await scripted([HOPS, "role-ok"]);
       const box = connect({ origin: platform.origin });
       const res = await callTool(box, "run_named_role", { role, task: "x" });
-      expect(text(res), role).toBe(HOPS);
+      expectRenewed(res, role);
       expect(posts(platform), role).toHaveLength(1);
     }
   });
@@ -322,11 +330,11 @@ describe("a turn out of room", () => {
     expect(text(await callTool(box2, "run_named_role", JSON.stringify({ role: "Agent.Outcome", task: "x" })))).toBe("role-ok");
   });
 
-  it("f1 ask_agent_concept never rolls", async () => {
+  it("f1 ask_agent_concept is never re-sent", async () => {
     const platform = await scripted([ROUNDS]);
     const box = connect({ origin: platform.origin });
     const res = await callTool(box, "ask_agent_concept", { need: "a term" });
-    expect(text(res)).toBe(ROUNDS);
+    expectRenewed(res, "ask_agent_concept");
     expect(posts(platform)).toHaveLength(1);
   });
 

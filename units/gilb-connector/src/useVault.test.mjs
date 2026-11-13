@@ -305,6 +305,38 @@ describe("gilbplatform_use_vault", () => {
     expect(read.body.contentVaultIds).toBeUndefined();
   });
 
+  it("n1 a display name with spaces and capitals selects the vault (PictureRecords 20)", async () => {
+    const PR = "https://picturerecords20.example.test/base";
+    for (const said of ["PictureRecords 20", "picturerecords 20", "PICTURERECORDS20", "Picture-Records_20"]) {
+      const { box } = await boundBox([{ vaultId: PR, name: "PictureRecords 20" }, { vaultId: OTHER, name: "Other" }]);
+      const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: said } });
+      expect(toolText(call), said).toBe(using(PR, [PR]));
+      expect(call.result.isError, said).toBe(false);
+    }
+  });
+
+  it("n1 a display name whose host differs still matches by name, and a spaced query matches the host's first label", async () => {
+    const odd = "https://x7k2.example.test/base";
+    const { box } = await boundBox([{ vaultId: odd, displayName: "Picture Records 20" }]);
+    const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "PictureRecords 20" } });
+    expect(toolText(call)).toBe(using(odd, [odd]));
+    const lab = "https://picturerecords20.example.test/base";
+    const second = await boundBox([{ vaultId: lab }]);
+    const again = await second.box.request("tools/call", { name: USE_VAULT, arguments: { vault: "Picture Records 20" } });
+    expect(toolText(again)).toBe(using(lab, [lab]));
+  });
+
+  it("n1 two close names are the ambiguity answer, and an unmatched name is the usual refusal", async () => {
+    const A = "https://picturerecords20.example.test/base";
+    const B = "https://pr20b.example.test/base";
+    const { box } = await boundBox([{ vaultId: A, name: "PictureRecords 20" }, { vaultId: B, name: "Picture Records 20" }]);
+    const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "picturerecords 20" } });
+    expect(toolText(call)).toBe(`More than one vault matches picturerecords 20: ${A}, ${B}. Say which one.`);
+    const none = await boundBox([{ vaultId: A, name: "PictureRecords 20" }]);
+    const refused = await none.box.request("tools/call", { name: USE_VAULT, arguments: { vault: "PictureRecords 21" } });
+    expect(toolText(refused)).toBe(`No vault this AI can reach is called PictureRecords 21. It can reach: ${A}.`);
+  });
+
   it("u4 two matches names both and changes nothing", async () => {
     const { platform, box } = await boundBox([SHOP_A, SHOP_B], { vaults: [ALREADY] });
     const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "shop" } });
@@ -375,11 +407,11 @@ describe("gilbplatform_use_vault", () => {
     const { box } = await boundBox([NS, OTHER]);
     const before = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(before.result.isError).toBe(false);
-    expect(toolText(before)).toBe(`connector: 0.6.1\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
+    expect(toolText(before)).toBe(`connector: 0.6.2\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
     const call = await box.request("tools/call", { name: USE_VAULT, arguments: { vault: "testcarwashcouponapp" } });
     expect(toolText(call)).toBe(using(NS, [NS]));
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.6.1\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
+    expect(toolText(who)).toBe(`connector: 0.6.2\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
   });
 
   it("u7 not bound answers the not-bound sentence and selects nothing", async () => {
@@ -423,7 +455,7 @@ describe("gilbplatform_use_vault", () => {
     expect(posts[1].body.contentVaultIds).toEqual([ONLY]);
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
     expect(toolText(who)).toBe(
-      `connector: 0.6.1\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${ONLY} ${AUTO_VAULTS_NOTE}`,
+      `connector: 0.6.2\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${ONLY} ${AUTO_VAULTS_NOTE}`,
     );
     const listed = await box.request("tools/list", {});
     expect(listed.result.tools.map((tool) => tool.name)).toContain("read_record");
@@ -447,7 +479,7 @@ describe("gilbplatform_use_vault", () => {
     expect(later.filter((rec) => rec.body.name === "list_vaults")).toHaveLength(1);
     expect(later[later.length - 1].body.contentVaultIds).toBeUndefined();
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.6.1\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
+    expect(toolText(who)).toBe(`connector: 0.6.2\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: none`);
     expect(toolText(who)).not.toContain("selected automatically");
   });
 
@@ -485,7 +517,7 @@ describe("gilbplatform_use_vault", () => {
     expect(selected.result.isError).toBe(false);
     expect(toolText(selected)).toBe(using(NS, [NS]));
     const who = await box.request("tools/call", { name: "gilbplatform_whoami", arguments: {} });
-    expect(toolText(who)).toBe(`connector: 0.6.1\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
+    expect(toolText(who)).toBe(`connector: 0.6.2\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${AI_VAULT}\nstate: bound\nvaults: ${NS}`);
     expect(toolText(who)).not.toContain("selected automatically");
     const listsAfterPick = toolPosts(platform.requests).filter((rec) => rec.body.name === "list_vaults").length;
     ids.splice(0, ids.length, AI_VAULT, ONLY);
