@@ -50,6 +50,9 @@ export interface ClaudeCodeTurn {
   payer?: string;
 }
 
+/** What a code turn on this bridge may do: "full" (files and commands in a sandbox) or "files-only" (native Windows: no commands). */
+export type CodeMode = "full" | "files-only";
+
 export interface ClaudeCodeReply {
   role: "assistant";
   content: string;
@@ -57,6 +60,8 @@ export interface ClaudeCodeReply {
   payer: "person-claude-code";
   /** True when the turn ended because its tool rounds were used up. Absent otherwise. The page sends {@link BUDGET_SPENT_CONTINUE} to go on. */
   budgetSpent?: boolean;
+  /** Code mode only: "files-only" when the turn could not run commands (Windows). Absent for a full code turn and for chat. */
+  codeMode?: "files-only";
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -67,7 +72,49 @@ export type ClaudeCodeStreamEvent =
   | { event: "start"; data: { ok: true } }
   | { event: "tool"; data: { name: string; ok: boolean } }
   | { event: "slipped"; data: { ids: string[] } }
-  | { event: "standing"; data: unknown };
+  | { event: "standing"; data: unknown }
+  // Code mode only (the bridge's code turn). A malformed one is dropped, never thrown.
+  | { event: "code_activity"; data: { tool: string; summary: string } }
+  | { event: "code_tool_error"; data: { tool: string; summary: string; text: string } }
+  | { event: "files_changed"; data: FilesChanged }
+  | { event: "approval_request"; data: ApprovalRequest }
+  | { event: "approval_done"; data: { id: string; allow: boolean } };
+
+/** What a code turn changed in the folder, as the bridge counted it. Each list holds at most 200 relative paths. */
+export interface FilesChanged {
+  added: string[];
+  changed: string[];
+  removed: string[];
+  addedCount: number;
+  changedCount: number;
+  removedCount: number;
+  truncated: boolean;
+}
+
+/** One question the bridge puts to the person before a write or a command (approval "each-write"). */
+export interface ApprovalRequest {
+  id: string;
+  tool: string;
+  summary: string;
+  /** A second line, when the bridge sent one (for a command: the model's own description of it). */
+  detail?: string;
+}
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+
+/** Turns one bridge code event into a stream event, or null when its shape is wrong. */
+function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeStreamEvent | null {
+  if (name === "activity" && isStr(d.tool) && isStr(d.summary)) return { event: "code_activity", data: { tool: d.tool, summary: d.summary } };
+  if (name === "tool_error" && isStr(d.tool) && isStr(d.summary) && isStr(d.text)) return { event: "code_tool_error", data: { tool: d.tool, summary: d.summary, text: d.text } };
+  if (name === "files_changed" && isStrList(d.added) && isStrList(d.changed) && isStrList(d.removed) && isCount(d.addedCount) && isCount(d.changedCount) && isCount(d.removedCount) && typeof d.truncated === "boolean") {
+    return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
+  }
+  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}) } };
+  if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow } };
+  return null;
+}
 
 /** A message the person wrote while a Claude Code turn was already running. */
 export interface SlippedMessage {
@@ -142,6 +189,21 @@ export interface SendClaudeCodeOpts {
    * "none" on a subscription; the bridge stops any run that says otherwise.
    */
   onBridgeStatus?: (status: { nested: boolean; apiKeySource: string | null; model: string }) => void;
+  /**
+   * "code" runs the turn in the folder the bridge was started with (`--workspace`): Claude Code may read, edit and run commands there.
+   * Default "chat" (no tools). A hand-off's nested turn is always a chat turn.
+   */
+  mode?: "chat" | "code";
+  /**
+   * Code mode only. "session" (default): the person approved once, when they started the turn. "each-write": the bridge asks before
+   * each write and each command, and {@link onApproval} answers.
+   */
+  approval?: "session" | "each-write";
+  /**
+   * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
+   * throws or rejects, answers "no". The turn keeps running while this waits.
+   */
+  onApproval?: (req: ApprovalRequest) => Promise<boolean>;
 }
 
 /** What `/base/ai/claude-code/tool` answers when the tool is a hand-off: a nested turn for THIS page to run on the person's Claude Code. */
@@ -162,7 +224,18 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null }>;
+  /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
+  workspaceInfo(): Promise<{ name: string; path: string } | null>;
+  /**
+   * Opens the system's own folder dialog ON THE COMPUTER THE BRIDGE RUNS ON and waits for the person (up to 5 minutes), then keeps the
+   * chosen folder as the code folder. `suggest` (default "MyJackfruitCode") is only a name the page may offer to make with createWorkspace.
+   * Cancel -> { chosen: false }. A refusal (a folder that is not fit, a code turn running, no dialog on this computer) throws a ClaudeCodeBridgeError
+   * carrying the bridge's own sentence. Needs the pairing.
+   */
+  chooseWorkspace(suggest?: string): Promise<{ chosen: false } | { chosen: true; name: string; path: string }>;
+  /** Makes ~/<name> on the bridge's computer (no dialog), and keeps it as the code folder. A folder that already has files -> 409 with the bridge's sentence. */
+  createWorkspace(name: string): Promise<{ name: string; path: string }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
   pair(code: string): Promise<ClaudeCodeReadback>;
   /** Trades the code for a secret and returns it WITHOUT keeping it (for an app that stores it itself). */
@@ -213,7 +286,11 @@ interface BridgeTurnOut {
   model: string;
   sessionId: string | undefined;
   budgetSpent?: boolean;
+  codeMode?: "files-only";
 }
+
+/** The bridge events only a code turn sends. */
+const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done"]);
 
 interface SseEvent {
   event: string;
@@ -361,6 +438,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   const bridgeOrigin = new URL(bridgeUrl).origin;
   const RELAY_ALLOWED_HEADERS = ["content-type", "x-bridge-secret", "accept"];
   const RELAY_HEAD_TIMEOUT_MS = 15000;
+  /** The folder dialog may stay open 5 minutes on the bridge's side; the relay waits a little longer. */
+  const CHOOSE_HEAD_TIMEOUT_MS = 5 * 60 * 1000 + 30000;
   const RELAY_READY_TIMEOUT_MS = 10000;
   const RELAY_POLL_MS = 1000;
   const RELAY_CLOSED = "The Claude Code bridge window was closed. Open it again to go on.";
@@ -447,7 +526,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   }
 
   /** One request through the relay window. Resolves at the head with a Response whose body is fed by the window's messages. */
-  function relayRequest(path: string, init: RequestInit): Promise<Response> {
+  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS): Promise<Response> {
     const signal = init.signal ?? undefined;
     if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
     const headers: Record<string, string> = {};
@@ -486,7 +565,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       const headTimer = setTimeout(() => {
         abortRemote();
         fail(new ClaudeCodeBridgeError(0, notRunning()));
-      }, RELAY_HEAD_TIMEOUT_MS);
+      }, headTimeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       const stream = new ReadableStream<Uint8Array>({
         start(c) {
@@ -548,14 +627,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
    * THE one way to reach the bridge. The relay window open: the request goes through it, never also direct. Otherwise it is a
    * direct fetch. `keepalive` has no meaning through the relay (the window sends it), so it is dropped there.
    */
-  function bridgeRequest(path: string, init: RequestInit): Promise<Response> {
-    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init);
+  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
+    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs);
     return fetch(`${bridgeUrl}${path}`, init);
   }
 
-  async function bridgeFetch(path: string, init: RequestInit): Promise<Response> {
+  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
     try {
-      return await bridgeRequest(path, init);
+      return await bridgeRequest(path, init, headTimeoutMs);
     } catch (e) {
       if (init.signal?.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
       if (e instanceof ClaudeCodeBridgeError) throw e;
@@ -707,6 +786,47 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         );
       };
 
+      /** The bridge asks whether a write or command may go ahead: the page's handler answers, off the read loop. */
+      // Each open question can be let go: when the bridge says it is done (answered, timed out, the turn ended) or the turn ends,
+      // the wait for the app's handler stops (as "no") and nothing is posted for it, so a handler that never settles cannot hold the turn.
+      const questions = new Map<string, { done: boolean; release: () => void }>();
+      const closeQuestion = (id: string) => {
+        const q = questions.get(id);
+        if (!q) return;
+        q.done = true;
+        q.release();
+      };
+      const askPerson = (req: ApprovalRequest) => {
+        const q = { done: false, release: () => {} };
+        const released = new Promise<boolean>((resolve) => {
+          q.release = () => resolve(false);
+        });
+        questions.set(req.id, q);
+        handlers.push(
+          (async () => {
+            let allow = false;
+            try {
+              allow = (await Promise.race([Promise.resolve(opts.onApproval?.(req)), released])) === true;
+            } catch {
+              allow = false;
+            }
+            if (q.done || stop.signal.aborted) return;
+            try {
+              const back = await bridgeFetch("/v1/approval", {
+                signal: stop.signal,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
+                body: JSON.stringify({ turnId, id: req.id, allow }),
+              });
+              if (back.status === 401) throw bridgeForgotUs();
+              // 404 or 409: the question timed out or was answered already; nothing more to do.
+            } catch (err) {
+              if (!stop.signal.aborted) failTurn(err);
+            }
+          })(),
+        );
+      };
+
       let readErr: unknown = null;
       try {
         for await (const ev of readBridgeSse(res, stop.signal)) {
@@ -735,15 +855,24 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 content,
                 model: typeof data.model === "string" ? data.model : "",
                 sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined,
+                ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
               };
             }
           } else if (ev.event === "error") {
             streamError = typeof data.message === "string" ? data.message : "Claude Code could not answer.";
+          } else if (announceStart && CODE_BRIDGE_EVENTS.has(ev.event)) {
+            const ce = codeStreamEvent(ev.event, data);
+            if (ce) {
+              opts.onEvent?.(ce);
+              if (ce.event === "approval_request") askPerson(ce.data);
+              else if (ce.event === "approval_done") closeQuestion(ce.data.id);
+            }
           }
         }
       } catch (err) {
         readErr = err;
       }
+      for (const id of [...questions.keys()]) closeQuestion(id); // the stream ended: no question is still open
       // The turn is over. A turn that failed or was left stops its handlers and drops their answers; one that ended with
       // its answer waits for the handlers still running, so an answer the bridge cannot take is still reported.
       if (readErr || fatal !== null || streamError) abortAll();
@@ -869,7 +998,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     };
 
     // 2. The turn, on the person's computer. A session is reused only when it already covers the thread before this message.
-    const skey = `${sessionPrefix}${opts.thread}`;
+    // A code session lives in the bridge's code folder, a chat session in its empty one: they are never resumed into each other.
+    const codeMode = opts.mode === "code";
+    const skey = codeMode ? `${sessionPrefix}mode-code/${opts.thread}` : `${sessionPrefix}${opts.thread}`;
     let sessionId: string | undefined;
     try {
       const kept = JSON.parse(store()?.getItem(skey) ?? "null") as { sessionId?: string; covers?: number } | null;
@@ -885,6 +1016,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         system: ctx.system,
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
+        ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session" } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -903,6 +1035,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       model: out.model,
       payer: "person-claude-code",
       ...(out.budgetSpent ? { budgetSpent: true } : {}),
+      ...(out.codeMode ? { codeMode: out.codeMode } : {}),
     };
   }
 
@@ -924,15 +1057,64 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     async bridgeInfo() {
       try {
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
-        if (!res.ok) return { reachable: false, build: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown };
+        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown };
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,
+          // An older bridge sends neither.
+          codeTurns: body.codeTurns === true,
+          workspace: body.workspace === true,
+          codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
         };
       } catch {
-        return { reachable: false, build: null };
+        return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
       }
+    },
+
+    async workspaceInfo() {
+      const conn = client.load();
+      if (!conn) return null;
+      const res = await bridgeFetch("/v1/workspace", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bridge-secret": conn.secret },
+        body: "{}",
+      });
+      if (res.status === 404) return null;
+      if (res.status === 401) throw new ClaudeCodeBridgeError(401, "The bridge no longer knows this pairing. Press Connect and enter its new code.");
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, "The bridge could not tell its code folder.");
+      const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown } | null;
+      return body && typeof body.name === "string" && typeof body.path === "string" ? { name: body.name, path: body.path } : null;
+    },
+
+    async chooseWorkspace(suggest) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      // The bridge answers only when the person closes its dialog (up to 5 minutes); a direct fetch has no timeout of its own, and the relay's wait is longer here.
+      const res = await bridgeFetch(
+        "/v1/workspace/choose",
+        { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify(suggest === undefined ? {} : { suggest }) },
+        CHOOSE_HEAD_TIMEOUT_MS,
+      );
+      const body = (await res.json().catch(() => null)) as { chosen?: unknown; name?: unknown; path?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not open the folder dialog.");
+      if (body?.chosen === false) return { chosen: false };
+      if (body?.chosen === true && typeof body.name === "string" && typeof body.path === "string") return { chosen: true, name: body.name, path: body.path };
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+    },
+
+    async createWorkspace(name) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/workspace/create", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bridge-secret": conn.secret },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not make that folder.");
+      if (body && typeof body.name === "string" && typeof body.path === "string") return { name: body.name, path: body.path };
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
     },
 
     async requestSecret(code) {

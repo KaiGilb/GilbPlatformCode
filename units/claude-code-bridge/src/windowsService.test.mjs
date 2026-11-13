@@ -123,6 +123,15 @@ describe("quoting for the Windows command line", () => {
 });
 
 describe("--install on Windows", () => {
+  it("carries --workspace into the launcher command, like --allow-origin", async () => {
+    const w = world();
+    const out = await install(w, ["--workspace", "C:\\Users\\Anna Maria\\MyCode"]);
+    expect(out.ok).toBe(true);
+    const js = decode(Buffer.from(w.files.get(`${LOCAL}\\start-com.gilb.claude-code-bridge.js`.toLowerCase())));
+    const cmd = `"${NODE}" "${FILE}" --supervise --port 47821 --claude "${CLAUDE}" --state-dir "${STATE}" --workspace "C:\\Users\\Anna Maria\\MyCode" --label ${DEFAULT_LABEL}`;
+    expect(js).toContain(`sh.Run(${JSON.stringify(cmd)}, 0, false);`);
+  });
+
   it("writes exactly: one Run value, one launcher file and the log (nothing else), with a user name that has a space", async () => {
     const w = world();
     const out = await install(w, ["--allow-origin", "https://app.example.test"]);

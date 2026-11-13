@@ -78,6 +78,25 @@ Safari blocks an https page's direct fetch to `http://127.0.0.1:<port>` (mixed c
 - Nothing about the relay is kept. After a page reload the person opens it again with a click.
 - Browser proof (not `npm test`): `units/claude-code-bridge/scripts/check-relay-client-browser.mjs`.
 
+## Code mode
+
+With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be a code turn: Claude Code reads, edits and runs commands inside that one folder.
+
+- `bridgeInfo()` also returns `codeTurns` and `workspace`. Both are false when the bridge's hello does not say (an older bridge).
+- `workspaceInfo()` returns `{ name, path }` of the bridge's code folder, or null when it has none (a 404), or when you are not connected. It needs the pairing and goes through the relay when that is open.
+- `bridgeInfo()` also returns `codeMode`: `"full"`, `"files-only"` (native Windows: the code turn can read and write files but not run commands) or `null` (no folder, or an older bridge).
+- `chooseWorkspace(suggest?)` opens the system's own folder dialog on the computer the bridge runs on and waits for the person (the bridge allows up to 5 minutes; through the relay this client waits 5 minutes 30 seconds, a direct fetch has no timer). It returns `{ chosen: false }` when the person cancels, or `{ chosen: true, name, path }`; the bridge keeps the folder. `suggest` (default `MyJackfruitCode`) is only a name for a later `createWorkspace`. A refusal (409 a code turn is running, 422 the folder is not fit, 501 no dialog on this computer) throws a `ClaudeCodeBridgeError` with the bridge's own sentence.
+- `createWorkspace(name)` makes `~/<name>` on the bridge's computer without a dialog and keeps it as the code folder: `{ name, path }`. 409 when the folder already has files, 400 for a bad name.
+- The reply of a files-only code turn has `codeMode: "files-only"`; other replies leave it out. Show it plainly: this turn could not run commands.
+- `sendTurn` takes `mode: "code"` (default `"chat"`) and `approval`: `"session"` (default; the person approved once) or `"each-write"` (the bridge asks before each write and each command). A hand-off's nested turn is always a chat turn and never carries either.
+- `onApproval(req)` is called with `{ id, tool, summary, detail? }` when the bridge asks (for a command, `summary` is the command and `detail` the model's description). Resolve true to allow. With no `onApproval`, or one that throws or rejects, the answer is no. The turn keeps reading while the person decides. When the bridge closes a question (answered, timed out, the turn ended), the wait for your handler stops and nothing is posted for it, so a handler that never settles cannot hold the turn.
+- New events for `onEvent`, code turns only. A malformed one is dropped:
+  - `code_activity` `{ tool, summary }`
+  - `code_tool_error` `{ tool, summary, text }`
+  - `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`
+  - `approval_request` `{ id, tool, summary }` and `approval_done` `{ id, allow }`
+- A code turn and a chat turn of one thread keep separate session ids: a code session lives in the code folder and cannot be resumed into the chat one.
+
 ## Slipping a message into a running turn
 
 `sendTurn` takes an optional `takeSlipped`. When a top-level tool answer is about to go back to Claude Code, the client calls it and, if it returns messages, appends them after that tool's own result (`slippedSuffix`) and emits a `slipped` event with their ids. The text rides on the next top-level tool answer only: a hand-off's nested turn never takes it. A turn that makes no more tool calls never calls `takeSlipped`; the host then sends the message after the turn.
