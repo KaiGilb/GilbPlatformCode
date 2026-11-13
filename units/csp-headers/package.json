@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-csp-headers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Vite plugin that makes one policy file the page's Content-Security-Policy meta tag, the header on the dev and preview servers, and the build's _headers file.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.9"
+  }
+}

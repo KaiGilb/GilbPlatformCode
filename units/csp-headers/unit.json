@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/csp-headers",
+  "package": "@kaigilb/gilbplatformcode-csp-headers",
+  "version": "0.1.0",
+  "purpose": "A Vite plugin that makes one policy file the page's Content-Security-Policy meta tag, the header on the dev and preview servers, and the build's _headers file.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.ts",
+    "src/csp.ts",
+    "src/plugin.ts",
+    "src/csp.test.ts",
+    "src/plugin.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "transformPolicy",
+      "replaces": "run-8 app/vite.config.ts: fakePolicy and withDevSocket (the fake-mode connect-src swap and the dev websocket)"
+    },
+    {
+      "member": "exclude",
+      "replaces": "run-8 app/vite.config.ts: the Studio-path test in headerFor and the index/fake html test in transformIndexHtml"
+    },
+    {
+      "member": "extraHeaders",
+      "replaces": "run-8 app/vite.config.ts: the nosniff, referrer and permissions lines of _headers"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:File.headers",
+    "title": "CSP headers (one policy file to meta tag, dev header and _headers)",
+    "note": "Vite plugin, Node only: reads one policy file (default security/csp.txt) and writes the Content-Security-Policy meta tag into index.html (without frame-ancestors, which a meta tag cannot carry), sets the header on the dev and preview servers, and writes or merges dist/_headers for Cloudflare Pages. Per-app parts come in as exclude and transformPolicy; the pure helpers readPolicy, metaPolicy, headersFileText need no Vite. Needs no vite package. Also found as: content security policy; CSP header; security headers; _headers file; Cloudflare headers; meta CSP."
+  }
+}
