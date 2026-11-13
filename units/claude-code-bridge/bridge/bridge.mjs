@@ -496,11 +496,20 @@ const APP_FOLDER_SENTENCE = "Make each new app in its own subfolder of the code 
 const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder.";
 /** Printed by a start and by --install when --full-access is on. */
 export const FULL_ACCESS_NOTICE = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.";
+const computerProjectParagraph = (project, p, folder) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
+const PROJECT_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this project folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 const computerParagraph = (name, p) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
 const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder.";
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
+/** A project name: 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit (so never "." or ".."). */
+export const validProjectName = (n) => typeof n === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
+/** Windows reserved device names (with or without an extension), refused on every platform so a project folder can move between computers. */
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+const projectNameOk = (n) => validProjectName(n) && n.toLowerCase() !== "node_modules" && !WIN_RESERVED.test(n) && !/[. ]$/.test(n);
+const PROJECT_CHANGED = "The project folder changed on disk.";
+const NO_SUCH_PROJECT = "No such project.";
 const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
@@ -643,7 +652,18 @@ function toolSummary(tool, input, roots) {
 }
 /** Every summary shown to the person is one bounded piece of text. */
 const SUMMARY_CAP = 300;
-const cap = (s, n = SUMMARY_CAP) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const cap = (s, n = SUMMARY_CAP) => {
+    if (s.length <= n)
+        return s;
+    // Cut by code point, never inside a surrogate pair; the result with "…" is at most n UTF-16 units.
+    let out = "";
+    for (const c of s) {
+        if (out.length + c.length > n - 1)
+            break;
+        out += c;
+    }
+    return `${out}…`;
+};
 const SNAPSHOT_CAP = 20000;
 const LIST_CAP = 200;
 /** Every file under `root` as relative path -> size and mtime. lstat only (a symlink is one entry, never followed); .git and node_modules skipped. */
@@ -820,6 +840,7 @@ export function createBridge(opts = {}) {
     let workspace = null;
     /** The folder as it was given (a symlink may differ from its real path): tool summaries accept both. */
     let workspaceGiven = null;
+    const turnRoots = (t) => (t.proj ? [t.proj.path] : workspace ? workspaceRoots() : []);
     const workspaceRoots = () => (workspace ? [workspace.path, workspaceGiven ?? workspace.path] : []);
     function saveWorkspace(real) {
         if (!opts.workspaceFile)
@@ -883,6 +904,37 @@ export function createBridge(opts = {}) {
             workspaceGiven = null;
         }
         return ok;
+    }
+    /** Is the project still the folder that was checked: a real directory (not a link), the same real path, device and inode? */
+    function projectStillGood(pr) {
+        try {
+            const st = fs.lstatSync(pr.path);
+            if (!st.isDirectory() || st.isSymbolicLink())
+                return false;
+            return realPath(pr.path) === pr.path && pr.id !== "" && idOf(pr.path) === pr.id;
+        }
+        catch {
+            return false;
+        }
+    }
+    /** A direct subfolder of the code folder named `name`, as a real directory (never a link): its real path and identity, or null. */
+    function resolveProject(name) {
+        if (!workspace || !projectNameOk(name))
+            return null;
+        try {
+            const cand = path.join(workspace.path, name);
+            const st = fs.lstatSync(cand);
+            if (!st.isDirectory() || st.isSymbolicLink())
+                return null;
+            const real = realPath(cand);
+            if (path.dirname(real) !== workspace.path)
+                return null;
+            const id = idOf(real);
+            return id === "" ? null : { path: real, name: path.basename(real), id };
+        }
+        catch {
+            return null;
+        }
     }
     /** Is this init `cwd` (the child's own getcwd()) the checked folder: a string, the same real path, and the same device and inode? */
     function childRunsIn(cwd, want) {
@@ -1194,20 +1246,21 @@ export function createBridge(opts = {}) {
      * link's target. A symlink that cannot be resolved (dangling) anywhere on the way counts as outside. A path that starts with `~` is a
      * home-relative path (Claude Code expands it) and is outside; so is one that starts with `$` (a variable no tool expands, but never a path to trust).
      */
-    function insideWorkspace(p) {
+    function insideWorkspace(p, root0) {
         if (!workspace || typeof p !== "string" || !p || p.includes("\0") || p.startsWith("~") || p.startsWith("$"))
             return false;
         // Resolved physically as written, and physically again after a plain lexical normalisation (a tool may drop "x/.." before it looks at the disk),
         // and the lexical result must itself be inside.
-        const lexical = path.resolve(workspace.path, p);
-        return physicallyInside(p) && physicallyInside(lexical) && within(lexical);
+        const base = root0 ?? workspace.path;
+        const lexical = path.resolve(base, p);
+        return physicallyInside(p, base) && physicallyInside(lexical, base) && within(lexical, base);
     }
-    function physicallyInside(p) {
+    function physicallyInside(p, base) {
         if (!workspace)
             return false;
         // An absolute path starts at its root ("/" or "C:\\"); the root is not a segment to walk.
         const root = path.isAbsolute(p) ? path.parse(p).root : "";
-        let cur = root || workspace.path;
+        let cur = root || (base ?? workspace.path);
         let exists = true;
         for (const seg of p.slice(root.length).split(/[\\/]+/)) {
             if (seg === "" || seg === ".")
@@ -1239,21 +1292,21 @@ export function createBridge(opts = {}) {
                 }
             }
         }
-        return within(cur);
+        return within(cur, base);
     }
     /** Is `p` the code folder or below it? Compared as text: NFC-normalised, and case-insensitively on macOS and Windows. Nothing is rewritten. */
-    function within(p) {
+    function within(p, base) {
         if (!workspace)
             return false;
         const pp = opts.pathPlatform ?? platform;
         const ci = pp === "darwin" || pp === "win32";
         const norm = (x) => (ci ? x.normalize("NFC").toLowerCase() : x.normalize("NFC"));
-        const root = norm(workspace.path).replace(/[\\/]+$/, "");
+        const root = norm(base ?? workspace.path).replace(/[\\/]+$/, "");
         const c = norm(p);
         return c === root || c.startsWith(root + path.sep) || c.startsWith(`${root}/`);
     }
     /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
-    function askPerson(turn, tool, summary, detail = "") {
+    function askPerson(turn, tool, summary, detail = "", notice = "") {
         return new Promise((resolve) => {
             const id = crypto.randomBytes(8).toString("hex");
             let timer;
@@ -1271,9 +1324,96 @@ export function createBridge(opts = {}) {
             };
             turn.approvals.set(id, entry);
             timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-            turn.send("approval_request", { id, tool, summary: cap(summary), ...(detail ? { detail: cap(detail, 200) } : {}) });
+            turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}), ...(notice ? { notice } : {}) });
         });
     }
+    /** Approval text is never cut: a run of whitespace is one space, and a text over the limit is not asked about at all. */
+    const APPROVAL_COMMAND_MAX = 2000;
+    const APPROVAL_PATH_MAX = 1000;
+    /** Any character that could hide part of a question: C0/C1 controls (but not TAB, LF, CR), Unicode format characters (bidi, zero-width, soft hyphen, BOM ...) and blank fillers. */
+    const HIDDEN_CHARS = /[\p{Cc}\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u180E]/u;
+    // Also: after NFC, a combining mark that stays (strike-through, stacked marks, ...) hides or alters what is read. Ordinary accented letters compose to one character and pass.
+    const hasHidden = (x) => HIDDEN_CHARS.test(x.replace(/[\t\n\r]/g, "")) || /\p{M}/u.test(x.normalize("NFC"));
+    const HAS_BREAK = /[\n\r\u2028\u2029]/;
+    const HIDDEN_MSG = "The request contains hidden or control characters, so it cannot be shown for approval; ask for it without them.";
+    /** Text shown to the person: every line break (LF, CRLF, CR, U+2028, U+2029) is one " ⏎ " marker; runs of spaces, tabs and other space separators are one space. */
+    /** Commands, URLs and queries: every non-ASCII character is shown as <U+XXXX> (a typed ⏎ included, so it cannot fake a line break marker). U+2028 and U+2029 are left for showText, which marks them as line breaks. */
+    const escapeNonAscii = (x) => x.replace(/[^\x00-\x7F]/gu, (c) => { const cp = c.codePointAt(0); return cp === 0x2028 || cp === 0x2029 ? c : `<U+${cp.toString(16).toUpperCase().padStart(4, "0")}>`; });
+    const showCommand = (x) => showText(escapeNonAscii(x));
+    /** The first detail line of a question about a path with non-ASCII characters: each distinct code point once, in order of first appearance (20 at most, then "…"). "" when the path is plain ASCII. */
+    const nonAsciiNote = (texts) => {
+        const seen = [];
+        for (const t of texts)
+            for (const c of t) {
+                const cp = c.codePointAt(0);
+                if (cp > 0x7f) {
+                    const u = `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+                    if (!seen.includes(u))
+                        seen.push(u);
+                }
+            }
+        return seen.length === 0 ? "" : `Path contains non-ASCII characters: ${seen.slice(0, 20).join(" ")}${seen.length > 20 ? " …" : ""}`;
+    };
+    /** The model's description: the only thing `detail` ever holds (capped at 200). The bridge's own lines go in `notice`, a separate field the page can show apart. */
+    const descOf = (desc) => cap(desc, 200);
+    const NOTICE_MAX = 400;
+    const HOST_LINE_MAX = 300;
+    const TOO_LONG_ADDRESS = "The address is too long to show for approval; ask for it without that.";
+    /** Tools whose fields are not paths: no path note. Every other tool (MultiEdit, MCP tools ...) gets it for file_path, notebook_path and path. */
+    const NOT_PATH_TOOLS = new Set(["Bash", "WebFetch", "WebSearch"]);
+    const PATH_KEYS = new Set(["file_path", "notebook_path", "path"]);
+    /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys at the TOP level (the only ones pathNote covers), which keep their characters. Nested path keys are escaped like any other string. */
+    const escapeInput = (v, top = false) => {
+        if (typeof v === "string")
+            return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
+        if (Array.isArray(v))
+            return v.map((x) => escapeInput(x));
+        if (v && typeof v === "object") {
+            // No prototype: an own "__proto__" key is a plain key here, so JSON.stringify shows it.
+            const o = Object.create(null);
+            for (const [k, x] of Object.entries(v))
+                o[escapeNonAscii(k)] = top && PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
+            return o;
+        }
+        return v;
+    };
+    const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
+    const BAD_TOOL_MSG = "The tool name is not valid.";
+    const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+    const RESERVED_MSG = "The request holds a reserved key (__proto__, constructor or prototype); ask for it without that.";
+    const LOOKALIKE_MSG = "Two fields in the request look the same; ask for it without that.";
+    /** A message when the input holds a reserved key at any depth, or two keys of one object that show as the same text; "" when fine. Iterative, so depth cannot overflow the stack. */
+    const inputKeyProblem = (root) => {
+        const stack = [root];
+        let dup = "";
+        while (stack.length > 0) {
+            const v = stack.pop();
+            if (Array.isArray(v)) {
+                for (const x of v)
+                    stack.push(x);
+            }
+            else if (v && typeof v === "object") {
+                const seen = new Set();
+                for (const [k, x] of Object.entries(v)) {
+                    if (RESERVED_KEYS.has(k))
+                        return RESERVED_MSG;
+                    const e = escapeNonAscii(k);
+                    if (seen.has(e))
+                        dup = LOOKALIKE_MSG;
+                    seen.add(e);
+                    stack.push(x);
+                }
+            }
+        }
+        return dup;
+    };
+    const pathNote = (tool, input) => (!NOT_PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string")) : "");
+    const ONLY_HTTP_MSG = "Only http and https addresses can be fetched.";
+    const USERINFO_MSG = "The address hides its real host (user@host form); ask for it without that.";
+    const showText = (x) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
+    const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
+    const TOO_LONG_PATH = "The path is too long to show for approval.";
+    const TOO_LONG_REQUEST = "The request is too long to show for approval; ask for it in smaller steps.";
     /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
     async function decideApproval(turn, args) {
         if (opts.logApproveArgs)
@@ -1282,22 +1422,69 @@ export function createBridge(opts = {}) {
         const input = args.input && typeof args.input === "object" ? args.input : {};
         const deny = (message) => ({ behavior: "deny", message });
         const str = (v) => (typeof v === "string" ? v : "");
+        const scope = turn.proj?.path ?? workspace?.path ?? "";
+        if (!TOOL_NAME_OK.test(tool))
+            return deny(BAD_TOOL_MSG);
+        const keyProblem = inputKeyProblem(input);
+        if (keyProblem)
+            return deny(keyProblem);
         if (computer) {
             // Computer mode: every request is asked of the person, no automatic allow or deny by path.
             let summary;
             let detail = "";
+            let notice = "";
+            // A path is shown exactly: a line break or a hidden character in any path field is a denial; so is a path over the limit.
+            for (const k of ["file_path", "notebook_path", "path"]) {
+                const v = input[k];
+                if (typeof v === "string") {
+                    if (hasHidden(v) || HAS_BREAK.test(v))
+                        return deny(HIDDEN_MSG);
+                    if (v.length > APPROVAL_PATH_MAX)
+                        return deny(TOO_LONG_PATH);
+                }
+            }
+            if (hasHidden(tool) || hasHidden(str(input.description)))
+                return deny(HIDDEN_MSG);
             if (tool === "Bash") {
-                summary = cap(str(input.command).replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
-                detail = str(input.description);
+                const c = str(input.command);
+                if (hasHidden(c))
+                    return deny(HIDDEN_MSG);
+                summary = showCommand(c) || "Bash";
+                if (summary.length > APPROVAL_COMMAND_MAX)
+                    return deny(TOO_LONG_COMMAND);
+                detail = descOf(showText(str(input.description)));
             }
             else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
                 const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
-                summary = cap(p ? (path.isAbsolute(p) ? p : path.resolve(workspace ? workspace.path : "/", p)) : tool);
+                // "~" and "$" paths are shown exactly as given (never resolved against the folder); absolute as given; other relative ones resolved against the start folder.
+                summary = p ? (p.startsWith("~") || p.startsWith("$") || path.isAbsolute(p) ? p : path.resolve(scope || "/", p)) : tool;
+                if (summary.length > APPROVAL_PATH_MAX)
+                    return deny(TOO_LONG_PATH);
             }
-            else if (tool === "WebFetch")
-                summary = cap(str(input.url) || tool);
-            else if (tool === "WebSearch")
-                summary = cap(str(input.query) || tool);
+            else if (tool === "WebFetch" || tool === "WebSearch") {
+                const t = str(tool === "WebFetch" ? input.url : input.query);
+                if (hasHidden(t))
+                    return deny(HIDDEN_MSG);
+                summary = showCommand(t) || tool;
+                if (tool === "WebFetch") {
+                    let host;
+                    try {
+                        const u = new URL(t);
+                        if ((u.protocol !== "http:" && u.protocol !== "https:") || !u.hostname)
+                            return deny(ONLY_HTTP_MSG);
+                        if (u.username || u.password)
+                            return deny(USERINFO_MSG);
+                        host = u.hostname;
+                    }
+                    catch {
+                        return deny(ONLY_HTTP_MSG); // does not parse: nothing to ask about
+                    }
+                    const line = `Host: ${host}`;
+                    if (line.length > HOST_LINE_MAX)
+                        return deny(TOO_LONG_ADDRESS);
+                    notice = line;
+                }
+            }
             else {
                 let j = "";
                 try {
@@ -1306,13 +1493,29 @@ export function createBridge(opts = {}) {
                 catch {
                     /* not printable */
                 }
-                summary = cap(`${tool || "tool"} ${j}`.trim());
+                if (hasHidden(j))
+                    return deny(HIDDEN_MSG);
+                let ej = j;
+                try {
+                    ej = JSON.stringify(escapeInput(input, true));
+                }
+                catch {
+                    /* not printable */
+                }
+                summary = showText(`${escapeNonAscii(tool || "tool")} ${ej}`);
             }
-            const a = await askPerson(turn, tool, summary, detail);
+            if (summary.length > APPROVAL_COMMAND_MAX)
+                return deny(TOO_LONG_REQUEST);
+            const note = pathNote(tool, input);
+            if (note)
+                notice = notice ? `${notice}\n${note}` : note;
+            if (notice.length > NOTICE_MAX)
+                return deny(TOO_LONG_ADDRESS);
+            const a = await askPerson(turn, tool, summary, detail, notice);
             return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
         }
         if (tool === "Read") {
-            if (!insideWorkspace(str(input.file_path)))
+            if (!insideWorkspace(str(input.file_path), scope))
                 return deny("Outside the code folder.");
             return { behavior: "allow", updatedInput: input };
         }
@@ -1320,7 +1523,7 @@ export function createBridge(opts = {}) {
             // `path`: absent means the folder itself; present it must be a non-empty string inside the folder (no "~", no non-string).
             if (input.path !== undefined && (typeof input.path !== "string" || input.path === ""))
                 return deny("Outside the code folder.");
-            if (!insideWorkspace(str(input.path) || (workspace ? workspace.path : "")))
+            if (!insideWorkspace(str(input.path) || scope, scope))
                 return deny("Outside the code folder.");
             // A glob (Glob's pattern, Grep's glob filter) may use only plain characters, no climbing out and no absolute start.
             const glob = tool === "Glob" ? input.pattern : input.glob;
@@ -1338,20 +1541,35 @@ export function createBridge(opts = {}) {
             if (typeof main !== "string" || main === "")
                 return deny("Outside the code folder.");
             for (const k of ["file_path", "notebook_path", "path"]) {
-                if (input[k] !== undefined && (typeof input[k] !== "string" || !insideWorkspace(input[k])))
+                if (input[k] !== undefined && (typeof input[k] !== "string" || !insideWorkspace(input[k], scope)))
                     return deny("Outside the code folder.");
             }
-            summary = toolSummary(tool, input, workspace ? workspaceRoots() : []);
+            for (const k of ["file_path", "notebook_path", "path"]) {
+                const v = input[k];
+                if (typeof v === "string" && (hasHidden(v) || HAS_BREAK.test(v)))
+                    return deny(HIDDEN_MSG);
+            }
+            if (str(main).length > APPROVAL_PATH_MAX)
+                return deny(TOO_LONG_PATH);
+            summary = toolSummary(tool, input, turnRoots(turn)); // the path inside the folder, shown exactly
         }
         else if (tool === "Bash") {
-            // The question shows the command itself; the model's own description is only a second line.
-            summary = cap(String(input.command ?? "").replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
-            detail = str(input.description);
+            // The question shows the whole command (whitespace collapsed, never cut); the model's own description is only a second line.
+            const c = str(input.command);
+            if (hasHidden(c) || hasHidden(str(input.description)))
+                return deny(HIDDEN_MSG);
+            summary = showCommand(c) || "Bash";
+            if (summary.length > APPROVAL_COMMAND_MAX)
+                return deny(TOO_LONG_COMMAND);
+            detail = descOf(showText(str(input.description)));
         }
         else {
             return deny("This tool is not allowed in a code turn.");
         }
-        const a = await askPerson(turn, tool, summary, detail);
+        const notice = pathNote(tool, input);
+        if (notice.length > NOTICE_MAX)
+            return deny(TOO_LONG_ADDRESS);
+        const a = await askPerson(turn, tool, summary, detail, notice);
         return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
     function relayToolCall(turn, name, args, rpcId) {
@@ -1493,7 +1711,7 @@ export function createBridge(opts = {}) {
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
             "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
-            "--append-system-prompt", `${turn.system}\n\n${computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}`,
+            "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}`,
             "--system-prompt-snapshot", "off",
         ];
         if (mode.resume)
@@ -1525,7 +1743,9 @@ export function createBridge(opts = {}) {
             "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")),
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
-            "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+            "--append-system-prompt", turn.proj
+                ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`
+                : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
         ] : [
             "-p",
             "--output-format", "stream-json",
@@ -1561,7 +1781,7 @@ export function createBridge(opts = {}) {
             if (!b || typeof b !== "object")
                 continue;
             if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__")) {
-                const summary = toolSummary(b.name, (b.input ?? {}), workspace ? workspaceRoots() : []);
+                const summary = toolSummary(b.name, (b.input ?? {}), turnRoots(turn));
                 if (typeof b.id === "string")
                     tracked.set(b.id, { tool: b.name, summary });
                 turn.send("activity", { tool: b.name, summary: cap(summary) });
@@ -1584,17 +1804,20 @@ export function createBridge(opts = {}) {
             // The last look at the folder before the child starts there.
             if (turn.code && !folderStillGood())
                 return resolve({ error: CODE_FOLDER_CHANGED, sessionId: mode.sessionId, model: "" });
+            if (turn.code && turn.proj && !projectStillGood(turn.proj))
+                return resolve({ error: PROJECT_CHANGED, sessionId: mode.sessionId, model: "" });
             // What the child must report as its own working folder (its init event's cwd is its getcwd()): the checked real path and identity.
-            const expectFolder = turn.code && workspace ? { path: workspace.path, id: workspace.id } : null;
+            const scope = turn.proj ?? workspace;
+            const expectFolder = turn.code && scope ? { path: scope.path, id: scope.id } : null;
             if (turn.code)
                 opts.beforeSpawn?.();
             let child;
             try {
                 child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
-                    cwd: turn.code && workspace ? workspace.path : workDir,
+                    cwd: turn.code && scope ? scope.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
                     // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-                    env: turn.code ? (computer ? childEnv(env) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
+                    env: turn.code ? (computer ? childEnv(env) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });
@@ -1721,6 +1944,7 @@ export function createBridge(opts = {}) {
         if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write")
             return json(res, 400, { error: 'approval must be "session" or "each-write"' });
         const isCode = body.mode === "code";
+        let proj = null;
         if (isCode) {
             if (typeof body.parentTurnId === "string" && body.parentTurnId)
                 return json(res, 400, { error: "A hand-off cannot be a code turn." });
@@ -1728,8 +1952,16 @@ export function createBridge(opts = {}) {
                 return json(res, 409, { error: NO_WORKSPACE });
             if (dialogOpen)
                 return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
-            if ([...turns.values()].some((t) => t.code))
-                return json(res, 429, { error: `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
+            if (body.project !== undefined) {
+                proj = resolveProject(body.project);
+                if (!proj)
+                    return json(res, 400, { error: NO_SUCH_PROJECT });
+            }
+            // One code turn at a time per project (or per code folder itself, when no project is named).
+            const key = proj ? proj.path : workspace.path;
+            if ([...turns.values()].some((t) => t.code && (t.proj ? t.proj.path : workspace.path) === key)) {
+                return json(res, 429, { error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
+            }
         }
         // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
         // that asked and, when it knows it, the call that asked. One level only, up to MAX_HANDOFFS_AT_ONCE at once, on the
@@ -1769,11 +2001,13 @@ export function createBridge(opts = {}) {
         const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
         // Code turn: the snapshot of the folder comes first (it can take a while on a big folder), and the folder is checked again
         // immediately before the spawn, so a swap during the snapshot is seen. The child's cwd is the checked real path.
-        const before = isCode && workspace ? snapshotFolder(workspace.path) : null;
+        const before = isCode && workspace ? snapshotFolder(proj ? proj.path : workspace.path) : null;
         if (isCode) {
             opts.afterSnapshot?.();
             if (!folderStillGood())
                 return json(res, 409, { error: CODE_FOLDER_CHANGED });
+            if (proj && !projectStillGood(proj))
+                return json(res, 409, { error: PROJECT_CHANGED });
         }
         const turn = {
             id: crypto.randomBytes(8).toString("hex"),
@@ -1792,6 +2026,7 @@ export function createBridge(opts = {}) {
             root: parent ? parent.root : { calls: 0 },
             budgetSpent: false,
             code: isCode,
+            proj,
             approval: isCode && body.approval === "each-write" ? "each-write" : "session",
             approvals: new Map(),
             owner: sha(String(req.headers["x-bridge-secret"])).toString("hex"),
@@ -1856,7 +2091,7 @@ export function createBridge(opts = {}) {
         });
         const sendFilesChanged = () => {
             if (before && workspace)
-                turn.send("files_changed", diffSnapshots(before, snapshotFolder(workspace.path)));
+                turn.send("files_changed", diffSnapshots(before, snapshotFolder(proj ? proj.path : workspace.path)));
         };
         try {
             // A resumed session already holds the thread. A new one is given the earlier turns as text.
@@ -1882,7 +2117,7 @@ export function createBridge(opts = {}) {
                     content: String(out.result.result ?? ""),
                     model: out.model,
                     payer: "person-claude-code",
-                    ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}) } : {}),
+                    ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
                     sessionId: out.sessionId,
                     // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
                     ...(turn.budgetSpent ? { budgetSpent: true } : {}),
@@ -1946,6 +2181,65 @@ export function createBridge(opts = {}) {
             return json(res, 422, { error: v.reason });
         switchTo(v);
         return json(res, 200, { chosen: true, name: v.name, path: v.path });
+    }
+    // ---- projects: the direct subfolders of the code folder ----------------------------------------------------------
+    const PROJECT_LIST_CAP = 500;
+    function handleProjects(res) {
+        if (workspace)
+            folderStillGood();
+        if (!workspace)
+            return json(res, 404, { error: NO_WORKSPACE });
+        const out = [];
+        try {
+            for (const e of fs.readdirSync(workspace.path)) {
+                if (e.startsWith(".") || !projectNameOk(e))
+                    continue;
+                try {
+                    const st = fs.lstatSync(path.join(workspace.path, e));
+                    if (st.isDirectory() && !st.isSymbolicLink())
+                        out.push({ name: e, modified: st.mtime.toISOString() });
+                }
+                catch {
+                    /* gone while listing */
+                }
+            }
+        }
+        catch (e) {
+            return json(res, 500, { error: `Could not read the code folder: ${e?.message ?? e}` });
+        }
+        out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+        return json(res, 200, { projects: out.slice(0, PROJECT_LIST_CAP) });
+    }
+    async function handleProjectCreate(req, res) {
+        let body;
+        try {
+            body = await readBody(req);
+        }
+        catch (e) {
+            return json(res, e.status ?? 400, { error: e.message });
+        }
+        if (workspace)
+            folderStillGood();
+        if (!workspace)
+            return json(res, 404, { error: NO_WORKSPACE });
+        if (dialogOpen)
+            return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+        const name = body.name;
+        if (!projectNameOk(name))
+            return json(res, 400, { error: "name must be 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit." });
+        const exists = "A project with this name already exists.";
+        const ci = (opts.pathPlatform ?? platform) === "darwin" || (opts.pathPlatform ?? platform) === "win32";
+        try {
+            if (ci && fs.readdirSync(workspace.path).some((e) => e.toLowerCase() === name.toLowerCase()))
+                return json(res, 409, { error: exists });
+            fs.mkdirSync(path.join(workspace.path, name), { mode: 0o700 });
+        }
+        catch (e) {
+            if (e.code === "EEXIST")
+                return json(res, 409, { error: exists });
+            return json(res, 500, { error: `Could not make the project: ${e?.message ?? e}` });
+        }
+        return json(res, 200, { name });
     }
     async function handleCreate(req, res) {
         let body;
@@ -2077,6 +2371,10 @@ export function createBridge(opts = {}) {
             if (req.method === "POST" && url.pathname === "/v1/workspace") {
                 return workspace ? json(res, 200, { name: workspace.name, path: workspace.path }) : json(res, 404, { error: NO_WORKSPACE });
             }
+            if (req.method === "POST" && url.pathname === "/v1/projects")
+                return handleProjects(res);
+            if (req.method === "POST" && url.pathname === "/v1/projects/create")
+                return handleProjectCreate(req, res);
             if (req.method === "POST" && url.pathname === "/v1/workspace/choose")
                 return handleChoose(req, res);
             if (req.method === "POST" && url.pathname === "/v1/workspace/create")
@@ -3206,7 +3504,7 @@ Gilb Claude Code bridge
   Listening:    http://127.0.0.1:${bridge.port}  (this computer only)
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
-  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`, tools off (no shell, no files, no web)
+  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${cli.fullAccess ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
 ${cli.fullAccess ? `  ${FULL_ACCESS_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${cli.fullAccess ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)

@@ -274,6 +274,79 @@ describe("chooseWorkspace and createWorkspace", () => {
   });
 });
 
+describe("projects (0.3.0)", () => {
+  it("listProjects and createProject post to the bridge; the bridge's sentences come through; not connected is 401", async () => {
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 401 });
+    await expect(client.createProject("a")).rejects.toMatchObject({ status: 401 });
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { projects: [{ name: "alpha", modified: "2026-11-13T10:00:00.000Z" }, { name: "" }, { nope: 1 }] }));
+    expect(await client.listProjects()).toEqual([{ name: "alpha", modified: "2026-11-13T10:00:00.000Z" }]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`${BRIDGE}/v1/projects`);
+    fetchMock.mockResolvedValueOnce(json(404, { error: "This bridge has no code folder. Start it with --workspace <folder>." }));
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 404, message: "This bridge has no code folder. Start it with --workspace <folder>." });
+    fetchMock.mockResolvedValueOnce(json(200, { projects: "x" }));
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 502 });
+    fetchMock.mockResolvedValueOnce(json(200, { name: "alpha" }));
+    expect(await client.createProject("alpha")).toEqual({ name: "alpha" });
+    const [url, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe(`${BRIDGE}/v1/projects/create`);
+    expect(JSON.parse(String(init.body))).toEqual({ name: "alpha" });
+    fetchMock.mockResolvedValueOnce(json(409, { error: "A project with this name already exists." }));
+    await expect(client.createProject("alpha")).rejects.toMatchObject({ status: 409, message: "A project with this name already exists." });
+  });
+
+  it("a turn with project sends it in the body, keeps the session per project, and passes the reply's project through", async () => {
+    client.save("s3cret");
+    const S1 = "11111111-2222-4333-8444-555555555555";
+    const S2 = "99999999-2222-4333-8444-555555555555";
+    let calls = fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    const r = await client.sendTurn([{ role: "user", content: "one" }], { thread: "T", mode: "code", project: "alpha" });
+    expect(turnBody(calls)).toMatchObject({ mode: "code", project: "alpha" });
+    expect(r).toMatchObject({ project: "alpha" });
+    expect(localStorage.getItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`)).toContain(S1);
+    // another project (and no project) of the same thread do not resume it
+    calls = fakeBridge([["message", { role: "assistant", content: "b", model: "m", sessionId: S2, mode: "code", project: "beta" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "T", mode: "code", project: "beta" });
+    expect(turnBody(calls)).not.toHaveProperty("sessionId");
+    calls = fakeBridge([["message", { role: "assistant", content: "c", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "T", mode: "code", project: "alpha" });
+    expect(turnBody(calls).sessionId).toBe(S1);
+    calls = fakeBridge([["message", { role: "assistant", content: "d", model: "m", sessionId: S2, mode: "code" }]]);
+    const r2 = await client.sendTurn([{ role: "user", content: "x" }], { thread: "T", mode: "code" });
+    expect(turnBody(calls)).not.toHaveProperty("project");
+    expect(r2).not.toHaveProperty("project");
+  });
+
+  it("the stored session keys are encoded per component: project alpha + thread notes differs from no project + thread alpha/notes", async () => {
+    client.save("s3cret");
+    const S1 = "11111111-2222-4333-8444-555555555555";
+    fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }], { thread: "notes", mode: "code", project: "alpha" });
+    const calls = fakeBridge([["message", { role: "assistant", content: "b", model: "m", sessionId: "99999999-2222-4333-8444-555555555555", mode: "code" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "alpha/notes", mode: "code" });
+    expect(turnBody(calls)).not.toHaveProperty("sessionId");
+    const k1 = `gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/notes`;
+    const k2 = `gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha%2Fnotes`;
+    expect(localStorage.getItem(k1)).toContain(S1);
+    expect(localStorage.getItem(k2)).toContain("99999999");
+    fetchMock.mockResolvedValue(json(200, { ok: true }));
+    client.disconnect();
+    expect(localStorage.getItem(k1)).toBeNull();
+    expect(localStorage.getItem(k2)).toBeNull();
+  });
+
+  it("project is ignored in a chat turn, and disconnect removes the project sessions too", async () => {
+    client.save("s3cret");
+    const calls = fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: SESSION }]]);
+    await client.sendTurn([{ role: "user", content: "one" }], { thread: "T", project: "alpha" });
+    expect(turnBody(calls)).not.toHaveProperty("project");
+    localStorage.setItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`, "{}");
+    fetchMock.mockResolvedValue(json(200, { ok: true }));
+    client.disconnect();
+    expect(localStorage.getItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`)).toBeNull();
+  });
+});
+
 describe("access (0.3.0)", () => {
   it("bridgeInfo returns access folder, computer or null (older bridge, odd value)", async () => {
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.3.0", codeTurns: true, workspace: true, codeMode: "full", access: "computer" }));
@@ -294,6 +367,44 @@ describe("access (0.3.0)", () => {
     expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A2", mode: "code" })).not.toHaveProperty("access");
     fakeBridge([["message", { role: "assistant", content: "x", model: "m", access: "bogus" }]]);
     expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A3", mode: "code" })).not.toHaveProperty("access");
+  });
+
+  it("an approval_request with a summary over 2000 characters, a detail over 200 or a notice over 400, is dropped as malformed; the limits themselves are accepted", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(2001) }], ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(201) }], ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: "y".repeat(2000), detail: "d".repeat(200), notice: "n".repeat(400) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A5", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
+    expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcde1"]);
+  });
+
+  it("an approval_request whose tool is not a plain name (line break, tab, space, empty, over 128) is dropped; plain names are kept", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    const mk = (n: number, tool: string): [string, unknown] => ["approval_request", { id: `0123456789abcd${String(n).padStart(2, "0")}`, tool, summary: "s" }];
+    fakeBridge([mk(10, "mcp__a\nFROM THE BRIDGE"), mk(11, "mcp__a\tb"), mk(12, "a b"), mk(13, ""), mk(14, "x".repeat(129)), mk(15, "mcp__git__push"), mk(16, "x".repeat(128)), ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A6", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
+    expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcd15", "0123456789abcd16"]);
+  });
+
+  it("notice is passed through on the event and to onApproval, apart from detail; a non-string notice is ignored; a notice over 400 drops the event", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const asked: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    fakeBridge([
+      ["approval_request", { id: "0123456789abcde1", tool: "WebFetch", summary: "https://x.example/", detail: "Host: github.com", notice: "Host: x.example" }],
+      ["approval_request", { id: "0123456789abcde2", tool: "Bash", summary: "ls", notice: 5 }],
+      ["approval_request", { id: "0123456789abcde3", tool: "Bash", summary: "ls", notice: "n".repeat(401) }],
+      ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }],
+    ], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A6", mode: "code", onEvent: (e) => seen.push(e), onApproval: async (r) => { asked.push(r); return true; } });
+    expect(asked).toEqual([
+      { id: "0123456789abcde1", tool: "WebFetch", summary: "https://x.example/", detail: "Host: github.com", notice: "Host: x.example" },
+      { id: "0123456789abcde2", tool: "Bash", summary: "ls" },
+    ]);
+    expect(seen.filter((e: any) => e.event === "approval_request")).toHaveLength(2);
   });
 
   it("any tool and a long summary are accepted in an approval_request", async () => {
