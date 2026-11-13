@@ -32,7 +32,7 @@ const mk = (name) => {
 };
 async function start(opts = {}) {
   ensureDir();
-  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
+  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, codePlatform: "darwin", codeEnvExtraPrefixes: ["FAKE_"], env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
   bridges.push(bridge);
   await bridge.start();
   const base = `http://127.0.0.1:${bridge.port}`;

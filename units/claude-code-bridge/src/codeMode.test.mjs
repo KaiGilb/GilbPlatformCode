@@ -31,7 +31,7 @@ async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
     allowedOrigins: [APP],
     workDir: path.join(dir, "work"),
     home: dir, // the code folder must be inside the home folder: this temp folder plays it
-    codePlatform: "darwin", // full mode is what these tests are about, on whatever platform CI runs (files-only is tested in chooseFolder.test.mjs)
+    codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", // full mode is what these tests are about, on whatever platform CI runs (files-only is tested in chooseFolder.test.mjs)
     ...(workspace ? { workspace: ws } : {}),
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
     ...bridgeOpts,

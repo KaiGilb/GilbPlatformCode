@@ -36,7 +36,7 @@ async function start(opts = {}, env = {}) {
     workDir: path.join(dir, "work"),
     home,
     workspaceFile: wsFile,
-    codePlatform: "darwin", // full mode unless a test says otherwise (files-only tests pass codePlatform "win32")
+    codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", // full mode unless a test says otherwise (files-only tests pass codePlatform "win32")
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
     ...opts,
   });
@@ -313,7 +313,7 @@ describe("files-only mode (Windows)", () => {
     expect(sys).toContain("You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.");
     expect(sys).not.toContain("The network reaches only package registries.");
     expect(sys).not.toContain("package.json");
-    expect(run.npmCache).toBe(process.env.npm_config_cache);
+    expect(run.npmCache).toBeUndefined(); // the bridge sets no npm cache here, and the person's own is not passed on (allow-listed environment)
   });
   it("each-write keeps its asking flags in files-only mode", async () => {
     const ws = mk("W2");

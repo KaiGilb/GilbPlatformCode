@@ -97,6 +97,40 @@ export function childEnv(env = process.env) {
         out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
     return out;
 }
+/**
+ * The only environment variable names a CODE turn's Claude Code gets (on Windows, matched without regard to case): ordinary paths, language,
+ * terminal and proxy settings, and the usual version-manager homes. Tokens and keys in the person's environment are not passed on.
+ * The Claude Code names (CLAUDE_CODE_*, CLAUDE_CONFIG_DIR) are kept too, except any whose name holds TOKEN, KEY or SECRET; the
+ * billing variables childEnv removes stay removed. A name that starts with LC_ is a locale setting and is kept.
+ */
+export const CODE_ENV_ALLOW = [
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "LANGUAGE", "TZ", "TERM", "COLORTERM", "NO_COLOR", "FORCE_COLOR",
+    "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    "NVM_DIR", "NVM_BIN", "VOLTA_HOME", "FNM_DIR", "PNPM_HOME", "COREPACK_HOME",
+    // What the bridge itself sets for the child (see childEnv):
+    "MCP_TOOL_TIMEOUT", "CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT", "CLAUDE_CONFIG_DIR",
+];
+/** Added on Windows. */
+export const CODE_ENV_ALLOW_WIN32 = [
+    "SystemRoot", "SystemDrive", "windir", "ComSpec", "PATHEXT", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "ProgramData",
+    "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+];
+/** The environment of a code turn's child: {@link childEnv} (so the billing variables are gone first), cut down to {@link CODE_ENV_ALLOW}. */
+export function codeChildEnv(env = process.env, platform = process.platform, extraPrefixes = []) {
+    const win = platform === "win32";
+    const norm = (k) => (win ? k.toUpperCase() : k);
+    const allow = new Set([...CODE_ENV_ALLOW, ...(win ? CODE_ENV_ALLOW_WIN32 : [])].map(norm));
+    const out = {};
+    for (const [k, v] of Object.entries(childEnv(env))) {
+        const n = norm(k);
+        const secretName = /TOKEN|KEY|SECRET/i.test(k);
+        if (allow.has(n) || n.startsWith("LC_") || extraPrefixes.some((p) => n.startsWith(norm(p))) || ((n.startsWith("CLAUDE_CODE_") || n === "CLAUDE_CONFIG_DIR") && !secretName))
+            out[k] = v;
+    }
+    return out;
+}
 // Single-file use (downloaded from the app): allowed-origins.json is not next to this file, so these built-in
 // defaults apply. The source keeps this list EMPTY: the host app names its own origins, and the Vite plugin
 // (claudeCodeBridgeFile({ defaultAllowedOrigins })) writes them into this one line when it serves or emits the file.
@@ -1479,7 +1513,8 @@ export function createBridge(opts = {}) {
                 child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
                     cwd: turn.code && workspace ? workspace.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
-                    env: turn.code && workspace && !filesOnly ? { ...envWithout(childEnv(env), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
+                    // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
+                    env: turn.code ? (workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });

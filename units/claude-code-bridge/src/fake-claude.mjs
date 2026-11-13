@@ -85,6 +85,8 @@ process.stdin.on("end", async () => {
     out(init);
   }
   let text = `echo: ${prompt.split("\n").slice(-1)[0]}`;
+  // ENVKEYS: answer with the names of the environment this process was given (a code turn's child gets no FAKE_CLAUDE_LOG, so it cannot log them).
+  if (prompt.includes("ENVKEYS")) text = `envkeys:${JSON.stringify(Object.keys(process.env))}`;
   if (prompt.includes("CALLTOOL") && url) {
     const rpc = async (method, params, id) =>
       (await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) })).json();
