@@ -19,7 +19,7 @@ let base;
 let logFile;
 let wsReal;
 
-async function start({ workspace = true, env = {} } = {}) {
+async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-code-")));
   logFile = path.join(dir, "claude.log");
   const ws = path.join(dir, "MyCode");
@@ -32,6 +32,7 @@ async function start({ workspace = true, env = {} } = {}) {
     workDir: path.join(dir, "work"),
     ...(workspace ? { workspace: ws } : {}),
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
+    ...bridgeOpts,
   });
   await bridge.start();
   base = `http://127.0.0.1:${bridge.port}`;
@@ -44,6 +45,7 @@ afterEach(async () => {
   if (dir) fs.rmSync(dir, { recursive: true, force: true });
 });
 
+const logRows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
 const runs = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === "run") : []);
 
 async function post(secret, body, route = "/v1/turn") {
@@ -64,6 +66,38 @@ async function post(secret, body, route = "/v1/turn") {
 }
 const T = (extra) => ({ system: "You are the agent.", prompt: "hello", ...extra });
 const ev = (r, name) => r.events.filter((e) => e[0] === name).map((e) => e[1]);
+
+/** Plays the page for an each-write turn: reads the stream as it comes, and answers each approval_request with decide(request). */
+async function approvingTurn(secret, body, decide) {
+  const res = await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(T(body)) });
+  const events = [];
+  let turnId = "";
+  const answers = [];
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const blk = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      const ev = /event: (.*)/.exec(blk)?.[1];
+      const data = /data: (.*)/.exec(blk)?.[1];
+      if (!ev) continue;
+      const parsed = JSON.parse(data);
+      events.push([ev, parsed]);
+      if (ev === "start") turnId = parsed.turnId;
+      if (ev === "approval_request" && decide) {
+        const allow = await decide(parsed, turnId);
+        answers.push(await post(secret, { turnId, id: parsed.id, allow }, "/v1/approval"));
+      }
+    }
+  }
+  return { status: res.status, events, turnId, answers };
+}
 
 describe("claude arguments", () => {
   it("a chat turn gets exactly today's arguments", async () => {
@@ -135,9 +169,9 @@ describe("the turn body", () => {
     expect(a.json.error).toBe("A hand-off cannot be a code turn.");
     expect((await post(secret, T({ mode: "root" }))).status).toBe(400);
     expect((await post(secret, T({ mode: 5 }))).status).toBe(400);
-    const b = await post(secret, T({ mode: "code", approval: "each-write" }));
+    const b = await post(secret, T({ mode: "code", approval: "never" }));
     expect(b.status).toBe(400);
-    expect(b.json.error).toBe('approval must be "session"');
+    expect(b.json.error).toBe('approval must be "session" or "each-write"');
     expect((await post(secret, T({ mode: "code", approval: "session" }))).status).toBe(200);
     expect((await post(secret, T({ mode: "chat" }))).status).toBe(200);
     expect(runs()).toHaveLength(2);
@@ -318,5 +352,157 @@ describe("--workspace on the command line", () => {
     expect(parseCli(["--workspace", "x"]).workspace).toBe(path.resolve(process.cwd(), "x"));
     expect(parseCli([]).workspace).toBeUndefined();
     expect(parseCli(["--workspace"]).workspace).toBe("");
+  });
+});
+
+describe("approval: each-write", () => {
+  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.";
+
+  it("the argument lists of a session and an each-write code turn differ only in the asking places", async () => {
+    const secret = await start();
+    await post(secret, T({ mode: "code" }));
+    await post(secret, T({ mode: "code", approval: "each-write" }));
+    const [a, b] = runs().map((r) => r.argv);
+    const val = (x, f) => x[x.indexOf(f) + 1];
+    expect(val(a, "--permission-mode")).toBe("acceptEdits");
+    expect(val(b, "--permission-mode")).toBe("manual");
+    expect(val(a, "--permission-prompts")).toBe("none");
+    expect(val(b, "--permission-prompts")).toBe("host");
+    expect(val(b, "--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
+    expect(a).not.toContain("--permission-prompt-tool");
+    expect(JSON.parse(val(b, "--settings"))).toEqual(codeTurnSettings(os.homedir(), process.platform, [], "each-write"));
+    expect(JSON.parse(val(b, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(false);
+    expect(JSON.parse(val(a, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(true);
+    // everything else is identical once those places are taken out (the MCP url carries the turn's own id and token)
+    const strip = (x) => {
+      const o = [...x];
+      for (const f of ["--permission-mode", "--permission-prompts", "--permission-prompt-tool", "--settings", "--mcp-config", "--session-id"]) {
+        const i = o.indexOf(f);
+        if (i >= 0) o.splice(i, 2);
+      }
+      return o;
+    };
+    expect(strip(b)).toEqual(strip(a));
+    // settings differ in that one key only
+    const sa = JSON.parse(val(a, "--settings"));
+    const sb = JSON.parse(val(b, "--settings"));
+    sb.sandbox.autoAllowBashIfSandboxed = true;
+    expect(sb).toEqual(sa);
+  });
+
+  it("every code turn appends the folder's system prompt; a chat turn does not", async () => {
+    const secret = await start();
+    await post(secret, T({ mode: "code" }));
+    await post(secret, T({ mode: "code", approval: "each-write" }));
+    await post(secret, T());
+    const [a, b, c] = runs().map((r) => r.argv);
+    for (const x of [a, b]) {
+      expect(x.filter((f) => f === "--append-system-prompt")).toHaveLength(1);
+      expect(x[x.indexOf("--append-system-prompt") + 1]).toBe(ASK_PROMPT);
+      expect(x[x.indexOf("--system-prompt") + 1]).toBe("You are the agent.");
+    }
+    expect(c).not.toContain("--append-system-prompt");
+  });
+
+  it("an each-write turn whose init reports acceptEdits (the asking mode did not take) is stopped", async () => {
+    const secret = await start({ env: { FAKE_INIT_PERMISSION_MODE: "acceptEdits" } });
+    const r = await post(secret, T({ mode: "code", approval: "each-write" }));
+    expect(ev(r, "message")).toHaveLength(0);
+    expect(ev(r, "error")[0].message).toMatch(/folder limits/);
+  });
+
+  it("400 for another approval value", async () => {
+    const secret = await start();
+    const r = await post(secret, T({ mode: "code", approval: "never" }));
+    expect(r.status).toBe(400);
+    expect(r.json.error).toBe('approval must be "session" or "each-write"');
+  });
+
+  it("bridge_approve is listed only in an each-write code turn", async () => {
+    const secret = await start();
+    await post(secret, T({ mode: "code", prompt: "LISTTOOLS" }));
+    await post(secret, T({ prompt: "LISTTOOLS" }));
+    await post(secret, T({ mode: "code", approval: "each-write", prompt: "LISTTOOLS" }));
+    const [sess, chat, each] = logRows("mcpTools").map((r) => r.names);
+    expect(sess).not.toContain("bridge_approve");
+    expect(chat).not.toContain("bridge_approve");
+    expect(each).toEqual(["bridge_approve"]);
+    expect(sess).toEqual([]);
+  });
+
+  it("a write inside the folder asks the person; allow reaches Claude Code as allow; no tool_request, nothing counted", async () => {
+    const secret = await start({ bridgeOpts: { maxToolCalls: 1 } });
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKWRITE" }, async () => true);
+    const req = r.events.filter((e) => e[0] === "approval_request").map((e) => e[1]);
+    expect(req).toHaveLength(1);
+    expect(req[0]).toMatchObject({ tool: "Write", summary: "a.txt" });
+    expect(req[0].id).toMatch(/^[0-9a-f]{16}$/);
+    expect(r.answers[0]).toMatchObject({ status: 200, json: { ok: true } });
+    expect(r.events.filter((e) => e[0] === "approval_done").map((e) => e[1])).toEqual([{ id: req[0].id, allow: true }]);
+    expect(logRows("approve")[0]).toEqual({ event: "approve", decision: { behavior: "allow", updatedInput: { file_path: path.join(wsReal, "a.txt"), content: "x" } }, hasStructured: false });
+    const names = r.events.map((e) => e[0]);
+    expect(names).not.toContain("tool_request");
+    expect(names).not.toContain("budget_spent");
+  });
+
+  it("deny reaches Claude Code as a deny with 'The person declined.'", async () => {
+    const secret = await start();
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKWRITE" }, async () => false);
+    expect(logRows("approve")[0].decision).toEqual({ behavior: "deny", message: "The person declined." });
+    expect(r.events.filter((e) => e[0] === "approval_done")[0][1].allow).toBe(false);
+  });
+
+  it("a Bash command asks with its description", async () => {
+    const secret = await start();
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKBASH" }, async () => true);
+    expect(r.events.find((e) => e[0] === "approval_request")[1]).toMatchObject({ tool: "Bash", summary: "List files" });
+  });
+
+  it("a write outside the folder is denied at once, with no question", async () => {
+    const secret = await start();
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKOUT" }, async () => true);
+    expect(r.events.map((e) => e[0])).not.toContain("approval_request");
+    expect(logRows("approve")[0].decision).toEqual({ behavior: "deny", message: "Outside the code folder." });
+  });
+
+  it("a write through a symlink that leaves the folder is denied at once", async () => {
+    const secret = await start();
+    fs.symlinkSync(os.tmpdir(), path.join(wsReal, "a.txt")); // the ASKWRITE target itself is a link to outside
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKWRITE" }, async () => true);
+    expect(r.events.map((e) => e[0])).not.toContain("approval_request");
+    expect(logRows("approve")[0].decision.message).toBe("Outside the code folder.");
+  });
+
+  it("no answer in time: denied with 'The person did not answer.'", async () => {
+    const secret = await start({ bridgeOpts: { approvalWaitMs: 150 } });
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKWRITE" }, null);
+    expect(r.events.some((e) => e[0] === "approval_request")).toBe(true);
+    expect(logRows("approve")[0].decision).toEqual({ behavior: "deny", message: "The person did not answer." });
+    expect(r.events.filter((e) => e[0] === "approval_done")[0][1].allow).toBe(false);
+  });
+
+  it("/v1/approval: 401 unpaired, 404 for an unknown turn or id, 400 for a non-boolean, 409 for a second answer", async () => {
+    const secret = await start();
+    expect((await post(null, { turnId: "x", id: "y", allow: true }, "/v1/approval")).status).toBe(401);
+    expect((await post(secret, { turnId: "nope", id: "nope", allow: true }, "/v1/approval")).status).toBe(404);
+    const seen = [];
+    const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKWRITE" }, async (q, turnId) => {
+      seen.push((await post(secret, { turnId, id: "0000000000000000", allow: true }, "/v1/approval")).status); // unknown id, live turn
+      seen.push((await post(secret, { turnId, id: q.id, allow: "yes" }, "/v1/approval")).status); // not a boolean
+      seen.push((await post(secret, { turnId, id: q.id, allow: true }, "/v1/approval")).status); // the answer
+      seen.push((await post(secret, { turnId, id: q.id, allow: false }, "/v1/approval")).status); // a second one
+      return true; // the helper's own answer is a third: also refused
+    });
+    expect(seen).toEqual([404, 400, 200, 409]);
+    expect(r.answers[0].status).toBe(409);
+    expect(logRows("approve")[0].decision.behavior).toBe("allow");
+  });
+});
+
+describe("activity summary", () => {
+  it("is the tool name when the input has no usable field, never empty", async () => {
+    const secret = await start();
+    const r = await post(secret, T({ mode: "code", prompt: "CODEEMPTY" }));
+    expect(ev(r, "activity")).toEqual([{ tool: "Bash", summary: "Bash" }, { tool: "Read", summary: "Read" }]);
   });
 });

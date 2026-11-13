@@ -72,7 +72,7 @@ process.stdin.on("end", async () => {
       model: "fake-model",
       apiKeySource: prompt.includes("APIKEYSOURCE") ? "ANTHROPIC_API_KEY" : (process.env.FAKE_API_KEY_SOURCE ?? "none"),
     };
-    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? "acceptEdits";
+    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? arg("--permission-mode") ?? "acceptEdits";
     if (pm !== "omit") init.permissionMode = pm;
     if (initMode === "nofield") delete init.apiKeySource;
     if (initMode === "null") init.apiKeySource = null;
@@ -88,6 +88,25 @@ process.stdin.on("end", async () => {
     const call = await rpc("tools/call", { name: list.result.tools[0].name, arguments: { q: "x" } }, 3);
     text = `tool said: ${call.result.content[0].text}`;
   }
+  // ASKWRITE / ASKOUT / ASKBASH: act as Claude Code with --permission-prompt-tool: ask the MCP tool bridge_approve and report its answer.
+  // LISTTOOLS: log the tool names the per-turn MCP server lists.
+  const ask = prompt.includes("ASKWRITE") ? { tool_name: "Write", input: { file_path: path.join(process.cwd(), "a.txt"), content: "x" } }
+    : prompt.includes("ASKOUT") ? { tool_name: "Write", input: { file_path: "/tmp/x-outside.txt", content: "x" } }
+    : prompt.includes("ASKBASH") ? { tool_name: "Bash", input: { command: "ls", description: "List files" } }
+    : null;
+  if ((ask || prompt.includes("LISTTOOLS")) && url) {
+    const rpc = async (method, params, id) =>
+      (await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) })).json();
+    await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "fake", version: "0" } }, 1);
+    const list = await rpc("tools/list", {}, 2);
+    log({ event: "mcpTools", names: list.result.tools.map((t) => t.name) });
+    if (ask) {
+      const r = await rpc("tools/call", { name: "bridge_approve", arguments: { ...ask, tool_use_id: "tuA" } }, 3);
+      const decision = JSON.parse(r.result.content[0].text);
+      log({ event: "approve", decision, hasStructured: r.result.structuredContent !== undefined });
+      text = `decision: ${decision.behavior}`;
+    }
+  }
   if (prompt.includes("SPAWNCHILD")) {
     // Like the real CLI, which starts helpers (its MCP children): one grandchild that sleeps, so a test can see whether Stop took it too.
     const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -102,6 +121,9 @@ process.stdin.on("end", async () => {
     fs.writeFileSync(file, "hi");
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Write", input: { file_path: file } }] } });
     out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }] } });
+  }
+  if (prompt.includes("CODEEMPTY")) {
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu3", name: "Bash", input: {} }, { type: "tool_use", id: "tu4", name: "Read", input: {} }] } });
   }
   if (prompt.includes("CODEERR")) {
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu2", name: "Bash", input: { command: "ls /" } }] } });

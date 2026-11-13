@@ -77,6 +77,10 @@ interface Turn {
   budgetSpent: boolean;
   /** A code turn: Claude Code may read, edit and run commands inside the workspace folder. */
   code: boolean;
+  /** Code turn only: "each-write" makes Claude Code ask the bridge (bridge_approve) before a write or a command. */
+  approval: "session" | "each-write";
+  /** Questions put to the person in this turn (each-write), kept after the answer so a second answer is told "already answered". */
+  approvals: Map<string, { settle: (allow: boolean, message?: string) => void; answered: boolean }>;
 }
 /** A JSON-RPC message from the local claude process. */
 interface McpMsg { id?: unknown; method?: string; params?: { _meta?: { progressToken?: unknown }; protocolVersion?: string; name?: unknown; arguments?: unknown; requestId?: unknown } }
@@ -551,6 +555,11 @@ export function checkSubscriptionLogin(claudeBin = "claude", env: NodeJS.Process
 
 // ---- code mode: one folder the person chose ---------------------------------------------------------------------------
 /** The only Claude Code tools a code turn has. */
+/** How long the person has to answer an approve-before-each-write question. */
+export const APPROVAL_WAIT_MS = 10 * 60 * 1000;
+/** The one extra tool of the per-turn MCP server in an each-write code turn: Claude Code asks it before a write or a command. */
+export const APPROVE_TOOL = "bridge_approve";
+const approveSchema = { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] };
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 
@@ -616,7 +625,7 @@ export function validateWorkspace(input: string, o: WorkspaceCheckOpts): { ok: t
 }
 
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = []) {
+export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session") {
   void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
   const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge"];
   if (platform !== "win32") {
@@ -627,7 +636,7 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      autoAllowBashIfSandboxed: true,
+      autoAllowBashIfSandboxed: approval !== "each-write", // each-write: every command asks too, because a command can write
       network: { allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"] },
       filesystem: { denyRead: [...denyRead, ...extraDenyRead] },
     },
@@ -639,10 +648,11 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
 }
 
 /** Fail closed: a code turn's init event may list only the code tools and this bridge's MCP tools, and no other permission mode. */
-function codeInitOk(ev: ClaudeEvent): boolean {
+function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session"): boolean {
   const tools = Array.isArray(ev.tools) ? ev.tools : [];
   if (!tools.every((t) => typeof t === "string" && (CODE_TOOLS.includes(t) || t.startsWith("mcp__gilb__")))) return false;
-  return ev.permissionMode === "acceptEdits";
+  // The asking mode is passed as `manual`, an alias of `default` (CLI reference): either name may be reported.
+  return approval === "each-write" ? ev.permissionMode === "manual" || ev.permissionMode === "default" : ev.permissionMode === "acceptEdits";
 }
 
 /** One line saying what a tool call does, for the `activity` event. */
@@ -650,15 +660,16 @@ function toolSummary(tool: string, input: Record<string, unknown>, roots: string
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
     const p = str(input.file_path) || str(input.notebook_path) || str(input.path);
+    if (!p) return tool;
     for (const r of roots) {
       const rel = path.relative(r, path.resolve(r, p));
       if (p && rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) return rel.split(path.sep).join("/");
     }
     return "(outside the folder)";
   }
-  if (tool === "Bash") return (str(input.description) || str(input.command)).slice(0, 120);
-  if (tool === "Glob" || tool === "Grep") return str(input.pattern).slice(0, 120);
-  return "";
+  if (tool === "Bash") return (str(input.description) || str(input.command)).slice(0, 120) || tool;
+  if (tool === "Glob" || tool === "Grep") return str(input.pattern).slice(0, 120) || tool;
+  return tool;
 }
 
 const SNAPSHOT_CAP = 20000;
@@ -763,6 +774,8 @@ export interface BridgeOptions {
   workspace?: string | undefined;
   /** TEST-ONLY, undocumented: extra folders added to the sandbox's denyRead list (the probe uses it for its decoy secret folder). */
   extraDenyRead?: string[] | undefined;
+  /** How long an approval question waits for the person before it is denied (default APPROVAL_WAIT_MS). Tests make it short. */
+  approvalWaitMs?: number | undefined;
 }
 
 /**
@@ -796,6 +809,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     workspace = { path: real, name: path.basename(real) };
   }
+  const approvalWaitMs = opts.approvalWaitMs ?? APPROVAL_WAIT_MS;
   const NO_WORKSPACE = "This bridge has no code folder. Start it with --workspace <folder>.";
   const env = opts.env ?? process.env;
   const log = opts.log ?? (() => {});
@@ -972,17 +986,25 @@ export function createBridge(opts: BridgeOptions = {}) {
       });
     }
     if (method === "ping") return ok({});
+    const askingTurn = turn.code && turn.approval === "each-write";
     if (method === "tools/list") {
       return ok({
-        tools: turn.tools.map((t: ToolSpec) => ({
-          name: t.name,
-          description: t.description ?? "",
-          inputSchema: t.inputSchema ?? { type: "object", properties: {} },
-        })),
+        tools: [
+          ...turn.tools.map((t: ToolSpec) => ({
+            name: t.name,
+            description: t.description ?? "",
+            inputSchema: t.inputSchema ?? { type: "object", properties: {} },
+          })),
+          ...(askingTurn ? [{ name: APPROVE_TOOL, description: "Permission prompt tool: decides whether Claude Code may run a tool.", inputSchema: approveSchema }] : []),
+        ],
       });
     }
     if (method === "tools/call") {
       const name = params?.name;
+      // The bridge answers this one itself: never relayed to the page, never counted against the tool budget.
+      if (askingTurn && name === APPROVE_TOOL) {
+        return decideApproval(turn, (params?.arguments ?? {}) as Record<string, unknown>).then((d) => ok({ content: [{ type: "text", text: JSON.stringify(d) }] }));
+      }
       if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
       return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {}), id).then(
         (r) => ok({ content: [{ type: "text", text: r.text }], isError: r.isError }),
@@ -1035,6 +1057,68 @@ export function createBridge(opts: BridgeOptions = {}) {
     let t = turn;
     while (t.parent) t = t.parent;
     return t;
+  }
+
+  /** Does this path, resolved against the folder, land inside it? The nearest existing parent is resolved through symlinks. */
+  function insideWorkspace(p: string): boolean {
+    if (!workspace || !p) return false;
+    let cur = path.resolve(workspace.path, p);
+    const tail: string[] = [];
+    for (;;) {
+      try {
+        cur = fs.realpathSync(cur);
+        break;
+      } catch {
+        const up = path.dirname(cur);
+        if (up === cur) return false;
+        tail.unshift(path.basename(cur));
+        cur = up;
+      }
+    }
+    const full = path.join(cur, ...tail);
+    const rel = path.relative(workspace.path, full);
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+  }
+
+  /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
+  function askPerson(turn: Turn, tool: string, summary: string): Promise<{ allow: boolean; message: string }> {
+    return new Promise((resolve) => {
+      const id = crypto.randomBytes(8).toString("hex");
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const entry = {
+        answered: false,
+        settle: (allow: boolean, message = "The person declined.") => {
+          if (entry.answered) return;
+          entry.answered = true;
+          if (timer !== undefined) clearTimeout(timer);
+          turn.send("approval_done", { id, allow });
+          resolve({ allow, message });
+        },
+      };
+      turn.approvals.set(id, entry);
+      timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
+      turn.send("approval_request", { id, tool, summary });
+    });
+  }
+
+  /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
+  async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const tool = typeof args.tool_name === "string" ? args.tool_name : "";
+    const input = args.input && typeof args.input === "object" ? (args.input as Record<string, unknown>) : {};
+    const deny = (message: string) => ({ behavior: "deny", message });
+    if (tool === "Read" || tool === "Glob" || tool === "Grep") return { behavior: "allow", updatedInput: input };
+    let summary: string;
+    if (tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
+      const p = String(input.file_path ?? input.notebook_path ?? "");
+      if (!insideWorkspace(p)) return deny("Outside the code folder.");
+      summary = toolSummary(tool, input, workspace ? [workspace.path, opts.workspace ?? workspace.path] : []);
+    } else if (tool === "Bash") {
+      summary = (typeof input.description === "string" && input.description) || String(input.command ?? "").slice(0, 200) || "Bash";
+    } else {
+      return deny("This tool is not allowed in a code turn.");
+    }
+    const a = await askPerson(turn, tool, summary);
+    return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
   }
 
   function relayToolCall(turn: Turn, name: string, args: unknown, rpcId?: unknown): Promise<ToolResult> {
@@ -1160,12 +1244,15 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcp),
       "--allowedTools", "mcp__gilb",
-      "--permission-mode", "acceptEdits",
-      "--permission-prompts", "none",
+      // session: edits are accepted and nothing may prompt. each-write: `manual` asks, and the bridge's own tool answers.
+      "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
+      "--permission-prompts", turn.approval === "each-write" ? "host" : "none",
+      ...(turn.approval === "each-write" ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
       "--disable-slash-commands",
-      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), process.platform, opts.extraDenyRead ?? [])),
+      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), process.platform, opts.extraDenyRead ?? [], turn.approval)),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
+      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -1265,7 +1352,7 @@ export function createBridge(opts: BridgeOptions = {}) {
               void stopChild(child);
             }
             // A code turn must show the folder limits too: only the code tools (and this bridge's MCP tools), and no other permission mode.
-            if (turn.code && !codeInitOk(ev)) {
+            if (turn.code && !codeInitOk(ev, turn.approval)) {
               limitsRefused = true;
               void stopChild(child);
             }
@@ -1313,7 +1400,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     // Code mode: one folder the person chose, one code turn at a time. Chat is the default and is unchanged.
     if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "code") return json(res, 400, { error: 'mode must be "chat" or "code"' });
-    if (body.approval !== undefined && body.approval !== "session") return json(res, 400, { error: 'approval must be "session"' });
+    if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write") return json(res, 400, { error: 'approval must be "session" or "each-write"' });
     const isCode = body.mode === "code";
     if (isCode) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
@@ -1370,6 +1457,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       root: parent ? parent.root : { calls: 0 },
       budgetSpent: false,
       code: isCode,
+      approval: isCode && body.approval === "each-write" ? "each-write" : "session",
+      approvals: new Map(),
     };
     if (parent) parent.handoffs.add(turn);
     turns.set(turn.id, turn);
@@ -1410,6 +1499,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       }
       turn.handoffs.clear();
       turn.closed = true;
+      for (const a of [...turn.approvals.values()]) a.settle(false, "The person did not answer."); // the page left the turn: deny what still waits
       for (const p of turn.pending.values()) p.reject(new Error("The turn ended."));
       turn.pending.clear();
       turns.delete(turn.id);
@@ -1540,6 +1630,20 @@ export function createBridge(opts: BridgeOptions = {}) {
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/v1/turn") return handleTurn(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/approval") {
+        let body;
+        try {
+          body = await readBody(req);
+        } catch (e) {
+          return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+        }
+        const a = turns.get(String(body.turnId))?.approvals.get(String(body.id));
+        if (!a) return json(res, 404, { error: "no such approval question" });
+        if (typeof body.allow !== "boolean") return json(res, 400, { error: "allow must be true or false" });
+        if (a.answered) return json(res, 409, { error: "already answered" });
+        a.settle(body.allow);
+        return json(res, 200, { ok: true });
+      }
       if (req.method === "POST" && url.pathname === "/v1/tool-result") {
         let body;
         try {

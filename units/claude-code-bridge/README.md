@@ -149,7 +149,7 @@ Start the bridge with the folder: `node bridge.mjs --workspace ~/MyJackfruitCode
 
 The bridge refuses a folder that does not exist (it never makes one), the root of the disk, your home folder, any folder that holds your home folder, a folder inside `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/Library` (macOS) or `AppData` (Windows) or inside a bridge state folder (`~/.gilb-claude-code-bridge*`), and a folder that directly holds `.ssh`, `.aws` or `.gnupg`. A symlink is followed first, so a link to your home folder is refused too. It prints the reason and exits with code 2.
 
-A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or no mode is the old turn; any other value is a 400). `"approval"` may only be `"session"` for now. A code turn cannot be a hand-off (400), needs a `--workspace` (409), and only one runs at a time (429).
+A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or no mode is the old turn; any other value is a 400). `"approval"` is `"session"` (the default) or `"each-write"`, see below. A code turn cannot be a hand-off (400), needs a `--workspace` (409), and only one runs at a time (429).
 
 What a code turn may do:
 - Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
@@ -159,6 +159,10 @@ What a code turn may do:
 - Nothing else is allowed to prompt: what would ask is denied. Settings files of the person and of the folder are ignored.
 - If Claude Code does not start with exactly these tools and the `acceptEdits` mode, the bridge stops the turn.
 
+Approval. With `"approval": "session"` the person approves once, when they start the code turn, and Claude Code may then edit freely inside the folder. With `"approval": "each-write"` Claude Code asks first: every write (Edit, Write, NotebookEdit) inside the folder and every shell command. The bridge starts Claude Code in its asking mode (`--permission-mode manual`) with `--permission-prompt-tool mcp__gilb__bridge_approve`, and turns off the sandbox's automatic Bash approval. `bridge_approve` is a tool of the bridge's own per-turn MCP server, listed only in these turns; it is never sent to the page and never counts against the tool budget. It answers at once, without asking: Read, Glob and Grep are allowed; a write outside the folder (a symlink is followed first) is denied with `Outside the code folder.`; any other tool is denied. For a write inside the folder and for Bash it sends the page an `approval_request` `{ id, tool, summary }` and waits. The page answers with `POST /v1/approval` `{ turnId, id, allow }` (paired; 404 for an unknown turn or question, 409 if it was already answered). The bridge then sends `approval_done` `{ id, allow }`. A denial reaches Claude Code as "The person declined."; no answer in 10 minutes, or the page leaving the turn, is a denial too ("The person did not answer.").
+
+Every code turn also gets one short added system prompt that names the folder and tells Claude Code to stay inside it, to say in one line what is refused, and to list the files it changed.
+
 Discovery: `GET /v1/hello` has `codeTurns: true` and `workspace: true|false` (never the path). `POST /v1/workspace` (paired) returns `{ name, path }`, or 404 when there is no folder.
 
 Extra events in a code turn (a chat turn sends none of them):
@@ -167,7 +171,7 @@ Extra events in a code turn (a chat turn sends none of them):
 - `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`, once, before `message` or `error`. It compares the folder before and after the turn (size and time; `.git`, `node_modules` and `.npm-cache` skipped; up to 20000 files; up to 200 names per list).
 - `message` has `mode: "code"`.
 
-Not done yet: approve-before-each-write, and a reduced mode for Windows (the sandbox is macOS, Linux and WSL2). Both come in the next batches. `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
+Not done yet: a reduced mode for Windows (the sandbox is macOS, Linux and WSL2). `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
 
 ## Relay window (for Safari)
 
