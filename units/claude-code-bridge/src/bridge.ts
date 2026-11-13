@@ -776,7 +776,16 @@ function toolSummary(tool: string, input: Record<string, unknown>, roots: string
 
 /** Every summary shown to the person is one bounded piece of text. */
 const SUMMARY_CAP = 300;
-const cap = (s: string, n = SUMMARY_CAP) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const cap = (s: string, n = SUMMARY_CAP) => {
+  if (s.length <= n) return s;
+  // Cut by code point, never inside a surrogate pair; the result with "…" is at most n UTF-16 units.
+  let out = "";
+  for (const c of s) {
+    if (out.length + c.length > n - 1) break;
+    out += c;
+  }
+  return `${out}…`;
+};
 
 const SNAPSHOT_CAP = 20000;
 const LIST_CAP = 200;
@@ -1463,8 +1472,22 @@ export function createBridge(opts: BridgeOptions = {}) {
   const NOTICE_MAX = 400;
   const HOST_LINE_MAX = 300;
   const TOO_LONG_ADDRESS = "The address is too long to show for approval; ask for it without that.";
-  const PATH_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit", "Glob", "Grep"]);
-  const pathNote = (tool: string, input: Record<string, unknown>) => (PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v): v is string => typeof v === "string")) : "");
+  /** Tools whose fields are not paths: no path note. Every other tool (MultiEdit, MCP tools ...) gets it for file_path, notebook_path and path. */
+  const NOT_PATH_TOOLS = new Set(["Bash", "WebFetch", "WebSearch"]);
+  const PATH_KEYS = new Set(["file_path", "notebook_path", "path"]);
+  /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys, which keep their characters. */
+  const escapeInput = (v: unknown): unknown => {
+    if (typeof v === "string") return escapeNonAscii(v.normalize("NFC"));
+    if (Array.isArray(v)) return v.map(escapeInput);
+    if (v && typeof v === "object") {
+      const o: Record<string, unknown> = {};
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) o[escapeNonAscii(k)] = PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
+      return o;
+    }
+    return v;
+  };
+  const pathNote = (tool: string, input: Record<string, unknown>) => (!NOT_PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v): v is string => typeof v === "string")) : "");
+  const ONLY_HTTP_MSG = "Only http and https addresses can be fetched.";
   const USERINFO_MSG = "The address hides its real host (user@host form); ask for it without that.";
   const showText = (x: string) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
   const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
@@ -1512,6 +1535,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           let host = "(not a valid address)";
           try {
             const u = new URL(t);
+            if ((u.protocol !== "http:" && u.protocol !== "https:") || !u.hostname) return deny(ONLY_HTTP_MSG);
             if (u.username || u.password) return deny(USERINFO_MSG);
             host = u.hostname;
           } catch {
@@ -1529,7 +1553,13 @@ export function createBridge(opts: BridgeOptions = {}) {
           /* not printable */
         }
         if (hasHidden(j)) return deny(HIDDEN_MSG);
-        summary = showText(`${tool || "tool"} ${j}`);
+        let ej = j;
+        try {
+          ej = JSON.stringify(escapeInput(input));
+        } catch {
+          /* not printable */
+        }
+        summary = showText(`${escapeNonAscii(tool || "tool")} ${ej}`);
       }
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_REQUEST);
       const note = pathNote(tool, input);
