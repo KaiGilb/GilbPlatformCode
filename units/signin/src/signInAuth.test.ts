@@ -69,4 +69,13 @@ describe("makeSignInAuth", () => {
     const yes = makeSignInAuth({ credential: r.credential, origin: ORIGIN, productName: "PictureRecords", createsVault: true });
     await expect(yes.completeNamedVault("x")).resolves.toBeUndefined();
   });
+
+  it("passes a credentials override to signInWithCode, and nothing when none is set", async () => {
+    const none = rig();
+    await makeSignInAuth({ credential: none.credential, origin: ORIGIN, productName: "P" }).verifyCode("a@example.test", "1", undefined);
+    expect(none.verifies[0]).toHaveLength(5);
+    const forced = rig();
+    await makeSignInAuth({ credential: forced.credential, origin: ORIGIN, productName: "P", credentials: "omit" }).verifyCode("a@example.test", "1", undefined);
+    expect(forced.verifies[0]![5]).toEqual({ credentials: "omit" });
+  });
 });

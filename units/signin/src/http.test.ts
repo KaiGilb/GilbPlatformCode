@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   checkVaultName,
   credentialsForPage,
-  pageHostname,
+  credentialsForPageOrigin,
+  pageOrigin,
   prepareVaultName,
   requestSignInCode,
   verifySignInCodeHttp,
@@ -121,9 +122,9 @@ function recordingTransport() {
   return { calls, transport };
 }
 
-const readPageHostname = pageHostname.read;
+const readPageOrigin = pageOrigin.read;
 afterEach(() => {
-  pageHostname.read = readPageHostname;
+  pageOrigin.read = readPageOrigin;
 });
 
 describe("verifySignInCodeHttp — email one-time-code verify", () => {
@@ -157,35 +158,78 @@ describe("verifySignInCodeHttp — email one-time-code verify", () => {
   });
 
   it.each([
+    ["http://localhost:5317", "omit"],
+    ["http://127.0.0.1:5317", "omit"],
+    ["http://[::1]:5317", "omit"],
+    ["http://localhost", "omit"],
+    ["http://localhost:5197", "include"],
+    ["http://localhost:5251", "include"],
+    ["http://127.0.0.1:5197", "include"],
+    ["http://[::1]:5251", "include"],
+    ["https://localhost:5197", "omit"],
+    ["http://localhost:51970", "omit"],
+    ["https://gilb.com", "include"],
+    ["https://www.gilb.com", "include"],
+    ["https://gilb.com:8443", "include"],
+    ["https://app.example.com", "omit"],
+    ["https://kaidev-pictures.pages.dev", "omit"],
+    ["https://x.app.gilb.com", "omit"],
+    ["https://id.gilb.com", "omit"],
+    ["https://evilgilb.com", "omit"],
+    ["https://gilb.com.evil.com", "omit"],
+    ["null", "omit"],
+    ["", "omit"],
+  ] as const)("credentialsForPageOrigin %s → %s", (origin, want) => {
+    expect(credentialsForPageOrigin(origin)).toBe(want);
+  });
+
+  it.each([
     ["gilb.com", "include"],
     ["www.gilb.com", "include"],
-    ["localhost", "include"],
-    ["127.0.0.1", "include"],
-    ["[::1]", "include"],
+    ["localhost", "omit"],
+    ["127.0.0.1", "omit"],
+    ["[::1]", "omit"],
     ["kaidev-pictures.pages.dev", "omit"],
     ["x.app.gilb.com", "omit"],
-    ["x.web.gilb.com", "omit"],
     ["id.gilb.com", "omit"],
     ["evilgilb.com", "omit"],
     ["gilb.com.evil.com", "omit"],
-  ] as const)("credentialsForPage %s → %s", (hostname, want) => {
+  ] as const)("deprecated credentialsForPage %s → %s", (hostname, want) => {
     expect(credentialsForPage(hostname)).toBe(want);
   });
 
-  it("credentialsForPage no location → omit", () => {
-    expect(pageHostname.read()).toBe("");
-    expect(credentialsForPage(pageHostname.read())).toBe("omit");
+  it("no location → omit", () => {
+    expect(pageOrigin.read()).toBe("");
+    expect(credentialsForPageOrigin(pageOrigin.read())).toBe("omit");
+  });
+
+  it("verify-code from a local app on port 5317 sends omit", async () => {
+    pageOrigin.read = () => "http://localhost:5317";
+    const fetched = await withFetch(
+      [jsonResponse(200, { token: "t" })],
+      () => verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP),
+    );
+    expect(fetched.calls[0]!.init.credentials).toBe("omit");
+  });
+
+  it("verify-code from Gilb's own rigs sends include", async () => {
+    for (const origin of ["http://localhost:5197", "http://localhost:5251"]) {
+      pageOrigin.read = () => origin;
+      const seen = recordingTransport();
+      await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", { transport: seen.transport });
+      expect(seen.calls[0]!.req.credentials).toBe("include");
+    }
   });
 
   it("verify-code sends omit for a third-party page", async () => {
-    pageHostname.read = () => "kaidev-pictures.pages.dev";
+    pageOrigin.read = () => "https://kaidev-pictures.pages.dev";
     const seen = recordingTransport();
     await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", { transport: seen.transport });
     expect(seen.calls[0]!.req.credentials).toBe("omit");
   });
 
   it("verify-code sends include for gilb.com", async () => {
-    pageHostname.read = () => "gilb.com";
+    pageOrigin.read = () => "https://gilb.com";
     const seen = recordingTransport();
     await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", { transport: seen.transport });
     expect(seen.calls[0]!.req.credentials).toBe("include");
@@ -197,7 +241,7 @@ describe("verifySignInCodeHttp — email one-time-code verify", () => {
   });
 
   it("an explicit credentials option wins over the page rule", async () => {
-    pageHostname.read = () => "kaidev-pictures.pages.dev";
+    pageOrigin.read = () => "https://kaidev-pictures.pages.dev";
     const forcedInclude = recordingTransport();
     await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", {
       transport: forcedInclude.transport,
@@ -205,7 +249,7 @@ describe("verifySignInCodeHttp — email one-time-code verify", () => {
     });
     expect(forcedInclude.calls[0]!.req.credentials).toBe("include");
 
-    pageHostname.read = () => "gilb.com";
+    pageOrigin.read = () => "https://gilb.com";
     const forcedOmit = recordingTransport();
     await verifySignInCodeHttp(ORIGIN_A, EMAIL, CODE, DPOP, undefined, "HostA", {
       transport: forcedOmit.transport,

@@ -23,6 +23,12 @@ export interface MakeSignInAuthOptions {
    * sentence saying that making a vault is not part of the app.
    */
   createsVault?: boolean;
+  /**
+   * Cookie mode for verify-code. Default: decided from the page
+   * (`credentialsForPageOrigin(location.origin)`), so a local app on any free loopback port
+   * except 5197 and 5251 sends no cookie.
+   */
+  credentials?: "include" | "omit";
 }
 
 /**
@@ -38,7 +44,14 @@ export function makeSignInAuth(o: MakeSignInAuthOptions): SignInAuth {
   return {
     requestCode: (email, returnTo) => requestSignInCode(origin, email, returnTo, productName, http),
     verifyCode: async (email, code, name) => {
-      const body = await credential.signInWithCode(origin, email, code, name, productName);
+      const body = await credential.signInWithCode(
+        origin,
+        email,
+        code,
+        name,
+        productName,
+        ...(o.credentials ? [{ credentials: o.credentials }] : []),
+      );
       return { needsVaultName: body.needsVaultName === true, suggestedName: body.suggestedName };
     },
     prepareName: (email) => prepareVaultName(origin, email, http),

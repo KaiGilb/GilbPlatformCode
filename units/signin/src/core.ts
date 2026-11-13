@@ -22,6 +22,7 @@ export {
   checkVaultName,
   verifySignInCodeHttp,
   credentialsForPage,
+  credentialsForPageOrigin,
 } from "./http";
 export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
 export {
