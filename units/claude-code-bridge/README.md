@@ -174,7 +174,7 @@ A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or 
 What a code turn may do:
 - Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
 - Reach the network only for the package registries: `registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`, `files.pythonhosted.org`. WebFetch and WebSearch are off.
-- Read none of the listed secret folders (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, the bridge state folder, and on macOS the Keychains and the Chrome, Firefox and Safari data).
+- Read none of the listed secret places: the folders `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config` (this covers `~/.config/gcloud`), `~/.claude`, `~/.docker`, `~/.kube`, `~/.azure`, the bridge state folder, and on macOS the Keychains and the Chrome, Firefox and Safari data; and the files `~/.npmrc`, `~/.yarnrc`, `~/.yarnrc.yml`, `~/.pypirc`, `~/.netrc` and `~/.git-credentials`. Installs from a private npm registry that needs your login do not work in a code turn (your `~/.npmrc` is not readable there).
 - npm uses a cache in the folder (`.npm-cache`), because the sandbox does not let it write `~/.npm` or the temp folder.
 - Nothing else is allowed to prompt: what would ask is denied. Settings files of the person and of the folder are ignored.
 - If Claude Code does not start with exactly these tools and the `acceptEdits` mode, the bridge stops the turn.

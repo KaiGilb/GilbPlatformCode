@@ -660,7 +660,8 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
     // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
     return { permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } };
   }
-  const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge"];
+  // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
+  const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
   if (platform !== "win32") {
     denyRead.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
   }
