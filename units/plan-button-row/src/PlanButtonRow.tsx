@@ -3,8 +3,8 @@
 // or third action alone at the far left. Two ways to use it:
 //   - structured: <PlanButtonRow primary={…} cancel={…} destructive={…} /> — the row puts them in order;
 //   - children (the original API): the caller passes the children in Mac order; the row only lays them out.
-// The structured row also carries the class gs-actionrow (its CSS: style-runtime's actionRowCss, copied here) and marks
-// the destructive slot gs-actionrow__far. The children API renders exactly what it always did; add className="gs-actionrow" there to opt in.
+// Both APIs carry the class gs-actionrow (its CSS: style-runtime's actionRowCss, copied here, written once per document)
+// and the structured API marks the destructive slot gs-actionrow__far. Every Tailwind class is kept as before.
 // It does not restyle the buttons and has no keyboard behaviour (Return / Esc are the host's job; see README).
 import { Children, isValidElement, useLayoutEffect, type CSSProperties, type ReactNode } from "react";
 import { ensureActionRowCss } from "./actionRowCss";
@@ -27,7 +27,7 @@ export type PlanButtonRowProps = {
   confirm?: boolean;
 };
 
-const BASE = "flex w-full flex-wrap items-center justify-end gap-3";
+const BASE = "gs-actionrow flex w-full flex-wrap items-center justify-end gap-3";
 // Narrow (container under 360px): the three slots share the width in equal parts, same order.
 const SLOT = "shrink-0 @max-[360px]:min-w-0 @max-[360px]:flex-1 @max-[360px]:shrink @max-[360px]:[&>*]:w-full";
 
@@ -52,10 +52,10 @@ function warnIfPositiveNotLast(children: ReactNode) {
 
 export function PlanButtonRow({ children, className = "", primary, cancel, destructive, style, confirm = false }: PlanButtonRowProps) {
   const structured = primary !== undefined || cancel !== undefined || destructive !== undefined;
-  // The structured row carries the shared action-row CSS (equal share when narrow, with or without Tailwind).
+  // Both rows carry the shared action-row CSS (equal share when narrow, with or without Tailwind).
   useLayoutEffect(() => {
-    if (structured) ensureActionRowCss();
-  }, [structured]);
+    ensureActionRowCss();
+  }, []);
   if (!structured) {
     warnIfPositiveNotLast(children);
     return (

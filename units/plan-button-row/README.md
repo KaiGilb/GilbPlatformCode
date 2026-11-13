@@ -6,7 +6,7 @@ The action row: every row of buttons in an app (dialog buttons, form Save/Cancel
 
 The action row: every row of buttons in an app (dialog buttons, form Save/Cancel, a record's Edit and Delete, a Delete confirm). It is a right-aligned row in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.
 
-`<PlanButtonRow className?>children</PlanButtonRow>` draws one `div` with `data-plan-button-row=""` and the classes `flex w-full flex-wrap items-center justify-end gap-3`. A `className` is added after them. With the children API the caller passes the children in the order they should appear; the row only lays them out and does not restyle the buttons. The structured API (`primary`, `cancel`, `destructive`) orders them for you; see "The Mac order (required)".
+`<PlanButtonRow className?>children</PlanButtonRow>` draws one `div` with `data-plan-button-row=""` and the classes `gs-actionrow flex w-full flex-wrap items-center justify-end gap-3`. A `className` is added after them. With the children API the caller passes the children in the order they should appear; the row only lays them out and does not restyle the buttons. The structured API (`primary`, `cancel`, `destructive`) orders them for you; see "The Mac order (required)".
 
 ## The Mac order (required)
 
@@ -32,7 +32,7 @@ Every app built on GilbPlatform uses the Mac order in every row of two or more b
 <PlanButtonRow cancel={<button autoFocus onClick={onCancel}>Cancel</button>} primary={<button className="bg-red-600" onClick={onDelete}>Delete bicycle</button>} />
 ```
 
-`confirm` marks the row whose whole purpose is the destructive act: the far slot is dropped (a `destructive` prop is ignored), the order is Cancel then `primary`, and the row carries `data-confirm` and `data-default="cancel"`. Paint the primary red yourself (class `gs-btn gs-btn--danger gs-btn--primary` from the style-runtime button looks, or your own). The structured row also carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`; it writes the shared action-row CSS once (a copy of style-runtime's `ACTION_ROW_CSS`, kept identical by a test), so the equal-share rule on a narrow row works without Tailwind too. The children API renders exactly what it always did; add `className="gs-actionrow"` to it to opt in to the same CSS.
+`confirm` marks the row whose whole purpose is the destructive act: the far slot is dropped (a `destructive` prop is ignored), the order is Cancel then `primary`, and the row carries `data-confirm` and `data-default="cancel"`. Paint the primary red yourself (class `gs-btn gs-btn--danger gs-btn--primary` from the style-runtime button looks, or your own). The structured row also carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`; it writes the shared action-row CSS once (a copy of style-runtime's `ACTION_ROW_CSS`, kept identical by a test), so the equal-share rule on a narrow row works without Tailwind too. The children API row carries `gs-actionrow` and the same CSS too, with every Tailwind class kept as before.
 
 A host without Tailwind can pass `style` (applied to the row itself, e.g. `display:flex; justifyContent:flex-end; gap:12`); the order is then still right, but the narrow-width sharing needs Tailwind v4 container queries.
 

@@ -145,7 +145,7 @@ describe("font catalogue", () => {
   it("loads nothing for the default sheet, and a font only when asked", async () => {
     render(<StyleStudio />);
     expect(FONT_CATALOGUE.some((f) => isFontLoaded(f.family))).toBe(false);
-    expect(document.head.querySelectorAll("link, style").length).toBe(0);
+    expect(document.head.querySelectorAll("link, style:not([data-gs-actionrow])").length).toBe(0);
     await loadFontFamily("Caveat");
     expect(isFontLoaded("Caveat")).toBe(true);
     expect(isFontLoaded("Kalam")).toBe(false);

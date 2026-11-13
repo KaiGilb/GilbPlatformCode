@@ -14,7 +14,7 @@
   "namedChanges": [
     "The header comment is reworded; no code change.",
     "Added after the copy (0.1.1): the optional primary, cancel and destructive slots, the narrow-width rule and the dev warning; the children API is unchanged.",
-    "0.1.2: the structured row carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`, writes the shared action-row CSS once (`src/actionRowCss.ts`, a copy of style-runtime's, kept identical by a test) so the equal-share narrow rule works without Tailwind, and takes `confirm` (no far slot, Cancel then a red primary, Cancel the default). The children API output is unchanged."
+    "0.1.2: the structured row carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`, writes the shared action-row CSS once (`src/actionRowCss.ts`, a copy of style-runtime's, kept identical by a test) so the equal-share narrow rule works without Tailwind, and takes `confirm` (no far slot, Cancel then a red primary, Cancel the default). The children API row also gains `gs-actionrow` and the CSS (its pinned class-string test now expects it first); every Tailwind class is kept, so Tailwind hosts see no change."
   ],
   "newFiles": ["src/actionRowCss.ts", "src/actionRowCss.test.ts"],
   "host": [],

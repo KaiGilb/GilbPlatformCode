@@ -4,7 +4,7 @@ import { PlanButtonRow } from "./index";
 
 afterEach(cleanup);
 
-const BASE = "flex w-full flex-wrap items-center justify-end gap-3";
+const BASE = "gs-actionrow flex w-full flex-wrap items-center justify-end gap-3";
 
 describe("PlanButtonRow", () => {
   it('renders a div with the attribute data-plan-button-row=""', () => {
@@ -127,8 +127,12 @@ describe("PlanButtonRow action-row CSS and confirm", () => {
     expect(row.getAttribute("data-default")).toBe("cancel");
     expect(r.container.querySelector(".gs-actionrow__far")).toBeNull();
   });
-  it("the children API still has no gs-actionrow class (unchanged output)", () => {
-    const r = render(<PlanButtonRow>x</PlanButtonRow>);
-    expect((r.container.firstElementChild as HTMLElement).className).not.toContain("gs-actionrow");
+  it("the children API row has gs-actionrow, keeps its Tailwind classes, and writes the CSS once", () => {
+    document.head.querySelectorAll("style[data-gs-actionrow]").forEach((n) => n.remove());
+    const r = render(<PlanButtonRow><button>Cancel</button><button>Save</button></PlanButtonRow>);
+    render(<PlanButtonRow><button>Cancel</button><button>Save</button></PlanButtonRow>);
+    const cls = (r.container.firstElementChild as HTMLElement).className.split(" ");
+    for (const c of ["gs-actionrow", "flex", "w-full", "flex-wrap", "items-center", "justify-end", "gap-3"]) expect(cls).toContain(c);
+    expect(document.head.querySelectorAll("style[data-gs-actionrow]")).toHaveLength(1);
   });
 });
