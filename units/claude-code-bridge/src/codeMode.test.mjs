@@ -254,7 +254,7 @@ describe("code turn events", () => {
     const [code, chat] = runs();
     expect(code.npmCache).toBe(path.join(wsReal, ".npm-cache"));
     expect(chat.npmCache).toBe(process.env.npm_config_cache); // only what the person's own env had
-    expect(chat.envKeys.includes("npm_config_cache")).toBe(process.env.npm_config_cache !== undefined);
+    expect(chat.envKeys.some((k) => k.toLowerCase() === "npm_config_cache")).toBe(process.env.npm_config_cache !== undefined);
   });
   it("in full mode the code turn's npm cache is always the folder's, even when the person's own environment sets one (a CI runner does)", async () => {
     const secret = await start({ env: { npm_config_cache: path.join(os.tmpdir(), "somewhere-else") } });
