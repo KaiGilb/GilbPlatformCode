@@ -149,7 +149,8 @@ describe("claude arguments", () => {
   it("codeTurnSettings has the sandbox keys, appends the test-only folders and drops the macOS paths on Windows", () => {
     const s = codeTurnSettings("/Users/p", "darwin", ["/tmp/x"]);
     expect(s.sandbox).toMatchObject({ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true });
-    expect(s.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]);
+    expect(s.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"]);
+    for (const h of ["github.com", "api.github.com", "objects.githubusercontent.com"]) expect(s.sandbox.network.allowedDomains).not.toContain(h);
     expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure", "~/Library/Keychains", "/tmp/x"]));
     expect(s.permissions).toEqual({ deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" });
     // Windows is files-only: no sandbox block at all, the permission rules stay.
@@ -364,7 +365,7 @@ describe("--workspace on the command line", () => {
 });
 
 describe("approval: each-write", () => {
-  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.";
+  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder. To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.";
 
   it("the argument lists of a session and an each-write code turn differ only in the asking places", async () => {
     const secret = await start();
