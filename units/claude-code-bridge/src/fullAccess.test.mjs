@@ -752,9 +752,10 @@ describe("R16 Lows (computer)", () => {
   const CTOR = "Request holds a field named constructor/prototype.";
   it("R16-L4: an input too deep to escape is denied, never shown raw", async () => {
     const secret = await start();
-    const N = 20000;
-    const input = { a: JSON.parse("[".repeat(N) + '"\u0440"' + "]".repeat(N)) };
-    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK({ tool_name: "mcp__x__y", input }) });
+    const N = 100000;
+    // Built as text: stringifying a tree this deep would overflow the test's own stack on some Node versions.
+    const prompt = `ASKJSON:[{"tool_name":"mcp__x__y","input":{"a":${"[".repeat(N)}"\\u0440"${"]".repeat(N)}}}]`;
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt });
     expect(requests).toHaveLength(0);
     expect(rows("askjson")[0].decision).toEqual({ behavior: "deny", message: "The request is too long to show for approval; ask for it in smaller steps." });
   });
