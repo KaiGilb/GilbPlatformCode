@@ -37,6 +37,18 @@ const CASES = [
   ["_headers file", ["csp-headers"]],
   ["Cloudflare headers", ["csp-headers"]],
   ["meta CSP", ["csp-headers"]],
+  // CB4
+  ["browser test", ["browser-proof"]],
+  ["end-to-end test", ["browser-proof"]],
+  ["headless Chrome", ["browser-proof"]],
+  ["e2e harness", ["browser-proof"]],
+  ["take screenshots in a test", ["browser-proof"]],
+  ["export records", ["vault-export"]],
+  ["export as zip", ["vault-export"]],
+  ["download my data", ["vault-export"]],
+  ["back up a vault", ["vault-export"]],
+  ["remember the chosen vault", ["vault-list"]],
+  ["shared with you banner", ["vault-list"]],
 ];
 
 for (const [phrase, units] of CASES) {
@@ -48,7 +60,7 @@ for (const [phrase, units] of CASES) {
 }
 
 test("a unit's own unit.json library note is identical to its library.json note", () => {
-  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers"]) {
+  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export"]) {
     const file = join(ROOT, "units", unit, "unit.json");
     assert.ok(existsSync(file), `${unit} has a unit.json`);
     const lib = JSON.parse(readFileSync(file, "utf8")).library;

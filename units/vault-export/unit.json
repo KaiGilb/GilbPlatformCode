@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "unit": "units/vault-export",
+  "package": "@kaigilb/gilbplatformcode-vault-export",
+  "version": "0.1.0",
+  "purpose": "Exports every record of a type from a vault as one archive of the records file and each record's picture, then reads the archive back and lists everything that does not check out.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.ts",
+    "src/vaultExport.ts",
+    "src/vaultExport.test.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "toJson",
+      "replaces": "run-8 app/src/services/exportService.ts: toJsonLd (the app's JSON-LD mapping)"
+    },
+    {
+      "member": "list",
+      "replaces": "run-8 exportService.ts: listTeapots (the record listing)"
+    },
+    {
+      "member": "compare",
+      "replaces": "run-8 exportService.ts: differences against TEAPOT_FIELDS (now differences(label, sent, now, fields))"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:Vault.export",
+    "title": "Vault export (records and their pictures in one archive, read back)",
+    "note": "The generic export: list the records, map each to JSON with the app's own function, read each record's picture bytes, pack the records file and the pictures into one archive, read the archive back and compare, and answer { zipBytes, count, files, pictures, differences }. A picture that cannot be read is named in differences, never thrown. Listing, bytes and zip are passed in (lws-records or vault-records-of-type, signed-picture's pictureBytes, zip's zipStore and unzipStore), so it has no peers. Also found as: export records; export as zip; download my data; back up a vault."
+  }
+}

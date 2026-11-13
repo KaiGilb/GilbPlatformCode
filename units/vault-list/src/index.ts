@@ -15,3 +15,15 @@ export {
   type VaultParentRef,
   type VaultTreeRow,
 } from "./vaultList";
+export {
+  currentKey,
+  dismissedKey,
+  dismissOffer,
+  forgetVault,
+  hasChosenVault,
+  offerDismissed,
+  rememberVault,
+  rememberedVault,
+  sharedOffer,
+  type KeyValueStore,
+} from "./vaultSession";

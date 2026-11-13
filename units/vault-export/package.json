@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-vault-export",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Exports every record of a type from a vault as one archive of the records file and each record's picture, then reads the archive back and lists everything that does not check out.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
