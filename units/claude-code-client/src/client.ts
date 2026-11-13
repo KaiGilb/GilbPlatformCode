@@ -310,9 +310,9 @@ interface BridgeTurnOut {
   project?: string;
 }
 
-/** The bridge events only a code turn sends. */
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
 const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
+/** The bridge events only a code turn sends. */
 const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done"]);
 
 interface SseEvent {
@@ -850,6 +850,25 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         );
       };
 
+      /** An approval_request the client dropped as malformed but that has a usable id: answer it "no" so the bridge does not wait out its timeout. */
+      const denyDropped = (id: string) => {
+        handlers.push(
+          (async () => {
+            try {
+              const back = await bridgeFetch("/v1/approval", {
+                signal: stop.signal,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
+                body: JSON.stringify({ turnId, id, allow: false }),
+              });
+              if (back.status === 401) throw bridgeForgotUs();
+            } catch (err) {
+              if (!stop.signal.aborted) failTurn(err);
+            }
+          })(),
+        );
+      };
+
       let readErr: unknown = null;
       try {
         for await (const ev of readBridgeSse(res, stop.signal)) {
@@ -891,6 +910,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
               opts.onEvent?.(ce);
               if (ce.event === "approval_request") askPerson(ce.data);
               else if (ce.event === "approval_done") closeQuestion(ce.data.id);
+            } else if (ev.event === "approval_request" && isStr(data.id) && data.id !== "" && data.id.length <= 128) {
+              denyDropped(data.id);
             }
           }
         }

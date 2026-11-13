@@ -388,6 +388,28 @@ describe("access (0.3.0)", () => {
     expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcd15", "0123456789abcd16"]);
   });
 
+  it("a dropped (malformed) approval_request with a usable string id is answered no; one without a usable id is left", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const asked: string[] = [];
+    const calls = fakeBridge([
+      ["approval_request", { id: "aaaa000000000001", tool: "Bash", summary: "x".repeat(2001) }],
+      ["approval_request", { id: "aaaa000000000002", tool: "mcp__a\nb", summary: "s" }],
+      ["approval_request", { id: "aaaa000000000003", tool: "Bash", summary: "ok" }],
+      ["approval_request", { tool: "Bash", summary: "x".repeat(2001) }],
+      ["approval_request", { id: 7, tool: "Bash", summary: "x".repeat(2001) }],
+      ["approval_request", { id: "", tool: "Bash", summary: "x".repeat(2001) }],
+      ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }],
+    ], (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined));
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A7", mode: "code", onEvent: (e) => seen.push(e), onApproval: async (r) => { asked.push(r.id); return true; } });
+    expect(asked).toEqual(["aaaa000000000003"]);
+    const posts = calls.filter((c) => c.url === `${BRIDGE}/v1/approval`).map((c) => JSON.parse(String(c.init.body)));
+    expect(posts.filter((b) => b.allow === false).map((b) => b.id).sort()).toEqual(["aaaa000000000001", "aaaa000000000002"]);
+    expect(posts.filter((b) => b.allow === true).map((b) => b.id)).toEqual(["aaaa000000000003"]);
+    expect(posts).toHaveLength(3);
+    expect(seen.filter((e: any) => e.event === "approval_request")).toHaveLength(1);
+  });
+
   it("notice is passed through on the event and to onApproval, apart from detail; a non-string notice is ignored; a notice over 400 drops the event", async () => {
     client.save("s3cret");
     const seen: unknown[] = [];

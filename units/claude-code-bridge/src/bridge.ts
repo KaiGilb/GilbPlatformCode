@@ -150,7 +150,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.0";
+export const BRIDGE_BUILD = "0.3.1";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1468,7 +1468,18 @@ export function createBridge(opts: BridgeOptions = {}) {
     return seen.length === 0 ? "" : `Path contains non-ASCII characters: ${seen.slice(0, 20).join(" ")}${seen.length > 20 ? " …" : ""}`;
   };
   /** The model's description: the only thing `detail` ever holds (capped at 200). The bridge's own lines go in `notice`, a separate field the page can show apart. */
-  const descOf = (desc: string) => cap(desc, 200);
+  const descOf = (desc: string) => {
+    // From the raw text, non-ASCII as <U+XXXX>; cut by code point and never inside an escape (an escape that does not fit is left out whole).
+    const shown = showCommand(desc);
+    if (shown.length <= 200) return shown;
+    const parts = shown.match(/<U\+[0-9A-F]{4,6}>|[\s\S]/gu) ?? [];
+    let out = "";
+    for (const p of parts) {
+      if (out.length + p.length > 199) break;
+      out += p;
+    }
+    return `${out}…`;
+  };
   const NOTICE_MAX = 400;
   const HOST_LINE_MAX = 300;
   const TOO_LONG_ADDRESS = "The address is too long to show for approval; ask for it without that.";
@@ -1476,26 +1487,48 @@ export function createBridge(opts: BridgeOptions = {}) {
   const NOT_PATH_TOOLS = new Set(["Bash", "WebFetch", "WebSearch"]);
   const PATH_KEYS = new Set(["file_path", "notebook_path", "path"]);
   /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys at the TOP level (the only ones pathNote covers), which keep their characters. Nested path keys are escaped like any other string. */
-  const escapeInput = (v: unknown, top = false): unknown => {
-    if (typeof v === "string") return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
-    if (Array.isArray(v)) return v.map((x) => escapeInput(x));
-    if (v && typeof v === "object") {
-      // No prototype: an own "__proto__" key is a plain key here, so JSON.stringify shows it.
-      const o: Record<string, unknown> = Object.create(null);
-      for (const [k, x] of Object.entries(v as Record<string, unknown>)) o[escapeNonAscii(k)] = top && PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
-      return o;
+  const escapeInput = (root: unknown): unknown => {
+    // Iterative, so depth cannot overflow the stack. No prototype on a copied object: an own "__proto__" key is a plain key, so JSON.stringify shows it.
+    const copy = (v: unknown): unknown => {
+      if (typeof v === "string") return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
+      if (Array.isArray(v)) return new Array<unknown>(v.length);
+      if (v && typeof v === "object") return Object.create(null);
+      return v;
+    };
+    const out = copy(root);
+    const work: { src: unknown; dst: unknown; top: boolean }[] = [{ src: root, dst: out, top: true }];
+    while (work.length > 0) {
+      const { src, dst, top } = work.pop()!;
+      if (Array.isArray(src)) {
+        const d = dst as unknown[];
+        for (let i = 0; i < src.length; i++) {
+          d[i] = copy(src[i]);
+          if (d[i] !== src[i] && typeof src[i] === "object" && src[i] !== null) work.push({ src: src[i], dst: d[i], top: false });
+        }
+      } else if (src && typeof src === "object") {
+        const d = dst as Record<string, unknown>;
+        for (const [k, x] of Object.entries(src as Record<string, unknown>)) {
+          const ek = escapeNonAscii(k);
+          if (top && PATH_KEYS.has(k) && typeof x === "string") d[ek] = x;
+          else {
+            d[ek] = copy(x);
+            if (x && typeof x === "object") work.push({ src: x, dst: d[ek], top: false });
+          }
+        }
+      }
     }
-    return v;
+    return out;
   };
   const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
   const BAD_TOOL_MSG = "The tool name is not valid.";
-  const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-  const RESERVED_MSG = "The request holds a reserved key (__proto__, constructor or prototype); ask for it without that.";
+  const RESERVED_MSG = "The request holds a reserved key (__proto__); ask for it without that.";
+  const CTOR_NOTICE = "Request holds a field named constructor/prototype.";
   const LOOKALIKE_MSG = "Two fields in the request look the same; ask for it without that.";
-  /** A message when the input holds a reserved key at any depth, or two keys of one object that show as the same text; "" when fine. Iterative, so depth cannot overflow the stack. */
-  const inputKeyProblem = (root: unknown): string => {
+  /** What is wrong with the input's keys: `deny` is a message when it holds "__proto__" at any depth, or two keys of one object that show as the same text; `ctor` is true when some key is "constructor" or "prototype" (asked about, with a notice). Iterative, so depth cannot overflow the stack. */
+  const inputKeyProblem = (root: unknown): { deny: string; ctor: boolean } => {
     const stack: unknown[] = [root];
     let dup = "";
+    let ctor = false;
     while (stack.length > 0) {
       const v = stack.pop();
       if (Array.isArray(v)) {
@@ -1503,15 +1536,16 @@ export function createBridge(opts: BridgeOptions = {}) {
       } else if (v && typeof v === "object") {
         const seen = new Set<string>();
         for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-          if (RESERVED_KEYS.has(k)) return RESERVED_MSG;
-          const e = escapeNonAscii(k);
+          if (k === "__proto__") return { deny: RESERVED_MSG, ctor };
+          if (k === "constructor" || k === "prototype") ctor = true;
+          const e = showText(JSON.stringify(escapeNonAscii(k))); // exactly the text the card shows for this key
           if (seen.has(e)) dup = LOOKALIKE_MSG;
           seen.add(e);
           stack.push(x);
         }
       }
     }
-    return dup;
+    return { deny: dup, ctor };
   };
   const pathNote = (tool: string, input: Record<string, unknown>) => (!NOT_PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v): v is string => typeof v === "string")) : "");
   const ONLY_HTTP_MSG = "Only http and https addresses can be fetched.";
@@ -1531,7 +1565,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     const scope = turn.proj?.path ?? workspace?.path ?? "";
     if (!TOOL_NAME_OK.test(tool)) return deny(BAD_TOOL_MSG);
     const keyProblem = inputKeyProblem(input);
-    if (keyProblem) return deny(keyProblem);
+    if (keyProblem.deny) return deny(keyProblem.deny);
     if (computer) {
       // Computer mode: every request is asked of the person, no automatic allow or deny by path.
       let summary: string;
@@ -1551,7 +1585,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (hasHidden(c)) return deny(HIDDEN_MSG);
         summary = showCommand(c) || "Bash";
         if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-        detail = descOf(showText(str(input.description)));
+        detail = descOf(str(input.description));
       } else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
         const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
         // "~" and "$" paths are shown exactly as given (never resolved against the folder); absolute as given; other relative ones resolved against the start folder.
@@ -1576,24 +1610,21 @@ export function createBridge(opts: BridgeOptions = {}) {
           notice = line;
         }
       } else {
-        let j = "";
+        let j: string;
+        let ej: string;
         try {
           j = JSON.stringify(input);
+          ej = JSON.stringify(escapeInput(input));
         } catch {
-          /* not printable */
+          return deny(TOO_LONG_REQUEST); // cannot be printed: never fall back to the raw text
         }
         if (hasHidden(j)) return deny(HIDDEN_MSG);
-        let ej = j;
-        try {
-          ej = JSON.stringify(escapeInput(input, true));
-        } catch {
-          /* not printable */
-        }
         summary = showText(`${escapeNonAscii(tool || "tool")} ${ej}`);
       }
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_REQUEST);
       const note = pathNote(tool, input);
       if (note) notice = notice ? `${notice}\n${note}` : note;
+      if (keyProblem.ctor) notice = notice ? `${notice}\n${CTOR_NOTICE}` : CTOR_NOTICE;
       if (notice.length > NOTICE_MAX) return deny(TOO_LONG_ADDRESS);
       const a = await askPerson(turn, tool, summary, detail, notice);
       return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
@@ -1634,11 +1665,12 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (hasHidden(c) || hasHidden(str(input.description))) return deny(HIDDEN_MSG);
       summary = showCommand(c) || "Bash";
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-      detail = descOf(showText(str(input.description)));
+      detail = descOf(str(input.description));
     } else {
       return deny("This tool is not allowed in a code turn.");
     }
-    const notice = pathNote(tool, input);
+    let notice = pathNote(tool, input);
+    if (keyProblem.ctor) notice = notice ? `${notice}\n${CTOR_NOTICE}` : CTOR_NOTICE;
     if (notice.length > NOTICE_MAX) return deny(TOO_LONG_ADDRESS);
     const a = await askPerson(turn, tool, summary, detail, notice);
     return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
