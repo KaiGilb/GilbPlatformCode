@@ -1475,13 +1475,13 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Tools whose fields are not paths: no path note. Every other tool (MultiEdit, MCP tools ...) gets it for file_path, notebook_path and path. */
   const NOT_PATH_TOOLS = new Set(["Bash", "WebFetch", "WebSearch"]);
   const PATH_KEYS = new Set(["file_path", "notebook_path", "path"]);
-  /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys, which keep their characters. */
-  const escapeInput = (v: unknown): unknown => {
+  /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys at the TOP level (the only ones pathNote covers), which keep their characters. Nested path keys are escaped like any other string. */
+  const escapeInput = (v: unknown, top = false): unknown => {
     if (typeof v === "string") return escapeNonAscii(v.normalize("NFC"));
-    if (Array.isArray(v)) return v.map(escapeInput);
+    if (Array.isArray(v)) return v.map((x) => escapeInput(x));
     if (v && typeof v === "object") {
       const o: Record<string, unknown> = {};
-      for (const [k, x] of Object.entries(v as Record<string, unknown>)) o[escapeNonAscii(k)] = PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
+      for (const [k, x] of Object.entries(v as Record<string, unknown>)) o[escapeNonAscii(k)] = top && PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
       return o;
     }
     return v;
@@ -1555,7 +1555,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (hasHidden(j)) return deny(HIDDEN_MSG);
         let ej = j;
         try {
-          ej = JSON.stringify(escapeInput(input));
+          ej = JSON.stringify(escapeInput(input, true));
         } catch {
           /* not printable */
         }
