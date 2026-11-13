@@ -49,6 +49,22 @@ const CASES = [
   ["back up a vault", ["vault-export"]],
   ["remember the chosen vault", ["vault-list"]],
   ["shared with you banner", ["vault-list"]],
+  // CB6
+  ["start-up", ["signin"]],
+  ["start up", ["signin"]],
+  ["sign in", ["signin"]],
+  ["sign-in", ["signin"]],
+  ["open app vault", ["signin"]],
+  ["first sign-in creates vault", ["signin"]],
+  ["since last visit", ["since-last-visit"]],
+  ["since your last visit", ["since-last-visit"]],
+  ["what changed", ["since-last-visit"]],
+  ["new records", ["since-last-visit"]],
+  ["activity banner", ["since-last-visit"]],
+  ["header menu", ["section-menu"]],
+  ["three dots", ["section-menu"]],
+  ["menu more", ["section-menu"]],
+  ["overflow menu", ["section-menu"]],
 ];
 
 for (const [phrase, units] of CASES) {
@@ -60,7 +76,7 @@ for (const [phrase, units] of CASES) {
 }
 
 test("a unit's own unit.json library note is identical to its library.json note", () => {
-  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export"]) {
+  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export", "since-last-visit"]) {
     const file = join(ROOT, "units", unit, "unit.json");
     assert.ok(existsSync(file), `${unit} has a unit.json`);
     const lib = JSON.parse(readFileSync(file, "utf8")).library;
