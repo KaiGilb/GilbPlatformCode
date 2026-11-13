@@ -23,5 +23,5 @@
     "scripts/check-host-agnostic.mjs"
   ],
   "host": [],
-  "library": {"admitted": true, "tag": "t:Vault.switcher", "title": "Vault switcher (a chip with the open vault and a sheet to pick another)", "note": "A chip with the open vault's name; a tap opens a sheet listing the vaults the person reaches, own first, shared and view-only ones labelled, the open one marked, and calls onPick with the chosen vault. React, on modal-sheet and vault-list (vaultChoices, choiceLine). It lists with the load you pass; the list itself is reachable-vaults or signin's listVaults."}
+  "library": {"admitted": true, "tag": "t:Vault.switcher", "title": "Vault switcher (a chip with the open vault and a sheet to pick another)", "note": "A chip with the open vault's name; a tap opens a sheet listing the vaults the person reaches, own first, shared and view-only ones labelled, the open one marked, and calls onPick with the chosen vault. React, on modal-sheet and vault-list (vaultChoices, choiceLine). It lists with the load you pass; the list itself is reachable-vaults or signin's listVaults. Also found as: vault chooser; choose a vault; pick another vault; switch between shared vaults."}
 }

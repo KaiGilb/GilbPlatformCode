@@ -203,3 +203,25 @@ export function choiceLine(c: Pick<VaultChoice, "yours" | "viewOnly">, words: Pa
   const w = { ...DEFAULT_CHOICE_WORDS, ...words };
   return `${c.yours ? w.yours : w.shared}${c.viewOnly ? ` · ${w.viewOnly}` : ""}`;
 }
+
+/**
+ * A tolerant typed filter over vault rows. A row is kept when its `represents` equals `want.represents`, or when its `shortName` or `name`
+ * (lower-cased) ends with `want.nameSuffix` (lower-cased). A row that arrives bare (no `represents`, no `name`, no `shortName`, as a vault shared
+ * with the person does) is kept unless `want.keepUnknown === false`. A row that says what it is and does not match is dropped. With neither
+ * `represents` nor `nameSuffix` asked, every row is kept. Never mutates `rows`; keeps their order; returns a new array.
+ */
+export function vaultsOfType<T extends { vaultId: string; represents?: string | null; name?: string | null; shortName?: string | null }>(
+  rows: readonly T[],
+  want: { represents?: string; nameSuffix?: string; keepUnknown?: boolean },
+): T[] {
+  const represents = want.represents;
+  const suffix = want.nameSuffix ? want.nameSuffix.toLowerCase() : undefined;
+  if (!represents && !suffix) return [...rows];
+  const keepUnknown = want.keepUnknown !== false;
+  return rows.filter((row) => {
+    if (represents && row.represents === represents) return true;
+    if (suffix && [row.shortName, row.name].some((n) => !!n && n.toLowerCase().endsWith(suffix))) return true;
+    const bare = !row.represents && !row.name && !row.shortName;
+    return bare && keepUnknown;
+  });
+}

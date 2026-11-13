@@ -56,7 +56,7 @@ export function granteeFromInput(text: string, o: { apex?: string } = {}): { gra
 const holds = (e: VaultAclEntry, mode: string): boolean => (e.levels as readonly string[]).includes(mode);
 
 function rowOf(e: VaultAclEntry, level: ShareLevel, owner: boolean): AccessRow {
-  const r = principalRow(e.principal, { label: e.label, webId: e.webId });
+  const r = principalRow(e.principal, { label: e.label, webId: e.webId, labelSource: e.labelSource, registered: e.registered, viewer: e.viewer });
   return { principal: e.principal, label: r.title, note: owner ? null : r.provenance, level, owner };
 }
 

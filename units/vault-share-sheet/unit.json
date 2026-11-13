@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-share-sheet",
   "package": "@kaigilb/gilbplatformcode-vault-share-sheet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",

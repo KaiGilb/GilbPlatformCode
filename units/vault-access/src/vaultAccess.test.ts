@@ -118,6 +118,9 @@ describe("fetchVaultAcl", () => {
           label: "Sam",
           webId: "https://sam.example.test/i",
           kind: "grant",
+          labelSource: "vault-name",
+          registered: true,
+          viewer: "self",
         },
         {
           principal: "https://id.example.test/base/p/no-name",
@@ -129,6 +132,34 @@ describe("fetchVaultAcl", () => {
       ],
       edges: [{ sourceVault: "https://other.example.test/vault", mode: "read", grade: "full", kind: "public" }],
     });
+  });
+
+  it("keeps labelSource, registered and viewer when the server sends them, including registered false and null", async () => {
+    setUp();
+    stubFetch(() =>
+      jsonResponse({
+        acl: [
+          { principal: "k1", levels: ["control"], labelSource: "account-email", registered: true, viewer: "earlier-identity-of-self" },
+          { principal: "k2", levels: ["read"], registered: false, labelSource: null, viewer: null },
+        ],
+      }),
+    );
+    const result = await fetchVaultAcl(VAULT);
+    if (!result.controlled) throw new Error("expected controlled");
+    expect(result.acl[0]).toMatchObject({ labelSource: "account-email", registered: true, viewer: "earlier-identity-of-self" });
+    expect(result.acl[1]).toMatchObject({ labelSource: null, registered: false, viewer: null });
+  });
+
+  it("leaves labelSource, registered and viewer out as keys when the server sends none of them", async () => {
+    setUp();
+    stubFetch(() => jsonResponse({ acl: [{ principal: "k1", levels: ["read"], label: "Sam" }] }));
+    const result = await fetchVaultAcl(VAULT);
+    if (!result.controlled) throw new Error("expected controlled");
+    const entry = result.acl[0]!;
+    expect(Object.keys(entry).sort()).toEqual(["kind", "label", "levels", "principal", "webId"]);
+    expect("labelSource" in entry).toBe(false);
+    expect("registered" in entry).toBe(false);
+    expect("viewer" in entry).toBe(false);
   });
 
   it("reads a 404 as not controlled", async () => {

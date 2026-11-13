@@ -102,6 +102,10 @@ The grantee of a grant is the person's vault address (`/vault` or `/base`), not 
 
 `NO_CONTROL`, the sentence a 403 on a grant or revoke carries, is exported. An app had copied it to show the same words for a 404 on the access list. The message a 403 gives is unchanged.
 
+## Changes in 0.1.3
+
+`fetchVaultAcl` keeps `labelSource`, `registered` and `viewer` on each entry when the server sends them (`registered` only when it is a boolean). It no longer drops them, and it adds none that were not sent. Before, a share sheet could not tell a registered key from an unknown one.
+
 ## Where it came from
 
 GilbApp (private repo `KaiGilb/GilbApp`), commit `e7c83b7dea8c30a1b851a9f4ada46cce4431141d`, copied by hand:

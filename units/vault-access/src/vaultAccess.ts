@@ -128,6 +128,10 @@ export async function fetchVaultAcl(vaultId: string): Promise<VaultAclResult> {
       label: typeof e.label === "string" ? e.label : e.label ?? null,
       webId: typeof e.webId === "string" ? e.webId : e.webId ?? null,
       kind: e.kind === "owner-inferred" ? ("owner-inferred" as const) : ("grant" as const),
+      // Passed on only when the server sent them: silence is not a fact, so no default is invented.
+      ...(e.labelSource !== undefined ? { labelSource: e.labelSource } : {}),
+      ...(typeof e.registered === "boolean" ? { registered: e.registered } : {}),
+      ...(e.viewer !== undefined ? { viewer: e.viewer } : {}),
     }));
     const rawEdges = Array.isArray(body.edges) ? (body.edges as VaultReachAclEntry[]) : [];
     const edges = rawEdges.map((e) => ({

@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-access",
   "package": "@kaigilb/gilbplatformcode-vault-access",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "purpose": "Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -36,6 +36,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.3. `fetchVaultAcl` keeps `labelSource`, `registered` and `viewer` on an entry when the server sends them; it adds none that were not sent",
     "0.1.2. `NO_CONTROL` (the 403 sentence) is exported; the message a 403 gives is unchanged",
     "The imports: `vaultOriginOf` from `@kaigilb/gilbplatformcode-vault-origin-rule`; `dpopReadAuth`, `dpopWriteAuth` and `invalidateDpop` from `@kaigilb/gilbplatformcode-lws-session-bridge`; `serverErrorText` from `@kaigilb/gilbplatformcode-server-error`. In the source these are `./config`, `./dpop` and `./serverError`. The three URL constants are functions in this file, built from `vaultOriginOf` at each call.",
     "The short-WebID example on `VaultAclEntry` named a host. The example is removed. No code changed.",

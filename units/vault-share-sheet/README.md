@@ -89,6 +89,10 @@ None of its own. The hook keeps its state per mount.
 - "Two people shared at once race." Different people: both are there after the re-read. The same person shared edit and view at once ends as edit, whichever lands first (on the fake platform; grants only add). Another sheet's request is not seen until the next read.
 - "A refused share half-works." It changes nothing (the list is the same before and after).
 
+## Changes in 0.1.1
+
+`accessRows` passes `labelSource`, `registered` and `viewer` to `principal-row`, so a registered key with no name reads "Registered principal" and a named one shows its name, not "Principal key". Needs `vault-access` 0.1.3, which keeps those fields.
+
 ## Where it came from
 
 Written for this repository in EESpeed round 7 (batch U2c) from PictureRecords run 7 `app/src/share/ShareSheet.tsx` and `shareApi.ts` (the sheet and the model) and run 6 `app/src/sharing.ts` and `app/src/ui/ShareSheet.tsx` (the owner row with `principal-row` labels and the apex read from `baseOrigin()`). Base commit `19fb34ba7195055fbd0ef13e376d789756e2c9f6` of `KaiGilb/GilbPlatformCode`. Changes from run 7: the owner is found by Control, not by kind; the public filter is gone; the apex is not `gilb.com`; a thrown 404 reads as the Control sentence; Close works while busy; the placeholder is run 6's.
