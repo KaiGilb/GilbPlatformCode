@@ -1,11 +1,11 @@
 // @vitest-environment node
-// Batch 10 (QA round 5, N7): a code turn's child gets an allow-listed environment; a chat turn's is unchanged
+// Batches 10 and 11 (QA rounds 5 and 6): a code turn's child gets an allow-listed environment (one spelling per name, no secret-looking LC_ names); CLAUDE_CONFIG_DIR is unreadable
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, codeChildEnv, CODE_ENV_ALLOW, childEnv } from "../bridge/bridge.mjs";
+import { createBridge, codeChildEnv, codeTurnSettings, CODE_ENV_ALLOW, childEnv } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -134,5 +134,51 @@ describe("codeChildEnv", () => {
   it("starts from childEnv: it adds nothing childEnv did not have except its own timeouts", () => {
     const base = childEnv({ PATH: "/bin" });
     expect(Object.keys(codeChildEnv({ PATH: "/bin" }, "linux")).sort()).toEqual(Object.keys(base).sort());
+  });
+});
+
+describe("N8: CLAUDE_CONFIG_DIR is unreadable in a code turn", () => {
+  it("codeTurnSettings adds it (made absolute, ~ left as is) when given, and nothing when not", () => {
+    const abs = path.resolve("some/cfg");
+    expect(codeTurnSettings("/Users/p", "darwin", [], "session", "some/cfg").sandbox.filesystem.denyRead).toContain(abs);
+    expect(codeTurnSettings("/Users/p", "darwin", [], "session", "~/.claude-alt").sandbox.filesystem.denyRead).toContain("~/.claude-alt");
+    expect(codeTurnSettings("/Users/p", "darwin", [], "session", "  ").sandbox.filesystem.denyRead).toEqual(codeTurnSettings("/Users/p", "darwin").sandbox.filesystem.denyRead);
+    expect(codeTurnSettings("/Users/p", "darwin")).toEqual(codeTurnSettings("/Users/p", "darwin", [], "session", ""));
+  });
+  it("a code turn's --settings carries the person's CLAUDE_CONFIG_DIR; with it unset there is no such entry", async () => {
+    const cfg = path.join(mk("CfgHolder"), "claude-cfg");
+    const ws = mk("CodeCfg");
+    const b = await start({ workspace: ws, codeEnvExtraPrefixes: ["FAKE_"], env: { ...process.env, FAKE_CLAUDE_LOG: logFile, CLAUDE_CONFIG_DIR: cfg } });
+    await turn(b, { mode: "code" });
+    const settingsOf = (i) => { const a = rows("run")[i].argv; return JSON.parse(a[a.indexOf("--settings") + 1]); };
+    expect(settingsOf(0).sandbox.filesystem.denyRead).toContain(cfg);
+    await b.bridge.close();
+    const env2 = { ...process.env, FAKE_CLAUDE_LOG: logFile };
+    delete env2.CLAUDE_CONFIG_DIR;
+    const b2 = await start({ workspace: ws, codeEnvExtraPrefixes: ["FAKE_"], env: env2 });
+    await turn(b2, { mode: "code" });
+    expect(settingsOf(1).sandbox.filesystem.denyRead).not.toContain(cfg);
+    expect(settingsOf(1).sandbox.filesystem.denyRead).toEqual(codeTurnSettings(os.homedir(), "darwin").sandbox.filesystem.denyRead);
+  });
+});
+
+describe("L11: one spelling per name on Windows", () => {
+  it("Path+PATH and SystemRoot+SYSTEMROOT give one each, the allow-list's spelling preferred, else the first seen", () => {
+    const out = codeChildEnv({ Path: "a", PATH: "b", SYSTEMROOT: "x", SystemRoot: "y", comspec: "c1", COMSPEC: "c2", Temp: "t1", TEMP: "t2" }, "win32");
+    const names = Object.keys(out).filter((k) => !/MCP_TOOL/.test(k));
+    expect(names.sort()).toEqual(["PATH", "SystemRoot", "TEMP", "comspec"].sort()); // PATH, SystemRoot, TEMP are the list's own spellings; no spelling of ComSpec is, so the first seen stays
+    expect(out.PATH).toBe("b");
+    expect(out.SystemRoot).toBe("y");
+  });
+  it("when no spelling is the list's own, the first seen is kept", () => {
+    const out = codeChildEnv({ comspec: "c1", COMSPEC: "c2" }, "win32");
+    expect(Object.keys(out).filter((k) => k.toUpperCase() === "COMSPEC")).toEqual(["comspec"]);
+  });
+});
+
+describe("L13: secret-looking LC_ names are stripped", () => {
+  it("LC_SECRET, lc_token and LC_API_KEY go; LC_ALL and LC_CTYPE stay", () => {
+    const out = codeChildEnv({ LC_SECRET: "s", lc_token: "t", LC_API_KEY: "k", LC_ALL: "C", LC_CTYPE: "UTF-8" }, "linux");
+    expect(Object.keys(out).filter((k) => /^lc_/i.test(k)).sort()).toEqual(["LC_ALL", "LC_CTYPE"]);
   });
 });

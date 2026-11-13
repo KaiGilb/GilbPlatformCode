@@ -121,14 +121,24 @@ export const CODE_ENV_ALLOW_WIN32 = [
 export function codeChildEnv(env = process.env, platform = process.platform, extraPrefixes = []) {
     const win = platform === "win32";
     const norm = (k) => (win ? k.toUpperCase() : k);
-    const allow = new Set([...CODE_ENV_ALLOW, ...(win ? CODE_ENV_ALLOW_WIN32 : [])].map(norm));
-    const out = {};
+    const spellings = [...CODE_ENV_ALLOW, ...(win ? CODE_ENV_ALLOW_WIN32 : [])];
+    const allow = new Set(spellings.map(norm));
+    const kept = new Map();
     for (const [k, v] of Object.entries(childEnv(env))) {
         const n = norm(k);
-        const secretName = /TOKEN|KEY|SECRET/i.test(k);
-        if (allow.has(n) || n.startsWith("LC_") || extraPrefixes.some((p) => n.startsWith(norm(p))) || ((n.startsWith("CLAUDE_CODE_") || n === "CLAUDE_CONFIG_DIR") && !secretName))
-            out[k] = v;
+        const secretName = /TOKEN|KEY|SECRET/i.test(k); // for every name, LC_* and CLAUDE_CODE_* included
+        const ok = (!secretName && (allow.has(n) || n.startsWith("LC_") || n.startsWith("CLAUDE_CODE_") || n === "CLAUDE_CONFIG_DIR")) || extraPrefixes.some((p) => n.startsWith(norm(p))); // extraPrefixes: test-only
+        if (!ok)
+            continue;
+        // One spelling per name on Windows (names are case-insensitive there): the allow-list's own spelling if present, else the first seen.
+        const prev = kept.get(n);
+        const exact = spellings.includes(k);
+        if (!prev || (!prev.exact && exact))
+            kept.set(n, { k, v, exact });
     }
+    const out = {};
+    for (const { k, v } of kept.values())
+        out[k] = v;
     return out;
 }
 // Single-file use (downloaded from the app): allowed-origins.json is not next to this file, so these built-in
@@ -561,8 +571,15 @@ export function validateWorkspace(input, o) {
     }
     return { ok: true, path: real, name: P.basename(real) };
 }
+/** A CLAUDE_CONFIG_DIR the person set holds Claude Code's own login and settings: it is unreadable in a code turn too. `~` is left for Claude Code to expand. */
+function configDirDeny(dir) {
+    const d = dir.trim();
+    if (!d)
+        return [];
+    return [d.startsWith("~") ? d : path.resolve(d)];
+}
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session") {
+export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "") {
     void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
     if (platform === "win32") {
         // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
@@ -580,7 +597,7 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
             allowUnsandboxedCommands: false,
             autoAllowBashIfSandboxed: approval !== "each-write", // each-write: every command asks too, because a command can write
             network: { allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"] },
-            filesystem: { denyRead: [...denyRead, ...extraDenyRead] },
+            filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
         },
         permissions: {
             deny: ["WebFetch", "WebSearch"],
@@ -1442,7 +1459,7 @@ export function createBridge(opts = {}) {
             "--permission-prompts", turn.approval === "each-write" ? "host" : "none",
             ...(turn.approval === "each-write" ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
             "--disable-slash-commands",
-            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval)),
+            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")),
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
             "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
