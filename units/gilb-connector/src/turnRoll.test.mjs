@@ -263,7 +263,8 @@ describe("a turn out of room", () => {
       const platform = await scripted([ROUNDS]);
       const box = connect({ origin: platform.origin, agent });
       const res = await callTool(box);
-      expectRenewed(res, agent);
+      // 0.6.2: a connector that is Agent.Concept does not renew at all; the server's answer stands.
+      expect(text(res), agent).toBe(ROUNDS);
       expect(posts(platform), agent).toHaveLength(1);
     }
   });

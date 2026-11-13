@@ -192,13 +192,16 @@ describe("round cut never blocks the person (stuck case i: run_named_role Agent.
     }
   });
 
-  it("r2 a connector that is Agent.Concept, and ask_agent_concept: same", async () => {
+  it("r2 r11 a connector that is Agent.Concept does not renew; ask_agent_concept renews", async () => {
     const platform = await scripted([ROUNDS, "tool-ok"]);
+    const lines = stderrLines();
     const box = connect({ origin: platform.origin, agent: "Agent.Concept" });
-    expect(JSON.parse(text(await callTool(box))).renewed).toBe(true);
+    // r11: a connector that is Agent.Concept does not renew: the server's answer stands, the reason is logged.
+    expect(text(await callTool(box))).toBe(ROUNDS);
     await callTool(box);
     expect(posts(platform)).toHaveLength(2);
-    expect(posts(platform)[1].body.turnId).not.toBe(TURN);
+    expect(posts(platform)[1].body.turnId).toBe(TURN);
+    expect(skipLines(lines).some((l) => l.includes("this connector is Agent.Concept"))).toBe(true);
     const p2 = await scripted([ROUNDS, "tool-ok"]);
     const b2 = connect({ origin: p2.origin });
     expect(JSON.parse(text(await callTool(b2, "ask_agent_concept", { need: "x" }))).renewed).toBe(true);
@@ -220,12 +223,60 @@ describe("round cut never blocks the person (stuck case i: run_named_role Agent.
     const lines = stderrLines();
     const platform = await scripted([ROUNDS]);
     const box = connect({ origin: platform.origin });
-    for (let i = 0; i < MAX_TURN_ROLLS; i++) await callTool(box, "run_named_role", { role: "Agent.Concept", task: "x" });
-    const res = await callTool(box, "run_named_role", { role: "Agent.Concept", task: "x" });
-    expect(JSON.parse(text(res)).renewed).toBe(false);
+    let res;
+    for (let i = 0; i < 2 * MAX_TURN_ROLLS; i++) {
+      res = await callTool(box);
+      if (JSON.parse(text(res)).renewed !== true) break;
+    }
+    expect(JSON.parse(text(res)).error).toContain("start a new chat");
     expect(skipLines(lines).length).toBeGreaterThan(0);
     expect(skipLines(lines)[0]).toContain(String(MAX_TURN_ROLLS));
   }, 60000);
+});
+
+describe("the Agent.Concept brake survives renewal", () => {
+  const concept = (box) => callTool(box, "run_named_role", { role: "Agent.Concept", task: "x" });
+  const outcome = (box) => callTool(box, "run_named_role", { role: "Agent.Outcome", task: "x" });
+
+  it("r9 a cut Concept call renews the turn, Agent.Outcome is sent on the new turn, Agent.Concept is not sent and says conceptPaused", async () => {
+    const platform = await scripted([ROUNDS, "role-ok"]);
+    const box = connect({ origin: platform.origin });
+    expect(JSON.parse(text(await concept(box))).renewed).toBe(true);
+    expect(posts(platform)).toHaveLength(1);
+    expect(text(await outcome(box))).toBe("role-ok");
+    expect(posts(platform)).toHaveLength(2);
+    expect(posts(platform)[1].body.turnId).not.toBe(TURN);
+    const paused = JSON.parse(text(await concept(box)));
+    expect(paused.conceptPaused).toBe(true);
+    expect(paused.renewed).toBe(true);
+    expect(paused.next).toContain("continues after the person's next message");
+    expect(posts(platform)).toHaveLength(2);
+    expect(JSON.parse(text(await callTool(box, "ask_agent_concept", { need: "x" }))).conceptPaused).toBe(true);
+    expect(posts(platform)).toHaveLength(2);
+  });
+
+  it("r9 a cut Concept hand-off sets the brake too", async () => {
+    const platform = await hopDoor(CUT);
+    const box = connect({ origin: platform.origin, env: meEnv() });
+    expect(answerOf(await concept(box)).cut).toBe(CUT_TEXT);
+    const before = posts(platform).length;
+    expect(JSON.parse(text(await concept(box))).conceptPaused).toBe(true);
+    expect(posts(platform)).toHaveLength(before);
+    await outcome(box);
+    const roles = posts(platform).filter((rec) => rec.body.name === "run_named_role");
+    expect(roles.at(-1).body.arguments).toContain("Agent.Outcome");
+    expect(roles.at(-1).body.turnId).not.toBe(TURN);
+  }, 30000);
+
+  it("r10 the person's next message (gilbplatform_task) clears the brake, and Concept is sent again", async () => {
+    const platform = await scripted([ROUNDS, "role-ok"]);
+    const box = connect({ origin: platform.origin });
+    await concept(box);
+    expect(JSON.parse(text(await concept(box))).conceptPaused).toBe(true);
+    await callTool(box, "gilbplatform_task", { text: "a new request" });
+    expect(text(await concept(box))).toBe("role-ok");
+    expect(posts(platform).at(-1).body.arguments).toContain("Agent.Concept");
+  });
 });
 
 describe("round cut never blocks the person (stuck case ii: a hand-off cut by the cap)", () => {

@@ -252,7 +252,8 @@ describe("a hand-off cut by the round ceiling", () => {
     const box = connect({ origin: platform.origin, env: meEnv(), agent: "Agent.Concept" });
     expect(answerOf(await run(box)).cut).toBe(CUT_TEXT);
     await callTool(box);
-    expect(posts(platform).at(-1).body.turnId).not.toBe(TURN);
+    // A connector that is Agent.Concept never renews (its mint limits are a brake).
+    expect(posts(platform).at(-1).body.turnId).toBe(TURN);
   }, 30000);
 
   it("c4 a role that resolves to Agent.Concept on the server (the call named it another way) renews the turn too", async () => {

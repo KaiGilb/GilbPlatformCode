@@ -2488,6 +2488,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let toolCallsSent = 0;
   /** /tool calls this process sent on the current turn id (hand-off children count their own rounds on the same turn, unseen here). */
   let roundsOnTurn = 0;
+  /**
+   * Set when an Agent.Concept call was cut or refused at a turn limit. Renewing the turn resets Concept's per-turn mint limits,
+   * so while this is set no Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn.
+   */
+  let conceptBrakedOnTurnChain = false;
   const uploadCwd = opts.cwd ?? process.cwd();
   const uploadRoots = [...(opts.uploadRoots ?? [])];
   const contextUrl = `${origin}/base/ai/claude-code/context`;
@@ -2985,6 +2990,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       logRollSkipped("this process is a hand-off");
       return false;
     }
+    if (agentIsConcept()) {
+      logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
+      return false;
+    }
     if (turnRolls >= MAX_TURN_ROLLS) {
       logRollSkipped(`${MAX_TURN_ROLLS} renewals already used`);
       return false;
@@ -3002,10 +3011,27 @@ export function startConnector(opts: StartOptions): ConnectorSession {
    * Any role, Agent.Concept too: the renewal re-sends nothing, so it cannot mint twice. Skipped only in a hand-off process,
    * when another path has already rolled since the hop began, or after MAX_TURN_ROLLS (each skip is logged).
    */
-  function rollAfterCut(hopTurn: string): void {
+  function rollAfterCut(hopTurn: string, conceptCut = false): void {
     if (hopMode) return logRollSkipped("this process is a hand-off");
+    if (conceptCut && !agentIsConcept()) conceptBrakedOnTurnChain = true;
     if (turnId !== hopTurn) return logRollSkipped("the turn was already renewed while the hand-off ran");
     renewTurn("a hand-off ran out of tool rounds");
+  }
+
+  /** A call that may run Agent.Concept. An unreadable or address-like role counts too: the brake fails closed. */
+  function isConceptCall(name: string, args: unknown): boolean {
+    return agentIsConcept() || name === "ask_agent_concept" || (name === "run_named_role" && !roleMayRoll(args));
+  }
+
+  function conceptPausedAnswer(): ToolResult {
+    return toolResult(
+      JSON.stringify({
+        renewed: true,
+        conceptPaused: true,
+        next: "Agent.Concept used its mint limit for this turn. Carry on with other work; Agent.Concept continues after the person's next message. Tell the person in your report.",
+      }),
+      true,
+    );
   }
 
   /** What the AI is told when a call was refused at a turn limit and was NOT re-sent. The turn is new (or says it could not be). */
@@ -3053,7 +3079,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       const ran = await runChild(shaped, signal, hopTurn);
       if (signal.aborted) return CANCELLED;
       const closed = await closeHop(shaped.id, hopTurn);
-      if (closed.cut) rollAfterCut(hopTurn);
+      if (closed.cut) rollAfterCut(hopTurn, conceptHop(shaped.role));
       // The hop returned, including one the server cut. Select here, in this process, never inside the hop.
       for (const namespace of ran.created) selectVault(namespace);
       const content = ran.text;
@@ -3061,7 +3087,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     } catch (err) {
       const closed = await closeHop(shaped.id, hopTurn);
       if (signal.aborted) return CANCELLED;
-      if (closed.cut) rollAfterCut(hopTurn);
+      if (closed.cut) rollAfterCut(hopTurn, conceptHop(shaped.role));
       const reason = err instanceof Error ? err.message : "the hand-off could not run";
       // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
       const isConcept = conceptHop(shaped.role);
@@ -3135,6 +3161,10 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   }
 
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal, resent = false): Promise<ToolResult | typeof CANCELLED> {
+    if (!hopMode && conceptBrakedOnTurnChain && isConceptCall(name, args)) {
+      process.stderr.write(`gilb-connector: ${name} not sent: Agent.Concept hit a turn limit and waits for the person's next message.\n`);
+      return conceptPausedAnswer();
+    }
     // Before a hand-off is asked for: the server refuses it when rounds + 60 * (open hand-offs + 1) is over the ceiling,
     // and the refusal would block everything after it. Start the turn fresh while nothing has been sent yet.
     if (!hopMode && name === "run_named_role" && roundsOnTurn + HAND_OFF_ROUND_RESERVE * (hopsRunning + 1) > TURN_ROUNDS_CEILING) {
@@ -3194,6 +3224,12 @@ export function startConnector(opts: StartOptions): ConnectorSession {
         if (alreadyNew || renewTurn("this chat reached a turn limit")) return callPlatformTool(name, args, signal, true);
         return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
       }
+      if (agentIsConcept()) {
+        // This connector is Agent.Concept: no renewal, the server's own answer stands (the reason is logged).
+        logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
+        return toolResult(result, toolAnswerIsError(result));
+      }
+      if (isConceptCall(name, args)) conceptBrakedOnTurnChain = true;
       if (alreadyNew) logRollSkipped("the turn was already renewed");
       const renewed = alreadyNew || renewTurn(`${name} was refused at a turn limit and ${resendBarrier}`);
       return renewedAnswer(name, renewed, resendBarrier);
@@ -3579,6 +3615,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (text.length > USER_TEXT_MAX) return toolResult(JSON.stringify({ error: "That request is too long." }), true);
     userText = text;
     cache = null;
+    // The person's next message: Agent.Concept may run again.
+    conceptBrakedOnTurnChain = false;
     return toolResult("The person's request is set.", false);
   }
 
