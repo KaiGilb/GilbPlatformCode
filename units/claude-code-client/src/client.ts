@@ -67,7 +67,47 @@ export type ClaudeCodeStreamEvent =
   | { event: "start"; data: { ok: true } }
   | { event: "tool"; data: { name: string; ok: boolean } }
   | { event: "slipped"; data: { ids: string[] } }
-  | { event: "standing"; data: unknown };
+  | { event: "standing"; data: unknown }
+  // Code mode only (the bridge's code turn). A malformed one is dropped, never thrown.
+  | { event: "code_activity"; data: { tool: string; summary: string } }
+  | { event: "code_tool_error"; data: { tool: string; summary: string; text: string } }
+  | { event: "files_changed"; data: FilesChanged }
+  | { event: "approval_request"; data: ApprovalRequest }
+  | { event: "approval_done"; data: { id: string; allow: boolean } };
+
+/** What a code turn changed in the folder, as the bridge counted it. Each list holds at most 200 relative paths. */
+export interface FilesChanged {
+  added: string[];
+  changed: string[];
+  removed: string[];
+  addedCount: number;
+  changedCount: number;
+  removedCount: number;
+  truncated: boolean;
+}
+
+/** One question the bridge puts to the person before a write or a command (approval "each-write"). */
+export interface ApprovalRequest {
+  id: string;
+  tool: string;
+  summary: string;
+}
+
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+
+/** Turns one bridge code event into a stream event, or null when its shape is wrong. */
+function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeStreamEvent | null {
+  if (name === "activity" && isStr(d.tool) && isStr(d.summary)) return { event: "code_activity", data: { tool: d.tool, summary: d.summary } };
+  if (name === "tool_error" && isStr(d.tool) && isStr(d.summary) && isStr(d.text)) return { event: "code_tool_error", data: { tool: d.tool, summary: d.summary, text: d.text } };
+  if (name === "files_changed" && isStrList(d.added) && isStrList(d.changed) && isStrList(d.removed) && isCount(d.addedCount) && isCount(d.changedCount) && isCount(d.removedCount) && typeof d.truncated === "boolean") {
+    return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
+  }
+  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary } };
+  if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow } };
+  return null;
+}
 
 /** A message the person wrote while a Claude Code turn was already running. */
 export interface SlippedMessage {
@@ -142,6 +182,21 @@ export interface SendClaudeCodeOpts {
    * "none" on a subscription; the bridge stops any run that says otherwise.
    */
   onBridgeStatus?: (status: { nested: boolean; apiKeySource: string | null; model: string }) => void;
+  /**
+   * "code" runs the turn in the folder the bridge was started with (`--workspace`): Claude Code may read, edit and run commands there.
+   * Default "chat" (no tools). A hand-off's nested turn is always a chat turn.
+   */
+  mode?: "chat" | "code";
+  /**
+   * Code mode only. "session" (default): the person approved once, when they started the turn. "each-write": the bridge asks before
+   * each write and each command, and {@link onApproval} answers.
+   */
+  approval?: "session" | "each-write";
+  /**
+   * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
+   * throws or rejects, answers "no". The turn keeps running while this waits.
+   */
+  onApproval?: (req: ApprovalRequest) => Promise<boolean>;
 }
 
 /** What `/base/ai/claude-code/tool` answers when the tool is a hand-off: a nested turn for THIS page to run on the person's Claude Code. */
@@ -162,7 +217,9 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean }>;
+  /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
+  workspaceInfo(): Promise<{ name: string; path: string } | null>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
   pair(code: string): Promise<ClaudeCodeReadback>;
   /** Trades the code for a secret and returns it WITHOUT keeping it (for an app that stores it itself). */
@@ -214,6 +271,9 @@ interface BridgeTurnOut {
   sessionId: string | undefined;
   budgetSpent?: boolean;
 }
+
+/** The bridge events only a code turn sends. */
+const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done"]);
 
 interface SseEvent {
   event: string;
@@ -707,6 +767,33 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         );
       };
 
+      /** The bridge asks whether a write or command may go ahead: the page's handler answers, off the read loop. */
+      const askPerson = (req: ApprovalRequest) => {
+        handlers.push(
+          (async () => {
+            let allow = false;
+            try {
+              allow = (await opts.onApproval?.(req)) === true;
+            } catch {
+              allow = false;
+            }
+            if (stop.signal.aborted) return;
+            try {
+              const back = await bridgeFetch("/v1/approval", {
+                signal: stop.signal,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
+                body: JSON.stringify({ turnId, id: req.id, allow }),
+              });
+              if (back.status === 401) throw bridgeForgotUs();
+              // 404 or 409: the question timed out or was answered already; nothing more to do.
+            } catch (err) {
+              if (!stop.signal.aborted) failTurn(err);
+            }
+          })(),
+        );
+      };
+
       let readErr: unknown = null;
       try {
         for await (const ev of readBridgeSse(res, stop.signal)) {
@@ -739,6 +826,12 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             }
           } else if (ev.event === "error") {
             streamError = typeof data.message === "string" ? data.message : "Claude Code could not answer.";
+          } else if (announceStart && CODE_BRIDGE_EVENTS.has(ev.event)) {
+            const ce = codeStreamEvent(ev.event, data);
+            if (ce) {
+              opts.onEvent?.(ce);
+              if (ce.event === "approval_request") askPerson(ce.data);
+            }
           }
         }
       } catch (err) {
@@ -869,7 +962,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     };
 
     // 2. The turn, on the person's computer. A session is reused only when it already covers the thread before this message.
-    const skey = `${sessionPrefix}${opts.thread}`;
+    // A code session lives in the bridge's code folder, a chat session in its empty one: they are never resumed into each other.
+    const codeMode = opts.mode === "code";
+    const skey = codeMode ? `${sessionPrefix}mode-code/${opts.thread}` : `${sessionPrefix}${opts.thread}`;
     let sessionId: string | undefined;
     try {
       const kept = JSON.parse(store()?.getItem(skey) ?? "null") as { sessionId?: string; covers?: number } | null;
@@ -885,6 +980,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         system: ctx.system,
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
+        ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session" } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -924,15 +1020,33 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     async bridgeInfo() {
       try {
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
-        if (!res.ok) return { reachable: false, build: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown };
+        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown };
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,
+          // An older bridge sends neither.
+          codeTurns: body.codeTurns === true,
+          workspace: body.workspace === true,
         };
       } catch {
-        return { reachable: false, build: null };
+        return { reachable: false, build: null, codeTurns: false, workspace: false };
       }
+    },
+
+    async workspaceInfo() {
+      const conn = client.load();
+      if (!conn) return null;
+      const res = await bridgeFetch("/v1/workspace", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bridge-secret": conn.secret },
+        body: "{}",
+      });
+      if (res.status === 404) return null;
+      if (res.status === 401) throw new ClaudeCodeBridgeError(401, "The bridge no longer knows this pairing. Press Connect and enter its new code.");
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, "The bridge could not tell its code folder.");
+      const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown } | null;
+      return body && typeof body.name === "string" && typeof body.path === "string" ? { name: body.name, path: body.path } : null;
     },
 
     async requestSecret(code) {

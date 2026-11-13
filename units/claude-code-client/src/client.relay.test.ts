@@ -111,6 +111,21 @@ describe("routing", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("workspaceInfo goes through the open relay, with the secret", async () => {
+    const client = await openedClient();
+    client.save("s3cret");
+    const p = client.workspaceInfo();
+    await waitReq();
+    const req = lastReq();
+    expect(req.path).toBe("/v1/workspace");
+    expect(req.method).toBe("POST");
+    expect(req.headers["x-bridge-secret"]).toBe("s3cret");
+    deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
+    deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"name":"MyCode","path":"/p/MyCode"}' }, win);
+    expect(await p).toEqual({ name: "MyCode", path: "/p/MyCode" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("probe and bridgeInfo go through the open relay", async () => {
     const client = await openedClient();
     const p = client.bridgeInfo();
@@ -119,7 +134,7 @@ describe("routing", () => {
     expect(req.path).toBe("/v1/hello");
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"bridge":"gilb-claude-code-bridge","build":"0.1.7"}' }, win);
-    expect(await p).toEqual({ reachable: true, build: "0.1.7" });
+    expect(await p).toEqual({ reachable: true, build: "0.1.7", codeTurns: false, workspace: false });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -188,7 +203,7 @@ describe("a streamed answer", () => {
     const req = lastReq();
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-err", id: req.id, message: "network error" }, win);
-    expect(await p).toEqual({ reachable: false, build: null }); // the body could not be read: not reachable
+    expect(await p).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false }); // the body could not be read: not reachable
   });
 
   it("an abort before the head posts gilb-bridge-abort and rejects as an aborted fetch (499)", async () => {
