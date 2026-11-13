@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "unit": "units/since-last-visit",
+  "package": "@kaigilb/gilbplatformcode-since-last-visit",
+  "version": "0.1.0",
+  "purpose": "Since your last visit: remembers what a list looked like when the person was last here, and says what other people added, changed or deleted since (new records, changes, activity), with an optional dismissible banner.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "22ae1dfdc7e5ed84d5883664aa969612e03896b9",
+    "files": []
+  },
+  "namedChanges": [],
+  "newFiles": [
+    "src/index.ts",
+    "src/visit.ts",
+    "src/visit.test.ts",
+    "src/banner.ts",
+    "src/SinceBanner.tsx",
+    "src/SinceBanner.test.tsx",
+    "src/since-banner.css",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [
+    {
+      "member": "recordVisit",
+      "replaces": "run-9 app/src/visit/sinceLastVisit.ts: sinceLastVisit (the read, the diff, the write; the vault read stays in the app)"
+    },
+    {
+      "member": "noteOwn",
+      "replaces": "run-9 app/src/visit/sinceLastVisit.ts: noteOwn"
+    },
+    {
+      "member": "SinceBanner",
+      "replaces": "run-9 app/src/ui/SinceBanner.tsx"
+    }
+  ],
+  "library": {
+    "admitted": true,
+    "tag": "t:Vault.sinceVisit",
+    "title": "Since your last visit (what changed, new records, activity banner)",
+    "note": "Remembers what a list looked like at the person's last visit and says what other people added, changed or deleted since: new records, changes, activity, a dismissible banner. Headless readVisit / writeVisit / diffVisit / recordVisit on the listing the app already has (ids, updatedAt, statedBy); own changes are left out and the first visit shows nothing. Per device, on the device clock; a delete cannot say who. SinceBanner is the optional React banner, plain CSS over the style tokens. Also found as: since your last visit; what changed; new records; changes; activity; banner."
+  }
+}

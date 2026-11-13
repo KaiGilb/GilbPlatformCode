@@ -1,0 +1,15 @@
+export {
+  readVisit,
+  writeVisit,
+  diffVisit,
+  recordVisit,
+  noteOwn,
+  ago,
+  defaultWhoLabel,
+  type VisitStore,
+  type VisitItem,
+  type VisitSnapshot,
+  type VisitChange,
+  type VisitChangeKind,
+  type DiffVisitOptions,
+} from "./visit";

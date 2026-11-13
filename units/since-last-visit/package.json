@@ -1,0 +1,40 @@
+{
+  "name": "@kaigilb/gilbplatformcode-since-last-visit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Since your last visit: remembers what a listing looked like when the person was last here, and says what other people added, changed or deleted since. Headless, plus an optional dismissible banner.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./banner": "./src/banner.ts",
+    "./since-banner.css": "./src/since-banner.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}
