@@ -651,8 +651,8 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
 function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session"): boolean {
   const tools = Array.isArray(ev.tools) ? ev.tools : [];
   if (!tools.every((t) => typeof t === "string" && (CODE_TOOLS.includes(t) || t.startsWith("mcp__gilb__")))) return false;
-  // The asking mode is passed as `manual`, an alias of `default` (CLI reference): either name may be reported.
-  return approval === "each-write" ? ev.permissionMode === "manual" || ev.permissionMode === "default" : ev.permissionMode === "acceptEdits";
+  // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
+  return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
 }
 
 /** One line saying what a tool call does, for the `activity` event. */
@@ -776,6 +776,8 @@ export interface BridgeOptions {
   extraDenyRead?: string[] | undefined;
   /** How long an approval question waits for the person before it is denied (default APPROVAL_WAIT_MS). Tests make it short. */
   approvalWaitMs?: number | undefined;
+  /** TEST-ONLY, undocumented: log the raw arguments object `bridge_approve` receives (the probe prints it). Off otherwise: it holds tool inputs. */
+  logApproveArgs?: boolean | undefined;
 }
 
 /**
@@ -1103,6 +1105,7 @@ export function createBridge(opts: BridgeOptions = {}) {
 
   /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
   async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (opts.logApproveArgs) log(`bridge_approve raw arguments: ${JSON.stringify(args)}`);
     const tool = typeof args.tool_name === "string" ? args.tool_name : "";
     const input = args.input && typeof args.input === "object" ? (args.input as Record<string, unknown>) : {};
     const deny = (message: string) => ({ behavior: "deny", message });

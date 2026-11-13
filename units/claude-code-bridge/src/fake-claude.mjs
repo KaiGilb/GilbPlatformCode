@@ -72,7 +72,7 @@ process.stdin.on("end", async () => {
       model: "fake-model",
       apiKeySource: prompt.includes("APIKEYSOURCE") ? "ANTHROPIC_API_KEY" : (process.env.FAKE_API_KEY_SOURCE ?? "none"),
     };
-    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? arg("--permission-mode") ?? "acceptEdits";
+    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
     if (pm !== "omit") init.permissionMode = pm;
     if (initMode === "nofield") delete init.apiKeySource;
     if (initMode === "null") init.apiKeySource = null;
@@ -92,6 +92,8 @@ process.stdin.on("end", async () => {
   // LISTTOOLS: log the tool names the per-turn MCP server lists.
   const ask = prompt.includes("ASKWRITE") ? { tool_name: "Write", input: { file_path: path.join(process.cwd(), "a.txt"), content: "x" } }
     : prompt.includes("ASKOUT") ? { tool_name: "Write", input: { file_path: "/tmp/x-outside.txt", content: "x" } }
+    : prompt.includes("ASKWEB") ? { tool_name: "WebFetch", input: { url: "https://example.com" } }
+    : prompt.includes("ASKTASK") ? { tool_name: "Task", input: { prompt: "x" } }
     : prompt.includes("ASKBASH") ? { tool_name: "Bash", input: { command: "ls", description: "List files" } }
     : null;
   if ((ask || prompt.includes("LISTTOOLS")) && url) {

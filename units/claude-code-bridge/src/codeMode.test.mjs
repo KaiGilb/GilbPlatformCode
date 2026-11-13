@@ -411,6 +411,19 @@ describe("approval: each-write", () => {
     expect(ev(r, "error")[0].message).toMatch(/folder limits/);
   });
 
+  it("an each-write turn passes only with the exact mode the real CLI reports ('default'); 'manual' or 'acceptEdits' stops it", async () => {
+    for (const mode of ["manual", "acceptEdits", "bypassPermissions", "omit"]) {
+      await bridge?.close();
+      const secret = await start({ env: { FAKE_INIT_PERMISSION_MODE: mode } });
+      const r = await post(secret, T({ mode: "code", approval: "each-write" }));
+      expect(ev(r, "message"), mode).toHaveLength(0);
+      expect(ev(r, "error")[0].message, mode).toMatch(/folder limits/);
+    }
+    await bridge.close();
+    const secret = await start({ env: { FAKE_INIT_PERMISSION_MODE: "default" } });
+    expect(ev(await post(secret, T({ mode: "code", approval: "each-write" })), "message")).toHaveLength(1);
+  });
+
   it("400 for another approval value", async () => {
     const secret = await start();
     const r = await post(secret, T({ mode: "code", approval: "never" }));
@@ -463,6 +476,18 @@ describe("approval: each-write", () => {
     const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKOUT" }, async () => true);
     expect(r.events.map((e) => e[0])).not.toContain("approval_request");
     expect(logRows("approve")[0].decision).toEqual({ behavior: "deny", message: "Outside the code folder." });
+  });
+
+  it("any other tool (WebFetch, Task) is denied at once with the not-allowed message, with no question", async () => {
+    const secret = await start();
+    for (const prompt of ["ASKWEB", "ASKTASK"]) {
+      const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt }, async () => true);
+      expect(r.events.map((e) => e[0])).not.toContain("approval_request");
+    }
+    expect(logRows("approve").map((r) => r.decision)).toEqual([
+      { behavior: "deny", message: "This tool is not allowed in a code turn." },
+      { behavior: "deny", message: "This tool is not allowed in a code turn." },
+    ]);
   });
 
   it("a write through a symlink that leaves the folder is denied at once", async () => {

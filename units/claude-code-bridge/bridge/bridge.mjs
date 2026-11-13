@@ -526,8 +526,8 @@ function codeInitOk(ev, approval = "session") {
     const tools = Array.isArray(ev.tools) ? ev.tools : [];
     if (!tools.every((t) => typeof t === "string" && (CODE_TOOLS.includes(t) || t.startsWith("mcp__gilb__"))))
         return false;
-    // The asking mode is passed as `manual`, an alias of `default` (CLI reference): either name may be reported.
-    return approval === "each-write" ? ev.permissionMode === "manual" || ev.permissionMode === "default" : ev.permissionMode === "acceptEdits";
+    // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
+    return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
 }
 /** One line saying what a tool call does, for the `activity` event. */
 function toolSummary(tool, input, roots) {
@@ -976,6 +976,8 @@ export function createBridge(opts = {}) {
     }
     /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
     async function decideApproval(turn, args) {
+        if (opts.logApproveArgs)
+            log(`bridge_approve raw arguments: ${JSON.stringify(args)}`);
         const tool = typeof args.tool_name === "string" ? args.tool_name : "";
         const input = args.input && typeof args.input === "object" ? args.input : {};
         const deny = (message) => ({ behavior: "deny", message });
