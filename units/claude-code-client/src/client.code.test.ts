@@ -351,6 +351,15 @@ describe("access (0.3.0)", () => {
     expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A3", mode: "code" })).not.toHaveProperty("access");
   });
 
+  it("an approval_request with a summary over 2000 characters, or a detail over 200, is dropped as malformed; 2000 is accepted", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(2001) }], ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(201) }], ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: "y".repeat(2000), detail: "d".repeat(200) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A5", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
+    expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcde1"]);
+  });
+
   it("any tool and a long summary are accepted in an approval_request", async () => {
     client.save("s3cret");
     const seen: unknown[] = [];

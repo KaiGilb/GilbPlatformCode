@@ -1427,9 +1427,17 @@ export function createBridge(opts: BridgeOptions = {}) {
       };
       turn.approvals.set(id, entry);
       timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-      turn.send("approval_request", { id, tool, summary: cap(summary), ...(detail ? { detail: cap(detail, 200) } : {}) });
+      turn.send("approval_request", { id, tool, summary, ...(detail ? { detail: cap(detail, 200) } : {}) });
     });
   }
+
+  /** Approval text is never cut: a run of whitespace is one space, and a text over the limit is not asked about at all. */
+  const APPROVAL_COMMAND_MAX = 2000;
+  const APPROVAL_PATH_MAX = 1000;
+  const collapseWs = (x: string) => x.replace(/\s+/g, " ").trim();
+  const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
+  const TOO_LONG_PATH = "The path is too long to show for approval.";
+  const TOO_LONG_REQUEST = "The request is too long to show for approval; ask for it in smaller steps.";
 
   /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
   async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1444,13 +1452,16 @@ export function createBridge(opts: BridgeOptions = {}) {
       let summary: string;
       let detail = "";
       if (tool === "Bash") {
-        summary = cap(str(input.command).replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
+        summary = collapseWs(str(input.command)) || "Bash";
+        if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
         detail = str(input.description);
       } else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
         const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
-        summary = cap(p ? (path.isAbsolute(p) ? p : path.resolve(scope || "/", p)) : tool);
-      } else if (tool === "WebFetch") summary = cap(str(input.url) || tool);
-      else if (tool === "WebSearch") summary = cap(str(input.query) || tool);
+        // "~" and "$" paths are shown exactly as given (never resolved against the folder); absolute as given; other relative ones resolved against the start folder.
+        summary = p ? collapseWs(p.startsWith("~") || p.startsWith("$") || path.isAbsolute(p) ? p : path.resolve(scope || "/", p)) : tool;
+        if (summary.length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
+      } else if (tool === "WebFetch") summary = collapseWs(str(input.url)) || tool;
+      else if (tool === "WebSearch") summary = collapseWs(str(input.query)) || tool;
       else {
         let j = "";
         try {
@@ -1458,8 +1469,9 @@ export function createBridge(opts: BridgeOptions = {}) {
         } catch {
           /* not printable */
         }
-        summary = cap(`${tool || "tool"} ${j}`.trim());
+        summary = collapseWs(`${tool || "tool"} ${j}`);
       }
+      if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_REQUEST);
       const a = await askPerson(turn, tool, summary, detail);
       return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
@@ -1487,10 +1499,12 @@ export function createBridge(opts: BridgeOptions = {}) {
       for (const k of ["file_path", "notebook_path", "path"]) {
         if (input[k] !== undefined && (typeof input[k] !== "string" || !insideWorkspace(input[k] as string, scope))) return deny("Outside the code folder.");
       }
-      summary = toolSummary(tool, input, turnRoots(turn));
+      if (collapseWs(str(main)).length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
+      summary = collapseWs(toolSummary(tool, input, turnRoots(turn)));
     } else if (tool === "Bash") {
-      // The question shows the command itself; the model's own description is only a second line.
-      summary = cap(String(input.command ?? "").replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
+      // The question shows the whole command (whitespace collapsed, never cut); the model's own description is only a second line.
+      summary = collapseWs(String(input.command ?? "")) || "Bash";
+      if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
       detail = str(input.description);
     } else {
       return deny("This tool is not allowed in a code turn.");

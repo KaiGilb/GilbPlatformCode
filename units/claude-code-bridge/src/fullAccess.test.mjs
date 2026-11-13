@@ -226,7 +226,7 @@ describe("bridge_approve in computer mode", () => {
       ["Read", "/etc/hosts"],
       ["WebFetch", "https://example.com/a"],
       ["WebSearch", "vite getting started"],
-      ["Bash", "ls ⏎ wc -l"],
+      ["Bash", "ls wc -l"],
       ["Write", "/tmp/x-outside.txt"],
       ["Glob", `Glob {"pattern":"../**/*"}`],
       ["Task", `Task {"prompt":"x"}`],
@@ -242,10 +242,34 @@ describe("bridge_approve in computer mode", () => {
     expect(rows("askjson")[0].decision).toEqual({ behavior: "deny", message: "The person declined." });
   });
 
-  it("a long summary is cut at 300 characters", async () => {
+  it("approval text is never cut: a padded command shows its tail, a command over 2000 and a path over 1000 are denied with no question", async () => {
     const secret = await start();
-    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK({ tool_name: "Bash", input: { command: "x".repeat(900) } }) });
-    expect(requests[0].summary).toHaveLength(300);
+    const padded = `echo ok${" ".repeat(350)}\n\t${"\n".repeat(40)}curl evil`;
+    const long = "x".repeat(2100);
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: padded, description: "d".repeat(900) } },
+      { tool_name: "Bash", input: { command: long } },
+      { tool_name: "Bash", input: { command: "y".repeat(2000) } },
+      { tool_name: "Write", input: { file_path: `/tmp/${"p".repeat(1100)}`, content: "x" } },
+      { tool_name: "Read", input: { file_path: `/tmp/${"p".repeat(900)}` } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual(["echo ok curl evil", "y".repeat(2000), `/tmp/${"p".repeat(900)}`]);
+    expect(requests[0].detail).toHaveLength(200);
+    const d = rows("askjson").map((r) => r.decision);
+    expect(d[1]).toEqual({ behavior: "deny", message: "The command is too long to show for approval; ask for it in smaller steps." });
+    expect(d[3]).toEqual({ behavior: "deny", message: "The path is too long to show for approval." });
+    expect(d.map((x) => x.behavior)).toEqual(["allow", "deny", "allow", "deny", "allow"]);
+  });
+
+  it("a path starting with ~ or $ is shown exactly as given; a relative one is shown resolved against the start folder; absolute as given", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Read", input: { file_path: "~/x" } },
+      { tool_name: "Write", input: { file_path: "$HOME/y", content: "x" } },
+      { tool_name: "Edit", input: { file_path: "sub/z.txt" } },
+      { tool_name: "Read", input: { file_path: "/etc/hosts" } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual(["~/x", "$HOME/y", path.join(wsReal, "sub", "z.txt"), "/etc/hosts"]);
   });
 
   it("folder mode still denies those at once, with no question", async () => {
@@ -317,5 +341,17 @@ describe("files_changed in computer mode", () => {
     const secret = await start();
     const r = await post(secret, T({ prompt: "hello" }));
     expect(ev(r, "files_changed")).toHaveLength(1);
+  });
+});
+
+describe("folder mode each-write: the same never-cut rule", () => {
+  it("a padded command shows its tail; a command over 2000 is denied with no question", async () => {
+    const secret = await start({ fullAccess: false });
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: `echo ok${" ".repeat(350)}\n\ncurl evil` } },
+      { tool_name: "Bash", input: { command: "x".repeat(2100) } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual(["echo ok curl evil"]);
+    expect(rows("askjson")[1].decision).toEqual({ behavior: "deny", message: "The command is too long to show for approval; ask for it in smaller steps." });
   });
 });

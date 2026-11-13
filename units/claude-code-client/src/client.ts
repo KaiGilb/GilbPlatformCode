@@ -104,6 +104,9 @@ export interface ApprovalRequest {
   detail?: string;
 }
 
+/** The bridge never cuts an approval question: it sends the whole text (up to 2000 characters) or does not ask. The detail line is capped at 200. */
+const APPROVAL_SUMMARY_MAX = 2000;
+const APPROVAL_DETAIL_MAX = 200;
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
@@ -115,7 +118,7 @@ function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeSt
   if (name === "files_changed" && isStrList(d.added) && isStrList(d.changed) && isStrList(d.removed) && isCount(d.addedCount) && isCount(d.changedCount) && isCount(d.removedCount) && typeof d.truncated === "boolean") {
     return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
   }
-  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}) } };
+  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary) && d.summary.length <= APPROVAL_SUMMARY_MAX && !(isStr(d.detail) && d.detail.length > APPROVAL_DETAIL_MAX)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}) } };
   if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow } };
   return null;
 }
