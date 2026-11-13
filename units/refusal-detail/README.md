@@ -31,7 +31,7 @@ No writers: the screen has no read-only line, so there is nothing to switch off.
 | a refusal that carries the platform's sentence: `RequestRefusedError`, or `platformSentence`, `platformMessage`, `serverSentence`, `reason`, `detail.sentence`, or a `RefusalDetail` from `readRefusal` | that sentence |
 | `RecordConflictError` (by `name`), status 412 or 428 | `o.conflict`, else `This changed elsewhere. Reload and try again.` |
 | anything `o.more(err)` maps (a sentence ends the search; `null` goes on) | that sentence |
-| a `TypeError`, an offline browser, or a "failed to fetch" message | `No connection. Try again.` |
+| an offline browser, or the message a browser gives a failed fetch ("Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource") | `No connection. Try again.` |
 | anything else | `o.fallback`, else `Something went wrong. Try again.` |
 
 Errors from units this one must not import (lws-records, lws-session-bridge) are matched by `name` and `status`. Picture errors live in `picture-errors`, which has this unit as a peer, so importing it here would be a cycle: pass `more` a function that answers `pictureFailure(e)`'s `sentence` and `next` joined, or `null` when its `kind` is `"unknown"`.

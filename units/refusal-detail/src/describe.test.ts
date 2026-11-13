@@ -39,9 +39,12 @@ describe("describeError", () => {
     expect(describeError(Object.assign(new Error("x"), { status: 412 }), { conflict: "This camera was changed elsewhere." })).toBe("This camera was changed elsewhere.");
     expect(describeError(Object.assign(new Error("x"), { status: 428 }), { conflict: "Changed." })).toBe("Changed.");
   });
-  test("a network failure is 'No connection. Try again.' (TypeError, failed-to-fetch message, offline browser)", () => {
+  test("a network failure is 'No connection. Try again.' (the browsers\' failed-fetch messages, an offline browser)", () => {
     expect(describeError(new TypeError("Failed to fetch"))).toBe("No connection. Try again.");
     expect(describeError(new Error("Load failed"))).toBe("No connection. Try again.");
+    expect(describeError(new TypeError("NetworkError when attempting to fetch resource."))).toBe("No connection. Try again.");
+    // a TypeError that is a bug in the page is not a lost connection
+    expect(describeError(new TypeError("x is not a function"))).toBe("Something went wrong. Try again.");
     vi.stubGlobal("navigator", { onLine: false });
     expect(describeError(new Error("odd"))).toBe("No connection. Try again.");
   });

@@ -50,7 +50,7 @@ function platformSentenceOf(e: unknown): string | null {
  * 3. A request the platform refused with a sentence (`RequestRefusedError`, a `serverSentence`, `platformSentence`, `reason`, or the `sentence` of a `RefusalDetail`): that sentence.
  * 4. A record changed elsewhere (`RecordConflictError`, status 412 or 428): `o.conflict`.
  * 5. `o.more(err)`.
- * 6. A network failure (a `TypeError`, an offline browser, or a "failed to fetch" message): "No connection. Try again."
+ * 6. A network failure (an offline browser, or the message a browser gives a failed fetch: "Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource"): "No connection. Try again."
  * 7. `o.fallback`. A raw message, a stack or a status is never shown.
  * It matches by class where this unit holds the class and by `name` and `status` for the rest, so it needs no other unit.
  */
@@ -68,6 +68,6 @@ export function describeError(err: unknown, o: DescribeOptions = {}): string {
   if (more) return more;
   const message = text(field(err, "message")) ?? "";
   const offline = typeof navigator !== "undefined" && navigator.onLine === false;
-  if (err instanceof TypeError || offline || OFFLINE_MESSAGE.test(message)) return DESCRIBE_WORDS.offline;
+  if (offline || OFFLINE_MESSAGE.test(message)) return DESCRIBE_WORDS.offline;
   return o.fallback ?? DESCRIBE_WORDS.fallback;
 }
