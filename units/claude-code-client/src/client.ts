@@ -104,9 +104,9 @@ export interface ApprovalRequest {
   detail?: string;
 }
 
-/** The bridge never cuts an approval question: it sends the whole text (up to 2000 characters) or does not ask. The detail line is capped at 200. */
+/** The bridge never cuts an approval question: it sends the whole text (up to 2000 characters) or does not ask. The detail is a never-cut head line (a "Path contains non-ASCII characters" or "Host:" line) and the model's description capped at 200, so it may be longer: up to 600. */
 const APPROVAL_SUMMARY_MAX = 2000;
-const APPROVAL_DETAIL_MAX = 200;
+const APPROVAL_DETAIL_MAX = 600;
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;

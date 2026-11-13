@@ -1429,7 +1429,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       };
       turn.approvals.set(id, entry);
       timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-      turn.send("approval_request", { id, tool, summary, ...(detail ? { detail: cap(detail, 200) } : {}) });
+      turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}) });
     });
   }
 
@@ -1446,17 +1446,21 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Commands, URLs and queries: every non-ASCII character is shown as <U+XXXX> (a typed ⏎ included, so it cannot fake a line break marker). U+2028 and U+2029 are left for showText, which marks them as line breaks. */
   const escapeNonAscii = (x: string) => x.replace(/[^\x00-\x7F]/gu, (c) => { const cp = c.codePointAt(0)!; return cp === 0x2028 || cp === 0x2029 ? c : `<U+${cp.toString(16).toUpperCase().padStart(4, "0")}>`; });
   const showCommand = (x: string) => showText(escapeNonAscii(x));
-  /** A URL as shown: escaped, and with its host as punycode when the shown text does not already hold that host. */
-  const showUrl = (u: string) => {
-    const t = showCommand(u);
-    try {
-      const h = new URL(u).hostname;
-      if (h && !t.includes(h)) return `${t} (host: ${h})`;
-    } catch {
-      /* not a URL: shown as written */
+  /** The first detail line of a question about a path with non-ASCII characters: each distinct code point once, in order of first appearance (20 at most, then "…"). "" when the path is plain ASCII. */
+  const nonAsciiNote = (texts: string[]): string => {
+    const seen: string[] = [];
+    for (const t of texts) for (const c of t) {
+      const cp = c.codePointAt(0)!;
+      if (cp > 0x7f) {
+        const u = `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+        if (!seen.includes(u)) seen.push(u);
+      }
     }
-    return t;
+    return seen.length === 0 ? "" : `Path contains non-ASCII characters: ${seen.slice(0, 20).join(" ")}${seen.length > 20 ? " …" : ""}`;
   };
+  /** The detail of a question: the head line (never cut) then the model's description, capped at 200. */
+  const withHead = (head: string, desc: string) => (head ? (desc ? `${head}\n${cap(desc, 200)}` : head) : cap(desc, 200));
+  const USERINFO_MSG = "The address hides its real host (user@host form); ask for it without that.";
   const showText = (x: string) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
   const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
   const TOO_LONG_PATH = "The path is too long to show for approval.";
@@ -1488,7 +1492,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (hasHidden(c)) return deny(HIDDEN_MSG);
         summary = showCommand(c) || "Bash";
         if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-        detail = showText(str(input.description));
+        detail = withHead("", showText(str(input.description)));
       } else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
         const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
         // "~" and "$" paths are shown exactly as given (never resolved against the folder); absolute as given; other relative ones resolved against the start folder.
@@ -1497,7 +1501,18 @@ export function createBridge(opts: BridgeOptions = {}) {
       } else if (tool === "WebFetch" || tool === "WebSearch") {
         const t = str(tool === "WebFetch" ? input.url : input.query);
         if (hasHidden(t)) return deny(HIDDEN_MSG);
-        summary = (tool === "WebFetch" ? showUrl(t) : showCommand(t)) || tool;
+        summary = showCommand(t) || tool;
+        if (tool === "WebFetch") {
+          let host = "(not a valid address)";
+          try {
+            const u = new URL(t);
+            if (u.username || u.password) return deny(USERINFO_MSG);
+            host = u.hostname;
+          } catch {
+            /* shown as not valid */
+          }
+          detail = `Host: ${host}`;
+        }
       } else {
         let j = "";
         try {
@@ -1509,6 +1524,8 @@ export function createBridge(opts: BridgeOptions = {}) {
         summary = showText(`${tool || "tool"} ${j}`);
       }
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_REQUEST);
+      const note = nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v): v is string => typeof v === "string"));
+      if (note) detail = detail ? `${note}\n${detail}` : note;
       const a = await askPerson(turn, tool, summary, detail);
       return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
@@ -1548,10 +1565,12 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (hasHidden(c) || hasHidden(str(input.description))) return deny(HIDDEN_MSG);
       summary = showCommand(c) || "Bash";
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-      detail = showText(str(input.description));
+      detail = withHead("", showText(str(input.description)));
     } else {
       return deny("This tool is not allowed in a code turn.");
     }
+    const note = nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v): v is string => typeof v === "string"));
+    if (note) detail = detail ? `${note}\n${detail}` : note;
     const a = await askPerson(turn, tool, summary, detail);
     return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
   }

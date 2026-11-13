@@ -471,18 +471,31 @@ describe("combining marks and non-ASCII text (N13, N14)", () => {
       "a ⏎ b",
     ]);
   });
-  it("WebFetch: the URL is escaped and its host is shown as punycode when the text does not already hold it", async () => {
+  it("WebFetch: the URL is shown escaped, and the detail's first line is always the host as punycode (no inline suffix)", async () => {
     const secret = await start();
     const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
       { tool_name: "WebFetch", input: { url: "https://g\u0456thub.com/a" } },
       { tool_name: "WebFetch", input: { url: "https://example.com/a" } },
       { tool_name: "WebFetch", input: { url: "https://EXAMPLE.com/\u00E9" } },
+      { tool_name: "WebFetch", input: { url: "not a url" } },
     ) });
-    expect(requests.map((q) => q.summary)).toEqual([
-      "https://g<U+0456>thub.com/a (host: xn--gthub-n2e.com)",
-      "https://example.com/a",
-      "https://EXAMPLE.com/<U+00E9> (host: example.com)",
+    expect(requests.map((q) => [q.summary, q.detail])).toEqual([
+      ["https://g<U+0456>thub.com/a", "Host: xn--gthub-n2e.com"],
+      ["https://example.com/a", "Host: example.com"],
+      ["https://EXAMPLE.com/<U+00E9>", "Host: example.com"],
+      ["not a url", "Host: (not a valid address)"],
     ]);
+  });
+  it("WebFetch: a URL with user@ or user:pass@ is denied at once, no question", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "WebFetch", input: { url: "https://github.com@evil.example/x" } },
+      { tool_name: "WebFetch", input: { url: "https://user:pass@example.com/" } },
+      { tool_name: "WebFetch", input: { url: "https://:pw@example.com/" } },
+    ) });
+    expect(requests).toEqual([]);
+    for (const r of rows("askjson")) expect(r.decision).toEqual({ behavior: "deny", message: "The address hides its real host (user@host form); ask for it without that." });
+    expect(rows("askjson")).toHaveLength(3);
   });
   it("limits count the shown text: 300 non-ASCII characters in a command (8 shown characters each, 2400) are denied, 200 are asked", async () => {
     const secret = await start();
@@ -492,5 +505,49 @@ describe("combining marks and non-ASCII text (N13, N14)", () => {
     ) });
     expect(requests).toHaveLength(1);
     expect(rows("askjson")[0].decision.message).toBe("The command is too long to show for approval; ask for it in smaller steps.");
+  });
+});
+
+describe("non-ASCII path note in the detail (N16)", () => {
+  for (const fullAccess of [true, false]) {
+    it(`${fullAccess ? "computer mode" : "folder each-write"}: a path with non-ASCII characters is shown as given and the detail starts with the code points; a description follows, capped; ASCII paths have no note`, async () => {
+      const secret = await start({ fullAccess });
+      const base = fullAccess ? "/tmp" : wsReal;
+      const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+        { tool_name: "Write", input: { file_path: `${base}/\u0440\u212A\u0440.txt`, content: "x" } },
+        { tool_name: "Write", input: { file_path: `${base}/plain.txt`, content: "x" } },
+        { tool_name: "Edit", input: { file_path: `${base}/\u00E9.txt` } },
+      ) });
+      const first = requests[0];
+      expect(first.summary).toBe(fullAccess ? "/tmp/\u0440\u212A\u0440.txt" : "\u0440\u212A\u0440.txt");
+      expect(first.detail).toBe("Path contains non-ASCII characters: U+0440 U+212A");
+      expect(requests[1]).not.toHaveProperty("detail");
+      expect(requests[2].detail).toBe("Path contains non-ASCII characters: U+00E9");
+    });
+  }
+  it("computer mode: Read, NotebookEdit and Glob/Grep path fields count too; the note comes before the description; more than 20 code points end with an ellipsis; the note is never cut", async () => {
+    const secret = await start();
+    const many = Array.from({ length: 25 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join("");
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Read", input: { file_path: "/tmp/\u0440" } },
+      { tool_name: "NotebookEdit", input: { notebook_path: "/tmp/\u0440.ipynb" } },
+      { tool_name: "Glob", input: { pattern: "*.js", path: "/tmp/\u{1F600}" } },
+      { tool_name: "Grep", input: { pattern: "x", path: "/tmp/\u0440" } },
+      { tool_name: "Write", input: { file_path: `/tmp/${many}`, content: "x" } },
+    ) });
+    expect(requests.map((q) => q.detail)).toEqual([
+      "Path contains non-ASCII characters: U+0440",
+      "Path contains non-ASCII characters: U+0440",
+      "Path contains non-ASCII characters: U+1F600",
+      "Path contains non-ASCII characters: U+0440",
+      `Path contains non-ASCII characters: ${Array.from({ length: 20 }, (_, i) => `U+${(0x4e00 + i).toString(16).toUpperCase()}`).join(" ")} …`,
+    ]);
+  });
+  it("a Bash description is kept after nothing else; for a path question with a description-less tool nothing else is added", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: "ls", description: "d".repeat(900) } },
+    ) });
+    expect(requests[0].detail).toHaveLength(200);
   });
 });
