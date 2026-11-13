@@ -64,6 +64,8 @@ export interface ClaudeCodeReply {
   codeMode?: "files-only";
   /** Code mode only: "computer" when the bridge runs with full computer access (--full-access). Absent otherwise. */
   access?: "computer";
+  /** Code turn only: the project the turn ran in. Absent for a turn in the code folder itself and for chat. */
+  project?: string;
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -202,6 +204,11 @@ export interface SendClaudeCodeOpts {
    */
   approval?: "session" | "each-write";
   /**
+   * Code mode only (bridge 0.3.0): the project, a direct subfolder of the bridge's code folder, this turn runs inside. The kept Claude Code
+   * session is per project (and thread). Absent: the code folder itself. An unknown project is a 400 from the bridge, "No such project.".
+   */
+  project?: string;
+  /**
    * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
    * throws or rejects, answers "no". The turn keeps running while this waits.
    */
@@ -238,6 +245,10 @@ export interface ClaudeCodeClient {
   chooseWorkspace(suggest?: string): Promise<{ chosen: false } | { chosen: true; name: string; path: string }>;
   /** Makes ~/<name> on the bridge's computer (no dialog), and keeps it as the code folder. A folder that already has files -> 409 with the bridge's sentence. */
   createWorkspace(name: string): Promise<{ name: string; path: string }>;
+  /** The projects (direct subfolders) of the bridge's code folder: `{ name, modified }`, sorted by name. Needs the pairing; goes through the relay when open. */
+  listProjects(): Promise<{ name: string; modified: string }[]>;
+  /** Makes the project `name` (a subfolder) in the code folder. 409 when it exists, 400 for a bad name, with the bridge's sentence. */
+  createProject(name: string): Promise<{ name: string }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
   pair(code: string): Promise<ClaudeCodeReadback>;
   /** Trades the code for a secret and returns it WITHOUT keeping it (for an app that stores it itself). */
@@ -290,6 +301,7 @@ interface BridgeTurnOut {
   budgetSpent?: boolean;
   codeMode?: "files-only";
   access?: "computer";
+  project?: string;
 }
 
 /** The bridge events only a code turn sends. */
@@ -860,6 +872,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined,
                 ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
                 ...(data.access === "computer" ? { access: "computer" as const } : {}),
+                ...(typeof data.project === "string" && data.project ? { project: data.project } : {}),
               };
             }
           } else if (ev.event === "error") {
@@ -1004,7 +1017,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     // 2. The turn, on the person's computer. A session is reused only when it already covers the thread before this message.
     // A code session lives in the bridge's code folder, a chat session in its empty one: they are never resumed into each other.
     const codeMode = opts.mode === "code";
-    const skey = codeMode ? `${sessionPrefix}mode-code/${opts.thread}` : `${sessionPrefix}${opts.thread}`;
+    const project = codeMode && typeof opts.project === "string" && opts.project ? opts.project : "";
+    const skey = codeMode ? `${sessionPrefix}mode-code/${project ? `${project}/` : ""}${opts.thread}` : `${sessionPrefix}${opts.thread}`;
     let sessionId: string | undefined;
     try {
       const kept = JSON.parse(store()?.getItem(skey) ?? "null") as { sessionId?: string; covers?: number } | null;
@@ -1020,7 +1034,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         system: ctx.system,
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
-        ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session" } : {}),
+        ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session", ...(project ? { project } : {}) } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -1041,6 +1055,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       ...(out.budgetSpent ? { budgetSpent: true } : {}),
       ...(out.codeMode ? { codeMode: out.codeMode } : {}),
       ...(out.access ? { access: out.access } : {}),
+      ...(out.project ? { project: out.project } : {}),
     };
   }
 
@@ -1120,6 +1135,28 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown; error?: unknown } | null;
       if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not make that folder.");
       if (body && typeof body.name === "string" && typeof body.path === "string") return { name: body.name, path: body.path };
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+    },
+
+    async listProjects() {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/projects", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: "{}" });
+      const body = (await res.json().catch(() => null)) as { projects?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not list the projects.");
+      if (!body || !Array.isArray(body.projects)) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+      return (body.projects as Array<{ name?: unknown; modified?: unknown }>)
+        .filter((p) => p && typeof p.name === "string" && p.name !== "")
+        .map((p) => ({ name: p.name as string, modified: typeof p.modified === "string" ? p.modified : "" }));
+    },
+
+    async createProject(name) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/projects/create", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify({ name }) });
+      const body = (await res.json().catch(() => null)) as { name?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not make that project.");
+      if (body && typeof body.name === "string") return { name: body.name };
       throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
     },
 

@@ -274,6 +274,61 @@ describe("chooseWorkspace and createWorkspace", () => {
   });
 });
 
+describe("projects (0.3.0)", () => {
+  it("listProjects and createProject post to the bridge; the bridge's sentences come through; not connected is 401", async () => {
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 401 });
+    await expect(client.createProject("a")).rejects.toMatchObject({ status: 401 });
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { projects: [{ name: "alpha", modified: "2026-11-13T10:00:00.000Z" }, { name: "" }, { nope: 1 }] }));
+    expect(await client.listProjects()).toEqual([{ name: "alpha", modified: "2026-11-13T10:00:00.000Z" }]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`${BRIDGE}/v1/projects`);
+    fetchMock.mockResolvedValueOnce(json(404, { error: "This bridge has no code folder. Start it with --workspace <folder>." }));
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 404, message: "This bridge has no code folder. Start it with --workspace <folder>." });
+    fetchMock.mockResolvedValueOnce(json(200, { projects: "x" }));
+    await expect(client.listProjects()).rejects.toMatchObject({ status: 502 });
+    fetchMock.mockResolvedValueOnce(json(200, { name: "alpha" }));
+    expect(await client.createProject("alpha")).toEqual({ name: "alpha" });
+    const [url, init] = fetchMock.mock.calls.at(-1) as [string, RequestInit];
+    expect(url).toBe(`${BRIDGE}/v1/projects/create`);
+    expect(JSON.parse(String(init.body))).toEqual({ name: "alpha" });
+    fetchMock.mockResolvedValueOnce(json(409, { error: "A project with this name already exists." }));
+    await expect(client.createProject("alpha")).rejects.toMatchObject({ status: 409, message: "A project with this name already exists." });
+  });
+
+  it("a turn with project sends it in the body, keeps the session per project, and passes the reply's project through", async () => {
+    client.save("s3cret");
+    const S1 = "11111111-2222-4333-8444-555555555555";
+    const S2 = "99999999-2222-4333-8444-555555555555";
+    let calls = fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    const r = await client.sendTurn([{ role: "user", content: "one" }], { thread: "T", mode: "code", project: "alpha" });
+    expect(turnBody(calls)).toMatchObject({ mode: "code", project: "alpha" });
+    expect(r).toMatchObject({ project: "alpha" });
+    expect(localStorage.getItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`)).toContain(S1);
+    // another project (and no project) of the same thread do not resume it
+    calls = fakeBridge([["message", { role: "assistant", content: "b", model: "m", sessionId: S2, mode: "code", project: "beta" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "T", mode: "code", project: "beta" });
+    expect(turnBody(calls)).not.toHaveProperty("sessionId");
+    calls = fakeBridge([["message", { role: "assistant", content: "c", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "T", mode: "code", project: "alpha" });
+    expect(turnBody(calls).sessionId).toBe(S1);
+    calls = fakeBridge([["message", { role: "assistant", content: "d", model: "m", sessionId: S2, mode: "code" }]]);
+    const r2 = await client.sendTurn([{ role: "user", content: "x" }], { thread: "T", mode: "code" });
+    expect(turnBody(calls)).not.toHaveProperty("project");
+    expect(r2).not.toHaveProperty("project");
+  });
+
+  it("project is ignored in a chat turn, and disconnect removes the project sessions too", async () => {
+    client.save("s3cret");
+    const calls = fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: SESSION }]]);
+    await client.sendTurn([{ role: "user", content: "one" }], { thread: "T", project: "alpha" });
+    expect(turnBody(calls)).not.toHaveProperty("project");
+    localStorage.setItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`, "{}");
+    fetchMock.mockResolvedValue(json(200, { ok: true }));
+    client.disconnect();
+    expect(localStorage.getItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/T`)).toBeNull();
+  });
+});
+
 describe("access (0.3.0)", () => {
   it("bridgeInfo returns access folder, computer or null (older bridge, odd value)", async () => {
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.3.0", codeTurns: true, workspace: true, codeMode: "full", access: "computer" }));

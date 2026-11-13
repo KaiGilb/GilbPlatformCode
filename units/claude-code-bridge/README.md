@@ -194,6 +194,18 @@ Extra events in a code turn (a chat turn sends none of them):
 
 `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
 
+## Projects (0.3.0)
+
+The code folder stays the bridge's folder. A **project** is a direct subfolder of it (for example `~/MyJackfruitCode/hello-gilbapp`), and a code turn may run inside one, in folder mode and in computer mode.
+
+- **Name rule** (`validProjectName`): 1 to 64 characters, letters, digits, dot, dash, underscore, starting with a letter or digit (so never `.` or `..`). Names are unique without regard to case on macOS and Windows. `node_modules` is not a project name.
+- `POST /v1/projects` (paired) answers `{ projects: [{ name, modified }] }` (`modified` is an ISO time): the direct subfolders of the code folder that are real directories (a symlink is left out), whose names pass the rule and do not start with `.`, sorted by name, at most 500. 404 `This bridge has no code folder. Start it with --workspace <folder>.` without a code folder.
+- `POST /v1/projects/create` (paired) `{ name }` makes `<code folder>/<name>` (mode 0700) and answers `{ name }`. 400 for a bad name, 409 `A project with this name already exists.`, 409 while the folder dialog is open.
+- A turn body may carry `project` (a name). It must pass the rule and be a real direct subfolder (not a link), else 400 `No such project.`. Like the code folder, the project is checked after the snapshot and again right before the child starts, by real path and device and inode: if it changed, 409 `The project folder changed on disk.`; and the child's own working folder (its init `cwd`) must be the project's real path and identity. Without `project` a turn runs in the code folder itself, as before. A chat turn ignores `project`.
+- **Confinement.** The child starts in the project folder. In folder mode the file and command limits, the `bridge_approve` checks (`Outside the code folder.` also for the code folder's other files and for other projects), the `files_changed` snapshot and the npm cache (`<project>/.npm-cache`) all use the project folder, not the whole code folder. In computer mode the project folder is the start folder (the same access as in your terminal otherwise). The system prompt names the project and leaves out the "make each new app in its own subfolder" sentences, because the project is the app's folder.
+- **Concurrency.** One code turn at a time per project, and one for the code folder itself (no project): a second one is 429 `A code turn is already running in <project>.` Different projects may run at once, within the bridge's turn limit.
+- The turn's `message` carries `project` (the project's name).
+
 ## Computer mode (0.3.0)
 
 Folder mode (above) is the default and is unchanged. **Computer mode** is for the person who wants a chat code turn to work like Claude Code in their own terminal. It is switched on **on the computer only**, with `--full-access` on the bridge's command line: `node bridge.mjs --workspace ~/MyCode --full-access`, or `--install --workspace ~/MyCode --full-access` (carried into the macOS LaunchAgent and the Windows launcher exactly like `--workspace`). `--install` without it installs folder mode again, so re-running the plain install line turns it off. No HTTP route, body field, header, environment variable or stored file can turn it on. A code turn still needs a code folder: it is the folder Claude Code starts in.
@@ -254,4 +266,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.1.9: a hand-off may run 30 minutes (the connector now gives level agents that long), so the bridge waits for a tool call 30 minutes.
 - 0.2.0: code mode: `--workspace`, `mode: "code"` turns, `/v1/workspace`, the `activity`, `tool_error` and `files_changed` events (see "Code folder").
 - 0.2.1: full-mode code turns may download from `codeload.github.com` and `raw.githubusercontent.com` (read-only archives of public repos); the system prompt says how.
-- 0.3.0: Computer mode: `--full-access` (command line and `--install` only), `access` in `/v1/hello` and in the code turn\'s `message` (see "Computer mode").
+- 0.3.0: Computer mode: `--full-access` (command line and `--install` only), `access` in `/v1/hello` and in the code turn\'s `message` (see "Computer mode"). Also 0.3.0: projects (see "Projects"); the start banner says which mode chat turns and code turns run in.
