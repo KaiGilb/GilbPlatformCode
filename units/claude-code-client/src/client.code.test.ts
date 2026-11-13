@@ -44,12 +44,12 @@ const turnBody = (calls: { url: string; init: RequestInit }[]) => JSON.parse(Str
 
 describe("bridgeInfo", () => {
   it("reports codeTurns and workspace, false when hello omits them (an older bridge)", async () => {
-    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only" }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only" });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only", access: null }));
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only", access: null });
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.1.9" }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.9", codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.9", codeTurns: false, workspace: false, codeMode: null, access: null });
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", codeTurns: "yes", workspace: 1, codeMode: "weird" }));
-    expect(await client.bridgeInfo()).toMatchObject({ codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toMatchObject({ codeTurns: false, workspace: false, codeMode: null, access: null });
   });
 });
 
@@ -271,6 +271,37 @@ describe("chooseWorkspace and createWorkspace", () => {
     client.save("s3cret");
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await expect(client.chooseWorkspace()).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+describe("access (0.3.0)", () => {
+  it("bridgeInfo returns access folder, computer or null (older bridge, odd value)", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.3.0", codeTurns: true, workspace: true, codeMode: "full", access: "computer" }));
+    expect(await client.bridgeInfo()).toMatchObject({ codeMode: "full", access: "computer" });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", codeMode: "full", access: "folder" }));
+    expect((await client.bridgeInfo()).access).toBe("folder");
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.2.1" }));
+    expect((await client.bridgeInfo()).access).toBeNull();
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", access: "root" }));
+    expect((await client.bridgeInfo()).access).toBeNull();
+  });
+
+  it("the reply carries access computer through; other replies leave it out", async () => {
+    client.save("s3cret");
+    fakeBridge([["message", { role: "assistant", content: "done", model: "m", sessionId: SESSION, mode: "code", access: "computer" }]]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A1", mode: "code" })).toMatchObject({ content: "done", access: "computer" });
+    fakeBridge([["message", { role: "assistant", content: "x", model: "m", sessionId: SESSION, mode: "code" }]]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A2", mode: "code" })).not.toHaveProperty("access");
+    fakeBridge([["message", { role: "assistant", content: "x", model: "m", access: "bogus" }]]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A3", mode: "code" })).not.toHaveProperty("access");
+  });
+
+  it("any tool and a long summary are accepted in an approval_request", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "WebSearch", summary: "x".repeat(300) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION, mode: "code", access: "computer" }]], (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined));
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A4", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
+    expect(seen).toContainEqual({ event: "approval_request", data: { id: "0123456789abcdef", tool: "WebSearch", summary: "x".repeat(300) } });
   });
 });
 

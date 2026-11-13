@@ -194,6 +194,20 @@ Extra events in a code turn (a chat turn sends none of them):
 
 `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
 
+## Computer mode (0.3.0)
+
+Folder mode (above) is the default and is unchanged. **Computer mode** is for the person who wants a chat code turn to work like Claude Code in their own terminal. It is switched on **on the computer only**, with `--full-access` on the bridge's command line: `node bridge.mjs --workspace ~/MyCode --full-access`, or `--install --workspace ~/MyCode --full-access` (carried into the macOS LaunchAgent and the Windows launcher exactly like `--workspace`). `--install` without it installs folder mode again, so re-running the plain install line turns it off. No HTTP route, body field, header, environment variable or stored file can turn it on. A code turn still needs a code folder: it is the folder Claude Code starts in.
+
+A start and `--install --full-access` print: "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access."
+
+`GET /v1/hello` has `access`: `"folder"`, `"computer"`, or `null` (no code folder). In computer mode `codeMode` is `"full"` on every platform (Windows too: no sandbox is used, so there is no files-only). The turn's `message` carries `access: "computer"`.
+
+What a computer-mode code turn runs: the person's own Claude Code, started in the code folder, with `-p --output-format stream-json --verbose --mcp-config <the bridge's gilb server> --allowedTools mcp__gilb --permission-mode acceptEdits` (approval `session`) or the asking mode `manual` (approval `each-write`; the CLI reports it as `default`), `--permission-prompts host --permission-prompt-tool mcp__gilb__bridge_approve`, `--settings {"permissions":{"disableBypassPermissionsMode":"disable"}}`, `--append-system-prompt <the turn's system text + a paragraph naming the folder>` and `--system-prompt-snapshot off`. There is no `--restricted`, `--tools`, `--disable-slash-commands`, `--strict-mcp-config` or sandbox: Claude Code keeps its own prompt, and the person's CLAUDE.md, skills, memory, hooks and MCP servers work as in the terminal. The child gets the person's environment (tokens and logins included) with only the billing variables removed (`ANTHROPIC_API_KEY` and the like), and its init event must still say `apiKeySource: "none"` and the permission mode that was asked for; it is not checked for a tool list. The folder checks (the child's own working folder is the checked code folder) stay.
+
+Every request Claude Code would ask about goes to the person through `bridge_approve`, with nothing allowed or denied automatically by path. The question shows: Bash the command (300 characters at most, new lines as ` ⏎ `, the model's description as `detail`); Read, Edit, Write, NotebookEdit the absolute path; WebFetch the URL; WebSearch the query; any other tool its name and its input as compact JSON (300 characters at most). The answer shapes and `POST /v1/approval` are as in folder mode.
+
+`files_changed` is still the snapshot of the code folder only: changes Claude Code makes outside the folder are not listed. Hand-offs (nested turns) are unchanged: chat turns.
+
 ## Relay window (for Safari)
 
 Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
@@ -240,3 +254,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.1.9: a hand-off may run 30 minutes (the connector now gives level agents that long), so the bridge waits for a tool call 30 minutes.
 - 0.2.0: code mode: `--workspace`, `mode: "code"` turns, `/v1/workspace`, the `activity`, `tool_error` and `files_changed` events (see "Code folder").
 - 0.2.1: full-mode code turns may download from `codeload.github.com` and `raw.githubusercontent.com` (read-only archives of public repos); the system prompt says how.
+- 0.3.0: Computer mode: `--full-access` (command line and `--install` only), `access` in `/v1/hello` and in the code turn\'s `message` (see "Computer mode").

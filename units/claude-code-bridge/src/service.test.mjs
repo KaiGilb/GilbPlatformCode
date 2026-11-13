@@ -112,6 +112,18 @@ describe("--install, --uninstall", () => {
     expect(x).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>/);
   });
 
+  it("--install --full-access carries it into the LaunchAgent and prints the notice; a plain --install drops it", async () => {
+    const plist = path.join(home, "Library", "LaunchAgents", "com.gilb.claude-code-bridge.plist");
+    const on = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode", "--full-access"]), deps());
+    expect(on.ok).toBe(true);
+    expect(fs.readFileSync(plist, "utf8")).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>\s*<string>--full-access<\/string>/);
+    expect(on.message).toContain("Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.");
+    const off = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode"]), deps());
+    expect(off.ok).toBe(true);
+    expect(fs.readFileSync(plist, "utf8")).not.toContain("--full-access");
+    expect(off.message).not.toContain("Full computer access");
+  });
+
   it("--install refuses a wildcard or plain-http origin and writes nothing", async () => {
     for (const bad of ["*", "http://app.example.com", "https://*.example.com"]) {
       const out = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--allow-origin", bad]), deps());

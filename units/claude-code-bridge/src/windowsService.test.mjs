@@ -132,6 +132,21 @@ describe("--install on Windows", () => {
     expect(js).toContain(`sh.Run(${JSON.stringify(cmd)}, 0, false);`);
   });
 
+  it("carries --full-access into the launcher command; a plain install drops it", async () => {
+    const w = world();
+    const out = await install(w, ["--workspace", "C:\\Users\\Anna Maria\\MyCode", "--full-access"]);
+    expect(out.ok).toBe(true);
+    expect(out.message).toContain("Full computer access is ON");
+    const key = `${LOCAL}\\start-com.gilb.claude-code-bridge.js`.toLowerCase();
+    const cmd = `"${NODE}" "${FILE}" --supervise --port 47821 --claude "${CLAUDE}" --state-dir "${STATE}" --workspace "C:\\Users\\Anna Maria\\MyCode" --full-access --label ${DEFAULT_LABEL}`;
+    expect(decode(Buffer.from(w.files.get(key)))).toContain(`sh.Run(${JSON.stringify(cmd)}, 0, false);`);
+    const w2 = world();
+    const out2 = await install(w2, ["--workspace", "C:\\Users\\Anna Maria\\MyCode"]);
+    expect(out2.ok).toBe(true);
+    expect(decode(Buffer.from(w2.files.get(key)))).not.toContain("--full-access");
+    expect(out2.message).not.toContain("Full computer access");
+  });
+
   it("writes exactly: one Run value, one launcher file and the log (nothing else), with a user name that has a space", async () => {
     const w = world();
     const out = await install(w, ["--allow-origin", "https://app.example.test"]);

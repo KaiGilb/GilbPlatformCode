@@ -62,6 +62,8 @@ export interface ClaudeCodeReply {
   budgetSpent?: boolean;
   /** Code mode only: "files-only" when the turn could not run commands (Windows). Absent for a full code turn and for chat. */
   codeMode?: "files-only";
+  /** Code mode only: "computer" when the bridge runs with full computer access (--full-access). Absent otherwise. */
+  access?: "computer";
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -224,7 +226,7 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null }>;
   /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
   workspaceInfo(): Promise<{ name: string; path: string } | null>;
   /**
@@ -287,6 +289,7 @@ interface BridgeTurnOut {
   sessionId: string | undefined;
   budgetSpent?: boolean;
   codeMode?: "files-only";
+  access?: "computer";
 }
 
 /** The bridge events only a code turn sends. */
@@ -856,6 +859,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 model: typeof data.model === "string" ? data.model : "",
                 sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined,
                 ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
+                ...(data.access === "computer" ? { access: "computer" as const } : {}),
               };
             }
           } else if (ev.event === "error") {
@@ -1036,6 +1040,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       payer: "person-claude-code",
       ...(out.budgetSpent ? { budgetSpent: true } : {}),
       ...(out.codeMode ? { codeMode: out.codeMode } : {}),
+      ...(out.access ? { access: out.access } : {}),
     };
   }
 
@@ -1057,8 +1062,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     async bridgeInfo() {
       try {
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
-        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown };
+        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown };
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,
@@ -1066,9 +1071,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           codeTurns: body.codeTurns === true,
           workspace: body.workspace === true,
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
+          access: body.access === "folder" || body.access === "computer" ? body.access : null,
         };
       } catch {
-        return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
+        return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
       }
     },
 

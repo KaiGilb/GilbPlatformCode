@@ -40,7 +40,7 @@ import { spawn, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.2.1";
+export const BRIDGE_BUILD = "0.3.0";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -493,6 +493,9 @@ const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).";
 const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder.";
+/** Printed by a start and by --install when --full-access is on. */
+export const FULL_ACCESS_NOTICE = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.";
+const computerParagraph = (name, p) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
 const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
@@ -607,7 +610,9 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
     };
 }
 /** Fail closed: a code turn's init event may list only the code tools and this bridge's MCP tools, and no other permission mode. */
-function codeInitOk(ev, approval = "session", filesOnly = false) {
+function codeInitOk(ev, approval = "session", filesOnly = false, computer = false) {
+    if (computer)
+        return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits"); // no tool-list check: Claude Code has its own tools
     const tools = Array.isArray(ev.tools) ? ev.tools : [];
     const allowed = filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS;
     if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__"))))
@@ -799,7 +804,8 @@ export function createBridge(opts = {}) {
     const platform = opts.platformOpts?.platform ?? process.platform;
     const home = opts.home ?? opts.platformOpts?.home ?? os.homedir();
     const codePlatform = opts.codePlatform ?? platform;
-    const filesOnly = codePlatform === "win32";
+    const computer = opts.fullAccess === true;
+    const filesOnly = codePlatform === "win32" && !computer;
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
     const idOf = (p) => {
         try {
@@ -1109,7 +1115,7 @@ export function createBridge(opts = {}) {
         }
         if (method === "ping")
             return ok({});
-        const askingTurn = turn.code && turn.approval === "each-write";
+        const askingTurn = turn.code && (computer || turn.approval === "each-write");
         if (method === "tools/list") {
             return ok({
                 tools: [
@@ -1275,6 +1281,35 @@ export function createBridge(opts = {}) {
         const input = args.input && typeof args.input === "object" ? args.input : {};
         const deny = (message) => ({ behavior: "deny", message });
         const str = (v) => (typeof v === "string" ? v : "");
+        if (computer) {
+            // Computer mode: every request is asked of the person, no automatic allow or deny by path.
+            let summary;
+            let detail = "";
+            if (tool === "Bash") {
+                summary = cap(str(input.command).replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
+                detail = str(input.description);
+            }
+            else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
+                const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
+                summary = cap(p ? path.resolve(workspace ? workspace.path : "/", p) : tool);
+            }
+            else if (tool === "WebFetch")
+                summary = cap(str(input.url) || tool);
+            else if (tool === "WebSearch")
+                summary = cap(str(input.query) || tool);
+            else {
+                let j = "";
+                try {
+                    j = JSON.stringify(input);
+                }
+                catch {
+                    /* not printable */
+                }
+                summary = cap(`${tool || "tool"} ${j}`.trim());
+            }
+            const a = await askPerson(turn, tool, summary, detail);
+            return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
+        }
         if (tool === "Read") {
             if (!insideWorkspace(str(input.file_path)))
                 return deny("Outside the code folder.");
@@ -1444,8 +1479,34 @@ export function createBridge(opts = {}) {
     }
     // ---- one chat turn ---------------------------------------------------------------------------------------------
     const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    /** Computer mode: the person's own Claude Code, started as their terminal would (own prompt, CLAUDE.md, skills, hooks and MCP servers all load). */
+    function computerArgs(turn, mode, mcp) {
+        const args = [
+            "-p",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--mcp-config", JSON.stringify(mcp), // no --strict-mcp-config: the person's own MCP servers load too
+            "--allowedTools", "mcp__gilb",
+            // session: edits are accepted. each-write: `manual` (the CLI's name for the asking mode; it reports "default") asks, and the bridge's own tool answers.
+            "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
+            "--permission-prompts", "host",
+            "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
+            "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
+            "--append-system-prompt", `${turn.system}\n\n${computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}`,
+            "--system-prompt-snapshot", "off",
+        ];
+        if (mode.resume)
+            args.push("--resume", mode.sessionId);
+        else
+            args.push("--session-id", mode.sessionId);
+        if (turn.model)
+            args.push("--model", turn.model);
+        return args;
+    }
     function claudeArgs(turn, mode) {
         const mcp = { mcpServers: { gilb: { type: "http", url: `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}` } } };
+        if (turn.code && computer)
+            return computerArgs(turn, mode, mcp);
         const args = turn.code ? [
             "-p",
             "--output-format", "stream-json",
@@ -1532,7 +1593,7 @@ export function createBridge(opts = {}) {
                     cwd: turn.code && workspace ? workspace.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
                     // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-                    env: turn.code ? (workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
+                    env: turn.code ? (computer ? childEnv(env) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });
@@ -1583,7 +1644,7 @@ export function createBridge(opts = {}) {
                             void stopChild(child);
                         }
                         // A code turn must show the folder limits too: only the code tools (and this bridge's MCP tools), and no other permission mode.
-                        if (turn.code && !codeInitOk(ev, turn.approval, filesOnly)) {
+                        if (turn.code && !codeInitOk(ev, turn.approval, filesOnly, computer)) {
                             limitsRefused = true;
                             void stopChild(child);
                         }
@@ -1614,7 +1675,7 @@ export function createBridge(opts = {}) {
                 // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
                 if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit))
                     refused = true;
-                const noStart = turn.code && !filesOnly && !sawInit && !initOk && !limitsRefused && !cwdRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
+                const noStart = turn.code && !filesOnly && !computer && !sawInit && !initOk && !limitsRefused && !cwdRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
                 if (noStart) {
                     const lines = stderr.trim().split("\n").map((l) => l.trim()).filter(Boolean);
                     const last = lines.length > 0 ? lines[lines.length - 1] : String(result?.result ?? "").trim().split("\n").pop().trim();
@@ -1820,7 +1881,7 @@ export function createBridge(opts = {}) {
                     content: String(out.result.result ?? ""),
                     model: out.model,
                     payer: "person-claude-code",
-                    ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}) } : {}),
+                    ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}) } : {}),
                     sessionId: out.sessionId,
                     // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
                     ...(turn.budgetSpent ? { budgetSpent: true } : {}),
@@ -1981,7 +2042,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -2144,6 +2205,7 @@ export function parseCli(argv) {
         label: val("--label") ?? DEFAULT_LABEL,
         stateDir: val("--state-dir"),
         workspace,
+        fullAccess: argv.includes("--full-access"),
     };
 }
 const xmlEsc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -2287,6 +2349,8 @@ export async function serviceInstall(opts, deps) {
         args.push("--allow-origin", o);
     if (opts.workspace)
         args.push("--workspace", opts.workspace);
+    if (opts.fullAccess)
+        args.push("--full-access");
     const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
     fs.mkdirSync(path.dirname(f.plist), { recursive: true });
     fs.mkdirSync(path.dirname(f.logFile), { recursive: true });
@@ -2323,7 +2387,7 @@ export async function serviceInstall(opts, deps) {
   Get your pairing code:  node ${file} --code${flags}
   Check it:               node ${file} --status${flags}
   Remove it:              node ${file} --uninstall${flags}
-  If a bridge is already running in a Terminal window, close that window: only one can hold port ${port}.`,
+  If a bridge is already running in a Terminal window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE}` : ""}`,
     };
 }
 export async function serviceUninstall(opts, deps) {
@@ -2702,6 +2766,8 @@ async function installWindows(opts, deps, ctx) {
         base.push("--allow-origin", o);
     if (opts.workspace)
         base.push("--workspace", opts.workspace);
+    if (opts.fullAccess)
+        base.push("--full-access");
     const value = runValue(f);
     if (value.length > RUN_VALUE_MAX)
         return { ok: false, message: `Not installed.\nThe start-up command would be ${value.length} characters; Windows allows ${RUN_VALUE_MAX} in a Run entry. Use a shorter --label.` };
@@ -2767,7 +2833,7 @@ async function installWindows(opts, deps, ctx) {
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
   Remove it:              node ${cmd} --uninstall${flags}
-  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.`,
+  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE}` : ""}`,
     };
 }
 async function uninstallWindows(opts, deps) {
@@ -2952,6 +3018,8 @@ export async function runSupervisor(cli, io = {}) {
         childArgs.push("--allow-origin", o);
     if (cli.workspace)
         childArgs.push("--workspace", cli.workspace);
+    if (cli.fullAccess)
+        childArgs.push("--full-access");
     const realSpawn = () => {
         try {
             if (fs.statSync(f.logFile).size > LOG_ROTATE_BYTES)
@@ -3021,17 +3089,17 @@ async function main() {
     const argv = process.argv.slice(2);
     const cli = parseCli(argv);
     if (cli.mode === "help") {
-        console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER]
+        console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access]
        node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
        --label L: letters, digits, dot, dash, underscore, 1 to 64 characters.${process.platform === "win32" ? `
        Windows: a second --label is a separate install (own state folder, log, launcher, start-up entry) and needs its own --port.` : ""}`);
         return;
     }
     // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"]);
+    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"]);
     const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]));
     if (unknown.length > 0) {
-        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --label, --install, --uninstall, --status, --code, --unpair-all, --help`);
+        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --label, --install, --uninstall, --status, --code, --unpair-all, --help`);
         process.exit(2);
     }
     if (cli.modes.length > 1) {
@@ -3110,7 +3178,7 @@ async function main() {
     // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
     // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
     const controlToken = crypto.randomBytes(32).toString("hex");
-    const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, workspaceFile: path.join(f.stateDir, "workspace.json"), log: (l) => console.log(`  ${l}`) });
+    const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), log: (l) => console.log(`  ${l}`) });
     try {
         await bridge.start();
     }
@@ -3138,7 +3206,7 @@ Gilb Claude Code bridge
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
   Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`, tools off (no shell, no files, no web)
-${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
+${cli.fullAccess ? `  ${FULL_ACCESS_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${cli.fullAccess ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 
