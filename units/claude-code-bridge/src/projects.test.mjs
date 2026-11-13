@@ -52,6 +52,7 @@ async function api(route, body = {}, secret = secret0) {
 }
 const T = (extra) => ({ system: "You are the agent.", prompt: "hello", mode: "code", ...extra });
 const ev = (r, name) => r.events.filter((e) => e[0] === name).map((e) => e[1]);
+const mk2 = (n) => { try { fs.mkdirSync(path.join(ws, n)); } catch { /* not allowed on this disk */ } };
 const mk = (n) => fs.mkdirSync(path.join(ws, n));
 const ASK = (...asks) => `ASKJSON:${JSON.stringify(asks)}`;
 
@@ -96,6 +97,17 @@ describe("POST /v1/projects", () => {
   });
 });
 
+describe("project names (L26)", () => {
+  it("Windows device names and names ending in a dot are refused on every platform, in create, list and turns; near misses are fine", async () => {
+    await start();
+    for (const ok of ["console", "com0", "lpt", "nullx", "aux-1", "com10"]) expect((await api("/v1/projects/create", { name: ok })).status, ok).toBe(200);
+    for (const bad of ["CON", "nul.txt", "x."]) mk2(bad);
+    const names = (await api("/v1/projects")).json.projects.map((p) => p.name);
+    expect(names).toEqual(["aux-1", "com0", "com10", "console", "lpt", "nullx"]);
+    for (const bad of ["CON", "nul.txt", "x."]) expect(await api("/v1/turn", T({ project: bad }))).toMatchObject({ status: 400, json: { error: "No such project." } });
+  });
+});
+
 describe("POST /v1/projects/create", () => {
   it("makes the folder (mode 0700), refuses an existing one (409), a bad name (400), and a case-clash on macOS", async () => {
     await start({ bridgeOpts: { pathPlatform: "darwin" } }); // the case rule follows the pretend platform, so it holds on a case-sensitive disk too
@@ -104,7 +116,7 @@ describe("POST /v1/projects/create", () => {
     if (process.platform !== "win32") expect(fs.statSync(path.join(ws, "alpha")).mode & 0o777).toBe(0o700);
     expect(await api("/v1/projects/create", { name: "alpha" })).toMatchObject({ status: 409, json: { error: "A project with this name already exists." } });
     expect((await api("/v1/projects/create", { name: "ALPHA" })).status).toBe(409);
-    for (const bad of ["", "..", ".x", "a/b", "a b", "node_modules", 5, undefined]) expect((await api("/v1/projects/create", { name: bad })).status, String(bad)).toBe(400);
+    for (const bad of ["", "..", ".x", "a/b", "a b", "node_modules", 5, undefined, "CON", "con", "PRN", "AUX", "NUL", "nul.txt", "Com1", "COM9.log", "LPT1", "lpt9.x", "x.", "x.."]) expect((await api("/v1/projects/create", { name: bad })).status, String(bad)).toBe(400);
   });
   it("is refused while the folder dialog is open (409)", async () => {
     let release;

@@ -1021,7 +1021,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     // A code session lives in the bridge's code folder, a chat session in its empty one: they are never resumed into each other.
     const codeMode = opts.mode === "code";
     const project = codeMode && typeof opts.project === "string" && opts.project ? opts.project : "";
-    const skey = codeMode ? `${sessionPrefix}mode-code/${project ? `${project}/` : ""}${opts.thread}` : `${sessionPrefix}${opts.thread}`;
+    // Each component is encoded, so project "alpha" with thread "notes" can never be the key of no project with thread "alpha/notes".
+    const skey = codeMode ? `${sessionPrefix}mode-code/${project ? `${encodeURIComponent(project)}/` : ""}${encodeURIComponent(opts.thread)}` : `${sessionPrefix}${opts.thread}`;
     let sessionId: string | undefined;
     try {
       const kept = JSON.parse(store()?.getItem(skey) ?? "null") as { sessionId?: string; covers?: number } | null;

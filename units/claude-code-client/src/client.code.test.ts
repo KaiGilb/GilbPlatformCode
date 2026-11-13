@@ -317,6 +317,24 @@ describe("projects (0.3.0)", () => {
     expect(r2).not.toHaveProperty("project");
   });
 
+  it("the stored session keys are encoded per component: project alpha + thread notes differs from no project + thread alpha/notes", async () => {
+    client.save("s3cret");
+    const S1 = "11111111-2222-4333-8444-555555555555";
+    fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: S1, mode: "code", project: "alpha" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }], { thread: "notes", mode: "code", project: "alpha" });
+    const calls = fakeBridge([["message", { role: "assistant", content: "b", model: "m", sessionId: "99999999-2222-4333-8444-555555555555", mode: "code" }]]);
+    await client.sendTurn([{ role: "user", content: "one" }, { role: "assistant", content: "a" }, { role: "user", content: "two" }], { thread: "alpha/notes", mode: "code" });
+    expect(turnBody(calls)).not.toHaveProperty("sessionId");
+    const k1 = `gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha/notes`;
+    const k2 = `gilb.claude-code-session.${PRINCIPAL}.mode-code/alpha%2Fnotes`;
+    expect(localStorage.getItem(k1)).toContain(S1);
+    expect(localStorage.getItem(k2)).toContain("99999999");
+    fetchMock.mockResolvedValue(json(200, { ok: true }));
+    client.disconnect();
+    expect(localStorage.getItem(k1)).toBeNull();
+    expect(localStorage.getItem(k2)).toBeNull();
+  });
+
   it("project is ignored in a chat turn, and disconnect removes the project sessions too", async () => {
     client.save("s3cret");
     const calls = fakeBridge([["message", { role: "assistant", content: "a", model: "m", sessionId: SESSION }]]);

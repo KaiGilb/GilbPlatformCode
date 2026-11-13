@@ -631,7 +631,9 @@ const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
 /** A project name: 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit (so never "." or ".."). */
 export const validProjectName = (n: unknown): n is string => typeof n === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
-const projectNameOk = (n: unknown): n is string => validProjectName(n) && n.toLowerCase() !== "node_modules";
+/** Windows reserved device names (with or without an extension), refused on every platform so a project folder can move between computers. */
+const WIN_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+const projectNameOk = (n: unknown): n is string => validProjectName(n) && n.toLowerCase() !== "node_modules" && !WIN_RESERVED.test(n) && !/[. ]$/.test(n);
 const PROJECT_CHANGED = "The project folder changed on disk.";
 const NO_SUCH_PROJECT = "No such project.";
 const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
@@ -1434,7 +1436,13 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Approval text is never cut: a run of whitespace is one space, and a text over the limit is not asked about at all. */
   const APPROVAL_COMMAND_MAX = 2000;
   const APPROVAL_PATH_MAX = 1000;
-  const collapseWs = (x: string) => x.replace(/\s+/g, " ").trim();
+  /** Any character that could hide part of a question: C0/C1 controls (but not TAB, LF, CR), Unicode format characters (bidi, zero-width, soft hyphen, BOM ...) and blank fillers. */
+  const HIDDEN_CHARS = /[\p{Cc}\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u180E]/u;
+  const hasHidden = (x: string) => HIDDEN_CHARS.test(x.replace(/[\t\n\r]/g, ""));
+  const HAS_BREAK = /[\n\r\u2028\u2029]/;
+  const HIDDEN_MSG = "The request contains hidden or control characters, so it cannot be shown for approval; ask for it without them.";
+  /** Text shown to the person: every line break (LF, CRLF, CR, U+2028, U+2029) is one " ⏎ " marker; runs of spaces, tabs and other space separators are one space. */
+  const showText = (x: string) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
   const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
   const TOO_LONG_PATH = "The path is too long to show for approval.";
   const TOO_LONG_REQUEST = "The request is too long to show for approval; ask for it in smaller steps.";
@@ -1451,25 +1459,39 @@ export function createBridge(opts: BridgeOptions = {}) {
       // Computer mode: every request is asked of the person, no automatic allow or deny by path.
       let summary: string;
       let detail = "";
+      // A path is shown exactly: a line break or a hidden character in any path field is a denial; so is a path over the limit.
+      for (const k of ["file_path", "notebook_path", "path"]) {
+        const v = input[k];
+        if (typeof v === "string") {
+          if (hasHidden(v) || HAS_BREAK.test(v)) return deny(HIDDEN_MSG);
+          if (v.length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
+        }
+      }
+      if (hasHidden(tool) || hasHidden(str(input.description))) return deny(HIDDEN_MSG);
       if (tool === "Bash") {
-        summary = collapseWs(str(input.command)) || "Bash";
+        const c = str(input.command);
+        if (hasHidden(c)) return deny(HIDDEN_MSG);
+        summary = showText(c) || "Bash";
         if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-        detail = str(input.description);
+        detail = showText(str(input.description));
       } else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
         const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
         // "~" and "$" paths are shown exactly as given (never resolved against the folder); absolute as given; other relative ones resolved against the start folder.
-        summary = p ? collapseWs(p.startsWith("~") || p.startsWith("$") || path.isAbsolute(p) ? p : path.resolve(scope || "/", p)) : tool;
+        summary = p ? (p.startsWith("~") || p.startsWith("$") || path.isAbsolute(p) ? p : path.resolve(scope || "/", p)) : tool;
         if (summary.length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
-      } else if (tool === "WebFetch") summary = collapseWs(str(input.url)) || tool;
-      else if (tool === "WebSearch") summary = collapseWs(str(input.query)) || tool;
-      else {
+      } else if (tool === "WebFetch" || tool === "WebSearch") {
+        const t = str(tool === "WebFetch" ? input.url : input.query);
+        if (hasHidden(t)) return deny(HIDDEN_MSG);
+        summary = showText(t) || tool;
+      } else {
         let j = "";
         try {
           j = JSON.stringify(input);
         } catch {
           /* not printable */
         }
-        summary = collapseWs(`${tool || "tool"} ${j}`);
+        if (hasHidden(j)) return deny(HIDDEN_MSG);
+        summary = showText(`${tool || "tool"} ${j}`);
       }
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_REQUEST);
       const a = await askPerson(turn, tool, summary, detail);
@@ -1499,13 +1521,19 @@ export function createBridge(opts: BridgeOptions = {}) {
       for (const k of ["file_path", "notebook_path", "path"]) {
         if (input[k] !== undefined && (typeof input[k] !== "string" || !insideWorkspace(input[k] as string, scope))) return deny("Outside the code folder.");
       }
-      if (collapseWs(str(main)).length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
-      summary = collapseWs(toolSummary(tool, input, turnRoots(turn)));
+      for (const k of ["file_path", "notebook_path", "path"]) {
+        const v = input[k];
+        if (typeof v === "string" && (hasHidden(v) || HAS_BREAK.test(v))) return deny(HIDDEN_MSG);
+      }
+      if (str(main).length > APPROVAL_PATH_MAX) return deny(TOO_LONG_PATH);
+      summary = toolSummary(tool, input, turnRoots(turn)); // the path inside the folder, shown exactly
     } else if (tool === "Bash") {
       // The question shows the whole command (whitespace collapsed, never cut); the model's own description is only a second line.
-      summary = collapseWs(String(input.command ?? "")) || "Bash";
+      const c = str(input.command);
+      if (hasHidden(c) || hasHidden(str(input.description))) return deny(HIDDEN_MSG);
+      summary = showText(c) || "Bash";
       if (summary.length > APPROVAL_COMMAND_MAX) return deny(TOO_LONG_COMMAND);
-      detail = str(input.description);
+      detail = showText(str(input.description));
     } else {
       return deny("This tool is not allowed in a code turn.");
     }

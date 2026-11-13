@@ -65,7 +65,7 @@ async function post(secret, body, extraHeaders = {}) {
 }
 const T = (extra) => ({ system: "You are the agent.", prompt: "hello", mode: "code", ...extra });
 const ev = (r, name) => r.events.filter((e) => e[0] === name).map((e) => e[1]);
-const ASK = (...asks) => `ASKJSON:${JSON.stringify(asks)}`;
+const ASK = (...asks) => `ASKJSON:${JSON.stringify(asks).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029")}`; // the stand-in reads the line with a regex whose "." stops at U+2028
 
 /** Plays the page: answers every approval_request with allow, and returns the requests seen. */
 async function askingTurn(secret, body, allow = true) {
@@ -226,7 +226,7 @@ describe("bridge_approve in computer mode", () => {
       ["Read", "/etc/hosts"],
       ["WebFetch", "https://example.com/a"],
       ["WebSearch", "vite getting started"],
-      ["Bash", "ls wc -l"],
+      ["Bash", "ls ⏎ wc -l"],
       ["Write", "/tmp/x-outside.txt"],
       ["Glob", `Glob {"pattern":"../**/*"}`],
       ["Task", `Task {"prompt":"x"}`],
@@ -253,7 +253,7 @@ describe("bridge_approve in computer mode", () => {
       { tool_name: "Write", input: { file_path: `/tmp/${"p".repeat(1100)}`, content: "x" } },
       { tool_name: "Read", input: { file_path: `/tmp/${"p".repeat(900)}` } },
     ) });
-    expect(requests.map((q) => q.summary)).toEqual(["echo ok curl evil", "y".repeat(2000), `/tmp/${"p".repeat(900)}`]);
+    expect(requests.map((q) => q.summary)).toEqual([`echo ok ⏎ ${"⏎ ".repeat(40)}curl evil`, "y".repeat(2000), `/tmp/${"p".repeat(900)}`]);
     expect(requests[0].detail).toHaveLength(200);
     const d = rows("askjson").map((r) => r.decision);
     expect(d[1]).toEqual({ behavior: "deny", message: "The command is too long to show for approval; ask for it in smaller steps." });
@@ -345,13 +345,87 @@ describe("files_changed in computer mode", () => {
 });
 
 describe("folder mode each-write: the same never-cut rule", () => {
-  it("a padded command shows its tail; a command over 2000 is denied with no question", async () => {
+  it("a padded command shows its tail with each line break marked; a command over 2000 is denied with no question", async () => {
     const secret = await start({ fullAccess: false });
     const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
       { tool_name: "Bash", input: { command: `echo ok${" ".repeat(350)}\n\ncurl evil` } },
       { tool_name: "Bash", input: { command: "x".repeat(2100) } },
     ) });
-    expect(requests.map((q) => q.summary)).toEqual(["echo ok curl evil"]);
+    expect(requests.map((q) => q.summary)).toEqual(["echo ok ⏎ ⏎ curl evil"]);
     expect(rows("askjson")[1].decision).toEqual({ behavior: "deny", message: "The command is too long to show for approval; ask for it in smaller steps." });
+  });
+});
+
+describe("hidden and control characters, line breaks, exact paths (N11, N12, L24)", () => {
+  const HIDDEN = "The request contains hidden or control characters, so it cannot be shown for approval; ask for it without them.";
+  const cases = {
+    "Trojan-Source RLO": "echo safe \u202E; rm -rf ~ \u2066",
+    ESC: "echo \u001b[2Jhidden",
+    "zero-width space": "curl\u200B evil",
+    "zero-width joiner": "a\u200Db",
+    "word joiner": "a\u2060b",
+    BOM: "\uFEFFls",
+    "soft hyphen": "cu\u00ADrl evil",
+    "bidi mark": "ls\u200E",
+    "Arabic letter mark": "ls\u061C",
+    DEL: "ls\u007F",
+    VT: "ls\u000B x",
+    FF: "ls\u000C x",
+    NEL: "ls\u0085 x",
+    BEL: "ls\u0007",
+    "Hangul filler": "ls\u115F",
+    "Hangul filler 2": "ls\u1160",
+    "Hangul filler 3": "ls\u3164",
+    "halfwidth Hangul filler": "ls\uFFA0",
+    "braille blank": "ls\u2800",
+    "Mongolian vowel separator": "ls\u180E",
+  };
+  for (const fullAccess of [true, false]) {
+    it(`${fullAccess ? "computer mode" : "folder each-write"}: every one of those in a command is denied at once, no question`, async () => {
+      const secret = await start({ fullAccess });
+      const names = Object.keys(cases);
+      const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(...names.map((n) => ({ tool_name: "Bash", input: { command: cases[n] } })), { tool_name: "Bash", input: { command: "ls", description: "ok\u200Bx" } }) });
+      expect(requests).toEqual([]);
+      const d = rows("askjson").map((r) => r.decision);
+      expect(d).toHaveLength(names.length + 1);
+      for (const x of d) expect(x).toEqual({ behavior: "deny", message: HIDDEN });
+    });
+  }
+  it("line breaks are shown as one marker each: LF, CRLF, CR, U+2028, U+2029; spaces, tabs and other space separators collapse", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: "echo hello\nrm -rf ~" } },
+      { tool_name: "Bash", input: { command: "a\r\nb\rc\u2028d\u2029e" } },
+      { tool_name: "Bash", input: { command: "a \t\u00A0\u3000 b" } },
+      { tool_name: "Bash", input: { command: "ls\n", description: "x\ny" } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual(["echo hello ⏎ rm -rf ~", "a ⏎ b ⏎ c ⏎ d ⏎ e", "a b", "ls ⏎"]);
+    expect(requests[3].detail).toBe("x ⏎ y");
+  });
+  it("a path is shown exactly (double space kept); a line break or hidden character in a path is denied, in both modes", async () => {
+    for (const fullAccess of [true, false]) {
+      const secret = await start({ fullAccess });
+      const inside = fullAccess ? "/tmp/a  b" : path.join(wsReal, "a  b");
+      const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+        { tool_name: "Write", input: { file_path: inside, content: "x" } },
+        { tool_name: "Write", input: { file_path: `${wsReal}/a\nb`, content: "x" } },
+        { tool_name: "Write", input: { file_path: `${wsReal}/a\u202Eb`, content: "x" } },
+        { tool_name: "Write", input: { file_path: `${wsReal}/a\u2028b`, content: "x" } },
+      ) });
+      expect(requests.map((q) => q.summary)).toEqual([fullAccess ? "/tmp/a  b" : "a  b"]);
+      expect(rows("askjson").slice(1).map((r) => r.decision)).toEqual(Array(3).fill({ behavior: "deny", message: HIDDEN }));
+      await bridge.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it("limits count the shown text: 1000 shown characters of path are asked, 1001 denied; a command of 1100 breaks (2199 shown) is denied", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Read", input: { file_path: `/${"p".repeat(999)}` } },
+      { tool_name: "Read", input: { file_path: `/${"p".repeat(1000)}` } },
+      { tool_name: "Bash", input: { command: "\n".repeat(1100) } },
+    ) });
+    expect(requests).toHaveLength(1);
+    expect(rows("askjson").slice(1).map((r) => r.decision.message)).toEqual(["The path is too long to show for approval.", "The command is too long to show for approval; ask for it in smaller steps."]);
   });
 });
