@@ -98,10 +98,10 @@ describe("POST /v1/projects", () => {
 
 describe("POST /v1/projects/create", () => {
   it("makes the folder (mode 0700), refuses an existing one (409), a bad name (400), and a case-clash on macOS", async () => {
-    await start();
+    await start({ bridgeOpts: { pathPlatform: "darwin" } }); // the case rule follows the pretend platform, so it holds on a case-sensitive disk too
     const r = await api("/v1/projects/create", { name: "alpha" });
     expect(r).toMatchObject({ status: 200, json: { name: "alpha" } });
-    expect(fs.statSync(path.join(ws, "alpha")).mode & 0o777).toBe(0o700);
+    if (process.platform !== "win32") expect(fs.statSync(path.join(ws, "alpha")).mode & 0o777).toBe(0o700);
     expect(await api("/v1/projects/create", { name: "alpha" })).toMatchObject({ status: 409, json: { error: "A project with this name already exists." } });
     expect((await api("/v1/projects/create", { name: "ALPHA" })).status).toBe(409);
     for (const bad of ["", "..", ".x", "a/b", "a b", "node_modules", 5, undefined]) expect((await api("/v1/projects/create", { name: bad })).status, String(bad)).toBe(400);
