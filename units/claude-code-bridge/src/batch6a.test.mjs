@@ -17,7 +17,7 @@ let dir, home, stateDir, wsFile, logFile;
 const bridges = [];
 function ensureDir() {
   if (dir) return;
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
   home = path.join(dir, "home");
   stateDir = path.join(home, ".gilb-claude-code-bridge");
   fs.mkdirSync(stateDir, { recursive: true });
@@ -28,11 +28,11 @@ const mk = (name) => {
   ensureDir();
   const p = path.join(home, name);
   fs.mkdirSync(p, { recursive: true });
-  return fs.realpathSync(p);
+  return fs.realpathSync.native(p);
 };
 async function start(opts = {}) {
   ensureDir();
-  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
+  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
   bridges.push(bridge);
   await bridge.start();
   const base = `http://127.0.0.1:${bridge.port}`;
@@ -131,7 +131,7 @@ describe("F1: the folder is checked again at every code turn", () => {
     const ws = mk("Same");
     const b = await start({ workspace: ws });
     for (let i = 0; i < 2; i++) expect((await turn(b, { mode: "code" })).status).toBe(200);
-    for (const r of rows("run")) expect(fs.realpathSync(r.cwd)).toBe(ws);
+    for (const r of rows("run")) expect(fs.realpathSync.native(r.cwd)).toBe(ws);
   });
 });
 
@@ -231,7 +231,7 @@ describe("F6: the folder must be inside the home folder", () => {
       const r = v(p);
       expect(r.ok, p).toBe(false);
       // a folder that holds the home folder (/var here, since the temp home lives in it) gets its own older sentence
-      if (!r.ok && !fs.realpathSync(home).startsWith(fs.realpathSync(p) + path.sep)) expect(r.reason, p).toMatch(/must be inside your home folder, for example ~\/MyJackfruitCode\.$/);
+      if (!r.ok && !fs.realpathSync.native(home).startsWith(fs.realpathSync.native(p) + path.sep)) expect(r.reason, p).toMatch(/must be inside your home folder, for example ~\/MyJackfruitCode\.$/);
     }
     expect(v(mk("Fine")).ok).toBe(true);
   });

@@ -456,6 +456,13 @@ const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 /**
+ * THE one way the bridge reads a real path: the system's own spelling (on a case-insensitive disk the real case; on Windows the long
+ * name, not the 8.3 short one). Every comparison of folders goes through it, so two forms of one path never meet.
+ */
+export function realPath(p) {
+    return fs.realpathSync.native(p);
+}
+/**
  * Is this folder fit to be a code folder? It must exist (it is never created), and it must not be the filesystem root, the
  * home folder or a parent of it, a folder that holds secrets or this bridge's own state, or a folder that directly holds .ssh, .aws or .gnupg.
  */
@@ -464,7 +471,7 @@ export function validateWorkspace(input, o) {
     const P = win ? path.win32 : path.posix;
     const ci = win || o.platform === "darwin";
     // the system's own spelling (on a case-insensitive disk the real case, not the case that was typed)
-    const realpath = o.realpath ?? ((p) => fs.realpathSync.native(p));
+    const realpath = o.realpath ?? realPath;
     const stat = o.stat ?? ((p) => fs.statSync(p));
     const readdir = o.readdir ?? ((p) => fs.readdirSync(p));
     const key = (p) => (ci ? p.toLowerCase() : p);
@@ -786,7 +793,7 @@ export function createBridge(opts = {}) {
         let ok = false;
         let why = "";
         try {
-            const now = fs.realpathSync(workspace.path);
+            const now = realPath(workspace.path);
             if (now !== workspace.path)
                 why = `its real path is now ${now}`;
             else if (workspace.id === "" || idOf(now) !== workspace.id)
@@ -814,7 +821,7 @@ export function createBridge(opts = {}) {
         if (typeof cwd !== "string" || cwd === "" || want.id === "")
             return false;
         try {
-            return fs.realpathSync(cwd) === want.path && idOf(cwd) === want.id;
+            return realPath(cwd) === want.path && idOf(cwd) === want.id;
         }
         catch {
             return false;
@@ -823,7 +830,7 @@ export function createBridge(opts = {}) {
     if (opts.workspace) {
         let real = opts.workspace;
         try {
-            real = fs.realpathSync.native(opts.workspace);
+            real = realPath(opts.workspace);
         }
         catch {
             /* main() checked it; keep what was given */
@@ -1155,7 +1162,7 @@ export function createBridge(opts = {}) {
             }
             if (st.isSymbolicLink()) {
                 try {
-                    cur = fs.realpathSync(cur);
+                    cur = realPath(cur);
                 }
                 catch {
                     return false; // a link to nowhere
@@ -1168,7 +1175,8 @@ export function createBridge(opts = {}) {
     function within(p) {
         if (!workspace)
             return false;
-        const ci = platform === "darwin" || platform === "win32";
+        const pp = opts.pathPlatform ?? platform;
+        const ci = pp === "darwin" || pp === "win32";
         const norm = (x) => (ci ? x.normalize("NFC").toLowerCase() : x.normalize("NFC"));
         const root = norm(workspace.path).replace(/[\\/]+$/, "");
         const c = norm(p);

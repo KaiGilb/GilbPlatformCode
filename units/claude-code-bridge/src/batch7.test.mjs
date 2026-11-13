@@ -16,7 +16,7 @@ let dir, home, stateDir, wsFile, logFile;
 const bridges = [];
 function ensureDir() {
   if (dir) return;
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
   home = path.join(dir, "home");
   stateDir = path.join(home, ".gilb-claude-code-bridge");
   fs.mkdirSync(stateDir, { recursive: true });
@@ -27,11 +27,11 @@ const mk = (name) => {
   ensureDir();
   const p = path.join(home, name);
   fs.mkdirSync(p, { recursive: true });
-  return fs.realpathSync(p);
+  return fs.realpathSync.native(p);
 };
 async function start(opts = {}) {
   ensureDir();
-  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
+  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
   bridges.push(bridge);
   await bridge.start();
   const base = `http://127.0.0.1:${bridge.port}`;

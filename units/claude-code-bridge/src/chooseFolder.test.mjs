@@ -18,7 +18,7 @@ const bridges = [];
 
 function ensureDir() {
   if (!dir) {
-    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-choose-")));
+    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-choose-")));
     home = path.join(dir, "home");
     stateDir = path.join(home, ".gilb-claude-code-bridge");
     fs.mkdirSync(stateDir, { recursive: true });
@@ -36,6 +36,7 @@ async function start(opts = {}, env = {}) {
     workDir: path.join(dir, "work"),
     home,
     workspaceFile: wsFile,
+    codePlatform: "darwin", // full mode unless a test says otherwise (files-only tests pass codePlatform "win32")
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
     ...opts,
   });
@@ -56,7 +57,7 @@ const mk = (name) => {
   ensureDir();
   const p = path.join(home, name);
   fs.mkdirSync(p, { recursive: true });
-  return fs.realpathSync(p);
+  return fs.realpathSync.native(p);
 };
 const call = async (secret, route, body = {}) => {
   const res = await fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(body) });
@@ -216,7 +217,7 @@ describe("POST /v1/workspace/create", () => {
   it("makes ~/<name> (mode 0700), stores and switches", async () => {
     const secret = await start();
     const r = await call(secret, "/v1/workspace/create", { name: "MyJackfruitCode" });
-    const want = path.join(fs.realpathSync(home), "MyJackfruitCode");
+    const want = path.join(fs.realpathSync.native(home), "MyJackfruitCode");
     expect(r).toEqual({ status: 200, json: { name: "MyJackfruitCode", path: want } });
     expect((fs.statSync(want).mode & 0o777).toString(8)).toBe("700");
     expect(stored().path).toBe(want);
@@ -256,7 +257,7 @@ describe("the stored folder", () => {
     expect(await hello()).toMatchObject({ workspace: true, codeMode: "full" });
     const r = await turn(secret, { mode: "code" });
     expect(ev(r, "message")[0]).toMatchObject({ mode: "code" });
-    expect(fs.realpathSync(runs()[0].cwd)).toBe(path.join(fs.realpathSync(home), "Kept"));
+    expect(fs.realpathSync.native(runs()[0].cwd)).toBe(path.join(fs.realpathSync.native(home), "Kept"));
   });
   it("a stored folder that was deleted is ignored with a log line, and the bridge runs", async () => {
     const secret0 = await start();

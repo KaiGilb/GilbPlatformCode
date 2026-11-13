@@ -20,17 +20,18 @@ let logFile;
 let wsReal;
 
 async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-code-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-code-")));
   logFile = path.join(dir, "claude.log");
   const ws = path.join(dir, "MyCode");
   fs.mkdirSync(ws);
-  wsReal = fs.realpathSync(ws);
+  wsReal = fs.realpathSync.native(ws);
   bridge = createBridge({
     port: 0,
     claudeBin: FAKE,
     allowedOrigins: [APP],
     workDir: path.join(dir, "work"),
     home: dir, // the code folder must be inside the home folder: this temp folder plays it
+    codePlatform: "darwin", // full mode is what these tests are about, on whatever platform CI runs (files-only is tested in chooseFolder.test.mjs)
     ...(workspace ? { workspace: ws } : {}),
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
     ...bridgeOpts,
@@ -120,7 +121,7 @@ describe("claude arguments", () => {
       "--system-prompt-snapshot", "off",
       "--session-id", expect.stringMatching(/^[0-9a-f-]{36}$/),
     ]);
-    expect(fs.realpathSync(run.cwd)).toBe(fs.realpathSync(path.join(dir, "work")));
+    expect(fs.realpathSync.native(run.cwd)).toBe(fs.realpathSync.native(path.join(dir, "work")));
   });
 
   it("a code turn gets the code arguments, the workspace as its folder, and the settings inline", async () => {
@@ -140,7 +141,7 @@ describe("claude arguments", () => {
     expect(val("--permission-prompts")).toBe("none");
     expect(val("--system-prompt")).toBe("You are the agent.");
     expect(val("--system-prompt-snapshot")).toBe("off");
-    expect(fs.realpathSync(run.cwd)).toBe(wsReal);
+    expect(fs.realpathSync.native(run.cwd)).toBe(wsReal);
     expect(JSON.parse(val("--settings"))).toEqual(codeTurnSettings(os.homedir(), process.platform));
     expect(ev(r, "message")[0]).toMatchObject({ mode: "code" });
   });
@@ -255,6 +256,11 @@ describe("code turn events", () => {
     expect(chat.npmCache).toBe(process.env.npm_config_cache); // only what the person's own env had
     expect(chat.envKeys.includes("npm_config_cache")).toBe(process.env.npm_config_cache !== undefined);
   });
+  it("in full mode the code turn's npm cache is always the folder's, even when the person's own environment sets one (a CI runner does)", async () => {
+    const secret = await start({ env: { npm_config_cache: path.join(os.tmpdir(), "somewhere-else") } });
+    await post(secret, T({ mode: "code" }));
+    expect(runs()[0].npmCache).toBe(path.join(wsReal, ".npm-cache"));
+  });
   it("an init with the code tools passes", async () => {
     const secret = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify([...CODE_TOOLS, "mcp__gilb__list_vaults"]) } });
     const r = await post(secret, T({ mode: "code" }));
@@ -263,7 +269,7 @@ describe("code turn events", () => {
 });
 
 describe("validateWorkspace", () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "ws-home-")));
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "ws-home-")));
   const mk = (...p) => {
     const f = path.join(home, ...p);
     fs.mkdirSync(f, { recursive: true });

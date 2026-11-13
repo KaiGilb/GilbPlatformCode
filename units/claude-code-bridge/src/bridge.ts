@@ -582,6 +582,13 @@ const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this com
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 
 type Dirent = { name: string; isDirectory(): boolean; isSymbolicLink(): boolean };
+/**
+ * THE one way the bridge reads a real path: the system's own spelling (on a case-insensitive disk the real case; on Windows the long
+ * name, not the 8.3 short one). Every comparison of folders goes through it, so two forms of one path never meet.
+ */
+export function realPath(p: string): string {
+  return fs.realpathSync.native(p);
+}
 export interface WorkspaceCheckOpts {
   home: string;
   platform: string;
@@ -600,7 +607,7 @@ export function validateWorkspace(input: string, o: WorkspaceCheckOpts): { ok: t
   const P = win ? path.win32 : path.posix;
   const ci = win || o.platform === "darwin";
   // the system's own spelling (on a case-insensitive disk the real case, not the case that was typed)
-  const realpath = o.realpath ?? ((p: string) => fs.realpathSync.native(p));
+  const realpath = o.realpath ?? realPath;
   const stat = o.stat ?? ((p: string) => fs.statSync(p));
   const readdir = o.readdir ?? ((p: string) => fs.readdirSync(p));
   const key = (p: string) => (ci ? p.toLowerCase() : p);
@@ -844,6 +851,8 @@ export interface BridgeOptions {
   platformOpts?: PlatformOpts | undefined;
   /** The one folder a code turn may work in (already checked by validateWorkspace). Unset: no code mode. */
   workspace?: string | undefined;
+  /** TEST-ONLY, undocumented: the platform whose case rules the folder-prefix test follows (default: the real one). */
+  pathPlatform?: string | undefined;
   /** TEST-ONLY, undocumented: called in a code turn right after the last folder check and right before the child starts (tests swap the folder here). */
   beforeSpawn?: (() => void) | undefined;
   /** TEST-ONLY, undocumented: called in a code turn between the folder snapshot and the folder check (tests swap the folder here). */
@@ -939,7 +948,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     let ok = false;
     let why = "";
     try {
-      const now = fs.realpathSync(workspace.path);
+      const now = realPath(workspace.path);
       if (now !== workspace.path) why = `its real path is now ${now}`;
       else if (workspace.id === "" || idOf(now) !== workspace.id) why = "it is no longer the same folder (device and inode differ)";
       else {
@@ -961,7 +970,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   function childRunsIn(cwd: unknown, want: { path: string; id: string }): boolean {
     if (typeof cwd !== "string" || cwd === "" || want.id === "") return false;
     try {
-      return fs.realpathSync(cwd) === want.path && idOf(cwd) === want.id;
+      return realPath(cwd) === want.path && idOf(cwd) === want.id;
     } catch {
       return false;
     }
@@ -969,7 +978,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   if (opts.workspace) {
     let real = opts.workspace;
     try {
-      real = fs.realpathSync.native(opts.workspace);
+      real = realPath(opts.workspace);
     } catch {
       /* main() checked it; keep what was given */
     }
@@ -1275,7 +1284,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       }
       if (st.isSymbolicLink()) {
         try {
-          cur = fs.realpathSync(cur);
+          cur = realPath(cur);
         } catch {
           return false; // a link to nowhere
         }
@@ -1286,7 +1295,8 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Is `p` the code folder or below it? Compared as text: NFC-normalised, and case-insensitively on macOS and Windows. Nothing is rewritten. */
   function within(p: string): boolean {
     if (!workspace) return false;
-    const ci = platform === "darwin" || platform === "win32";
+    const pp = opts.pathPlatform ?? platform;
+    const ci = pp === "darwin" || pp === "win32";
     const norm = (x: string) => (ci ? x.normalize("NFC").toLowerCase() : x.normalize("NFC"));
     const root = norm(workspace.path).replace(/[\\/]+$/, "");
     const c = norm(p);

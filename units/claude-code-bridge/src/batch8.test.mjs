@@ -16,7 +16,7 @@ let dir, home, stateDir, wsFile, logFile;
 const bridges = [];
 function ensureDir() {
   if (dir) return;
-  dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-6a-")));
   home = path.join(dir, "home");
   stateDir = path.join(home, ".gilb-claude-code-bridge");
   fs.mkdirSync(stateDir, { recursive: true });
@@ -27,11 +27,11 @@ const mk = (name) => {
   ensureDir();
   const p = path.join(home, name);
   fs.mkdirSync(p, { recursive: true });
-  return fs.realpathSync(p);
+  return fs.realpathSync.native(p);
 };
 async function start(opts = {}) {
   ensureDir();
-  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
+  const bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP, APP2], workDir: path.join(dir, "work"), home, workspaceFile: wsFile, codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts });
   bridges.push(bridge);
   await bridge.start();
   const base = `http://127.0.0.1:${bridge.port}`;
@@ -172,7 +172,7 @@ describe("N6: the folder-prefix test ignores case (macOS, Windows) and Unicode f
     const upper = path.join(path.dirname(ws), "MYCODE", "a.txt");
     for (const [platform, want] of [["darwin", "allow"], ["linux", "deny"]]) {
       fs.rmSync(logFile, { force: true });
-      const b = await start({ workspace: ws, approvalWaitMs: 300, codePlatform: undefined, platformOpts: { platform } });
+      const b = await start({ workspace: ws, approvalWaitMs: 300, pathPlatform: platform });
       await turn(b, { mode: "code", approval: "each-write", prompt: ASK({ tool_name: "Read", input: { file_path: upper } }) });
       // on a case-sensitive pretend, the real (insensitive) disk still resolves the path physically; the lexical prefix test is what differs
       const d = rows("askjson").map((x) => x.decision.behavior);
@@ -185,7 +185,7 @@ describe("N6: the folder-prefix test ignores case (macOS, Windows) and Unicode f
     const nfd = nfc.normalize("NFD");
     const ws = mk(nfd);
     fs.writeFileSync(path.join(ws, "a.txt"), "x");
-    const b = await start({ workspace: ws, approvalWaitMs: 300, platformOpts: { platform: "linux" } });
+    const b = await start({ workspace: ws, approvalWaitMs: 300, pathPlatform: "linux" });
     const input = { file_path: path.join(path.dirname(ws), nfc, "a.txt") };
     await turn(b, { mode: "code", approval: "each-write", prompt: ASK({ tool_name: "Read", input }) });
     const dec = rows("askjson").map((x) => x.decision);
