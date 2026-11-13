@@ -15,7 +15,30 @@ The line carries no query, no headers and no token. The screen shows no codes an
 - `VaultBusyError(status, message)`: the vault (or the edge in front of it) answered 502, 503 or 504. It carries `status`.
 - `AccessDeniedScreen({ onSignOut, ownerName, detail?, placeName?, backgroundImage?, backgroundColor? })`: the screen. Title "This <placeName> is private" (`placeName` defaults to `vault`), tagline "Ask its owner, <ownerName>, to add you.", the collapsed `details.refusal-details` with the line (or "No request details were kept for this refusal."), and a "Sign out" button that calls `onSignOut`. The `bg-layer` div is drawn only when `backgroundImage` or `backgroundColor` is given.
 
+- `"./describe"` (since 0.1.1): `describeError(err, { conflict?, more?, fallback? })`, see "One sentence for any error" below.
+
 No writers: the screen has no read-only line, so there is nothing to switch off.
+
+## One sentence for any error
+
+`import { describeError } from "@kaigilb/gilbplatformcode-refusal-detail/describe"` (since 0.1.1). It answers one plain sentence a person can read, never a stack, a status or a raw message. The root entry does not import it and its peers do not change; `./describe` imports only `./refusal`.
+
+| The error | The sentence |
+| --- | --- |
+| `NoAccessError`, `VaultBusyError` | its own `message` |
+| a 403 `RecordForbiddenError` (by `name`) | its `message` |
+| `NotSignedInError`, or any error with status 401 and no platform sentence | `Sign in again.` |
+| a refusal that carries the platform's sentence: `RequestRefusedError`, or `platformSentence`, `platformMessage`, `serverSentence`, `reason`, `detail.sentence`, or a `RefusalDetail` from `readRefusal` | that sentence |
+| `RecordConflictError` (by `name`), status 412 or 428 | `o.conflict`, else `This changed elsewhere. Reload and try again.` |
+| anything `o.more(err)` maps (a sentence ends the search; `null` goes on) | that sentence |
+| a `TypeError`, an offline browser, or a "failed to fetch" message | `No connection. Try again.` |
+| anything else | `o.fallback`, else `Something went wrong. Try again.` |
+
+Errors from units this one must not import (lws-records, lws-session-bridge) are matched by `name` and `status`. Picture errors live in `picture-errors`, which has this unit as a peer, so importing it here would be a cycle: pass `more` a function that answers `pictureFailure(e)`'s `sentence` and `next` joined, or `null` when its `kind` is `"unknown"`.
+
+```ts
+const say = (e: unknown) => describeError(e, { conflict: "This camera was changed elsewhere. Reloaded.", more: pictureSentence });
+```
 
 ## What this is not
 
@@ -105,6 +128,10 @@ Also: React 19; the peer `@kaigilb/gilbplatformcode-server-error`; the styleshee
 - "The path is the decoded path." An encoded slash stays `%2F` and a lower-case `%2f` is written `%2F`.
 - "`NoAccessError` says garden." Its default says "here"; the source's own garden wording is what the source app passes.
 - "The screen has no dependencies on the page." It needs the page rules named in "Styling".
+
+## Changes in 0.1.1
+
+Additive: the entry `"./describe"` with `describeError` and `DESCRIBE_WORDS` (see "One sentence for any error"). The root entry, its exports and its peers are unchanged. 11 new tests (`src/describe.test.ts`) and 2 in `src/exports.test.ts`.
 
 ## Where it came from
 

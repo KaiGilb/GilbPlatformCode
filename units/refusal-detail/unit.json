@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/refusal-detail",
   "package": "@kaigilb/gilbplatformcode-refusal-detail",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -16,6 +16,7 @@
     ]
   },
   "namedChanges": [
+    "0.1.1. new, additive, entry ./describe: `describeError(err, { conflict?, more?, fallback? })`, one plain sentence for NoAccessError, VaultBusyError, a refusal with a platform sentence, a lost sign-in, a conflict and a network failure; imports only ./refusal; no new peer, the root entry is unchanged",
     "R1. errors.ts line 1 (the import of the record client's errors) is deleted; mapWriteError, PlantChangedElsewhereError and PictureUnreadableError are not taken",
     "R2. NoAccessError's constructor gains a third optional parameter message = \"You have no write access here yet. Ask the owner.\" and calls super(message)",
     "R3. RefusalDetail, refusalLine and VaultBusyError as in the source",
@@ -27,7 +28,9 @@
     "accessDenied.css holds only the rules for .bg-layer, .display, .signin-screen, .signin-panel, .signin-panel .display, .tagline, .btn, .btn.secondary, .btn.full and .refusal-details (summary, p): styles.css lines 22, 26-33 (not 34-37), 87-90, 93, 97, 127-129 and background.css 2-7"
   ],
   "newFiles": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/describe.ts",
+    "src/describe.test.ts"
   ],
   "host": [
     { "member": "ownerName", "replaces": "OWNER_NAME from the app's config, src/screens/AskOwnerScreen.tsx:3,14" },
@@ -37,5 +40,5 @@
     { "member": "placeName", "replaces": "the word garden, src/screens/AskOwnerScreen.tsx:13" },
     { "member": "NoAccessError message", "replaces": "the sentence You have no write access to this garden yet. Ask the owner., src/data/errors.ts:14" }
   ],
-  "library": { "admitted": true, "tag": "t:VaultRequestRefusal.detail", "title": "Access denied screen and refusal line", "note": "For a refused read; it classifies nothing and sends nothing. The banner for a refused write is the app's own words." }
+  "library": { "admitted": true, "tag": "t:VaultRequestRefusal.detail", "title": "Access denied screen and refusal line", "note": "For a refused read; it classifies nothing and sends nothing. The banner for a refused write is the app's own words. Entry ./describe turns any error into one plain sentence to show (error message): no access, vault busy, a platform refusal sentence, sign in again, changed elsewhere, no connection. Also found as: error message; describe an error; error sentence; friendly error text." }
 }
