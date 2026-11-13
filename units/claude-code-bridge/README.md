@@ -145,7 +145,25 @@ Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests, `scripts
 
 Until now every turn ran with Claude Code's own tools off. A **code turn** turns them on, for one folder you choose.
 
-Start the bridge with the folder: `node bridge.mjs --workspace ~/MyJackfruitCode` (with `--install` the folder is kept in the login item). Without `--workspace` there is no code mode and nothing changes.
+Start the bridge with the folder: `node bridge.mjs --workspace ~/MyJackfruitCode` (with `--install` the folder is kept in the login item), or choose it from chat (see "Choosing the folder from chat"). With no folder there is no code mode and nothing changes.
+
+### Choosing the folder from chat
+
+The folder is kept in the state folder as `workspace.json` `{ "version": 1, "path": "<real path>" }` (mode 0600, written to a temp file and renamed, like the pairings). At start, `--workspace` wins and is stored; otherwise a stored folder is checked with the same rules and used. A stored folder that is no longer fit (deleted, now the home folder) is ignored with a log line: no code mode, and the bridge still runs.
+
+Two paired routes:
+- `POST /v1/workspace/choose` `{ suggest? }` opens the system's own folder dialog on this computer and waits up to 5 minutes. macOS: `osascript` (`choose folder`, starting in your home folder). Windows: `powershell.exe` with a fixed script using `FolderBrowserDialog`. Linux: `zenity --file-selection --directory`; without `zenity` the answer is 501 `No folder dialog on this computer. Start the bridge with --workspace <folder>.` The commands are fixed text; no page text goes into them. The person can make a new folder inside the dialog. Cancel: 200 `{ chosen: false }`. A folder that fails the checks above: 422 `{ error }`, nothing stored. Otherwise the bridge stores it, switches to it and answers `{ chosen: true, name, path }`. One dialog at a time (409). Refused while a code turn runs (409 `A code turn is running. Wait for it to finish.`), and a code turn is refused while the dialog is open. `suggest` (1 to 64 letters, digits, spaces, dots, dashes, underscores; default `MyJackfruitCode`) is only checked here; it names the folder the page offers to make with the next route.
+- `POST /v1/workspace/create` `{ name }` (same character rule; `.` and `..` refused) makes `~/<name>` (mode 0700), checks, stores and switches, and answers `{ name, path }`. An existing empty folder is taken; one with files is 409 `The folder ~/<name> already has files. Choose it with the folder dialog instead.`
+
+`GET /v1/hello` shows the switched folder (`workspace: true|false`) and `codeMode`: `"full"`, `"files-only"` or `null` (no folder).
+
+### Windows: files only
+
+Native Windows has no sandbox for commands, so a code turn there runs a reduced mode: files only. Claude Code gets only `Read, Edit, Write, Glob, Grep` (no Bash, no NotebookEdit), `--restricted`, the same permission flags as the approval chosen, settings with the permission rules but no `sandbox` block, and no npm cache. The init check allows only those five tools. The added system prompt says: "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves." The `message` event of such a turn has `codeMode: "files-only"`. macOS, Linux and WSL2 run the full mode.
+
+### A sandbox that cannot start
+
+In full mode the sandbox is required (`failIfUnavailable`). Where it cannot start (Linux without bubblewrap, for example) Claude Code exits before it starts; the turn then ends with `Claude Code could not start its sandbox on this computer, so the code turn was stopped.` followed by the last line the CLI wrote to stderr.
 
 The bridge refuses a folder that does not exist (it never makes one), the root of the disk, your home folder, any folder that holds your home folder, a folder inside `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/Library` (macOS) or `AppData` (Windows) or inside a bridge state folder (`~/.gilb-claude-code-bridge*`), and a folder that directly holds `.ssh`, `.aws` or `.gnupg`. A symlink is followed first, so a link to your home folder is refused too. It prints the reason and exits with code 2.
 
@@ -163,15 +181,15 @@ Approval. With `"approval": "session"` the person approves once, when they start
 
 Every code turn also gets one short added system prompt that names the folder and tells Claude Code to stay inside it, to say in one line what is refused, and to list the files it changed.
 
-Discovery: `GET /v1/hello` has `codeTurns: true` and `workspace: true|false` (never the path). `POST /v1/workspace` (paired) returns `{ name, path }`, or 404 when there is no folder.
+Discovery: `GET /v1/hello` has `codeTurns: true`, `workspace: true|false` (never the path) and `codeMode`. `POST /v1/workspace` (paired) returns `{ name, path }`, or 404 when there is no folder.
 
 Extra events in a code turn (a chat turn sends none of them):
 - `activity` `{ tool, summary }` for each tool call (not the GilbPlatform tools).
 - `tool_error` `{ tool, summary, text }` when such a call failed.
 - `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`, once, before `message` or `error`. It compares the folder before and after the turn (size and time; `.git`, `node_modules` and `.npm-cache` skipped; up to 20000 files; up to 200 names per list).
-- `message` has `mode: "code"`.
+- `message` has `mode: "code"` (and `codeMode: "files-only"` on Windows).
 
-Not done yet: a reduced mode for Windows (the sandbox is macOS, Linux and WSL2). `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
+`scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
 
 ## Relay window (for Safari)
 

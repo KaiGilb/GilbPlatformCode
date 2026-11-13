@@ -150,7 +150,8 @@ describe("claude arguments", () => {
     expect(s.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]);
     expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/Library/Keychains", "/tmp/x"]));
     expect(s.permissions).toEqual({ deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" });
-    expect(codeTurnSettings("C:\\Users\\a", "win32").sandbox.filesystem.denyRead.some((p) => p.includes("Library"))).toBe(false);
+    // Windows is files-only: no sandbox block at all, the permission rules stay.
+    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } });
   });
 });
 

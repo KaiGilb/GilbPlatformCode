@@ -561,6 +561,14 @@ export const APPROVAL_WAIT_MS = 10 * 60 * 1000;
 export const APPROVE_TOOL = "bridge_approve";
 const approveSchema = { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name", "input"] };
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
+/** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
+export const FILES_ONLY_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+const FOLDER_PROMPT = "Choose the folder where the AI may build your app";
+const FOLDER_SUGGEST = /^[A-Za-z0-9 ._-]{1,64}$/;
+const DIALOG_MAX_MS = 5 * 60 * 1000;
+const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
+const NETWORK_SENTENCE = "The network reaches only package registries.";
+const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 
 type Dirent = { name: string; isDirectory(): boolean; isSymbolicLink(): boolean };
@@ -627,6 +635,10 @@ export function validateWorkspace(input: string, o: WorkspaceCheckOpts): { ok: t
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
 export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session") {
   void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
+  if (platform === "win32") {
+    // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
+    return { permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } };
+  }
   const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge"];
   if (platform !== "win32") {
     denyRead.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
@@ -648,9 +660,10 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
 }
 
 /** Fail closed: a code turn's init event may list only the code tools and this bridge's MCP tools, and no other permission mode. */
-function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session"): boolean {
+function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session", filesOnly = false): boolean {
   const tools = Array.isArray(ev.tools) ? ev.tools : [];
-  if (!tools.every((t) => typeof t === "string" && (CODE_TOOLS.includes(t) || t.startsWith("mcp__gilb__")))) return false;
+  const allowed = filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS;
+  if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__")))) return false;
   // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
   return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
 }
@@ -752,6 +765,47 @@ export const PAIRING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_PAIRINGS = 20;
 const PERSIST_EVERY_MS = 60 * 1000; // "last used" is written to disk at most this often
 
+/** Is `cmd` a program on PATH? */
+function onPath(cmd: string): boolean {
+  const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  return dirs.some((d) => {
+    try {
+      fs.accessSync(path.join(d, cmd), fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+const WINDOWS_FOLDER_SCRIPT = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '${FOLDER_PROMPT}'; $d.ShowNewFolderButton = $true; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }`;
+
+/** The system's own folder dialog, on this computer. The commands and their text are constants: no page text goes into them. Resolves the path, or null for cancel. */
+function systemFolderDialog(platform: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  let file: string;
+  let args: string[];
+  if (platform === "darwin") {
+    file = "osascript";
+    args = ["-e", `POSIX path of (choose folder with prompt "${FOLDER_PROMPT}" default location (path to home folder))`];
+  } else if (platform === "win32") {
+    file = "powershell.exe";
+    args = ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_FOLDER_SCRIPT];
+  } else {
+    file = "zenity";
+    args = ["--file-selection", "--directory", `--title=${FOLDER_PROMPT}`];
+  }
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { timeout: DIALOG_MAX_MS, windowsHide: false, env: childEnv(env) }, (err, stdout, stderr) => {
+      const out = String(stdout ?? "").replace(/[\r\n]+$/, "");
+      if (!err) return resolve(out === "" ? null : out.replace(/(.)[\\/]+$/, "$1"));
+      const e = err as ErrLike & { killed?: boolean; code?: number | string };
+      // Cancel: osascript exits 1 with "User canceled (-128)"; zenity exits 1; the Windows script prints nothing. A dialog left open for the whole wait is a cancel too.
+      if (e.killed || /-128|cancel/i.test(String(stderr ?? "")) || Number(e.code) === 1) return resolve(null);
+      reject(new Error(String(stderr ?? "").trim().split("\n").pop() || e.message || "unknown error"));
+    });
+  });
+}
+
 export interface BridgeOptions {
   port?: number | undefined;
   claudeBin?: string | undefined;
@@ -772,6 +826,16 @@ export interface BridgeOptions {
   platformOpts?: PlatformOpts | undefined;
   /** The one folder a code turn may work in (already checked by validateWorkspace). Unset: no code mode. */
   workspace?: string | undefined;
+  /** TEST-ONLY, undocumented: the platform the code mode is chosen for (files-only on "win32"), when the real one cannot be pretended (the stand-in claude cannot start under a pretend-Windows launch). */
+  codePlatform?: string | undefined;
+  /** Where the chosen code folder is kept between runs (workspace.json). Unset: memory only. */
+  workspaceFile?: string | undefined;
+  /** Where "~" is for the folder checks and "Make ~/<name>" (default os.homedir()). Tests. */
+  home?: string | undefined;
+  /** Opens the system's folder dialog and resolves the chosen path, or null when the person cancelled. Tests inject this so no real dialog opens. */
+  chooseFolder?: (() => Promise<string | null>) | undefined;
+  /** Is this program on PATH? (the zenity lookup on Linux). Tests inject this. */
+  which?: ((cmd: string) => boolean) | undefined;
   /** TEST-ONLY, undocumented: extra folders added to the sandbox's denyRead list (the probe uses it for its decoy secret folder). */
   extraDenyRead?: string[] | undefined;
   /** How long an approval question waits for the person before it is denied (default APPROVAL_WAIT_MS). Tests make it short. */
@@ -801,7 +865,40 @@ export function createBridge(opts: BridgeOptions = {}) {
   const claudeBin = opts.claudeBin ?? "claude";
   const allowedOrigins = opts.allowedOrigins ?? loadAllowedOrigins();
   const workDir = opts.workDir ?? path.join(os.homedir(), ".gilb-claude-code-bridge", "work");
+  const env = opts.env ?? process.env;
+  const log = opts.log ?? (() => {});
+  const platform = opts.platformOpts?.platform ?? process.platform;
+  const home = opts.home ?? opts.platformOpts?.home ?? os.homedir();
+  const codePlatform = opts.codePlatform ?? platform;
+  const filesOnly = codePlatform === "win32";
   let workspace: { path: string; name: string } | null = null;
+  /** The folder as it was given (a symlink may differ from its real path): tool summaries accept both. */
+  let workspaceGiven: string | null = null;
+  const workspaceRoots = () => (workspace ? [workspace.path, workspaceGiven ?? workspace.path] : []);
+  function saveWorkspace(real: string) {
+    if (!opts.workspaceFile) return;
+    try {
+      fs.mkdirSync(path.dirname(opts.workspaceFile), { recursive: true, mode: 0o700 });
+      const tmp = `${opts.workspaceFile}.${process.pid}.tmp`;
+      fs.rmSync(tmp, { force: true });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, path: real }), { mode: 0o600, flag: "wx" });
+      fs.renameSync(tmp, opts.workspaceFile);
+    } catch (e) {
+      log(`could not save the code folder: ${(e as ErrLike)?.message ?? e}`); // it still works until the bridge restarts
+    }
+  }
+  /** The folder checks, with this bridge's own state folders barred. */
+  function checkFolder(input: string) {
+    const stateDirs: string[] = [];
+    if (opts.workspaceFile) stateDirs.push(path.dirname(opts.workspaceFile));
+    stateDirs.push(path.join(home, ".gilb-claude-code-bridge"));
+    try {
+      for (const e of fs.readdirSync(home)) if (e.startsWith(".gilb-claude-code-bridge")) stateDirs.push(path.join(home, e));
+    } catch {
+      /* the listed state folders are still checked */
+    }
+    return validateWorkspace(input, { home, platform, stateDirs });
+  }
   if (opts.workspace) {
     let real = opts.workspace;
     try {
@@ -810,11 +907,24 @@ export function createBridge(opts: BridgeOptions = {}) {
       /* main() checked it; keep what was given */
     }
     workspace = { path: real, name: path.basename(real) };
+    workspaceGiven = opts.workspace;
+    saveWorkspace(real); // --workspace wins and is kept
+  } else if (opts.workspaceFile && fs.existsSync(opts.workspaceFile)) {
+    try {
+      const stored = JSON.parse(fs.readFileSync(opts.workspaceFile, "utf8"));
+      if (stored && stored.version === 1 && typeof stored.path === "string") {
+        const v = checkFolder(stored.path);
+        if (v.ok) {
+          workspace = { path: v.path, name: v.name };
+          workspaceGiven = v.path;
+        } else log(`the stored code folder is not used: ${v.reason}`);
+      } else log("the stored code folder file is not in a known shape; it is ignored");
+    } catch (e) {
+      log(`the stored code folder could not be read: ${(e as ErrLike)?.message ?? e}`);
+    }
   }
   const approvalWaitMs = opts.approvalWaitMs ?? APPROVAL_WAIT_MS;
   const NO_WORKSPACE = "This bridge has no code folder. Start it with --workspace <folder>.";
-  const env = opts.env ?? process.env;
-  const log = opts.log ?? (() => {});
   const maxPairFailures = opts.maxPairFailures ?? 5;
   const maxToolCalls = opts.maxToolCalls ?? TURN_MAX_TOOL_CALLS;
   const hopMaxMs = opts.hopMaxMs ?? HOP_MAX_MS;
@@ -1114,7 +1224,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
       const p = String(input.file_path ?? input.notebook_path ?? "");
       if (!insideWorkspace(p)) return deny("Outside the code folder.");
-      summary = toolSummary(tool, input, workspace ? [workspace.path, opts.workspace ?? workspace.path] : []);
+      summary = toolSummary(tool, input, workspace ? workspaceRoots() : []);
     } else if (tool === "Bash") {
       summary = (typeof input.description === "string" && input.description) || String(input.command ?? "").slice(0, 200) || "Bash";
     } else {
@@ -1242,7 +1352,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--tools", CODE_TOOLS.join(","),
+      "--tools", (filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS).join(","),
       "--restricted",
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcp),
@@ -1252,10 +1362,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-prompts", turn.approval === "each-write" ? "host" : "none",
       ...(turn.approval === "each-write" ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
       "--disable-slash-commands",
-      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), process.platform, opts.extraDenyRead ?? [], turn.approval)),
+      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval)),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
-      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : NETWORK_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -1287,7 +1397,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     for (const b of content as Array<Record<string, unknown>>) {
       if (!b || typeof b !== "object") continue;
       if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__")) {
-        const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, workspace ? [workspace.path, opts.workspace ?? workspace.path] : []);
+        const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, workspace ? workspaceRoots() : []);
         if (typeof b.id === "string") tracked.set(b.id, { tool: b.name, summary });
         turn.send("activity", { tool: b.name, summary });
       } else if (ev.type === "user" && b.type === "tool_result" && b.is_error === true && typeof b.tool_use_id === "string") {
@@ -1309,7 +1419,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
           cwd: turn.code && workspace ? workspace.path : workDir,
           // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
-          env: turn.code && workspace ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
+          env: turn.code && workspace && !filesOnly ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
         });
@@ -1355,7 +1465,7 @@ export function createBridge(opts: BridgeOptions = {}) {
               void stopChild(child);
             }
             // A code turn must show the folder limits too: only the code tools (and this bridge's MCP tools), and no other permission mode.
-            if (turn.code && !codeInitOk(ev, turn.approval)) {
+            if (turn.code && !codeInitOk(ev, turn.approval, filesOnly)) {
               limitsRefused = true;
               void stopChild(child);
             }
@@ -1374,7 +1484,12 @@ export function createBridge(opts: BridgeOptions = {}) {
         // Fail closed: an answer is shown only after an init event that proved the subscription. The one exception is a
         // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
         if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit)) refused = true;
-        if (limitsRefused) {
+        const noStart = turn.code && !filesOnly && !sawInit && !initOk && !limitsRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
+        if (noStart) {
+          const lines = stderr.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+          const last = lines.length > 0 ? lines[lines.length - 1]! : String(result?.result ?? "").trim().split("\n").pop()!.trim();
+          resolve({ error: `${SANDBOX_START_ERROR} ${last.slice(0, 300)}`.trim(), sessionId: mode.sessionId, model });
+        } else if (limitsRefused) {
           resolve({ error: CODE_LIMITS_ERROR, sessionId: mode.sessionId, model });
         } else if (refused) {
           resolve({
@@ -1408,6 +1523,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (isCode) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
       if (!workspace) return json(res, 409, { error: NO_WORKSPACE });
+      if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
       if ([...turns.values()].some((t) => t.code)) return json(res, 429, { error: `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
     }
     // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -1541,7 +1657,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           content: String(out.result.result ?? ""),
           model: out.model,
           payer: "person-claude-code",
-          ...(isCode ? { mode: "code" } : {}),
+          ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}) } : {}),
           sessionId: out.sessionId,
           // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
           ...(turn.budgetSpent ? { budgetSpent: true } : {}),
@@ -1553,6 +1669,88 @@ export function createBridge(opts: BridgeOptions = {}) {
       finish();
       res.end();
     }
+  }
+
+  // ---- choosing the code folder from chat ------------------------------------------------------------------------
+  let dialogOpen = false;
+  const codeTurnRunning = () => [...turns.values()].some((t) => t.code);
+  const switchTo = (v: { path: string; name: string }) => {
+    workspace = { path: v.path, name: v.name };
+    workspaceGiven = v.path;
+    saveWorkspace(v.path);
+  };
+
+  async function handleChoose(req: IncomingMessage, res: ServerResponse) {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    // The suggestion is checked even though only "Create it" uses it; it never goes into a script.
+    if (body.suggest !== undefined && !(typeof body.suggest === "string" && FOLDER_SUGGEST.test(body.suggest))) return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
+    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    if (dialogOpen) return json(res, 409, { error: "A folder dialog is already open on this computer." });
+    const which = opts.which ?? onPath;
+    if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !which("zenity")) {
+      return json(res, 501, { error: "No folder dialog on this computer. Start the bridge with --workspace <folder>." });
+    }
+    dialogOpen = true;
+    let picked: string | null;
+    try {
+      picked = await (opts.chooseFolder ?? (() => systemFolderDialog(platform, env)))();
+    } catch (e) {
+      return json(res, 500, { error: `The folder dialog failed: ${(e as ErrLike)?.message ?? e}` });
+    } finally {
+      dialogOpen = false;
+    }
+    if (picked === null || picked === "") return json(res, 200, { chosen: false });
+    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    const v = checkFolder(picked);
+    if (!v.ok) return json(res, 422, { error: v.reason });
+    switchTo(v);
+    return json(res, 200, { chosen: true, name: v.name, path: v.path });
+  }
+
+  async function handleCreate(req: IncomingMessage, res: ServerResponse) {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    const name = body.name;
+    if (typeof name !== "string" || !FOLDER_SUGGEST.test(name) || /^\.+$/.test(name)) return json(res, 400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
+    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+    const target = path.join(home, name);
+    const exists = `The folder ~/${name} already has files. Choose it with the folder dialog instead.`;
+    let made = false;
+    try {
+      const st = fs.lstatSync(target);
+      if (!st.isDirectory() || fs.readdirSync(target).length > 0) return json(res, 409, { error: exists });
+    } catch (e) {
+      if ((e as ErrLike).code !== "ENOENT") return json(res, 500, { error: `Could not look at ~/${name}: ${(e as ErrLike)?.message ?? e}` });
+      try {
+        fs.mkdirSync(target, { mode: 0o700 });
+        made = true;
+      } catch (e2) {
+        return json(res, 500, { error: `Could not make ~/${name}: ${(e2 as ErrLike)?.message ?? e2}` });
+      }
+    }
+    const v = checkFolder(target);
+    if (!v.ok) {
+      if (made) {
+        try {
+          fs.rmdirSync(target); // only the empty folder this request just made
+        } catch {
+          /* left as it is */
+        }
+      }
+      return json(res, 422, { error: v.reason });
+    }
+    switchTo(v);
+    return json(res, 200, { name: v.name, path: v.path });
   }
 
   // ---- routing -----------------------------------------------------------------------------------------------------
@@ -1598,7 +1796,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -1627,6 +1825,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (req.method === "POST" && url.pathname === "/v1/workspace") {
         return workspace ? json(res, 200, { name: workspace.name, path: workspace.path }) : json(res, 404, { error: NO_WORKSPACE });
       }
+      if (req.method === "POST" && url.pathname === "/v1/workspace/choose") return handleChoose(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/workspace/create") return handleCreate(req, res);
       if (req.method === "POST" && url.pathname === "/v1/unpair") {
         pairings.delete(sha(String(req.headers["x-bridge-secret"])).toString("hex"));
         savePairings();
@@ -1684,6 +1884,10 @@ export function createBridge(opts: BridgeOptions = {}) {
     },
     get pairingCode() {
       return pairingCode;
+    },
+    /** The code folder now in use (given, stored or chosen), or null. */
+    get workspacePath() {
+      return workspace ? workspace.path : null;
     },
     start() {
       fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
@@ -2684,7 +2888,7 @@ async function main() {
   // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
   // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
   const controlToken = crypto.randomBytes(32).toString("hex");
-  const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, log: (l) => console.log(`  ${l}`) });
+  const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, workspaceFile: path.join(f.stateDir, "workspace.json"), log: (l) => console.log(`  ${l}`) });
   try {
     await bridge.start();
   } catch (e) {
@@ -2709,7 +2913,7 @@ Gilb Claude Code bridge
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
   Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`, tools off (no shell, no files, no web)
-${workspace ? `  Code folder:  ${workspace}  (a code turn may read, edit and run commands only there)\n` : ""}
+${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 

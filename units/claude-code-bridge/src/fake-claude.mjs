@@ -51,6 +51,11 @@ process.stdin.on("end", async () => {
   const mcp = JSON.parse(arg("--mcp-config") ?? "{}");
   const url = mcp.mcpServers?.gilb?.url;
   // FAKE_INIT: "omit" = no init event; "nofield" = init without apiKeySource; "null" = apiKeySource null; otherwise normal.
+  if (prompt.includes("SANDBOXFAIL")) {
+    // The real CLI with failIfUnavailable on a computer where the sandbox cannot start: a line on stderr, no init, a non-zero exit.
+    process.stderr.write("Error: sandbox required but unavailable: bubblewrap (bwrap) is not installed\n");
+    process.exit(1);
+  }
   if (prompt.includes("ZEROTURNSANSWER")) {
     // no init, and a "no turn ran" result that nevertheless carries text: must not be shown
     out({ type: "result", subtype: "success", is_error: false, num_turns: 0, session_id: sessionId, result: "sneaky answer" });
