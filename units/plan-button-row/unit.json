@@ -2,8 +2,8 @@
   "schema": 1,
   "unit": "units/plan-button-row",
   "package": "@kaigilb/gilbplatformcode-plan-button-row",
-  "version": "0.1.1",
-  "purpose": "A right-aligned row of buttons for a card, in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.",
+  "version": "0.1.2",
+  "purpose": "The action row: every row of buttons in an app (dialog buttons, form Save/Cancel, a record's Edit and Delete, a Delete confirm).",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
@@ -13,9 +13,10 @@
   },
   "namedChanges": [
     "The header comment is reworded; no code change.",
-    "Added after the copy (0.1.1): the optional primary, cancel and destructive slots, the narrow-width rule and the dev warning; the children API is unchanged."
+    "Added after the copy (0.1.1): the optional primary, cancel and destructive slots, the narrow-width rule and the dev warning; the children API is unchanged.",
+    "0.1.2: the structured row carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`, writes the shared action-row CSS once (`src/actionRowCss.ts`, a copy of style-runtime's, kept identical by a test) so the equal-share narrow rule works without Tailwind, and takes `confirm` (no far slot, Cancel then a red primary, Cancel the default). The children API output is unchanged."
   ],
-  "newFiles": [],
+  "newFiles": ["src/actionRowCss.ts", "src/actionRowCss.test.ts"],
   "host": [],
-  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row (Mac order)", "note": "Only lays out buttons; for one button look take button. For the remove control take remove-control." }
+  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row: Save/Cancel, Edit/Delete, confirm delete (Mac order, action row)", "note": "Use for every row of buttons: dialog, form, a record's Edit + Delete, 'Delete X?' confirm. Positive rightmost, Cancel left of it, Delete alone at far left. Comes with the app style (style-runtime). For one button look take button; for the remove control take remove-control." }
 }

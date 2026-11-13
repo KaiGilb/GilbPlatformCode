@@ -102,3 +102,33 @@ describe("PlanButtonRow structured API", () => {
     expect((r.container.querySelector("[data-plan-button-row]") as HTMLElement).style.gap).toBe("12px");
   });
 });
+
+describe("PlanButtonRow action-row CSS and confirm", () => {
+  it("structured row has gs-actionrow, marks the destructive slot far, and writes the CSS once", () => {
+    document.head.querySelectorAll("style[data-gs-actionrow]").forEach((n) => n.remove());
+    const r = render(<PlanButtonRow destructive={<button>Delete</button>} cancel={<button>Cancel</button>} primary={<button>Save</button>} />);
+    render(<PlanButtonRow cancel={<button>Cancel</button>} primary={<button>Save</button>} />);
+    const row = r.container.querySelector("[data-plan-button-row]") as HTMLElement;
+    expect(row.className.split(" ")).toContain("gs-actionrow");
+    expect(row.getAttribute("data-default")).toBe("primary");
+    expect(r.container.querySelector('[data-slot="destructive"]')!.className).toContain("gs-actionrow__far");
+    expect(r.container.querySelector('[data-slot="cancel"]')!.className).not.toContain("gs-actionrow__far");
+    expect(document.head.querySelectorAll("style[data-gs-actionrow]")).toHaveLength(1);
+  });
+  it("record view: Edit primary + Delete destructive renders Delete, Edit", () => {
+    const r = render(<PlanButtonRow destructive={<button>Delete</button>} primary={<button>Edit</button>} />);
+    expect([...r.container.querySelectorAll("[data-structured] button")].map((b) => b.textContent)).toEqual(["Delete", "Edit"]);
+  });
+  it("confirm: no far slot, Cancel then primary, Cancel is the default, data-confirm set", () => {
+    const r = render(<PlanButtonRow confirm destructive={<button>Ignored</button>} cancel={<button>Cancel</button>} primary={<button>Delete camera</button>} />);
+    expect([...r.container.querySelectorAll("[data-structured] button")].map((b) => b.textContent)).toEqual(["Cancel", "Delete camera"]);
+    const row = r.container.querySelector("[data-plan-button-row]") as HTMLElement;
+    expect(row.hasAttribute("data-confirm")).toBe(true);
+    expect(row.getAttribute("data-default")).toBe("cancel");
+    expect(r.container.querySelector(".gs-actionrow__far")).toBeNull();
+  });
+  it("the children API still has no gs-actionrow class (unchanged output)", () => {
+    const r = render(<PlanButtonRow>x</PlanButtonRow>);
+    expect((r.container.firstElementChild as HTMLElement).className).not.toContain("gs-actionrow");
+  });
+});

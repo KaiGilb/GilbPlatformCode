@@ -3,8 +3,11 @@
 // or third action alone at the far left. Two ways to use it:
 //   - structured: <PlanButtonRow primary={…} cancel={…} destructive={…} /> — the row puts them in order;
 //   - children (the original API): the caller passes the children in Mac order; the row only lays them out.
+// The structured row also carries the class gs-actionrow (its CSS: style-runtime's actionRowCss, copied here) and marks
+// the destructive slot gs-actionrow__far. The children API renders exactly what it always did; add className="gs-actionrow" there to opt in.
 // It does not restyle the buttons and has no keyboard behaviour (Return / Esc are the host's job; see README).
-import { Children, isValidElement, type CSSProperties, type ReactNode } from "react";
+import { Children, isValidElement, useLayoutEffect, type CSSProperties, type ReactNode } from "react";
+import { ensureActionRowCss } from "./actionRowCss";
 
 export type PlanButtonRowProps = {
   children?: ReactNode;
@@ -17,6 +20,11 @@ export type PlanButtonRowProps = {
   destructive?: ReactNode;
   /** For a host without Tailwind: inline layout on the row itself (e.g. display:flex, justifyContent:flex-end, gap). */
   style?: CSSProperties;
+  /**
+   * The destructive act is the row's whole purpose ("Delete this camera?"): no far slot (a `destructive` is ignored),
+   * order Cancel then the primary, which the host paints red; Cancel stays the default (Return). Structured API only.
+   */
+  confirm?: boolean;
 };
 
 const BASE = "flex w-full flex-wrap items-center justify-end gap-3";
@@ -42,8 +50,12 @@ function warnIfPositiveNotLast(children: ReactNode) {
   }
 }
 
-export function PlanButtonRow({ children, className = "", primary, cancel, destructive, style }: PlanButtonRowProps) {
+export function PlanButtonRow({ children, className = "", primary, cancel, destructive, style, confirm = false }: PlanButtonRowProps) {
   const structured = primary !== undefined || cancel !== undefined || destructive !== undefined;
+  // The structured row carries the shared action-row CSS (equal share when narrow, with or without Tailwind).
+  useLayoutEffect(() => {
+    if (structured) ensureActionRowCss();
+  }, [structured]);
   if (!structured) {
     warnIfPositiveNotLast(children);
     return (
@@ -54,9 +66,16 @@ export function PlanButtonRow({ children, className = "", primary, cancel, destr
   }
   return (
     <div data-plan-button-row-box="" className="@container w-full">
-      <div data-plan-button-row="" data-structured="" className={`flex w-full flex-nowrap items-center justify-end gap-3 ${className}`.trim()} style={style}>
-        {destructive !== undefined && (
-          <div data-slot="destructive" className={`${SLOT} mr-auto`}>
+      <div
+        data-plan-button-row=""
+        data-structured=""
+        data-default={confirm ? "cancel" : "primary"}
+        {...(confirm ? { "data-confirm": "" } : {})}
+        className={`gs-actionrow flex w-full flex-nowrap items-center justify-end gap-3 ${className}`.trim()}
+        style={style}
+      >
+        {destructive !== undefined && !confirm && (
+          <div data-slot="destructive" className={`${SLOT} gs-actionrow__far mr-auto`}>
             {destructive}
           </div>
         )}

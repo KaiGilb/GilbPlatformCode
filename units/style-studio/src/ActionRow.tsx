@@ -7,6 +7,9 @@ import type { ReactNode } from "react";
  * confirmation) pass `primary.danger`: it becomes the rightmost red button and Cancel is the
  * default. Labels must be verbs. Under 380px the buttons share the width equally, same order.
  * Styled by the sheet's own button classes/tokens (gs-btn, gs-btn--secondary, gs-btn--danger).
+ * Since style-runtime 0.2.1 the row CSS ships with the style (toCssText / ensureActionRowCss) and a slot-based
+ * `ActionRow` is in style-runtime/react (re-exported here as `ActionRowSlots`). This spec-object API is kept for the
+ * Studio and its callers; it still carries its own inline <style> so it works inside the Studio, which writes nothing to <head>.
  */
 export interface ActionSpec {
   label: ReactNode;
