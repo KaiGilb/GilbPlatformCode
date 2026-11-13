@@ -1295,7 +1295,7 @@ export function createBridge(opts = {}) {
         return c === root || c.startsWith(root + path.sep) || c.startsWith(`${root}/`);
     }
     /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
-    function askPerson(turn, tool, summary, detail = "") {
+    function askPerson(turn, tool, summary, detail = "", notice = "") {
         return new Promise((resolve) => {
             const id = crypto.randomBytes(8).toString("hex");
             let timer;
@@ -1313,7 +1313,7 @@ export function createBridge(opts = {}) {
             };
             turn.approvals.set(id, entry);
             timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-            turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}) });
+            turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}), ...(notice ? { notice } : {}) });
         });
     }
     /** Approval text is never cut: a run of whitespace is one space, and a text over the limit is not asked about at all. */
@@ -1343,8 +1343,13 @@ export function createBridge(opts = {}) {
             }
         return seen.length === 0 ? "" : `Path contains non-ASCII characters: ${seen.slice(0, 20).join(" ")}${seen.length > 20 ? " …" : ""}`;
     };
-    /** The detail of a question: the head line (never cut) then the model's description, capped at 200. */
-    const withHead = (head, desc) => (head ? (desc ? `${head}\n${cap(desc, 200)}` : head) : cap(desc, 200));
+    /** The model's description: the only thing `detail` ever holds (capped at 200). The bridge's own lines go in `notice`, a separate field the page can show apart. */
+    const descOf = (desc) => cap(desc, 200);
+    const NOTICE_MAX = 400;
+    const HOST_LINE_MAX = 300;
+    const TOO_LONG_ADDRESS = "The address is too long to show for approval; ask for it without that.";
+    const PATH_TOOLS = new Set(["Read", "Write", "Edit", "NotebookEdit", "Glob", "Grep"]);
+    const pathNote = (tool, input) => (PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string")) : "");
     const USERINFO_MSG = "The address hides its real host (user@host form); ask for it without that.";
     const showText = (x) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
     const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
@@ -1363,6 +1368,7 @@ export function createBridge(opts = {}) {
             // Computer mode: every request is asked of the person, no automatic allow or deny by path.
             let summary;
             let detail = "";
+            let notice = "";
             // A path is shown exactly: a line break or a hidden character in any path field is a denial; so is a path over the limit.
             for (const k of ["file_path", "notebook_path", "path"]) {
                 const v = input[k];
@@ -1382,7 +1388,7 @@ export function createBridge(opts = {}) {
                 summary = showCommand(c) || "Bash";
                 if (summary.length > APPROVAL_COMMAND_MAX)
                     return deny(TOO_LONG_COMMAND);
-                detail = withHead("", showText(str(input.description)));
+                detail = descOf(showText(str(input.description)));
             }
             else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
                 const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
@@ -1407,7 +1413,10 @@ export function createBridge(opts = {}) {
                     catch {
                         /* shown as not valid */
                     }
-                    detail = `Host: ${host}`;
+                    const line = `Host: ${host}`;
+                    if (line.length > HOST_LINE_MAX)
+                        return deny(TOO_LONG_ADDRESS);
+                    notice = line;
                 }
             }
             else {
@@ -1424,10 +1433,12 @@ export function createBridge(opts = {}) {
             }
             if (summary.length > APPROVAL_COMMAND_MAX)
                 return deny(TOO_LONG_REQUEST);
-            const note = nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string"));
+            const note = pathNote(tool, input);
             if (note)
-                detail = detail ? `${note}\n${detail}` : note;
-            const a = await askPerson(turn, tool, summary, detail);
+                notice = notice ? `${notice}\n${note}` : note;
+            if (notice.length > NOTICE_MAX)
+                return deny(TOO_LONG_ADDRESS);
+            const a = await askPerson(turn, tool, summary, detail, notice);
             return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
         }
         if (tool === "Read") {
@@ -1477,15 +1488,15 @@ export function createBridge(opts = {}) {
             summary = showCommand(c) || "Bash";
             if (summary.length > APPROVAL_COMMAND_MAX)
                 return deny(TOO_LONG_COMMAND);
-            detail = withHead("", showText(str(input.description)));
+            detail = descOf(showText(str(input.description)));
         }
         else {
             return deny("This tool is not allowed in a code turn.");
         }
-        const note = nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string"));
-        if (note)
-            detail = detail ? `${note}\n${detail}` : note;
-        const a = await askPerson(turn, tool, summary, detail);
+        const notice = pathNote(tool, input);
+        if (notice.length > NOTICE_MAX)
+            return deny(TOO_LONG_ADDRESS);
+        const a = await askPerson(turn, tool, summary, detail, notice);
         return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
     function relayToolCall(turn, name, args, rpcId) {

@@ -369,13 +369,32 @@ describe("access (0.3.0)", () => {
     expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A3", mode: "code" })).not.toHaveProperty("access");
   });
 
-  it("an approval_request with a summary over 2000 characters, or a detail over 600, is dropped as malformed; 2000 and 600 are accepted", async () => {
+  it("an approval_request with a summary over 2000 characters, a detail over 200 or a notice over 400, is dropped as malformed; the limits themselves are accepted", async () => {
     client.save("s3cret");
     const seen: unknown[] = [];
     const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
-    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(2001) }], ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(601) }], ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: "y".repeat(2000), detail: "d".repeat(600) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(2001) }], ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(201) }], ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: "y".repeat(2000), detail: "d".repeat(200), notice: "n".repeat(400) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
     await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A5", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
     expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcde1"]);
+  });
+
+  it("notice is passed through on the event and to onApproval, apart from detail; a non-string notice is ignored; a notice over 400 drops the event", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const asked: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    fakeBridge([
+      ["approval_request", { id: "0123456789abcde1", tool: "WebFetch", summary: "https://x.example/", detail: "Host: github.com", notice: "Host: x.example" }],
+      ["approval_request", { id: "0123456789abcde2", tool: "Bash", summary: "ls", notice: 5 }],
+      ["approval_request", { id: "0123456789abcde3", tool: "Bash", summary: "ls", notice: "n".repeat(401) }],
+      ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }],
+    ], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A6", mode: "code", onEvent: (e) => seen.push(e), onApproval: async (r) => { asked.push(r); return true; } });
+    expect(asked).toEqual([
+      { id: "0123456789abcde1", tool: "WebFetch", summary: "https://x.example/", detail: "Host: github.com", notice: "Host: x.example" },
+      { id: "0123456789abcde2", tool: "Bash", summary: "ls" },
+    ]);
+    expect(seen.filter((e: any) => e.event === "approval_request")).toHaveLength(2);
   });
 
   it("any tool and a long summary are accepted in an approval_request", async () => {
