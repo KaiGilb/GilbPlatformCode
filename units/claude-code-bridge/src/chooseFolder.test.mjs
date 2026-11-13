@@ -156,6 +156,62 @@ describe("POST /v1/workspace/choose", () => {
   });
 });
 
+describe("the dialog lock", () => {
+  /** A bridge whose injected folder dialog stays open until `finish(pathOrNull)` is called. `opened()` resolves once it is open; `calls` counts dialogs started. */
+  async function withPendingDialog(opts = {}) {
+    let finish;
+    let calls = 0;
+    let markOpen;
+    const opened = new Promise((r) => (markOpen = r));
+    const secret = await start({ ...opts, chooseFolder: () => new Promise((r) => { calls += 1; finish = r; markOpen(); }) });
+    return { secret, opened, finish: (v) => finish(v), calls: () => calls };
+  }
+  const DIALOG_SENTENCE = /^A folder dialog is (already )?open/;
+
+  it("a second /v1/workspace/choose while the first is pending is 409, opens no second dialog, and the first then finishes normally", async () => {
+    const pick = mk("Picked");
+    const d = await withPendingDialog();
+    const first = call(d.secret, "/v1/workspace/choose");
+    await d.opened;
+    const second = await call(d.secret, "/v1/workspace/choose");
+    expect(second.status).toBe(409);
+    expect(second.json.error).toMatch(DIALOG_SENTENCE);
+    expect(d.calls()).toBe(1);
+    d.finish(pick);
+    expect((await first).json).toEqual({ chosen: true, name: "Picked", path: pick });
+    expect(stored().path).toBe(pick);
+  });
+
+  it("a code turn while a dialog is pending is 409 and does not start claude; after the dialog it runs", async () => {
+    const ws = mk("Existing");
+    const d = await withPendingDialog({ workspace: ws });
+    const first = call(d.secret, "/v1/workspace/choose");
+    await d.opened;
+    const t = await turn(d.secret, { mode: "code" });
+    expect(t.status).toBe(409);
+    expect(t.json.error).toMatch(DIALOG_SENTENCE);
+    expect(runs()).toHaveLength(0);
+    d.finish(null);
+    expect((await first).json).toEqual({ chosen: false });
+    const after = await turn(d.secret, { mode: "code" });
+    expect(ev(after, "message")).toHaveLength(1);
+  });
+
+  it("/v1/workspace/create while a dialog is pending is 409 and makes no folder; after the dialog it works", async () => {
+    const d = await withPendingDialog();
+    const first = call(d.secret, "/v1/workspace/choose");
+    await d.opened;
+    const c = await call(d.secret, "/v1/workspace/create", { name: "WhileOpen" });
+    expect(c.status).toBe(409);
+    expect(c.json.error).toMatch(DIALOG_SENTENCE);
+    expect(fs.existsSync(path.join(home, "WhileOpen"))).toBe(false);
+    expect(fs.existsSync(wsFile)).toBe(false);
+    d.finish(null);
+    expect((await first).json).toEqual({ chosen: false });
+    expect((await call(d.secret, "/v1/workspace/create", { name: "WhileOpen" })).status).toBe(200);
+  });
+});
+
 describe("POST /v1/workspace/create", () => {
   it("makes ~/<name> (mode 0700), stores and switches", async () => {
     const secret = await start();
