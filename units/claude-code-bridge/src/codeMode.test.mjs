@@ -30,6 +30,7 @@ async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
     claudeBin: FAKE,
     allowedOrigins: [APP],
     workDir: path.join(dir, "work"),
+    home: dir, // the code folder must be inside the home folder: this temp folder plays it
     ...(workspace ? { workspace: ws } : {}),
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...env },
     ...bridgeOpts,
@@ -466,10 +467,10 @@ describe("approval: each-write", () => {
     expect(r.events.filter((e) => e[0] === "approval_done")[0][1].allow).toBe(false);
   });
 
-  it("a Bash command asks with its description", async () => {
+  it("a Bash command asks with the command as the summary and the description as detail", async () => {
     const secret = await start();
     const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt: "ASKBASH" }, async () => true);
-    expect(r.events.find((e) => e[0] === "approval_request")[1]).toMatchObject({ tool: "Bash", summary: "List files" });
+    expect(r.events.find((e) => e[0] === "approval_request")[1]).toMatchObject({ tool: "Bash", summary: "ls", detail: "List files" });
   });
 
   it("a write outside the folder is denied at once, with no question", async () => {

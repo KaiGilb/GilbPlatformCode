@@ -114,6 +114,18 @@ process.stdin.on("end", async () => {
       text = `decision: ${decision.behavior}`;
     }
   }
+  // ASKJSON:<json array of {tool_name,input}>: ask bridge_approve for each, in order, and log each decision.
+  const askJson = /ASKJSON:(.*)/.exec(prompt);
+  if (askJson && url) {
+    const rpc = async (method, params, id) =>
+      (await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) })).json();
+    await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "fake", version: "0" } }, 1);
+    let n = 10;
+    for (const ask of JSON.parse(askJson[1])) {
+      const r = await rpc("tools/call", { name: "bridge_approve", arguments: ask }, n++);
+      log({ event: "askjson", tool: ask.tool_name, decision: JSON.parse(r.result.content[0].text) });
+    }
+  }
   if (prompt.includes("SPAWNCHILD")) {
     // Like the real CLI, which starts helpers (its MCP children): one grandchild that sleeps, so a test can see whether Stop took it too.
     const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });

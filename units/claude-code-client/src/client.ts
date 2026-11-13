@@ -96,6 +96,8 @@ export interface ApprovalRequest {
   id: string;
   tool: string;
   summary: string;
+  /** A second line, when the bridge sent one (for a command: the model's own description of it). */
+  detail?: string;
 }
 
 const isStr = (v: unknown): v is string => typeof v === "string";
@@ -109,7 +111,7 @@ function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeSt
   if (name === "files_changed" && isStrList(d.added) && isStrList(d.changed) && isStrList(d.removed) && isCount(d.addedCount) && isCount(d.changedCount) && isCount(d.removedCount) && typeof d.truncated === "boolean") {
     return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
   }
-  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary } };
+  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && isStr(d.summary)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}) } };
   if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow } };
   return null;
 }
@@ -785,16 +787,30 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       };
 
       /** The bridge asks whether a write or command may go ahead: the page's handler answers, off the read loop. */
+      // Each open question can be let go: when the bridge says it is done (answered, timed out, the turn ended) or the turn ends,
+      // the wait for the app's handler stops (as "no") and nothing is posted for it, so a handler that never settles cannot hold the turn.
+      const questions = new Map<string, { done: boolean; release: () => void }>();
+      const closeQuestion = (id: string) => {
+        const q = questions.get(id);
+        if (!q) return;
+        q.done = true;
+        q.release();
+      };
       const askPerson = (req: ApprovalRequest) => {
+        const q = { done: false, release: () => {} };
+        const released = new Promise<boolean>((resolve) => {
+          q.release = () => resolve(false);
+        });
+        questions.set(req.id, q);
         handlers.push(
           (async () => {
             let allow = false;
             try {
-              allow = (await opts.onApproval?.(req)) === true;
+              allow = (await Promise.race([Promise.resolve(opts.onApproval?.(req)), released])) === true;
             } catch {
               allow = false;
             }
-            if (stop.signal.aborted) return;
+            if (q.done || stop.signal.aborted) return;
             try {
               const back = await bridgeFetch("/v1/approval", {
                 signal: stop.signal,
@@ -849,12 +865,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             if (ce) {
               opts.onEvent?.(ce);
               if (ce.event === "approval_request") askPerson(ce.data);
+              else if (ce.event === "approval_done") closeQuestion(ce.data.id);
             }
           }
         }
       } catch (err) {
         readErr = err;
       }
+      for (const id of [...questions.keys()]) closeQuestion(id); // the stream ended: no question is still open
       // The turn is over. A turn that failed or was left stops its handlers and drops their answers; one that ended with
       // its answer waits for the handlers still running, so an answer the bridge cannot take is still reported.
       if (readErr || fatal !== null || streamError) abortAll();

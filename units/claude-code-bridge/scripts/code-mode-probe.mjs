@@ -2,6 +2,7 @@
 // Code-mode probe: runs ONE code turn with the REAL `claude` against throwaway folders and checks, from outside, that the
 // folder limits hold. Run by hand (not by CI):  node scripts/code-mode-probe.mjs
 // It makes temp folders only: W (the workspace), OUT (a sibling outside it) and SECRET (a decoy holding token.txt).
+// The code folder must be inside the home folder, so the temp folders are made under $CODE_PROBE_BASE (default: the home folder; removed at the end).
 // It never touches ~/.ssh or any real secret. Needs `claude` on PATH, logged in with a subscription.
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +11,7 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { createBridge } from "../bridge/bridge.mjs";
 
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "code-probe-")));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(process.env.CODE_PROBE_BASE ?? os.homedir(), ".code-probe-")));
 const W = path.join(tmp, "W");
 const OUT = path.join(tmp, "OUT");
 const SECRET = path.join(tmp, "SECRET");

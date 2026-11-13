@@ -80,6 +80,8 @@ interface Turn {
   /** Code turn only: "each-write" makes Claude Code ask the bridge (bridge_approve) before a write or a command. */
   approval: "session" | "each-write";
   /** Questions put to the person in this turn (each-write), kept after the answer so a second answer is told "already answered". */
+  /** SHA-256 hex of the pairing secret that started this turn: only that pairing may answer its questions. */
+  owner: string;
   approvals: Map<string, { settle: (allow: boolean, message?: string) => void; answered: boolean }>;
 }
 /** A JSON-RPC message from the local claude process. */
@@ -565,6 +567,8 @@ export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "Not
 export const FILES_ONLY_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
 const FOLDER_PROMPT = "Choose the folder where the AI may build your app";
 const FOLDER_SUGGEST = /^[A-Za-z0-9 ._-]{1,64}$/;
+/** A folder name the page may send: the character rule, no space at either end, and not only spaces and dots. */
+const folderNameOk = (n: unknown): n is string => typeof n === "string" && FOLDER_SUGGEST.test(n) && n === n.trim() && !/^[ .]+$/.test(n);
 const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries.";
@@ -618,10 +622,13 @@ export function validateWorkspace(input: string, o: WorkspaceCheckOpts): { ok: t
   const homes = [...new Set([P.resolve(o.home), tryReal(o.home)])];
   if (homes.some((h) => key(h) === key(real))) return { ok: false, reason: `The code folder cannot be your home folder. Make a folder for your code, for example ~/MyJackfruitCode, and start the bridge with --workspace ~/MyJackfruitCode.` };
   if (homes.some((h) => inside(h, real))) return { ok: false, reason: `The code folder ${real} holds your home folder. Choose a folder inside it, for example ~/MyJackfruitCode.` };
+  if (!homes.some((h) => inside(real, h))) return { ok: false, reason: `The code folder must be inside your home folder, for example ~/MyJackfruitCode.` };
   const secretNames = [".ssh", ".aws", ".gnupg", ".config", ".claude", ...(o.platform === "darwin" ? ["Library"] : []), ...(win ? ["AppData"] : [])];
   const barred = [...homes.flatMap((h) => secretNames.map((n) => P.join(h, n))), ...o.stateDirs.flatMap((d) => [P.resolve(d), tryReal(d)])];
   const hit = barred.find((b) => inside(real, b));
   if (hit) return { ok: false, reason: `The code folder ${real} is inside ${hit}, which holds secrets or the bridge's own files. Make a folder for your code, for example ~/MyJackfruitCode.` };
+  const holds = o.stateDirs.flatMap((d) => [P.resolve(d), tryReal(d)]).find((d) => inside(d, real));
+  if (holds) return { ok: false, reason: `The code folder ${real} holds the bridge's own state folder ${holds}. Choose a folder made for your code, for example ~/MyJackfruitCode.` };
   try {
     const names = readdir(real).map((n) => key(n));
     const bad = [".ssh", ".aws", ".gnupg"].find((n) => names.includes(n));
@@ -684,6 +691,10 @@ function toolSummary(tool: string, input: Record<string, unknown>, roots: string
   if (tool === "Glob" || tool === "Grep") return str(input.pattern).slice(0, 120) || tool;
   return tool;
 }
+
+/** Every summary shown to the person is one bounded piece of text. */
+const SUMMARY_CAP = 300;
+const cap = (s: string, n = SUMMARY_CAP) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 const SNAPSHOT_CAP = 20000;
 const LIST_CAP = 200;
@@ -898,6 +909,32 @@ export function createBridge(opts: BridgeOptions = {}) {
       /* the listed state folders are still checked */
     }
     return validateWorkspace(input, { home, platform, stateDirs });
+  }
+  /**
+   * Is the code folder still the folder that was checked? Its real path now must equal the stored real path and pass the checks again.
+   * If not, code mode is switched off (workspace.json is left as it is) and false is returned.
+   */
+  function folderStillGood(): boolean {
+    if (!workspace) return false;
+    let ok = false;
+    let why = "";
+    try {
+      const now = fs.realpathSync(workspace.path);
+      if (now !== workspace.path) why = `its real path is now ${now}`;
+      else {
+        const v = checkFolder(now);
+        if (v.ok) ok = true;
+        else why = v.reason;
+      }
+    } catch (e) {
+      why = (e as ErrLike)?.message ?? String(e);
+    }
+    if (!ok) {
+      log(`the code folder changed on disk (${why}); code mode is off until a folder is chosen again`);
+      workspace = null;
+      workspaceGiven = null;
+    }
+    return ok;
   }
   if (opts.workspace) {
     let real = opts.workspace;
@@ -1171,10 +1208,34 @@ export function createBridge(opts: BridgeOptions = {}) {
     return t;
   }
 
-  /** Does this path, resolved against the folder, land inside it? The nearest existing parent is resolved through symlinks. */
+  /**
+   * Does this path, resolved against the folder, land inside it? Every existing part of the path below the folder is looked at
+   * with lstat: a symlink whose target cannot be resolved (dangling) counts as outside. The nearest existing parent is then resolved through symlinks.
+   */
   function insideWorkspace(p: string): boolean {
-    if (!workspace || !p) return false;
-    let cur = path.resolve(workspace.path, p);
+    if (!workspace || !p || p.includes("\0")) return false;
+    const full0 = path.resolve(workspace.path, p);
+    const lex = path.relative(workspace.path, full0);
+    if (lex !== "" && lex !== ".." && !lex.startsWith(`..${path.sep}`) && !path.isAbsolute(lex)) {
+      let walk = workspace.path;
+      for (const seg of lex.split(path.sep)) {
+        walk = path.join(walk, seg);
+        let st: fs.Stats;
+        try {
+          st = fs.lstatSync(walk);
+        } catch {
+          break; // nothing here yet: nothing further down exists either
+        }
+        if (st.isSymbolicLink()) {
+          try {
+            fs.realpathSync(walk);
+          } catch {
+            return false; // a link to nowhere: it may be made to point anywhere
+          }
+        }
+      }
+    }
+    let cur = full0;
     const tail: string[] = [];
     for (;;) {
       try {
@@ -1193,7 +1254,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
-  function askPerson(turn: Turn, tool: string, summary: string): Promise<{ allow: boolean; message: string }> {
+  function askPerson(turn: Turn, tool: string, summary: string, detail = ""): Promise<{ allow: boolean; message: string }> {
     return new Promise((resolve) => {
       const id = crypto.randomBytes(8).toString("hex");
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1209,7 +1270,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       };
       turn.approvals.set(id, entry);
       timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-      turn.send("approval_request", { id, tool, summary });
+      turn.send("approval_request", { id, tool, summary: cap(summary), ...(detail ? { detail: cap(detail, 200) } : {}) });
     });
   }
 
@@ -1219,18 +1280,38 @@ export function createBridge(opts: BridgeOptions = {}) {
     const tool = typeof args.tool_name === "string" ? args.tool_name : "";
     const input = args.input && typeof args.input === "object" ? (args.input as Record<string, unknown>) : {};
     const deny = (message: string) => ({ behavior: "deny", message });
-    if (tool === "Read" || tool === "Glob" || tool === "Grep") return { behavior: "allow", updatedInput: input };
+    const str = (v: unknown) => (typeof v === "string" ? v : "");
+    if (tool === "Read") {
+      if (!insideWorkspace(str(input.file_path))) return deny("Outside the code folder.");
+      return { behavior: "allow", updatedInput: input };
+    }
+    if (tool === "Glob" || tool === "Grep") {
+      // No path means the folder itself. A Glob pattern that is itself a path (absolute, ~, or climbing out) is checked up to its first wildcard.
+      const base = str(input.path) || (workspace ? workspace.path : "");
+      if (!insideWorkspace(base)) return deny("Outside the code folder.");
+      if (tool === "Glob") {
+        const pat = str(input.pattern);
+        const prefix = pat.split(/[*?[{]/)[0] ?? "";
+        if (pat.startsWith("~") || path.isAbsolute(pat) || /(^|[\\/])\.\.([\\/]|$)/.test(pat)) {
+          if (pat.startsWith("~") || !insideWorkspace(path.resolve(base, prefix || "."))) return deny("Outside the code folder.");
+        }
+      }
+      return { behavior: "allow", updatedInput: input };
+    }
     let summary: string;
+    let detail = "";
     if (tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
       const p = String(input.file_path ?? input.notebook_path ?? "");
       if (!insideWorkspace(p)) return deny("Outside the code folder.");
       summary = toolSummary(tool, input, workspace ? workspaceRoots() : []);
     } else if (tool === "Bash") {
-      summary = (typeof input.description === "string" && input.description) || String(input.command ?? "").slice(0, 200) || "Bash";
+      // The question shows the command itself; the model's own description is only a second line.
+      summary = cap(String(input.command ?? "").replace(/\r\n|\r|\n/g, " ⏎ ")) || "Bash";
+      detail = str(input.description);
     } else {
       return deny("This tool is not allowed in a code turn.");
     }
-    const a = await askPerson(turn, tool, summary);
+    const a = await askPerson(turn, tool, summary, detail);
     return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
   }
 
@@ -1399,13 +1480,13 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__")) {
         const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, workspace ? workspaceRoots() : []);
         if (typeof b.id === "string") tracked.set(b.id, { tool: b.name, summary });
-        turn.send("activity", { tool: b.name, summary });
+        turn.send("activity", { tool: b.name, summary: cap(summary) });
       } else if (ev.type === "user" && b.type === "tool_result" && b.is_error === true && typeof b.tool_use_id === "string") {
         const t = tracked.get(b.tool_use_id);
         if (!t) continue;
         const raw = b.content;
         const text = typeof raw === "string" ? raw : Array.isArray(raw) ? (raw as Array<{ text?: unknown }>).map((x) => (typeof x?.text === "string" ? x.text : "")).join(" ") : "";
-        turn.send("tool_error", { tool: t.tool, summary: t.summary, text: text.slice(0, 200) });
+        turn.send("tool_error", { tool: t.tool, summary: cap(t.summary), text: text.slice(0, 200) });
       }
     }
   }
@@ -1523,6 +1604,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (isCode) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
       if (!workspace) return json(res, 409, { error: NO_WORKSPACE });
+      if (!folderStillGood()) return json(res, 409, { error: "The code folder changed on disk. Choose it again." });
       if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
       if ([...turns.values()].some((t) => t.code)) return json(res, 429, { error: `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
     }
@@ -1578,6 +1660,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       code: isCode,
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
+      owner: sha(String(req.headers["x-bridge-secret"])).toString("hex"),
     };
     if (parent) parent.handoffs.add(turn);
     turns.set(turn.id, turn);
@@ -1688,9 +1771,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
     // The suggestion is checked even though only "Create it" uses it; it never goes into a script.
-    if (body.suggest !== undefined && !(typeof body.suggest === "string" && FOLDER_SUGGEST.test(body.suggest))) return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
+    if (body.suggest !== undefined && !folderNameOk(body.suggest)) return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
     if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is already open on this computer." });
+    if (workspace) folderStillGood();
     const which = opts.which ?? onPath;
     if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !which("zenity")) {
       return json(res, 501, { error: "No folder dialog on this computer. Start the bridge with --workspace <folder>." });
@@ -1720,9 +1804,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
     const name = body.name;
-    if (typeof name !== "string" || !FOLDER_SUGGEST.test(name) || /^\.+$/.test(name)) return json(res, 400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
+    if (!folderNameOk(name)) return json(res, 400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
     if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+    if (workspace) folderStillGood();
     const target = path.join(home, name);
     const exists = `The folder ~/${name} already has files. Choose it with the folder dialog instead.`;
     let made = false;
@@ -1840,7 +1925,9 @@ export function createBridge(opts: BridgeOptions = {}) {
         } catch (e) {
           return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
         }
-        const a = turns.get(String(body.turnId))?.approvals.get(String(body.id));
+        const t = turns.get(String(body.turnId));
+        // Only the pairing that started the turn may answer; any other gets the same answer as an unknown question.
+        const a = t && t.owner === sha(String(req.headers["x-bridge-secret"])).toString("hex") ? t.approvals.get(String(body.id)) : undefined;
         if (!a) return json(res, 404, { error: "no such approval question" });
         if (typeof body.allow !== "boolean") return json(res, 400, { error: "allow must be true or false" });
         if (a.answered) return json(res, 409, { error: "already answered" });

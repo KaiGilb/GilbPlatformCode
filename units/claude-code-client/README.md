@@ -89,7 +89,7 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 - `createWorkspace(name)` makes `~/<name>` on the bridge's computer without a dialog and keeps it as the code folder: `{ name, path }`. 409 when the folder already has files, 400 for a bad name.
 - The reply of a files-only code turn has `codeMode: "files-only"`; other replies leave it out. Show it plainly: this turn could not run commands.
 - `sendTurn` takes `mode: "code"` (default `"chat"`) and `approval`: `"session"` (default; the person approved once) or `"each-write"` (the bridge asks before each write and each command). A hand-off's nested turn is always a chat turn and never carries either.
-- `onApproval(req)` is called with `{ id, tool, summary }` when the bridge asks. Resolve true to allow. With no `onApproval`, or one that throws or rejects, the answer is no. The turn keeps reading while the person decides.
+- `onApproval(req)` is called with `{ id, tool, summary, detail? }` when the bridge asks (for a command, `summary` is the command and `detail` the model's description). Resolve true to allow. With no `onApproval`, or one that throws or rejects, the answer is no. The turn keeps reading while the person decides. When the bridge closes a question (answered, timed out, the turn ended), the wait for your handler stops and nothing is posted for it, so a handler that never settles cannot hold the turn.
 - New events for `onEvent`, code turns only. A malformed one is dropped:
   - `code_activity` `{ tool, summary }`
   - `code_tool_error` `{ tool, summary, text }`
