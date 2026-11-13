@@ -92,6 +92,7 @@ interface ClaudeEvent {
   subtype?: string;
   model?: string;
   apiKeySource?: unknown;
+  cwd?: unknown;
   tools?: unknown[];
   mcp_servers?: unknown[];
   num_turns?: number;
@@ -575,6 +576,7 @@ const NETWORK_SENTENCE = "The network reaches only package registries.";
 const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
+const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
 const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
@@ -597,7 +599,8 @@ export function validateWorkspace(input: string, o: WorkspaceCheckOpts): { ok: t
   const win = o.platform === "win32";
   const P = win ? path.win32 : path.posix;
   const ci = win || o.platform === "darwin";
-  const realpath = o.realpath ?? ((p: string) => fs.realpathSync(p));
+  // the system's own spelling (on a case-insensitive disk the real case, not the case that was typed)
+  const realpath = o.realpath ?? ((p: string) => fs.realpathSync.native(p));
   const stat = o.stat ?? ((p: string) => fs.statSync(p));
   const readdir = o.readdir ?? ((p: string) => fs.readdirSync(p));
   const key = (p: string) => (ci ? p.toLowerCase() : p);
@@ -683,7 +686,7 @@ function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "sessi
 function toolSummary(tool: string, input: Record<string, unknown>, roots: string[]): string {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
-    const p = str(input.file_path) || str(input.notebook_path) || str(input.path);
+    const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
     if (!p) return tool;
     for (const r of roots) {
       const rel = path.relative(r, path.resolve(r, p));
@@ -841,6 +844,8 @@ export interface BridgeOptions {
   platformOpts?: PlatformOpts | undefined;
   /** The one folder a code turn may work in (already checked by validateWorkspace). Unset: no code mode. */
   workspace?: string | undefined;
+  /** TEST-ONLY, undocumented: called in a code turn right after the last folder check and right before the child starts (tests swap the folder here). */
+  beforeSpawn?: (() => void) | undefined;
   /** TEST-ONLY, undocumented: called in a code turn between the folder snapshot and the folder check (tests swap the folder here). */
   afterSnapshot?: (() => void) | undefined;
   /** TEST-ONLY, undocumented: the platform the code mode is chosen for (files-only on "win32"), when the real one cannot be pretended (the stand-in claude cannot start under a pretend-Windows launch). */
@@ -952,10 +957,19 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     return ok;
   }
+  /** Is this init `cwd` (the child's own getcwd()) the checked folder: a string, the same real path, and the same device and inode? */
+  function childRunsIn(cwd: unknown, want: { path: string; id: string }): boolean {
+    if (typeof cwd !== "string" || cwd === "" || want.id === "") return false;
+    try {
+      return fs.realpathSync(cwd) === want.path && idOf(cwd) === want.id;
+    } catch {
+      return false;
+    }
+  }
   if (opts.workspace) {
     let real = opts.workspace;
     try {
-      real = fs.realpathSync(opts.workspace);
+      real = fs.realpathSync.native(opts.workspace);
     } catch {
       /* main() checked it; keep what was given */
     }
@@ -1232,6 +1246,13 @@ export function createBridge(opts: BridgeOptions = {}) {
    */
   function insideWorkspace(p: string): boolean {
     if (!workspace || typeof p !== "string" || !p || p.includes("\0") || p.startsWith("~") || p.startsWith("$")) return false;
+    // Resolved physically as written, and physically again after a plain lexical normalisation (a tool may drop "x/.." before it looks at the disk),
+    // and the lexical result must itself be inside.
+    const lexical = path.resolve(workspace.path, p);
+    return physicallyInside(p) && physicallyInside(lexical) && within(lexical);
+  }
+  function physicallyInside(p: string): boolean {
+    if (!workspace) return false;
     let cur = path.isAbsolute(p) ? path.parse(p).root : workspace.path;
     let exists = true;
     for (const seg of p.split(/[\\/]+/)) {
@@ -1260,8 +1281,16 @@ export function createBridge(opts: BridgeOptions = {}) {
         }
       }
     }
-    const rel = path.relative(workspace.path, cur);
-    return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+    return within(cur);
+  }
+  /** Is `p` the code folder or below it? Compared as text: NFC-normalised, and case-insensitively on macOS and Windows. Nothing is rewritten. */
+  function within(p: string): boolean {
+    if (!workspace) return false;
+    const ci = platform === "darwin" || platform === "win32";
+    const norm = (x: string) => (ci ? x.normalize("NFC").toLowerCase() : x.normalize("NFC"));
+    const root = norm(workspace.path).replace(/[\\/]+$/, "");
+    const c = norm(p);
+    return c === root || c.startsWith(root + path.sep) || c.startsWith(`${root}/`);
   }
 
   /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
@@ -1310,8 +1339,12 @@ export function createBridge(opts: BridgeOptions = {}) {
     let summary: string;
     let detail = "";
     if (tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
-      const p = String(input.file_path ?? input.notebook_path ?? "");
-      if (!insideWorkspace(p)) return deny("Outside the code folder.");
+      // NotebookEdit is decided on notebook_path, the others on file_path; and any path key present, whichever it is, must be inside.
+      const main = tool === "NotebookEdit" ? input.notebook_path : input.file_path;
+      if (typeof main !== "string" || main === "") return deny("Outside the code folder.");
+      for (const k of ["file_path", "notebook_path", "path"]) {
+        if (input[k] !== undefined && (typeof input[k] !== "string" || !insideWorkspace(input[k] as string))) return deny("Outside the code folder.");
+      }
       summary = toolSummary(tool, input, workspace ? workspaceRoots() : []);
     } else if (tool === "Bash") {
       // The question shows the command itself; the model's own description is only a second line.
@@ -1506,6 +1539,9 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (!launch.ok) return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
       // The last look at the folder before the child starts there.
       if (turn.code && !folderStillGood()) return resolve({ error: CODE_FOLDER_CHANGED, sessionId: mode.sessionId, model: "" });
+      // What the child must report as its own working folder (its init event's cwd is its getcwd()): the checked real path and identity.
+      const expectFolder = turn.code && workspace ? { path: workspace.path, id: workspace.id } : null;
+      if (turn.code) opts.beforeSpawn?.();
       let child: ChildProcess;
       try {
         child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
@@ -1527,6 +1563,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       let sawInit = false;
       let initOk = false; // fail closed: a good init event (apiKeySource "none") must have been seen
       let limitsRefused = false; // code turn: the init event did not show the folder limits
+      let cwdRefused = false; // code turn: the child is not running in the checked code folder
       const tracked = new Map<string, { tool: string; summary: string }>(); // code turn: tool_use id -> what it was
       child.stderr!.on("data", (d) => {
         stderr = (stderr + d).slice(-2000);
@@ -1560,10 +1597,17 @@ export function createBridge(opts: BridgeOptions = {}) {
             if (turn.code && !codeInitOk(ev, turn.approval, filesOnly)) {
               limitsRefused = true;
               void stopChild(child);
+            } else if (turn.code && !(expectFolder && childRunsIn(ev.cwd, expectFolder))) {
+              // Verify the CHILD, not the path: its own working folder must be the checked one. Tools only run after init.
+              cwdRefused = true;
+              log("the code turn's child did not start in the code folder; code mode is off until a folder is chosen again");
+              workspace = null;
+              workspaceGiven = null;
+              void stopChild(child);
             }
           } else if (ev.type === "result") {
             result = ev;
-          } else if (turn.code && !limitsRefused && (ev.type === "assistant" || ev.type === "user")) {
+          } else if (turn.code && !limitsRefused && !cwdRefused && (ev.type === "assistant" || ev.type === "user")) {
             codeEvents(turn, ev, tracked);
           }
         }
@@ -1576,13 +1620,15 @@ export function createBridge(opts: BridgeOptions = {}) {
         // Fail closed: an answer is shown only after an init event that proved the subscription. The one exception is a
         // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
         if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit)) refused = true;
-        const noStart = turn.code && !filesOnly && !sawInit && !initOk && !limitsRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
+        const noStart = turn.code && !filesOnly && !sawInit && !initOk && !limitsRefused && !cwdRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
         if (noStart) {
           const lines = stderr.trim().split("\n").map((l) => l.trim()).filter(Boolean);
           const last = lines.length > 0 ? lines[lines.length - 1]! : String(result?.result ?? "").trim().split("\n").pop()!.trim();
           resolve({ error: `${SANDBOX_START_ERROR} ${last.slice(0, 300)}`.trim(), sessionId: mode.sessionId, model });
         } else if (limitsRefused) {
           resolve({ error: CODE_LIMITS_ERROR, sessionId: mode.sessionId, model });
+        } else if (cwdRefused) {
+          resolve({ error: CODE_CWD_ERROR, sessionId: mode.sessionId, model });
         } else if (refused) {
           resolve({
             error: "Claude Code did not confirm that this run uses your Claude subscription, so the bridge stopped it: a run that would use an API key, not your Claude subscription, is refused. The bridge refuses that. Remove ANTHROPIC_API_KEY / apiKeyHelper from your Claude Code settings, or run `claude auth login` with your subscription.",

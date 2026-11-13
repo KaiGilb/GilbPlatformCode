@@ -79,6 +79,7 @@ process.stdin.on("end", async () => {
     };
     const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
     if (pm !== "omit") init.permissionMode = pm;
+    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd(); // the real CLI's init carries its own getcwd()
     if (initMode === "nofield") delete init.apiKeySource;
     if (initMode === "null") init.apiKeySource = null;
     out(init);
@@ -136,6 +137,7 @@ process.stdin.on("end", async () => {
     return;
   }
   if (prompt.includes("CODEWRITE")) {
+    await new Promise((r) => setTimeout(r, 200)); // after init: a bridge that refused the init has killed this process by now
     const file = path.join(process.cwd(), "hello.txt");
     fs.writeFileSync(file, "hi");
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Write", input: { file_path: file } }] } });
