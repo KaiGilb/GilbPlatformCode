@@ -1,6 +1,6 @@
 # Sign-in unit
 
-Reusable GilbPlatformCode login artefact. One email one-time-code card, the DPoP proof every signed-in call carries, the session credential an app holds after sign-in, and a machine agent's sign-in. Not a second login. Passkey offer is host wiring, not this unit.
+Sign in, sign-in, start-up: opens an app's own vault on first sign-in (creates it once), then hands the app that vault (`useLiveStart`). Reusable GilbPlatformCode login artefact. One email one-time-code card, the DPoP proof every signed-in call carries, the session credential an app holds after sign-in, and a machine agent's sign-in. Not a second login. Passkey offer is host wiring, not this unit.
 
 ## What this is
 
@@ -116,6 +116,35 @@ const headers = await machine.authHeaders("POST", url);
 ```
 
 The token is reused until 30 s before it expires. `invalidate()` after a 401. A refusal, an unreachable endpoint, a 2xx with no token, and a 2xx whose body is not JSON are `MachineTokenError` (`status` 0 means no answer arrived).
+
+## Start-up in 15 lines
+
+`useLiveStart` is the whole start-up of a live app: restore the sign-in or show the card, find or make the person's own app vault (first sign-in creates it, once), then say ready. Stages: `"signin"` (show the card), `"opening"` (show `step`), `"ready"` (show the app), `"error"` (show `error`, offer `retry()` and `signOut()`).
+
+```tsx
+import { SignInCard, useLiveStart } from "@kaigilb/gilbplatformcode-signin";
+import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
+import "@kaigilb/gilbplatformcode-signin/signin.css";
+
+const credential = new SessionCredential();                       // module level: one per page
+const APP = { id: "myapp", productName: "MyApp", title: "MyApp", origin: ID_ORIGIN, returnTo: () => window.location.origin };
+const VAULT = { represents: MY_TYPE_IRI, nameSuffix: "myapp", storageKey: "myapp" }; // the app's own vault type
+
+export function Root() {
+  const s = useLiveStart({ credential, idOrigin: ID_ORIGIN, app: APP, vaultConfig: VAULT });
+  if (s.stage === "ready") return <App vault={s.vault!} actor={s.actor!} vaults={s.vaults} signOut={s.signOut} />;
+  if (s.stage === "signin") return <SignInCard {...s.signInProps} />;
+  if (s.stage === "error") return <div role="alert">{s.error} <button onClick={s.retry}>Retry</button> <button onClick={s.signOut}>Sign out</button></div>;
+  return <p role="status">Opening your vault... ({s.step})</p>;
+}
+```
+
+- `vault` is the person's own app vault (`ListedVault`); `actor` is their own address (their landing vault's id, else the app vault's); `vaults` is every vault they reach; `principal` is who signed in. They are set only when `stage` is `"ready"`.
+- Pass stable `credential`, `app` and `vaultConfig` (module constants): a new one restarts the start-up.
+- `error` is a sentence in plain words (the platform's own words when it sent them). `retry()` works only from `"error"`; it never makes a second vault, because a half-made vault is finished, not repeated (`createAppVaultService`).
+- `signOut()` drops the key and the stored sign-in and goes to `"signin"`.
+- `vaultShortName(vault)` is a header name for a vault; `sentenceOfStartError(err)` is the sentence the hook uses. Both are in `./core` too.
+- Not React? `createLiveStart(options)` (in `./core`) is the same machine: `getState()`, `subscribe()`, `start()`, `signedIn()`, `retry()`, `signOut()`, `dispose()`.
 
 ## Take
 
@@ -241,6 +270,10 @@ Errors are thrown unchanged. The pending name is cleared ONLY when (a) the creat
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.10
+
+Patch release, additive only. New `src/liveStart.ts` (`createLiveStart`, `vaultShortName`, `sentenceOfStartError`, also in `./core`) and `src/useLiveStart.ts` (`useLiveStart`, React): the whole live-app start-up on top of `createAppVaultService`. See "Start-up in 15 lines". New dev dependencies for the hook's test only (`@testing-library/react`, `react-dom`, `jsdom`).
 
 ## Changes in 0.2.9
 

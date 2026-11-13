@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-signin",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "private": true,
   "type": "module",
   "description": "GilbPlatformCode sign-in unit. Email one-time-code card, DPoP proofs, the session credential an app holds after sign-in, and a machine agent's sign-in. Host injects app / origin / auth / returnTo. No vault host baked. No captive vault store.",
@@ -28,9 +28,13 @@
     }
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.1",
     "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "typescript": "^5.9.2",
     "vitest": "^2.1.9"
   }
