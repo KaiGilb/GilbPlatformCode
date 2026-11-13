@@ -138,7 +138,7 @@ describe("POST /v1/workspace/choose", () => {
     const ws = mk("Work");
     let called = false;
     const secret = await start({ workspace: ws, chooseFolder: async () => { called = true; return null; } });
-    const running = turn(secret, { mode: "code", prompt: "WAITFOREVER" });
+    const running = turn(secret, { mode: "code", prompt: "WAITFOREVER" }).catch(() => {}); // closing the bridge ends this stream with a socket error
     for (let i = 0; i < 100 && runs().length === 0; i++) await new Promise((r) => setTimeout(r, 50));
     const r = await call(secret, "/v1/workspace/choose");
     expect(r).toEqual({ status: 409, json: { error: "A code turn is running. Wait for it to finish." } });
@@ -147,7 +147,7 @@ describe("POST /v1/workspace/choose", () => {
     expect(c.status).toBe(409);
     bridge.server.closeAllConnections?.();
     await bridge.close();
-    await running.catch(() => {});
+    await running;
   });
 
   it("Linux without zenity: 501 with the --workspace sentence", async () => {
