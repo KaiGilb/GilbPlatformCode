@@ -50,6 +50,9 @@ export interface ClaudeCodeTurn {
   payer?: string;
 }
 
+/** What a code turn on this bridge may do: "full" (files and commands in a sandbox) or "files-only" (native Windows: no commands). */
+export type CodeMode = "full" | "files-only";
+
 export interface ClaudeCodeReply {
   role: "assistant";
   content: string;
@@ -57,6 +60,8 @@ export interface ClaudeCodeReply {
   payer: "person-claude-code";
   /** True when the turn ended because its tool rounds were used up. Absent otherwise. The page sends {@link BUDGET_SPENT_CONTINUE} to go on. */
   budgetSpent?: boolean;
+  /** Code mode only: "files-only" when the turn could not run commands (Windows). Absent for a full code turn and for chat. */
+  codeMode?: "files-only";
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -217,9 +222,18 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null }>;
   /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
   workspaceInfo(): Promise<{ name: string; path: string } | null>;
+  /**
+   * Opens the system's own folder dialog ON THE COMPUTER THE BRIDGE RUNS ON and waits for the person (up to 5 minutes), then keeps the
+   * chosen folder as the code folder. `suggest` (default "MyJackfruitCode") is only a name the page may offer to make with createWorkspace.
+   * Cancel -> { chosen: false }. A refusal (a folder that is not fit, a code turn running, no dialog on this computer) throws a ClaudeCodeBridgeError
+   * carrying the bridge's own sentence. Needs the pairing.
+   */
+  chooseWorkspace(suggest?: string): Promise<{ chosen: false } | { chosen: true; name: string; path: string }>;
+  /** Makes ~/<name> on the bridge's computer (no dialog), and keeps it as the code folder. A folder that already has files -> 409 with the bridge's sentence. */
+  createWorkspace(name: string): Promise<{ name: string; path: string }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
   pair(code: string): Promise<ClaudeCodeReadback>;
   /** Trades the code for a secret and returns it WITHOUT keeping it (for an app that stores it itself). */
@@ -270,6 +284,7 @@ interface BridgeTurnOut {
   model: string;
   sessionId: string | undefined;
   budgetSpent?: boolean;
+  codeMode?: "files-only";
 }
 
 /** The bridge events only a code turn sends. */
@@ -421,6 +436,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   const bridgeOrigin = new URL(bridgeUrl).origin;
   const RELAY_ALLOWED_HEADERS = ["content-type", "x-bridge-secret", "accept"];
   const RELAY_HEAD_TIMEOUT_MS = 15000;
+  /** The folder dialog may stay open 5 minutes on the bridge's side; the relay waits a little longer. */
+  const CHOOSE_HEAD_TIMEOUT_MS = 5 * 60 * 1000 + 30000;
   const RELAY_READY_TIMEOUT_MS = 10000;
   const RELAY_POLL_MS = 1000;
   const RELAY_CLOSED = "The Claude Code bridge window was closed. Open it again to go on.";
@@ -507,7 +524,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   }
 
   /** One request through the relay window. Resolves at the head with a Response whose body is fed by the window's messages. */
-  function relayRequest(path: string, init: RequestInit): Promise<Response> {
+  function relayRequest(path: string, init: RequestInit, headTimeoutMs: number = RELAY_HEAD_TIMEOUT_MS): Promise<Response> {
     const signal = init.signal ?? undefined;
     if (signal?.aborted) return Promise.reject(new DOMException("aborted", "AbortError"));
     const headers: Record<string, string> = {};
@@ -546,7 +563,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       const headTimer = setTimeout(() => {
         abortRemote();
         fail(new ClaudeCodeBridgeError(0, notRunning()));
-      }, RELAY_HEAD_TIMEOUT_MS);
+      }, headTimeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       const stream = new ReadableStream<Uint8Array>({
         start(c) {
@@ -608,14 +625,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
    * THE one way to reach the bridge. The relay window open: the request goes through it, never also direct. Otherwise it is a
    * direct fetch. `keepalive` has no meaning through the relay (the window sends it), so it is dropped there.
    */
-  function bridgeRequest(path: string, init: RequestInit): Promise<Response> {
-    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init);
+  function bridgeRequest(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
+    if (relayStateNow === "open" && relayWindow !== null) return relayRequest(path, init, headTimeoutMs);
     return fetch(`${bridgeUrl}${path}`, init);
   }
 
-  async function bridgeFetch(path: string, init: RequestInit): Promise<Response> {
+  async function bridgeFetch(path: string, init: RequestInit, headTimeoutMs?: number): Promise<Response> {
     try {
-      return await bridgeRequest(path, init);
+      return await bridgeRequest(path, init, headTimeoutMs);
     } catch (e) {
       if (init.signal?.aborted) throw new ClaudeCodeBridgeError(499, DISCONNECTED);
       if (e instanceof ClaudeCodeBridgeError) throw e;
@@ -822,6 +839,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 content,
                 model: typeof data.model === "string" ? data.model : "",
                 sessionId: typeof data.sessionId === "string" ? data.sessionId : undefined,
+                ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
               };
             }
           } else if (ev.event === "error") {
@@ -999,6 +1017,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       model: out.model,
       payer: "person-claude-code",
       ...(out.budgetSpent ? { budgetSpent: true } : {}),
+      ...(out.codeMode ? { codeMode: out.codeMode } : {}),
     };
   }
 
@@ -1020,17 +1039,18 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     async bridgeInfo() {
       try {
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
-        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown };
+        if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown };
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,
           // An older bridge sends neither.
           codeTurns: body.codeTurns === true,
           workspace: body.workspace === true,
+          codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
         };
       } catch {
-        return { reachable: false, build: null, codeTurns: false, workspace: false };
+        return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null };
       }
     },
 
@@ -1047,6 +1067,36 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       if (!res.ok) throw new ClaudeCodeBridgeError(res.status, "The bridge could not tell its code folder.");
       const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown } | null;
       return body && typeof body.name === "string" && typeof body.path === "string" ? { name: body.name, path: body.path } : null;
+    },
+
+    async chooseWorkspace(suggest) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      // The bridge answers only when the person closes its dialog (up to 5 minutes); a direct fetch has no timeout of its own, and the relay's wait is longer here.
+      const res = await bridgeFetch(
+        "/v1/workspace/choose",
+        { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify(suggest === undefined ? {} : { suggest }) },
+        CHOOSE_HEAD_TIMEOUT_MS,
+      );
+      const body = (await res.json().catch(() => null)) as { chosen?: unknown; name?: unknown; path?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not open the folder dialog.");
+      if (body?.chosen === false) return { chosen: false };
+      if (body?.chosen === true && typeof body.name === "string" && typeof body.path === "string") return { chosen: true, name: body.name, path: body.path };
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+    },
+
+    async createWorkspace(name) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/workspace/create", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bridge-secret": conn.secret },
+        body: JSON.stringify({ name }),
+      });
+      const body = (await res.json().catch(() => null)) as { name?: unknown; path?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not make that folder.");
+      if (body && typeof body.name === "string" && typeof body.path === "string") return { name: body.name, path: body.path };
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
     },
 
     async requestSecret(code) {

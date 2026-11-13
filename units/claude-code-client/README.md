@@ -84,6 +84,10 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 
 - `bridgeInfo()` also returns `codeTurns` and `workspace`. Both are false when the bridge's hello does not say (an older bridge).
 - `workspaceInfo()` returns `{ name, path }` of the bridge's code folder, or null when it has none (a 404), or when you are not connected. It needs the pairing and goes through the relay when that is open.
+- `bridgeInfo()` also returns `codeMode`: `"full"`, `"files-only"` (native Windows: the code turn can read and write files but not run commands) or `null` (no folder, or an older bridge).
+- `chooseWorkspace(suggest?)` opens the system's own folder dialog on the computer the bridge runs on and waits for the person (the bridge allows up to 5 minutes; through the relay this client waits 5 minutes 30 seconds, a direct fetch has no timer). It returns `{ chosen: false }` when the person cancels, or `{ chosen: true, name, path }`; the bridge keeps the folder. `suggest` (default `MyJackfruitCode`) is only a name for a later `createWorkspace`. A refusal (409 a code turn is running, 422 the folder is not fit, 501 no dialog on this computer) throws a `ClaudeCodeBridgeError` with the bridge's own sentence.
+- `createWorkspace(name)` makes `~/<name>` on the bridge's computer without a dialog and keeps it as the code folder: `{ name, path }`. 409 when the folder already has files, 400 for a bad name.
+- The reply of a files-only code turn has `codeMode: "files-only"`; other replies leave it out. Show it plainly: this turn could not run commands.
 - `sendTurn` takes `mode: "code"` (default `"chat"`) and `approval`: `"session"` (default; the person approved once) or `"each-write"` (the bridge asks before each write and each command). A hand-off's nested turn is always a chat turn and never carries either.
 - `onApproval(req)` is called with `{ id, tool, summary }` when the bridge asks. Resolve true to allow. With no `onApproval`, or one that throws or rejects, the answer is no. The turn keeps reading while the person decides.
 - New events for `onEvent`, code turns only. A malformed one is dropped:

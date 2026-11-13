@@ -111,6 +111,33 @@ describe("routing", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("chooseWorkspace goes through the open relay and still waits after 4 minutes (the dialog is open)", async () => {
+    const client = await openedClient();
+    client.save("s3cret");
+    fakeTimers();
+    const p = client.chooseWorkspace("MyJackfruitCode");
+    await waitReq();
+    const req = lastReq();
+    expect(req.path).toBe("/v1/workspace/choose");
+    expect(req.headers["x-bridge-secret"]).toBe("s3cret");
+    expect(JSON.parse(req.body!)).toEqual({ suggest: "MyJackfruitCode" });
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+    deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
+    deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"chosen":true,"name":"MyCode","path":"/p/MyCode"}' }, win);
+    expect(await p).toEqual({ chosen: true, name: "MyCode", path: "/p/MyCode" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("chooseWorkspace through the relay gives up only after 5 minutes 30 seconds", async () => {
+    const client = await openedClient();
+    client.save("s3cret");
+    fakeTimers();
+    const p = client.chooseWorkspace().catch((e) => e);
+    await waitReq();
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 31000);
+    expect(((await p) as ClaudeCodeBridgeError).status).toBe(0);
+  });
+
   it("workspaceInfo goes through the open relay, with the secret", async () => {
     const client = await openedClient();
     client.save("s3cret");
@@ -134,7 +161,7 @@ describe("routing", () => {
     expect(req.path).toBe("/v1/hello");
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"bridge":"gilb-claude-code-bridge","build":"0.1.7"}' }, win);
-    expect(await p).toEqual({ reachable: true, build: "0.1.7", codeTurns: false, workspace: false });
+    expect(await p).toEqual({ reachable: true, build: "0.1.7", codeTurns: false, workspace: false, codeMode: null });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -203,7 +230,7 @@ describe("a streamed answer", () => {
     const req = lastReq();
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-err", id: req.id, message: "network error" }, win);
-    expect(await p).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false }); // the body could not be read: not reachable
+    expect(await p).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null }); // the body could not be read: not reachable
   });
 
   it("an abort before the head posts gilb-bridge-abort and rejects as an aborted fetch (499)", async () => {

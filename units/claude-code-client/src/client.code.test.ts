@@ -44,12 +44,12 @@ const turnBody = (calls: { url: string; init: RequestInit }[]) => JSON.parse(Str
 
 describe("bridgeInfo", () => {
   it("reports codeTurns and workspace, false when hello omits them (an older bridge)", async () => {
-    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.2.0", codeTurns: true, workspace: true }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.2.0", codeTurns: true, workspace: true });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only" }));
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.2.0", codeTurns: true, workspace: true, codeMode: "files-only" });
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.1.9" }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.9", codeTurns: false, workspace: false });
-    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", codeTurns: "yes", workspace: 1 }));
-    expect(await client.bridgeInfo()).toMatchObject({ codeTurns: false, workspace: false });
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.9", codeTurns: false, workspace: false, codeMode: null });
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", codeTurns: "yes", workspace: 1, codeMode: "weird" }));
+    expect(await client.bridgeInfo()).toMatchObject({ codeTurns: false, workspace: false, codeMode: null });
   });
 });
 
@@ -217,5 +217,71 @@ describe("the stored session", () => {
     fetchMock.mockResolvedValue(json(200, { ok: true }));
     client.disconnect();
     expect(localStorage.getItem(`gilb.claude-code-session.${PRINCIPAL}.mode-code/T`)).toBeNull();
+  });
+});
+
+describe("chooseWorkspace and createWorkspace", () => {
+  it("chooseWorkspace posts the suggestion with the secret and returns the chosen folder", async () => {
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { chosen: true, name: "MyJackfruitCode", path: "/Users/p/MyJackfruitCode" }));
+    expect(await client.chooseWorkspace("MyJackfruitCode")).toEqual({ chosen: true, name: "MyJackfruitCode", path: "/Users/p/MyJackfruitCode" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BRIDGE}/v1/workspace/choose`);
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["x-bridge-secret"]).toBe("s3cret");
+    expect(JSON.parse(String(init.body))).toEqual({ suggest: "MyJackfruitCode" });
+    // no abort signal and no timer on the direct fetch: the dialog may stay open for 5 minutes
+    expect(init.signal).toBeUndefined();
+  });
+  it("sends no suggest when none is given; cancel is { chosen: false }", async () => {
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { chosen: false }));
+    expect(await client.chooseWorkspace()).toEqual({ chosen: false });
+    expect(JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({});
+  });
+  it("throws the bridge's own sentence on 409, 422 and 501", async () => {
+    client.save("s3cret");
+    for (const [status, error] of [[409, "A code turn is running. Wait for it to finish."], [422, "The code folder cannot be your home folder."], [501, "No folder dialog on this computer. Start the bridge with --workspace <folder>."]] as const) {
+      fetchMock.mockResolvedValueOnce(json(status, { error }));
+      await expect(client.chooseWorkspace()).rejects.toMatchObject({ name: "ClaudeCodeBridgeError", status, message: error });
+    }
+  });
+  it("throws when not connected, and on an answer of an unknown shape", async () => {
+    await expect(client.chooseWorkspace()).rejects.toMatchObject({ status: 401 });
+    await expect(client.createWorkspace("X")).rejects.toMatchObject({ status: 401 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { nonsense: true }));
+    await expect(client.chooseWorkspace()).rejects.toMatchObject({ status: 502 });
+  });
+  it("createWorkspace posts the name and returns { name, path }; 409 and 400 carry the bridge's sentence", async () => {
+    client.save("s3cret");
+    fetchMock.mockResolvedValueOnce(json(200, { name: "MyJackfruitCode", path: "/Users/p/MyJackfruitCode" }));
+    expect(await client.createWorkspace("MyJackfruitCode")).toEqual({ name: "MyJackfruitCode", path: "/Users/p/MyJackfruitCode" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(`${BRIDGE}/v1/workspace/create`);
+    expect(JSON.parse(String(init.body))).toEqual({ name: "MyJackfruitCode" });
+    const full = "The folder ~/MyJackfruitCode already has files. Choose it with the folder dialog instead.";
+    fetchMock.mockResolvedValueOnce(json(409, { error: full }));
+    await expect(client.createWorkspace("MyJackfruitCode")).rejects.toMatchObject({ status: 409, message: full });
+    fetchMock.mockResolvedValueOnce(json(400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." }));
+    await expect(client.createWorkspace("../x")).rejects.toMatchObject({ status: 400 });
+  });
+  it("an unreachable bridge is the usual 'not reachable' error", async () => {
+    client.save("s3cret");
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(client.chooseWorkspace()).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+describe("codeMode on the reply", () => {
+  it("a files-only message passes codeMode through; a full code turn and a chat turn leave it out", async () => {
+    client.save("s3cret");
+    fakeBridge([["message", { role: "assistant", content: "done", model: "m", sessionId: SESSION, mode: "code", codeMode: "files-only" }]]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "T", mode: "code" })).toMatchObject({ content: "done", codeMode: "files-only" });
+    fakeBridge([ANSWER]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "T2", mode: "code" })).not.toHaveProperty("codeMode");
+    fakeBridge([["message", { role: "assistant", content: "x", model: "m", codeMode: "bogus" }]]);
+    expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "T3" })).not.toHaveProperty("codeMode");
   });
 });
