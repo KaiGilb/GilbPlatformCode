@@ -573,6 +573,9 @@ const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries.";
 const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
+/** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
+const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
+const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 
@@ -838,6 +841,8 @@ export interface BridgeOptions {
   platformOpts?: PlatformOpts | undefined;
   /** The one folder a code turn may work in (already checked by validateWorkspace). Unset: no code mode. */
   workspace?: string | undefined;
+  /** TEST-ONLY, undocumented: called in a code turn between the folder snapshot and the folder check (tests swap the folder here). */
+  afterSnapshot?: (() => void) | undefined;
   /** TEST-ONLY, undocumented: the platform the code mode is chosen for (files-only on "win32"), when the real one cannot be pretended (the stand-in claude cannot start under a pretend-Windows launch). */
   codePlatform?: string | undefined;
   /** Where the chosen code folder is kept between runs (workspace.json). Unset: memory only. */
@@ -883,7 +888,16 @@ export function createBridge(opts: BridgeOptions = {}) {
   const home = opts.home ?? opts.platformOpts?.home ?? os.homedir();
   const codePlatform = opts.codePlatform ?? platform;
   const filesOnly = codePlatform === "win32";
-  let workspace: { path: string; name: string } | null = null;
+  /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
+  const idOf = (p: string): string => {
+    try {
+      const st = fs.lstatSync(p, { bigint: true });
+      return st.isDirectory() ? `${st.dev}:${st.ino}` : "";
+    } catch {
+      return "";
+    }
+  };
+  let workspace: { path: string; name: string; id: string } | null = null;
   /** The folder as it was given (a symlink may differ from its real path): tool summaries accept both. */
   let workspaceGiven: string | null = null;
   const workspaceRoots = () => (workspace ? [workspace.path, workspaceGiven ?? workspace.path] : []);
@@ -922,6 +936,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     try {
       const now = fs.realpathSync(workspace.path);
       if (now !== workspace.path) why = `its real path is now ${now}`;
+      else if (workspace.id === "" || idOf(now) !== workspace.id) why = "it is no longer the same folder (device and inode differ)";
       else {
         const v = checkFolder(now);
         if (v.ok) ok = true;
@@ -944,7 +959,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     } catch {
       /* main() checked it; keep what was given */
     }
-    workspace = { path: real, name: path.basename(real) };
+    workspace = { path: real, name: path.basename(real), id: idOf(real) };
     workspaceGiven = opts.workspace;
     saveWorkspace(real); // --workspace wins and is kept
   } else if (opts.workspaceFile && fs.existsSync(opts.workspaceFile)) {
@@ -953,7 +968,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (stored && stored.version === 1 && typeof stored.path === "string") {
         const v = checkFolder(stored.path);
         if (v.ok) {
-          workspace = { path: v.path, name: v.name };
+          workspace = { path: v.path, name: v.name, id: idOf(v.path) };
           workspaceGiven = v.path;
         } else log(`the stored code folder is not used: ${v.reason}`);
       } else log("the stored code folder file is not in a known shape; it is ignored");
@@ -1210,47 +1225,42 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /**
-   * Does this path, resolved against the folder, land inside it? Every existing part of the path below the folder is looked at
-   * with lstat: a symlink whose target cannot be resolved (dangling) counts as outside. The nearest existing parent is then resolved through symlinks.
+   * Does this path land inside the folder? It is resolved the way the OS does: segment by segment from the folder (or from the root for an
+   * absolute path), and every existing segment is resolved through symlinks before the next one is applied, so `link/..` is the parent of the
+   * link's target. A symlink that cannot be resolved (dangling) anywhere on the way counts as outside. A path that starts with `~` is a
+   * home-relative path (Claude Code expands it) and is outside; so is one that starts with `$` (a variable no tool expands, but never a path to trust).
    */
   function insideWorkspace(p: string): boolean {
-    if (!workspace || !p || p.includes("\0")) return false;
-    const full0 = path.resolve(workspace.path, p);
-    const lex = path.relative(workspace.path, full0);
-    if (lex !== "" && lex !== ".." && !lex.startsWith(`..${path.sep}`) && !path.isAbsolute(lex)) {
-      let walk = workspace.path;
-      for (const seg of lex.split(path.sep)) {
-        walk = path.join(walk, seg);
-        let st: fs.Stats;
-        try {
-          st = fs.lstatSync(walk);
-        } catch {
-          break; // nothing here yet: nothing further down exists either
-        }
-        if (st.isSymbolicLink()) {
-          try {
-            fs.realpathSync(walk);
-          } catch {
-            return false; // a link to nowhere: it may be made to point anywhere
-          }
-        }
+    if (!workspace || typeof p !== "string" || !p || p.includes("\0") || p.startsWith("~") || p.startsWith("$")) return false;
+    let cur = path.isAbsolute(p) ? path.parse(p).root : workspace.path;
+    let exists = true;
+    for (const seg of p.split(/[\\/]+/)) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") {
+        cur = path.dirname(cur);
+        continue;
       }
-    }
-    let cur = full0;
-    const tail: string[] = [];
-    for (;;) {
+      cur = path.join(cur, seg);
+      if (!exists) continue; // below something that is not there yet: nothing further down exists either
+      let st: fs.Stats;
       try {
-        cur = fs.realpathSync(cur);
-        break;
-      } catch {
-        const up = path.dirname(cur);
-        if (up === cur) return false;
-        tail.unshift(path.basename(cur));
-        cur = up;
+        st = fs.lstatSync(cur);
+      } catch (e) {
+        if ((e as ErrLike).code === "ENOENT") {
+          exists = false;
+          continue;
+        }
+        return false;
+      }
+      if (st.isSymbolicLink()) {
+        try {
+          cur = fs.realpathSync(cur);
+        } catch {
+          return false; // a link to nowhere
+        }
       }
     }
-    const full = path.join(cur, ...tail);
-    const rel = path.relative(workspace.path, full);
+    const rel = path.relative(workspace.path, cur);
     return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
   }
 
@@ -1287,15 +1297,13 @@ export function createBridge(opts: BridgeOptions = {}) {
       return { behavior: "allow", updatedInput: input };
     }
     if (tool === "Glob" || tool === "Grep") {
-      // No path means the folder itself. A Glob pattern that is itself a path (absolute, ~, or climbing out) is checked up to its first wildcard.
-      const base = str(input.path) || (workspace ? workspace.path : "");
-      if (!insideWorkspace(base)) return deny("Outside the code folder.");
-      if (tool === "Glob") {
-        const pat = str(input.pattern);
-        const prefix = pat.split(/[*?[{]/)[0] ?? "";
-        if (pat.startsWith("~") || path.isAbsolute(pat) || /(^|[\\/])\.\.([\\/]|$)/.test(pat)) {
-          if (pat.startsWith("~") || !insideWorkspace(path.resolve(base, prefix || "."))) return deny("Outside the code folder.");
-        }
+      // `path`: absent means the folder itself; present it must be a non-empty string inside the folder (no "~", no non-string).
+      if (input.path !== undefined && (typeof input.path !== "string" || input.path === "")) return deny("Outside the code folder.");
+      if (!insideWorkspace(str(input.path) || (workspace ? workspace.path : ""))) return deny("Outside the code folder.");
+      // A glob (Glob's pattern, Grep's glob filter) may use only plain characters, no climbing out and no absolute start.
+      const glob = tool === "Glob" ? input.pattern : input.glob;
+      if (tool === "Glob" || glob !== undefined) {
+        if (typeof glob !== "string" || !SAFE_GLOB.test(glob) || glob.split("/").includes("..") || glob.startsWith("/") || glob.startsWith("\\")) return deny("Outside the code folder.");
       }
       return { behavior: "allow", updatedInput: input };
     }
@@ -1496,6 +1504,8 @@ export function createBridge(opts: BridgeOptions = {}) {
   function runClaude(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
     return new Promise((resolve) => {
       if (!launch.ok) return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
+      // The last look at the folder before the child starts there.
+      if (turn.code && !folderStillGood()) return resolve({ error: CODE_FOLDER_CHANGED, sessionId: mode.sessionId, model: "" });
       let child: ChildProcess;
       try {
         child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
@@ -1605,7 +1615,6 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (isCode) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
       if (!workspace) return json(res, 409, { error: NO_WORKSPACE });
-      if (!folderStillGood()) return json(res, 409, { error: "The code folder changed on disk. Choose it again." });
       if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
       if ([...turns.values()].some((t) => t.code)) return json(res, 429, { error: `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
     }
@@ -1642,6 +1651,13 @@ export function createBridge(opts: BridgeOptions = {}) {
       : typeof body.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,79}$/.test(body.model) ? body.model : "";
     const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
 
+    // Code turn: the snapshot of the folder comes first (it can take a while on a big folder), and the folder is checked again
+    // immediately before the spawn, so a swap during the snapshot is seen. The child's cwd is the checked real path.
+    const before = isCode && workspace ? snapshotFolder(workspace.path) : null;
+    if (isCode) {
+      opts.afterSnapshot?.();
+      if (!folderStillGood()) return json(res, 409, { error: CODE_FOLDER_CHANGED });
+    }
     const turn: Turn = {
       id: crypto.randomBytes(8).toString("hex"),
       mcpToken: crypto.randomBytes(24).toString("hex"),
@@ -1715,7 +1731,6 @@ export function createBridge(opts: BridgeOptions = {}) {
       finish();
     });
 
-    const before = isCode && workspace ? snapshotFolder(workspace.path) : null;
     const sendFilesChanged = () => {
       if (before && workspace) turn.send("files_changed", diffSnapshots(before, snapshotFolder(workspace.path)));
     };
@@ -1759,7 +1774,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   let dialogOpen = false;
   const codeTurnRunning = () => [...turns.values()].some((t) => t.code);
   const switchTo = (v: { path: string; name: string }) => {
-    workspace = { path: v.path, name: v.name };
+    workspace = { path: v.path, name: v.name, id: idOf(v.path) };
     workspaceGiven = v.path;
     saveWorkspace(v.path);
   };
