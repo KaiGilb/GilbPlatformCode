@@ -378,6 +378,16 @@ describe("access (0.3.0)", () => {
     expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcde1"]);
   });
 
+  it("an approval_request whose tool is not a plain name (line break, tab, space, empty, over 128) is dropped; plain names are kept", async () => {
+    client.save("s3cret");
+    const seen: unknown[] = [];
+    const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
+    const mk = (n: number, tool: string): [string, unknown] => ["approval_request", { id: `0123456789abcd${String(n).padStart(2, "0")}`, tool, summary: "s" }];
+    fakeBridge([mk(10, "mcp__a\nFROM THE BRIDGE"), mk(11, "mcp__a\tb"), mk(12, "a b"), mk(13, ""), mk(14, "x".repeat(129)), mk(15, "mcp__git__push"), mk(16, "x".repeat(128)), ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A6", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
+    expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcd15", "0123456789abcd16"]);
+  });
+
   it("notice is passed through on the event and to onApproval, apart from detail; a non-string notice is ignored; a notice over 400 drops the event", async () => {
     client.save("s3cret");
     const seen: unknown[] = [];

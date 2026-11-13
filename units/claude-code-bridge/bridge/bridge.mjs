@@ -1365,16 +1365,47 @@ export function createBridge(opts = {}) {
     /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys at the TOP level (the only ones pathNote covers), which keep their characters. Nested path keys are escaped like any other string. */
     const escapeInput = (v, top = false) => {
         if (typeof v === "string")
-            return escapeNonAscii(v.normalize("NFC"));
+            return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
         if (Array.isArray(v))
             return v.map((x) => escapeInput(x));
         if (v && typeof v === "object") {
-            const o = {};
+            // No prototype: an own "__proto__" key is a plain key here, so JSON.stringify shows it.
+            const o = Object.create(null);
             for (const [k, x] of Object.entries(v))
                 o[escapeNonAscii(k)] = top && PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
             return o;
         }
         return v;
+    };
+    const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
+    const BAD_TOOL_MSG = "The tool name is not valid.";
+    const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+    const RESERVED_MSG = "The request holds a reserved key (__proto__, constructor or prototype); ask for it without that.";
+    const LOOKALIKE_MSG = "Two fields in the request look the same; ask for it without that.";
+    /** A message when the input holds a reserved key at any depth, or two keys of one object that show as the same text; "" when fine. Iterative, so depth cannot overflow the stack. */
+    const inputKeyProblem = (root) => {
+        const stack = [root];
+        let dup = "";
+        while (stack.length > 0) {
+            const v = stack.pop();
+            if (Array.isArray(v)) {
+                for (const x of v)
+                    stack.push(x);
+            }
+            else if (v && typeof v === "object") {
+                const seen = new Set();
+                for (const [k, x] of Object.entries(v)) {
+                    if (RESERVED_KEYS.has(k))
+                        return RESERVED_MSG;
+                    const e = escapeNonAscii(k);
+                    if (seen.has(e))
+                        dup = LOOKALIKE_MSG;
+                    seen.add(e);
+                    stack.push(x);
+                }
+            }
+        }
+        return dup;
     };
     const pathNote = (tool, input) => (!NOT_PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string")) : "");
     const ONLY_HTTP_MSG = "Only http and https addresses can be fetched.";
@@ -1392,6 +1423,11 @@ export function createBridge(opts = {}) {
         const deny = (message) => ({ behavior: "deny", message });
         const str = (v) => (typeof v === "string" ? v : "");
         const scope = turn.proj?.path ?? workspace?.path ?? "";
+        if (!TOOL_NAME_OK.test(tool))
+            return deny(BAD_TOOL_MSG);
+        const keyProblem = inputKeyProblem(input);
+        if (keyProblem)
+            return deny(keyProblem);
         if (computer) {
             // Computer mode: every request is asked of the person, no automatic allow or deny by path.
             let summary;
@@ -1431,7 +1467,7 @@ export function createBridge(opts = {}) {
                     return deny(HIDDEN_MSG);
                 summary = showCommand(t) || tool;
                 if (tool === "WebFetch") {
-                    let host = "(not a valid address)";
+                    let host;
                     try {
                         const u = new URL(t);
                         if ((u.protocol !== "http:" && u.protocol !== "https:") || !u.hostname)
@@ -1441,7 +1477,7 @@ export function createBridge(opts = {}) {
                         host = u.hostname;
                     }
                     catch {
-                        /* shown as not valid */
+                        return deny(ONLY_HTTP_MSG); // does not parse: nothing to ask about
                     }
                     const line = `Host: ${host}`;
                     if (line.length > HOST_LINE_MAX)
