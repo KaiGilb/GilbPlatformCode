@@ -744,7 +744,7 @@ const GILB_AGENT: ToolSpec = {
 
 const GILB_TASK: ToolSpec = {
   name: "gilbplatform_task",
-  description: "Set the person's request. GilbPlatform loads the agent's standing from this text.",
+  description: "Set the person's request. GilbPlatform loads the agent's standing from this text. Call it with each new message from the person.",
   inputSchema: {
     type: "object",
     properties: {
@@ -3028,7 +3028,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       JSON.stringify({
         renewed: true,
         conceptPaused: true,
-        next: "Agent.Concept used its mint limit for this turn. Carry on with other work; Agent.Concept continues after the person's next message. Tell the person in your report.",
+        next: "Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.",
       }),
       true,
     );

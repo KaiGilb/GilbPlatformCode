@@ -249,7 +249,7 @@ describe("the Agent.Concept brake survives renewal", () => {
     const paused = JSON.parse(text(await concept(box)));
     expect(paused.conceptPaused).toBe(true);
     expect(paused.renewed).toBe(true);
-    expect(paused.next).toContain("continues after the person's next message");
+    expect(paused.next).toBe("Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.");
     expect(posts(platform)).toHaveLength(2);
     expect(JSON.parse(text(await callTool(box, "ask_agent_concept", { need: "x" }))).conceptPaused).toBe(true);
     expect(posts(platform)).toHaveLength(2);
