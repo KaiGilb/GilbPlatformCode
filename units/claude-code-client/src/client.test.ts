@@ -74,13 +74,13 @@ describe("probe and pair", () => {
 
   it("bridgeInfo reports the build when hello has one, and null when it does not", async () => {
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: "0.1.5" }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.5", codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: "0.1.5", codeTurns: false, workspace: false, codeMode: null, access: null });
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge" }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null, codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null, codeTurns: false, workspace: false, codeMode: null, access: null });
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", build: 15 }));
-    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null, codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toEqual({ reachable: true, build: null, codeTurns: false, workspace: false, codeMode: null, access: null });
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    expect(await client.bridgeInfo()).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null });
+    expect(await client.bridgeInfo()).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(`${CLAUDE_CODE_BRIDGE_URL}/v1/hello`);
     expect(init.method).toBe("GET");

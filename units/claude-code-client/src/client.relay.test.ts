@@ -161,7 +161,7 @@ describe("routing", () => {
     expect(req.path).toBe("/v1/hello");
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-res", id: req.id, status: 200, headers: {}, body: '{"bridge":"gilb-claude-code-bridge","build":"0.1.7"}' }, win);
-    expect(await p).toEqual({ reachable: true, build: "0.1.7", codeTurns: false, workspace: false, codeMode: null });
+    expect(await p).toEqual({ reachable: true, build: "0.1.7", codeTurns: false, workspace: false, codeMode: null, access: null });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -230,7 +230,7 @@ describe("a streamed answer", () => {
     const req = lastReq();
     deliver({ type: "gilb-bridge-head", id: req.id, status: 200, contentType: "application/json" }, win);
     deliver({ type: "gilb-bridge-err", id: req.id, message: "network error" }, win);
-    expect(await p).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null }); // the body could not be read: not reachable
+    expect(await p).toEqual({ reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null }); // the body could not be read: not reachable
   });
 
   it("an abort before the head posts gilb-bridge-abort and rejects as an aborted fetch (499)", async () => {
