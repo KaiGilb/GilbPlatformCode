@@ -205,12 +205,12 @@ describe("the nested connector's clock", () => {
     expect(clockItems(bad)).toHaveLength(0);
   }, 20000);
 
-  it("says to finish now when 3 minutes or fewer are left, and counts down to 0", async () => {
+  it("says to stop at a step boundary when 3 minutes or fewer are left, and counts down to 0", async () => {
     const box = await hopConnector({ hopDeadline: Date.now() + 2 * MIN });
     const res = await call(box);
-    expect(res.result.content.at(-1).text).toBe("Hand-off clock: 2 minutes left. Finish now: stop starting new writes and answer with what you did and what remains.");
+    expect(res.result.content.at(-1).text).toBe("Hand-off clock: 2 minutes left. Stop at the next step boundary and answer with which steps are done and which are not. Never skip a check or a read-back to finish sooner.");
     const late = await hopConnector({ hopDeadline: Date.now() - 1000 });
-    expect((await call(late)).result.content.at(-1).text).toBe("Hand-off clock: 0 minutes left. Finish now: stop starting new writes and answer with what you did and what remains.");
+    expect((await call(late)).result.content.at(-1).text).toBe("Hand-off clock: 0 minutes left. Stop at the next step boundary and answer with which steps are done and which are not. Never skip a check or a read-back to finish sooner.");
     const edge = await hopConnector({ hopDeadline: Date.now() + 4 * MIN });
     expect((await call(edge)).result.content.at(-1).text).toBe("Hand-off clock: 0 of 4 minutes used, 4 left.");
   }, 20000);
@@ -236,13 +236,16 @@ describe("--hop-deadline", () => {
 });
 
 describe("the time-limit paragraph", () => {
-  it("keeps the old first sentence and adds the trust-only-the-clock sentences", async () => {
+  it("never invites a skipped check: the old skip words are gone, the do-every-step sentence is in, the clock sentences stay", async () => {
     const logFile = join(scratch(), "claude.log");
     const platform = await hopDoor("Jackfruit");
     const box = connect({ origin: platform.origin, env: meEnv({ FAKE_CLAUDE_LOG: logFile }) });
     expect((await box.request("tools/call", { name: "run_named_role", arguments: { role: "Jackfruit", task: "a" } })).result.isError).toBe(false);
     const prompt = readLog(logFile).find((row) => row.event === "run").prompt;
-    expect(prompt).toContain("Time limit: this hand-off is stopped after 15 minutes, and whatever is unfinished then is lost to the caller.");
+    expect(prompt).toContain("You have up to 15 minutes. Do every step your standard names, including its checks and read-backs. If you cannot finish in time, stop at a step boundary and say which steps are done and which are not; never skip a check to finish sooner.");
+    for (const gone of ["stopped after", "lost to the caller", "finish cleanly", "stop starting new writes", "shorten the work", "Do the reads your job requires first", "while the clock shows more than 3 minutes left"]) {
+      expect(prompt, gone).not.toContain(gone);
+    }
     expect(prompt).toContain("so the caller can hand over the rest. Every tool answer ends with a line \"Hand-off clock: …\"");
     expect(prompt).toContain("Trust only that clock.");
     expect(prompt.endsWith("never say the time limit stopped you unless the clock said so.")).toBe(true);
