@@ -131,7 +131,7 @@ Also: React 19; the peer `@kaigilb/gilbplatformcode-server-error`; the styleshee
 
 ## Changes in 0.1.1
 
-Additive: the entry `"./describe"` with `describeError` and `DESCRIBE_WORDS` (see "One sentence for any error"). The root entry, its exports and its peers are unchanged. 11 new tests (`src/describe.test.ts`) and 2 in `src/exports.test.ts`.
+Additive: the entry `"./describe"` with `describeError` and `DESCRIBE_WORDS` (see "One sentence for any error"). The root entry, its exports and its peers are unchanged. 10 new tests (`src/describe.test.ts`) and 2 in `src/exports.test.ts`.
 
 ## Where it came from
 
