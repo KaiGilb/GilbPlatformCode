@@ -68,10 +68,23 @@ describe("help, you, remembered names", () => {
     expect(screen.getByText("Principal key")).toBeTruthy();
   });
 
-  it("names a non-owner row You when its principal is you", async () => {
+  it("names a delegate's own row You, and the real owner row keeps its label", async () => {
     const api: ShareApi = { load: async () => viewOf([row(BEN, "Principal key", { owner: true })]), share: async () => {}, unshare: async () => {} };
     await ready(<VaultShareSheet vaultId={VAULT} you={BEN} onClose={() => {}} api={api} />);
-    expect(screen.getAllByText("You")).toHaveLength(2); // the owner row, and the row that is you
+    expect(screen.getAllByText("You")).toHaveLength(1);
+    expect(screen.getByText("Principal key")).toBeTruthy(); // the owner (ANN), not "You"
+  });
+
+  it("two people on one browser never see each other's typed names", async () => {
+    const store = memoryStore();
+    const { api } = platform();
+    const mine = await ready(<VaultShareSheet vaultId={VAULT} you={ANN} rememberNames={store} onClose={() => {}} api={api} />);
+    await share("ben");
+    await waitFor(() => expect(screen.getByText("ben")).toBeTruthy());
+    mine.unmount();
+    await ready(<VaultShareSheet vaultId={VAULT} you={BEN} rememberNames={store} onClose={() => {}} api={api} />);
+    expect(screen.queryByText("ben")).toBeNull();
+    expect(screen.getByText("You")).toBeTruthy(); // his own row; ANN's typed name is not his
   });
 
   it("shows the typed name after a reload (a new sheet, the same store), and not for a person the platform named", async () => {

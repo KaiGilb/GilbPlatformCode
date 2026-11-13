@@ -79,19 +79,19 @@ export function principalsOf(view: AccessView | null): string[] | null {
 }
 
 /**
- * The rows as the sheet shows them. With `you`: the owner row, and any row whose principal is `you`, read `words.you`.
+ * The rows as the sheet shows them. A row whose principal is exactly `you` (the unit compares principals with ===, as unshare does) reads `words.you`; the owner row is not special.
  * A row the platform left unnamed (`named: false`) shows the name remembered for it, else `words.unnamed` as its note.
  * A row the platform did name is never changed.
  */
 export function labelRows(view: AccessView, o: { you?: string | undefined; names: RememberedNames; words: ShareWords }): AccessView {
   if (!view.controlled) return view;
   const { you, names, words } = o;
-  const one = (r: AccessRow, isOwnerRow: boolean): AccessRow => {
-    if (you !== undefined && (isOwnerRow || r.principal === you)) return { ...r, label: words.you, note: null };
+  const one = (r: AccessRow): AccessRow => {
+    if (you !== undefined && r.principal === you) return { ...r, label: words.you, note: null };
     if (r.named) return r;
     const given = names[r.principal];
     if (given) return { ...r, label: given, note: words.remembered(given) };
     return { ...r, note: words.unnamed };
   };
-  return { controlled: true, owner: view.owner ? one(view.owner, true) : null, rows: view.rows.map((r) => one(r, false)) };
+  return { controlled: true, owner: view.owner ? one(view.owner) : null, rows: view.rows.map(one) };
 }

@@ -26,7 +26,7 @@ Two entries.
 ### Help, You, remembered names
 
 - `help` (a `ReactNode`): drawn as `<p className="vss-help">` directly under the title, inside the dialog. Nothing is drawn without it.
-- `you` (the signed-in principal): the owner row, and any row whose `principal` equals `you`, reads `words.you` ("You") with no note. Without `you` the owner reads as the platform named it.
+- `you` (the signed-in principal): only the row whose `principal` equals `you` (exact match, as `unshare` compares) reads `words.you` ("You") with no note. The owner row is not special: if `you` is not the owner, the owner keeps the platform's label. Without `you` nothing is changed.
 - `rememberNames` (a `KeyValueStore`: `get`, `set`, `remove`, the same shape as `vault-list`'s; `browserStore(prefix)` from `./remember-names` is `localStorage` under your prefix): when a share works, the name typed for the new person is kept per vault (and per `you`), found by comparing the list before and after the share. It is shown on later loads, in a new sheet too, for a person the platform sent no name for (`named: false`), with the note `words.remembered(name)`. Removing the person deletes it. A person the platform did name is never renamed. A store that throws is "nothing kept".
 - `words.unnamed` ("No name was given for this person."): the note under an unnamed person with no remembered name.
 
