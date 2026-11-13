@@ -1321,10 +1321,27 @@ export function createBridge(opts = {}) {
     const APPROVAL_PATH_MAX = 1000;
     /** Any character that could hide part of a question: C0/C1 controls (but not TAB, LF, CR), Unicode format characters (bidi, zero-width, soft hyphen, BOM ...) and blank fillers. */
     const HIDDEN_CHARS = /[\p{Cc}\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u180E]/u;
-    const hasHidden = (x) => HIDDEN_CHARS.test(x.replace(/[\t\n\r]/g, ""));
+    // Also: after NFC, a combining mark that stays (strike-through, stacked marks, ...) hides or alters what is read. Ordinary accented letters compose to one character and pass.
+    const hasHidden = (x) => HIDDEN_CHARS.test(x.replace(/[\t\n\r]/g, "")) || /\p{M}/u.test(x.normalize("NFC"));
     const HAS_BREAK = /[\n\r\u2028\u2029]/;
     const HIDDEN_MSG = "The request contains hidden or control characters, so it cannot be shown for approval; ask for it without them.";
     /** Text shown to the person: every line break (LF, CRLF, CR, U+2028, U+2029) is one " ⏎ " marker; runs of spaces, tabs and other space separators are one space. */
+    /** Commands, URLs and queries: every non-ASCII character is shown as <U+XXXX> (a typed ⏎ included, so it cannot fake a line break marker). U+2028 and U+2029 are left for showText, which marks them as line breaks. */
+    const escapeNonAscii = (x) => x.replace(/[^\x00-\x7F]/gu, (c) => { const cp = c.codePointAt(0); return cp === 0x2028 || cp === 0x2029 ? c : `<U+${cp.toString(16).toUpperCase().padStart(4, "0")}>`; });
+    const showCommand = (x) => showText(escapeNonAscii(x));
+    /** A URL as shown: escaped, and with its host as punycode when the shown text does not already hold that host. */
+    const showUrl = (u) => {
+        const t = showCommand(u);
+        try {
+            const h = new URL(u).hostname;
+            if (h && !t.includes(h))
+                return `${t} (host: ${h})`;
+        }
+        catch {
+            /* not a URL: shown as written */
+        }
+        return t;
+    };
     const showText = (x) => x.split(/\r\n|[\n\r\u2028\u2029]/).join(" ⏎ ").replace(/[ \t\p{Zs}]+/gu, " ").trim();
     const TOO_LONG_COMMAND = "The command is too long to show for approval; ask for it in smaller steps.";
     const TOO_LONG_PATH = "The path is too long to show for approval.";
@@ -1358,7 +1375,7 @@ export function createBridge(opts = {}) {
                 const c = str(input.command);
                 if (hasHidden(c))
                     return deny(HIDDEN_MSG);
-                summary = showText(c) || "Bash";
+                summary = showCommand(c) || "Bash";
                 if (summary.length > APPROVAL_COMMAND_MAX)
                     return deny(TOO_LONG_COMMAND);
                 detail = showText(str(input.description));
@@ -1374,7 +1391,7 @@ export function createBridge(opts = {}) {
                 const t = str(tool === "WebFetch" ? input.url : input.query);
                 if (hasHidden(t))
                     return deny(HIDDEN_MSG);
-                summary = showText(t) || tool;
+                summary = (tool === "WebFetch" ? showUrl(t) : showCommand(t)) || tool;
             }
             else {
                 let j = "";
@@ -1437,7 +1454,7 @@ export function createBridge(opts = {}) {
             const c = str(input.command);
             if (hasHidden(c) || hasHidden(str(input.description)))
                 return deny(HIDDEN_MSG);
-            summary = showText(c) || "Bash";
+            summary = showCommand(c) || "Bash";
             if (summary.length > APPROVAL_COMMAND_MAX)
                 return deny(TOO_LONG_COMMAND);
             detail = showText(str(input.description));

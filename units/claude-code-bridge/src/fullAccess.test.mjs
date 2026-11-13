@@ -396,7 +396,7 @@ describe("hidden and control characters, line breaks, exact paths (N11, N12, L24
     const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
       { tool_name: "Bash", input: { command: "echo hello\nrm -rf ~" } },
       { tool_name: "Bash", input: { command: "a\r\nb\rc\u2028d\u2029e" } },
-      { tool_name: "Bash", input: { command: "a \t\u00A0\u3000 b" } },
+      { tool_name: "Bash", input: { command: "a \t   b" } },
       { tool_name: "Bash", input: { command: "ls\n", description: "x\ny" } },
     ) });
     expect(requests.map((q) => q.summary)).toEqual(["echo hello ⏎ rm -rf ~", "a ⏎ b ⏎ c ⏎ d ⏎ e", "a b", "ls ⏎"]);
@@ -427,5 +427,70 @@ describe("hidden and control characters, line breaks, exact paths (N11, N12, L24
     ) });
     expect(requests).toHaveLength(1);
     expect(rows("askjson").slice(1).map((r) => r.decision.message)).toEqual(["The path is too long to show for approval.", "The command is too long to show for approval; ask for it in smaller steps."]);
+  });
+});
+
+describe("combining marks and non-ASCII text (N13, N14)", () => {
+  const HIDDEN = "The request contains hidden or control characters, so it cannot be shown for approval; ask for it without them.";
+  for (const fullAccess of [true, false]) {
+    const mode = fullAccess ? "computer mode" : "folder each-write";
+    it(`${mode}: strike-through and other combining marks are denied (command, description); NFD a-ring in a path is allowed and shown as given`, async () => {
+      const secret = await start({ fullAccess });
+      const nfd = "a\u030A.txt"; // a + combining ring above: composes to one character
+      const inside = fullAccess ? `/tmp/${nfd}` : path.join(wsReal, nfd);
+      const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+        { tool_name: "Bash", input: { command: "r\u0336m\u0336 -rf ~" } },
+        { tool_name: "Bash", input: { command: "ls", description: "x\u0336y" } },
+        { tool_name: "Bash", input: { command: "ls e\u0301\u0301" } },
+        { tool_name: "Write", input: { file_path: `${wsReal}/b\u0336.txt`, content: "x" } },
+        { tool_name: "Write", input: { file_path: inside, content: "x" } },
+      ) });
+      const d = rows("askjson").map((r) => r.decision);
+      expect(d.map((x) => x.behavior)).toEqual(["deny", "deny", "deny", "deny", "allow"]);
+      for (const x of d.slice(0, 4)) expect(x.message).toBe(HIDDEN);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].summary).toBe(fullAccess ? `/tmp/${nfd}` : nfd); // the original text, not the normalised one
+    });
+  }
+  it("a non-ASCII character in a command is shown as <U+XXXX>; a Cyrillic look-alike is visible; a typed marker is escaped; paths keep their characters", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: "curl https://g\u0456thub.com/x" } },
+      { tool_name: "Bash", input: { command: "echo a \u23CE rm -rf ~" } },
+      { tool_name: "Bash", input: { command: "echo \u{1F600} \u00E9" } },
+      { tool_name: "Write", input: { file_path: "/tmp/\u00E9.txt", content: "x" } },
+      { tool_name: "WebSearch", input: { query: "caf\u00E9 \u0456" } },
+      { tool_name: "Bash", input: { command: "a\nb" } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual([
+      "curl https://g<U+0456>thub.com/x",
+      "echo a <U+23CE> rm -rf ~",
+      "echo <U+1F600> <U+00E9>",
+      "/tmp/\u00E9.txt",
+      "caf<U+00E9> <U+0456>",
+      "a ⏎ b",
+    ]);
+  });
+  it("WebFetch: the URL is escaped and its host is shown as punycode when the text does not already hold it", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "WebFetch", input: { url: "https://g\u0456thub.com/a" } },
+      { tool_name: "WebFetch", input: { url: "https://example.com/a" } },
+      { tool_name: "WebFetch", input: { url: "https://EXAMPLE.com/\u00E9" } },
+    ) });
+    expect(requests.map((q) => q.summary)).toEqual([
+      "https://g<U+0456>thub.com/a (host: xn--gthub-n2e.com)",
+      "https://example.com/a",
+      "https://EXAMPLE.com/<U+00E9> (host: example.com)",
+    ]);
+  });
+  it("limits count the shown text: 300 non-ASCII characters in a command (8 shown characters each, 2400) are denied, 200 are asked", async () => {
+    const secret = await start();
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK(
+      { tool_name: "Bash", input: { command: "\u00E9".repeat(300) } },
+      { tool_name: "Bash", input: { command: "\u00E9".repeat(200) } },
+    ) });
+    expect(requests).toHaveLength(1);
+    expect(rows("askjson")[0].decision.message).toBe("The command is too long to show for approval; ask for it in smaller steps.");
   });
 });
