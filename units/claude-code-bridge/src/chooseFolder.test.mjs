@@ -311,7 +311,7 @@ describe("files-only mode (Windows)", () => {
     expect(settings).toEqual(codeTurnSettings(os.homedir(), "win32"));
     const sys = val("--append-system-prompt");
     expect(sys).toContain("You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.");
-    expect(sys).not.toContain("The network reaches only package registries.");
+    expect(sys).not.toContain("The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).");
     expect(sys).not.toContain("package.json");
     expect(run.npmCache).toBeUndefined(); // the bridge sets no npm cache here, and the person's own is not passed on (allow-listed environment)
   });

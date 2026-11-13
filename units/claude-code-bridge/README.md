@@ -141,7 +141,7 @@ File modes (`0o600`, `0o700`) do nothing useful on Windows; the state folder is 
 
 Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests, `scripts/windows-service-e2e.mjs` (Always On on a real runner: `--install` then hello within 20 s, `--status`, the registry value, `--code`, pair and one turn, `taskkill` of the bridge and it returns within 15 s, the stored start-up command run as Windows runs it, `--uninstall` leaves nothing; once with a home folder `...\Anna Maria`, once as a new standard user in the Users group) and `scripts/windows-e2e.mjs` (the real built bridge as a process, a stand-in claude behind a `.cmd` shim written the way npm writes it, by name on PATH, and as a `.mjs`; pair, one turn, Stop, and a check with `tasklist` that the stand-in's child is gone) on GitHub's `windows-latest` runners with Node 20 and 22. It has not been tried by a person on a Windows PC, and the real `claude.exe` has not been run there.
 
-## Code folder (0.2.0)
+## Code folder (0.2.0; GitHub archives 0.2.1)
 
 Until now every turn ran with Claude Code's own tools off. A **code turn** turns them on, for one folder you choose.
 
@@ -173,7 +173,7 @@ A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or 
 
 What a code turn may do:
 - Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
-- Reach the network only for the package registries: `registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`, `files.pythonhosted.org`. WebFetch and WebSearch are off.
+- Reach the network only for the package registries: `registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`, `files.pythonhosted.org`; and, since 0.2.1, two GitHub download hosts: `codeload.github.com` (archives of a commit of a public repo) and `raw.githubusercontent.com` (raw files). They are read-only downloads. Still refused: `github.com`, `api.github.com`, git clone/pull/push, private repos (no login is passed). To take a GilbPlatformCode unit at a pinned commit: `curl -fsSL https://codeload.github.com/KaiGilb/GilbPlatformCode/tar.gz/<commit> | tar -xz`, then `cd GilbPlatformCode-<commit>/units/<unit> && npm pack --pack-destination <app>/vendor/<unit>`. WebFetch and WebSearch are off.
 - Read none of the listed secret places: the folders `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config` (this covers `~/.config/gcloud`), `~/.claude`, `~/.docker`, `~/.kube`, `~/.azure`, the bridge state folder, and on macOS the Keychains and the Chrome, Firefox and Safari data; and the files `~/.npmrc`, `~/.yarnrc`, `~/.yarnrc.yml`, `~/.pypirc`, `~/.netrc` and `~/.git-credentials`. Installs from a private npm registry that needs your login do not work in a code turn (your `~/.npmrc` is not readable there).
 - A code turn's Claude Code gets only a short list of ordinary environment variables (paths, language, proxy); tokens and keys in your environment are not passed to it.
 - npm uses a cache in the folder (`.npm-cache`), because the sandbox does not let it write `~/.npm` or the temp folder.
@@ -239,3 +239,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.1.8: runs on Windows, in one session or Always On (see "Windows"): Windows-aware `resolveBin`, no shell for `claude` (npm `.cmd` shim read, not run), process-tree stop with `taskkill`, PowerShell-correct commands in the banner, SIGBREAK/SIGHUP.
 - 0.1.9: a hand-off may run 30 minutes (the connector now gives level agents that long), so the bridge waits for a tool call 30 minutes.
 - 0.2.0: code mode: `--workspace`, `mode: "code"` turns, `/v1/workspace`, the `activity`, `tool_error` and `files_changed` events (see "Code folder").
+- 0.2.1: full-mode code turns may download from `codeload.github.com` and `raw.githubusercontent.com` (read-only archives of public repos); the system prompt says how.
