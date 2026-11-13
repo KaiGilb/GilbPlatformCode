@@ -1,10 +1,12 @@
 # section-menu
 
-The section menu: a header button that says where you are, and a large panel that opens on a short rest of the pointer (200 ms) or at once on tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
+The header menu (menu, more, three dots, overflow): the section menu, a header button that says where you are, and a large panel that opens on a short rest of the pointer (200 ms) or at once on tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
 
 It is meant to be the default menu of an app built on GilbPlatform when the person asking for the app describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). GilbApp's branch `kai/section-menu-shared-unit` takes it (not yet on GilbApp main). The website counterpart is `web-units/section-menu`.
 
 ## What this is
+
+The header menu of an app: the section menu (a header button and a large panel of sections) and `MenuButton`, the small three-dots "..." menu (menu, more, overflow) whose list closes on Escape or a press outside and gives the focus back to the button.
 
 `<SectionMenu sections current api sizeClass layers ...>` draws:
 
@@ -20,6 +22,8 @@ It is meant to be the default menu of an app built on GilbPlatform when the pers
 - **keyboard**: on open, focus lands on the section you are in. Tab stays inside the panel and visits Close, then every section, each followed (when it is previewed) by its options and places, then "For you", then the footer act, and wraps. Tab skips a coming entry; the arrows land on it, and Tab or Shift+Tab from there goes on to the next or previous usable entry in that order. Up, Down, Home and End move between sections; Right goes into the options; Left comes back.
 - **phone** (`sizeClass="compact"`): one column, no hover preview; the options are those of the section you are in. Medium is two columns.
 - Reduced motion: the transitions switch off under `prefers-reduced-motion`.
+
+- **`MenuButton`** (0.2.5): the small "..." header menu. `<MenuButton items={[{ id, label, onSelect, disabled? }]} label="Menu" icon? align="end" onOpenChange? />` draws a button (`aria-haspopup="menu"`, `aria-expanded`, `aria-controls`) and, open, a `role="menu"` list of `role="menuitem"` buttons. Escape closes it and the focus goes back to the button; so does choosing an item (the act runs after that); a press outside closes it; Tab closes it. Down or Up on the closed button opens it on the first or last item; Up, Down, Home and End move between the enabled items and wrap; a disabled item is skipped and does nothing. Plain CSS in `:where()` over the style tokens: `import "<package>/menu-button.css"` (no Tailwind needed). For a menu that must flip above its anchor near the window's edge, place it with `menu-place`.
 
 Also in the unit:
 
@@ -137,6 +141,10 @@ The button, the dimmed edge and the panel, side by side in the page. Test hooks:
 - Do not list a destination that is not built (Rule_Code_gilb-app-nav-truth). `coming` is only for an entry the owner names as coming.
 - Do not fire a window event for an act in the destination; leave an intent (`createIntentChannel`).
 - Do not pick private paint-order numbers in a new app; use `overlay-layers`.
+
+## Changes in 0.2.5
+
+Patch release, additive only: `MenuButton` and `menu-button.css`. The section menu is unchanged.
 
 ## Wrong readings
 
