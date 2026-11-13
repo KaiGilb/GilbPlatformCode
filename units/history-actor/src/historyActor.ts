@@ -12,7 +12,7 @@ export interface DescribeAgentOptions {
   nameSuffix?: string;
 }
 
-/** The name label of a vault host (`anna` in `https://anna.gilb.com/base/p/x`): the first label of a host with at least three labels, never `id` or `www`. */
+/** The name label of a vault host (`anna` in `https://anna.example.test/base/p/x`): the first label of a host with at least three labels, never `id` or `www`. */
 function vaultHostName(address: string, o: DescribeAgentOptions): string | null {
   let host: string;
   try {
