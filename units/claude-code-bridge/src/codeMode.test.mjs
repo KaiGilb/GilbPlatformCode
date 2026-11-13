@@ -358,7 +358,7 @@ describe("--workspace on the command line", () => {
 });
 
 describe("approval: each-write", () => {
-  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.";
+  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries. Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.";
 
   it("the argument lists of a session and an each-write code turn differ only in the asking places", async () => {
     const secret = await start();

@@ -311,6 +311,7 @@ describe("files-only mode (Windows)", () => {
     const sys = val("--append-system-prompt");
     expect(sys).toContain("You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.");
     expect(sys).not.toContain("The network reaches only package registries.");
+    expect(sys).not.toContain("package.json");
     expect(run.npmCache).toBe(process.env.npm_config_cache);
   });
   it("each-write keeps its asking flags in files-only mode", async () => {

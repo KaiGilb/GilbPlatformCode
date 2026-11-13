@@ -572,6 +572,7 @@ const folderNameOk = (n: unknown): n is string => typeof n === "string" && FOLDE
 const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries.";
+const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 const SANDBOX_START_ERROR = "Claude Code could not start its sandbox on this computer, so the code turn was stopped.";
 const CODE_LIMITS_ERROR = "The bridge stopped this code turn: Claude Code did not start with the folder limits.";
 
@@ -1446,7 +1447,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval)),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
-      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : NETWORK_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
     ] : [
       "-p",
       "--output-format", "stream-json",
