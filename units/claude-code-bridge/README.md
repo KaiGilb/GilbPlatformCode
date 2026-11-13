@@ -141,6 +141,33 @@ File modes (`0o600`, `0o700`) do nothing useful on Windows; the state folder is 
 
 Proof: `.github/workflows/claude-code-windows.yml` runs the unit tests, `scripts/windows-service-e2e.mjs` (Always On on a real runner: `--install` then hello within 20 s, `--status`, the registry value, `--code`, pair and one turn, `taskkill` of the bridge and it returns within 15 s, the stored start-up command run as Windows runs it, `--uninstall` leaves nothing; once with a home folder `...\Anna Maria`, once as a new standard user in the Users group) and `scripts/windows-e2e.mjs` (the real built bridge as a process, a stand-in claude behind a `.cmd` shim written the way npm writes it, by name on PATH, and as a `.mjs`; pair, one turn, Stop, and a check with `tasklist` that the stand-in's child is gone) on GitHub's `windows-latest` runners with Node 20 and 22. It has not been tried by a person on a Windows PC, and the real `claude.exe` has not been run there.
 
+## Code folder (0.2.0)
+
+Until now every turn ran with Claude Code's own tools off. A **code turn** turns them on, for one folder you choose.
+
+Start the bridge with the folder: `node bridge.mjs --workspace ~/MyJackfruitCode` (with `--install` the folder is kept in the login item). Without `--workspace` there is no code mode and nothing changes.
+
+The bridge refuses a folder that does not exist (it never makes one), the root of the disk, your home folder, any folder that holds your home folder, a folder inside `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/Library` (macOS) or `AppData` (Windows) or inside a bridge state folder (`~/.gilb-claude-code-bridge*`), and a folder that directly holds `.ssh`, `.aws` or `.gnupg`. A symlink is followed first, so a link to your home folder is refused too. It prints the reason and exits with code 2.
+
+A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or no mode is the old turn; any other value is a 400). `"approval"` may only be `"session"` for now. A code turn cannot be a hand-off (400), needs a `--workspace` (409), and only one runs at a time (429).
+
+What a code turn may do:
+- Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
+- Reach the network only for the package registries: `registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`, `files.pythonhosted.org`. WebFetch and WebSearch are off.
+- Read none of the listed secret folders (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, the bridge state folder, and on macOS the Keychains and the Chrome, Firefox and Safari data).
+- Nothing else is allowed to prompt: what would ask is denied. Settings files of the person and of the folder are ignored.
+- If Claude Code does not start with exactly these tools and the `acceptEdits` mode, the bridge stops the turn.
+
+Discovery: `GET /v1/hello` has `codeTurns: true` and `workspace: true|false` (never the path). `POST /v1/workspace` (paired) returns `{ name, path }`, or 404 when there is no folder.
+
+Extra events in a code turn (a chat turn sends none of them):
+- `activity` `{ tool, summary }` for each tool call (not the GilbPlatform tools).
+- `tool_error` `{ tool, summary, text }` when such a call failed.
+- `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`, once, before `message` or `error`. It compares the folder before and after the turn (size and time; `.git` and `node_modules` skipped; up to 20000 files; up to 200 names per list).
+- `message` has `mode: "code"`.
+
+Not done yet: approve-before-each-write, and a reduced mode for Windows (the sandbox is macOS, Linux and WSL2). Both come in the next batches. `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.
+
 ## Relay window (for Safari)
 
 Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
@@ -185,3 +212,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.1.7: relay window (`GET /relay`) for Safari; `/v1/hello` reports `relay: true`; relayed requests take the opener page as their origin.
 - 0.1.8: runs on Windows, in one session or Always On (see "Windows"): Windows-aware `resolveBin`, no shell for `claude` (npm `.cmd` shim read, not run), process-tree stop with `taskkill`, PowerShell-correct commands in the banner, SIGBREAK/SIGHUP.
 - 0.1.9: a hand-off may run 30 minutes (the connector now gives level agents that long), so the bridge waits for a tool call 30 minutes.
+- 0.2.0: code mode: `--workspace`, `mode: "code"` turns, `/v1/workspace`, the `activity`, `tool_error` and `files_changed` events (see "Code folder").

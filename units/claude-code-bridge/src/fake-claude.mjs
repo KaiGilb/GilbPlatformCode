@@ -4,6 +4,7 @@
 //   claude -p ... (prompt on stdin)    -> stream-json on stdout; records its argv and the env it was given
 // If the prompt contains CALLTOOL it acts as an MCP client of the --mcp-config server, like the real CLI does.
 import fs from "node:fs";
+import path from "node:path";
 import { spawn } from "node:child_process";
 
 const argv = process.argv.slice(2);
@@ -65,7 +66,7 @@ process.stdin.on("end", async () => {
       type: "system",
       subtype: "init",
       session_id: sessionId,
-      tools: ["mcp__gilb__list_vaults"],
+      tools: process.env.FAKE_INIT_TOOLS ? JSON.parse(process.env.FAKE_INIT_TOOLS) : ["mcp__gilb__list_vaults"],
       mcp_servers: [{ name: "gilb", status: "connected" }],
       model: "fake-model",
       apiKeySource: prompt.includes("APIKEYSOURCE") ? "ANTHROPIC_API_KEY" : (process.env.FAKE_API_KEY_SOURCE ?? "none"),
@@ -92,6 +93,16 @@ process.stdin.on("end", async () => {
   if (prompt.includes("WAITFOREVER")) {
     setInterval(() => {}, 1000);
     return;
+  }
+  if (prompt.includes("CODEWRITE")) {
+    const file = path.join(process.cwd(), "hello.txt");
+    fs.writeFileSync(file, "hi");
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Write", input: { file_path: file } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }] } });
+  }
+  if (prompt.includes("CODEERR")) {
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu2", name: "Bash", input: { command: "ls /" } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu2", is_error: true, content: "permission denied" }] } });
   }
   out({ type: "assistant", message: { content: [{ type: "text", text }] } });
   out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });

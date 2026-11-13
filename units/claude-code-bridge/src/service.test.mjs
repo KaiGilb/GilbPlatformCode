@@ -105,6 +105,13 @@ describe("--install, --uninstall", () => {
     expect(x).toMatch(/<string>--allow-origin<\/string>\s*<string>https:\/\/app\.example\.com<\/string>\s*<string>--allow-origin<\/string>\s*<string>http:\/\/localhost:3000<\/string>/);
   });
 
+  it("--install carries --workspace into the LaunchAgent, like --allow-origin", async () => {
+    const out = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode"]), deps());
+    expect(out.ok).toBe(true);
+    const x = fs.readFileSync(path.join(home, "Library", "LaunchAgents", "com.gilb.claude-code-bridge.plist"), "utf8");
+    expect(x).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>/);
+  });
+
   it("--install refuses a wildcard or plain-http origin and writes nothing", async () => {
     for (const bad of ["*", "http://app.example.com", "https://*.example.com"]) {
       const out = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--allow-origin", bad]), deps());
