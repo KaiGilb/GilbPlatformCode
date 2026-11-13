@@ -24,6 +24,12 @@ export interface ShareWords {
   no: string;
   yes: string;
   close: string;
+  /** The label of your own row (the owner's, and the row whose principal is the sheet's `you`). */
+  you: string;
+  /** The note under a person the platform sent no name for and none was remembered. */
+  unnamed: string;
+  /** The note under a person shown by the name you typed when you shared. */
+  remembered(name: string): string;
 }
 
 // Defaults copied from PictureRecords run 7, app/src/share/ShareSheet.tsx, except where a line says otherwise.
@@ -47,4 +53,7 @@ export const defaultWords: ShareWords = {
   no: "No", // :103
   yes: "Yes", // :104
   close: "Close", // :114
+  you: "You", // PictureRecords run 9, app/src/share/namedShareApi.ts
+  unnamed: "No name was given for this person.", // namedShareApi.ts NO_NAME
+  remembered: (name) => `Added by you as ${name}.`, // namedShareApi.ts
 };

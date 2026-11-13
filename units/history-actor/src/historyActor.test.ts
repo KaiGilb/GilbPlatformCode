@@ -73,3 +73,23 @@ describe("describeAgent", () => {
     expect(a).not.toBe(b);
   });
 });
+
+describe("describeAgent: a person on a vault host", () => {
+  it("is named by the host's first label", () => {
+    expect(describeAgent("https://sotest.gilb.com/base/p/abc")).toEqual({ who: "sotest", whoKind: "person", agentLabel: "sotest" });
+    expect(describeAgent("https://anna.example.test/base/p/abc", {}).who).toBe("anna");
+  });
+  it("cuts nameSuffix, but never down to nothing", () => {
+    expect(describeAgent("https://anna-vault.gilb.com/base/p/abc", { nameSuffix: "-vault" }).who).toBe("anna");
+    expect(describeAgent("https://-vault.gilb.com/base/p/abc", { nameSuffix: "-vault" }).who).toBe("-vault");
+  });
+  it("leaves a shared or short host as Person (legacy output)", () => {
+    for (const a of ["https://id.gilb.com/base/p/abc", "https://www.gilb.com/base/p/abc", "http://example.test/base/p/abc?x=1", "/base/p/abc"]) {
+      expect(describeAgent(a)).toEqual({ who: "Person", whoKind: "person", agentLabel: "Person" });
+      expect(describeAgent(a, { nameSuffix: "x" }).who).toBe("Person");
+    }
+  });
+  it("does not touch agent or system addresses", () => {
+    expect(describeAgent("https://anna.gilb.com/base/e/agent-foo").who).toBe("AI agent · foo");
+  });
+});

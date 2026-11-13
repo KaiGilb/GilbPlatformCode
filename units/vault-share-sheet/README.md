@@ -12,16 +12,37 @@ Two entries.
 
 - `granteeFromInput(text, { apex? })`: what the person typed to `{ grantee, name }`, or `{ problem }` (a sentence to show; no request has been made). The text is trimmed. An empty entry or an email gets `vault-address`'s own sentence (`vaultNameProblem`, "not an email"). A full address (`https://…`) goes through `vaultIdProblem` and is kept as typed; its `name` is the first host label. A bare name goes through `vaultNameProblem`, and its grantee is exactly what `vaultAddressFromName(name, apex)` answers; `apex` defaults to the host of `baseOrigin()`. The unit composes no `/vault` path and holds no host. A bare host (`ann.example.test`, `https://ann.example.test`) is neither a name nor an address and is refused with the sentence of the check it fails.
 - `accessRows(acl)`: `{ owner, rows }` from the `VaultAclEntry` list. **The owner is the entry that holds `control`**, not the entry of kind `owner-inferred`: the live owner row has kind `grant` (run 7, F14). The owner is returned apart and is not in `rows`. Another holder of Control (a delegate) stays in `rows` with `owner: true`, so a screen shows them and offers no Remove (`unshareVault` does not take Control away). Level: write is `"edit"`; otherwise read is `"view"`; an entry with neither (append only) is left out. Only `acl` is read: public grants are in `edges`, not `acl`, so there is no `/public/` filter.
-- `AccessRow`: `{ principal, label, note, level, owner }`. `principal` is the key exactly as the platform gave it, for `unshare`. `label` and `note` are `principal-row`'s title and provenance sentence for the key (the note is null for an owner).
+- `AccessRow`: `{ principal, label, note, level, owner, named }`. `named` is true when the platform sent a name for the key (a label, which `principal-row` pairs with its `labelSource`) or the key is a vault whose host is its name; false means `label` is only what the key is ("Principal key", "Registered principal"). Never test the label text for this. `principal` is the key exactly as the platform gave it, for `unshare`. `label` and `note` are `principal-row`'s title and provenance sentence for the key (the note is null for an owner).
 - `loadAccessView(vaultId)`: `{ controlled: false }` for a person without Control (the platform answers 404), else `{ controlled: true, owner, rows }`. Any other error throws.
 - `accessFailure(e)`: the sentence for an error. A `VaultAccessError` with status 403, or 404, is `NO_CONTROL` (the constant `vault-access` exports, not a copy); another `VaultAccessError` is its own message; an `Error` is its message; anything else is "Something went wrong. Try again."
 - `ShareApi` (`load`, `share`, `unshare`) and `defaultShareApi` (`loadAccessView`, `shareVault`, `unshareVault`).
 
 **`.`** (React; the model's exports too):
 
-- `useVaultShare(vaultId, api?)`: `{ state, submit(text, level), remove(principal), reread(), clearMessages() }`. It reads when it mounts and when `vaultId` changes, and again after every share or remove that worked. **While a request is in flight a second `submit` or `remove` is ignored: no second request**, even in the same tick (a ref guards it, not the disabled button). An input problem from `granteeFromInput` is put in `state.submitProblem` and nothing is sent. A failed share puts its sentence in `submitProblem`; a failed remove puts it in `removeProblem` with the principal, so it shows on that row only.
-- `VaultShareSheet({ vaultId, title?, onClose, showOwner?, defaultLevel?, words?, api? })`: built on `modal-sheet`. States: reading; not controlled (shows the Control sentence and no form); the list, with "Nobody else has access yet." when there are no rows; an inline Yes or No on each row before a remove (never `window.confirm`); two radios (edit, view; `defaultLevel` is `"view"` unless told); one `busy` flag that turns off the field, the radios, Share and every row button while any request is in flight; one error line under the form and one on the row. `showOwner` (default true) draws the owner, and any other holder of Control, at the top with "Owns this vault" and no Remove. Closing is always allowed (Escape, backdrop, Close), also while busy; run 7's sheet refused to close while busy.
+- `useVaultShare(vaultId, api?, { you?, rememberNames? }?)`: `{ state, submit(text, level), remove(principal), reread(), clearMessages() }`. It reads when it mounts and when `vaultId` changes, and again after every share or remove that worked. **While a request is in flight a second `submit` or `remove` is ignored: no second request**, even in the same tick (a ref guards it, not the disabled button). An input problem from `granteeFromInput` is put in `state.submitProblem` and nothing is sent. A failed share puts its sentence in `submitProblem`; a failed remove puts it in `removeProblem` with the principal, so it shows on that row only.
+- `VaultShareSheet({ vaultId, title?, onClose, showOwner?, defaultLevel?, help?, you?, rememberNames?, words?, api? })`: built on `modal-sheet`. States: reading; not controlled (shows the Control sentence and no form); the list, with "Nobody else has access yet." when there are no rows; an inline Yes or No on each row before a remove (never `window.confirm`); two radios (edit, view; `defaultLevel` is `"view"` unless told); one `busy` flag that turns off the field, the radios, Share and every row button while any request is in flight; one error line under the form and one on the row. `showOwner` (default true) draws the owner, and any other holder of Control, at the top with "Owns this vault" and no Remove. Closing is always allowed (Escape, backdrop, Close), also while busy; run 7's sheet refused to close while busy.
 - `ShareWords` and `defaultWords`: every sentence the sheet shows that is not the platform's. Defaults are run 7's (each line in `src/words.ts` names the line it came from); pass `words` to change any of them.
+
+### Help, You, remembered names
+
+- `help` (a `ReactNode`): drawn as `<p className="vss-help">` directly under the title, inside the dialog. Nothing is drawn without it.
+- `you` (the signed-in principal): the owner row, and any row whose `principal` equals `you`, reads `words.you` ("You") with no note. Without `you` the owner reads as the platform named it.
+- `rememberNames` (a `KeyValueStore`: `get`, `set`, `remove`, the same shape as `vault-list`'s; `browserStore(prefix)` from `./remember-names` is `localStorage` under your prefix): when a share works, the name typed for the new person is kept per vault (and per `you`), found by comparing the list before and after the share. It is shown on later loads, in a new sheet too, for a person the platform sent no name for (`named: false`), with the note `words.remembered(name)`. Removing the person deletes it. A person the platform did name is never renamed. A store that throws is "nothing kept".
+- `words.unnamed` ("No name was given for this person."): the note under an unnamed person with no remembered name.
+
+```tsx
+import { browserStore } from "@kaigilb/gilbplatformcode-vault-share-sheet/remember-names";
+
+const names = browserStore("picturerecords:");   // once, outside the component
+<VaultShareSheet
+  vaultId={vaultId}
+  title="Share my cameras"
+  help="People you add can see your cameras (View) or also add and edit them (Edit)."
+  you={principal}
+  rememberNames={names}
+  onClose={close}
+/>
+```
 
 ## What this is not
 
@@ -93,10 +114,14 @@ None of its own. The hook keeps its state per mount.
 
 `accessRows` passes `labelSource`, `registered` and `viewer` to `principal-row`, so a registered key with no name reads "Registered principal" and a named one shows its name, not "Principal key". Needs `vault-access` 0.1.3, which keeps those fields.
 
+## Changes in 0.1.2
+
+Adds `help`, `you`, `rememberNames`, `words.you`, `words.unnamed`, `words.remembered`, `AccessRow.named`, and the `./remember-names` entry (`browserStore`, `labelRows`, `KeyValueStore`; kept off `.` so the runtime exports are unchanged; `KeyValueStore` is also a type export of `.`). Nothing existing changes unless the new props are passed. Absorbs PictureRecords run 9 `namedShareApi.ts` and its portal for the help line.
+
 ## Where it came from
 
 Written for this repository in EESpeed round 7 (batch U2c) from PictureRecords run 7 `app/src/share/ShareSheet.tsx` and `shareApi.ts` (the sheet and the model) and run 6 `app/src/sharing.ts` and `app/src/ui/ShareSheet.tsx` (the owner row with `principal-row` labels and the apex read from `baseOrigin()`). Base commit `19fb34ba7195055fbd0ef13e376d789756e2c9f6` of `KaiGilb/GilbPlatformCode`. Changes from run 7: the owner is found by Control, not by kind; the public filter is gone; the apex is not `gilb.com`; a thrown 404 reads as the Control sentence; Close works while busy; the placeholder is run 6's.
 
 ## Tests
 
-`npm test` runs every test file: `model.test.ts` (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` (jsdom, injected api, including stale-read ordering), `boundaries.test.ts`, `exports.test.ts` and `hostAgnostic.test.ts`.
+`npm test` runs every test file: `model.test.ts` (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` (jsdom, injected api, including stale-read ordering), `boundaries.test.ts`, `exports.test.ts`, `hostAgnostic.test.ts` and `rememberNames.test.tsx`.

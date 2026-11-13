@@ -7,12 +7,34 @@ export interface HistoryActor {
   agentLabel: string;
 }
 
+export interface DescribeAgentOptions {
+  /** Cut from the end of a vault host's name label (for example `"-vault"` turns `anna-vault` into `anna`). */
+  nameSuffix?: string;
+}
+
+/** The name label of a vault host (`anna` in `https://anna.gilb.com/base/p/x`): the first label of a host with at least three labels, never `id` or `www`. */
+function vaultHostName(address: string, o: DescribeAgentOptions): string | null {
+  let host: string;
+  try {
+    host = new URL(address).hostname;
+  } catch {
+    return null;
+  }
+  const labels = host.split(".");
+  const first = labels[0] ?? "";
+  if (labels.length < 3 || first === "" || first === "id" || first === "www") return null;
+  const suffix = o.nameSuffix ?? "";
+  return suffix !== "" && first.length > suffix.length && first.endsWith(suffix) ? first.slice(0, -suffix.length) : first;
+}
+
 /**
  * Who wrote a change, from the address string alone.
+ * A person address on a vault host (`<name>.<apex>`, three or more labels, not `id` or `www`) is named by that host's first label,
+ * minus `opts.nameSuffix`; any other person address stays "Person".
  * Does not remember the answer, and does not look up a person's name.
  * The app keeps a session cache and may replace "Person" later. That step is not here.
  */
-export function describeAgent(agent: string | null | undefined): HistoryActor {
+export function describeAgent(agent: string | null | undefined, opts: DescribeAgentOptions = {}): HistoryActor {
   if (!agent?.trim()) {
     return { who: "Unknown actor", whoKind: "unknown", agentLabel: "unknown" };
   }
@@ -35,6 +57,8 @@ export function describeAgent(agent: string | null | undefined): HistoryActor {
 
   const pM = a.match(/\/base\/p\/([^/?#]+)/i);
   if (pM?.[1]) {
+    const name = vaultHostName(a, opts);
+    if (name) return { who: name, whoKind: "person", agentLabel: name };
     return { who: "Person", whoKind: "person", agentLabel: "Person" };
   }
 
