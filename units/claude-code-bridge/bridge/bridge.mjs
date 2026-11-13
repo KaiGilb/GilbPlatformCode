@@ -521,7 +521,7 @@ function codeInitOk(ev) {
     const tools = Array.isArray(ev.tools) ? ev.tools : [];
     if (!tools.every((t) => typeof t === "string" && (CODE_TOOLS.includes(t) || t.startsWith("mcp__gilb__"))))
         return false;
-    return ev.permissionMode === undefined || ev.permissionMode === "acceptEdits";
+    return ev.permissionMode === "acceptEdits";
 }
 /** One line saying what a tool call does, for the `activity` event. */
 function toolSummary(tool, input, roots) {
@@ -567,7 +567,7 @@ export function snapshotFolder(root) {
                 continue;
             }
             if (st.isDirectory()) {
-                if (e.name !== ".git" && e.name !== "node_modules")
+                if (e.name !== ".git" && e.name !== "node_modules" && e.name !== ".npm-cache")
                     stack.push(r);
                 continue;
             }
@@ -1114,7 +1114,8 @@ export function createBridge(opts = {}) {
             try {
                 child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
                     cwd: turn.code && workspace ? workspace.path : workDir,
-                    env: childEnv(env),
+                    // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
+                    env: turn.code && workspace ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });

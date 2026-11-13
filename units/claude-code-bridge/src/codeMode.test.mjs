@@ -173,6 +173,8 @@ describe("code turn events", () => {
     const secret = await start();
     fs.writeFileSync(path.join(wsReal, "hello.txt"), "old content");
     fs.writeFileSync(path.join(wsReal, "gone.txt"), "x");
+    fs.mkdirSync(path.join(wsReal, ".npm-cache"));
+    fs.writeFileSync(path.join(wsReal, ".npm-cache", "c.txt"), "x");
     fs.mkdirSync(path.join(wsReal, "node_modules"));
     fs.writeFileSync(path.join(wsReal, "node_modules", "n.txt"), "x");
     const r = await post(secret, T({ mode: "code", prompt: "CODEWRITE" }));
@@ -195,6 +197,27 @@ describe("code turn events", () => {
     const r = await post(secret, T({ mode: "code" }));
     expect(ev(r, "message")).toHaveLength(0);
     expect(ev(r, "error")[0].message).toBe("The bridge stopped this code turn: Claude Code did not start with the folder limits.");
+  });
+  it("an init whose permission mode is not exactly acceptEdits stops the turn", async () => {
+    const secret = await start({ env: { FAKE_INIT_PERMISSION_MODE: "bypassPermissions" } });
+    const r = await post(secret, T({ mode: "code" }));
+    expect(ev(r, "message")).toHaveLength(0);
+    expect(ev(r, "error")[0].message).toBe("The bridge stopped this code turn: Claude Code did not start with the folder limits.");
+  });
+  it("an init with no permission mode stops the turn", async () => {
+    const secret = await start({ env: { FAKE_INIT_PERMISSION_MODE: "omit" } });
+    const r = await post(secret, T({ mode: "code" }));
+    expect(ev(r, "message")).toHaveLength(0);
+    expect(ev(r, "error")[0].message).toBe("The bridge stopped this code turn: Claude Code did not start with the folder limits.");
+  });
+  it("a code turn's child gets npm_config_cache inside the workspace; a chat turn's env is unchanged", async () => {
+    const secret = await start();
+    await post(secret, T({ mode: "code" }));
+    await post(secret, T());
+    const [code, chat] = runs();
+    expect(code.npmCache).toBe(path.join(wsReal, ".npm-cache"));
+    expect(chat.npmCache).toBe(process.env.npm_config_cache); // only what the person's own env had
+    expect(chat.envKeys.includes("npm_config_cache")).toBe(process.env.npm_config_cache !== undefined);
   });
   it("an init with the code tools passes", async () => {
     const secret = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify([...CODE_TOOLS, "mcp__gilb__list_vaults"]) } });

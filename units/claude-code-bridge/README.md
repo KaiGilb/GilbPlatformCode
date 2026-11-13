@@ -155,6 +155,7 @@ What a code turn may do:
 - Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
 - Reach the network only for the package registries: `registry.npmjs.org`, `registry.yarnpkg.com`, `pypi.org`, `files.pythonhosted.org`. WebFetch and WebSearch are off.
 - Read none of the listed secret folders (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, the bridge state folder, and on macOS the Keychains and the Chrome, Firefox and Safari data).
+- npm uses a cache in the folder (`.npm-cache`), because the sandbox does not let it write `~/.npm` or the temp folder.
 - Nothing else is allowed to prompt: what would ask is denied. Settings files of the person and of the folder are ignored.
 - If Claude Code does not start with exactly these tools and the `acceptEdits` mode, the bridge stops the turn.
 
@@ -163,7 +164,7 @@ Discovery: `GET /v1/hello` has `codeTurns: true` and `workspace: true|false` (ne
 Extra events in a code turn (a chat turn sends none of them):
 - `activity` `{ tool, summary }` for each tool call (not the GilbPlatform tools).
 - `tool_error` `{ tool, summary, text }` when such a call failed.
-- `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`, once, before `message` or `error`. It compares the folder before and after the turn (size and time; `.git` and `node_modules` skipped; up to 20000 files; up to 200 names per list).
+- `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`, once, before `message` or `error`. It compares the folder before and after the turn (size and time; `.git`, `node_modules` and `.npm-cache` skipped; up to 20000 files; up to 200 names per list).
 - `message` has `mode: "code"`.
 
 Not done yet: approve-before-each-write, and a reduced mode for Windows (the sandbox is macOS, Linux and WSL2). Both come in the next batches. `scripts/code-mode-probe.mjs` runs one code turn with the real `claude` against throwaway folders and checks that the limits hold; run it by hand after a Claude Code update.

@@ -41,6 +41,7 @@ process.stdin.on("end", async () => {
     pid: process.pid,
     envKeys: Object.keys(process.env),
     cwd: process.cwd(),
+    npmCache: process.env.npm_config_cache,
   });
   const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   if (arg("--resume") && arg("--resume").startsWith("00000000")) {
@@ -71,6 +72,8 @@ process.stdin.on("end", async () => {
       model: "fake-model",
       apiKeySource: prompt.includes("APIKEYSOURCE") ? "ANTHROPIC_API_KEY" : (process.env.FAKE_API_KEY_SOURCE ?? "none"),
     };
+    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? "acceptEdits";
+    if (pm !== "omit") init.permissionMode = pm;
     if (initMode === "nofield") delete init.apiKeySource;
     if (initMode === "null") init.apiKeySource = null;
     out(init);
