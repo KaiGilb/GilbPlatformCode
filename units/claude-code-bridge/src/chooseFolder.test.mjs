@@ -87,7 +87,7 @@ describe("POST /v1/workspace/choose", () => {
     const r = await call(secret, "/v1/workspace/choose", { suggest: "MyJackfruitCode" });
     expect(r).toEqual({ status: 200, json: { chosen: true, name: "MyJackfruitCode", path: pick } });
     expect(stored()).toEqual({ version: 1, path: pick });
-    expect((fs.statSync(wsFile).mode & 0o777).toString(8)).toBe("600");
+    if (process.platform !== "win32") expect((fs.statSync(wsFile).mode & 0o777).toString(8)).toBe("600"); // file modes mean nothing on Windows
     expect(fs.readdirSync(stateDir).filter((n) => n.endsWith(".tmp"))).toEqual([]);
     expect(await hello()).toMatchObject({ workspace: true, codeMode: "full" });
     expect((await call(secret, "/v1/workspace")).json).toEqual({ name: "MyJackfruitCode", path: pick });
@@ -219,7 +219,7 @@ describe("POST /v1/workspace/create", () => {
     const r = await call(secret, "/v1/workspace/create", { name: "MyJackfruitCode" });
     const want = path.join(fs.realpathSync.native(home), "MyJackfruitCode");
     expect(r).toEqual({ status: 200, json: { name: "MyJackfruitCode", path: want } });
-    expect((fs.statSync(want).mode & 0o777).toString(8)).toBe("700");
+    if (process.platform !== "win32") expect((fs.statSync(want).mode & 0o777).toString(8)).toBe("700"); // file modes mean nothing on Windows
     expect(stored().path).toBe(want);
     expect(await hello()).toMatchObject({ workspace: true });
   });

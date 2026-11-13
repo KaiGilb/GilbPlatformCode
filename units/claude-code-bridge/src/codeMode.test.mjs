@@ -142,7 +142,7 @@ describe("claude arguments", () => {
     expect(val("--system-prompt")).toBe("You are the agent.");
     expect(val("--system-prompt-snapshot")).toBe("off");
     expect(fs.realpathSync.native(run.cwd)).toBe(wsReal);
-    expect(JSON.parse(val("--settings"))).toEqual(codeTurnSettings(os.homedir(), process.platform));
+    expect(JSON.parse(val("--settings"))).toEqual(codeTurnSettings(os.homedir(), "darwin"));
     expect(ev(r, "message")[0]).toMatchObject({ mode: "code" });
   });
 
@@ -378,7 +378,7 @@ describe("approval: each-write", () => {
     expect(val(b, "--permission-prompts")).toBe("host");
     expect(val(b, "--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
     expect(a).not.toContain("--permission-prompt-tool");
-    expect(JSON.parse(val(b, "--settings"))).toEqual(codeTurnSettings(os.homedir(), process.platform, [], "each-write"));
+    expect(JSON.parse(val(b, "--settings"))).toEqual(codeTurnSettings(os.homedir(), "darwin", [], "each-write"));
     expect(JSON.parse(val(b, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(false);
     expect(JSON.parse(val(a, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(true);
     // everything else is identical once those places are taken out (the MCP url carries the turn's own id and token)

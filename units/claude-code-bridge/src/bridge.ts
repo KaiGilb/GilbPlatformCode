@@ -790,6 +790,13 @@ export const PAIRING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const MAX_PAIRINGS = 20;
 const PERSIST_EVERY_MS = 60 * 1000; // "last used" is written to disk at most this often
 
+/** A copy of the environment without any spelling of `name` (an environment variable name is case-insensitive on Windows, and npm reads either case). */
+function envWithout(e: NodeJS.ProcessEnv, name: string): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const k of Object.keys(e)) if (k.toLowerCase() !== name.toLowerCase()) out[k] = e[k];
+  return out;
+}
+
 /** Is `cmd` a program on PATH? */
 function onPath(cmd: string): boolean {
   const dirs = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
@@ -1262,9 +1269,11 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
   function physicallyInside(p: string): boolean {
     if (!workspace) return false;
-    let cur = path.isAbsolute(p) ? path.parse(p).root : workspace.path;
+    // An absolute path starts at its root ("/" or "C:\\"); the root is not a segment to walk.
+    const root = path.isAbsolute(p) ? path.parse(p).root : "";
+    let cur = root || workspace.path;
     let exists = true;
-    for (const seg of p.split(/[\\/]+/)) {
+    for (const seg of p.slice(root.length).split(/[\\/]+/)) {
       if (seg === "" || seg === ".") continue;
       if (seg === "..") {
         cur = path.dirname(cur);
@@ -1557,7 +1566,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
           cwd: turn.code && workspace ? workspace.path : workDir,
           // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
-          env: turn.code && workspace && !filesOnly ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
+          env: turn.code && workspace && !filesOnly ? { ...envWithout(childEnv(env), "npm_config_cache"), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env),
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
         });
