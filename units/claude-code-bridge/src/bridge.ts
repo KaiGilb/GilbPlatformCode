@@ -616,11 +616,12 @@ const folderNameOk = (n: unknown): n is string => typeof n === "string" && FOLDE
 const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).";
+const APP_FOLDER_SENTENCE = "Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask.";
 const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder.";
 /** Printed by a start and by --install when --full-access is on. */
 export const FULL_ACCESS_NOTICE = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.";
-const computerParagraph = (name: string, p: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
-const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
+const computerParagraph = (name: string, p: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
+const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder.";
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
@@ -1410,7 +1411,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         detail = str(input.description);
       } else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
         const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
-        summary = cap(p ? path.resolve(workspace ? workspace.path : "/", p) : tool);
+        summary = cap(p ? (path.isAbsolute(p) ? p : path.resolve(workspace ? workspace.path : "/", p)) : tool);
       } else if (tool === "WebFetch") summary = cap(str(input.url) || tool);
       else if (tool === "WebSearch") summary = cap(str(input.query) || tool);
       else {
@@ -1615,7 +1616,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
-      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+      "--append-system-prompt", `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
     ] : [
       "-p",
       "--output-format", "stream-json",

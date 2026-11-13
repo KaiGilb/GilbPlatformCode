@@ -113,7 +113,7 @@ describe("computer mode arguments", () => {
       "--permission-prompts", "host",
       "--permission-prompt-tool", "mcp__gilb__bridge_approve",
       "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
-      "--append-system-prompt", `You are the agent.\n\nYou are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "MyCode" (${wsReal}). Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+      "--append-system-prompt", `You are the agent.\n\nYou are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "MyCode" (${wsReal}). Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
       "--system-prompt-snapshot", "off",
       "--session-id", expect.stringMatching(/^[0-9a-f-]{36}$/),
     ]);
@@ -149,6 +149,23 @@ describe("computer mode arguments", () => {
     expect(argv).toContain("--restricted");
     expect(argv).toContain("--tools");
     expect(JSON.parse(argv[argv.indexOf("--settings") + 1]).sandbox.enabled).toBe(true);
+  });
+});
+
+describe("the app-subfolder sentence", () => {
+  it("is in the folder-mode full prompt, the files-only prompt and the computer prompt", async () => {
+    const SENT = "Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask.";
+    const prompts = [];
+    for (const [fullAccess, platform] of [[false, "darwin"], [false, "win32"], [true, "darwin"]]) {
+      const secret = await start({ fullAccess, platform });
+      await post(secret, T());
+      const a = runs()[0].argv;
+      prompts.push(a[a.indexOf("--append-system-prompt") + 1]);
+      await bridge.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    for (const x of prompts) expect(x).toContain(SENT);
+    expect(prompts[0]).toContain("make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder.");
   });
 });
 
