@@ -50,6 +50,18 @@ afterEach(async () => {
 });
 
 const logRows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
+// "claude was stopped": off Windows the stand-in logs the SIGTERM it was sent; Windows has none to catch (the bridge ends the tree
+// with taskkill /F), so there it is the stand-in process being gone (only runs that wait forever count).
+const isWin = process.platform === "win32";
+const pidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const stoppedRuns = () => (isWin ? logRows("run").filter((r) => r.prompt.includes("WAITFOREVER") && !pidAlive(r.pid)) : logRows("sigterm"));
 const until = async (fn, ms = 15000) => {
   for (let i = 0; i < ms / 25; i++) {
     const v = await fn();
@@ -207,11 +219,11 @@ describe("POST /v1/turn/cancel", () => {
     expect((await api(a, "/v1/turn/cancel", {})).json).toEqual({ cancelled: false });
     expect((await api("", "/v1/turn/cancel", { turnId: t.turnId })).status).toBe(401);
     await new Promise((r) => setTimeout(r, 150));
-    expect(logRows("sigterm")).toHaveLength(0);
+    expect(stoppedRuns()).toHaveLength(0);
     expect(t.ended).toBe(false);
     // the owner
     expect((await api(a, "/v1/turn/cancel", { turnId: t.turnId })).json).toEqual({ cancelled: true });
-    await until(() => logRows("sigterm").length === 1);
+    await until(() => stoppedRuns().length === 1);
     await t.done;
     expect(t.events.find((e) => e[0] === "error")[1]).toEqual({ message: "The turn was cancelled." });
     expect(names(t)).not.toContain("message");
