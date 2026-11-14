@@ -1,1 +1,1 @@
-export { agentLabel, describeAgent, type HistoryActor, type HistoryActorKind } from "./historyActor";
+export { agentLabel, describeAgent, type DescribeAgentOptions, type HistoryActor, type HistoryActorKind } from "./historyActor";

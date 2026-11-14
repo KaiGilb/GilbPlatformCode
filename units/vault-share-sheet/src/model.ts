@@ -1,6 +1,6 @@
 // The headless half: nothing here imports React or the dialog unit.
 import { baseOrigin } from "@kaigilb/gilbplatformcode-base-origin";
-import { principalRow } from "@kaigilb/gilbplatformcode-principal-row";
+import { keyNamespace, principalRow } from "@kaigilb/gilbplatformcode-principal-row";
 import {
   NO_CONTROL,
   VaultAccessError,
@@ -24,6 +24,11 @@ export interface AccessRow {
   level: ShareLevel;
   /** Holds Control. Such a row is never offered for removal: `unshareVault` does not take Control away. */
   owner: boolean;
+  /**
+   * The platform gave this key a name (a label, which principal-row pairs with its labelSource), or the key is a vault whose host
+   * is its name. False means `label` is only what the key is ("Principal key", "Registered principal").
+   */
+  named: boolean;
 }
 
 export type AccessView =
@@ -57,7 +62,8 @@ const holds = (e: VaultAclEntry, mode: string): boolean => (e.levels as readonly
 
 function rowOf(e: VaultAclEntry, level: ShareLevel, owner: boolean): AccessRow {
   const r = principalRow(e.principal, { label: e.label, webId: e.webId, labelSource: e.labelSource, registered: e.registered, viewer: e.viewer });
-  return { principal: e.principal, label: r.title, note: owner ? null : r.provenance, level, owner };
+  const named = (e.label?.trim() ?? "") !== "" || keyNamespace(e.principal) === "pod";
+  return { principal: e.principal, label: r.title, note: owner ? null : r.provenance, level, owner, named };
 }
 
 /**

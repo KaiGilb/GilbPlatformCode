@@ -26,3 +26,4 @@
 .vss .vss-row-name { font-weight: 600; overflow-wrap: anywhere; }
 .vss .vss-row-line, .vss .vss-row-note { font-size: 0.875rem; opacity: 0.75; }
 .vss .vss-inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.vss .vss-help { margin: 0 0 0.75rem; font-size: 0.9375rem; opacity: 0.85; }

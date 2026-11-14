@@ -64,6 +64,12 @@ const CASES = [
   ["describe an error", ["refusal-detail"]],
   ["flow deps for a vault", ["record-picture"]],
   ["stamp who stated a record", ["record-picture"]],
+  // Round 9 CB3
+  ["share", ["vault-share-sheet"]],
+  ["give access", ["vault-share-sheet"]],
+  ["invite", ["vault-share-sheet"]],
+  ["who has access", ["vault-share-sheet"]],
+  ["owner", ["vault-share-sheet"]],
 ];
 
 for (const [phrase, units] of CASES) {

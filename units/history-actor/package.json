@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-history-actor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Who is named on a change, from the address alone. A person is not looked up.",

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VaultShareSheet, defaultWords, useVaultShare, type AccessRow, type AccessView, type ShareApi } from "./index";
 
 const VAULT = "https://ann.fake.test/vault";
-const row = (principal: string, label: string, level: "edit" | "view" = "view", owner = false): AccessRow => ({ principal, label, note: owner ? null : `from ${label}`, level, owner });
+const row = (principal: string, label: string, level: "edit" | "view" = "view", owner = false, named = true): AccessRow => ({ principal, label, note: owner ? null : `from ${label}`, level, owner, named });
 const OWNER = row("p-ann", "Ann", "edit", true);
 const BEN = row("p-ben", "Ben", "edit");
 const CAT = row("p-cat", "Cat", "view");
