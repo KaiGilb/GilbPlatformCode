@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { CdpClient, findChrome, makePage, runLegs, startBrowser, type WebSocketLike } from "./index.mjs";
+import { buildChromeArgs, byTestId, CdpClient, findChrome, makePage, makeTools, runLegs, startBrowser, type WebSocketLike } from "./index.mjs";
 
 /** A socket that answers commands from a table and lets a test push events. */
 class FakeSocket implements WebSocketLike {
@@ -163,6 +163,118 @@ describe("page", () => {
   });
 });
 
+describe("waitForHuman", () => {
+  it("prints the message first, then waits for the expression and returns its value", async () => {
+    const { cdp, sock } = await connect();
+    const lines: string[] = [];
+    const page = makePage(cdp, { log: (l) => lines.push(l) });
+    let n = 0;
+    sock.answers["Runtime.evaluate"] = () => ({ result: { value: ++n < 3 ? false : "signed-in" } });
+    expect(await page.waitForHuman("Type the code you were sent.", "!!window.__user")).toBe("signed-in");
+    expect(lines).toEqual(["Type the code you were sent."]);
+    expect(n).toBe(3);
+  });
+  it("gives up after its own time limit with the expression in the error, and defaults to five minutes", async () => {
+    const { cdp, sock } = await connect();
+    const page = makePage(cdp, { log: () => undefined });
+    sock.answers["Runtime.evaluate"] = () => ({ result: { value: false } });
+    await expect(page.waitForHuman("m", "window.never", 150)).rejects.toThrow("Timed out after 150 ms waiting for: window.never");
+    expect(String(page.waitForHuman)).toContain("timeoutMs = 300000");
+  });
+});
+
+describe("Chrome launch arguments", () => {
+  it("headless by default: --headless=new and --hide-scrollbars, a free debugging port, the profile, then the extras and the blank page", () => {
+    expect(buildChromeArgs({ args: ["--lang=en"] }, "/p")).toEqual(["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--remote-debugging-port=0", "--user-data-dir=/p", "--lang=en", "about:blank"]);
+    expect(buildChromeArgs(undefined, "/p")).toContain("--headless=new");
+  });
+  it("headed drops --headless=new and --hide-scrollbars and keeps the rest", () => {
+    const a = buildChromeArgs({ headed: true, args: ["--lang=en"] }, "/p");
+    expect(a).toEqual(["--disable-gpu", "--no-first-run", "--remote-debugging-port=0", "--user-data-dir=/p", "--lang=en", "about:blank"]);
+    expect(a.some((x) => x.startsWith("--headless"))).toBe(false);
+    expect(a).not.toContain("--hide-scrollbars");
+  });
+});
+
+describe("makeTools (a fake page)", () => {
+  const fake = () => {
+    const evals: string[] = [];
+    const waits: Array<[string, number | undefined]> = [];
+    const sent: Array<[string, any]> = [];
+    let evalAnswer: unknown = true;
+    const tools = makeTools({
+      eval: async (e: string) => (evals.push(e), evalAnswer),
+      waitFor: async (e: string, ms?: number) => (waits.push([e, ms]), true),
+      send: async (m: string, p?: any) => (sent.push([m, p]), m === "DOM.getDocument" ? { root: { nodeId: 1 } } : m === "DOM.querySelector" ? { nodeId: p.selector === "#none" ? 0 : 7 } : {}),
+    });
+    return { tools, evals, waits, sent, answer: (v: unknown) => (evalAnswer = v) };
+  };
+  it("exists, wait and gone ask for the selector, quoted, with a 15 s default", async () => {
+    const { tools, evals, waits } = fake();
+    await tools.exists('a[title="x"]');
+    await tools.wait("#a");
+    await tools.gone("#a", 500);
+    expect(evals).toEqual([`!!document.querySelector(${JSON.stringify('a[title="x"]')})`]);
+    expect(waits).toEqual([['!!document.querySelector("#a")', 15000], ['!document.querySelector("#a")', 500]]);
+  });
+  it("click waits for the element and then clicks it", async () => {
+    const { tools, evals, waits } = fake();
+    await tools.click("#go");
+    expect(waits[0]![0]).toContain('querySelector("#go")');
+    expect(evals).toEqual(['document.querySelector("#go").click()']);
+  });
+  it("clickText looks for text in clickable things, optionally within a part of the page, and clicks the first", async () => {
+    const { tools, evals, waits } = fake();
+    await tools.clickText("Save", { within: "#dialog", timeoutMs: 900 });
+    expect(waits[0]![1]).toBe(900);
+    expect(waits[0]![0]).toContain('document.querySelector("#dialog")');
+    expect(waits[0]![0]).toContain('.includes("Save")');
+    expect(evals[0]).toMatch(/\.click\(\)$/);
+    await tools.clickText("Save");
+    expect(waits[1]![0]).toContain("const root = document;");
+  });
+  it("set uses the native setter and sends input and change events", async () => {
+    const { tools, evals, waits } = fake();
+    await tools.set("#name", 'Ann "A"');
+    expect(waits[0]![0]).toContain('"#name"');
+    expect(evals[0]).toContain("HTMLInputElement.prototype");
+    expect(evals[0]).toContain("HTMLSelectElement.prototype");
+    expect(evals[0]).toContain("HTMLTextAreaElement.prototype");
+    expect(evals[0]).toContain('getOwnPropertyDescriptor(proto, "value").set.call');
+    expect(evals[0]).toContain(JSON.stringify('Ann "A"'));
+    expect(evals[0]).toContain('new Event("input", { bubbles: true })');
+    expect(evals[0]).toContain('new Event("change", { bubbles: true })');
+  });
+  it("waitImage waits for complete and a real width, with 20 s by default", async () => {
+    const { tools, waits } = fake();
+    await tools.waitImage("#pic");
+    expect(waits[0]![1]).toBe(20000);
+    expect(waits[0]![0]).toContain("i.complete && i.naturalWidth > 0");
+  });
+  it("setFiles puts the paths on the input through the protocol, one path or a list, and says when there is no input", async () => {
+    const { tools, sent } = fake();
+    await tools.setFiles("input[type=file]", "/tmp/a.jpg");
+    await tools.setFiles("input[type=file]", ["/tmp/a.jpg", "/tmp/b.jpg"]);
+    expect(sent.map(([m]) => m)).toEqual(["DOM.getDocument", "DOM.querySelector", "DOM.setFileInputFiles", "DOM.getDocument", "DOM.querySelector", "DOM.setFileInputFiles"]);
+    expect(sent[2]![1]).toEqual({ nodeId: 7, files: ["/tmp/a.jpg"] });
+    expect(sent[5]![1]).toEqual({ nodeId: 7, files: ["/tmp/a.jpg", "/tmp/b.jpg"] });
+    await expect(tools.setFiles("#none", "/x")).rejects.toThrow("no file input for #none");
+  });
+  it("noHorizontalScroll throws with the numbers when the page is wider than the width, and uses the window's width when none is given", async () => {
+    const { tools, answer } = fake();
+    answer({ doc: 400, body: 390, inner: 390 });
+    await expect(tools.noHorizontalScroll(390)).rejects.toThrow('horizontal scroll: {"doc":400,"body":390,"inner":390} (wanted <= 390)');
+    await expect(tools.noHorizontalScroll()).rejects.toThrow("wanted <= 390");
+    await expect(tools.noHorizontalScroll(400)).resolves.toBeUndefined();
+    answer({ doc: 390, body: 395, inner: 390 });
+    await expect(tools.noHorizontalScroll(390)).rejects.toThrow("horizontal scroll");
+  });
+  it("byTestId builds the attribute selector", () => {
+    expect(byTestId("add")).toBe('[data-testid="add"]');
+    expect(fake().tools.byTestId("x")).toBe('[data-testid="x"]');
+  });
+});
+
 describe("runLegs", () => {
   const fakePage = () => {
     const errors: string[] = [];
@@ -289,4 +401,75 @@ describe("real Chrome smoke test", () => {
     }
   }, 60000);
   if (!chromePath) it("(skipped: Chrome was not found on this machine)", () => undefined);
+
+  it.skipIf(!chromePath)("makeTools drives a real page: wait, click, clickText, set, waitImage, setFiles, gone, noHorizontalScroll", async () => {
+    const work = mkdtempSync(join(tmpdir(), "bp-tools-"));
+    try {
+      const { page, close } = await startBrowser({ profileDir: join(work, "profiles"), width: 390, height: 600 });
+      try {
+        const t = makeTools(page);
+        const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+        const html = `<!doctype html><body><input id=n><select id=s><option value=a>A</option><option value=b>B</option></select><textarea id=ta></textarea>
+          <input type=file id=f multiple><div id=out></div><div data-testid="box"><img id=pic src="data:image/png;base64,${png}"></div>
+          <div id=dlg><button onclick="document.getElementById('out').textContent+='dlg;'">Save</button></div><button onclick="document.getElementById('out').textContent+='top;'">Save</button>
+          <button id=rm onclick="this.remove()">Remove me</button>
+          <script>window.seen=[];for (const id of ['n','s','ta']) for (const ev of ['input','change']) document.getElementById(id).addEventListener(ev, e => seen.push(id+':'+ev+':'+e.target.value));
+          setTimeout(()=>{const d=document.createElement('p');d.id='late';document.body.append(d)},200)</script>`;
+        await page.goto(`data:text/html,${encodeURIComponent(html)}`);
+        expect(await t.exists("#n")).toBe(true);
+        expect(await t.exists("#nope")).toBe(false);
+        await t.wait("#late", 5000);
+        await t.set("#n", "Ann");
+        await t.set("#s", "b");
+        await t.set("#ta", "long text");
+        expect(await page.eval("document.getElementById('n').value + document.getElementById('s').value + document.getElementById('ta').value")).toBe("Annblong text");
+        expect(await page.eval("seen")).toEqual(["n:input:Ann", "n:change:Ann", "s:input:b", "s:change:b", "ta:input:long text", "ta:change:long text"]);
+        await t.clickText("Save", { within: "#dlg" });
+        expect(await page.eval("document.getElementById('out').textContent")).toBe("dlg;");
+        await t.clickText("Save");
+        expect(await page.eval("document.getElementById('out').textContent")).toBe("dlg;dlg;");
+        await t.click("#rm");
+        await t.gone("#rm", 2000);
+        await t.waitImage(byTestId("box"), 5000);
+        await t.waitImage("#pic", 5000);
+        const a = join(work, "a.txt");
+        const b = join(work, "b.txt");
+        writeFileSync(a, "a");
+        writeFileSync(b, "bb");
+        await t.setFiles("#f", [a, b]);
+        expect(await page.eval("[...document.getElementById('f').files].map(f => f.name + ':' + f.size).join()")).toBe("a.txt:1,b.txt:2");
+        await t.noHorizontalScroll(390);
+        await page.eval("document.body.insertAdjacentHTML('beforeend','<div style=\"width:900px;height:5px\"></div>')");
+        await expect(t.noHorizontalScroll(390)).rejects.toThrow("horizontal scroll");
+      } finally {
+        await close();
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it.skipIf(!chromePath)("keepProfile keeps the profile folder after close and uses it again on the next start", async () => {
+    const work = mkdtempSync(join(tmpdir(), "bp-keep-"));
+    const dir = join(work, "kept");
+    try {
+      const first = await startBrowser({ profileDir: dir, keepProfile: true });
+      expect(first.profile).toBe(dir);
+      await first.page.goto("data:text/html,<title>one</title>");
+      await first.close();
+      expect(existsSync(dir)).toBe(true);
+      expect(existsSync(join(dir, "Default"))).toBe(true);
+      const second = await startBrowser({ profileDir: dir, keepProfile: true });
+      try {
+        expect(second.profile).toBe(dir);
+        expect(await second.page.eval("1+1")).toBe(2);
+      } finally {
+        await second.close();
+      }
+      expect(existsSync(dir)).toBe(true);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  }, 60000);
+
 });
