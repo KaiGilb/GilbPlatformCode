@@ -7,3 +7,4 @@ export * from "./theme";
 export * from "./vault";
 export { defaultSheet } from "./defaultSheet";
 export { BUNDLED_FONT_NAMES, isBundledFont } from "./fontNames";
+export { ACTION_ROW_CSS, ensureActionRowCss } from "./actionRowCss";

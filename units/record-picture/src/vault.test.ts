@@ -1,7 +1,9 @@
 // createVaultPictures against the fake (run-7's upload tests, ported): the folder, the warning, endFiles' answer.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createVaultPictures, vaultPictureService, type VaultPictureServiceDeps } from "./vault";
-import { VAULT_ORIGIN, bytes, makeWorld, prepared, type World } from "../test/world";
+import type { CopyMap } from "@kaigilb/gilbplatformcode-picture-set";
+import { addWithPicture, deleteWithPicture, removePicture, replacePicture } from "./index";
+import { createVaultPictures, vaultPictureFlowDeps, vaultPictureService, type VaultPictureServiceDeps } from "./vault";
+import { FACT, VAULT_ORIGIN, bytes, makeWorld, prepared, type Boat, type BoatForm, type World } from "../test/world";
 
 let w: World;
 beforeEach(() => {
@@ -161,5 +163,74 @@ describe("vaultPictureService", () => {
     } finally {
       URL.revokeObjectURL = orig;
     }
+  });
+});
+
+describe("vaultPictureFlowDeps", () => {
+  const WHO = "https://ann.fake.test/vault";
+  const deps = (stamp?: string | null | (() => string | null), copies?: CopyMap) =>
+    vaultPictureFlowDeps<Boat, BoatForm>({
+      vaultId: w.vault.id,
+      typeIri: "t:Sailboat",
+      fact: FACT,
+      pictures: w.pics,
+      toFacts: (f) => ({ name: f.name }),
+      fromRecord: (made, f, picture) => ({ ...made, name: f.name, picture }),
+      nameHint: (f) => f.name,
+      ...(stamp !== undefined ? { stamp } : {}),
+      ...(copies ? { copies } : {}),
+    });
+  const stated = (id: string): unknown => {
+    const facts = w.fake.state.records.get(id)!.facts;
+    return facts.statedBy ?? facts["a:statedBy"];
+  };
+  const hasStated = (body: unknown) => Object.keys(body as object).some((k) => /statedBy$/.test(k));
+
+  it("with stamp on, the create (picture-first) and the link PATCH (record-first) both carry statedBy", async () => {
+    const first = await addWithPicture(deps(WHO), { name: "Heron" }, prepared(), { order: "picture-first" });
+    expect(stated(first.record.id)).toBe(WHO);
+    expect(first.record.picture).toMatch(/\/vault\/e\//);
+    const second = await addWithPicture(deps(WHO), { name: "Egret" }, prepared(2));
+    const patches = w.recordPatches(second.record);
+    expect(patches).toHaveLength(1);
+    expect(hasStated(patches[0]!.body)).toBe(true);
+    expect(Object.values(patches[0]!.body as object)).toContain(WHO);
+    expect(stated(second.record.id)).toBe(WHO);
+  });
+
+  it("with stamp as a function, it is read on each write", async () => {
+    let who: string | null = "a";
+    const d = deps(() => who);
+    const r1 = await d.createRecord({ name: "One" });
+    who = null;
+    const r2 = await d.createRecord({ name: "Two" });
+    expect(stated(r1.id)).toBe("a");
+    expect(stated(r2.id)).toBeUndefined();
+  });
+
+  it("with stamp off (absent, null or empty), neither the create nor the link PATCH carries statedBy", async () => {
+    for (const stamp of [undefined, null, ""] as const) {
+      const first = await addWithPicture(deps(stamp), { name: "Heron" }, prepared(), { order: "picture-first" });
+      expect(stated(first.record.id)).toBeUndefined();
+      const second = await addWithPicture(deps(stamp), { name: "Egret" }, prepared(2));
+      expect(hasStated(w.recordPatches(second.record)[0]!.body)).toBe(false);
+      expect(stated(second.record.id)).toBeUndefined();
+    }
+  });
+
+  it("replace and remove link through the same deps (stamped); the delete ends the files first and sends no If-Match", async () => {
+    const added = await addWithPicture(deps(WHO), { name: "Heron" }, prepared());
+    const oldMaster = added.record.picture!;
+    const map = await w.pics.loadCopies();
+    const replaced = await replacePicture(deps(WHO, map), added.record, prepared(3));
+    expect(replaced.record.picture).not.toBe(oldMaster);
+    expect(w.recordPatches(replaced.record).every((c) => hasStated(c.body))).toBe(true);
+    const removed = await removePicture(deps(WHO, map), replaced.record);
+    expect(removed.record.picture).toBeNull();
+    const again = await addWithPicture(deps(WHO), { name: "Egret" }, prepared(4));
+    await deleteWithPicture(deps(WHO, await w.pics.loadCopies()), again.record);
+    expect(w.fake.state.records.get(again.record.id)!.endedSeq).not.toBeNull();
+    expect(w.fake.calls.of("DELETE /lws/r/:id").every((c) => !c.headers["if-match"])).toBe(true);
+    expect(w.fake.violations).toEqual([]);
   });
 });

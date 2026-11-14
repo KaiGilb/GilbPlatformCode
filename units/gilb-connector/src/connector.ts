@@ -31,7 +31,7 @@ import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { ChildProcess } from "node:child_process";
 
-export const CONNECTOR_VERSION = "0.6.1";
+export const CONNECTOR_VERSION = "0.6.2";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -411,6 +411,13 @@ export class HopQueue {
  * Each roll re-sends one call the platform refused BEFORE running it, so a long planning chat may go on.
  */
 export const MAX_TURN_ROLLS = 40;
+/**
+ * The server's per-turn ceiling on /tool calls (TURN_MAX_MODEL_ROUNDS), and the room it keeps for each hand-off a new
+ * run_named_role would open (a call is refused when rounds + 60 * (open hand-offs + 1) is over the ceiling).
+ * The server sends no round count back, so the connector counts the /tool calls it sent on the current turn id.
+ */
+export const TURN_ROUNDS_CEILING = 240;
+export const HAND_OFF_ROUND_RESERVE = 60;
 
 /** A remembered vault choice is used again only within this long. */
 export const VAULT_CHOICE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -737,7 +744,7 @@ const GILB_AGENT: ToolSpec = {
 
 const GILB_TASK: ToolSpec = {
   name: "gilbplatform_task",
-  description: "Set the person's request. GilbPlatform loads the agent's standing from this text.",
+  description: "Set the person's request. GilbPlatform loads the agent's standing from this text. Call it with each new message from the person.",
   inputSchema: {
     type: "object",
     properties: {
@@ -1130,6 +1137,17 @@ function hopCreatedNamespaces(file: string): string[] {
  * A string entry is the vault id. An object entry's id is `vaultId`.
  */
 function vaultIdsFromListResult(result: string): string[] | null {
+  const rows = vaultRowsFromListResult(result);
+  return rows ? rows.map((row) => row.id) : null;
+}
+
+/** A listed vault: its id, and the display name the row carries (name, displayName, label or title), if any. */
+interface ListedVault {
+  id: string;
+  name: string | null;
+}
+
+function vaultRowsFromListResult(result: string): ListedVault[] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(result) as unknown;
@@ -1142,12 +1160,27 @@ function vaultIdsFromListResult(result: string): string[] | null {
     rows = (parsed as { vaults: unknown[] }).vaults;
   }
   if (!rows) return null;
-  const ids: string[] = [];
+  const out: ListedVault[] = [];
   for (const row of rows) {
     const id = vaultIdOfListed(row);
-    if (id) ids.push(id);
+    if (!id) continue;
+    out.push({ id, name: displayNameOfListed(row) });
   }
-  return ids;
+  return out;
+}
+
+function displayNameOfListed(row: unknown): string | null {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  for (const key of ["name", "displayName", "label", "title"]) {
+    const value = (row as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return null;
+}
+
+/** Lower case, letters and digits only: "PictureRecords 20", "picturerecords-20" and "PICTURERECORDS20" are one name. */
+function squashVaultName(input: string): string {
+  return input.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function vaultIdOfListed(row: unknown): string | null {
@@ -1260,7 +1293,7 @@ function firstHostLabel(host: string): string {
   return (host.split(".")[0] ?? "").toLowerCase();
 }
 
-function listedVaultMatches(id: string, query: VaultQuery): boolean {
+function listedVaultMatches(id: string, query: VaultQuery, displayName: string | null = null): boolean {
   const lower = id.trim().toLowerCase();
   if (query.address) {
     if (lower === query.address.toLowerCase()) return true;
@@ -1270,16 +1303,20 @@ function listedVaultMatches(id: string, query: VaultQuery): boolean {
   }
   if (!query.name) return false;
   if (lower === query.name) return true;
+  const squashed = squashVaultName(query.name);
+  // The listed display name matches when the two are equal with spaces, case and punctuation ignored.
+  if (displayName !== null && squashed !== "" && squashVaultName(displayName) === squashed) return true;
   const host = hostOfVault(id);
   if (!host) return false;
   if (host === query.name) return true;
-  return firstHostLabel(host) === query.name;
+  const label = firstHostLabel(host);
+  return label === query.name || (squashed !== "" && squashVaultName(label) === squashed);
 }
 
-function matchingVaults(ids: readonly string[], query: VaultQuery): string[] {
+function matchingVaults(rows: readonly ListedVault[], query: VaultQuery): string[] {
   const matched: string[] = [];
-  for (const id of ids) {
-    if (!listedVaultMatches(id, query)) continue;
+  for (const { id, name } of rows) {
+    if (!listedVaultMatches(id, query, name)) continue;
     if (matched.some((have) => sameVault(have, id))) continue;
     matched.push(id);
   }
@@ -2449,6 +2486,13 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   const hopModel = opts.hopModel !== undefined && HOP_MODEL_RE.test(opts.hopModel) ? opts.hopModel : undefined;
   let turnRolls = 0;
   let toolCallsSent = 0;
+  /** /tool calls this process sent on the current turn id (hand-off children count their own rounds on the same turn, unseen here). */
+  let roundsOnTurn = 0;
+  /**
+   * Set when an Agent.Concept call was cut or refused at a turn limit. Renewing the turn resets Concept's per-turn mint limits,
+   * so while this is set no Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn.
+   */
+  let conceptBrakedOnTurnChain = false;
   const uploadCwd = opts.cwd ?? process.cwd();
   const uploadRoots = [...(opts.uploadRoots ?? [])];
   const contextUrl = `${origin}/base/ai/claude-code/context`;
@@ -2726,6 +2770,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       cache = null;
       reportedPrincipal = "";
       turnId = newTurnId();
+      roundsOnTurn = 0;
     }
     try {
       await loadContext(true);
@@ -2934,19 +2979,77 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     });
   }
 
-  /**
-   * A cut hop spent its turn's rounds, so the next call starts on a fresh turn (nothing is re-sent: the hop may have written).
-   * Main process only, never Agent.Concept, within MAX_TURN_ROLLS, and only if no other path has rolled since the hop began.
-   */
-  function rollAfterCut(hopTurn: string, allowed: boolean): void {
-    if (hopMode || !allowed || agentIsConcept() || turnId !== hopTurn || turnRolls >= MAX_TURN_ROLLS) return;
-    turnRolls += 1;
-    turnId = newTurnId();
-    cache = null;
-    process.stderr.write(`gilb-connector: a hand-off ran out of tool rounds; started a new turn (${turnRolls} of ${MAX_TURN_ROLLS}).\n`);
+  /** One stderr line for a turn that was NOT renewed, and why. No tokens, ids or call bodies. */
+  function logRollSkipped(reason: string): void {
+    process.stderr.write(`gilb-connector: turn not renewed: ${reason}.\n`);
   }
 
-  async function runHop(hop: unknown, signal: AbortSignal, hopTurn: string, mayRoll: boolean): Promise<ToolResult | typeof CANCELLED> {
+  /** Starts a fresh platform turn id. false (and a stderr line) when this process may not: in a hand-off, or MAX_TURN_ROLLS used. */
+  function renewTurn(why: string): boolean {
+    if (hopMode) {
+      logRollSkipped("this process is a hand-off");
+      return false;
+    }
+    if (agentIsConcept()) {
+      logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
+      return false;
+    }
+    if (turnRolls >= MAX_TURN_ROLLS) {
+      logRollSkipped(`${MAX_TURN_ROLLS} renewals already used`);
+      return false;
+    }
+    turnRolls += 1;
+    turnId = newTurnId();
+    roundsOnTurn = 0;
+    cache = null;
+    process.stderr.write(`gilb-connector: ${why}; started a new turn (${turnRolls} of ${MAX_TURN_ROLLS}).\n`);
+    return true;
+  }
+
+  /**
+   * A cut hop spent its turn's rounds, so the next call starts on a fresh turn (nothing is re-sent: the hop may have written).
+   * Any role, Agent.Concept too: the renewal re-sends nothing, so it cannot mint twice. Skipped only in a hand-off process,
+   * when another path has already rolled since the hop began, or after MAX_TURN_ROLLS (each skip is logged).
+   */
+  function rollAfterCut(hopTurn: string, conceptCut = false): void {
+    if (hopMode) return logRollSkipped("this process is a hand-off");
+    if (conceptCut && !agentIsConcept()) conceptBrakedOnTurnChain = true;
+    if (turnId !== hopTurn) return logRollSkipped("the turn was already renewed while the hand-off ran");
+    renewTurn("a hand-off ran out of tool rounds");
+  }
+
+  /** A call that may run Agent.Concept. An unreadable or address-like role counts too: the brake fails closed. */
+  function isConceptCall(name: string, args: unknown): boolean {
+    return agentIsConcept() || name === "ask_agent_concept" || (name === "run_named_role" && !roleMayRoll(args));
+  }
+
+  function conceptPausedAnswer(): ToolResult {
+    return toolResult(
+      JSON.stringify({
+        renewed: true,
+        conceptPaused: true,
+        next: "Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.",
+      }),
+      true,
+    );
+  }
+
+  /** What the AI is told when a call was refused at a turn limit and was NOT re-sent. The turn is new (or says it could not be). */
+  function renewedAnswer(name: string, renewed: boolean, why: string): ToolResult {
+    const check = name === "run_named_role" ? "list_records or read_record on what the hand-off should have written" : "a read of what it should have changed";
+    return toolResult(
+      JSON.stringify({
+        error: "this turn had used all its tool rounds, so this call was refused before it ran",
+        renewed,
+        next: renewed
+          ? `The connector started a new turn, so you may go on. This call was not sent again (${why}). It did not run: call ${name} again if you still need it. If you are not sure it did not run, check first with ${check}. Do not stop for this.`
+          : `The connector could not start a new turn (${why}). Tell the person what you did, and stop.`,
+      }),
+      true,
+    );
+  }
+
+  async function runHop(hop: unknown, signal: AbortSignal, hopTurn: string): Promise<ToolResult | typeof CANCELLED> {
     if (!validHop(hop)) {
       return toolResult(JSON.stringify({ error: "The hand-off returned an unexpected answer.", next: HAND_OFF_FAILED_NEXT }), true);
     }
@@ -2976,7 +3079,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       const ran = await runChild(shaped, signal, hopTurn);
       if (signal.aborted) return CANCELLED;
       const closed = await closeHop(shaped.id, hopTurn);
-      if (closed.cut) rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
+      if (closed.cut) rollAfterCut(hopTurn, conceptHop(shaped.role));
       // The hop returned, including one the server cut. Select here, in this process, never inside the hop.
       for (const namespace of ran.created) selectVault(namespace);
       const content = ran.text;
@@ -2984,7 +3087,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     } catch (err) {
       const closed = await closeHop(shaped.id, hopTurn);
       if (signal.aborted) return CANCELLED;
-      if (closed.cut) rollAfterCut(hopTurn, mayRoll && !shaped.role.toLowerCase().replace(/[^a-z0-9]/g, "").includes("concept"));
+      if (closed.cut) rollAfterCut(hopTurn, conceptHop(shaped.role));
       const reason = err instanceof Error ? err.message : "the hand-off could not run";
       // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
       const isConcept = conceptHop(shaped.role);
@@ -3058,7 +3161,19 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   }
 
   async function callPlatformTool(name: string, args: unknown, signal: AbortSignal, resent = false): Promise<ToolResult | typeof CANCELLED> {
-    if (!hopMode) toolCallsSent += 1;
+    if (!hopMode && conceptBrakedOnTurnChain && isConceptCall(name, args)) {
+      process.stderr.write(`gilb-connector: ${name} not sent: Agent.Concept hit a turn limit and waits for the person's next message.\n`);
+      return conceptPausedAnswer();
+    }
+    // Before a hand-off is asked for: the server refuses it when rounds + 60 * (open hand-offs + 1) is over the ceiling,
+    // and the refusal would block everything after it. Start the turn fresh while nothing has been sent yet.
+    if (!hopMode && name === "run_named_role" && roundsOnTurn + HAND_OFF_ROUND_RESERVE * (hopsRunning + 1) > TURN_ROUNDS_CEILING) {
+      renewTurn(`this turn has ${roundsOnTurn} tool rounds and ${hopsRunning} open hand-offs, too near the ${TURN_ROUNDS_CEILING} ceiling for another hand-off`);
+    }
+    if (!hopMode) {
+      toolCallsSent += 1;
+      roundsOnTurn += 1;
+    }
     const sentTurn = turnId;
     const repeatableCall = isRepeatableCall(name, args);
     let res: { status: number; body: unknown };
@@ -3090,25 +3205,36 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     }
     const body = res.body && typeof res.body === "object" ? (res.body as { result?: unknown; hop?: unknown }) : {};
     if (body.hop && typeof body.hop === "object") {
-      return runHop(body.hop, signal, sentTurn, name === "run_named_role" && roleMayRoll(args));
+      return runHop(body.hop, signal, sentTurn);
     }
     const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
     // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
     // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
-    // Not in a hop, not for Agent.Concept or ask_agent_concept (their mint limits are per turn), and not twice in a row.
-    if (!hopMode && !resent && !agentIsConcept() && name !== "ask_agent_concept" && (name !== "run_named_role" || roleMayRoll(args))) {
-      const limit = turnLimitOf(result);
-      if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
-        if (turnRolls >= MAX_TURN_ROLLS) {
-          return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
-        }
-        turnRolls += 1;
-        turnId = newTurnId();
-        cache = null;
-        process.stderr.write(`gilb-connector: this chat reached a turn limit; started a new turn (${turnRolls} of ${MAX_TURN_ROLLS}).\n`);
-        return callPlatformTool(name, args, signal, true);
+    // Not re-sent: Agent.Concept or ask_agent_concept (their mint limits are per turn), an unreadable role, or a second refusal.
+    // Those still get a fresh turn, so the NEXT call works, and an answer that says what to do (never just "stop").
+    const limit = hopMode ? null : turnLimitOf(result);
+    if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
+      const resendBarrier = resent
+        ? "it was already sent once on a new turn"
+        : agentIsConcept() || name === "ask_agent_concept" || (name === "run_named_role" && !roleMayRoll(args))
+          ? "an Agent.Concept call is never sent again by the connector"
+          : "";
+      const alreadyNew = turnId !== sentTurn;
+      if (resendBarrier === "") {
+        if (alreadyNew || renewTurn("this chat reached a turn limit")) return callPlatformTool(name, args, signal, true);
+        return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
       }
+      if (agentIsConcept()) {
+        // This connector is Agent.Concept: no renewal, the server's own answer stands (the reason is logged).
+        logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
+        return toolResult(result, toolAnswerIsError(result));
+      }
+      if (isConceptCall(name, args)) conceptBrakedOnTurnChain = true;
+      if (alreadyNew) logRollSkipped("the turn was already renewed");
+      const renewed = alreadyNew || renewTurn(`${name} was refused at a turn limit and ${resendBarrier}`);
+      return renewedAnswer(name, renewed, resendBarrier);
     }
+    if (hopMode && turnLimitOf(result)) logRollSkipped("this process is a hand-off");
     if (!hopMode && isVaultNamespace(reportedPrincipal) && listsNoVaults(name, result)) {
       const sentence = aiNoGrant(namedVault(args), reportedPrincipal);
       say(sentence);
@@ -3234,8 +3360,9 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (listed === CANCELLED) return listed;
     if (listed.isError) return listed;
     const text = listed.content[0].text;
-    const ids = vaultIdsFromListResult(text);
-    if (!ids) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
+    const rows = vaultRowsFromListResult(text);
+    if (!rows) return toolResult(JSON.stringify({ error: "list_vaults returned an unexpected answer." }), true);
+    const ids = rows.map((row) => row.id);
     if (ids.length === 0) {
       if (isVaultNamespace(reportedPrincipal)) {
         const sentence = aiNoGrant(undefined, reportedPrincipal);
@@ -3244,7 +3371,7 @@ export function startConnector(opts: StartOptions): ConnectorSession {
       }
       return toolResult(`No vault this AI can reach is called ${raw}. It can reach: .`, false);
     }
-    const matched = matchingVaults(ids, query);
+    const matched = matchingVaults(rows, query);
     if (matched.length === 0) {
       return toolResult(`No vault this AI can reach is called ${raw}. It can reach: ${ids.join(", ")}.`, false);
     }
@@ -3488,6 +3615,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (text.length > USER_TEXT_MAX) return toolResult(JSON.stringify({ error: "That request is too long." }), true);
     userText = text;
     cache = null;
+    // The person's next message: Agent.Concept may run again.
+    conceptBrakedOnTurnChain = false;
     return toolResult("The person's request is set.", false);
   }
 

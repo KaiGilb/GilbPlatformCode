@@ -28,7 +28,7 @@ const REQUIRED = [pkg("lws-records"), pkg("photo-ref")];
 // The "./prepare" and "./vault" entries have their own optional peers; every other file may use only the required two.
 const ALLOWED_BY_FILE = {
   "src/prepare.ts": [SIBLING, pkg("picture-shrink"), pkg("picture-pick")],
-  "src/vault.ts": [SIBLING, pkg("picture-set"), pkg("picture-upload"), pkg("lws-session-bridge")],
+  "src/vault.ts": [SIBLING, ...REQUIRED, pkg("picture-set"), pkg("picture-upload"), pkg("lws-session-bridge")],
 };
 const allowedFor = (rel) => ALLOWED_BY_FILE[rel.split("\\").join("/")] ?? [SIBLING, ...REQUIRED];
 

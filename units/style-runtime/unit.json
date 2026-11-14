@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-runtime",
   "package": "@kaigilb/gilbplatformcode-style-runtime",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "`loadStyle({ fetchRemote, fallbackUrl, cacheKey })` reads the app's style sheet, validates it, and keeps exactly one `<style id=\"gilb-style\">` in `<head>`.",
   "source": {
     "repo": "KaiGilb/gilb-style",
@@ -19,7 +19,8 @@
   "namedChanges": [
     "the source's tests moved from `test/` to `src/` with their imports made relative to the file; the shared sheet fixture is `src/fixtures.ts`;",
     "`@types/culori` is a dependency, not a dev dependency, because the unit is installed as TypeScript source and the app type-checks it;",
-    "no source line changed in the files taken; 0.2.0 adds the vault reader (`loadStyleFromVault`, `makeVaultFetchRemote`, `recordsToSheet`) moved here from `style-studio`, with `defaultSheet` and the list of bundled font names."
+    "no source line changed in the files taken; 0.2.0 adds the vault reader (`loadStyleFromVault`, `makeVaultFetchRemote`, `recordsToSheet`) moved here from `style-studio`, with `defaultSheet` and the list of bundled font names.",
+    "0.2.1: adds the action row (`src/actionRowCss.ts`: `ACTION_ROW_CSS`, `ensureActionRowCss`; `toCssText` appends the CSS, so the Mac-order button row arrives with `loadStyle`); the `/react` entry (`src/react.tsx`: `ActionRow`, `ThemeToggle`, `ModeButton`, the toggle moved here from `style-studio`; React is an optional peer); `toCssVars` now emits `--accent-ink` (read by the outline, soft and text button looks but never written before) and `--on-bad`. `toCssText` output is the old output plus those two variables and the appended row CSS; one css.test.ts check cuts the appended block off before it checks selectors."
   ],
   "newFiles": [
     "src/index.ts",
@@ -31,13 +32,16 @@
     "src/defaultSheet.ts",
     "src/fontNames.ts",
     "scripts/check-host-agnostic.mjs",
-    "examples/style.tokens.json"
+    "examples/style.tokens.json",
+    "src/actionRowCss.ts",
+    "src/actionRow.test.tsx",
+    "src/react.tsx"
   ],
   "host": [],
   "library": {
     "admitted": true,
     "tag": "t:AppStyleSheet.runtime",
     "title": "Apply the app's style at start (style tokens)",
-    "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default."
+    "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default. It also brings the button row (Mac order: positive rightmost, Cancel left of it, Delete alone at far left): use ActionRow from the /react entry or the gs-actionrow classes."
   }
 }

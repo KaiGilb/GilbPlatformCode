@@ -3,3 +3,5 @@ export { VaultSwitcher } from "./VaultSwitcher";
 export type { VaultSwitcherProps } from "./VaultSwitcher";
 export { defaultWords } from "./words";
 export type { VaultSwitcherWords } from "./words";
+export { useVaultChoice } from "./useVaultChoice";
+export type { ListedVaultRow, UseVaultChoiceOptions, VaultChoiceState } from "./useVaultChoice";

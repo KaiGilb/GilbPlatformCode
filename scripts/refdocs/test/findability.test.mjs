@@ -65,6 +65,27 @@ const CASES = [
   ["three dots", ["section-menu"]],
   ["menu more", ["section-menu"]],
   ["overflow menu", ["section-menu"]],
+  // CB5
+  ["record list", ["optimistic-records"]],
+  ["add edit delete", ["optimistic-records"]],
+  ["undo delete", ["optimistic-records"]],
+  ["optimistic", ["optimistic-records"]],
+  ["offline-friendly", ["optimistic-records"]],
+  ["switch vault", ["vault-switcher"]],
+  ["choose vault", ["vault-switcher"]],
+  ["several vaults", ["vault-switcher"]],
+  ["shared with me", ["vault-switcher"]],
+  ["vault picker", ["vault-switcher"]],
+  ["error message", ["refusal-detail"]],
+  ["describe an error", ["refusal-detail"]],
+  ["flow deps for a vault", ["record-picture"]],
+  ["stamp who stated a record", ["record-picture"]],
+  // Round 9 CB3
+  ["share", ["vault-share-sheet"]],
+  ["give access", ["vault-share-sheet"]],
+  ["invite", ["vault-share-sheet"]],
+  ["who has access", ["vault-share-sheet"]],
+  ["owner", ["vault-share-sheet"]],
 ];
 
 for (const [phrase, units] of CASES) {
@@ -76,7 +97,7 @@ for (const [phrase, units] of CASES) {
 }
 
 test("a unit's own unit.json library note is identical to its library.json note", () => {
-  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export", "since-last-visit"]) {
+  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export", "since-last-visit", "optimistic-records", "refusal-detail"]) {
     const file = join(ROOT, "units", unit, "unit.json");
     assert.ok(existsSync(file), `${unit} has a unit.json`);
     const lib = JSON.parse(readFileSync(file, "utf8")).library;

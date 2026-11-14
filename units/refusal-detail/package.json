@@ -1,11 +1,12 @@
 {
   "name": "@kaigilb/gilbplatformcode-refusal-detail",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.",
   "exports": {
     ".": "./src/index.ts",
+    "./describe": "./src/describe.ts",
     "./accessDenied.css": "./src/accessDenied.css"
   },
   "files": [

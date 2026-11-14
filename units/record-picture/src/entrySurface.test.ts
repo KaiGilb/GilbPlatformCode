@@ -49,7 +49,12 @@ describe("the entries' import surface", () => {
   it('"./prepare" reaches only picture-shrink and picture-pick', () => {
     expect(closure("prepare.ts").packages).toEqual(["@kaigilb/gilbplatformcode-picture-pick", "@kaigilb/gilbplatformcode-picture-shrink"]);
   });
-  it('"./vault" reaches only picture-set and the bridge (picture-upload is picture-set\'s own peer)', () => {
-    expect(closure("vault.ts").packages).toEqual(["@kaigilb/gilbplatformcode-lws-session-bridge", "@kaigilb/gilbplatformcode-picture-set"]);
+  it('"./vault" reaches only picture-set, the bridge and the two required peers (picture-upload is picture-set\'s own peer)', () => {
+    expect(closure("vault.ts").packages).toEqual([
+      "@kaigilb/gilbplatformcode-lws-records",
+      "@kaigilb/gilbplatformcode-lws-session-bridge",
+      "@kaigilb/gilbplatformcode-photo-ref",
+      "@kaigilb/gilbplatformcode-picture-set",
+    ]);
   });
 });

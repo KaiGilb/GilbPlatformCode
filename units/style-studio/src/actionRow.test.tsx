@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { readdirSync, readFileSync } from "node:fs";
 import { ActionRow } from "./ActionRow";
 import { StyleStudio } from "./studio/index";
 
-afterEach(cleanup);
-const row = () => screen.getByTestId("gs-actionrow");
+afterEach(() => {
+  cleanup();
+  document.head.querySelectorAll("style[data-gs-actionrow]").forEach((n) => n.remove());
+});
+const row = () => document.querySelector<HTMLElement>(".gs-actionrow")!;
 const labels = () => Array.from(row().querySelectorAll("button")).map((b) => b.textContent);
 
 describe("ActionRow (Mac order)", () => {
@@ -23,15 +26,20 @@ describe("ActionRow (Mac order)", () => {
     expect(btns[1]!.className).toContain("gs-btn--danger");
     expect(btns[0]!.getAttribute("data-default")).toBe("true");
   });
-  it("is right-aligned and equal-width on narrow", () => {
+  it("renders style-runtime's row: gs-actionrow, data-plan-button-row, and the CSS present once in the document", () => {
     render(<ActionRow cancel={{ label: "Cancel" }} primary={{ label: "Save" }} />);
-    const css = row().querySelector("style")!.textContent!;
-    expect(css).toMatch(/justify-content:flex-end/);
-    expect(css).toMatch(/max-width:380px\)\{\.gs-actionrow>button\{flex:1 1 0/);
+    render(<ActionRow cancel={{ label: "Cancel" }} primary={{ label: "Save" }} />);
+    expect(row().classList.contains("gs-actionrow")).toBe(true);
+    expect(row().hasAttribute("data-plan-button-row")).toBe(true);
+    expect(row().querySelector("style")).toBeNull();
+    const css = document.head.querySelectorAll("style[data-gs-actionrow]");
+    expect(css).toHaveLength(1);
+    expect(css[0]!.textContent).toMatch(/justify-content:flex-end/);
+    expect(css[0]!.textContent).toMatch(/@container \(max-width:380px\)/);
   });
   it("Studio preview shows both patterns in Mac order", () => {
     render(<StyleStudio />);
-    const rows = screen.getAllByTestId("gs-actionrow").map((r) => Array.from(r.querySelectorAll("button")).map((b) => b.textContent));
+    const rows = Array.from(document.querySelectorAll(".gs-actionrow")).map((r) => Array.from(r.querySelectorAll("button")).map((b) => b.textContent));
     expect(rows).toContainEqual(["Delete", "Cancel", "Save"]);
     expect(rows).toContainEqual(["Cancel", "Delete"]);
   });

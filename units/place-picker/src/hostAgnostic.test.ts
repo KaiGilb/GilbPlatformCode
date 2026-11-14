@@ -43,6 +43,11 @@ describe("host-agnostic check", () => {
     expect(r.status, r.stdout).toBe(1);
     expect(r.stderr).toMatch(/FAIL/);
   });
+  test("an import of the unit's own stylesheet passes; one of another stylesheet fails", () => {
+    expect(runWithPlant("planted.ts", `import "./placePicker.css";`).status).toBe(0);
+    expect(runWithPlant("planted.ts", `import "other-package/x.css";`).status).toBe(1);
+    expect(runWithPlant("planted.ts", `import "../../x/y.css";`).status).toBe(1);
+  });
   test("a sentence that ends in GilbVeda. is not a host and passes", () => {
     const r = runWithPlant("planted.ts", `export const S = "Type at least 3 letters to search all of GilbVeda.";`);
     expect(r.status, r.stderr).toBe(0);

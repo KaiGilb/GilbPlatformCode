@@ -21,7 +21,7 @@ const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.u
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\./i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
 // Relative imports must stay inside src/ (checked by path below); packages are listed here.
-const ALLOWED_IMPORT = [/^react$/, /^react\/jsx-runtime$/, /^@kaigilb\/gilbplatformcode-style-runtime$/, /^dompurify$/, /^@fontsource\/[a-z0-9-]+\/latin-(400|600)\.css$/];
+const ALLOWED_IMPORT = [/^react$/, /^react\/jsx-runtime$/, /^@kaigilb\/gilbplatformcode-style-runtime(\/react)?$/, /^dompurify$/, /^@fontsource\/[a-z0-9-]+\/latin-(400|600)\.css$/];
 const RELATIVE = /^\.{1,2}(\/[A-Za-z0-9_.-]+)+$|^\.\/[A-Za-z0-9_-]+$/;
 
 if (!existsSync(srcRoot)) {

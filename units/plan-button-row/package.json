@@ -1,9 +1,9 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-button-row",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
-  "description": "A card's button row: right-aligned, in Mac order, the positive action rightmost. It only lays the buttons out.",
+  "description": "The action row: every row of buttons (dialog, form, a record's Edit and Delete, a Delete confirm), right-aligned in Mac order, the positive action rightmost. It only lays the buttons out.",
   "exports": {
     ".": "./src/index.ts"
   },

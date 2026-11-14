@@ -5,6 +5,9 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+export { assertButtonRows, classifyButton, collectButtonRows, judgeButtonRows } from "./buttonRows.mjs";
+export { byTestId, makeTools } from "./pageTools.mjs";
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Where Chrome is: `CHROME` when set, else the usual place for this system. Returns null when none of them exists. */
@@ -97,8 +100,8 @@ export class CdpClient {
   }
 }
 
-/** The page: what a leg uses. Built on a connected `CdpClient`. */
-export function makePage(cdp) {
+/** The page: what a leg uses. Built on a connected `CdpClient`. `log` is where `waitForHuman` prints its message. */
+export function makePage(cdp, { log = console.log } = {}) {
   const page = {
     /** Any protocol command, for what the page object does not cover. */
     send: (method, params) => cdp.send(method, params),
@@ -143,28 +146,53 @@ export function makePage(cdp) {
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: k, windowsVirtualKeyCode: code });
       await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: k, windowsVirtualKeyCode: code });
     },
+    /** Prints the message, then waits (default five minutes) until the expression is truthy: for a step only a person can do, such as typing a sign-in code into a headed window. */
+    async waitForHuman(message, readyExpr, timeoutMs = 300000) {
+      log(message);
+      return page.waitFor(readyExpr, timeoutMs);
+    },
     sleep,
   };
   return page;
+}
+
+/** The command-line arguments for Chrome: headless by default; `headed` drops `--headless=new` and `--hide-scrollbars` so a person can use the window. */
+export function buildChromeArgs({ headed = false, args = [] } = {}, profile) {
+  return [
+    ...(headed ? [] : ["--headless=new"]),
+    "--disable-gpu",
+    ...(headed ? [] : ["--hide-scrollbars"]),
+    "--no-first-run",
+    "--remote-debugging-port=0",
+    `--user-data-dir=${profile}`,
+    ...args,
+    "about:blank",
+  ];
 }
 
 /**
  * Starts headless Chrome with a new profile inside `profileDir` (default `.browser-proof` under the current folder; never the system
  * temp folder unless you pass it), connects to its first page and turns on the protocol domains (`domains`, default Runtime, Page and Log;
  * without Log, a failed resource load such as a missing favicon is not counted as a page error).
- * `close()` stops Chrome and removes the profile; it is safe to call twice and it also runs when the process exits.
+ * `headed: true` opens a visible window (for a step a person must do; see `page.waitForHuman`). `keepProfile: true` uses `profileDir`
+ * itself as the profile (default `.browser-proof/profile`) and leaves it when closed, so a sign-in survives to the next run; do not
+ * run two browsers on one kept profile.
+ * `close()` stops Chrome and removes the profile (unless kept); it is safe to call twice and it also runs when the process exits.
  * Throws a plain sentence when Chrome cannot be found or does not start.
  *
- * @param {{ chrome?: string, profileDir?: string, domains?: string[], width?: number, height?: number, deviceScaleFactor?: number, mobile?: boolean, args?: string[], startupMs?: number }} [opts]
+ * @param {{ chrome?: string, headed?: boolean, keepProfile?: boolean, profileDir?: string, domains?: string[], width?: number, height?: number, deviceScaleFactor?: number, mobile?: boolean, args?: string[], startupMs?: number }} [opts]
  */
 export async function startBrowser(opts = {}) {
   const chrome = opts.chrome ?? findChrome();
   if (!chrome) throw new Error("Chrome was not found. Install it or set CHROME to its path.");
-  const base = resolve(opts.profileDir ?? join(process.cwd(), ".browser-proof"));
+  const keep = opts.keepProfile === true;
+  const base = resolve(opts.profileDir ?? join(process.cwd(), ".browser-proof", ...(keep ? ["profile"] : [])));
   mkdirSync(base, { recursive: true });
-  const profile = mkdtempSync(join(base, "chrome-"));
+  const profile = keep ? base : mkdtempSync(join(base, "chrome-"));
+  // A kept profile still holds the port of the last run; Chrome writes a new one.
+  if (keep) rmSync(join(profile, "DevToolsActivePort"), { force: true });
   // Its own process group, so that stopping Chrome stops its helper processes too (a plain kill leaves them running).
-  const child = spawn(chrome, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, ...(opts.args ?? []), "about:blank"], { stdio: "ignore", detached: process.platform !== "win32" });
+  const child = spawn(chrome, buildChromeArgs(opts, profile), { stdio: "ignore", detached: process.platform !== "win32" });
   let exited = child.exitCode !== null;
   child.once("exit", () => (exited = true));
   child.once("error", () => (exited = true));
@@ -178,7 +206,7 @@ export async function startBrowser(opts = {}) {
       /* gone already */
     }
   };
-  const removeProfile = () => rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  const removeProfile = () => keep || rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   const onExit = () => {
     stop();
     try {

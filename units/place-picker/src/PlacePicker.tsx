@@ -9,6 +9,7 @@
 //   - a bound value opens for edit with its text selected and is kept: it is replaced only by a pick and cleared only when the person
 //     empties the box.
 import { useEffect, useId, useRef, useState } from "react";
+import "./placePicker.css";
 import {
   GeoUnavailableError,
   resolveGeoGrains,
@@ -66,6 +67,12 @@ type LoadState =
   | { kind: "empty"; q: string; capped: boolean; unplaced: number }
   | { kind: "error"; q: string; message: string; notAnAbsence: boolean };
 
+/** CHANGED (new): `word` is whole-word matching; `prefix` lets the last word be the start of a word. */
+export type PlaceSearchMode = "word" | "prefix";
+
+/** CHANGED (new): the last word of a query must have this many letters before a prefix search is made. */
+export const PLACE_PREFIX_MIN_LAST_WORD = 2;
+
 export interface PlacePickerProps {
   /** Which catalogue grain this control searches. */
   rung: GeoRung;
@@ -92,6 +99,12 @@ export interface PlacePickerProps {
    * This field's own access pill, rendered on the right of the row. A slot, not a level: this control cannot read, choose or write one.
    */
   rungPill?: React.ReactNode;
+  /**
+   * CHANGED (new): how the typed text is matched. `"prefix"` (the default) lets the last word be the start of a word, so "Jap" finds Japan
+   * (the catalogue's `match=prefix`); it is used only when the last word has at least 2 letters, and if the catalogue refuses the parameter
+   * (a 400) the same search is made again as `"word"`. `"word"` matches whole words only, as the catalogue does by default ("Jap" finds nothing).
+   */
+  searchMode?: PlaceSearchMode;
 }
 
 export function PlacePicker({
@@ -106,6 +119,7 @@ export function PlacePicker({
   pickLandedElsewhere = null,
   disabled = false,
   rungPill = null,
+  searchMode = "prefix",
 }: PlacePickerProps) {
   const [q, setQ] = useState("");
   /**
@@ -116,6 +130,8 @@ export function PlacePicker({
   const [state, setState] = useState<LoadState>({ kind: "idle" });
   /** True while a pick is being committed: the row is chosen but the cascade has not landed. */
   const [committing, setCommitting] = useState(false);
+  /** The row under the pointer or the focus, for the stable class `pp-option--active`. */
+  const [activeId, setActiveId] = useState<string | null>(null);
   const listedPlaces = state.kind === "results" ? state.hits.map((h) => h.place) : NO_PLACES;
   const details = usePlaceHitDetails(listedPlaces);
   const inputId = useId();
@@ -154,7 +170,18 @@ export function PlacePicker({
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const found = await searchPlacesInCountryDetailed(needle, rung, restrictToCountryId, PLACE_SEARCH_RESULT_CAP, ac.signal);
+          // CHANGED (new): prefix when asked for and the last word is long enough; a catalogue that refuses `match` (400) is asked again as text.
+          const lastWord = needle.split(/\s+/).pop() ?? "";
+          const prefix = searchMode === "prefix" && lastWord.length >= PLACE_PREFIX_MIN_LAST_WORD;
+          const ask = (match: "text" | "prefix") =>
+            searchPlacesInCountryDetailed(needle, rung, restrictToCountryId, PLACE_SEARCH_RESULT_CAP, ac.signal, { match });
+          let found;
+          try {
+            found = await ask(prefix ? "prefix" : "text");
+          } catch (e) {
+            if (!prefix || !(e instanceof GeoUnavailableError) || e.status !== 400) throw e;
+            found = await ask("text");
+          }
           if (ac.signal.aborted) return;
           const grains = await resolveGeoGrains(ac.signal);
           if (ac.signal.aborted) return;
@@ -178,16 +205,16 @@ export function PlacePicker({
       clearTimeout(timer);
       ac.abort();
     };
-  }, [q, rung, restrictToCountryId]);
+  }, [q, rung, restrictToCountryId, searchMode]);
 
   if (value && !editingBound) {
     return (
-      <div className="relative flex items-start gap-2 bg-[var(--surface)] py-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="font-[var(--serif)] text-[13px] italic text-[var(--ink-soft)]">{label}</p>
+      <div className="pp-root relative flex items-start gap-2 bg-[var(--surface)] py-2.5">
+        <div className="pp-body min-w-0 flex-1">
+          <p className="pp-label font-[var(--serif)] text-[13px] italic text-[var(--ink-soft)]">{label}</p>
           <button
             type="button"
-            className="mt-0.5 block w-full break-words text-left text-[15px] text-[var(--ink)]"
+            className="pp-value mt-0.5 block w-full break-words text-left text-[15px] text-[var(--ink)]"
             data-testid={`place-${rung}-value`}
             // The catalogue entity this value is: kept on the value so a flag (a country) or any later mark can be drawn from the
             // picked row's own reference, never from its label. A data attribute, never text.
@@ -207,18 +234,18 @@ export function PlacePicker({
           <div className="flex items-center gap-2">
             {/* The three ways a chip can be filled are three different facts: a pick made here, a pick made in another box, a cascade. */}
             {foundInBoxLabel ? (
-              <span className="shrink-0 text-[11px] text-[var(--ink-faint)]" data-testid={`place-${rung}-provenance`}>
+              <span className="pp-note shrink-0 text-[11px] text-[var(--ink-faint)]" data-testid={`place-${rung}-provenance`}>
                 found in your {foundInBoxLabel} search
               </span>
             ) : filledByCascade ? (
-              <span className="shrink-0 text-[11px] text-[var(--ink-faint)]" data-testid={`place-${rung}-provenance`}>
+              <span className="pp-note shrink-0 text-[11px] text-[var(--ink-faint)]" data-testid={`place-${rung}-provenance`}>
                 filled from your pick
               </span>
             ) : null}
           </div>
         </div>
         {/* This field's own rung pill, on the right. The column is drawn even when the slot is empty so the width does not jump between rows. */}
-        <div className="flex shrink-0 flex-col items-end gap-1">{rungPill}</div>
+        <div className="pp-pill flex shrink-0 flex-col items-end gap-1">{rungPill}</div>
       </div>
     );
   }
@@ -245,9 +272,9 @@ export function PlacePicker({
   }
 
   return (
-    <div className="relative flex items-start gap-2 bg-[var(--surface)] py-2.5">
-      <div className="min-w-0 flex-1" ref={editRootRef}>
-        <label htmlFor={inputId} className="font-[var(--serif)] block text-[13px] italic text-[var(--ink-soft)]">
+    <div className="pp-root relative flex items-start gap-2 bg-[var(--surface)] py-2.5">
+      <div className="pp-body min-w-0 flex-1" ref={editRootRef}>
+        <label htmlFor={inputId} className="pp-label font-[var(--serif)] block text-[13px] italic text-[var(--ink-soft)]">
           {label}
         </label>
         <input
@@ -261,7 +288,7 @@ export function PlacePicker({
           autoComplete="off"
           spellCheck={false}
           disabled={disabled}
-          className="mt-0.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[16px] text-[var(--ink)]"
+          className="pp-input mt-0.5 w-full rounded-md border border-[var(--line)] bg-[var(--surface)] px-2 py-1.5 text-[16px] text-[var(--ink)]"
           placeholder={
             restrictToCountryId && rung !== "country"
               ? `Search ${label.toLowerCase()} in the chosen country…`
@@ -280,7 +307,7 @@ export function PlacePicker({
         />
         {/* The control the person actually used says what happened: their pick went to another field. */}
         {pickLandedElsewhere ? (
-          <p className="px-1 py-1 text-xs text-[var(--ink)]" role="status" data-testid={`place-${rung}-landed-elsewhere`}>
+          <p className="pp-note px-1 py-1 text-xs text-[var(--ink)]" role="status" data-testid={`place-${rung}-landed-elsewhere`}>
             “{pickLandedElsewhere.label}” is held as a {pickLandedElsewhere.rungLabel.toLowerCase()} in the shared catalogue, so your pick went to
             the {pickLandedElsewhere.rungLabel} field above. Search here again if you also keep a {label.toLowerCase()}.
           </p>
@@ -288,24 +315,24 @@ export function PlacePicker({
         {/* The listbox role lives on the inner list only: a listbox may own only options, not the loading/empty/error lines. */}
         <div id={listId} onBlur={() => leaveBoundEditLater()}>
           {state.kind === "idle" ? (
-            <p className="px-1 py-1 text-xs text-[var(--ink-faint)]">
+            <p className="pp-note px-1 py-1 text-xs text-[var(--ink-faint)]">
               Type to search — places come from the shared catalogue, so there is nothing to list until you do.
             </p>
           ) : state.kind === "keep-typing" ? (
-            <p className="px-1 py-1 text-xs text-[var(--ink-faint)]">Keep typing…</p>
+            <p className="pp-note px-1 py-1 text-xs text-[var(--ink-faint)]">Keep typing…</p>
           ) : state.kind === "loading" ? (
-            <p className="px-1 py-1 text-xs text-[var(--ink-faint)]" aria-live="polite">
+            <p className="pp-note px-1 py-1 text-xs text-[var(--ink-faint)]" aria-live="polite">
               Searching the place catalogue…
             </p>
           ) : state.kind === "error" ? (
-            <p className="px-1 py-1 text-xs text-[var(--bad)]" role="alert">
+            <p className="pp-error px-1 py-1 text-xs text-[var(--bad)]" role="alert">
               {state.message}
               {state.notAnAbsence ? ` ${NOT_A_NEGATIVE}` : ""}
             </p>
           ) : state.kind === "empty" ? (
             // CHANGED (F13): "no match" is said only when the whole catalogue answer was read and every match was placed.
             state.capped || state.unplaced > 0 ? (
-              <p className="px-1 py-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-partial-note`}>
+              <p className="pp-note px-1 py-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-partial-note`}>
                 {state.capped ? (
                   <>
                     Could not check every match for “{state.q}”
@@ -316,7 +343,7 @@ export function PlacePicker({
                 {NOT_A_NEGATIVE}
               </p>
             ) : (
-              <p className="px-1 py-1 text-xs text-[var(--ink-faint)]">
+              <p className="pp-note px-1 py-1 text-xs text-[var(--ink-faint)]">
                 No {label.toLowerCase()} matches “{state.q}”
                 {restrictToCountryId ? " in the country you chose" : ""}. Try another spelling.
               </p>
@@ -324,14 +351,16 @@ export function PlacePicker({
           ) : (
             <>
               {/* A listbox owns options and nothing else: the options are direct children, with no list semantics fighting the widget semantics. */}
-              <div role="listbox" aria-label={`${label} matches`} className="flex flex-col gap-0.5 py-1">
+              <div role="listbox" aria-label={`${label} matches`} className="pp-listbox flex flex-col gap-0.5 py-1">
                 {state.hits.map((h) => (
                   <button
                     key={h.place.id}
                     type="button"
                     role="option"
                     aria-selected={false}
-                    className="w-full rounded-lg px-3 py-2 text-left hover:bg-[var(--sel)] active:bg-[var(--surface-sunken)]"
+                    className={`pp-option${activeId === h.place.id ? " pp-option--active" : ""} w-full rounded-lg px-3 py-2 text-left hover:bg-[var(--sel)] active:bg-[var(--surface-sunken)]`}
+                    onMouseEnter={() => setActiveId(h.place.id)}
+                    onFocus={() => setActiveId(h.place.id)}
                     disabled={committing}
                     // A pointer press must not move the focus off the box, or the blur would close the list before the click lands.
                     onMouseDown={(e) => e.preventDefault()}
@@ -363,15 +392,15 @@ export function PlacePicker({
                       })();
                     }}
                   >
-                    <span className="block text-sm text-[var(--ink)]">{h.place.label}</span>
+                    <span className="pp-option-name block text-sm text-[var(--ink)]">{h.place.label}</span>
                     {/* The row says what it is and where, and where it will go, before the person commits. An unclassifiable type is
                         shown as unclassified, never quietly relabelled to this box's own rung. */}
-                    <span className="block text-xs text-[var(--ink-faint)]" data-testid="place-option-lands">
+                    <span className="pp-option-meta block text-xs text-[var(--ink-faint)]" data-testid="place-option-lands">
                       <PlaceHitMeta detail={details.get(h.place.id)} fallback={h.landsIn ? RUNG_LABEL[h.landsIn].toLowerCase() : null} />
                       {h.landsIn ? "" : ` · grain not classified — will be filed as ${label}`}
                     </span>
                     {h.landsIn && h.landsIn !== rung ? (
-                      <span className="block text-[11px] text-[var(--ink-faint)]">
+                      <span className="pp-option-meta block text-[11px] text-[var(--ink-faint)]">
                         goes in your {RUNG_LABEL[h.landsIn]} field, not {label}
                       </span>
                     ) : null}
@@ -379,14 +408,14 @@ export function PlacePicker({
                 ))}
               </div>
               {state.capped ? (
-                <p className="px-1 pb-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-capped-note`}>
+                <p className="pp-note px-1 pb-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-capped-note`}>
                   Showing the first matches
                   {restrictToCountryId ? " inside the country you chose" : ""}. There are more than this search could check. Type more to narrow.
                 </p>
               ) : null}
               {/* CHANGED (F13): matches left out for want of a country are said. */}
               {state.unplaced > 0 ? (
-                <p className="px-1 pb-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-unplaced-note`}>
+                <p className="pp-note px-1 pb-1 text-xs text-[var(--ink-faint)]" data-testid={`place-${rung}-unplaced-note`}>
                   {UNPLACED_SENTENCE}
                 </p>
               ) : null}
@@ -395,7 +424,7 @@ export function PlacePicker({
         </div>
       </div>
       {/* The rung pill holds its place while the field is being searched too: a pill that disappeared on tap would tell the person their sharing setting had gone away. */}
-      <div className="flex shrink-0 flex-col items-end gap-1">{rungPill}</div>
+      <div className="pp-pill flex shrink-0 flex-col items-end gap-1">{rungPill}</div>
     </div>
   );
 }

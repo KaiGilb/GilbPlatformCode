@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-picture",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Links a stored picture to a record's picture fact, reads the link back, and runs the add, replace, remove and delete order so no picture file is orphaned and no record is lost.",

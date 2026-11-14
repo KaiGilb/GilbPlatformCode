@@ -11,6 +11,6 @@ describe("the package's exports", () => {
     expect(Object.keys(prepare).sort()).toEqual(["checkPictureFile", "preparePicture"]);
   });
   it('"./vault" is exactly these values', () => {
-    expect(Object.keys(vault).sort()).toEqual(["createVaultPictures", "vaultPictureService"]);
+    expect(Object.keys(vault).sort()).toEqual(["createVaultPictures", "vaultPictureFlowDeps", "vaultPictureService"]);
   });
 });
