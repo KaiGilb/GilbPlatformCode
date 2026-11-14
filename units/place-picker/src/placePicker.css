@@ -1,0 +1,32 @@
+/* The place picker's own look, for an app that does not use Tailwind. Every rule is wrapped in :where(), so it has no specificity of its own:
+   the Tailwind classes the component also carries, and any rule of the host's, win over it.
+   Theme with the style-runtime variables (each has a neutral fallback): --ink, --ink-soft, --ink-faint, --surface, --lines, --sel, --bad,
+   --accent, --r-md, --serif. Mobile first: every control is at least 44px tall, the input is 16px (no zoom on a phone), focus is drawn. */
+:where(.pp-root) { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.625rem 0; background: var(--surface, transparent); color: var(--ink, inherit); }
+:where(.pp-body) { flex: 1 1 auto; min-width: 0; }
+:where(.pp-pill) { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+:where(.pp-label) { display: block; margin: 0; font-family: var(--serif, inherit); font-size: 0.8125rem; font-style: italic; color: var(--ink-soft, inherit); }
+:where(.pp-input) {
+  box-sizing: border-box; display: block; width: 100%; min-height: 2.75rem; margin-top: 0.125rem; padding: 0.5rem 0.75rem;
+  font: inherit; font-size: 1rem; color: var(--ink, inherit); background: var(--surface, transparent);
+  border: 1px solid var(--lines, color-mix(in srgb, currentColor 35%, transparent)); border-radius: var(--r-md, 0.5rem);
+}
+:where(.pp-value) {
+  box-sizing: border-box; display: block; width: 100%; min-height: 2.75rem; margin-top: 0.125rem; padding: 0.5rem 0; text-align: left;
+  font: inherit; font-size: 0.9375rem; color: var(--ink, inherit); background: transparent; border: 0; overflow-wrap: anywhere; cursor: pointer;
+}
+:where(.pp-value:disabled, .pp-input:disabled, .pp-option:disabled) { opacity: 0.5; cursor: not-allowed; }
+:where(.pp-input:focus-visible, .pp-value:focus-visible, .pp-option:focus-visible) { outline: 2px solid var(--accent, #1a56db); outline-offset: 2px; }
+:where(.pp-listbox) { display: flex; flex-direction: column; gap: 0.125rem; padding: 0.25rem 0; }
+:where(.pp-option) {
+  box-sizing: border-box; display: block; width: 100%; min-height: 2.75rem; padding: 0.5rem 0.75rem; text-align: left;
+  font: inherit; color: var(--ink, inherit); background: transparent; border: 0; border-radius: var(--r-md, 0.5rem); cursor: pointer;
+}
+:where(.pp-option:hover, .pp-option--active) { background: var(--sel, color-mix(in srgb, currentColor 8%, transparent)); }
+:where(.pp-option-name) { display: block; font-size: 0.875rem; color: var(--ink, inherit); }
+:where(.pp-option-meta) { display: block; font-size: 0.75rem; color: var(--ink-faint, inherit); opacity: 0.85; }
+:where(.pp-note) { margin: 0; padding: 0.25rem; font-size: 0.75rem; color: var(--ink-faint, inherit); }
+:where(.pp-error) { margin: 0; padding: 0.25rem; font-size: 0.75rem; color: var(--bad, #b42318); }
+@media (min-width: 40rem) {
+  :where(.pp-option-name) { font-size: 0.9375rem; }
+}

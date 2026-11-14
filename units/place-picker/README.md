@@ -6,7 +6,11 @@ The box where a place is searched in the catalogue and chosen, one rung at a tim
 
 The box where a place is searched in the catalogue and chosen, one rung at a time: city, region or country.
 
-`<PlacePicker rung label value onPick onClear restrictToCountryId? filledByCascade? foundInBoxLabel? pickLandedElsewhere? rungPill? disabled? />`. Nothing is typeable into it as a value: a search of two letters or more lists up to eight places from the catalogue (`geo-catalogue`), each with its kind and where it is (`place-hit-details`) and, when it will land in another field, a line that says so before the pick; choosing one calls `onPick(place)` and the box waits for that to finish before it clears itself. A bound value shows its name; a tap opens it for edit with the text selected (it is not wiped); emptying the box clears it; Escape or leaving the box unchanged keeps it. `RUNG_LABEL` is the word of each rung ("City", "Region", "Country") and `PLACE_SEARCH_*` are the debounce (140 ms), the minimum (1), the listing (2) and the cap (8).
+`<PlacePicker rung label value onPick onClear restrictToCountryId? filledByCascade? foundInBoxLabel? pickLandedElsewhere? rungPill? disabled? searchMode? />`. Nothing is typeable into it as a value: a search of two letters or more lists up to eight places from the catalogue (`geo-catalogue`), each with its kind and where it is (`place-hit-details`) and, when it will land in another field, a line that says so before the pick; choosing one calls `onPick(place)` and the box waits for that to finish before it clears itself. A bound value shows its name; a tap opens it for edit with the text selected (it is not wiped); emptying the box clears it; Escape or leaving the box unchanged keeps it. `RUNG_LABEL` is the word of each rung ("City", "Region", "Country") and `PLACE_SEARCH_*` are the debounce (140 ms), the minimum (1), the listing (2) and the cap (8).
+
+**Search mode (`searchMode?: "word" | "prefix"`, new, 0.1.1).** The catalogue matches whole words by default, so "Jap" finds nothing there. The box's default is `"prefix"`: when the last word typed has two letters or more it asks with `match=prefix` ("Jap" finds Japan, "New Y" is asked as whole words because "Y" is one letter), and if the catalogue refuses the parameter (400) it asks again as whole words. `"word"` never sends `match`. Any other failure is still the one fixed sentence below, not a retry. `PLACE_PREFIX_MIN_LAST_WORD` (2) is exported.
+
+**Labels of saved places (`usePlaceLabels(ids)`, new, 0.1.1).** A hook that returns a `Map` of catalogue address to label for a list of saved addresses: what the device already knows is there on the first render; each other address is read once per session through `geo-catalogue`'s `getPlaceLabel` (shared by every hook that asks, in flight or done; a failed read is asked again next time). An address with no label (404, too large, outside the catalogue, the catalogue down) stays absent, so a view shows nothing for it and never an address.
 
 **It says what it does not know.** The box has a state for each of idle, keep typing, searching, the list, nothing, and a failure, and never draws one as another:
 
@@ -50,7 +54,17 @@ Through `geo-catalogue` and `place-hit-details`: `GET <geo origin>/base/search?q
 
 ## What the host must supply
 
-The two origins, set once through `geo-origin` and `term-origin`, and `fetch`. Styling: GilbApp's `var(--...)` tokens (`--ink`, `--ink-soft`, `--ink-faint`, `--line`, `--surface`, `--sel`, `--surface-sunken`, `--bad`, `--serif`).
+The two origins, set once through `geo-origin` and `term-origin`, and `fetch`. Styling: see "Styling" below.
+
+## Styling
+
+The box carries two sets of classes. The Tailwind arbitrary classes of GilbApp stay as they were. Beside them are stable plain classes, and the package ships `src/placePicker.css`, which the component imports itself (a bundler that handles CSS needs nothing more) and which is also exported as `@kaigilb/gilbplatformcode-place-picker/placePicker.css`. An app with plain CSS and no Tailwind gets a styled picker from that file alone.
+
+The classes: `pp-root` (the row), `pp-body` (label, input and list), `pp-label`, `pp-input`, `pp-listbox`, `pp-option` (one hit; `pp-option--active` on the one under the pointer or the focus), `pp-option-name`, `pp-option-meta`, `pp-note` (the quiet lines: idle, searching, partial answers, where a value came from), `pp-error`, `pp-value` (the bound value, a button) and `pp-pill` (the slot for `rungPill`).
+
+Every rule is wrapped in `:where()`, so it has no specificity: your own CSS, and Tailwind where you use it, win without `!important`. It reads the variables the style runtime emits, each with a neutral fallback: `--ink`, `--ink-soft`, `--ink-faint`, `--surface`, `--lines`, `--sel`, `--bad`, `--accent`, `--r-md`, `--serif`. It is mobile first: the input, each hit and the bound value are at least 44px (2.75rem) tall, the input is 16px (a phone does not zoom), and focus is drawn (`:focus-visible`). It pulls nothing in (no `@import`, no `url()`).
+
+An app that uses Tailwind keeps working without change; one that does not writes nothing more than `import "@kaigilb/gilbplatformcode-place-picker/placePicker.css"` if its bundler does not follow the component's own import.
 
 ## Module state
 
@@ -74,6 +88,7 @@ Everything else is GilbApp's code. Each change is marked `CHANGED` in the source
 5. **No address or id tail as text** (F14). The second line of a row is `place-hit-details`'s, which says a position ("1 of 2 with this name") where GilbApp wrote `entry <end of the address>`. The box itself wrote no address as text; `data-place-id` stays.
 6. `RUNG_LABEL` says "Region", as GilbApp's picker did; `place-display` (the read-only address line) says "Region/State".
 7. The module header and the comments that named a cycle, an agent or a person are reworded with the same facts. No other code changed.
+8. **0.1.1, new:** the `pp-*` classes and `placePicker.css`; `searchMode`; `usePlaceLabels`. Each is marked in the source or is a new file.
 
 ## Where it came from
 
@@ -81,10 +96,11 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9
 
 ## Tests
 
-`npx vitest run`, 79 tests in 8 files:
+`npx vitest run`, 108 tests in 11 files:
 
 - `PlacePicker.cycle168.test.tsx` 17 of GilbApp's 30 (the other 13 render the whole address card and go with the card parts and the Address view): the listbox owns options only (axe clean), a cut-short empty answer is not "no match", the country clause is conditional, the row says where it will land, a pick that lands at another rung is said in both places (over `test/AddressBoxes.tsx`, the card's three boxes with `place-draft` and `place-clear`), a failed commit is said and not an untouched form.
 - `PlacePicker.n6.test.tsx` 7, `.s8cardlook.test.tsx` 6, `.s8cityfix.test.tsx` 6 of 8 (the other 2 render the address card): changing a bound city by keyboard and pointer, the four Oslo rows told apart, the city first.
 - `PlacePicker.honest.test.tsx` 24 (new): F13 (unplaced, cut short, complete), F14 (no address or id tail readable in any state), F15 (a 502, a throw, the fence), the pick awaited (M28), an older search aborted (M29), the states in words, and the box as a control (the pause before a search, a change of country, the access pill, Escape, `aria-expanded`, leaving the box during a pick).
+- `placePicker.css.test.ts` 18 (new): every `pp-` class in the component is in the stylesheet and the other way round, rules are `:where()`, 44px targets, visible focus, tokens with fallbacks, no `@import`/`url()`. `searchMode.test.tsx` 6 and `usePlaceLabels.test.tsx` 3 (new): prefix by default, one-letter last word as text, `word`, a 400 asked again as text, a 502 is not retried; one read per address, known names at once, failures absent.
 - `exports.test.ts` 3, `noNetwork.test.ts` 3 (new); `hostAgnostic.test.ts` 13.
 - A world-level check closes every file: across it, no request to the catalogue was anything but a `GET`.

@@ -8,8 +8,10 @@ Reads the shared place catalogue: search by kind of place, one place, the walk u
 
 The client of the shared world catalogue (GilbGeo), with no React. The app owns no place data: a place is a row of the catalogue, and a value that names a place is that row's address. This unit asks the catalogue for rows and keeps nothing but a small copy of what it said.
 
-- `searchPlaceIds(q, rung, signal?)`: the ids a search finds at one rung (`city`, `region`, `country`) and whether the answer is the whole answer (`incomplete`). `searchPlaces(q, rung, limit?, signal?)`: the same, each id read as a row and ranked for the box (`rankHitsForRung`: the box's own kind first, then the unclassified, then the rest).
+- `searchPlaceIds(q, rung, signal?, { match? })`: the ids a search finds at one rung (`city`, `region`, `country`) and whether the answer is the whole answer (`incomplete`). `searchPlaces(q, rung, limit?, signal?)`: the same, each id read as a row and ranked for the box (`rankHitsForRung`: the box's own kind first, then the unclassified, then the rest).
 - `searchPlacesInCountryDetailed(q, rung, countryId, limit?, signal?)`: the same restricted to one country, `{ hits, capped, unplaced }`. `capped` says the scan stopped early; `unplaced` (new) counts the candidates left out because no country could be reached from them. An empty `hits` with `capped` or `unplaced` above zero is not "no such place".
+- **Search mode (new, 0.1.1).** `searchPlaceIds`, `searchPlaces` and `searchPlacesInCountryDetailed` take `{ match: "text" | "prefix" }` as their last argument. `text` (the default, and the request GilbApp made) matches whole words only: `q=Jap` finds nothing. `prefix` adds `match=prefix` (the catalogue's phrase prefix: the last word may be the start of a word): `q=Jap&match=prefix` finds Japan. Measured live 2026-11-14 against `type=Country`: without `match` 200, total 0; with `match=prefix` 200, total 1 (Japan). A catalogue that does not know the parameter answers 400, which is a `GeoUnavailableError` with `status` 400.
+- `getPlaceLabel(id, signal?, { maxBytes? })` (new, 0.1.1): the label of one place as a string, or `null`. In order: `peekPlace`; the device's name copy; then the row is streamed through the unit's fenced `GET` and read for its `label` field only, the transfer is cancelled at the label, and the name (only the name) is kept for the tab and on the device (`base:geo:labels:v1`, 30 days, 400). If the response has no stream, `getPlace` under `maxBytes` (default `PLACE_LABEL_MAX_BYTES`, 5 MB). `null` for a 404, a row with no `label`, or a row larger than `maxBytes`; a failed read still throws `GeoUnavailableError`. **Measured live 2026-11-14:** a row's keys are alphabetical, so `label` comes after `c_geometry`, near the end of the row (Iceland: byte 16154 of 16193; Russia: byte 3649565 of 3649603), and a `Range` request is ignored (200 with the whole row). So a big country still costs its transfer, but nothing is parsed or held, and a name read once is never read again. The name is kept apart from the row copy on purpose: the row copy holds type and parents, which a name alone cannot supply.
 - `getPlace(id, signal?, { maxBytes? })`: one row as `{ id, label, type, memberOf }`, geometry dropped; `null` for a 404 (an absence); a thrown `GeoUnavailableError` for anything else (a failure). `peekPlace(id)`: what is known without asking. A row read once is kept for the tab and a small copy (label, type, parents) on the device for 30 days, 400 rows.
 - `resolveAncestry(startId, signal?)`: walks `memberOf` up from a row to find its city, region and country, at most `MAX_MEMBER_OF_HOPS` (5) hops; a rung not reached is `null` and is never guessed.
 - `resolveGeoGrains(signal?)`: the ontology's map (`byRung`, `rungOf`, `kindOf`, `unclassified`), read once per tab and asked again after a failure.
@@ -49,6 +51,7 @@ Nothing to the catalogue, and nothing to any server. The only requests are `GET`
 | Request | Made by | Server |
 |---|---|---|
 | `GET <geo origin>/base/search?q=<text>&type=<kind>` (one per kind of the rung, in parallel; `credentials: "omit"`) | `searchPlaceIds`, so `searchPlaces` and `searchPlacesInCountryDetailed` | the catalogue |
+| `GET <row address>` (read as a stream for its `label` only, then cancelled; `credentials: "omit"`) | `getPlaceLabel` | the catalogue, and only an address inside it |
 | `GET <row address>` (the row, `credentials: "omit"`) | `getPlace`, so every search, the walk and the pinned search | the catalogue, and only an address inside it (the fence) |
 | `GET <ontology origin>/base/t/GeoRegion/children` and `GET <ontology origin>/base/t/<kind>` for each child, one after another | `resolveGeoGrains`, once per tab | the ontology master (`termOrigin()`) |
 
@@ -110,7 +113,8 @@ Everything else is GilbApp's code. Each change is marked `CHANGED` in `src/geoCa
 6. **A row's own `@id`** is taken as the place's id only when it is inside the catalogue; otherwise the address the row was asked at stays (the id feeds later reads, such as the flag).
 7. **`resolveAncestry`** does not follow a parent outside the catalogue (the fence would refuse it); GilbApp followed it with a request.
 8. **`RestrictedSearch.unplaced`** (F13): the number of scanned candidates left out for want of a country. GilbApp dropped them without a word (its comment said the surface states the cost; the code counted nothing).
-9. **Not taken:** `immediateParent` and `searchPlacesInCountry` (no caller in GilbApp's Address or work location). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts.
+9. **Search mode, `getPlaceLabel`** (0.1.1, new, not GilbApp's): see "What this is". `PLACE_LABEL_MAX_BYTES` and the `SearchMatch`/`SearchOptions` types are new exports of the module.
+10. **Not taken:** `immediateParent` and `searchPlacesInCountry` (no caller in GilbApp's Address or work location). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts.
 
 ## Where it came from
 
@@ -118,7 +122,7 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9
 
 ## Tests
 
-`npx vitest run`, 8 files:
+`npx vitest run`, 117 tests in 9 files:
 
 - `placeKinds.s8cityfix.test.ts` 12: ported from GilbApp unchanged in its cases (the order of a City box's hits; `rankHitsForRung`).
 - `restricted.test.ts` 12: the catalogue behaviours of GilbApp's `PlacePicker.cycle168.test.tsx` put at the function level (N6, NEW-2, the 502 on the deepest hop, the bounded walk), plus the F13 cases (new).
@@ -126,6 +130,7 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9
 - `ontologyOrigin.test.ts` 6 (new): where the grain map is read from; a failed read is asked again; one unreadable kind is listed and the rest stay.
 - `getPlace.test.ts` 10 (new): the row's shape, the caches, the ceiling, the device copy.
 - `readOnly.test.ts` 3 (new): the source names no method but `GET`, no write verb, and calls `fetch` in two places only.
+- `getPlaceLabel.test.ts` 12 (new): known name no request; label in the first bytes (stream cancelled); label after a big geometry; a label split across chunks with escapes and multi-byte letters; kept for the tab and the device and no row copy written; absent label; ceiling; no-stream fallback; 404 and 502; the fence; one request for two asks. Search match: default unchanged, `prefix` adds `match=prefix`.
 - `exports.test.ts` 3 (new); `hostAgnostic.test.ts` 13: the same host-agnostic check test as the other units.
 - A world-level check closes every file that uses the test double: across the file, no request to the catalogue was anything but a `GET`.
 

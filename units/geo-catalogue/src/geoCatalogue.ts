@@ -387,7 +387,14 @@ function leanPut(place: GeoPlace): void {
 export function __resetGeoCache(): void {
   placeCache.clear();
   placeInflight.clear();
+  placeLabelInflight.clear();
   leanMem = null;
+  labelMem = null;
+  try {
+    if (typeof localStorage !== "undefined") localStorage.removeItem(LABEL_KEY);
+  } catch {
+    /* nothing to clear */
+  }
   try {
     if (typeof localStorage !== "undefined") localStorage.removeItem(LEAN_KEY);
   } catch {
@@ -399,7 +406,9 @@ export function __resetGeoCache(): void {
 export function __resetGeoMemoryOnly(): void {
   placeCache.clear();
   placeInflight.clear();
+  placeLabelInflight.clear();
   leanMem = null;
+  labelMem = null;
 }
 
 /**
@@ -461,10 +470,24 @@ export interface PlaceSearch {
   readonly incomplete: boolean;
 }
 
+/**
+ * CHANGED (new): how the catalogue matches the typed text. `text` (the catalogue's default) matches whole words only, so "Jap" finds nothing;
+ * `prefix` sends `match=prefix` and the last word may be the start of a word ("Jap" finds Japan). Measured live 2026-11-14: `type=Country&q=Jap`
+ * answers total 0 and `&match=prefix` answers the one hit, Japan.
+ */
+export type SearchMatch = "text" | "prefix";
+
+/** CHANGED (new): the options of a search. */
+export interface SearchOptions {
+  /** Default `text`. */
+  readonly match?: SearchMatch;
+}
+
 export async function searchPlaceIds(
   q: string,
   rung: GeoRung,
   signal?: AbortSignal,
+  opts?: SearchOptions,
 ): Promise<PlaceSearch> {
   const query = q.trim();
   if (query === "") return { total: 0, ids: [], incomplete: false };
@@ -489,7 +512,9 @@ export async function searchPlaceIds(
       const url =
         `${geoOrigin()}/base/search?q=${encodeURIComponent(query)}` +
         // 🔴 BARE local name. `t:City` is refused by the server — see the module header.
-        `&type=${encodeURIComponent(bare)}`;
+        `&type=${encodeURIComponent(bare)}` +
+        // CHANGED (new): only when asked; the default request is the one GilbApp made.
+        (opts?.match === "prefix" ? "&match=prefix" : "");
       const res = await geoFetch(url, signal);
       if (!res.ok) throw new GeoUnavailableError(res.status, await res.text().catch(() => ""));
       const body = (await res.json()) as { total?: { value?: number }; ids?: unknown };
@@ -631,6 +656,133 @@ export async function getPlace(id: string, signal?: AbortSignal, opts?: { maxByt
   }
 }
 
+// ── CHANGED (new): THE NAME OF A PLACE, WITHOUT READING THE PLACE ────────────────────────────────────────────────
+// A country row is up to 3.6 MB (Russia, measured 2026-11-14) and a name is all a list of saved addresses wants. Measured live on
+// Iceland (16 KB) and Russia (3.6 MB): the row's keys are in alphabetical order, so `label` comes AFTER `c_geometry`, near the END of the
+// row (Iceland byte 16154 of 16193; Russia byte 3649565 of 3649603), and a `Range` request is ignored (200 with the whole row). So the
+// name cannot be had by reading the start of a big row; this reads the stream as it arrives, keeps only a small window of text, stops and
+// cancels the transfer the moment the name is seen, and never parses or holds the geometry. A small row is done early; a big one costs
+// its transfer but not its memory or its parse.
+const LABEL_KEY = "base:geo:labels:v1";
+const LABEL_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LABEL_MAX_ROWS = 400;
+type LabelRow = { l: string; s: number };
+let labelMem: Record<string, LabelRow> | null = null;
+function labelLoad(): Record<string, LabelRow> {
+  if (labelMem) return labelMem;
+  let out: Record<string, LabelRow> = {};
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(LABEL_KEY) : null;
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (parsed && typeof parsed === "object") out = parsed as Record<string, LabelRow>;
+  } catch {
+    out = {};
+  }
+  labelMem = out;
+  return out;
+}
+function labelGet(id: string): string | null {
+  const row = labelLoad()[id];
+  return row && typeof row.l === "string" && row.l !== "" && Date.now() - row.s <= LABEL_TTL_MS ? row.l : null;
+}
+function labelPut(id: string, label: string): void {
+  if (label === "") return;
+  const all = labelLoad();
+  all[id] = { l: label, s: Date.now() };
+  const ids = Object.keys(all);
+  if (ids.length > LABEL_MAX_ROWS) {
+    ids.sort((a, b) => all[a]!.s - all[b]!.s);
+    for (const old of ids.slice(0, ids.length - LABEL_MAX_ROWS)) delete all[old];
+  }
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(LABEL_KEY, JSON.stringify(all));
+  } catch {
+    /* a full or blocked store only means the next session reads the name again */
+  }
+}
+const placeLabelInflight = new Map<string, Promise<string | null>>();
+const LABEL_FIELD = /"label"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+/** The default ceiling of `getPlaceLabel`: a row larger than this is not read for its name (Russia is 3.6 MB). */
+export const PLACE_LABEL_MAX_BYTES = 5_000_000;
+
+/**
+ * The name of one place, as cheaply as the catalogue allows, or `null` when it has none to give.
+ *
+ *  1. what is already known (`peekPlace`, then the name copy on the device);
+ *  2. otherwise the row is streamed through the unit's fenced `GET` and read for its `label` field only; the transfer is cancelled as
+ *     soon as the name is seen, and the name (only the name) is kept in this tab and on the device (`base:geo:labels:v1`, 30 days, 400);
+ *  3. if the response cannot be read as a stream, the row is read with `getPlace` under `maxBytes`.
+ *
+ * `null` is: a 404 (no such place), a row with no `label`, or a row larger than `maxBytes` (`GeoRowTooLargeError` is caught here). A failed
+ * read (the catalogue down) still throws `GeoUnavailableError`, as `getPlace` does, so "down" is never drawn as "no name".
+ * A row that is not in the catalogue is refused with no request (the fence).
+ */
+export async function getPlaceLabel(id: string, signal?: AbortSignal, opts?: { maxBytes?: number }): Promise<string | null> {
+  if (!isGeoUrl(id)) throw new GeoUnavailableError(null, "outside the catalogue", "not-geo");
+  const known = peekPlace(id)?.label;
+  if (known) return known;
+  const kept = labelGet(id);
+  if (kept) return kept;
+  const maxBytes = opts?.maxBytes ?? PLACE_LABEL_MAX_BYTES;
+  const flight = `${id}|<=${maxBytes}`;
+  const pending = placeLabelInflight.get(flight);
+  if (pending) return pending;
+  const work = (async (): Promise<string | null> => {
+    const res = await geoFetch(id, signal);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new GeoUnavailableError(res.status, await res.text().catch(() => ""));
+    const reader = res.body?.getReader?.();
+    if (!reader) {
+      // No stream to read: the row, whole, under the ceiling.
+      try {
+        const p = await getPlace(id, signal, { maxBytes });
+        return p?.label ? p.label : null;
+      } catch (e) {
+        if (e instanceof GeoRowTooLargeError) return null;
+        throw e;
+      }
+    }
+    const decoder = new TextDecoder();
+    let window = "";
+    let seen = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return null; // the whole row was read and it has no name
+        seen += value.byteLength;
+        window += decoder.decode(value, { stream: true });
+        const m = LABEL_FIELD.exec(window);
+        if (m) {
+          let label: string;
+          try {
+            label = JSON.parse(`"${m[1]}"`) as string;
+          } catch {
+            return null;
+          }
+          label = label.trim();
+          if (label === "") return null;
+          labelPut(id, label);
+          return label;
+        }
+        if (seen > maxBytes) return null;
+        // Keep only what a name split across two chunks could need: from an unfinished `"label"` key, else a short tail.
+        const at = window.lastIndexOf('"label"');
+        window = at >= 0 ? window.slice(at) : window.slice(-16);
+        if (window.length > 8192) window = "";
+      }
+    } finally {
+      void reader.cancel().catch(() => {});
+    }
+  })();
+  placeLabelInflight.set(flight, work);
+  try {
+    return await work;
+  } finally {
+    placeLabelInflight.delete(flight);
+  }
+}
+
 /** Hop ceiling on the parent walk. The deepest real chain measured is far shorter; this bound
  *  exists so an ingest cycle cannot hang the surface, ⛔ not because 5 is a semantic depth. */
 export const MAX_MEMBER_OF_HOPS = 5;
@@ -738,8 +890,9 @@ export async function searchPlaces(
   rung: GeoRung,
   limit = 8,
   signal?: AbortSignal,
+  opts?: SearchOptions,
 ): Promise<GeoPlace[]> {
-  const { ids } = await searchPlaceIds(q, rung, signal);
+  const { ids } = await searchPlaceIds(q, rung, signal, opts);
   const hits = await hydrate(ids, limit, signal);
   return rankHitsForRung(hits, rung, (await resolveGeoGrains(signal)).rungOf);
 }
@@ -807,13 +960,14 @@ export async function searchPlacesInCountryDetailed(
   countryId: string | null,
   limit = 8,
   signal?: AbortSignal,
+  opts?: SearchOptions,
 ): Promise<RestrictedSearch> {
   if (!countryId) {
-    const open = await searchPlaceIds(q, rung, signal);
+    const open = await searchPlaceIds(q, rung, signal, opts);
     const rungOf = (await resolveGeoGrains(signal)).rungOf;
     return { hits: rankHitsForRung(await hydrate(open.ids, limit, signal), rung, rungOf), capped: open.incomplete, unplaced: 0 };
   }
-  const { ids, incomplete } = await searchPlaceIds(q, rung, signal);
+  const { ids, incomplete } = await searchPlaceIds(q, rung, signal, opts);
   const scanned = ids.slice(0, MAX_RESTRICTED_CANDIDATES);
   const out: GeoPlace[] = [];
   let unplaced = 0;

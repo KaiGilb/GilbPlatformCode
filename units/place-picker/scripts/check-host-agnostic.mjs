@@ -3,7 +3,7 @@
  * Host-agnostic check for this unit body.
  *
  * Fails when a source file under src/ (tests excepted) names a vault host on any line, comments
- * included; when it imports anything but its own modules ("./x") and the packages listed in
+ * included; when it imports anything but its own modules ("./x", and its own "./x.css") and the packages listed in
  * ALLOWED_IMPORT; and when a CSS file pulls anything in (`@import`, `url(`) or names a host.
  * Imports are parsed with the TypeScript compiler, not matched by line, so a multi-line import and a
  * template-literal dynamic import are both seen. Tests may use example.test.
@@ -20,7 +20,7 @@ const UNIT = "units/place-picker";
 const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), ".."));
 const srcRoot = join(root, "src");
 const FORBIDDEN = [/gilb\.com/i, /veda\.[a-z0-9]/i, /localhost/i, /127\.0\.0\.1/, /w3id\.org/i];
-const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+$/, /^@kaigilb\/gilbplatformcode-geo-catalogue$/, /^@kaigilb\/gilbplatformcode-place-hit-details$/, /^react$/];
+const ALLOWED_IMPORT = [/^\.\/[A-Za-z0-9_-]+(\.css)?$/, /^@kaigilb\/gilbplatformcode-geo-catalogue$/, /^@kaigilb\/gilbplatformcode-place-hit-details$/, /^react$/];
 
 if (!existsSync(srcRoot)) {
   console.error(`Host-agnostic check ERROR — no src/ under ${root}`);
