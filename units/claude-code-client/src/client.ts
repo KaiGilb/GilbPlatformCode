@@ -100,6 +100,22 @@ export interface ClaudeCodeReply {
   access?: "computer";
   /** Code turn only: the project the turn ran in. Absent for a turn in the code folder itself and for chat. */
   project?: string;
+  /** The effort the turn ran with, when one was asked for (bridge 0.3.5). */
+  effort?: Effort;
+  /** Code turn only (bridge 0.3.5): whether the turn was set to hand coding jobs to the sonnet-coder subagent. */
+  delegateCoding?: boolean;
+}
+
+/** The model names a turn may ask for (bridge 0.3.5); a full name like `claude-opus-5-5` is allowed too. */
+export const MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"] as const;
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type Effort = (typeof EFFORTS)[number];
+const FULL_MODEL = /^claude-[a-z0-9][a-z0-9.-]{0,62}$/;
+/** What the bridge's `/v1/hello` says the page may choose from (bridge 0.3.5). Absent on an older bridge. */
+export interface BridgeOptions {
+  models: string[];
+  efforts: string[];
+  delegateCoding: boolean;
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -259,6 +275,18 @@ export interface SendClaudeCodeOpts {
    */
   project?: string;
   /**
+   * The model the person chose (bridge 0.3.5): `opus`, `sonnet`, `haiku`, `fable`, or a full name matching `/^claude-[a-z0-9][a-z0-9.-]{0,62}$/`.
+   * Chat and code turns. Anything else throws a ClaudeCodeBridgeError (400, "That model is not allowed.") before any request. A hand-off inherits it.
+   */
+  model?: string;
+  /** The effort the person chose (bridge 0.3.5): `low`, `medium`, `high`, `xhigh` or `max`. Anything else throws (400, "That effort is not allowed."). A hand-off inherits it. */
+  effort?: Effort;
+  /**
+   * Code turns only (bridge 0.3.5): the model hands coding jobs to a Sonnet subagent and checks its work. With mode "chat" this throws
+   * (400, "delegateCoding is only for code turns.") before any request.
+   */
+  delegateCoding?: boolean;
+  /**
    * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
    * throws or rejects, answers "no". The turn keeps running while this waits.
    */
@@ -300,7 +328,7 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions }>;
   /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
   workspaceInfo(): Promise<{ name: string; path: string } | null>;
   /**
@@ -376,6 +404,8 @@ interface BridgeTurnOut {
   codeMode?: "files-only";
   access?: "computer";
   project?: string;
+  effort?: Effort;
+  delegateCoding?: boolean;
 }
 
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
@@ -776,6 +806,11 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
   async function runTurn(messages: ClaudeCodeTurn[], opts: SendClaudeCodeOpts, signal: AbortSignal): Promise<ClaudeCodeReply> {
     const last = messages[messages.length - 1];
     if (!last || last.role !== "user") throw new ClaudeCodePlatformError(400, "Write a message first.");
+    // The person's choices are checked before anything goes out (the bridge checks them again).
+    if (opts.model !== undefined && !(typeof opts.model === "string" && ((MODEL_ALIASES as readonly string[]).includes(opts.model) || FULL_MODEL.test(opts.model)))) throw new ClaudeCodeBridgeError(400, "That model is not allowed.");
+    if (opts.effort !== undefined && !(typeof opts.effort === "string" && (EFFORTS as readonly string[]).includes(opts.effort))) throw new ClaudeCodeBridgeError(400, "That effort is not allowed.");
+    if (opts.delegateCoding !== undefined && typeof opts.delegateCoding !== "boolean") throw new ClaudeCodeBridgeError(400, "delegateCoding must be true or false.");
+    if (opts.delegateCoding === true && opts.mode !== "code") throw new ClaudeCodeBridgeError(400, "delegateCoding is only for code turns.");
     const conn = client.load();
     if (!conn) throw new ClaudeCodeBridgeError(401, "Claude Code is not connected. Press Connect.");
 
@@ -996,6 +1031,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 ...(data.codeMode === "files-only" ? { codeMode: "files-only" as const } : {}),
                 ...(data.access === "computer" ? { access: "computer" as const } : {}),
                 ...(typeof data.project === "string" && data.project ? { project: data.project } : {}),
+                ...(typeof data.effort === "string" && (EFFORTS as readonly string[]).includes(data.effort) ? { effort: data.effort as Effort } : {}),
+                ...(typeof data.delegateCoding === "boolean" ? { delegateCoding: data.delegateCoding } : {}),
               };
             }
           } else if (ev.event === "error") {
@@ -1172,6 +1209,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         tools: ctx.tools,
         ...(sessionId ? { sessionId } : {}),
         ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session", ...(project ? { project } : {}) } : {}),
+        ...(opts.model !== undefined ? { model: opts.model } : {}),
+        ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
+        ...(codeMode && opts.delegateCoding !== undefined ? { delegateCoding: opts.delegateCoding } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -1193,6 +1233,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       ...(out.codeMode ? { codeMode: out.codeMode } : {}),
       ...(out.access ? { access: out.access } : {}),
       ...(out.project ? { project: out.project } : {}),
+      ...(out.effort ? { effort: out.effort } : {}),
+      ...(out.delegateCoding !== undefined ? { delegateCoding: out.delegateCoding } : {}),
     };
   }
 
@@ -1215,7 +1257,11 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       try {
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
+        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown } | null | undefined;
+        const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null);
+        const models = o && typeof o === "object" ? strs(o.models) : null;
+        const efforts = o && typeof o === "object" ? strs(o.efforts) : null;
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,
@@ -1224,6 +1270,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           workspace: body.workspace === true,
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
           access: body.access === "folder" || body.access === "computer" ? body.access : null,
+          // Present only when the bridge (0.3.5 and later) says what the page may choose.
+          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true } } : {}),
         };
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };

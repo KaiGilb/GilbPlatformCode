@@ -44,6 +44,14 @@ process.stdin.on("end", async () => {
     npmCache: process.env.npm_config_cache,
   });
   const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+  // IGNORETERM: a child that takes its time to stop (the first SIGTERM is logged, the exit comes 3 s later), so a test can act in between.
+  if (prompt.includes("IGNORETERM")) {
+    process.removeAllListeners("SIGTERM");
+    process.on("SIGTERM", () => {
+      log({ event: "sigterm-slow" });
+      setTimeout(() => process.exit(143), 3000);
+    });
+  }
   if (arg("--resume") && arg("--resume").startsWith("00000000")) {
     out({ type: "result", subtype: "error_during_execution", is_error: true, num_turns: 0, session_id: sessionId, result: "" });
     return;
