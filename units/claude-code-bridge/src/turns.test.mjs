@@ -145,7 +145,7 @@ describe("429 bodies", () => {
     const second = await openTurn(a, { mode: "code", project: "alpha" });
     expect(second.status).toBe(429);
     expect(second.json).toEqual({
-      error: "A code turn is already running in alpha.", code: "CodeTurnRunning", project: "alpha", turnId: first.turnId,
+      error: "A code turn is already running in alpha.", code: "CodeTurnRunning", project: "alpha", ownTurn: true, turnId: first.turnId,
       startedAt: first.events[0][1].startedAt,
     });
     first.close();
@@ -156,7 +156,7 @@ describe("429 bodies", () => {
     await until(() => third.turnId);
     const fourth = await openTurn(a, { mode: "code" });
     expect(fourth.status).toBe(429);
-    expect(fourth.json).toMatchObject({ error: "A code turn is already running in MyCode. Wait for it to finish.", code: "CodeTurnRunning", project: null, turnId: third.turnId });
+    expect(fourth.json).toMatchObject({ error: "A code turn is already running in MyCode. Wait for it to finish.", code: "CodeTurnRunning", project: null, ownTurn: true, turnId: third.turnId });
   });
 
   it("too many turns: the same text, code TooManyTurns", async () => {
@@ -216,7 +216,7 @@ describe("POST /v1/turn/cancel", () => {
     await until(() => t.turnId);
     expect((await api(b, "/v1/turn/cancel", { turnId: t.turnId })).json).toEqual({ cancelled: false });
     expect((await api(a, "/v1/turn/cancel", { turnId: "nope" })).json).toEqual({ cancelled: false });
-    expect((await api(a, "/v1/turn/cancel", {})).json).toEqual({ cancelled: false });
+    expect((await api(a, "/v1/turn/cancel", {})).status).toBe(400); // no id is not a string
     expect((await api("", "/v1/turn/cancel", { turnId: t.turnId })).status).toBe(401);
     await new Promise((r) => setTimeout(r, 150));
     expect(stoppedRuns()).toHaveLength(0);

@@ -35,16 +35,19 @@ export class BridgeTurnRunningError extends ClaudeCodeBridgeError {
   readonly code = "CodeTurnRunning" as const;
   /** The project the running turn is in, or null for the code folder itself. */
   readonly project: string | null;
-  /** The bridge's id of the turn that is running. */
-  readonly turnId: string;
-  /** When that turn started (ISO). */
-  readonly startedAt: string;
-  constructor(message: string, info: { project: string | null; turnId: string; startedAt: string }) {
+  /** True when the running turn belongs to this pairing (bridge 0.3.4). False when it is someone else's, or the bridge is older and did not say. */
+  readonly ownTurn: boolean;
+  /** The bridge's id of the turn that is running. Only an own turn is named (bridge 0.3.4); otherwise undefined. */
+  readonly turnId?: string;
+  /** When that turn started (ISO). Only an own turn says; otherwise undefined. */
+  readonly startedAt?: string;
+  constructor(message: string, info: { project: string | null; ownTurn: boolean; turnId?: string; startedAt?: string }) {
     super(429, message);
     this.name = "BridgeTurnRunningError";
     this.project = info.project;
-    this.turnId = info.turnId;
-    this.startedAt = info.startedAt;
+    this.ownTurn = info.ownTurn;
+    if (info.turnId !== undefined) this.turnId = info.turnId;
+    if (info.startedAt !== undefined) this.startedAt = info.startedAt;
   }
 }
 
@@ -815,13 +818,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       });
       if (res.status === 401) throw bridgeForgotUs();
       if (!res.ok) {
-        const err = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown; project?: unknown; turnId?: unknown; startedAt?: unknown } | null;
+        const err = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown; project?: unknown; ownTurn?: unknown; turnId?: unknown; startedAt?: unknown } | null;
         const text = typeof err?.error === "string" ? err.error : "The bridge could not run the turn.";
         if (res.status === 429 && err?.code === "CodeTurnRunning") {
           throw new BridgeTurnRunningError(text, {
             project: typeof err.project === "string" ? err.project : null,
-            turnId: typeof err.turnId === "string" ? err.turnId : "",
-            startedAt: typeof err.startedAt === "string" ? err.startedAt : "",
+            ownTurn: err.ownTurn === true,
+            ...(err.ownTurn !== false && typeof err.turnId === "string" ? { turnId: err.turnId } : {}),
+            ...(err.ownTurn !== false && typeof err.startedAt === "string" ? { startedAt: err.startedAt } : {}),
           });
         }
         throw new ClaudeCodeBridgeError(res.status, text);

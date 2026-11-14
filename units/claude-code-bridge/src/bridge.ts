@@ -159,7 +159,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.2";
+export const BRIDGE_BUILD = "0.3.4";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -408,6 +408,8 @@ export function newPairingCode() {
   return `${s.slice(0, 3)}-${s.slice(3)}`;
 }
 const normCode = (c: unknown) => String(c ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const BAD_REQUEST = "Bad request.";
+const callerKey = (req: IncomingMessage) => sha(String(req.headers["x-bridge-secret"])).toString("hex");
 const sha = (s: unknown) => crypto.createHash("sha256").update(String(s)).digest();
 const same = (a: unknown, b: unknown) => crypto.timingSafeEqual(sha(a), sha(b));
 
@@ -2029,6 +2031,9 @@ export function createBridge(opts: BridgeOptions = {}) {
     // Code mode: one folder the person chose, one code turn at a time. Chat is the default and is unchanged.
     if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "code") return json(res, 400, { error: 'mode must be "chat" or "code"' });
     if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write") return json(res, 400, { error: 'approval must be "session" or "each-write"' });
+    // An id from the page is a string or nothing; any other shape is a bad request (never turned into text, which can throw).
+    if (body.parentTurnId !== undefined && typeof body.parentTurnId !== "string") return json(res, 400, { error: BAD_REQUEST });
+    const me = callerKey(req);
     const isCode = body.mode === "code";
     let proj: { path: string; name: string; id: string } | null = null;
     if (isCode) {
@@ -2043,13 +2048,13 @@ export function createBridge(opts: BridgeOptions = {}) {
       const key = proj ? proj.path : workspace.path;
       if ([...turns.values()].some((t) => t.code && (t.proj ? t.proj.path : workspace!.path) === key)) {
         const running = [...turns.values()].find((t) => t.code && (t.proj ? t.proj.path : workspace!.path) === key)!;
-        return json(res, 429, {
+        const refusal = {
           error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
           code: "CodeTurnRunning",
           project: proj ? proj.name : null,
-          turnId: running.id,
-          startedAt: new Date(running.startedAt).toISOString(),
-        });
+        };
+        // The turn's id and start time go only to the pairing that owns the turn; anyone else learns that one is running, no more.
+        return json(res, 429, running.owner === me ? { ...refusal, ownTurn: true, turnId: running.id, startedAt: new Date(running.startedAt).toISOString() } : { ...refusal, ownTurn: false });
       }
     }
     // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -2060,7 +2065,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     let parentCallId = "";
     if (parentId) {
       parent = turns.get(parentId) ?? null;
-      if (!parent || parent.closed) return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
+      // A turn of another pairing is answered exactly like an unknown one.
+      if (!parent || parent.closed || parent.owner !== me) return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
       if (parent.parent) return json(res, 400, { error: "A hand-off cannot hand off again." });
       if (body.parentCallId !== undefined) {
         const raw = body.parentCallId;
@@ -2113,7 +2119,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       proj,
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
-      owner: sha(String(req.headers["x-bridge-secret"])).toString("hex"),
+      owner: me,
       startedAt: now(),
       lastActivityAt: now(),
       lastActivity: "",
@@ -2401,6 +2407,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       } catch (e) {
         return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
       }
+      if (typeof body.code !== "string") return json(res, 400, { error: BAD_REQUEST });
       if (normCode(body.code).length === 6 && normCode(body.code) === normCode(pairingCode)) {
         const secret = crypto.randomBytes(32).toString("hex");
         const t = now();
@@ -2432,7 +2439,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       }
       if (req.method === "POST" && url.pathname === "/v1/turn") return handleTurn(req, res);
       if (req.method === "POST" && url.pathname === "/v1/turns") {
-        const me = sha(String(req.headers["x-bridge-secret"])).toString("hex");
+        const me = callerKey(req);
         const iso = (ms: number) => new Date(ms).toISOString();
         return json(res, 200, {
           turns: [...turns.values()].filter((t) => !t.parent && t.owner === me).map((t) => ({
@@ -2454,9 +2461,10 @@ export function createBridge(opts: BridgeOptions = {}) {
         } catch (e) {
           return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
         }
-        const t = turns.get(String(body.turnId));
+        if (typeof body.turnId !== "string") return json(res, 400, { error: BAD_REQUEST });
+        const t = turns.get(body.turnId);
         // Only the pairing that started the turn may cancel it; any other gets the same answer as an unknown turn.
-        if (!t || t.parent || t.closed || t.owner !== sha(String(req.headers["x-bridge-secret"])).toString("hex")) return json(res, 200, { cancelled: false });
+        if (!t || t.parent || t.closed || t.owner !== callerKey(req)) return json(res, 200, { cancelled: false });
         t.cancelRequested = true;
         for (const h of t.handoffs) {
           h.closed = true;
@@ -2472,9 +2480,10 @@ export function createBridge(opts: BridgeOptions = {}) {
         } catch (e) {
           return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
         }
-        const t = turns.get(String(body.turnId));
+        if (typeof body.turnId !== "string" || typeof body.id !== "string") return json(res, 400, { error: BAD_REQUEST });
+        const t = turns.get(body.turnId);
         // Only the pairing that started the turn may answer; any other gets the same answer as an unknown question.
-        const a = t && t.owner === sha(String(req.headers["x-bridge-secret"])).toString("hex") ? t.approvals.get(String(body.id)) : undefined;
+        const a = t && t.owner === callerKey(req) ? t.approvals.get(body.id) : undefined;
         if (!a) return json(res, 404, { error: "no such approval question" });
         if (typeof body.allow !== "boolean") return json(res, 400, { error: "allow must be true or false" });
         if (a.answered) return json(res, 409, { error: "already answered" });
@@ -2488,11 +2497,12 @@ export function createBridge(opts: BridgeOptions = {}) {
         } catch (e) {
           return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
         }
-        const turn = turns.get(String(body.turnId));
-        const p = turn?.pending.get(String(body.id));
-        if (turn && !p && turn.cancelled.has(String(body.id))) return json(res, 200, { ignored: true, reason: "cancelled" });
+        if (typeof body.turnId !== "string" || typeof body.id !== "string") return json(res, 400, { error: BAD_REQUEST });
+        const turn = turns.get(body.turnId);
+        const p = turn?.pending.get(body.id);
+        if (turn && !p && turn.cancelled.has(body.id)) return json(res, 200, { ignored: true, reason: "cancelled" });
         if (!turn || !p) return json(res, 404, { error: "No such tool call is waiting." });
-        turn.pending.delete(String(body.id));
+        turn.pending.delete(body.id);
         p.resolve({ text: typeof body.result === "string" ? body.result : JSON.stringify(body.result ?? null), isError: body.isError === true });
         return json(res, 200, { ok: true });
       }

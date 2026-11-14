@@ -163,13 +163,30 @@ describe("sendTurn signal", () => {
 });
 
 describe("BridgeTurnRunningError", () => {
-  const body = { error: "A code turn is already running in alpha.", code: "CodeTurnRunning", project: "alpha", turnId: "t9", startedAt: "2026-11-14T10:00:00.000Z" };
+  const body = { error: "A code turn is already running in alpha.", code: "CodeTurnRunning", project: "alpha", ownTurn: true, turnId: "t9", startedAt: "2026-11-14T10:00:00.000Z" };
   it("a 429 with code CodeTurnRunning throws it, with the bridge's text and fields", async () => {
     fetchMock.mockImplementation(async (url: string) => (url === CONTEXT_URL ? json(200, CONTEXT) : json(429, body)));
     const err = await client.sendTurn(MSGS, { thread: "T", mode: "code", project: "alpha" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BridgeTurnRunningError);
     expect(err).toBeInstanceOf(ClaudeCodeBridgeError);
-    expect(err).toMatchObject({ name: "BridgeTurnRunningError", code: "CodeTurnRunning", project: "alpha", turnId: "t9", startedAt: body.startedAt, status: 429, message: body.error });
+    expect(err).toMatchObject({ name: "BridgeTurnRunningError", code: "CodeTurnRunning", project: "alpha", ownTurn: true, turnId: "t9", startedAt: body.startedAt, status: 429, message: body.error });
+  });
+  it("another pairing's turn: ownTurn false, turnId and startedAt undefined (even if a bridge sent them)", async () => {
+    const other = { error: body.error, code: "CodeTurnRunning", project: "alpha", ownTurn: false };
+    for (const b of [other, { ...other, turnId: "t9", startedAt: body.startedAt }]) {
+      fetchMock.mockImplementation(async (url: string) => (url === CONTEXT_URL ? json(200, CONTEXT) : json(429, b)));
+      const err = (await client.sendTurn(MSGS, { thread: "T", mode: "code", project: "alpha" }).catch((e: unknown) => e)) as BridgeTurnRunningError;
+      expect(err).toBeInstanceOf(BridgeTurnRunningError);
+      expect(err.ownTurn).toBe(false);
+      expect(err.turnId).toBeUndefined();
+      expect(err.startedAt).toBeUndefined();
+    }
+  });
+  it("a bridge older than 0.3.4 says nothing of ownTurn: ownTurn false, its turnId still passed on", async () => {
+    const { ownTurn: _o, ...old } = body;
+    fetchMock.mockImplementation(async (url: string) => (url === CONTEXT_URL ? json(200, CONTEXT) : json(429, old)));
+    const err = (await client.sendTurn(MSGS, { thread: "T", mode: "code", project: "alpha" }).catch((e: unknown) => e)) as BridgeTurnRunningError;
+    expect(err).toMatchObject({ ownTurn: false, turnId: "t9", startedAt: body.startedAt });
   });
   it("project null is kept; other 429s (TooManyTurns, no code) stay a plain ClaudeCodeBridgeError", async () => {
     fetchMock.mockImplementation(async (url: string) => (url === CONTEXT_URL ? json(200, CONTEXT) : json(429, { ...body, project: null })));
