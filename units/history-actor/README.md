@@ -4,7 +4,7 @@ Who is named on a change, read from the address string alone.
 
 ## What this is
 
-- `describeAgent(agent)` → `{ who, whoKind, agentLabel }`
+- `describeAgent(agent, opts?)` → `{ who, whoKind, agentLabel }`. `opts.nameSuffix` is cut from a vault host's name (see 2 below).
 - `agentLabel(agent)` → `describeAgent(agent).agentLabel`
 
 `whoKind` is `person`, `agent`, `system`, or `unknown`.
@@ -38,7 +38,7 @@ The first match wins. Later patterns are not tried.
    - `who` is `AI agent · ` plus the slug with `-` and `_` turned into spaces, then three word replacements: a whole word `vabasevedanta` becomes `VA BVedanta`, a whole word `vedanta` becomes `BVedanta`, a whole word `esco` becomes `ESCO`. The replacements ignore case. `vabasevedanta` is replaced before `vedanta`, so it is not replaced twice.
    - `agentLabel` is the raw slug, before the spaces and the word replacements.
    - `myvedanta` does not contain the word `vedanta`. It is left as written. `escort` is not `esco`.
-2. A person. `/base/p/` plus an id, case-insensitive. `who` is `Person`. `agentLabel` is `Person`. The id is not in either string.
+2. A person. `/base/p/` plus an id, case-insensitive. When the address's host is a vault host (three or more labels, first label not `id` or `www`, for example `https://anna.gilb.com/base/p/abc`), `who` and `agentLabel` are the host's first label (`anna`) minus `opts.nameSuffix` when the label ends with it and is longer than it. Otherwise (a short host, `id.`, `www.`, a relative path) `who` is `Person` and `agentLabel` is `Person`. The id is not in either string. `whoKind` is `person` either way.
 3. Any other `/base/e/` id. This pattern is **case-sensitive**. `/BASE/E/` does not match.
    - If the id starts with `agent-` or `agent_`, this is the underscore path. `who` is `AI agent · ` plus the slug with `-` and `_` turned into spaces. The three word replacements are **not** applied on this path. `agent_vedanta` stays `vedanta`, not `BVedanta`. `agentLabel` is the slug after the prefix is removed, still with its dashes.
    - Otherwise `who` is `System · ` plus the id. An id longer than 20 characters is cut to 16 plus `…` in `who` only. `agentLabel` is the full id.
@@ -71,9 +71,16 @@ describeAgent("http://example.test/base/e/agent_vedanta");
 describeAgent("http://example.test/base/p/abc?x=1");
 // { who: "Person", whoKind: "person", agentLabel: "Person" }
 
+describeAgent("https://anna-vault.gilb.com/base/p/abc", { nameSuffix: "-vault" });
+// { who: "anna", whoKind: "person", agentLabel: "anna" }
+
 describeAgent("http://example.test/BASE/E/short-id");
 // Actor, not System. The entity test is case-sensitive.
 ```
+
+## Changes in 0.1.1
+
+`describeAgent` takes an optional second argument and names a person on a vault host by the host's first label. Every address the 0.1.0 tests used gives the same answer.
 
 ## What the host must supply
 

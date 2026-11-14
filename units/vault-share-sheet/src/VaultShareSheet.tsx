@@ -1,7 +1,8 @@
 import { ModalSheet } from "@kaigilb/gilbplatformcode-modal-sheet";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import "./vaultShareSheet.css";
 import type { AccessRow, ShareApi, ShareLevel } from "./model";
+import { labelRows, type KeyValueStore } from "./rememberNames";
 import { useVaultShare } from "./useVaultShare";
 import { defaultWords, type ShareWords } from "./words";
 
@@ -15,20 +16,27 @@ export interface VaultShareSheetProps {
   showOwner?: boolean;
   /** The level the radios start on. Default "view". */
   defaultLevel?: ShareLevel;
+  /** A line under the title (what Edit and View mean here, say). Drawn as `<p className="vss-help">`. */
+  help?: ReactNode;
+  /** The signed-in principal. The owner row, and any row with this principal, reads `words.you` ("You"). */
+  you?: string;
+  /** Where to remember the name typed when sharing, per vault. The platform sends no name for most people, so a later load shows it from here. */
+  rememberNames?: KeyValueStore;
   words?: Partial<ShareWords>;
   /** Replace any of the three calls (the default talks to the platform through vault-access). */
   api?: Partial<ShareApi>;
 }
 
 /** Share a whole vault: type a vault name or address and a level, see who has access, take it away with an inline Yes or No. */
-export function VaultShareSheet({ vaultId, title, onClose, showOwner = true, defaultLevel = "view", words, api }: VaultShareSheetProps) {
+export function VaultShareSheet({ vaultId, title, onClose, showOwner = true, defaultLevel = "view", help, you, rememberNames, words, api }: VaultShareSheetProps) {
   const w: ShareWords = { ...defaultWords, ...words };
-  const { state, submit, remove, clearMessages } = useVaultShare(vaultId, api);
+  const { state, submit, remove, clearMessages } = useVaultShare(vaultId, api, { you, rememberNames });
   const [text, setText] = useState("");
   const [level, setLevel] = useState<ShareLevel>(defaultLevel);
   const [removing, setRemoving] = useState<string | null>(null);
   const ids = useId();
-  const { busy, view } = state;
+  const { busy } = state;
+  const view = state.view ? labelRows(state.view, { you, names: state.names, words: w }) : null;
   const notControlled = state.status === "ready" && view !== null && !view.controlled;
 
   // A share that worked empties the field.
@@ -68,6 +76,7 @@ export function VaultShareSheet({ vaultId, title, onClose, showOwner = true, def
 
   return (
     <ModalSheet title={title ?? w.title} onClose={onClose} closeLabel={w.close} className="vss">
+      {help !== undefined && help !== null && help !== false ? <p className="vss-help">{help}</p> : null}
       {notControlled ? (
         <p className="vss-note" role="status">{w.notControlled}</p>
       ) : (

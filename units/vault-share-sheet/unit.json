@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-share-sheet",
   "package": "@kaigilb/gilbplatformcode-vault-share-sheet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -14,6 +14,7 @@
     "src/index.ts",
     "src/model.ts",
     "src/words.ts",
+    "src/rememberNames.ts",
     "src/useVaultShare.ts",
     "src/VaultShareSheet.tsx",
     "src/vaultShareSheet.css",
@@ -26,5 +27,5 @@
     "scripts/check-host-agnostic.mjs"
   ],
   "host": [],
-  "library": {"admitted": true, "tag": "t:Vault.share", "title": "Vault share sheet (give, see and remove access to a whole vault)", "note": "Share your vault with a person by their vault name or address: who has access, edit or view, inline remove. Headless ./model plus a React sheet on modal-sheet. The calls themselves are vault-access; a share of one record is lws-relations. Share access grant: the sheet for it."}
+  "library": {"admitted": true, "tag": "t:Vault.share", "title": "Vault share sheet (give, see and remove access to a whole vault)", "note": "Share your vault with a person by their vault name or address: who has access, edit or view, inline remove. Headless ./model plus a React sheet on modal-sheet. The calls themselves are vault-access; a share of one record is lws-relations. Share access grant: the sheet for it. Also found as: share; give access; invite; who has access; owner. Takes a help line under the title, shows your own row as You, and remembers the name you typed for each person."}
 }

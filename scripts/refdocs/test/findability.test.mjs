@@ -49,6 +49,12 @@ const CASES = [
   ["back up a vault", ["vault-export"]],
   ["remember the chosen vault", ["vault-list"]],
   ["shared with you banner", ["vault-list"]],
+  // Round 9 CB3
+  ["share", ["vault-share-sheet"]],
+  ["give access", ["vault-share-sheet"]],
+  ["invite", ["vault-share-sheet"]],
+  ["who has access", ["vault-share-sheet"]],
+  ["owner", ["vault-share-sheet"]],
 ];
 
 for (const [phrase, units] of CASES) {
