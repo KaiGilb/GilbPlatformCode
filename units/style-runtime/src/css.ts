@@ -1,7 +1,8 @@
 // StyleSheet -> CSS custom properties. SECURITY: toCssText validates first and only ever interpolates
 // (a) strings that passed validateStyleSheet, (b) hex produced by toHex, (c) constants in this file.
-import { contrastRatio, ensureContrast } from "./color";
+import { contrastRatio, ensureContrast, parseColor } from "./color";
 import { paletteFromSeed } from "./palette";
+import { ACTION_ROW_CSS } from "./actionRowCss";
 import { validateStyleSheet, type PaletteInput, type StyleSheet } from "./schema";
 
 type Mode = "light" | "dark";
@@ -43,6 +44,11 @@ function colorVars(sheet: StyleSheet, mode: Mode): Record<string, string> {
   const paper = given.paper;
   const ensure = (c: string) => ensureContrast(c, paper, 4.5);
   const onAccent = given.onAccent ?? (contrastRatio("#ffffff", given.accent) >= contrastRatio("#111111", given.accent) ? "#ffffff" : "#111111");
+  // Accent as text/outline ink: the accent itself, nudged only as far as needed to reach 4.5:1 on the paper and, when the sheet gives a parseable surface, the surface.
+  const inkOnPaper = ensure(given.accent);
+  const accentInk = given.surface && parseColor(given.surface) ? ensureContrast(inkOnPaper, given.surface, 4.5) : inkOnPaper;
+  const bad = given.bad ?? ensure(gen.bad);
+  const onBad = contrastRatio("#ffffff", bad) >= contrastRatio("#111111", bad) ? "#ffffff" : "#111111";
   // Original palette colours (catalogue / website), contrast-fixed to 3:1 against this mode's paper.
   const extras: Record<string, string> = {};
   (sheet.palette.extra ?? []).slice(0, 6).forEach((c, i) => {
@@ -57,9 +63,11 @@ function colorVars(sheet: StyleSheet, mode: Mode): Record<string, string> {
     "--lines": given.lines ?? "var(--ink)",
     "--tint-hi": mode === "dark" ? "color-mix(in srgb, var(--ink) 26%, var(--paper))" : "#ffffff",
     "--on-accent": onAccent,
+    "--accent-ink": accentInk,
     "--ok": given.ok ?? ensure(gen.ok),
     "--warn": given.warn ?? ensure(gen.warn),
-    "--bad": given.bad ?? ensure(gen.bad),
+    "--bad": bad,
+    "--on-bad": onBad,
     "--signin-brand": "var(--accent)",
     "--signin-on-brand": "var(--on-accent)",
   };
@@ -160,7 +168,7 @@ export function toCssVars(sheet: StyleSheet, mode: Mode): Record<string, string>
 }
 
 const MODE_KEYS = [
-  "--accent", "--paper", "--ink", "--surface", "--lines", "--tint-hi", "--on-accent", "--ok", "--warn", "--bad",
+  "--accent", "--paper", "--ink", "--surface", "--lines", "--tint-hi", "--on-accent", "--accent-ink", "--ok", "--warn", "--bad", "--on-bad",
   "--shadow-sm", "--shadow-md", "--shadow-lg",
 ];
 
@@ -193,5 +201,5 @@ export function toCssText(sheet: StyleSheet): string {
   if (s.mode === "system") {
     parts.push(`@media (prefers-color-scheme: dark) {\n${block(":root:not([data-theme])", darkVars, "  ")}\n}`);
   }
-  return parts.join("\n") + "\n";
+  return parts.join("\n") + "\n" + ACTION_ROW_CSS + "\n";
 }
