@@ -8,7 +8,7 @@ One unit, three entries, no React. The record is read and written with `lws-reco
 
 - `"."` (peers `lws-records`, `photo-ref`): the link (`pictureLinkPatch`, `pictureOfFacts`, `linkPicture`, `PictureLinkNotKeptError`) and the flow (`addWithPicture`, `replacePicture`, `removePicture`, `deleteWithPicture`, `PictureSaveError`, `FILES_NOT_REMOVED`).
 - `"./prepare"` (optional peers `picture-shrink`, `picture-pick`): `checkPictureFile`, `preparePicture`.
-- `"./vault"` (optional peers `picture-set`, `picture-upload`, `lws-session-bridge`): `createVaultPictures`, a thin binder of picture-set's copy map, store and end.
+- `"./vault"` (optional peers `picture-set`, `picture-upload`, `lws-session-bridge`): `createVaultPictures`, a thin binder of picture-set's copy map, store and end; `vaultPictureService`; `vaultPictureFlowDeps`, the `PictureFlowDeps` for one vault.
 
 An app that only needs the link and the flow installs the two required peers and nothing else.
 
@@ -41,6 +41,7 @@ preparePicture(file, o?: { screenEdge?: number; thumbEdge?: number; makeSet?: ty
 
 // "./vault"
 createVaultPictures(c: { vaultOrigin; vaultRoot; folder; send? }): { loadCopies(); upload(p); endFiles(master, copies) }
+vaultPictureFlowDeps<R, F>(o: { vaultId; typeIri; fact; pictures; copies?; toFacts; fromRecord; nameHint?; stamp? }): PictureFlowDeps<R, F>
 ```
 
 - `pictureLinkPatch` writes the `{"@id": master}` form only (a `null` member deletes the fact, JSON merge patch). `pictureOfFacts` reads every form a vault serves: a plain string, `{"@id": x}`, a list (the first item that reads), under the bare key or the `a:` spelling (the bare key wins when both are there). Empty and non-string values are `null`.
@@ -97,6 +98,25 @@ const url = pictures.track(await pictureObjectUrl(uri, origin), vaultId); pictur
 pictures.forget();                                    // was forgetAll's maps, bindings and tracked loop
 ```
 
+### vaultPictureFlowDeps
+
+`vaultPictureFlowDeps({ vaultId, typeIri, fact, pictures, copies?, toFacts, fromRecord, nameHint?, stamp? })` (since 0.1.2, same `"./vault"` entry) answers the `PictureFlowDeps<R, F>` an app otherwise writes by hand (about 20 lines in run 9). `R` is the app's record and must carry `id`, `entity`, `etag` and `picture`.
+
+- `createRecord`: lws-records' `createRecord` into `vaultId` with `typeIri`, `toFacts(form)`, and (picture-first only) the picture link under `fact`; the record is `fromRecord({ id, entity, etag }, form, masterOrNull)`. `nameHint(form)` is the address hint.
+- `upload`, `endFiles`: `pictures` (a `createVaultPictures` binding, or `service.forVault(vaultId)`). `copiesOf`: picture-set's `copiesOf` of `copies` (a copy map, or a function that answers one; none when omitted, so pass the map for a replace or delete).
+- `link`: `linkPicture` (PATCH with If-Match, read back), answering `{ ...rec, etag, picture }`.
+- `deleteRecord`: DELETE with NO If-Match (the files are already ended, so a record that moved on must still go). `pictureOf`: `rec.picture`.
+- `stamp`: the signed-in principal's address, or a function answering it (`null` or `""` means none). When there is one, `statedBy` is written on the create AND on the link PATCH (the field-edit PATCH is the app's own, so it adds `statedBy` itself). Without `stamp` no `statedBy` is sent. The slug is `statedBy`; lws-records spells it `a:statedBy` on the wire.
+
+```ts
+const deps = vaultPictureFlowDeps<Camera, CameraForm>({
+  vaultId, typeIri: CAMERA_TYPE_IRI, fact: PICTURE_FACT, pictures: pictures.forVault(vaultId), copies: map,
+  toFacts, nameHint: (f) => f.name.trim(), stamp: principal,
+  fromRecord: (made, form, picture) => ({ ...applyForm(blank(), form), ...made, picture }),
+});
+await addWithPicture(deps, form, prepared);
+```
+
 ## How to take it
 
 Package `@kaigilb/gilbplatformcode-record-picture`. Install the required peers `lws-records` and `photo-ref`, plus the optional peers of each entry you import. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy.
@@ -104,6 +124,10 @@ Package `@kaigilb/gilbplatformcode-record-picture`. Install the required peers `
 ## Changes in 0.1.1
 
 Additive, in `"./vault"`: `vaultPictureService` and the types `VaultPictureService`, `VaultPictureServiceDeps`. No new peer (it uses only `createVaultPictures` and picture-set's `CopyMap` type). 10 new tests (`src/vault.test.ts`).
+
+## Changes in 0.1.2
+
+Additive, in `"./vault"`: `vaultPictureFlowDeps` and the type `VaultPictureFlowOptions`. `"./vault"` now also imports the two required peers `lws-records` and `photo-ref` (through `./link`), so it needs no new peer. 4 new tests (`src/vault.test.ts`): `statedBy` on the create and on the link PATCH when `stamp` is on, none when it is off, `stamp` as a function, and replace, remove and delete through the deps.
 
 ## Where it came from
 
