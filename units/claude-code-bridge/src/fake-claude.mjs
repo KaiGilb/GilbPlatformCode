@@ -152,6 +152,11 @@ process.stdin.on("end", async () => {
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu2", name: "Bash", input: { command: "ls /" } }] } });
     out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu2", is_error: true, content: "permission denied" }] } });
   }
+  if (prompt.includes("HOLDAFTER")) {
+    // After the work above (a tool call, a CODEWRITE), stay running, so a test can look at a turn that is mid-way.
+    setInterval(() => {}, 1000);
+    return;
+  }
   out({ type: "assistant", message: { content: [{ type: "text", text }] } });
   out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
 });

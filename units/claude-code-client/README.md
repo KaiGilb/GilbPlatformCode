@@ -89,6 +89,7 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 - `createWorkspace(name)` makes `~/<name>` on the bridge's computer without a dialog and keeps it as the code folder: `{ name, path }`. 409 when the folder already has files, 400 for a bad name.
 - `bridgeInfo()` also returns `access` (0.3.0): `"folder"` (the default), `"computer"` (the bridge was started with `--full-access`: the code turn runs like Claude Code in the person's terminal, and every request is asked of the person through `onApproval`) or `null` (no folder, or an older bridge). Only the command line of the bridge sets it; this client cannot. Show it plainly when it is `"computer"`.
 - `listProjects()` returns `{ name, modified }[]` (the direct subfolders of the bridge's code folder) and `createProject(name)` makes one (bridge 0.3.0). `sendTurn` takes `project` (code mode): the turn runs inside that subfolder, the kept Claude Code session is per project and thread (its stored key encodes each part, `mode-code/<project>/<thread>`, so a project and a thread containing `/` never collide), and the reply carries `project`. Both go through the relay when it is open.
+- 0.3.1: an `approval_request` the client drops as malformed but that has a usable string `id` (non-empty, 128 characters at most) is answered "no" to the bridge, so the bridge does not wait out its timeout. One without a usable `id` is left. `notice` may now also say "Request holds a field named constructor/prototype."
 - The reply of a computer-access code turn has `access: "computer"`; other replies leave it out. `files_changed` still lists only the code folder: changes outside it are not listed. `approval_request` carries any `tool` and a `summary` of up to 2000 characters (the bridge never cuts it; the client drops a longer one, a `detail` over 200 and a `notice` over 400, as malformed), so show them as they come, whole.
 - The reply of a files-only code turn has `codeMode: "files-only"`; other replies leave it out. Show it plainly: this turn could not run commands.
 - `sendTurn` takes `mode: "code"` (default `"chat"`) and `approval`: `"session"` (default; the person approved once) or `"each-write"` (the bridge asks before each write and each command). A hand-off's nested turn is always a chat turn and never carries either.
@@ -99,6 +100,31 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
   - `files_changed` `{ added, changed, removed, addedCount, changedCount, removedCount, truncated }`
   - `approval_request` `{ id, tool, summary }` and `approval_done` `{ id, allow }`
 - A code turn and a chat turn of one thread keep separate session ids: a code session lives in the code folder and cannot be resumed into the chat one.
+
+## Running turns (0.3.2)
+
+For a page that can lose track of a turn (a remount, a reload). These need bridge 0.3.2; against an older bridge each degrades as noted. Everything is additive.
+
+- `sendTurn(messages, { signal })`: aborting the signal closes the stream, which makes the bridge stop Claude Code for that turn. The promise rejects with a `ClaudeCodeBridgeError` (status 499, "The turn was stopped."). Through the relay the client posts `gilb-bridge-abort`.
+- When the relay window is open the client also posts `gilb-bridge-bye` on `pagehide`, so the window drops every request this page still has open and the bridge stops those turns.
+- New `onEvent` events:
+  - `turn_started` `{ turnId, startedAt, mode, project }`, the first event of a turn (an older bridge sends none).
+  - `heartbeat` `{ at }` (ISO time), one for each keepalive the bridge sends while a turn's stream is open.
+  - `tool_start` `{ name, at }` when a platform tool call begins, before it returns (`tool` follows when it does).
+  - A hand-off's nested turn now shows: its `code_activity`, `code_tool_error`, `tool_start` and `tool` events carry `hop: true`. Nothing else about the existing events changed.
+- A 429 `CodeTurnRunning` from the bridge throws `BridgeTurnRunningError` (a `ClaudeCodeBridgeError` with status 429; `name` `"BridgeTurnRunningError"`; the bridge's own sentence as `message`; fields `code`, `project` (string or null), `ownTurn` (boolean), `turnId`, `startedAt`). From bridge 0.3.4 the bridge names the running turn only to its own pairing: `ownTurn` is `true` and `turnId` and `startedAt` are strings; for a turn of another pairing `ownTurn` is `false` and both are `undefined`. A bridge older than 0.3.4 does not say `ownTurn`; the client then gives `false` and still passes on the `turnId` the bridge sent. Other 429s and errors are unchanged. When `ownTurn` is true the page can use `turnId` to follow the running turn and queue its message.
+- `listTurns()` returns the turns running for this pairing as `RunningTurn[]` (`{ turnId, mode, project, startedAt, lastActivityAt, lastActivity, toolCalls, handoffs }`). An older bridge (404) gives `[]`. Needs the pairing; goes through the relay when it is open.
+- `cancelTurn(turnId)` asks the bridge to stop one of this pairing's turns and resolves true when it did; false for a turn that is not running, belongs to another pairing, or a bridge without the route (404). The stopped turn's own `sendTurn` rejects with the bridge's "The turn was cancelled.".
+
+## Tool calls for the page (0.3.3)
+
+A host that needs to know what each platform tool call was (for example to show the records an agent wrote) reads it from `onEvent`; no wrapping of `fetch` is needed. Both events cover the person's own turn and a hand-off's nested turn (those carry `hop: true`, as before).
+
+- `tool_start` `{ name, at, callId, args, role? }`
+- `tool` `{ name, ok, callId, args, answer?, answerTruncated?, role? }`
+- `callId` is the bridge's id for the call and pairs a `tool_start` with its `tool`. `args` is the tool input as the model sent it, parsed (the raw text if it is not JSON). `answer` is what the page got back from the platform, parsed (the text if it is not JSON); a failed call gives its `{ error }`. For the call that asks for a hand-off, `answer` is the hand-off's final answer. `role` is the hand-off agent's role, set only on a hand-off's nested calls.
+- If the answer is over 256 KB (`TOOL_ANSWER_EVENT_CAP`, in characters), `answer` is `undefined` and `answerTruncated` is `true`.
+- These go to the page's `onEvent` only. Nothing about them is sent to the bridge or anywhere else; the bridge-bound and platform-bound request bodies are unchanged. The existing fields (`name`, `ok`, `at`, `hop`) are unchanged, so an older consumer still works. `answer` is taken before any slipped text is appended.
 
 ## Slipping a message into a running turn
 
@@ -138,3 +164,5 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 Repository `KaiGilb/gilb-claude-code`, tag v0.2.0, commit `3b032c0c6710faa8d24c5fd4848d82e6d5c73c3e`: `src/client.ts`, `src/commands.ts`, `src/client.test.ts`, `src/client.e2e.test.ts`, `src/commands.test.ts` and `test-setup.ts`. `src/index.ts` exports the two source files (v0.2.0 also exported the Connect component and badge, which are other units).
 
 Changed on the way in, and only this: `bridgeUrl` is required and `DEFAULT_BRIDGE_URL` is gone (it was `http://127.0.0.1:47821`), with a runtime error when it is missing; two comments that named the loopback address or the Gilb origin are reworded. Tests: import paths now name the bridge unit; tests that relied on the default pass `bridgeUrl`; the test of the default address became a test that `bridgeUrl` is required; Gilb host names used as inputs are `*.example.test`; one `!` for the stricter frame tsconfig; the setup file no longer calls the React test cleanup (no component here).
+
+Changelog: 0.3.4: `BridgeTurnRunningError` gains `ownTurn` (boolean); `turnId` and `startedAt` may be `undefined` (the running turn is someone else's; bridge 0.3.4). 0.3.3: `tool_start` and `tool` events carry `callId`, `args`, and (on `tool`) `answer` / `answerTruncated` (over 256 KB), plus `role` on a hand-off's calls (see "Tool calls for the page"). 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").

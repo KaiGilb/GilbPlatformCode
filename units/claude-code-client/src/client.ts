@@ -30,6 +30,40 @@ export class ClaudeCodeBridgeError extends Error {
   }
 }
 
+/** The bridge refused a code turn because one is already running in that project (HTTP 429, code CodeTurnRunning). Its text is the bridge's own sentence. */
+export class BridgeTurnRunningError extends ClaudeCodeBridgeError {
+  readonly code = "CodeTurnRunning" as const;
+  /** The project the running turn is in, or null for the code folder itself. */
+  readonly project: string | null;
+  /** True when the running turn belongs to this pairing (bridge 0.3.4). False when it is someone else's, or the bridge is older and did not say. */
+  readonly ownTurn: boolean;
+  /** The bridge's id of the turn that is running. Only an own turn is named (bridge 0.3.4); otherwise undefined. */
+  readonly turnId?: string;
+  /** When that turn started (ISO). Only an own turn says; otherwise undefined. */
+  readonly startedAt?: string;
+  constructor(message: string, info: { project: string | null; ownTurn: boolean; turnId?: string; startedAt?: string }) {
+    super(429, message);
+    this.name = "BridgeTurnRunningError";
+    this.project = info.project;
+    this.ownTurn = info.ownTurn;
+    if (info.turnId !== undefined) this.turnId = info.turnId;
+    if (info.startedAt !== undefined) this.startedAt = info.startedAt;
+  }
+}
+
+/** A turn that is running on the bridge for this pairing (bridge 0.3.2; `POST /v1/turns`). */
+export interface RunningTurn {
+  turnId: string;
+  mode: "code" | "chat";
+  project: string | null;
+  startedAt: string;
+  lastActivityAt: string;
+  /** Short, in the wording of the `code_activity` summary; "" when there was none yet. */
+  lastActivity: string;
+  toolCalls: number;
+  handoffs: number;
+}
+
 /** GilbPlatform refused or could not answer the turn's context request (the tool calls report their errors to the model instead). */
 export class ClaudeCodePlatformError extends Error {
   readonly status: number;
@@ -73,13 +107,23 @@ export const BUDGET_SPENT_CONTINUE = "continue";
 
 /** What the page tells the app while a turn runs. `standing` carries the platform's raw report; the app reads it as it likes. */
 export type ClaudeCodeStreamEvent =
+  // The first event of every turn (bridge 0.3.2; an older bridge sends none).
+  | { event: "turn_started"; data: { turnId: string; startedAt: string; mode: "code" | "chat"; project: string | null } }
   | { event: "start"; data: { ok: true } }
-  | { event: "tool"; data: { name: string; ok: boolean } }
+  // One per keepalive the bridge sends while the turn is open (client 0.3.2).
+  | { event: "heartbeat"; data: { at: string } }
+  // `hop: true` marks activity that belongs to a hand-off's nested turn (client 0.3.2).
+  // Client 0.3.3 adds `callId` (pairs a `tool_start` with its `tool`), `args` (the tool input, parsed; the raw text if it is not JSON),
+  // `answer` (what the page got back, parsed; the text if it is not JSON; `undefined` with `answerTruncated: true` when over 256 KB)
+  // and, for a hand-off's nested turn, `role` (the hand-off agent's role). They go to `onEvent` only, never to the bridge.
+  | { event: "tool"; data: { name: string; ok: boolean; callId: string; args: unknown; answer?: unknown; answerTruncated?: true; role?: string }; hop?: true }
+  // A platform tool call has begun (it has not returned yet).
+  | { event: "tool_start"; data: { name: string; at: string; callId: string; args: unknown; role?: string }; hop?: true }
   | { event: "slipped"; data: { ids: string[] } }
   | { event: "standing"; data: unknown }
   // Code mode only (the bridge's code turn). A malformed one is dropped, never thrown.
-  | { event: "code_activity"; data: { tool: string; summary: string } }
-  | { event: "code_tool_error"; data: { tool: string; summary: string; text: string } }
+  | { event: "code_activity"; data: { tool: string; summary: string }; hop?: true }
+  | { event: "code_tool_error"; data: { tool: string; summary: string; text: string }; hop?: true }
   | { event: "files_changed"; data: FilesChanged }
   | { event: "approval_request"; data: ApprovalRequest }
   | { event: "approval_done"; data: { id: string; allow: boolean } };
@@ -219,6 +263,23 @@ export interface SendClaudeCodeOpts {
    * throws or rejects, answers "no". The turn keeps running while this waits.
    */
   onApproval?: (req: ApprovalRequest) => Promise<boolean>;
+  /**
+   * Aborting closes the stream to the bridge, which stops Claude Code for this turn. The returned promise then rejects with a
+   * ClaudeCodeBridgeError (status 499, "The turn was stopped."). Through the relay window the client posts `gilb-bridge-abort`.
+   */
+  signal?: AbortSignal;
+}
+
+/** The largest tool answer (serialised, in characters) the `tool` event carries; above it `answer` is undefined and `answerTruncated` is true. */
+export const TOOL_ANSWER_EVENT_CAP = 256 * 1024;
+
+/** JSON text becomes its value; anything else stays the text. */
+function parseMaybeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 /** What `/base/ai/claude-code/tool` answers when the tool is a hand-off: a nested turn for THIS page to run on the person's Claude Code. */
@@ -290,6 +351,13 @@ export interface ClaudeCodeClient {
   directBlocked(): Promise<boolean>;
   /** Sends the thread to the person's Claude Code and returns the assistant turn. */
   sendTurn(messages: ClaudeCodeTurn[], opts: SendClaudeCodeOpts): Promise<ClaudeCodeReply>;
+  /**
+   * The turns running on the bridge for this pairing (`POST /v1/turns`, bridge 0.3.2), so a page that lost track of one (a reload)
+   * can learn it. An older bridge without the route -> []. Needs the pairing; goes through the relay when open.
+   */
+  listTurns(): Promise<RunningTurn[]>;
+  /** Asks the bridge to stop one of this pairing's turns (`POST /v1/turn/cancel`). false when it is not running, is not this pairing's, or the bridge is older and has no such route. */
+  cancelTurn(turnId: string): Promise<boolean>;
 }
 
 /** Most tool requests of one turn handled at once; the rest wait their turn. A running hand-off counts as one. */
@@ -310,10 +378,13 @@ interface BridgeTurnOut {
   project?: string;
 }
 
-/** The bridge events only a code turn sends. */
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
 const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
+/** The bridge events only a code turn sends. */
 const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done"]);
+
+/** The name readBridgeSse gives a comment-only block (the bridge's `: keepalive`). */
+const KEEPALIVE = "\0keepalive";
 
 interface SseEvent {
   event: string;
@@ -338,13 +409,18 @@ async function* readBridgeSse(res: Response, stop?: AbortSignal): AsyncGenerator
       for (const part of parts) {
         let event = "message";
         const data: string[] = [];
+        let comment = false;
         for (const raw of part.split("\n")) {
           const line = raw.replace(/\r$/, "");
+          if (line.startsWith(":")) comment = true;
           if (!line || line.startsWith(":")) continue;
           if (line.startsWith("event:")) event = line.slice(6).trim();
           else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
         }
-        if (data.length === 0) continue;
+        if (data.length === 0) {
+          if (comment) yield { event: KEEPALIVE, data: {} }; // a comment line alone is the bridge's keepalive
+          continue;
+        }
         let parsed: unknown = {};
         try {
           parsed = JSON.parse(data.join("\n"));
@@ -509,6 +585,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     if (openTimer !== null) clearTimeout(openTimer);
     openTimer = null;
     globalThis.removeEventListener?.("message", onRelayMessage as EventListener);
+    globalThis.removeEventListener?.("pagehide", onPageHide);
     relayWindow = null;
     const waiting = openWaiting;
     openWaiting = [];
@@ -517,6 +594,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     for (const r of open) r.fail(new ClaudeCodeBridgeError(0, RELAY_CLOSED));
     setRelayState("closed");
     for (const w of waiting) w(false);
+  }
+  /** This page is going away: tell the relay window to drop every open request, so the bridge stops the turns this page started. */
+  function onPageHide() {
+    postRelay({ type: "gilb-bridge-bye" });
   }
   function onRelayMessage(ev: MessageEvent) {
     // Only the window we opened, and only from the bridge's own origin. Anything else is ignored.
@@ -737,8 +818,17 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       });
       if (res.status === 401) throw bridgeForgotUs();
       if (!res.ok) {
-        const err = (await res.json().catch(() => null)) as { error?: unknown } | null;
-        throw new ClaudeCodeBridgeError(res.status, typeof err?.error === "string" ? err.error : "The bridge could not run the turn.");
+        const err = (await res.json().catch(() => null)) as { error?: unknown; code?: unknown; project?: unknown; ownTurn?: unknown; turnId?: unknown; startedAt?: unknown } | null;
+        const text = typeof err?.error === "string" ? err.error : "The bridge could not run the turn.";
+        if (res.status === 429 && err?.code === "CodeTurnRunning") {
+          throw new BridgeTurnRunningError(text, {
+            project: typeof err.project === "string" ? err.project : null,
+            ownTurn: err.ownTurn === true,
+            ...(err.ownTurn !== false && typeof err.turnId === "string" ? { turnId: err.turnId } : {}),
+            ...(err.ownTurn !== false && typeof err.startedAt === "string" ? { startedAt: err.startedAt } : {}),
+          });
+        }
+        throw new ClaudeCodeBridgeError(res.status, text);
       }
       let turnId = "";
       let out: BridgeTurnOut | null = null;
@@ -850,11 +940,36 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         );
       };
 
+      /** An approval_request the client dropped as malformed but that has a usable id: answer it "no" so the bridge does not wait out its timeout. */
+      const denyDropped = (id: string) => {
+        handlers.push(
+          (async () => {
+            try {
+              const back = await bridgeFetch("/v1/approval", {
+                signal: stop.signal,
+                method: "POST",
+                headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
+                body: JSON.stringify({ turnId, id, allow: false }),
+              });
+              if (back.status === 401) throw bridgeForgotUs();
+            } catch (err) {
+              if (!stop.signal.aborted) failTurn(err);
+            }
+          })(),
+        );
+      };
+
       let readErr: unknown = null;
       try {
         for await (const ev of readBridgeSse(res, stop.signal)) {
           const data = (ev.data ?? {}) as Record<string, unknown>;
-          if (ev.event === "start") {
+          if (ev.event === KEEPALIVE) {
+            opts.onEvent?.({ event: "heartbeat", data: { at: new Date().toISOString() } });
+          } else if (ev.event === "turn_started") {
+            if (announceStart && isStr(data.turnId) && isStr(data.startedAt) && (data.mode === "code" || data.mode === "chat") && (data.project === null || isStr(data.project))) {
+              opts.onEvent?.({ event: "turn_started", data: { turnId: data.turnId, startedAt: data.startedAt, mode: data.mode, project: data.project } });
+            }
+          } else if (ev.event === "start") {
             turnId = typeof data.turnId === "string" ? data.turnId : "";
             if (announceStart) opts.onEvent?.({ event: "start", data: { ok: true } });
           } else if (ev.event === "status") {
@@ -885,12 +1000,18 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             }
           } else if (ev.event === "error") {
             streamError = typeof data.message === "string" ? data.message : "Claude Code could not answer.";
+          } else if (!announceStart && (ev.event === "activity" || ev.event === "tool_error")) {
+            // A hand-off's nested turn: its activity is passed on, marked as the hand-off's.
+            const ce = codeStreamEvent(ev.event, data);
+            if (ce && (ce.event === "code_activity" || ce.event === "code_tool_error")) opts.onEvent?.({ ...ce, hop: true });
           } else if (announceStart && CODE_BRIDGE_EVENTS.has(ev.event)) {
             const ce = codeStreamEvent(ev.event, data);
             if (ce) {
               opts.onEvent?.(ce);
               if (ce.event === "approval_request") askPerson(ce.data);
               else if (ce.event === "approval_done") closeQuestion(ce.data.id);
+            } else if (ev.event === "approval_request" && isStr(data.id) && data.id !== "" && data.id.length <= 128) {
+              denyDropped(data.id);
             }
           }
         }
@@ -915,7 +1036,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     }
 
     // 1. What makes this the platform's agent: the composed prompt and the tools.
-    const ctxRes = await postPlatform(contextUrl, turnFields);
+    const ctxRes = await postPlatform(contextUrl, turnFields, signal);
     const ctxBody = await readJson(ctxRes);
     if (!ctxRes.ok) {
       const code = ctxBody && typeof ctxBody === "object" ? (ctxBody as { error?: unknown }).error : undefined;
@@ -939,9 +1060,13 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       bridgeTurnId: string,
       sig: AbortSignal,
       callId: string,
+      hopRole?: string,
     ): Promise<{ result: string; isError: boolean }> => {
       let result: string;
       let isError = false;
+      const parsedArgs = parseMaybeJson(args);
+      const roleField = hopId && typeof hopRole === "string" && hopRole !== "" ? { role: hopRole } : {};
+      opts.onEvent?.({ event: "tool_start", data: { name, at: new Date().toISOString(), callId, args: parsedArgs, ...roleField }, ...(hopId ? { hop: true as const } : {}) });
       try {
         const tr = await postPlatform(toolUrl, { ...turnFields, name, arguments: args, ...(hopId ? { hop: { id: hopId } } : {}) }, sig);
         const body = await readJson(tr);
@@ -966,6 +1091,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         result = JSON.stringify({ error: err instanceof Error ? err.message : `${name} could not run` });
       }
       if (platformBudgetSpent(result)) turnBudgetSpent = true;
+      // What the page tells the app: taken before any slipped text is appended, and only handed to `onEvent`.
+      const answerTooBig = result.length > TOOL_ANSWER_EVENT_CAP;
+      const answerFields = answerTooBig ? { answer: undefined, answerTruncated: true as const } : { answer: parseMaybeJson(result) };
       // Top-level answers only. If this turn was already left, take nothing: the answer is not posted, so the text would be lost.
       if (!hopId && !sig.aborted) {
         const slipped = opts.takeSlipped?.() ?? [];
@@ -974,7 +1102,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           opts.onEvent?.({ event: "slipped", data: { ids: slipped.map((s) => s.id) } });
         }
       }
-      opts.onEvent?.({ event: "tool", data: { name, ok: !isError } });
+      opts.onEvent?.({ event: "tool", data: { name, ok: !isError, callId, args: parsedArgs, ...answerFields, ...roleField }, ...(hopId ? { hop: true as const } : {}) });
       return { result, isError };
     };
 
@@ -1001,7 +1129,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         if (typeof callId === "string" && callId !== "") nestedBody.parentCallId = callId;
         const done = await streamBridgeTurn(
           nestedBody,
-          (name, args, _turn, toolSig, nestedCallId) => callTool(name, args, hop.id, "", toolSig, nestedCallId),
+          (name, args, _turn, toolSig, nestedCallId) => callTool(name, args, hop.id, "", toolSig, nestedCallId, hop.role),
           false,
           (d) => opts.onBridgeStatus?.({ nested: true, ...d }),
           sig,
@@ -1269,6 +1397,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         if (relayWindow === win && relayStateNow === "opening") return; // the same window, still waiting
         relayWindow = win;
         globalThis.addEventListener?.("message", onRelayMessage as EventListener);
+        globalThis.addEventListener?.("pagehide", onPageHide);
         setRelayState("opening");
         if (relayPoll === null) {
           relayPoll = setInterval(() => {
@@ -1327,7 +1456,57 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     sendTurn(messages, opts) {
       const ctl = new AbortController();
       inflight.add(ctl);
-      return runTurn(messages, opts, ctl.signal).finally(() => inflight.delete(ctl));
+      const outer = opts.signal;
+      const onOuter = () => ctl.abort();
+      if (outer?.aborted) ctl.abort();
+      else outer?.addEventListener("abort", onOuter, { once: true });
+      return runTurn(messages, opts, ctl.signal)
+        .catch((e: unknown) => {
+          // The caller stopped the turn (not Disconnect): say that, whatever form the failure took.
+          if (outer?.aborted) throw new ClaudeCodeBridgeError(499, "The turn was stopped.");
+          throw e;
+        })
+        .finally(() => {
+          inflight.delete(ctl);
+          outer?.removeEventListener("abort", onOuter);
+        });
+    },
+
+    async listTurns() {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/turns", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: "{}" });
+      if (res.status === 404) return []; // an older bridge has no such route
+      if (res.status === 401) throw new ClaudeCodeBridgeError(401, "The bridge no longer knows this pairing. Press Connect and enter its new code.");
+      const body = (await res.json().catch(() => null)) as { turns?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not list the running turns.");
+      if (!body || !Array.isArray(body.turns)) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+      const out: RunningTurn[] = [];
+      for (const t of body.turns as Array<Record<string, unknown> | null>) {
+        if (!t || !isStr(t.turnId) || t.turnId === "" || (t.mode !== "code" && t.mode !== "chat")) continue;
+        out.push({
+          turnId: t.turnId,
+          mode: t.mode,
+          project: isStr(t.project) ? t.project : null,
+          startedAt: isStr(t.startedAt) ? t.startedAt : "",
+          lastActivityAt: isStr(t.lastActivityAt) ? t.lastActivityAt : "",
+          lastActivity: isStr(t.lastActivity) ? t.lastActivity : "",
+          toolCalls: isCount(t.toolCalls) ? t.toolCalls : 0,
+          handoffs: isCount(t.handoffs) ? t.handoffs : 0,
+        });
+      }
+      return out;
+    },
+
+    async cancelTurn(turnId) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/turn/cancel", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify({ turnId }) });
+      if (res.status === 404) return false; // an older bridge has no such route
+      if (res.status === 401) throw new ClaudeCodeBridgeError(401, "The bridge no longer knows this pairing. Press Connect and enter its new code.");
+      const body = (await res.json().catch(() => null)) as { cancelled?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not cancel the turn.");
+      return body?.cancelled === true;
     },
   };
   return client;

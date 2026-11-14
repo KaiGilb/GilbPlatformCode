@@ -40,7 +40,7 @@ import { spawn, execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.0";
+export const BRIDGE_BUILD = "0.3.4";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -160,17 +160,23 @@ var statusEl = document.getElementById("status");
 function post(msg, target) { try { window.opener.postMessage(msg, target); } catch (e) {} }
 // The opener's origin cannot be read up front, so say "ready" to each allowed origin; a wrong origin drops it.
 for (var i = 0; i < ALLOW.length; i++) post({ type: "gilb-bridge-ready", build: BUILD }, ALLOW[i]);
+// The page went away: abort every open request, so the bridge stops the turns that page started.
+function abortAll() { for (var k in aborts) { try { aborts[k].abort(); } catch (e) {} } }
 setInterval(function () {
-  if (!window.opener || window.opener.closed) statusEl.textContent = "The page that opened this window has closed. You can close it.";
+  if (!window.opener || window.opener.closed) {
+    statusEl.textContent = "The page that opened this window has closed. You can close it.";
+    abortAll();
+  }
 }, 2000);
 var HEADERS = ["content-type", "x-bridge-secret", "accept"];
 addEventListener("message", function (ev) {
   if (!window.opener || ev.source !== window.opener || ALLOW.indexOf(ev.origin) < 0) return;
   var m = ev.data;
   if (!m || typeof m !== "object" || typeof m.type !== "string") return;
-  if (m.type !== "gilb-bridge-req" && m.type !== "gilb-bridge-abort") return;
+  if (m.type !== "gilb-bridge-req" && m.type !== "gilb-bridge-abort" && m.type !== "gilb-bridge-bye") return;
   if (peer === null) peer = ev.origin;
   else if (ev.origin !== peer) return;
+  if (m.type === "gilb-bridge-bye") { abortAll(); return; }
   statusEl.textContent = "Connected to " + peer;
   var id = m.id;
   if (typeof id !== "string" && typeof id !== "number") return;
@@ -282,6 +288,8 @@ export function newPairingCode() {
     return `${s.slice(0, 3)}-${s.slice(3)}`;
 }
 const normCode = (c) => String(c ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const BAD_REQUEST = "Bad request.";
+const callerKey = (req) => sha(String(req.headers["x-bridge-secret"])).toString("hex");
 const sha = (s) => crypto.createHash("sha256").update(String(s)).digest();
 const same = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
 const realFiles = {
@@ -1189,6 +1197,7 @@ export function createBridge(opts = {}) {
             }
             if (!turn.tools.some((t) => t.name === name))
                 return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
+            noteActivity(turn, cap(String(name)), true);
             return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {}), id).then((r) => ok({ content: [{ type: "text", text: r.text }], isError: r.isError }), (e) => ok({ content: [{ type: "text", text: String(e?.message ?? e) }], isError: true }));
         }
         return bad(-32601, `Method not found: ${method}`);
@@ -1355,7 +1364,20 @@ export function createBridge(opts = {}) {
         return seen.length === 0 ? "" : `Path contains non-ASCII characters: ${seen.slice(0, 20).join(" ")}${seen.length > 20 ? " …" : ""}`;
     };
     /** The model's description: the only thing `detail` ever holds (capped at 200). The bridge's own lines go in `notice`, a separate field the page can show apart. */
-    const descOf = (desc) => cap(desc, 200);
+    const descOf = (desc) => {
+        // From the raw text, non-ASCII as <U+XXXX>; cut by code point and never inside an escape (an escape that does not fit is left out whole).
+        const shown = showCommand(desc);
+        if (shown.length <= 200)
+            return shown;
+        const parts = shown.match(/<U\+[0-9A-F]{4,6}>|[\s\S]/gu) ?? [];
+        let out = "";
+        for (const p of parts) {
+            if (out.length + p.length > 199)
+                break;
+            out += p;
+        }
+        return `${out}…`;
+    };
     const NOTICE_MAX = 400;
     const HOST_LINE_MAX = 300;
     const TOO_LONG_ADDRESS = "The address is too long to show for approval; ask for it without that.";
@@ -1363,29 +1385,55 @@ export function createBridge(opts = {}) {
     const NOT_PATH_TOOLS = new Set(["Bash", "WebFetch", "WebSearch"]);
     const PATH_KEYS = new Set(["file_path", "notebook_path", "path"]);
     /** A copy of the input with every string escaped as a command is (<U+XXXX>), except the values of path keys at the TOP level (the only ones pathNote covers), which keep their characters. Nested path keys are escaped like any other string. */
-    const escapeInput = (v, top = false) => {
-        if (typeof v === "string")
-            return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
-        if (Array.isArray(v))
-            return v.map((x) => escapeInput(x));
-        if (v && typeof v === "object") {
-            // No prototype: an own "__proto__" key is a plain key here, so JSON.stringify shows it.
-            const o = Object.create(null);
-            for (const [k, x] of Object.entries(v))
-                o[escapeNonAscii(k)] = top && PATH_KEYS.has(k) && typeof x === "string" ? x : escapeInput(x);
-            return o;
+    const escapeInput = (root) => {
+        // Iterative, so depth cannot overflow the stack. No prototype on a copied object: an own "__proto__" key is a plain key, so JSON.stringify shows it.
+        const copy = (v) => {
+            if (typeof v === "string")
+                return escapeNonAscii(v); // from the raw text, never the NFC form (U+212A must show as <U+212A>, not "K")
+            if (Array.isArray(v))
+                return new Array(v.length);
+            if (v && typeof v === "object")
+                return Object.create(null);
+            return v;
+        };
+        const out = copy(root);
+        const work = [{ src: root, dst: out, top: true }];
+        while (work.length > 0) {
+            const { src, dst, top } = work.pop();
+            if (Array.isArray(src)) {
+                const d = dst;
+                for (let i = 0; i < src.length; i++) {
+                    d[i] = copy(src[i]);
+                    if (d[i] !== src[i] && typeof src[i] === "object" && src[i] !== null)
+                        work.push({ src: src[i], dst: d[i], top: false });
+                }
+            }
+            else if (src && typeof src === "object") {
+                const d = dst;
+                for (const [k, x] of Object.entries(src)) {
+                    const ek = escapeNonAscii(k);
+                    if (top && PATH_KEYS.has(k) && typeof x === "string")
+                        d[ek] = x;
+                    else {
+                        d[ek] = copy(x);
+                        if (x && typeof x === "object")
+                            work.push({ src: x, dst: d[ek], top: false });
+                    }
+                }
+            }
         }
-        return v;
+        return out;
     };
     const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
     const BAD_TOOL_MSG = "The tool name is not valid.";
-    const RESERVED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-    const RESERVED_MSG = "The request holds a reserved key (__proto__, constructor or prototype); ask for it without that.";
+    const RESERVED_MSG = "The request holds a reserved key (__proto__); ask for it without that.";
+    const CTOR_NOTICE = "Request holds a field named constructor/prototype.";
     const LOOKALIKE_MSG = "Two fields in the request look the same; ask for it without that.";
-    /** A message when the input holds a reserved key at any depth, or two keys of one object that show as the same text; "" when fine. Iterative, so depth cannot overflow the stack. */
+    /** What is wrong with the input's keys: `deny` is a message when it holds "__proto__" at any depth, or two keys of one object that show as the same text; `ctor` is true when some key is "constructor" or "prototype" (asked about, with a notice). Iterative, so depth cannot overflow the stack. */
     const inputKeyProblem = (root) => {
         const stack = [root];
         let dup = "";
+        let ctor = false;
         while (stack.length > 0) {
             const v = stack.pop();
             if (Array.isArray(v)) {
@@ -1395,9 +1443,11 @@ export function createBridge(opts = {}) {
             else if (v && typeof v === "object") {
                 const seen = new Set();
                 for (const [k, x] of Object.entries(v)) {
-                    if (RESERVED_KEYS.has(k))
-                        return RESERVED_MSG;
-                    const e = escapeNonAscii(k);
+                    if (k === "__proto__")
+                        return { deny: RESERVED_MSG, ctor };
+                    if (k === "constructor" || k === "prototype")
+                        ctor = true;
+                    const e = showText(JSON.stringify(escapeNonAscii(k))); // exactly the text the card shows for this key
                     if (seen.has(e))
                         dup = LOOKALIKE_MSG;
                     seen.add(e);
@@ -1405,7 +1455,7 @@ export function createBridge(opts = {}) {
                 }
             }
         }
-        return dup;
+        return { deny: dup, ctor };
     };
     const pathNote = (tool, input) => (!NOT_PATH_TOOLS.has(tool) ? nonAsciiNote(["file_path", "notebook_path", "path"].map((k) => input[k]).filter((v) => typeof v === "string")) : "");
     const ONLY_HTTP_MSG = "Only http and https addresses can be fetched.";
@@ -1426,8 +1476,8 @@ export function createBridge(opts = {}) {
         if (!TOOL_NAME_OK.test(tool))
             return deny(BAD_TOOL_MSG);
         const keyProblem = inputKeyProblem(input);
-        if (keyProblem)
-            return deny(keyProblem);
+        if (keyProblem.deny)
+            return deny(keyProblem.deny);
         if (computer) {
             // Computer mode: every request is asked of the person, no automatic allow or deny by path.
             let summary;
@@ -1452,7 +1502,7 @@ export function createBridge(opts = {}) {
                 summary = showCommand(c) || "Bash";
                 if (summary.length > APPROVAL_COMMAND_MAX)
                     return deny(TOO_LONG_COMMAND);
-                detail = descOf(showText(str(input.description)));
+                detail = descOf(str(input.description));
             }
             else if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "NotebookEdit") {
                 const p = (tool === "NotebookEdit" ? str(input.notebook_path) : "") || str(input.file_path) || str(input.notebook_path) || str(input.path);
@@ -1486,22 +1536,17 @@ export function createBridge(opts = {}) {
                 }
             }
             else {
-                let j = "";
+                let j;
+                let ej;
                 try {
                     j = JSON.stringify(input);
+                    ej = JSON.stringify(escapeInput(input));
                 }
                 catch {
-                    /* not printable */
+                    return deny(TOO_LONG_REQUEST); // cannot be printed: never fall back to the raw text
                 }
                 if (hasHidden(j))
                     return deny(HIDDEN_MSG);
-                let ej = j;
-                try {
-                    ej = JSON.stringify(escapeInput(input, true));
-                }
-                catch {
-                    /* not printable */
-                }
                 summary = showText(`${escapeNonAscii(tool || "tool")} ${ej}`);
             }
             if (summary.length > APPROVAL_COMMAND_MAX)
@@ -1509,6 +1554,8 @@ export function createBridge(opts = {}) {
             const note = pathNote(tool, input);
             if (note)
                 notice = notice ? `${notice}\n${note}` : note;
+            if (keyProblem.ctor)
+                notice = notice ? `${notice}\n${CTOR_NOTICE}` : CTOR_NOTICE;
             if (notice.length > NOTICE_MAX)
                 return deny(TOO_LONG_ADDRESS);
             const a = await askPerson(turn, tool, summary, detail, notice);
@@ -1561,12 +1608,14 @@ export function createBridge(opts = {}) {
             summary = showCommand(c) || "Bash";
             if (summary.length > APPROVAL_COMMAND_MAX)
                 return deny(TOO_LONG_COMMAND);
-            detail = descOf(showText(str(input.description)));
+            detail = descOf(str(input.description));
         }
         else {
             return deny("This tool is not allowed in a code turn.");
         }
-        const notice = pathNote(tool, input);
+        let notice = pathNote(tool, input);
+        if (keyProblem.ctor)
+            notice = notice ? `${notice}\n${CTOR_NOTICE}` : CTOR_NOTICE;
         if (notice.length > NOTICE_MAX)
             return deny(TOO_LONG_ADDRESS);
         const a = await askPerson(turn, tool, summary, detail, notice);
@@ -1772,6 +1821,14 @@ export function createBridge(opts = {}) {
             args.push("--model", turn.model);
         return args;
     }
+    /** Records a sign of life on the top-level turn (a hand-off's activity counts for the turn that asked for it). */
+    function noteActivity(turn, what, countCall) {
+        const top = turn.parent ?? turn;
+        top.lastActivityAt = now();
+        top.lastActivity = what;
+        if (countCall)
+            top.toolCalls += 1;
+    }
     /** Code turn: turns the CLI's assistant/user stream events into `activity` and `tool_error` events. */
     function codeEvents(turn, ev, tracked) {
         const content = ev.message?.content;
@@ -1784,6 +1841,7 @@ export function createBridge(opts = {}) {
                 const summary = toolSummary(b.name, (b.input ?? {}), turnRoots(turn));
                 if (typeof b.id === "string")
                     tracked.set(b.id, { tool: b.name, summary });
+                noteActivity(turn, cap(summary), true);
                 turn.send("activity", { tool: b.name, summary: cap(summary) });
             }
             else if (ev.type === "user" && b.type === "tool_result" && b.is_error === true && typeof b.tool_use_id === "string") {
@@ -1943,6 +2001,10 @@ export function createBridge(opts = {}) {
             return json(res, 400, { error: 'mode must be "chat" or "code"' });
         if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write")
             return json(res, 400, { error: 'approval must be "session" or "each-write"' });
+        // An id from the page is a string or nothing; any other shape is a bad request (never turned into text, which can throw).
+        if (body.parentTurnId !== undefined && typeof body.parentTurnId !== "string")
+            return json(res, 400, { error: BAD_REQUEST });
+        const me = callerKey(req);
         const isCode = body.mode === "code";
         let proj = null;
         if (isCode) {
@@ -1960,7 +2022,14 @@ export function createBridge(opts = {}) {
             // One code turn at a time per project (or per code folder itself, when no project is named).
             const key = proj ? proj.path : workspace.path;
             if ([...turns.values()].some((t) => t.code && (t.proj ? t.proj.path : workspace.path) === key)) {
-                return json(res, 429, { error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
+                const running = [...turns.values()].find((t) => t.code && (t.proj ? t.proj.path : workspace.path) === key);
+                const refusal = {
+                    error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
+                    code: "CodeTurnRunning",
+                    project: proj ? proj.name : null,
+                };
+                // The turn's id and start time go only to the pairing that owns the turn; anyone else learns that one is running, no more.
+                return json(res, 429, running.owner === me ? { ...refusal, ownTurn: true, turnId: running.id, startedAt: new Date(running.startedAt).toISOString() } : { ...refusal, ownTurn: false });
             }
         }
         // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -1971,7 +2040,8 @@ export function createBridge(opts = {}) {
         let parentCallId = "";
         if (parentId) {
             parent = turns.get(parentId) ?? null;
-            if (!parent || parent.closed)
+            // A turn of another pairing is answered exactly like an unknown one.
+            if (!parent || parent.closed || parent.owner !== me)
                 return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
             if (parent.parent)
                 return json(res, 400, { error: "A hand-off cannot hand off again." });
@@ -1988,7 +2058,7 @@ export function createBridge(opts = {}) {
             }
         }
         else if ([...turns.values()].filter((t) => !t.parent).length >= MAX_TURNS_AT_ONCE) {
-            return json(res, 429, { error: "Too many turns at once." });
+            return json(res, 429, { error: "Too many turns at once.", code: "TooManyTurns" });
         }
         const prompt = typeof body.prompt === "string" ? body.prompt : "";
         const system = typeof body.system === "string" ? body.system : "";
@@ -2029,10 +2099,18 @@ export function createBridge(opts = {}) {
             proj,
             approval: isCode && body.approval === "each-write" ? "each-write" : "session",
             approvals: new Map(),
-            owner: sha(String(req.headers["x-bridge-secret"])).toString("hex"),
+            owner: me,
+            startedAt: now(),
+            lastActivityAt: now(),
+            lastActivity: "",
+            toolCalls: 0,
+            handoffCount: 0,
+            cancelRequested: false,
         };
-        if (parent)
+        if (parent) {
             parent.handoffs.add(turn);
+            parent.handoffCount += 1;
+        }
         turns.set(turn.id, turn);
         res.writeHead(200, {
             "content-type": "text/event-stream",
@@ -2045,6 +2123,7 @@ export function createBridge(opts = {}) {
                 res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
         };
         turn.send = send;
+        send("turn_started", { turnId: turn.id, startedAt: new Date(turn.startedAt).toISOString(), mode: isCode ? "code" : "chat", project: proj ? proj.name : null });
         send("start", { ok: true, turnId: turn.id });
         const beat = setInterval(() => {
             if (!res.writableEnded)
@@ -2099,13 +2178,16 @@ export function createBridge(opts = {}) {
             const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
             let sessionId = resumeId || crypto.randomUUID();
             let out = await runClaude(turn, { sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
-            if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !turn.closed) {
+            if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !turn.closed && !turn.cancelRequested) {
                 // The session is gone (different folder, cleaned up): start a new one with the thread as text.
                 sessionId = crypto.randomUUID();
                 out = await runClaude(turn, { sessionId, resume: false }, freshPrompt);
             }
             sendFilesChanged();
-            if (out.error || !out.result) {
+            if (turn.cancelRequested) {
+                send("error", { message: "The turn was cancelled." });
+            }
+            else if (out.error || !out.result) {
                 send("error", { message: out.error ?? "Claude Code gave no answer." });
             }
             else if (out.result.is_error) {
@@ -2347,6 +2429,8 @@ export function createBridge(opts = {}) {
             catch (e) {
                 return json(res, e.status ?? 400, { error: e.message });
             }
+            if (typeof body.code !== "string")
+                return json(res, 400, { error: BAD_REQUEST });
             if (normCode(body.code).length === 6 && normCode(body.code) === normCode(pairingCode)) {
                 const secret = crypto.randomBytes(32).toString("hex");
                 const t = now();
@@ -2386,6 +2470,44 @@ export function createBridge(opts = {}) {
             }
             if (req.method === "POST" && url.pathname === "/v1/turn")
                 return handleTurn(req, res);
+            if (req.method === "POST" && url.pathname === "/v1/turns") {
+                const me = callerKey(req);
+                const iso = (ms) => new Date(ms).toISOString();
+                return json(res, 200, {
+                    turns: [...turns.values()].filter((t) => !t.parent && t.owner === me).map((t) => ({
+                        turnId: t.id,
+                        mode: t.code ? "code" : "chat",
+                        project: t.proj ? t.proj.name : null,
+                        startedAt: iso(t.startedAt),
+                        lastActivityAt: iso(t.lastActivityAt),
+                        lastActivity: t.lastActivity,
+                        toolCalls: t.toolCalls,
+                        handoffs: t.handoffCount,
+                    })),
+                });
+            }
+            if (req.method === "POST" && url.pathname === "/v1/turn/cancel") {
+                let body;
+                try {
+                    body = await readBody(req);
+                }
+                catch (e) {
+                    return json(res, e.status ?? 400, { error: e.message });
+                }
+                if (typeof body.turnId !== "string")
+                    return json(res, 400, { error: BAD_REQUEST });
+                const t = turns.get(body.turnId);
+                // Only the pairing that started the turn may cancel it; any other gets the same answer as an unknown turn.
+                if (!t || t.parent || t.closed || t.owner !== callerKey(req))
+                    return json(res, 200, { cancelled: false });
+                t.cancelRequested = true;
+                for (const h of t.handoffs) {
+                    h.closed = true;
+                    void stopChild(h.child);
+                }
+                void stopChild(t.child);
+                return json(res, 200, { cancelled: true });
+            }
             if (req.method === "POST" && url.pathname === "/v1/approval") {
                 let body;
                 try {
@@ -2394,9 +2516,11 @@ export function createBridge(opts = {}) {
                 catch (e) {
                     return json(res, e.status ?? 400, { error: e.message });
                 }
-                const t = turns.get(String(body.turnId));
+                if (typeof body.turnId !== "string" || typeof body.id !== "string")
+                    return json(res, 400, { error: BAD_REQUEST });
+                const t = turns.get(body.turnId);
                 // Only the pairing that started the turn may answer; any other gets the same answer as an unknown question.
-                const a = t && t.owner === sha(String(req.headers["x-bridge-secret"])).toString("hex") ? t.approvals.get(String(body.id)) : undefined;
+                const a = t && t.owner === callerKey(req) ? t.approvals.get(body.id) : undefined;
                 if (!a)
                     return json(res, 404, { error: "no such approval question" });
                 if (typeof body.allow !== "boolean")
@@ -2414,13 +2538,15 @@ export function createBridge(opts = {}) {
                 catch (e) {
                     return json(res, e.status ?? 400, { error: e.message });
                 }
-                const turn = turns.get(String(body.turnId));
-                const p = turn?.pending.get(String(body.id));
-                if (turn && !p && turn.cancelled.has(String(body.id)))
+                if (typeof body.turnId !== "string" || typeof body.id !== "string")
+                    return json(res, 400, { error: BAD_REQUEST });
+                const turn = turns.get(body.turnId);
+                const p = turn?.pending.get(body.id);
+                if (turn && !p && turn.cancelled.has(body.id))
                     return json(res, 200, { ignored: true, reason: "cancelled" });
                 if (!turn || !p)
                     return json(res, 404, { error: "No such tool call is waiting." });
-                turn.pending.delete(String(body.id));
+                turn.pending.delete(body.id);
                 p.resolve({ text: typeof body.result === "string" ? body.result : JSON.stringify(body.result ?? null), isError: body.isError === true });
                 return json(res, 200, { ok: true });
             }
