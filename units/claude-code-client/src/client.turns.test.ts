@@ -78,8 +78,8 @@ describe("new stream events", () => {
     release(json(200, { result: "{}" }));
     await p;
     const start = events.find((e) => e.event === "tool_start")!;
-    expect(start).toEqual({ event: "tool_start", data: { name: "list_vaults", at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) } });
-    expect(events.find((e) => e.event === "tool")).toEqual({ event: "tool", data: { name: "list_vaults", ok: true } });
+    expect(start).toEqual({ event: "tool_start", data: { name: "list_vaults", at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/), callId: "c1", args: {} } });
+    expect(events.find((e) => e.event === "tool")).toEqual({ event: "tool", data: { name: "list_vaults", ok: true, callId: "c1", args: {}, answer: {} } });
   });
 
   it("a hand-off's tool calls and activity carry hop: true; the person's own are unchanged", async () => {

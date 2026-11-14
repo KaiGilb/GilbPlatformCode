@@ -139,7 +139,7 @@ describe("slipping a message into a running turn", () => {
     expect(r.results[1]!.result).not.toContain(SLIPPED_LEAD);
     expect(takeSlipped).toHaveBeenCalledTimes(2);
     expect(events.filter((e) => e.event === "slipped")).toEqual([{ event: "slipped", data: { ids: ["a"] } }]);
-    expect(events.filter((e) => e.event === "tool")).toEqual([
+    expect(events.filter((e) => e.event === "tool")).toMatchObject([
       { event: "tool", data: { name: "paint", ok: true } },
       { event: "tool", data: { name: "list_vaults", ok: true } },
     ]);
@@ -264,7 +264,7 @@ describe("slipping a message into a running turn", () => {
       result: own + slippedSuffix([{ id: "a", text: "use blue" }]),
       isError: true,
     });
-    expect(events.filter((e) => e.event === "tool")).toEqual([{ event: "tool", data: { name: "create_record", ok: false } }]);
+    expect(events.filter((e) => e.event === "tool")).toMatchObject([{ event: "tool", data: { name: "create_record", ok: false } }]);
     expect(events.filter((e) => e.event === "slipped")).toEqual([{ event: "slipped", data: { ids: ["a"] } }]);
   });
 

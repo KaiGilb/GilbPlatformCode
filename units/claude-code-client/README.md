@@ -116,6 +116,16 @@ For a page that can lose track of a turn (a remount, a reload). These need bridg
 - `listTurns()` returns the turns running for this pairing as `RunningTurn[]` (`{ turnId, mode, project, startedAt, lastActivityAt, lastActivity, toolCalls, handoffs }`). An older bridge (404) gives `[]`. Needs the pairing; goes through the relay when it is open.
 - `cancelTurn(turnId)` asks the bridge to stop one of this pairing's turns and resolves true when it did; false for a turn that is not running, belongs to another pairing, or a bridge without the route (404). The stopped turn's own `sendTurn` rejects with the bridge's "The turn was cancelled.".
 
+## Tool calls for the page (0.3.3)
+
+A host that needs to know what each platform tool call was (for example to show the records an agent wrote) reads it from `onEvent`; no wrapping of `fetch` is needed. Both events cover the person's own turn and a hand-off's nested turn (those carry `hop: true`, as before).
+
+- `tool_start` `{ name, at, callId, args, role? }`
+- `tool` `{ name, ok, callId, args, answer?, answerTruncated?, role? }`
+- `callId` is the bridge's id for the call and pairs a `tool_start` with its `tool`. `args` is the tool input as the model sent it, parsed (the raw text if it is not JSON). `answer` is what the page got back from the platform, parsed (the text if it is not JSON); a failed call gives its `{ error }`. For the call that asks for a hand-off, `answer` is the hand-off's final answer. `role` is the hand-off agent's role, set only on a hand-off's nested calls.
+- If the answer is over 256 KB (`TOOL_ANSWER_EVENT_CAP`, in characters), `answer` is `undefined` and `answerTruncated` is `true`.
+- These go to the page's `onEvent` only. Nothing about them is sent to the bridge or anywhere else; the bridge-bound and platform-bound request bodies are unchanged. The existing fields (`name`, `ok`, `at`, `hop`) are unchanged, so an older consumer still works. `answer` is taken before any slipped text is appended.
+
 ## Slipping a message into a running turn
 
 `sendTurn` takes an optional `takeSlipped`. When a top-level tool answer is about to go back to Claude Code, the client calls it and, if it returns messages, appends them after that tool's own result (`slippedSuffix`) and emits a `slipped` event with their ids. The text rides on the next top-level tool answer only: a hand-off's nested turn never takes it. A turn that makes no more tool calls never calls `takeSlipped`; the host then sends the message after the turn.
@@ -155,4 +165,4 @@ Repository `KaiGilb/gilb-claude-code`, tag v0.2.0, commit `3b032c0c6710faa8d24c5
 
 Changed on the way in, and only this: `bridgeUrl` is required and `DEFAULT_BRIDGE_URL` is gone (it was `http://127.0.0.1:47821`), with a runtime error when it is missing; two comments that named the loopback address or the Gilb origin are reworded. Tests: import paths now name the bridge unit; tests that relied on the default pass `bridgeUrl`; the test of the default address became a test that `bridgeUrl` is required; Gilb host names used as inputs are `*.example.test`; one `!` for the stricter frame tsconfig; the setup file no longer calls the React test cleanup (no component here).
 
-Changelog: 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").
+Changelog: 0.3.3: `tool_start` and `tool` events carry `callId`, `args`, and (on `tool`) `answer` / `answerTruncated` (over 256 KB), plus `role` on a hand-off's calls (see "Tool calls for the page"). 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").

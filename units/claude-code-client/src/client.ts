@@ -110,9 +110,12 @@ export type ClaudeCodeStreamEvent =
   // One per keepalive the bridge sends while the turn is open (client 0.3.2).
   | { event: "heartbeat"; data: { at: string } }
   // `hop: true` marks activity that belongs to a hand-off's nested turn (client 0.3.2).
-  | { event: "tool"; data: { name: string; ok: boolean }; hop?: true }
+  // Client 0.3.3 adds `callId` (pairs a `tool_start` with its `tool`), `args` (the tool input, parsed; the raw text if it is not JSON),
+  // `answer` (what the page got back, parsed; the text if it is not JSON; `undefined` with `answerTruncated: true` when over 256 KB)
+  // and, for a hand-off's nested turn, `role` (the hand-off agent's role). They go to `onEvent` only, never to the bridge.
+  | { event: "tool"; data: { name: string; ok: boolean; callId: string; args: unknown; answer?: unknown; answerTruncated?: true; role?: string }; hop?: true }
   // A platform tool call has begun (it has not returned yet).
-  | { event: "tool_start"; data: { name: string; at: string }; hop?: true }
+  | { event: "tool_start"; data: { name: string; at: string; callId: string; args: unknown; role?: string }; hop?: true }
   | { event: "slipped"; data: { ids: string[] } }
   | { event: "standing"; data: unknown }
   // Code mode only (the bridge's code turn). A malformed one is dropped, never thrown.
@@ -262,6 +265,18 @@ export interface SendClaudeCodeOpts {
    * ClaudeCodeBridgeError (status 499, "The turn was stopped."). Through the relay window the client posts `gilb-bridge-abort`.
    */
   signal?: AbortSignal;
+}
+
+/** The largest tool answer (serialised, in characters) the `tool` event carries; above it `answer` is undefined and `answerTruncated` is true. */
+export const TOOL_ANSWER_EVENT_CAP = 256 * 1024;
+
+/** JSON text becomes its value; anything else stays the text. */
+function parseMaybeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 /** What `/base/ai/claude-code/tool` answers when the tool is a hand-off: a nested turn for THIS page to run on the person's Claude Code. */
@@ -1041,10 +1056,13 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       bridgeTurnId: string,
       sig: AbortSignal,
       callId: string,
+      hopRole?: string,
     ): Promise<{ result: string; isError: boolean }> => {
       let result: string;
       let isError = false;
-      opts.onEvent?.({ event: "tool_start", data: { name, at: new Date().toISOString() }, ...(hopId ? { hop: true as const } : {}) });
+      const parsedArgs = parseMaybeJson(args);
+      const roleField = hopId && typeof hopRole === "string" && hopRole !== "" ? { role: hopRole } : {};
+      opts.onEvent?.({ event: "tool_start", data: { name, at: new Date().toISOString(), callId, args: parsedArgs, ...roleField }, ...(hopId ? { hop: true as const } : {}) });
       try {
         const tr = await postPlatform(toolUrl, { ...turnFields, name, arguments: args, ...(hopId ? { hop: { id: hopId } } : {}) }, sig);
         const body = await readJson(tr);
@@ -1069,6 +1087,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         result = JSON.stringify({ error: err instanceof Error ? err.message : `${name} could not run` });
       }
       if (platformBudgetSpent(result)) turnBudgetSpent = true;
+      // What the page tells the app: taken before any slipped text is appended, and only handed to `onEvent`.
+      const answerTooBig = result.length > TOOL_ANSWER_EVENT_CAP;
+      const answerFields = answerTooBig ? { answer: undefined, answerTruncated: true as const } : { answer: parseMaybeJson(result) };
       // Top-level answers only. If this turn was already left, take nothing: the answer is not posted, so the text would be lost.
       if (!hopId && !sig.aborted) {
         const slipped = opts.takeSlipped?.() ?? [];
@@ -1077,7 +1098,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           opts.onEvent?.({ event: "slipped", data: { ids: slipped.map((s) => s.id) } });
         }
       }
-      opts.onEvent?.({ event: "tool", data: { name, ok: !isError }, ...(hopId ? { hop: true as const } : {}) });
+      opts.onEvent?.({ event: "tool", data: { name, ok: !isError, callId, args: parsedArgs, ...answerFields, ...roleField }, ...(hopId ? { hop: true as const } : {}) });
       return { result, isError };
     };
 
@@ -1104,7 +1125,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         if (typeof callId === "string" && callId !== "") nestedBody.parentCallId = callId;
         const done = await streamBridgeTurn(
           nestedBody,
-          (name, args, _turn, toolSig, nestedCallId) => callTool(name, args, hop.id, "", toolSig, nestedCallId),
+          (name, args, _turn, toolSig, nestedCallId) => callTool(name, args, hop.id, "", toolSig, nestedCallId, hop.role),
           false,
           (d) => opts.onBridgeStatus?.({ nested: true, ...d }),
           sig,
