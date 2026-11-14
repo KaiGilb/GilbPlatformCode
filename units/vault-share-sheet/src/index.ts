@@ -9,3 +9,4 @@ export { VaultShareSheet } from "./VaultShareSheet";
 export type { VaultShareSheetProps } from "./VaultShareSheet";
 export { defaultWords } from "./words";
 export type { ShareWords } from "./words";
+export type { KeyValueStore } from "./rememberNames";

@@ -1,12 +1,13 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-share-sheet",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.",
   "exports": {
     ".": "./src/index.ts",
     "./model": "./src/model.ts",
+    "./remember-names": "./src/rememberNames.ts",
     "./vaultShareSheet.css": "./src/vaultShareSheet.css"
   },
   "files": [

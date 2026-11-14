@@ -1,5 +1,8 @@
+import { createRecord, deleteRecord, patchRecord, type RecordCreateFacts } from "@kaigilb/gilbplatformcode-lws-records";
 import { signedSend } from "@kaigilb/gilbplatformcode-lws-session-bridge";
-import { endPictureFiles, loadCopyMap, storePictureSet, type CopyMap, type Send, type StoredPicture } from "@kaigilb/gilbplatformcode-picture-set";
+import { copiesOf, endPictureFiles, loadCopyMap, storePictureSet, type CopyMap, type Send, type StoredPicture } from "@kaigilb/gilbplatformcode-picture-set";
+import type { PictureFlowDeps } from "./flow";
+import { linkPicture, pictureLinkPatch, type RecordRef } from "./link";
 import type { PreparedPicture } from "./types";
 
 export interface VaultPictures {
@@ -112,5 +115,61 @@ export function vaultPictureService(deps: VaultPictureServiceDeps): VaultPicture
     releaseAll() {
       for (const url of [...tracked.keys()]) release(url);
     },
+  };
+}
+
+/** What {@link vaultPictureFlowDeps} is given. Nothing here names a host, a fact or a type: the caller supplies them. */
+export interface VaultPictureFlowOptions<R extends RecordRef & { picture: string | null }, F> {
+  /** The vault the records live in, as the vault list gives it. */
+  vaultId: string;
+  /** The type the record is created with. */
+  typeIri: string;
+  /** The name of the record's picture fact (this unit holds none). */
+  fact: string;
+  /** The vault's picture binding (`createVaultPictures`, or `vaultPictureService(...).forVault(vaultId)`). */
+  pictures: Pick<VaultPictures, "upload" | "endFiles">;
+  /** The vault's copy map, read when a replace or delete needs the copies of a master; omit for none. */
+  copies?: CopyMap | (() => CopyMap);
+  /** The facts a new record is created with. */
+  toFacts(form: F): RecordCreateFacts;
+  /** The record as the host holds it, from what the create answered, the form, and the picture address it was created with (null for none). */
+  fromRecord(made: RecordRef, form: F, picture: string | null): R;
+  /** The name hint for the new record's address; omit for none. */
+  nameHint?(form: F): string | undefined;
+  /**
+   * The signed-in principal's address. When it is given (a string, or a function answering one, or null for none), it is written as
+   * `statedBy` on the create and on every picture link PATCH. When it is absent nothing is added.
+   */
+  stamp?: string | null | (() => string | null);
+}
+
+/**
+ * The {@link PictureFlowDeps} an app writes by hand: create into the vault (with the picture link when the flow asks, picture-first), link
+ * with `linkPicture`, end files with picture-set, and delete the record WITHOUT If-Match (the files are already ended, so a record that
+ * moved on must still go). With `stamp`, `statedBy` is added to the create and to the link PATCH.
+ */
+export function vaultPictureFlowDeps<R extends RecordRef & { picture: string | null }, F>(o: VaultPictureFlowOptions<R, F>): PictureFlowDeps<R, F> {
+  const stampFacts = (): Record<string, string> => {
+    const who = typeof o.stamp === "function" ? o.stamp() : o.stamp;
+    return who ? { statedBy: who } : {};
+  };
+  const map = (): CopyMap => (typeof o.copies === "function" ? o.copies() : (o.copies ?? new Map()));
+  const stampedPatch: typeof patchRecord = (id, patch, at, source, precondition) => patchRecord(id, { ...patch, ...stampFacts() }, at, source, precondition);
+  return {
+    fact: o.fact,
+    createRecord: async (form, pic) => {
+      const facts: RecordCreateFacts = { ...o.toFacts(form), ...stampFacts(), ...(pic ? (pictureLinkPatch(o.fact, pic.master) as RecordCreateFacts) : {}) };
+      const made = await createRecord(o.vaultId, o.typeIri, facts, o.nameHint?.(form));
+      return o.fromRecord({ id: made.id, entity: made.entity ?? null, etag: made.etag }, form, pic?.master ?? null);
+    },
+    upload: (p) => o.pictures.upload(p),
+    link: async (rec, master) => {
+      const r = await linkPicture(rec, o.fact, master, { patch: stampedPatch });
+      return { ...rec, etag: r.etag, picture: r.picture };
+    },
+    endFiles: (master, copies) => o.pictures.endFiles(master, copies),
+    copiesOf: (master) => copiesOf(map(), master).map((c) => c.uri),
+    deleteRecord: (rec) => deleteRecord(rec.id, rec.entity),
+    pictureOf: (rec) => rec.picture,
   };
 }
