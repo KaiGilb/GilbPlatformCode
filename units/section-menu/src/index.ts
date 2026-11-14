@@ -34,3 +34,4 @@ export {
 } from "./menuList";
 export { MenuIcon, isMenuIconKey, type MenuIconKey } from "./MenuIcon";
 export { createIntentChannel, type Intent, type IntentChannel, type IntentChannelValue } from "./intent";
+export { MenuButton, type MenuButtonProps, type MenuButtonItem } from "./MenuButton";

@@ -1,0 +1,64 @@
+/* Styles for MenuButton. Every rule sits in :where() so the app's own CSS always wins.
+   Colours come from the style-runtime tokens (--surface, --ink, --line, --accent); the second value is a fallback. */
+:where(.mb-box) {
+  position: relative;
+  display: inline-block;
+}
+:where(.mb-trigger) {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink, #161514);
+  cursor: pointer;
+}
+:where(.mb-trigger:hover, .mb-trigger[aria-expanded="true"]) {
+  background: var(--line, #e4e3e0);
+}
+:where(.mb-trigger:focus-visible, .mb-item:focus-visible) {
+  outline: 2px solid var(--accent, #3698a2);
+  outline-offset: 2px;
+}
+:where(.mb-list) {
+  position: absolute;
+  top: 100%;
+  z-index: 20;
+  min-width: 11rem;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--line, #cececd);
+  border-radius: 8px;
+  background: var(--surface, #fbfaf8);
+  color: var(--ink, #161514);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.12);
+}
+:where(.mb-box[data-align="end"] .mb-list) {
+  right: 0;
+}
+:where(.mb-box[data-align="start"] .mb-list) {
+  left: 0;
+}
+:where(.mb-item) {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+:where(.mb-item:hover, .mb-item:focus) {
+  background: var(--line, #e4e3e0);
+}
+:where(.mb-item[aria-disabled="true"]) {
+  color: var(--ink-faint, #808080);
+  cursor: default;
+}

@@ -1,0 +1,50 @@
+/* Styles for SinceBanner. Every rule sits in :where() so the app's own CSS always wins.
+   Colours come from the style-runtime tokens (--surface, --ink, --line, --accent); the second value is a fallback. */
+:where(.slv-banner) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line, #cececd);
+  border-left: 4px solid var(--accent, #3698a2);
+  border-radius: 6px;
+  background: var(--surface, #fbfaf8);
+  color: var(--ink, #161514);
+  font-size: 0.9rem;
+}
+:where(.slv-text) {
+  min-width: 0;
+}
+:where(.slv-list) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+:where(.slv-item) {
+  display: inline;
+}
+:where(.slv-item + .slv-item)::before {
+  content: " \00b7  ";
+}
+:where(.slv-when) {
+  color: var(--ink-faint, #666);
+}
+:where(.slv-btn) {
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--accent, #1f6f78);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+:where(.slv-btn:focus-visible) {
+  outline: 2px solid var(--accent, #3698a2);
+  outline-offset: 2px;
+}
+:where(.slv-dismiss) {
+  flex: none;
+}
