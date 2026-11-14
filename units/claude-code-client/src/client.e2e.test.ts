@@ -123,4 +123,35 @@ describe("client <-> bridge, end to end", () => {
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(c.load()).toBeNull();
   });
+
+  it("listTurns sees a running turn; the signal and cancelTurn each stop it on the bridge (end to end)", async () => {
+    const c = mk();
+    await c.pair(bridge.pairingCode);
+    expect(await c.listTurns()).toEqual([]);
+    // the page's signal
+    const ctl = new AbortController();
+    const events: { event: string; data: unknown }[] = [];
+    const first = c.sendTurn([{ role: "user", content: "WAITFOREVER one" }], { thread: "t", signal: ctl.signal, onEvent: (e) => events.push(e) }).then(() => "answered", (e: unknown) => e);
+    const running = await vi.waitFor(async () => {
+      const l = await c.listTurns();
+      expect(l).toHaveLength(1);
+      return l[0]!;
+    });
+    expect(running).toMatchObject({ mode: "chat", project: null, toolCalls: 0, handoffs: 0 });
+    expect(events[0]).toMatchObject({ event: "turn_started", data: { turnId: running.turnId, mode: "chat", project: null } });
+    ctl.abort();
+    expect(await first).toMatchObject({ status: 499, message: "The turn was stopped." });
+    await vi.waitFor(async () => expect(await c.listTurns()).toEqual([]));
+    // cancelTurn
+    const second = c.sendTurn([{ role: "user", content: "WAITFOREVER two" }], { thread: "t" }).then(() => "answered", (e: unknown) => e);
+    const row = await vi.waitFor(async () => {
+      const l = await c.listTurns();
+      expect(l).toHaveLength(1);
+      return l[0]!;
+    });
+    expect(await c.cancelTurn("not-a-turn")).toBe(false);
+    expect(await c.cancelTurn(row.turnId)).toBe(true);
+    expect(await second).toMatchObject({ message: "The turn was cancelled." });
+    expect(await c.listTurns()).toEqual([]);
+  });
 });

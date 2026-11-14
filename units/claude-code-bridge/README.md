@@ -169,7 +169,7 @@ In full mode the sandbox is required (`failIfUnavailable`). Where it cannot star
 
 The bridge refuses a folder that does not exist (it never makes one), a folder that is not inside your home folder (`The code folder must be inside your home folder, for example ~/MyJackfruitCode.`; system and temp folders fall under this), the root of the disk, your home folder, any folder that holds your home folder, a folder inside `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config`, `~/.claude`, `~/Library` (macOS) or `AppData` (Windows) or inside a bridge state folder (`~/.gilb-claude-code-bridge*`), a folder that holds a bridge state folder, and a folder that directly holds `.ssh`, `.aws` or `.gnupg`. A symlink is followed first, so a link to your home folder is refused too. It prints the reason and exits with code 2.
 
-A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or no mode is the old turn; any other value is a 400). `"approval"` is `"session"` (the default) or `"each-write"`, see below. A code turn cannot be a hand-off (400), needs a `--workspace` (409), and only one runs at a time (429).
+A page asks for a code turn with `"mode": "code"` in the turn body (`"chat"` or no mode is the old turn; any other value is a 400). `"approval"` is `"session"` (the default) or `"each-write"`, see below. A code turn cannot be a hand-off (400), needs a `--workspace` (409), and only one runs at a time (429, with `code: "CodeTurnRunning"`; see "Running turns").
 
 What a code turn may do:
 - Read, edit and write files, and run shell commands, inside the folder. The shell runs in Claude Code's sandbox; the file tools are limited to the folder.
@@ -220,11 +220,21 @@ Every request Claude Code would ask about goes to the person through `bridge_app
 
 `files_changed` is still the snapshot of the code folder only: changes Claude Code makes outside the folder are not listed. Hand-offs (nested turns) are unchanged: chat turns.
 
+## Running turns (0.3.2)
+
+So a page that lost track of a turn (a reload, a remounted component) can find it again, and a message sent meanwhile can be queued instead of refused.
+
+- **`turn_started`** `{ turnId, startedAt, mode, project }` is the first event of every turn stream (`mode` is `"code"` or `"chat"`; `project` is the project name or `null`). `start` follows it. The `: keepalive` comment every 10 seconds stays.
+- **`POST /v1/turns`** (paired, like `/v1/turn`) answers `{ "turns": [ { turnId, mode, project, startedAt, lastActivityAt, lastActivity, toolCalls, handoffs } ] }`: only the turns started by the caller's own pairing, top-level turns only (hand-offs are counted in `handoffs`, the number started so far). `startedAt` and `lastActivityAt` are ISO times. `lastActivity` is a short line in the wording of the code `activity` summary (a file path, a command, a tool name), `""` before the first call. `toolCalls` counts the built-in tools of a code turn and the GilbPlatform (MCP) tool calls of every turn, hand-offs included.
+- **`POST /v1/turn/cancel`** `{ turnId }` answers `{ "cancelled": true|false }`. Only the pairing that started the turn can cancel it; a turn of another pairing, an unknown id, a hand-off id and a turn that has ended all answer `{ "cancelled": false }`, so nothing about another pairing is revealed. It stops Claude Code the same way a closed stream does; the turn's stream then ends with an `error` event, "The turn was cancelled.".
+- **429 for a refused turn** now has a body the page can read: a code turn already running is `{ error: "A code turn is already running in <project>.", code: "CodeTurnRunning", project, turnId, startedAt }` (`project` is `null` for the code folder itself; `turnId` and `startedAt` are the running turn's, from any pairing); the turn limit is `{ error: "Too many turns at once.", code: "TooManyTurns" }`. The error texts are unchanged.
+- **The relay window** now stops what its page started when that page goes away: the page posts `gilb-bridge-bye` on `pagehide`, or the window sees that its opener closed, and every request the window still has open is aborted, so the bridge stops those turns.
+
 ## Relay window (for Safari)
 
 Safari blocks an https page's fetch to `http://127.0.0.1:47821` as mixed content. So the page can open a small window served by the bridge, `GET /relay`, and talk to it by postMessage; that window's own fetches are same-origin. The person keeps the window open (it can be minimised). It replies only to the page that opened it, and only to an origin on the bridge's allow-list (built-in plus `--allow-origin`), which is embedded in the page. `/v1/hello` reports `relay: true`, so a page can tell a bridge that has it from an older one.
 
-Messages: the page posts `gilb-bridge-req` (`id`, `path`, `method`, `headers`, `body`) and `gilb-bridge-abort` (`id`). The window answers every request first with `gilb-bridge-head` (`id`, `status`, `contentType`). A `text/event-stream` answer then follows as `gilb-bridge-chunk` messages and one `gilb-bridge-end`; any other answer follows as one `gilb-bridge-res` (`status`, `headers`, `body`). A failure, or an abort, is `gilb-bridge-err` (`message`, `"aborted"` after an abort).
+Messages: the page posts `gilb-bridge-req` (`id`, `path`, `method`, `headers`, `body`) and `gilb-bridge-abort` (`id`) and `gilb-bridge-bye` (no `id`: the page is going away, so abort every open request). The window answers every request first with `gilb-bridge-head` (`id`, `status`, `contentType`). A `text/event-stream` answer then follows as `gilb-bridge-chunk` messages and one `gilb-bridge-end`; any other answer follows as one `gilb-bridge-res` (`status`, `headers`, `body`). A failure, or an abort, is `gilb-bridge-err` (`message`, `"aborted"` after an abort).
 
 Origin rules for a relayed request:
 - The relay window sends `Origin` = the bridge's own origin plus `x-gilb-relay-origin` = the opener page. That header must be on the allow-list, else 403. Pairing secrets are then bound to that opener origin, as if the page had called directly.
@@ -268,3 +278,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.2.1: full-mode code turns may download from `codeload.github.com` and `raw.githubusercontent.com` (read-only archives of public repos); the system prompt says how.
 - 0.3.0: Computer mode: `--full-access` (command line and `--install` only), `access` in `/v1/hello` and in the code turn\'s `message` (see "Computer mode"). Also 0.3.0: projects (see "Projects"); the start banner says which mode chat turns and code turns run in.
 - 0.3.1: approval display fails closed (a request too deep to escape is denied, never shown raw); look-alike keys are compared on the text shown; the Bash description is shown with non-ASCII escaped as <U+XXXX>; a field named `constructor` or `prototype` is asked about, with the notice "Request holds a field named constructor/prototype." (`__proto__` is still refused).
+- 0.3.2: running turns (additive; an older client ignores all of it): the `turn_started` event, `POST /v1/turns`, `POST /v1/turn/cancel`, `code` (`CodeTurnRunning`, `TooManyTurns`) and the running turn's `project`, `turnId` and `startedAt` in the two 429 bodies, tool-call counts and last activity for built-in and MCP tools, and the relay window's `gilb-bridge-bye` / opener-closed abort (see "Running turns").

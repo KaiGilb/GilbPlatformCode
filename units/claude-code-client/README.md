@@ -101,6 +101,21 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
   - `approval_request` `{ id, tool, summary }` and `approval_done` `{ id, allow }`
 - A code turn and a chat turn of one thread keep separate session ids: a code session lives in the code folder and cannot be resumed into the chat one.
 
+## Running turns (0.3.2)
+
+For a page that can lose track of a turn (a remount, a reload). These need bridge 0.3.2; against an older bridge each degrades as noted. Everything is additive.
+
+- `sendTurn(messages, { signal })`: aborting the signal closes the stream, which makes the bridge stop Claude Code for that turn. The promise rejects with a `ClaudeCodeBridgeError` (status 499, "The turn was stopped."). Through the relay the client posts `gilb-bridge-abort`.
+- When the relay window is open the client also posts `gilb-bridge-bye` on `pagehide`, so the window drops every request this page still has open and the bridge stops those turns.
+- New `onEvent` events:
+  - `turn_started` `{ turnId, startedAt, mode, project }`, the first event of a turn (an older bridge sends none).
+  - `heartbeat` `{ at }` (ISO time), one for each keepalive the bridge sends while a turn's stream is open.
+  - `tool_start` `{ name, at }` when a platform tool call begins, before it returns (`tool` follows when it does).
+  - A hand-off's nested turn now shows: its `code_activity`, `code_tool_error`, `tool_start` and `tool` events carry `hop: true`. Nothing else about the existing events changed.
+- A 429 `CodeTurnRunning` from the bridge throws `BridgeTurnRunningError` (a `ClaudeCodeBridgeError` with status 429; `name` `"BridgeTurnRunningError"`; the bridge's own sentence as `message`; fields `code`, `project` (string or null), `turnId`, `startedAt`). Other 429s and errors are unchanged. The page can use `turnId` to follow the running turn and queue its message.
+- `listTurns()` returns the turns running for this pairing as `RunningTurn[]` (`{ turnId, mode, project, startedAt, lastActivityAt, lastActivity, toolCalls, handoffs }`). An older bridge (404) gives `[]`. Needs the pairing; goes through the relay when it is open.
+- `cancelTurn(turnId)` asks the bridge to stop one of this pairing's turns and resolves true when it did; false for a turn that is not running, belongs to another pairing, or a bridge without the route (404). The stopped turn's own `sendTurn` rejects with the bridge's "The turn was cancelled.".
+
 ## Slipping a message into a running turn
 
 `sendTurn` takes an optional `takeSlipped`. When a top-level tool answer is about to go back to Claude Code, the client calls it and, if it returns messages, appends them after that tool's own result (`slippedSuffix`) and emits a `slipped` event with their ids. The text rides on the next top-level tool answer only: a hand-off's nested turn never takes it. A turn that makes no more tool calls never calls `takeSlipped`; the host then sends the message after the turn.
@@ -139,3 +154,5 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 Repository `KaiGilb/gilb-claude-code`, tag v0.2.0, commit `3b032c0c6710faa8d24c5fd4848d82e6d5c73c3e`: `src/client.ts`, `src/commands.ts`, `src/client.test.ts`, `src/client.e2e.test.ts`, `src/commands.test.ts` and `test-setup.ts`. `src/index.ts` exports the two source files (v0.2.0 also exported the Connect component and badge, which are other units).
 
 Changed on the way in, and only this: `bridgeUrl` is required and `DEFAULT_BRIDGE_URL` is gone (it was `http://127.0.0.1:47821`), with a runtime error when it is missing; two comments that named the loopback address or the Gilb origin are reworded. Tests: import paths now name the bridge unit; tests that relied on the default pass `bridgeUrl`; the test of the default address became a test that `bridgeUrl` is required; Gilb host names used as inputs are `*.example.test`; one `!` for the stricter frame tsconfig; the setup file no longer calls the React test cleanup (no component here).
+
+Changelog: 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").

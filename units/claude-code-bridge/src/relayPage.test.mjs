@@ -14,7 +14,7 @@ const EVIL = "https://evil.example";
 const SELF = "http://127.0.0.1:47821";
 
 /** Runs the page script. Returns helpers to post a message "from" a source/origin and to read what the page did. */
-function boot() {
+function boot({ pending = false } = {}) {
   const { html } = relayPage([GILB, OTHER]);
   const m = /<script>([\s\S]*)<\/script>/.exec(html);
   expect(m).not.toBeNull();
@@ -22,6 +22,8 @@ function boot() {
   const fetches = []; // what the page fetched: { url, init }
   const opener = { closed: false, postMessage: (msg, target) => sent.push({ msg, target }) };
   const status = { textContent: "" };
+  const intervals = []; // the page's setInterval callbacks
+  const aborted = []; // the paths of requests whose fetch was aborted (only when `pending`)
   let handler = null;
   const win = {
     opener,
@@ -30,9 +32,16 @@ function boot() {
     addEventListener: (type, fn) => {
       if (type === "message") handler = fn;
     },
-    setInterval: () => 0,
+    setInterval: (fn) => {
+      intervals.push(fn);
+      return 0;
+    },
     fetch: (url, init) => {
       fetches.push({ url, init });
+      if (pending) {
+        // A request that never answers, like a turn's stream: it ends only when the page's signal aborts it.
+        return new Promise((_, reject) => init.signal.addEventListener("abort", () => { aborted.push(url); reject(new Error("aborted")); }));
+      }
       return Promise.resolve({
         status: 200,
         headers: { get: (k) => (k === "content-type" ? "application/json" : null) },
@@ -56,7 +65,7 @@ function boot() {
   const post = (data, { source = opener, origin = GILB } = {}) => handler({ data, source, origin });
   const settle = () => new Promise((r) => setTimeout(r, 0));
   const replies = () => sent.filter((s) => s.msg.type !== "gilb-bridge-ready");
-  return { post, settle, sent, fetches, opener, status, replies };
+  return { post, settle, sent, fetches, opener, status, replies, intervals, aborted };
 }
 
 const req = (path, extra = {}) => ({ type: "gilb-bridge-req", id: "1", path, ...extra });
@@ -160,5 +169,49 @@ describe("relay page script guards", () => {
       accept: "*/*",
       "x-gilb-relay-origin": GILB,
     });
+  });
+});
+
+describe("relay page: the opener goes away (0.3.2)", () => {
+  const open = (p, n) => {
+    for (let i = 1; i <= n; i++) p.post(req("/v1/turn", { id: String(i), method: "POST", body: "{}" }));
+  };
+
+  it("a gilb-bridge-bye from the page aborts every open request, and tells each one it was aborted", async () => {
+    const p = boot({ pending: true });
+    open(p, 2);
+    await p.settle();
+    expect(p.fetches.length).toBe(2);
+    expect(p.aborted).toEqual([]);
+    p.post({ type: "gilb-bridge-bye" });
+    await p.settle();
+    expect(p.aborted).toEqual(["/v1/turn", "/v1/turn"]);
+    expect(p.replies().map((r) => r.msg.message)).toEqual(["aborted", "aborted"]);
+  });
+
+  it("the opener closing aborts them too (the window's own check)", async () => {
+    const p = boot({ pending: true });
+    open(p, 1);
+    await p.settle();
+    expect(p.intervals.length).toBe(1);
+    p.intervals[0](); // the opener is still there: nothing happens
+    await p.settle();
+    expect(p.aborted).toEqual([]);
+    p.opener.closed = true;
+    p.intervals[0]();
+    await p.settle();
+    expect(p.aborted).toEqual(["/v1/turn"]);
+    expect(p.status.textContent).toMatch(/has closed/);
+  });
+
+  it("a bye from a page that is not the opener, or from another origin, aborts nothing", async () => {
+    const p = boot({ pending: true });
+    open(p, 1);
+    await p.settle();
+    p.post({ type: "gilb-bridge-bye" }, { source: { postMessage() {} } });
+    p.post({ type: "gilb-bridge-bye" }, { origin: EVIL });
+    p.post({ type: "gilb-bridge-bye" }, { origin: OTHER }); // allowed, but the window is bound to the first origin
+    await p.settle();
+    expect(p.aborted).toEqual([]);
   });
 });

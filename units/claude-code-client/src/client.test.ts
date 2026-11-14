@@ -166,7 +166,7 @@ describe("sendClaudeCodeTurn", () => {
       onEvent: (ev) => events.push(ev.event),
     });
     expect(reply).toEqual({ role: "assistant", content: "You have 1 vault.", model: "claude-opus-5-5", payer: "person-claude-code" });
-    expect(events).toEqual(["standing", "start", "tool"]);
+    expect(events).toEqual(["standing", "start", "tool_start", "tool"]);
 
     // The prompt/tools came from GilbPlatform, with the picked agent and vaults, authed with DPoP.
     const ctx = calls.find((c) => c.url === AI_CLAUDE_CODE_CONTEXT_URL)!;

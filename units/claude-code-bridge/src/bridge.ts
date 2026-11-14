@@ -84,6 +84,15 @@ interface Turn {
   /** Questions put to the person in this turn (each-write), kept after the answer so a second answer is told "already answered". */
   /** SHA-256 hex of the pairing secret that started this turn: only that pairing may answer its questions. */
   owner: string;
+  /** When the turn began (ms), the time of its last sign of life (ms), what that was (the activity wording), and how many tool calls it made. */
+  startedAt: number;
+  lastActivityAt: number;
+  lastActivity: string;
+  toolCalls: number;
+  /** How many hand-offs this (top-level) turn has started. */
+  handoffCount: number;
+  /** Set when the person's pairing asked for the turn to be cancelled (POST /v1/turn/cancel). */
+  cancelRequested: boolean;
   approvals: Map<string, { settle: (allow: boolean, message?: string) => void; answered: boolean }>;
 }
 /** A JSON-RPC message from the local claude process. */
@@ -150,7 +159,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.1";
+export const BRIDGE_BUILD = "0.3.2";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -271,17 +280,23 @@ var statusEl = document.getElementById("status");
 function post(msg, target) { try { window.opener.postMessage(msg, target); } catch (e) {} }
 // The opener's origin cannot be read up front, so say "ready" to each allowed origin; a wrong origin drops it.
 for (var i = 0; i < ALLOW.length; i++) post({ type: "gilb-bridge-ready", build: BUILD }, ALLOW[i]);
+// The page went away: abort every open request, so the bridge stops the turns that page started.
+function abortAll() { for (var k in aborts) { try { aborts[k].abort(); } catch (e) {} } }
 setInterval(function () {
-  if (!window.opener || window.opener.closed) statusEl.textContent = "The page that opened this window has closed. You can close it.";
+  if (!window.opener || window.opener.closed) {
+    statusEl.textContent = "The page that opened this window has closed. You can close it.";
+    abortAll();
+  }
 }, 2000);
 var HEADERS = ["content-type", "x-bridge-secret", "accept"];
 addEventListener("message", function (ev) {
   if (!window.opener || ev.source !== window.opener || ALLOW.indexOf(ev.origin) < 0) return;
   var m = ev.data;
   if (!m || typeof m !== "object" || typeof m.type !== "string") return;
-  if (m.type !== "gilb-bridge-req" && m.type !== "gilb-bridge-abort") return;
+  if (m.type !== "gilb-bridge-req" && m.type !== "gilb-bridge-abort" && m.type !== "gilb-bridge-bye") return;
   if (peer === null) peer = ev.origin;
   else if (ev.origin !== peer) return;
+  if (m.type === "gilb-bridge-bye") { abortAll(); return; }
   statusEl.textContent = "Connected to " + peer;
   var id = m.id;
   if (typeof id !== "string" && typeof id !== "number") return;
@@ -1309,6 +1324,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         return decideApproval(turn, (params?.arguments ?? {}) as Record<string, unknown>).then((d) => ok({ content: [{ type: "text", text: JSON.stringify(d) }] }));
       }
       if (!turn.tools.some((t: ToolSpec) => t.name === name)) return Promise.resolve(bad(-32602, `Unknown tool ${name}`));
+      noteActivity(turn, cap(String(name)), true);
       return relayToolCall(turn, String(name), JSON.stringify(params?.arguments ?? {}), id).then(
         (r) => ok({ content: [{ type: "text", text: r.text }], isError: r.isError }),
         (e: unknown) => ok({ content: [{ type: "text", text: String((e as ErrLike)?.message ?? e) }], isError: true }),
@@ -1857,6 +1873,14 @@ export function createBridge(opts: BridgeOptions = {}) {
     return args;
   }
 
+  /** Records a sign of life on the top-level turn (a hand-off's activity counts for the turn that asked for it). */
+  function noteActivity(turn: Turn, what: string, countCall: boolean) {
+    const top = turn.parent ?? turn;
+    top.lastActivityAt = now();
+    top.lastActivity = what;
+    if (countCall) top.toolCalls += 1;
+  }
+
   /** Code turn: turns the CLI's assistant/user stream events into `activity` and `tool_error` events. */
   function codeEvents(turn: Turn, ev: ClaudeEvent, tracked: Map<string, { tool: string; summary: string }>) {
     const content = ev.message?.content;
@@ -1866,6 +1890,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__")) {
         const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, turnRoots(turn));
         if (typeof b.id === "string") tracked.set(b.id, { tool: b.name, summary });
+        noteActivity(turn, cap(summary), true);
         turn.send("activity", { tool: b.name, summary: cap(summary) });
       } else if (ev.type === "user" && b.type === "tool_result" && b.is_error === true && typeof b.tool_use_id === "string") {
         const t = tracked.get(b.tool_use_id);
@@ -2017,7 +2042,14 @@ export function createBridge(opts: BridgeOptions = {}) {
       // One code turn at a time per project (or per code folder itself, when no project is named).
       const key = proj ? proj.path : workspace.path;
       if ([...turns.values()].some((t) => t.code && (t.proj ? t.proj.path : workspace!.path) === key)) {
-        return json(res, 429, { error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.` });
+        const running = [...turns.values()].find((t) => t.code && (t.proj ? t.proj.path : workspace!.path) === key)!;
+        return json(res, 429, {
+          error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
+          code: "CodeTurnRunning",
+          project: proj ? proj.name : null,
+          turnId: running.id,
+          startedAt: new Date(running.startedAt).toISOString(),
+        });
       }
     }
     // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -2042,7 +2074,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         return json(res, 429, { error: `Too many hand-offs are running for this turn at once (${MAX_HANDOFFS_AT_ONCE}). Wait for one to answer.` });
       }
     } else if ([...turns.values()].filter((t) => !t.parent).length >= MAX_TURNS_AT_ONCE) {
-      return json(res, 429, { error: "Too many turns at once." });
+      return json(res, 429, { error: "Too many turns at once.", code: "TooManyTurns" });
     }
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     const system = typeof body.system === "string" ? body.system : "";
@@ -2082,8 +2114,17 @@ export function createBridge(opts: BridgeOptions = {}) {
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
       owner: sha(String(req.headers["x-bridge-secret"])).toString("hex"),
+      startedAt: now(),
+      lastActivityAt: now(),
+      lastActivity: "",
+      toolCalls: 0,
+      handoffCount: 0,
+      cancelRequested: false,
     };
-    if (parent) parent.handoffs.add(turn);
+    if (parent) {
+      parent.handoffs.add(turn);
+      parent.handoffCount += 1;
+    }
     turns.set(turn.id, turn);
     res.writeHead(200, {
       "content-type": "text/event-stream",
@@ -2095,6 +2136,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     turn.send = send;
+    send("turn_started", { turnId: turn.id, startedAt: new Date(turn.startedAt).toISOString(), mode: isCode ? "code" : "chat", project: proj ? proj.name : null });
     send("start", { ok: true, turnId: turn.id });
     const beat = setInterval(() => {
       if (!res.writableEnded) res.write(": keepalive\n\n");
@@ -2144,13 +2186,15 @@ export function createBridge(opts: BridgeOptions = {}) {
       const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
       let sessionId = resumeId || crypto.randomUUID();
       let out = await runClaude(turn, { sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
-      if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !turn.closed) {
+      if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !turn.closed && !turn.cancelRequested) {
         // The session is gone (different folder, cleaned up): start a new one with the thread as text.
         sessionId = crypto.randomUUID();
         out = await runClaude(turn, { sessionId, resume: false }, freshPrompt);
       }
       sendFilesChanged();
-      if (out.error || !out.result) {
+      if (turn.cancelRequested) {
+        send("error", { message: "The turn was cancelled." });
+      } else if (out.error || !out.result) {
         send("error", { message: out.error ?? "Claude Code gave no answer." });
       } else if (out.result.is_error) {
         send("error", { message: `Claude Code: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
@@ -2387,6 +2431,40 @@ export function createBridge(opts: BridgeOptions = {}) {
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/v1/turn") return handleTurn(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/turns") {
+        const me = sha(String(req.headers["x-bridge-secret"])).toString("hex");
+        const iso = (ms: number) => new Date(ms).toISOString();
+        return json(res, 200, {
+          turns: [...turns.values()].filter((t) => !t.parent && t.owner === me).map((t) => ({
+            turnId: t.id,
+            mode: t.code ? "code" : "chat",
+            project: t.proj ? t.proj.name : null,
+            startedAt: iso(t.startedAt),
+            lastActivityAt: iso(t.lastActivityAt),
+            lastActivity: t.lastActivity,
+            toolCalls: t.toolCalls,
+            handoffs: t.handoffCount,
+          })),
+        });
+      }
+      if (req.method === "POST" && url.pathname === "/v1/turn/cancel") {
+        let body;
+        try {
+          body = await readBody(req);
+        } catch (e) {
+          return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+        }
+        const t = turns.get(String(body.turnId));
+        // Only the pairing that started the turn may cancel it; any other gets the same answer as an unknown turn.
+        if (!t || t.parent || t.closed || t.owner !== sha(String(req.headers["x-bridge-secret"])).toString("hex")) return json(res, 200, { cancelled: false });
+        t.cancelRequested = true;
+        for (const h of t.handoffs) {
+          h.closed = true;
+          void stopChild(h.child);
+        }
+        void stopChild(t.child);
+        return json(res, 200, { cancelled: true });
+      }
       if (req.method === "POST" && url.pathname === "/v1/approval") {
         let body;
         try {
