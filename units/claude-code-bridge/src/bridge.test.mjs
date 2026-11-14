@@ -400,16 +400,17 @@ describe("the command line refuses a bad origin before anything starts", () => {
 });
 
 describe("the model the page may name", () => {
-  it("a value that could be read as an option never reaches the child's argv", async () => {
+  it("a value that could be read as an option is refused (400) and never reaches the child's argv", async () => {
     const { body } = await pair();
-    await turn(body.secret, { prompt: "hi", model: "--dangerously-skip-permissions" });
-    await turn(body.secret, { prompt: "hi", model: "-x" });
+    for (const model of ["--dangerously-skip-permissions", "-x"]) {
+      const res = await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": body.secret }, body: JSON.stringify({ system: "s", prompt: "hi", model }) });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "That model is not allowed." });
+    }
     await turn(body.secret, { prompt: "hi", model: "claude-opus-5-5" });
     const argvs = runs().filter((r) => r.event === "run").map((r) => r.argv);
-    expect(argvs).toHaveLength(3);
-    expect(argvs[0]).not.toContain("--model");
-    expect(argvs[1]).not.toContain("--model");
-    expect(argvs[2]).toContain("claude-opus-5-5");
+    expect(argvs).toHaveLength(1);
+    expect(argvs[0]).toContain("claude-opus-5-5");
   });
 });
 
@@ -1259,7 +1260,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.4", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.5", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });

@@ -101,6 +101,18 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
   - `approval_request` `{ id, tool, summary }` and `approval_done` `{ id, allow }`
 - A code turn and a chat turn of one thread keep separate session ids: a code session lives in the code folder and cannot be resumed into the chat one.
 
+## Model, effort and coding hand-offs (0.3.5)
+
+`sendTurn` options `model`, `effort` and `delegateCoding` (all optional) are passed to the bridge (bridge 0.3.5 and later; an older bridge ignores them).
+
+- `model`: `opus`, `sonnet`, `haiku`, `fable` (the `MODEL_ALIASES` export) or a full name matching `/^claude-[a-z0-9][a-z0-9.-]{0,62}$/`. Chat and code turns.
+- `effort`: `low`, `medium`, `high`, `xhigh`, `max` (the `EFFORTS` export). Chat and code turns.
+- `delegateCoding: true`: code turns only; the model hands coding jobs to a Sonnet subagent and checks its work.
+- Any other value throws a `ClaudeCodeBridgeError` (status 400: "That model is not allowed.", "That effort is not allowed.", "delegateCoding is only for code turns.") before any request is made. The bridge checks the same rules again.
+- A hand-off's nested turn does not carry them; the bridge gives it its parent's model and effort.
+- The reply carries `effort` and `delegateCoding` when the bridge says how it ran the turn.
+- `bridgeInfo()` has `options: { models, efforts, delegateCoding }` when the bridge sends it (0.3.5 and later) and no `options` key otherwise, so a page can show only what this bridge supports.
+
 ## Running turns (0.3.2)
 
 For a page that can lose track of a turn (a remount, a reload). These need bridge 0.3.2; against an older bridge each degrades as noted. Everything is additive.
@@ -165,4 +177,4 @@ Repository `KaiGilb/gilb-claude-code`, tag v0.2.0, commit `3b032c0c6710faa8d24c5
 
 Changed on the way in, and only this: `bridgeUrl` is required and `DEFAULT_BRIDGE_URL` is gone (it was `http://127.0.0.1:47821`), with a runtime error when it is missing; two comments that named the loopback address or the Gilb origin are reworded. Tests: import paths now name the bridge unit; tests that relied on the default pass `bridgeUrl`; the test of the default address became a test that `bridgeUrl` is required; Gilb host names used as inputs are `*.example.test`; one `!` for the stricter frame tsconfig; the setup file no longer calls the React test cleanup (no component here).
 
-Changelog: 0.3.4: `BridgeTurnRunningError` gains `ownTurn` (boolean); `turnId` and `startedAt` may be `undefined` (the running turn is someone else's; bridge 0.3.4). 0.3.3: `tool_start` and `tool` events carry `callId`, `args`, and (on `tool`) `answer` / `answerTruncated` (over 256 KB), plus `role` on a hand-off's calls (see "Tool calls for the page"). 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").
+Changelog: 0.3.5: `sendTurn` options `model`, `effort`, `delegateCoding`; `bridgeInfo()` exposes `options`; the reply carries `effort` and `delegateCoding`; exports `MODEL_ALIASES`, `EFFORTS`. 0.3.4: `BridgeTurnRunningError` gains `ownTurn` (boolean); `turnId` and `startedAt` may be `undefined` (the running turn is someone else's; bridge 0.3.4). 0.3.3: `tool_start` and `tool` events carry `callId`, `args`, and (on `tool`) `answer` / `answerTruncated` (over 256 KB), plus `role` on a hand-off's calls (see "Tool calls for the page"). 0.3.2: `sendTurn` `signal`; `turn_started`, `heartbeat`, `tool_start` events and `hop: true` on a hand-off's activity; `BridgeTurnRunningError`; `listTurns()` and `cancelTurn()`; `gilb-bridge-bye` on `pagehide` (see "Running turns").

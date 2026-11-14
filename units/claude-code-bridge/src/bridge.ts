@@ -61,6 +61,10 @@ interface Turn {
   system: string;
   tools: ToolSpec[];
   model: string;
+  /** The effort the person chose ("" when none): passed to the child as --effort. A hand-off inherits its parent's. */
+  effort: string;
+  /** Code turn only: Opus (or whichever model the turn has) hands coding jobs to the `sonnet-coder` subagent. */
+  delegate: boolean;
   pending: Map<string, PendingCall>;
   closed: boolean;
   child: ChildProcess | null;
@@ -159,7 +163,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.4";
+export const BRIDGE_BUILD = "0.3.5";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -628,6 +632,28 @@ const approveSchema = { type: "object", properties: { tool_name: { type: "string
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 /** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
 export const FILES_ONLY_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+/** The model names a turn may ask for: these aliases, or a full model name. Anything else is refused. */
+export const MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"];
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const FULL_MODEL = /^claude-[a-z0-9][a-z0-9.-]{0,62}$/;
+const modelAllowed = (m: unknown): m is string => typeof m === "string" && (MODEL_ALIASES.includes(m) || FULL_MODEL.test(m));
+const effortAllowed = (e: unknown): e is string => typeof e === "string" && EFFORTS.includes(e);
+/** Claude Code's subagent tool. The CLI (2.1.325) accepts `Agent` in --tools and lists it as `Task` in the init event. Present only when delegateCoding is on. */
+export const SUBAGENT_TOOL = "Agent";
+const SUBAGENT_TOOL_NAMES = ["Agent", "Task"];
+/** Appended to a delegating code turn's system prompt. */
+export const DELEGATE_SENTENCE = "Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself.";
+const CODER_PROMPT = "You write and change code from a brief. Work only inside the folder you were started in. Follow the brief exactly: do not add or change anything it does not ask for. Run the project's tests and typecheck when it has them. Report the files you changed, the exact commands you ran and their results. Claim nothing you did not run.";
+/** The one custom subagent of a delegating code turn. Folder mode gives it exactly the code tools of the turn; computer mode leaves tools out (it inherits). */
+export function delegateAgents(filesOnly: boolean, computer: boolean): string {
+  const agent: Record<string, unknown> = {
+    description: "Writes and changes code from a detailed brief, then reports what it changed and the checks it ran.",
+    prompt: CODER_PROMPT,
+    model: "sonnet",
+  };
+  if (!computer) agent.tools = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS)];
+  return JSON.stringify({ "sonnet-coder": agent });
+}
 const FOLDER_PROMPT = "Choose the folder where the AI may build your app";
 const FOLDER_SUGGEST = /^[A-Za-z0-9 ._-]{1,64}$/;
 /** A folder name the page may send: the character rule, no space at either end, and not only spaces and dots. */
@@ -765,10 +791,10 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
 }
 
 /** Fail closed: a code turn's init event may list only the code tools and this bridge's MCP tools, and no other permission mode. */
-function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session", filesOnly = false, computer = false): boolean {
+function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "session", filesOnly = false, computer = false, delegate = false): boolean {
   if (computer) return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits"); // no tool-list check: Claude Code has its own tools
   const tools = Array.isArray(ev.tools) ? ev.tools : [];
-  const allowed = filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS;
+  const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
   if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__")))) return false;
   // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
   return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
@@ -1584,6 +1610,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (!TOOL_NAME_OK.test(tool)) return deny(BAD_TOOL_MSG);
     const keyProblem = inputKeyProblem(input);
     if (keyProblem.deny) return deny(keyProblem.deny);
+    // Starting the sonnet-coder subagent changes nothing by itself; each write and command it then makes is asked like any other.
+    if (turn.delegate && SUBAGENT_TOOL_NAMES.includes(tool)) return { behavior: "allow", updatedInput: input };
     if (computer) {
       // Computer mode: every request is asked of the person, no automatic allow or deny by path.
       let summary: string;
@@ -1819,12 +1847,14 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
       "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
-      "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}`,
+      "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${turn.delegate ? `\n\n${DELEGATE_SENTENCE}` : ""}`,
       "--system-prompt-snapshot", "off",
     ];
     if (mode.resume) args.push("--resume", mode.sessionId);
     else args.push("--session-id", mode.sessionId);
     if (turn.model) args.push("--model", turn.model);
+    if (turn.effort) args.push("--effort", turn.effort);
+    if (turn.delegate) args.push("--agents", delegateAgents(false, true));
     return args;
   }
 
@@ -1835,7 +1865,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--tools", (filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS).join(","),
+      "--tools", [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...(turn.delegate ? [SUBAGENT_TOOL] : [])].join(","),
       "--restricted",
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcp),
@@ -1850,7 +1880,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
         ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`
-        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.`,
+        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${turn.delegate ? ` ${DELEGATE_SENTENCE}` : ""}`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -1872,6 +1902,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (mode.resume) args.push("--resume", mode.sessionId);
     else args.push("--session-id", mode.sessionId);
     if (turn.model) args.push("--model", turn.model);
+    if (turn.effort) args.push("--effort", turn.effort);
+    if (turn.delegate) args.push("--agents", delegateAgents(filesOnly, false));
     return args;
   }
 
@@ -1968,7 +2000,7 @@ export function createBridge(opts: BridgeOptions = {}) {
               void stopChild(child);
             }
             // A code turn must show the folder limits too: only the code tools (and this bridge's MCP tools), and no other permission mode.
-            if (turn.code && !codeInitOk(ev, turn.approval, filesOnly, computer)) {
+            if (turn.code && !codeInitOk(ev, turn.approval, filesOnly, computer, turn.delegate)) {
               limitsRefused = true;
               void stopChild(child);
             } else if (turn.code && !(expectFolder && childRunsIn(ev.cwd, expectFolder))) {
@@ -2033,6 +2065,10 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write") return json(res, 400, { error: 'approval must be "session" or "each-write"' });
     // An id from the page is a string or nothing; any other shape is a bad request (never turned into text, which can throw).
     if (body.parentTurnId !== undefined && typeof body.parentTurnId !== "string") return json(res, 400, { error: BAD_REQUEST });
+    // The model and the effort the person chose (chat and code turns); delegateCoding is for code turns only.
+    if (body.model !== undefined && !modelAllowed(body.model)) return json(res, 400, { error: "That model is not allowed." });
+    if (body.effort !== undefined && !effortAllowed(body.effort)) return json(res, 400, { error: "That effort is not allowed." });
+    if (body.delegateCoding !== undefined && (typeof body.delegateCoding !== "boolean" || (body.mode !== "code" && body.delegateCoding))) return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
     const me = callerKey(req);
     const isCode = body.mode === "code";
     let proj: { path: string; name: string; id: string } | null = null;
@@ -2066,7 +2102,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (parentId) {
       parent = turns.get(parentId) ?? null;
       // A turn of another pairing is answered exactly like an unknown one.
-      if (!parent || parent.closed || parent.owner !== me) return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
+      if (!parent || parent.closed || parent.cancelRequested || parent.owner !== me) return json(res, 404, { error: "The turn that asked for this hand-off is not running." });
       if (parent.parent) return json(res, 400, { error: "A hand-off cannot hand off again." });
       if (body.parentCallId !== undefined) {
         const raw = body.parentCallId;
@@ -2086,9 +2122,10 @@ export function createBridge(opts: BridgeOptions = {}) {
     const system = typeof body.system === "string" ? body.system : "";
     const tools: ToolSpec[] = Array.isArray(body.tools) ? body.tools.filter((t: ToolSpec) => t && typeof t.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(t.name)) : [];
     if (!prompt.trim() || !system.trim()) return json(res, 400, { error: "prompt and system are required." });
-    const model = parent
-      ? parent.model
-      : typeof body.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,79}$/.test(body.model) ? body.model : "";
+    // A hand-off carries its own model and effort when it names them, otherwise it inherits its parent's.
+    const model = typeof body.model === "string" ? body.model : parent ? parent.model : "";
+    const effort = typeof body.effort === "string" ? body.effort : parent ? parent.effort : "";
+    const delegate = isCode && body.delegateCoding === true;
     const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
 
     // Code turn: the snapshot of the folder comes first (it can take a while on a big folder), and the folder is checked again
@@ -2105,6 +2142,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       system,
       tools,
       model,
+      effort,
+      delegate,
       pending: new Map(),
       closed: false,
       child: null,
@@ -2209,6 +2248,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           role: "assistant",
           content: String(out.result.result ?? ""),
           model: out.model,
+          ...(turn.effort ? { effort: turn.effort } : {}),
+          ...(isCode ? { delegateCoding: turn.delegate } : {}),
           payer: "person-claude-code",
           ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
           sessionId: out.sessionId,
@@ -2398,7 +2439,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true } });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -2500,6 +2541,8 @@ export function createBridge(opts: BridgeOptions = {}) {
         if (typeof body.turnId !== "string" || typeof body.id !== "string") return json(res, 400, { error: BAD_REQUEST });
         const turn = turns.get(body.turnId);
         const p = turn?.pending.get(body.id);
+        // Only the pairing that started the turn may answer its calls; any other gets the same answer as an unknown turn.
+        if (turn && turn.owner !== callerKey(req)) return json(res, 404, { error: "No such tool call is waiting." });
         if (turn && !p && turn.cancelled.has(body.id)) return json(res, 200, { ignored: true, reason: "cancelled" });
         if (!turn || !p) return json(res, 404, { error: "No such tool call is waiting." });
         turn.pending.delete(body.id);
