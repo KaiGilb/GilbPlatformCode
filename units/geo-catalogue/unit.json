@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/geo-catalogue",
   "package": "@kaigilb/gilbplatformcode-geo-catalogue",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Reads the shared place catalogue: search by kind of place, one place, the walk up to its country, and the ontology's map of which kind of place is a city, a region or a country.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -34,13 +34,19 @@
     "The ontology reads have their own fetcher (`vedaFetch`).",
     "A row's own `@id` is taken as its id only when it is inside the catalogue; `resolveAncestry` does not follow a parent outside it.",
     "`RestrictedSearch.unplaced` (new): the candidates left out for want of a country.",
-    "`immediateParent` and `searchPlacesInCountry` are not taken (no caller). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts."
+    "`immediateParent` and `searchPlacesInCountry` are not taken (no caller). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts.",
+    "0.1.1 (new, not GilbApp's): `getPlaceLabel(id, signal?, { maxBytes? })`, the label of a place read from the stream of its row (the transfer cancelled at the label; kept in its own copy, `base:geo:labels:v1`), and `PLACE_LABEL_MAX_BYTES`.",
+    "0.1.1 (new): `searchPlaceIds`, `searchPlaces` and `searchPlacesInCountryDetailed` take `{ match: \"text\" | \"prefix\" }` as a last argument; `prefix` adds `match=prefix` to the catalogue's search (default `text`, the request GilbApp made)."
   ],
   "newFiles": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/getPlaceLabel.test.ts"
   ],
   "host": [],
   "library": {
-    "admitted": false
+    "admitted": true,
+    "tag": "t:GeoPlace.catalogue",
+    "title": "Place catalogue reads (search, one place, walk up to the country)",
+    "note": "The client of the shared GilbGeo place catalogue with no screen: search by kind of place (country, city, region; whole words or the start of a word), one place, getPlaceLabel(id) for the label of a country, city or place address without holding or parsing its whole row (a country row can be 3.6 MB, and its label is at the end), and the walk up to its country. Reads go only to the origin set with geo-origin, GET only, credentials omitted, and an address outside the catalogue is refused before any request; for a drawn picker take place-picker."
   }
 }

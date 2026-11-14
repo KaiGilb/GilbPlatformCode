@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import * as unit from "./index";
 
 it("exports exactly these", () => {
-  expect(Object.keys(unit).sort()).toEqual(["PLACE_SEARCH_DEBOUNCE_MS", "PLACE_SEARCH_LIST_CHARS", "PLACE_SEARCH_MIN_CHARS", "PLACE_SEARCH_RESULT_CAP", "PlacePicker", "RUNG_LABEL"]);
+  expect(Object.keys(unit).sort()).toEqual(["PLACE_PREFIX_MIN_LAST_WORD", "PLACE_SEARCH_DEBOUNCE_MS", "PLACE_SEARCH_LIST_CHARS", "PLACE_SEARCH_MIN_CHARS", "PLACE_SEARCH_RESULT_CAP", "PlacePicker", "RUNG_LABEL", "usePlaceLabels"]);
 });
 
 it("the rung words are the address card's own: 'Region', not the display unit's 'Region/State'", () => {
