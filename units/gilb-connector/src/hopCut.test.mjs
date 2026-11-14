@@ -236,39 +236,40 @@ describe("a hand-off cut by the round ceiling", () => {
     expect(posts(platform).at(-1).body.turnId).toBe(rolledTo);
   }, 30000);
 
-  it("c4 a cut hop whose role is Agent.Concept: CUT_TEXT, no roll", async () => {
+  it("c4 a cut hop whose role is Agent.Concept: CUT_TEXT, and the turn is renewed (0.6.2; nothing is re-sent)", async () => {
     for (const role of ["Agent.Concept", "agent concept", "Concept"]) {
       const lines = stderrLines();
       const platform = await hopDoor(CUT);
       const box = connect({ origin: platform.origin, env: meEnv() });
       const res = await callTool(box, "run_named_role", { role, task: "a" });
       expect(answerOf(res).cut, role).toBe(CUT_TEXT);
-      expect(rollLines(lines), role).toHaveLength(0);
+      expect(rollLines(lines), role).toHaveLength(1);
       await callTool(box);
-      expect(posts(platform).at(-1).body.turnId, role).toBe(TURN);
+      expect(posts(platform).at(-1).body.turnId, role).not.toBe(TURN);
     }
     // And a connector that is Agent.Concept itself.
     const platform = await hopDoor(CUT);
     const box = connect({ origin: platform.origin, env: meEnv(), agent: "Agent.Concept" });
     expect(answerOf(await run(box)).cut).toBe(CUT_TEXT);
     await callTool(box);
+    // A connector that is Agent.Concept never renews (its mint limits are a brake).
     expect(posts(platform).at(-1).body.turnId).toBe(TURN);
   }, 30000);
 
-  it("c4 a role that resolves to Agent.Concept on the server (the call named it another way) is not rolled", async () => {
+  it("c4 a role that resolves to Agent.Concept on the server (the call named it another way) renews the turn too", async () => {
     const lines = stderrLines();
     const platform = await hopDoor(CUT, (rec) => (rec.body.name === "run_named_role" ? { body: { hop: hopOf(HOP_A, "Agent.Concept") } } : undefined));
     const box = connect({ origin: platform.origin, env: meEnv() });
     expect(answerOf(await callTool(box, "run_named_role", { role: "Ontology", task: "a" })).cut).toBe(CUT_TEXT);
-    expect(rollLines(lines)).toHaveLength(0);
+    expect(rollLines(lines)).toHaveLength(1);
   }, 20000);
 
-  it("c4 a hand-off from another tool than run_named_role is not rolled", async () => {
+  it("c4 a hand-off from another tool than run_named_role renews the turn too", async () => {
     const lines = stderrLines();
     const platform = await hopDoor(CUT, (rec) => (rec.body.name === "ask_agent_concept" ? { body: { hop: hopOf(HOP_A, "Jackfruit") } } : undefined));
     const box = connect({ origin: platform.origin, env: meEnv() });
     expect(answerOf(await callTool(box, "ask_agent_concept", { need: "x" })).cut).toBe(CUT_TEXT);
-    expect(rollLines(lines)).toHaveLength(0);
+    expect(rollLines(lines)).toHaveLength(1);
   }, 20000);
 
   it("c5 in hop mode a hand-off answer cuts nothing and rolls nothing", async () => {
