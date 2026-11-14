@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { toCssText, toCssVars } from "./css";
 import { COLOR_PATTERNS } from "./schema";
 import { validSheet } from "./fixtures";
+import { ACTION_ROW_CSS } from "./actionRowCss";
 
 const decls = (css: string) =>
   css.split("\n").map((l) => l.trim()).filter((l) => /^--[a-z0-9-]+: .*;$/.test(l)).map((l) => {
@@ -39,7 +40,8 @@ describe("toCssText", () => {
       }
     }
     // the text outside declarations is only selectors, braces and the media query
-    const rest = css.split("\n").filter((l) => !/^\s*--[a-z0-9-]+: .*;$/.test(l) && l.trim() !== "");
+    // (the appended ACTION_ROW_CSS block is checked in actionRow.test.tsx, so it is cut off here)
+    const rest = css.replace(ACTION_ROW_CSS, "").split("\n").filter((l) => !/^\s*--[a-z0-9-]+: .*;$/.test(l) && l.trim() !== "");
     for (const l of rest) expect(l.trim()).toMatch(/^(:root|\[data-theme="dark"\]|@media \(prefers-color-scheme: dark\)|:root:not\(\[data-theme\]\)) \{$|^\}$/);
   });
 

@@ -13,7 +13,7 @@ A developer tool. Not loaded by the app at runtime; the app takes style-runtime.
 - 48 open-licence fonts (latin, weights 400 and 600), fetched only when chosen or scrolled into view. Eight one-click pairings.
 - Buttons and windows styles, and a logo (PNG, JPEG, WebP, or SVG that is cleaned and turned into PNG).
 - `saveStyle`, which writes the sheet into the app's resource vault as three typed records (palette, brand kit, style sheet) and makes them public-read, so the app can load its style at start without signing in.
-- `ThemeToggle` (a light/dark button), `ActionRow` (a Mac-order button row), the palette catalogues, and, re-exported from `style-runtime` (where they live, so an app that only applies its style never takes the Studio), the vault reader `loadStyleFromVault`, `makeVaultFetchRemote` and `recordsToSheet`.
+- `ThemeToggle` (a light/dark button; it now lives in `style-runtime/react` and is re-exported here), `ActionRow` (a Mac-order button row with spec objects; `ActionRowSlots` is `style-runtime/react`'s slot-based row, which an app should use), the palette catalogues, and, re-exported from `style-runtime` (where they live, so an app that only applies its style never takes the Studio), the vault reader `loadStyleFromVault`, `makeVaultFetchRemote` and `recordsToSheet`.
 
 ## What this is not
 

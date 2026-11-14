@@ -11,7 +11,7 @@ Applies the app's style at start: loads one `style.tokens.json`, checks it, and 
 - The app's own `/style.tokens.json` is used only when the remote fails and nothing was cached.
 - `loadStyle` never throws; it returns `{ source, errors }` (`source` is `cache`, `remote`, `fallback` or `none`).
 
-It also holds the rest of the runtime: `validateStyleSheet`, `toCssVars`, `toCssText`, `applyStyleSheet`, `paletteFromSeed`, `checkPalette`, the contrast helpers (`contrastRatio`, `ensureContrast`, `meetsAA`, `parseColor`, `toHex`), the light/dark functions `initTheme`, `toggleTheme`, `currentTheme`, and the types (`StyleSheet`, `Palette`, `Theme`, ...). The only dependency is `culori`. There is no React, no font, no colour catalogue and no studio in it.
+The button row comes with it (see "Buttons"). It also holds the rest of the runtime: `validateStyleSheet`, `toCssVars`, `toCssText`, `applyStyleSheet`, `paletteFromSeed`, `checkPalette`, the contrast helpers (`contrastRatio`, `ensureContrast`, `meetsAA`, `parseColor`, `toHex`), the light/dark functions `initTheme`, `toggleTheme`, `currentTheme`, and the types (`StyleSheet`, `Palette`, `Theme`, ...). The only dependency is `culori`. The core has no React, no font, no colour catalogue and no studio in it; the optional `/react` entry holds `ActionRow` and `ThemeToggle`.
 
 ## What this is not
 
@@ -61,6 +61,27 @@ loadStyle({ cacheKey: "style:myapp", fetchRemote: makeVaultFetchRemote(sheetUrl)
 
 Put a copy of `examples/style.tokens.json` in your app's public folder as `/style.tokens.json` and edit it, or let the Studio write it. Then call `initTheme()` once if the app has a light/dark switch.
 
+## Buttons
+
+The Mac-order button row (RuleUiActionRowMacOrder) comes with the style: `toCssText`, and so `loadStyle`, appends the `.gs-actionrow` rules and the button looks (`.gs-btn`, `--primary`, `--secondary`, `--danger`; zero specificity via `:where()`, so your own rules win; 44px high; a visible focus ring). A row of two or more buttons is right-aligned with the positive action rightmost (Return), Cancel left of it (Esc), and a destructive or third action alone at the far left; under 380px the buttons share the width equally. `--accent-ink` and `--on-bad` are emitted for the outline, soft and text looks and the red button.
+
+React, from the optional subpath (React is an optional peer; the core never imports it):
+
+```tsx
+import { ActionRow } from "@kaigilb/gilbplatformcode-style-runtime/react";
+
+// Record view: Delete far left, Edit (the primary) rightmost.
+<ActionRow destructive={<button className="gs-btn gs-btn--danger">Delete</button>} primary={<button className="gs-btn">Edit</button>} />
+
+// Form or dialog: Cancel left of the primary.
+<ActionRow cancel={<button className="gs-btn gs-btn--secondary">Cancel</button>} primary={<button className="gs-btn" type="submit">Save</button>} />
+
+// "Delete this camera?": confirm, the red button is rightmost and Cancel stays the default.
+<ActionRow confirm cancel={<button className="gs-btn gs-btn--secondary" autoFocus>Cancel</button>} primary={<button className="gs-btn gs-btn--danger gs-btn--primary">Delete camera</button>} />
+```
+
+Without React, use the classes: `<div class="gs-actionrow"><button class="gs-btn gs-btn--danger gs-actionrow__far">Delete</button><button class="gs-btn gs-btn--secondary">Cancel</button><button class="gs-btn">Save</button></div>`. A host that never calls `loadStyle` calls `ensureActionRowCss()` (the React `ActionRow` does it itself); it writes one `<style data-gs-actionrow>`. `ThemeToggle` and `ModeButton` are also in `/react`; `style-studio` re-exports them.
+
 ## Examples
 
 ```ts
@@ -98,4 +119,4 @@ toggleTheme();                               // flips <html data-theme>, stores 
 
 ## Where it came from
 
-The private package `gilb-style` (KaiGilb/gilb-style), commit `234a8fcd8bdf9022a81883ca9e5026327f64d10c`: `src/schema.ts`, `color.ts`, `css.ts`, `palette.ts`, `runtime.ts` and `theme.ts`, with their tests. The React toggle `ThemeToggle` stays in `style-studio`; only the non-React theme functions are here. Colour parsing and conversion use `culori` (MIT); see `THIRD-PARTY-NOTICES.md` in `style-studio`.
+The private package `gilb-style` (KaiGilb/gilb-style), commit `234a8fcd8bdf9022a81883ca9e5026327f64d10c`: `src/schema.ts`, `color.ts`, `css.ts`, `palette.ts`, `runtime.ts` and `theme.ts`, with their tests. The React toggle `ThemeToggle` moved here in 0.2.1 (the `/react` entry; `style-studio` re-exports it), and the action row is new in 0.2.1. Colour parsing and conversion use `culori` (MIT); see `THIRD-PARTY-NOTICES.md` in `style-studio`.
