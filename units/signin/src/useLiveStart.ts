@@ -9,6 +9,8 @@ export interface UseLiveStartOptions extends Omit<LiveStartOptions, "credential"
   credential: SessionCredential | LiveStartOptions["credential"];
   /** The app's identity for the sign-in card (`app.productName` also goes in the one-time-code email). */
   app: SignInApp;
+  /** Cookie mode for verify-code. Default: decided from the page; see `makeSignInAuth`. */
+  credentials?: "include" | "omit";
 }
 
 export interface UseLiveStartResult extends LiveStartState {
@@ -27,7 +29,7 @@ export interface UseLiveStartResult extends LiveStartState {
  * @returns the state, `retry`, `signOut` and the props for the sign-in card
  */
 export function useLiveStart(o: UseLiveStartOptions): UseLiveStartResult {
-  const { credential, idOrigin, app, vaultConfig, transport, store, service } = o;
+  const { credential, idOrigin, app, vaultConfig, transport, store, service, credentials } = o;
   const ctl = useMemo(
     () =>
       createLiveStart({
@@ -52,8 +54,9 @@ export function useLiveStart(o: UseLiveStartOptions): UseLiveStartResult {
         origin: idOrigin,
         productName: app.productName,
         ...(transport ? { transport } : {}),
+        ...(credentials ? { credentials } : {}),
       }),
-    [credential, idOrigin, app.productName, transport],
+    [credential, idOrigin, app.productName, transport, credentials],
   );
   const signInProps = useMemo(() => ({ app, auth, onSignedIn: () => ctl.signedIn() }), [app, auth, ctl]);
   return useMemo(

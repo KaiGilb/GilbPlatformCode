@@ -22,6 +22,7 @@ import {
   type SessionStore,
   type StoredSession,
 } from "./session";
+import { pageOrigin } from "./http";
 import { generateDpopKeyPair, type DpopPublicJwk } from "./dpop";
 import type { Transport, TransportRequest, TransportResponse } from "./transport";
 
@@ -2296,4 +2297,25 @@ test("a cookie-bridge re-mint during an in-flight sign-out is its own sign-in", 
   assert.equal(b.serverSignedOut, true);
   assert.equal(calls.filter((call) => call.url === SIGN_OUT_URL).length, 2);
   assert.equal(cred.session, null);
+});
+
+test("renew sends credentials omit on a local app's own port, on a rig, and with an include override", async () => {
+  for (const [origin, opt] of [["http://localhost:5317", undefined], ["http://localhost:5197", undefined], ["http://localhost:5317", "include"]] as const) {
+    const was = pageOrigin.read;
+    pageOrigin.read = () => origin;
+    try {
+      const store = memoryStore(await seed());
+      let now = NOW;
+      const t = renewTransport(() => jsonResponse(200, renewedBody()));
+      const cred = new SessionCredential({ store, transport: t.send, now: () => now, ...(opt ? { credentials: opt } : {}) });
+      await cred.restore();
+      now = NOW + 3_600_000 - EXPIRY_GUARD_MS;
+      await cred.authHeaders("GET", "https://a.example.test/lws/vault/v1/records");
+      const hit = renewCalls(t.calls);
+      assert.equal(hit.length, 1);
+      assert.equal(hit[0]!.req.credentials, "omit", `${origin} ${opt ?? ""}`);
+    } finally {
+      pageOrigin.read = was;
+    }
+  }
 });

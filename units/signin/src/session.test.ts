@@ -17,6 +17,7 @@ import {
   REACHABLE_VAULTS_PATH,
 } from "./session";
 import { generateDpopKeyPair } from "./core";
+import { pageOrigin } from "./http";
 import type { Transport, TransportRequest } from "./transport";
 
 const dec = (s: string) => JSON.parse(Buffer.from(s, "base64url").toString("utf8"));
@@ -673,4 +674,65 @@ test("platformSentenceOf reads message from a parsed body or its text, and nothi
   assert.equal(platformSentenceOf({ error: "Unauthorized", message: " hi " }), "hi");
   assert.equal(platformSentenceOf('{"message":"hi"}'), "hi");
   for (const b of [undefined, null, "not json", [], {}, { message: "" }, { message: 4 }]) assert.equal(platformSentenceOf(b), undefined);
+});
+
+function verifyAnswer() {
+  const token = jwtWithExp(Math.floor(Date.now() / 1000) + 1800);
+  return [{ status: 200, body: { token, principal: "https://id.example.test/i/p9" } }];
+}
+
+async function withPage<T>(origin: string, run: () => Promise<T>): Promise<T> {
+  const was = pageOrigin.read;
+  pageOrigin.read = () => origin;
+  try {
+    return await run();
+  } finally {
+    pageOrigin.read = was;
+  }
+}
+
+test("signInWithCode on a local app's own port (5317) sends credentials omit to verify-code", async () => {
+  const t = fakeTransport(verifyAnswer());
+  const cred = new SessionCredential({ transport: t.send });
+  await withPage("http://localhost:5317", () => cred.signInWithCode("https://id.example.test", "a@example.test", "123456"));
+  assert.equal(t.calls[0].url, "https://id.example.test/base/auth/email/verify-code");
+  assert.equal(t.calls[0].req.credentials, "omit");
+});
+
+test("signInWithCode on Gilb's own rig (5197) sends credentials include", async () => {
+  const t = fakeTransport(verifyAnswer());
+  const cred = new SessionCredential({ transport: t.send });
+  await withPage("http://localhost:5197", () => cred.signInWithCode("https://id.example.test", "a@example.test", "123456"));
+  assert.equal(t.calls[0].req.credentials, "include");
+});
+
+test("a credentials override wins: per call, and on the credential; the per-call one wins over the credential's", async () => {
+  const perCall = fakeTransport(verifyAnswer());
+  await withPage("http://localhost:5317", () =>
+    new SessionCredential({ transport: perCall.send }).signInWithCode("https://id.example.test", "a@example.test", "1", undefined, undefined, { credentials: "include" }));
+  assert.equal(perCall.calls[0].req.credentials, "include");
+
+  const onCred = fakeTransport(verifyAnswer());
+  await withPage("http://localhost:5197", () =>
+    new SessionCredential({ transport: onCred.send, credentials: "omit" }).signInWithCode("https://id.example.test", "a@example.test", "1"));
+  assert.equal(onCred.calls[0].req.credentials, "omit");
+
+  const both = fakeTransport(verifyAnswer());
+  await withPage("http://localhost:5317", () =>
+    new SessionCredential({ transport: both.send, credentials: "omit" }).signInWithCode("https://id.example.test", "a@example.test", "1", undefined, undefined, { credentials: "include" }));
+  assert.equal(both.calls[0].req.credentials, "include");
+});
+
+test("the bridge mint follows the same page rule, and an override", async () => {
+  const local = fakeTransport([{ status: 200, body: okBody() }]);
+  await withPage("http://localhost:5317", () => new SessionCredential({ dpopMintUrl: MINT_URL, transport: local.send }).getSession());
+  assert.equal(local.calls[0].req.credentials, "omit");
+
+  const rig = fakeTransport([{ status: 200, body: okBody() }]);
+  await withPage("http://localhost:5251", () => new SessionCredential({ dpopMintUrl: MINT_URL, transport: rig.send }).getSession());
+  assert.equal(rig.calls[0].req.credentials, "include");
+
+  const forced = fakeTransport([{ status: 200, body: okBody() }]);
+  await withPage("http://localhost:5317", () => new SessionCredential({ dpopMintUrl: MINT_URL, transport: forced.send, credentials: "include" }).getSession());
+  assert.equal(forced.calls[0].req.credentials, "include");
 });

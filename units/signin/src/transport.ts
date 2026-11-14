@@ -76,7 +76,7 @@ export interface HttpOptions {
   /** Defaults to {@link fetchTransport}. */
   transport?: Transport;
   /**
-   * Cookie mode for this call. When set, it wins over the page rule (`credentialsForPage` in ./http).
+   * Cookie mode for this call. When set, it wins over the page rule (`credentialsForPageOrigin` in ./http).
    * The platform's own apps pass `"include"`.
    */
   credentials?: RequestCredentials;

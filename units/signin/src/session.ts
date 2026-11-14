@@ -49,7 +49,7 @@
 
 import { dpopHeaders, dpopProof, generateDpopKeyPair, type DpopKey, type DpopPublicJwk, type DpopWebCryptoKey } from "./dpop";
 import { fetchTransport, type Transport, type TransportResponse } from "./transport";
-import { verifySignInCodeHttp, type VerifyHttpBody } from "./http";
+import { credentialsForPageOrigin, pageOrigin, verifySignInCodeHttp, type VerifyHttpBody } from "./http";
 import { isRequestFault, platformSentenceOf, RequestRefusedError } from "./platformRefusal";
 import {
   indexedDbSessionStore,
@@ -334,6 +334,19 @@ export interface SessionCredentialOptions {
    * Omitted, the client asks for {@link RENEW_WINDOW_MAX_SEC} (14 days).
    */
   renewWindowSec?: number;
+  /**
+   * Cookie mode for verify-code and for the bridge mint. Default: decided from the page
+   * (`credentialsForPageOrigin(location.origin)`): "include" on the platform's own pages and
+   * on Gilb's own loopback rigs (ports 5197 and 5251), "omit" on every other page, so a local app on
+   * any other port signs in with the emailed code and no cookie. The renewal call is always "omit".
+   */
+  credentials?: "include" | "omit";
+}
+
+/** Per-call options of {@link SessionCredential.signInWithCode}. */
+export interface SignInWithCodeOptions {
+  /** Cookie mode for this verify-code call. Wins over the credential's option and the page rule. */
+  credentials?: "include" | "omit";
 }
 
 interface Minted {
@@ -562,6 +575,7 @@ export class SessionCredential {
     code: string,
     name?: string,
     productName?: string,
+    callOpts: SignInWithCodeOptions = {},
   ): Promise<VerifyHttpBody> {
     // Counted before the first await so `restore` during verify-code does not adopt a stored
     // key over the key this call is binding the token to. The save is started, not awaited:
@@ -569,7 +583,7 @@ export class SessionCredential {
     this.signInsInFlight++;
     this.signInSerial++;
     this.noteSignIn();
-    return this.signInWithCodeBody(origin, email, code, name, productName).finally(() => {
+    return this.signInWithCodeBody(origin, email, code, name, productName, callOpts).finally(() => {
       this.signInsInFlight--;
       return this.flushStore();
     });
@@ -581,6 +595,7 @@ export class SessionCredential {
     code: string,
     name?: string,
     productName?: string,
+    callOpts: SignInWithCodeOptions = {},
   ): Promise<VerifyHttpBody> {
     // A sign-out while the code is on the wire must not be undone when the answer lands: the
     // token would be held after sign-out, bound to a key the credential may no longer hold.
@@ -588,6 +603,7 @@ export class SessionCredential {
     const jwk = await this.ensurePublicJwk();
     const body = await verifySignInCodeHttp(origin, email, code, jwk, name, productName, {
       transport: this.opts.transport,
+      credentials: callOpts.credentials ?? this.opts.credentials ?? credentialsForPageOrigin(pageOrigin.read()),
       ...(this.renewalWanted()
         ? { renew: true as const, renewWindowSec: this.opts.renewWindowSec ?? RENEW_WINDOW_MAX_SEC }
         : {}),
@@ -926,8 +942,10 @@ export class SessionCredential {
     const send = this.opts.transport ?? fetchTransport;
     const res: TransportResponse = await send(url, {
       method: "POST",
-      // First-party only: the session-cookie bridge. A third-party page must not send it.
-      credentials: "include",
+      // The session-cookie bridge is first-party. A third-party page (a local app on any port but
+      // 5197 / 5251) gets no Access-Control-Allow-Credentials, so it sends no cookie. With no page
+      // (a worker, a server) there is no CORS, and the bridge keeps its cookie.
+      credentials: this.opts.credentials ?? (pageOrigin.read() ? credentialsForPageOrigin(pageOrigin.read()) : "include"),
       headers: { ...CSRF_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({ dpopJwk: jwk }),
       timeoutMs: 15000,

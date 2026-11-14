@@ -224,9 +224,11 @@ const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "Pictu
 
 `origin` and `productName` are the app's (the unit holds neither). `transport` is optional. `verifyCode` runs `credential.signInWithCode`, so the credential holds the token. `completeNamedVault` rejects with "Creating a new vault is not part of <product>. Sign in with an account that already has a vault." unless you pass `createsVault: true`, which makes it resolve (the name was already sent by `verifyCode`). A wrong code is still `CodeRejectedError`.
 
-### Allowed localhost dev ports
+### Local development
 
-A page on `http://localhost:<port>` can sign in against a live platform only when that origin is in the platform's `FIRST_PARTY_ORIGINS` (GilbPlatform `src/config/index.ts:879`, read from the environment). In production that list holds `http://localhost:5197` and `http://localhost:5251`. Run a dev server on 5197 or 5251; any other port is refused as an origin the platform does not admit (`OriginNotAllowedError` in `./session`). Allocate the port through the dev-ports rule, not by guessing.
+Any free localhost port works with no setup. Run your dev server on a port of your choice (allocate it through the dev-ports rule), and the app signs in with the email code. No cookie is sent: the platform admits a local app on any localhost port without credentials, and the token is already in the verify-code answer. Ports 5197 and 5251 are Gilb's own rigs (first-party, with cookies); do not take them for your app.
+
+`credentialsForPageOrigin(location.origin)` makes the decision: "include" on the platform's own pages and on `http://localhost:5197` / `:5251` (also 127.0.0.1 and [::1]), "omit" on every other page. Pass `credentials: "include" | "omit"` to `SessionCredential`, `makeSignInAuth` or `useLiveStart` to override it. The renewal call is always "omit".
 
 ## The app's own vault
 
@@ -301,15 +303,19 @@ npm run typecheck
 npm run check:host-agnostic
 ```
 
-Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a host on its fixed list (see `scripts/check-host-agnostic.mjs`), or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module. The one exception is the first-party page-host literals in `credentialsForPage` (`src/http.ts`): each appears once, and they classify the page for the verify-code cookie decision rather than naming a request target.
+Tests mock fetch or run a local `node:http` server. They prove request shape, host injection, proof shape and the credential's races, not a live mailbox. The host-agnostic check fails when any source line names a host on its fixed list (see `scripts/check-host-agnostic.mjs`), or when a headless entry (`core`, `session`, `machine`) or a file it imports reaches anything but a sibling module. The one exception is the first-party page-host literals in `credentialsForPageOrigin` (`src/http.ts`): each appears once, and they classify the page for the verify-code cookie decision rather than naming a request target.
 
 ## Source
 
 The private `gilb-signin` package, 0.5.0. The card keeps this unit's host-agnostic default: the vault-address preview shows when check-name returns an `address`, or else when name-prep returns a `webIdDomain`.
 
+## Changes in 0.2.11
+
+A local app on any localhost port except 5197 and 5251 signs in with no cookie. `credentialsForPageOrigin(origin)` takes the full page origin: "include" for gilb.com / www.gilb.com (any port) and for `http` loopback pages on port 5197 or 5251, "omit" for everything else. `credentialsForPage(hostname)` is deprecated (a hostname cannot show the port): "include" only for gilb.com hosts, "omit" for loopback. New `credentials?: "include" | "omit"` option on `SessionCredential`, `makeSignInAuth` and `useLiveStart`, and a per-call option on `signInWithCode`. The bridge mint follows the same rule. Renewal stays "omit".
+
 ## Changes in 0.2.2
 
-verify-code sends cookies only on a first-party page. `credentialsForPage` answers "include" for an exact hostname of gilb.com, www.gilb.com, localhost, 127.0.0.1 or [::1], and "omit" for every other page and for a page with no location. An explicit credentials option still wins. An attested third-party origin gets no Access-Control-Allow-Credentials, so "include" there made the browser drop the verify-code answer. The token is already in the JSON.
+verify-code sends cookies only on a first-party page. `credentialsForPage` answered "include" for an exact hostname of gilb.com, www.gilb.com, localhost, 127.0.0.1 or [::1], and "omit" for every other page and for a page with no location. (Superseded below: a localhost page is first-party only on port 5197 or 5251.) An explicit credentials option still wins. An attested third-party origin gets no Access-Control-Allow-Credentials, so "include" there made the browser drop the verify-code answer. The token is already in the JSON.
 
 `signInWithCode` reads the reachable vaults from `GET /lws/vaults` after the code is accepted. verify-code returns none, and the session-cookie bridge is first-party only, so a third-party app was left with `vaults: []`. A list that cannot be read or is only partial stays signed in; `session.vaultsProblem` is the sentence. `loadReachableVaults(origin)` is that read on its own.
 

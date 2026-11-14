@@ -137,37 +137,61 @@ export interface VerifyCodeOptions extends HttpOptions {
   renewWindowSec?: number;
 }
 
-/** First-party page hosts: the platform's own pages and the dev loopback rigs. Exact match. */
-const FIRST_PARTY_PAGE_HOSTS: ReadonlySet<string> = new Set([
-  "gilb.com",
-  "www.gilb.com",
-  "localhost",
-  "127.0.0.1",
-  "[::1]",
-]);
+/** First-party page hosts of the platform's own pages. Exact match, any port. */
+const GILB_PAGE_HOSTS: ReadonlySet<string> = new Set(["gilb.com", "www.gilb.com"]);
+
+/** Loopback page hosts. A local app lives here; only Gilb's own rig ports are first-party. */
+const LOOPBACK_PAGE_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The two loopback ports of Gilb's own dev rigs. Every other loopback port is a third-party app. */
+const GILB_RIG_PORTS: ReadonlySet<string> = new Set(["5197", "5251"]);
 
 /**
- * Cookie mode for verify-code from a page on `hostname`.
+ * Cookie mode for verify-code from the page at `origin` (the page's `location.origin`).
  *
  * GilbPlatform `src/server/cors.ts` sends Access-Control-Allow-Credentials only for a first-party
- * page. An attested third-party origin does not get that header, so "include" makes the browser
- * discard the JSON, which already carries the token (the cookieless mint). Those pages send "omit".
- * Exact hostname only — a subdomain, a lookalike, or a suffix is third-party. No page location
- * (empty hostname) omits.
+ * page. A third-party origin, including a local app on any free loopback port, does not get that
+ * header, so "include" makes the browser discard the JSON, which already carries the token (the
+ * cookieless mint). Those pages send "omit".
+ *
+ * First-party ("include"): the platform's own page hosts on any port, or an http page on a
+ * loopback host whose port is exactly 5197 or 5251 (Gilb's own rigs). Everything else, an
+ * unparseable origin, an opaque origin ("null") and "" (no page) is "omit".
  */
-export function credentialsForPage(hostname: string): RequestCredentials {
-  return FIRST_PARTY_PAGE_HOSTS.has(hostname) ? "include" : "omit";
+export function credentialsForPageOrigin(origin: string): RequestCredentials {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return "omit";
+  }
+  if (GILB_PAGE_HOSTS.has(url.hostname)) return "include";
+  if (url.protocol === "http:" && LOOPBACK_PAGE_HOSTS.has(url.hostname) && GILB_RIG_PORTS.has(url.port)) {
+    return "include";
+  }
+  return "omit";
 }
 
 /**
- * The only read of `location`. Tests replace `read` to inject a page hostname.
- * No `location` (a worker, a test, a server) yields "" so {@link credentialsForPage} omits.
+ * @deprecated A hostname cannot show the port, and on a loopback host the port decides, so use
+ * {@link credentialsForPageOrigin} with `location.origin`. Kept for old callers. It answers
+ * "include" only for the platform's own page hosts. For a loopback host it answers
+ * "omit": that is the safe side, since "omit" works on every page (the token is in the JSON) while
+ * "include" on a local app's own port makes the browser drop the answer.
  */
-export const pageHostname: { read: () => string } = {
+export function credentialsForPage(hostname: string): RequestCredentials {
+  return GILB_PAGE_HOSTS.has(hostname) ? "include" : "omit";
+}
+
+/**
+ * The only read of `location`. Tests replace `read` to inject a page origin.
+ * No `location` (a worker, a test, a server) yields "" so {@link credentialsForPageOrigin} omits.
+ */
+export const pageOrigin: { read: () => string } = {
   read(): string {
     try {
-      const hostname = globalThis.location?.hostname;
-      return typeof hostname === "string" ? hostname : "";
+      const origin = globalThis.location?.origin;
+      return typeof origin === "string" ? origin : "";
     } catch {
       return "";
     }
@@ -201,10 +225,10 @@ export async function verifySignInCodeHttp(
     // ⚠ Cookie only on a first-party page. GilbPlatform src/server/cors.ts does not send
     // Access-Control-Allow-Credentials for an attested third-party origin, so "include" there
     // makes the browser drop this answer. The token is already in the JSON; those pages send
-    // "omit". An explicit opts.credentials wins over credentialsForPage.
+    // "omit". An explicit opts.credentials wins over credentialsForPageOrigin.
     res = await send(join(origin, "/base/auth/email/verify-code"), {
       method: "POST",
-      credentials: opts.credentials ?? credentialsForPage(pageHostname.read()),
+      credentials: opts.credentials ?? credentialsForPageOrigin(pageOrigin.read()),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       timeoutMs: 15000,
