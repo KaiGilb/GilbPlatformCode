@@ -55,6 +55,7 @@ function listen() {
     if (url.endsWith("/base/oauth/token")) return send(200, { access_token: `atk-${requests.length}`, token_type: "DPoP", expires_in: 300, scope: "base.write" });
     if (url.endsWith("/base/e/first-use")) return send(404, { error: "not_found" });
     if (url.endsWith("/context")) return send(200, { system: "STANDING That person is identified as: https://example.test/base. Tools follow.", tools: TOOLS });
+    if (url.endsWith("/tool") && requests.at(-1).body.name === "write_plan_card" && globalThis.__cardReply) return send(200, { result: globalThis.__cardReply });
     if (url.endsWith("/tool")) return send(200, { result: "tool-ok" });
     return send(404, { error: "no such door" });
   });
@@ -254,6 +255,51 @@ describe("idempotency key on write_plan_card", () => {
     expect(keyOf(cards[0].body)).toBe("mine-1");
     expect(keyOf(cards[1].body)).toBeUndefined();
     expect(keyOf(toolPosts(platform, "write_plan_table")[0].body)).toBeUndefined();
+  });
+});
+
+describe("IDEMPOTENCY_KEY_NOT_USED warning", () => {
+  const NOTE = { code: "IDEMPOTENCY_KEY_NOT_USED", field: "idempotencyKey", level: "info", message: "The card exists." };
+  const OTHER = { code: "SOMETHING_ELSE", field: "card.x", level: "info", message: "keep me" };
+  const reply = JSON.stringify({ ok: true, warnings: [NOTE, OTHER] });
+  afterEach(() => {
+    delete globalThis.__cardReply;
+  });
+
+  it("a key the connector made: that warning is removed, other warnings stay", async () => {
+    quiet();
+    globalThis.__cardReply = reply;
+    const platform = await listen();
+    const out = JSON.parse(text(await connect(platform.origin).call("write_plan_card", { card: { tag: "G" } })));
+    expect(out.warnings).toEqual([OTHER]);
+    expect(out.ok).toBe(true);
+  });
+
+  it("a key the caller sent: the answer is untouched", async () => {
+    quiet();
+    globalThis.__cardReply = reply;
+    const platform = await listen();
+    const out = await connect(platform.origin).call("write_plan_card", { card: { tag: "G" }, idempotencyKey: "mine" });
+    expect(text(out)).toBe(reply);
+  });
+
+  it("a call_status re-send of a connector-made key is stripped too", async () => {
+    quiet();
+    globalThis.__cardReply = reply;
+    const platform = await listen();
+    scriptFetch("write_plan_card", [err("ECONNRESET", "read")]);
+    const box = connect(platform.origin);
+    const first = JSON.parse(text(await box.call("write_plan_card", { card: { tag: "G" } })));
+    const again = JSON.parse(text(await box.call("gilbplatform_call_status", { callId: first.callId })));
+    expect(again.warnings).toEqual([OTHER]);
+  });
+
+  it("an answer with no such warning is returned byte for byte", async () => {
+    quiet();
+    globalThis.__cardReply = JSON.stringify({ ok: true, warnings: [OTHER] });
+    const platform = await listen();
+    const out = await connect(platform.origin).call("write_plan_card", { card: { tag: "G" } });
+    expect(text(out)).toBe(globalThis.__cardReply);
   });
 });
 

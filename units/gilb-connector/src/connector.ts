@@ -248,7 +248,7 @@ function summariseArgs(args: unknown): Record<string, string> {
 }
 
 /** The arguments with one idempotency key, made once per logical call. A key the caller sent is kept. Not for check mode, not for tools without the field. */
-function withIdempotencyKey(name: string, args: unknown): { args: unknown; key?: string } {
+function withIdempotencyKey(name: string, args: unknown): { args: unknown; key?: string; generated?: boolean } {
   if (!IDEMPOTENT_WRITE_TOOLS.has(name)) return { args };
   let row: Record<string, unknown> | null = null;
   if (typeof args === "string") {
@@ -263,7 +263,26 @@ function withIdempotencyKey(name: string, args: unknown): { args: unknown; key?:
   const given = row.idempotencyKey;
   if (typeof given === "string" && given !== "") return { args: row, key: given };
   const key = randomUUID();
-  return { args: { ...row, idempotencyKey: key }, key };
+  return { args: { ...row, idempotencyKey: key }, key, generated: true };
+}
+
+/** The platform's info warning for a key on an update (plan-card/adapter.ts). The AI never sent the key the connector made, so it is noise. */
+const KEY_NOT_USED_CODE = "IDEMPOTENCY_KEY_NOT_USED";
+
+/** The answer without that one warning. Any other warning, and any answer that is not a JSON report with a `warnings` list, is returned as it was. */
+function withoutKeyNotUsedWarning(result: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    return result;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return result;
+  const row = parsed as { warnings?: unknown };
+  if (!Array.isArray(row.warnings)) return result;
+  const kept = row.warnings.filter((w) => !(w && typeof w === "object" && (w as { code?: unknown }).code === KEY_NOT_USED_CODE));
+  if (kept.length === row.warnings.length) return result;
+  return JSON.stringify({ ...row, warnings: kept });
 }
 
 /** The sentence for a platform that is down or restarting. `what` is the HTTP status or the network error. */
@@ -2667,6 +2686,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
   let conceptBrakeReason: ConceptPauseReason = "rounds";
   /** Calls that were sent and got no answer, by callId (newest last). Held in memory only. */
   const unknownCalls = new Map<string, UnknownCall>();
+  /** Keys this connector made (not the caller). A call_status re-send carries the same key, so it is told apart here. */
+  const generatedKeys = new Set<string>();
   const uploadCwd = opts.cwd ?? process.cwd();
   const uploadRoots = [...(opts.uploadRoots ?? [])];
   const contextUrl = `${origin}/base/ai/claude-code/context`;
@@ -3409,6 +3430,11 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     // One key and one callId per logical call. Every retry in postPlatform, and a re-send on a new turn, carries the same body.
     const keyed = withIdempotencyKey(name, args);
     const sendArgs = keyed.args;
+    if (keyed.generated && keyed.key) {
+      if (generatedKeys.size >= 500) generatedKeys.clear();
+      generatedKeys.add(keyed.key);
+    }
+    const ownKey = keyed.key !== undefined && generatedKeys.has(keyed.key);
     const callId = givenCallId ?? randomUUID();
     const sentAt = new Date().toISOString();
     let res: { status: number; body: unknown };
@@ -3442,7 +3468,8 @@ export function startConnector(opts: StartOptions): ConnectorSession {
     if (body.hop && typeof body.hop === "object") {
       return runHop(body.hop, signal, sentTurn);
     }
-    const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+    const rawResult = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+    const result = ownKey ? withoutKeyNotUsedWarning(rawResult) : rawResult;
     // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
     // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
     // Not re-sent: Agent.Concept or ask_agent_concept (their mint limits are per turn), an unreadable role, or a second refusal.
