@@ -17,3 +17,6 @@ export interface UploadedPicture {
   /** A sentence when the picture is stored but its small copy is not linked, else null. */
   warning: string | null;
 }
+
+/** What a person did to a record's picture in an edit: set a new one (prepared), or take it away. No change at all is `undefined`. */
+export type PictureChange = { kind: "set"; prepared: PreparedPicture } | { kind: "remove" };

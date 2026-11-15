@@ -27,7 +27,8 @@ export interface PictureFlowDeps<R, F> {
   endFiles(master: string, copies: readonly string[]): Promise<string[]>;
   /** The stored copies of a master other than the master itself. */
   copiesOf(master: string): readonly string[];
-  deleteRecord(rec: R): Promise<void>;
+  /** Deletes the record. The flow passes `o` only when `deleteWithPicture` was given an `ifMatch` that answered a tag; with none it calls `deleteRecord(rec)` as before. */
+  deleteRecord(rec: R, o?: { ifMatch: string }): Promise<void>;
   /** The picture address the record holds, or null. */
   pictureOf(rec: R): string | null;
 }
@@ -128,13 +129,38 @@ export async function removePicture<R, F>(d: PictureFlowDeps<R, F>, rec: R): Pro
   return { record: linked, notice: (await endQuietly(d, old, oldCopies)) ? null : FILES_NOT_REMOVED };
 }
 
+/** What `deleteWithPicture` may be told. */
+export interface DeleteOptions<R> {
+  /**
+   * The version tag the delete must match (sent as If-Match), or a function that answers it from the record (null: none). Default: none, an
+   * unconditional delete.
+   */
+  ifMatch?: string | ((rec: R) => string | null);
+  /**
+   * "files-first" (default): end the files, then delete the record, so a record that moved on still goes. "record-first": delete the record
+   * (with If-Match when given) and only then end the files; a refused delete (a 412 included) throws before a file is touched.
+   */
+  order?: "files-first" | "record-first";
+}
+
 /**
- * Ends the picture's files FIRST, then deletes the record. Files that cannot be ended give the notice FILES_NOT_REMOVED and the record is
- * still deleted. A failure of `deleteRecord` is thrown.
+ * Deletes the record and ends the picture's files.
+ * "files-first" (default, as in 0.1.x): ends the files FIRST, then deletes the record, with no If-Match unless `o.ifMatch` gives one. Files that
+ * cannot be ended give the notice FILES_NOT_REMOVED and the record is still deleted. A failure of `deleteRecord` is thrown.
+ * "record-first": deletes the record FIRST (with `If-Match` when `o.ifMatch` gives a tag), then ends the files. A refused delete (a 412 because
+ * the record changed, or any other error) is thrown as it is, and no file has been touched, so the record keeps its picture. Files that cannot
+ * be ended after the record went give the notice FILES_NOT_REMOVED.
  */
-export async function deleteWithPicture<R, F>(d: PictureFlowDeps<R, F>, rec: R): Promise<{ notice: string | null }> {
+export async function deleteWithPicture<R, F>(d: PictureFlowDeps<R, F>, rec: R, o: DeleteOptions<R> = {}): Promise<{ notice: string | null }> {
+  const tag = typeof o.ifMatch === "function" ? o.ifMatch(rec) : (o.ifMatch ?? null);
+  const del = () => (tag ? d.deleteRecord(rec, { ifMatch: tag }) : d.deleteRecord(rec));
   const old = d.pictureOf(rec);
+  if (o.order === "record-first") {
+    const copies = old ? d.copiesOf(old) : [];
+    await del();
+    return { notice: old && !(await endQuietly(d, old, copies)) ? FILES_NOT_REMOVED : null };
+  }
   const notice = old && !(await endQuietly(d, old, d.copiesOf(old))) ? FILES_NOT_REMOVED : null;
-  await d.deleteRecord(rec);
+  await del();
   return { notice };
 }

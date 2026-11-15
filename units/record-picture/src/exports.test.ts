@@ -8,9 +8,9 @@ describe("the package's exports", () => {
     expect(Object.keys(unit).sort()).toEqual(["FILES_NOT_REMOVED", "PictureLinkNotKeptError", "PictureSaveError", "addWithPicture", "deleteWithPicture", "linkPicture", "pictureLinkPatch", "pictureOfFacts", "removePicture", "replacePicture"].sort());
   });
   it('"./prepare" is exactly these values', () => {
-    expect(Object.keys(prepare).sort()).toEqual(["checkPictureFile", "preparePicture"]);
+    expect(Object.keys(prepare).sort()).toEqual(["checkPictureFile", "pickPicture", "preparePicture"]);
   });
   it('"./vault" is exactly these values', () => {
-    expect(Object.keys(vault).sort()).toEqual(["createVaultPictures", "vaultPictureFlowDeps", "vaultPictureService"]);
+    expect(Object.keys(vault).sort()).toEqual(["createVaultPictures", "recordPictureListApi", "vaultPictureFlowDeps", "vaultPictureService"]);
   });
 });

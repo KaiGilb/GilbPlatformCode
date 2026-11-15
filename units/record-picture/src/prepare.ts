@@ -1,4 +1,5 @@
 import { pictureFiles } from "@kaigilb/gilbplatformcode-picture-pick";
+import { pictureFailure } from "@kaigilb/gilbplatformcode-picture-errors";
 import { makePictureSet } from "@kaigilb/gilbplatformcode-picture-shrink";
 import type { PreparedPicture } from "./types";
 
@@ -50,4 +51,38 @@ export async function preparePicture(
     },
   });
   return { thumb: set.thumb, screen: set.screen, previewUrl: URL.createObjectURL(set.screen) };
+}
+
+/** What {@link pickPicture} answers: the prepared picture (its `previewUrl` is the caller's to revoke), or ONE plain sentence for the person. */
+export type PickResult = { ok: true; prepared: PreparedPicture; previewUrl: string } | { ok: false; sentence: string };
+
+/**
+ * The pick step: the first file picked, `checkPictureFile`, `prepare` (default `preparePicture`), and a preview URL. A file that fails the
+ * check or cannot be prepared is `{ ok: false, sentence }`: the check's own sentence, or picture-errors' sentence and what to do next for a
+ * failure of `prepare`. No file is `null`. When `isAlive()` is false by the time the picture is prepared (the screen went away) the preview is
+ * revoked at once and the answer is `null`.
+ *
+ * @param files what the picker gave (picture-pick's `onPick`)
+ * @param o `prepare`, `maxBytes` and `words` for the check, `failureWords` (picture-errors' words), `isAlive`
+ */
+export async function pickPicture(
+  files: readonly File[],
+  o: { prepare?: (file: File) => Promise<PreparedPicture>; maxBytes?: number; words?: PictureWords; failureWords?: Parameters<typeof pictureFailure>[1]; isAlive?: () => boolean } = {},
+): Promise<PickResult | null> {
+  const file = files[0];
+  if (!file) return null;
+  const bad = checkPictureFile(file, { ...(o.maxBytes !== undefined ? { maxBytes: o.maxBytes } : {}), ...(o.words ? { words: o.words } : {}) });
+  if (bad) return { ok: false, sentence: bad };
+  let prepared: PreparedPicture;
+  try {
+    prepared = await (o.prepare ?? preparePicture)(file);
+  } catch (e) {
+    const f = pictureFailure(e, o.failureWords);
+    return { ok: false, sentence: `${f.sentence} ${f.next}` };
+  }
+  if (o.isAlive && !o.isAlive()) {
+    URL.revokeObjectURL(prepared.previewUrl);
+    return null;
+  }
+  return { ok: true, prepared, previewUrl: prepared.previewUrl };
 }

@@ -15,6 +15,7 @@ An `<img src>` cannot carry the request signature, so the picture is fetched wit
 - `enablePictureDeviceCache({ name })` / `disablePictureDeviceCache()`: off until you call it. When on, and where `caches` (Cache Storage) exists, `pictureObjectUrl` first looks in `caches.open(name)` for the request URL `<vaultOrigin>/files/<encoded id>`; a hit makes the object URL from the stored blob with no network call; a miss fetches as before and, when the read is ok, stores a copy (`cache.put(url, res.clone())`) before making the object URL. A storage failure (quota, private mode) is swallowed with one `console.warn` and the picture still shows. Without `caches`, enabling does nothing. `disablePictureDeviceCache()` stops using it but keeps the stored pictures. **`name` must be per person**, for example `signed-picture:<hash of the principal>`, so a second person on the same browser never sees the first one's pictures.
 - `startPictureSession({ principal, deviceCachePrefix, queueLimit? })` (since 0.2.1): the start-up at sign-in. It sets the queue limit (default 6), turns on the device cache named `deviceCacheNameFor(deviceCachePrefix, principal)`, and answers the sign-out step: `await stop()` frees every picture URL, deletes that device cache and turns the cache off (safe to call twice). An empty `principal` throws; so does a `queueLimit` that is not a whole number of at least 1 (nothing is changed then).
 - `deviceCacheNameFor(prefix, principal)` (since 0.2.1): `<prefix>:<64-bit hash of the principal>`: stable for one person, different for another, and the principal itself is not in the name. The device cache must be per person: a name shared by two people would show one the other's pictures.
+- `createPictureSession({ deviceCachePrefix, service, vaultId, onCopies, queueLimit? })` (since 0.2.3): the per-person session an app wires by hand around `startPictureSession`. It answers `{ setPrincipal(principal | null), refresh(), stop() }`. `setPrincipal(p)` starts `p`'s session (device cache, queue limit) and lists the vault's copy map (`service.fresh(vaultId)` then `service.copies(vaultId)`, handed to `onCopies`); the same principal again does nothing; a different principal first ends the old person's session (URLs freed, device cache deleted, `service.forget()`), then starts the new one; `null` or "" is sign-out. `refresh()` lists the map again after a picture changed. `stop()` is sign-out and is safe twice. A copy map that arrives after a stop or a switch is dropped. `service` is record-picture's `vaultPictureService(...)` (or any object with `fresh`, `copies`, `forget`); it is a structural type, so there is no new peer.
 - `queuePicture(job)`: runs `job` when fewer than the limit (4) are running, in the order asked; a job that rejects frees its slot.
 - `setPictureQueueLimit(n)`: sets the limit. `n` must be a whole number of at least 1, else `RangeError`. Raising it starts waiting jobs at once; lowering it lets the running ones finish. The plan's choice for apps is 6.
 - `SignedImage({ fileUri, vaultOrigin, previewUrl?, placeholder?, className?, alt? })`: a `div` (class `thumb` unless you give `className`) that fetches only when it is within 200 px of the screen (an `IntersectionObserver` with `rootMargin: "200px"`, or at once where there is none), through `queuePicture`. `previewUrl` (a local picture) wins and nothing is fetched. It shows `placeholder` until the picture arrives, then an `<img>` with `alt` (default empty).
@@ -114,6 +115,19 @@ const { bytes, type } = await pictureBytes(masterUri, vaultOrigin); // was maste
 download(new Blob([bytes], { type }), "picture.jpg");
 for (const uri of [master, ...copies]) forgetPicture(uri);          // was revokeSet(master, copies)
 ```
+
+## Per-person session (0.2.3)
+
+```tsx
+const session = useMemo(() => createPictureSession({ deviceCachePrefix: "myapp", service: pictures, vaultId, onCopies: setCopies }), [pictures, vaultId]);
+useEffect(() => { void session.setPrincipal(principal); }, [principal, session]);   // a switch forgets the old person
+const afterSave = () => session.refresh();
+const signOut = async () => { await session.stop(); /* then the app's own sign-out */ };
+```
+
+## Changes in 0.2.3
+
+Additive: `createPictureSession` and the types `PictureSession`, `PictureSessionOptions`, `PictureSessionService` (`src/pictureSession.ts`). No new peer. 6 new tests (`src/createPictureSession.test.ts`): switching principal forgets the old person, sign-out forgets, the same principal is a no-op, a late copy map is dropped, an empty principal.
 
 ## Changes in 0.2.2
 

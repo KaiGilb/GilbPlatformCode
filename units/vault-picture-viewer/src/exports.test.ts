@@ -3,6 +3,6 @@ import * as unit from "./index";
 
 describe("the package's exports", () => {
   it("are exactly these values", () => {
-    expect(Object.keys(unit).sort()).toEqual(["useVaultPictureViewer"]);
+    expect(Object.keys(unit).sort()).toEqual(["PictureThumb", "useVaultPictureViewer"]);
   });
 });
