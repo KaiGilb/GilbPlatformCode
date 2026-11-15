@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-switcher",
   "package": "@kaigilb/gilbplatformcode-vault-switcher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "A chip that shows the open vault and, on a tap, lists the vaults the person reaches, own first and shared ones labelled, and hands back the one they pick.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -10,7 +10,8 @@
     "files": []
   },
   "namedChanges": [
-    "0.1.1. new, additive: `useVaultChoice({ listed, ownVaultId, principal, appKey, represents?, store? })`, the state behind the chip (options, current, switchTo, markGone, canWrite; the choice kept per person and app); peer vault-list is now ^0.1.4 (it uses vaultsOfType, rememberVault, rememberedVault, forgetVault)"
+    "0.1.1. new, additive: `useVaultChoice({ listed, ownVaultId, principal, appKey, represents?, store? })`, the state behind the chip (options, current, switchTo, markGone, canWrite; the choice kept per person and app); peer vault-list is now ^0.1.4 (it uses vaultsOfType, rememberVault, rememberedVault, forgetVault)",
+    "0.1.2 (additive): `useVaultChoice` takes `load?` and answers `refresh()`: it reads the vault list again and shows it without a remount. The kept choice is now read from the list as it stands, not once at mount, so a vault kept from last time opens when a later list carries it. A new `listed` array already updated `options`; that is unchanged."
   ],
   "newFiles": [
     "src/index.ts",
@@ -25,8 +26,9 @@
     "src/exports.test.ts",
     "src/hostAgnostic.test.ts",
     "test/setup.ts",
-    "scripts/check-host-agnostic.mjs"
+    "scripts/check-host-agnostic.mjs",
+    "src/refresh.test.tsx"
   ],
   "host": [],
-  "library": {"admitted": true, "tag": "t:Vault.switcher", "title": "Vault switcher (a chip with the open vault and a sheet to pick another)", "note": "A chip with the open vault's name; a tap opens a sheet listing the vaults the person reaches, own first, shared and view-only ones labelled, the open one marked, and calls onPick with the chosen vault. React, on modal-sheet and vault-list (vaultChoices, choiceLine). It lists with the load you pass; the list itself is reachable-vaults or signin's listVaults. Also found as: vault chooser; choose a vault; pick another vault; switch between shared vaults; switch vault; several vaults; shared with me; vault picker. The hook useVaultChoice({ listed, ownVaultId, principal, appKey, represents?, store? }) holds the choice for you: options (own first), current, switchTo, markGone and canWrite, remembered per person and app, a gone vault dropped."}
+  "library": {"admitted": true, "tag": "t:Vault.switcher", "title": "Vault switcher (a chip with the open vault and a sheet to pick another)", "note": "A chip with the open vault's name; a tap opens a sheet listing the vaults the person reaches, own first, shared and view-only ones labelled, the open one marked, and calls onPick with the chosen vault. React, on modal-sheet and vault-list (vaultChoices, choiceLine). It lists with the load you pass; the list itself is reachable-vaults or signin's listVaults. Refresh vault list: `refresh()` reads the vault list again (with `load`) and a new share or a vanished vault shows without a remount. Also found as: vault chooser; choose a vault; pick another vault; switch between shared vaults; switch vault; several vaults; shared with me; vault picker. The hook useVaultChoice({ listed, ownVaultId, principal, appKey, represents?, store? }) holds the choice for you: options (own first), current, switchTo, markGone and canWrite, remembered per person and app, a gone vault dropped."}
 }

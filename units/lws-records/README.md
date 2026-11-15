@@ -33,6 +33,17 @@ The unit holds two pieces of module state, `reads` (the vault `@context`, read o
 - Not a cache. It remembers a vault's `@context` and datom log (the two caches above) and nothing else; every record read is a request.
 - Not a sign-in. It asks the auth seam for headers.
 
+### Changes in 0.4.2
+
+Additive. `mergePatch(before, after, { names?, toFact? })` (new file `src/mergePatch.ts`, exported from the root): the body for `patchRecord` that turns `before` into `after`. A changed field is given as its new value, a field that was set and is now missing, `undefined` or `null` is `null` (the platform deletes the fact), an unchanged field is left out, so `{}` means no request is needed. Values are compared by what they hold (objects in any key order, arrays by position) and a changed object or array is sent whole, because a fact's value replaces the stored one. `names` writes a field under another fact name (`{ movement: "watchMovement" }`), `toFact` converts a set value (a link: `(id) => ({ "@id": iri(id) })`); a cleared field is `null` whatever `toFact` is. `RecordForbiddenError` now has `status`, always `403` (the class and its message are otherwise unchanged); refusal-detail's `isForbidden` reads it. Tests: `src/mergePatch.test.ts` (10) and the export list.
+
+```ts
+import { mergePatch, patchRecord } from "@kaigilb/gilbplatformcode-lws-records";
+
+const patch = mergePatch(stored, edited, { names: { movement: "watchMovement" }, toFact: { movement: (m) => ({ "@id": movementIri(m) }) } });
+if (Object.keys(patch).length) await patchRecord(id, patch, entity, undefined, { ifMatch });
+```
+
 ### Changes in 0.4.1
 
 `createRecord` also answers `entity`, optional in the type, the new record's absolute entity URI on the vault namespace's host and segment (`/base/e/<id>` or `/vault/e/<id>`). The id still comes from the `Location` header when the answer has one, otherwise from the body's `@id`. `id` and `etag` are unchanged. A caller no longer has to read the record back to learn the entity URI.

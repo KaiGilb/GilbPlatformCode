@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-switcher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "A chip that shows the open vault and, on a tap, lists the vaults the person reaches, own first and shared ones labelled, and hands back the one they pick.",

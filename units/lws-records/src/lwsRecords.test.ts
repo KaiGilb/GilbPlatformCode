@@ -20,6 +20,7 @@ describe("lws-records exports", () => {
       "idFromResourceUrl",
       "isFactStringFaithful",
       "loadVaultContext",
+      "mergePatch",
       "namesNoStoredFact",
       "omittableAssembledKeys",
       "parseServerErrorBody",

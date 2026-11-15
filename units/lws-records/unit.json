@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/lws-records",
   "package": "@kaigilb/gilbplatformcode-lws-records",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "purpose": "Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -490,10 +490,13 @@
     "`authHeader` (lines 245-246) takes an optional `method` and passes it to `bearerHeaderFor`, and `patchRecord` (line 984) calls `authHeader(reqUrl, \"PATCH\")`",
     "comments that name a host are reworded, and `BASE_ORIGIN` in a comment reads `baseOrigin()`; no code changed",
     "in `records.ts` (0.3.0) the import from `record-types` gains `typeUriForVaultNamespace` (used by `retypeRecord`); `retypeRecord` (line 922) calls `authHeader(reqUrl, \"PUT\")` and `deleteRecord` (line 1017) calls `authHeader(reqUrl, \"DELETE\")`, so the credential is bound to the method (`authHeader` already takes the method, 0.1.0)",
-    "in `records.ts` (0.4.0) `idFromResourceUrl` (line 257), `throwForCreateStatus` (line 241) and `toWireFacts` (line 360) are `export`ed; they were private. No token of their bodies changed, and nothing else in the file"
+    "in `records.ts` (0.4.0) `idFromResourceUrl` (line 257), `throwForCreateStatus` (line 241) and `toWireFacts` (line 360) are `export`ed; they were private. No token of their bodies changed, and nothing else in the file",
+    "0.4.2 (additive): `src/mergePatch.ts`, new code: `mergePatch(before, after, { names?, toFact? })`, the JSON Merge Patch from one version of a record's fields to another (changed fields as given, cleared fields as `null`, unchanged left out). `RecordForbiddenError` gains `readonly status = 403` (in `records.ts`), so a caller can tell a refusal by `err.status` without the class."
   ],
   "newFiles": [
-    "src/index.ts"
+    "src/index.ts",
+    "src/mergePatch.ts",
+    "src/mergePatch.test.ts"
   ],
   "host": [],
   "library": {

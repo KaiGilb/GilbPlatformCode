@@ -7,7 +7,7 @@ import * as describeEntry from "./describe";
 
 describe("the package's exports", () => {
   it("are exactly these values", () => {
-    expect(Object.keys(unit).sort()).toEqual(["AccessDeniedScreen", "NoAccessError", "VaultBusyError", "readRefusal", "refusalLine"].sort());
+    expect(Object.keys(unit).sort()).toEqual(["AccessDeniedScreen", "NoAccessError", "VaultBusyError", "isForbidden", "readRefusal", "refusalLine"].sort());
   });
   it('"./describe" is exactly these values, and the root entry does not reach it', () => {
     expect(Object.keys(describeEntry).sort()).toEqual(["DESCRIBE_WORDS", "describeError"]);

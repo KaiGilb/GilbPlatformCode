@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-optimistic-records",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A list of records that shows an add, an edit and a delete at once, rolls a failed write back, and keeps a delete waiting for an Undo before it is sent.",

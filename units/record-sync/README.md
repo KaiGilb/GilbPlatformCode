@@ -12,6 +12,7 @@ Plain functions and types, no React, no credential. The platform serves the list
 - `syncRecordChanges(platform, vaultId, typeNames, state, { maxPages? }?)`: the live list's changes since `state.live` (full rows, oldest first), then the ended list's deletes since `state.ended`. Answers `{ kind: "changes", rows, ended, state, complete, pages }`, or `null` when the caller must read its list again (a platform without the feed, or a position the platform no longer takes).
 - `walkRecordPages(platform, vaultId, typeNames, { until?, maxRows?, maxPages? }?)`: the whole typed list in full rows (`include=body&limit=100`), newest first, stepping by the page's `nextOffset` until the list says `complete`. Answers a `RecordWalk` (`{ rows, complete, pages }`). An empty `typeNames` is refused. Added in 0.3.0.
 - `completeCopy(platform, vaultId, typeName, { filter?, maxPages?, partialOk?, pageLimit?, onPage? }?)`: a complete, consistent copy of one type with bodies, and the position to continue from. `since=head` first (kept), the newest-first walk by `after=<nextCursor>` (`include=body&limit=200`, no `offset`), then ONE `since=<kept head>` pass that merges what was written or changed meanwhile (changed rows go to the top; a row that no longer holds `filter` leaves). Answers `{ records, cursor, truncated?, reason? }`; `truncated` is set by the page cap (`maxPages`, also a bound of `maxPages` x 100 rows) or, with `partialOk`, by a failure after rows were read. A platform that refuses `after=` is walked by offset; a refused kept head (`400 since_cursor_invalid`) restarts the pass from `start` once. Throws `PlatformLacks` (a `PlatformError`, status 400) when the platform lacks `include=body` or `since=`, and `RecordListError` on any other non-200. Ended records are not tracked. `onPage(page)` is told each walk page as it is read: `{ records, pages, walkDone }`, where `records` is every row of the walk so far, newest first, as a fresh array. It is an early look at the walk, not the copy: it is not merged with the `since` pass and is never told about it; it adds no request and changes none, and an error it throws is ignored. After a walk restarts by offset it stays silent until the new walk holds as many rows as it last told, so it never tells a shorter list. `walkDone` is true on the walk's last page; a walk cut by the page cap never says it. Added in 0.4.0 (`onPage` and `CompletePage` in 0.4.1), reached as `import { completeCopy, PlatformLacks } from "@kaigilb/gilbplatformcode-record-sync/complete-copy"` (a subpath, so the root export list of 0.3.0 is unchanged).
+- `streamCopy(platform, vaultId, typeName, { map, onDone?, ...completeCopyOptions })` (since 0.4.2): a list loader `(emit?) => Promise<T[]>` over `completeCopy`. With `emit`, each walk page's NEW rows are passed mapped, newest first, while the walk goes on; the promise answers every row of the finished copy, mapped (`map` answers `null` to leave a row out). `onDone(copy)` says `truncated` and `reason` (use it with `partialOk`). It sends exactly `completeCopy`'s requests. Reached as `import { streamCopy } from "@kaigilb/gilbplatformcode-record-sync/stream-copy"`; the root export list is unchanged.
 - `RECORD_PAGE_LIMIT` (100): the most rows one full-row page carries. `RECORD_WALK_MAX_PAGES` (500): the most requests one walk sends by default. Added in 0.3.0.
 - `RecordListError`: a list that answered other than 200 (`status`, and `code`, the platform's error name such as `since_cursor_invalid`).
 - The platform client this talks through: `PlatformClient` (`{ origin, fetch }`), `PlatformFetch`, `PlatformError` (`status` 0 means not reached), `PlatformAnswer`, `request(platform, method, url, body?, headers?, cache?, bound?)`, `RequestBound` (`signal`, `timeoutMs`), `routeUrl(platform, path)`, `vaultSegment(vaultId)`, `locate(platform, iri)` (the IRI's own path and query, on the platform's origin; a `PlatformError` of status 0 when the IRI is not an address), `retryAfterMs(headers, now?)` (what a `Retry-After` header asks for, in milliseconds, or `null`), `isAbsoluteIri(value)` (a shape check for an absolute http(s) IRI), `originHostMismatch(platform, vaultId)` (why the client's origin cannot write in that vault, or `null`; the origin's host and port must be the vault's), and `expectStatus(answer, method, ok)`: the answer itself when its status is one of `ok`, else a `PlatformError` that says what was asked and what came back (`<METHOD> <url> answered <status>: <first 300 characters of the body>`).
@@ -91,6 +92,19 @@ if (sync) {
 }
 ```
 
+### Stream a list into a screen
+
+```ts
+import { streamCopy } from "@kaigilb/gilbplatformcode-record-sync/stream-copy";
+import { useRecordList } from "@kaigilb/gilbplatformcode-optimistic-records";
+
+const list = streamCopy(platform, vaultId, "Wristwatch", { map: (row) => watchOfRow(row), partialOk: true, onDone: (c) => setPartial(!!c.truncated) });
+const { items, loading } = useRecordList({ list, create, update, remove, key: "id", sort: newestFirst });
+// the first 200 watches show while the rest is read; `items` ends as the consistent copy
+```
+
+`platform` is `{ origin, fetch }`; with the signed fetch of `platform-fetch` that is `{ origin: vaultOriginOf(vaultId), fetch: platformFetch() }`.
+
 ## What the host must supply
 
 - `platform.fetch`: the host app's AUTHENTICATED fetch, at the vault's own origin (`platform.origin`). It adds the token and, where the app uses one, the DPoP proof. In the Plan card it is `lwsReadFetch` of `lws-vault-sets`, which signs through `lws-session-bridge`. Every request here is a `GET`.
@@ -122,6 +136,10 @@ Dynamic imports in the files taken: none. The tracer does not follow `import()`,
 - "`code` is a field of the body." The platform sends the error name as the body's `error`; `code` is that, or `null` when the body is not JSON or names none.
 
 ## Where it came from
+
+### Changes in 0.4.2
+
+Additive: `streamCopy` and `StreamCopyOptions`, in the new file `src/streamCopy.ts`, reached as the subpath `./stream-copy` (the root export list and `completeCopy` are unchanged). It turns `completeCopy`'s `onPage` into the `emit` of optimistic-records' `useRecordList`. A PATCH because record-sync is a hub unit (RuleGhsHubUnitChange). Tests: `src/streamCopy.test.ts` (7; 125 in the unit).
 
 ### Changes in 0.4.1
 

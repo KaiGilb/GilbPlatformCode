@@ -36,3 +36,16 @@ export async function readRefusal(method: string, url: string, res: Response): P
   const sentence = serverErrorText(res.status, body, "Refused");
   return { method, path: new URL(url).pathname.replace(/%2F/gi, "%2F"), status: res.status, sentence };
 }
+
+/**
+ * True when the platform refused this request as forbidden (403): a `NoAccessError`, or any error that carries `status` 403
+ * (a `PlatformError` or `RecordListError` from record-sync, a `RecordForbiddenError` from lws-records, a `RefusalDetail`), or whose
+ * `name` is `NoAccessError` or `RecordForbiddenError` (an error from another copy of those classes). It matches by `status` and `name`,
+ * not by importing those units. A 401, 404, 412 or 5xx is not forbidden, and neither is anything that is not an object.
+ */
+export function isForbidden(err: unknown): boolean {
+  if (err instanceof NoAccessError) return true;
+  if (typeof err !== "object" || err === null) return false;
+  const { name, status } = err as { name?: unknown; status?: unknown };
+  return status === 403 || name === "NoAccessError" || name === "RecordForbiddenError";
+}
