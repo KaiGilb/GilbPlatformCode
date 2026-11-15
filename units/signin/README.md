@@ -226,7 +226,11 @@ const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "Pictu
 
 ### Local development
 
-Any free localhost port works with no setup. Run your dev server on a port of your choice (allocate it through the dev-ports rule), and the app signs in with the email code. No cookie is sent: the platform admits a local app on any localhost port without credentials, and the token is already in the verify-code answer. Ports 5197 and 5251 are Gilb's own rigs (first-party, with cookies); do not take them for your app.
+Any free localhost port works with no setup, for a third-party app too. Run your dev server on a port of your choice (allocate it through the dev-ports rule), and the app signs in with the email code. Checked against production on 2026-11-15 with CORS preflights only: `http://localhost:5333` is admitted by both the sign-in host and a user-vault host, and no `Access-Control-Allow-Credentials` comes back. So no cookie is sent, and the token is already in the verify-code answer.
+
+Ports 5197 and 5251 are Gilb's own rigs. Production adds the credentials header (cookies) for those two only. A third-party developer does not need them: use any other port, and the app signs in without a cookie. Do not take 5197 or 5251 for your app.
+
+Only localhost is admitted. A real phone on your LAN, opening your build at `http://192.168.x.x:<port>`, cannot sign in to a local build today. Production does not admit that origin, and no workaround is promised.
 
 `credentialsForPageOrigin(location.origin)` makes the decision: "include" on the platform's own pages and on `http://localhost:5197` / `:5251` (also 127.0.0.1 and [::1]), "omit" on every other page. Pass `credentials: "include" | "omit"` to `SessionCredential`, `makeSignInAuth` or `useLiveStart` to override it. The renewal call is always "omit".
 
