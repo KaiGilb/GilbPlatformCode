@@ -51,6 +51,8 @@ const rows = vaults.options.map((o) => ({ vaultId: o.vaultId, name: o.label, mod
 - `represents` (a type address) keeps only the vaults of that type, compared by its bare name because the platform answers a type under its own host; a vault that says nothing about itself (a landing vault) is left out. Omit it to offer every listed vault.
 - `options` are vault-list's `vaultChoices`: `{ vaultId, label, yours, viewOnly }`, the own vault first. `current` is the last one chosen, else the own vault. `switchTo(id)` opens one of `options` and keeps it (an id that is not offered is ignored). `canWrite` is true for the own vault and for a vault that lists `write`.
 - `markGone(id)`: call it when the platform refuses the open vault (403) so the person no longer sees it; it leaves `options` until the page loads again and the kept choice is forgotten. The own vault is never dropped. After it `current` is the own vault.
+- `load` and `refresh()` (since 0.1.2): pass `load` (the call that gave you `listed`) and `refresh()` reads the list again and shows it without a remount: a vault shared since the page opened appears in `options`, one that is no longer listed leaves it (the open one falls back to the own vault). It answers the `options` now offered, so a chip can use it as its list: `load={async () => (await vaults.refresh()).map(toRow)}`. It throws if `load` fails and leaves the list as it was; a newer `refresh` or a new `listed` array wins over an older answer; a vault marked gone stays out until the page loads again. Without `load` it reads nothing. A new `listed` array always updated `options` (it is read on every render); `refresh` is for an app that has no list to pass in again.
+- The kept choice is read from the list as it stands, so a vault opened last time is opened as soon as the list carries it, also when that list arrives after the first render. A vault the person picked is never replaced by it.
 - A real row is a `VaultListItem`, so the `rows` above are the three fields the sheet reads. Run in `src/recipe.test.tsx`.
 
 ## Styling
@@ -83,10 +85,14 @@ None. The component keeps its state per mount.
 
 Written for this repository in EESpeed round 7 (batch U3b) from PictureRecords run 7 `app/src/components/VaultChip.tsx` and `app/src/platform/vaultChoices.ts`, and run 6 `app/src/VaultChooser.tsx`. Base commit `19fb34ba7195055fbd0ef13e376d789756e2c9f6` of `KaiGilb/GilbPlatformCode`. Changes from run 7: the rows come from `vault-list`'s `vaultChoices` and `choiceLine`; `onPick` gets the vault as listed; the open vault is marked and picking it does not call `onPick`; a failed load shows a fixed sentence and Try again, not the raw error message; slow loads are numbered; the dialog is `modal-sheet` (focus kept, Tab trapped, scroll locked).
 
+## Changes in 0.1.2
+
+Additive: `load` (option) and `refresh()` (result) on `useVaultChoice`; the kept choice no longer reads the list only once, at mount. Test: `src/refresh.test.tsx` (11). No new peer.
+
 ## Changes in 0.1.1
 
 Additive: `useVaultChoice` and the types `ListedVaultRow`, `UseVaultChoiceOptions`, `VaultChoiceState`. The peer `vault-list` is now ^0.1.4 (the hook uses `vaultsOfType`, `rememberVault`, `rememberedVault` and `forgetVault`). No new peer. The run-9 PictureRecords app wrote this by hand in `vaults.ts` and `VaultHost.tsx` (135 lines) and never found the switcher.
 
 ## Tests
 
-`npm test` runs `useVaultChoice.test.tsx` and `recipe.test.tsx` (the hook, and the README recipe run), `VaultSwitcher.test.tsx` (jsdom: load per open, order and second lines, loading, error and retry, empty, pick, aria-current, Escape and focus, stale and late loads, words), `stylesheet.test.ts`, `exports.test.ts` and `hostAgnostic.test.ts`.
+`npm test` runs `useVaultChoice.test.tsx`, `refresh.test.tsx` (a list that changes after start, `refresh`, a late kept choice) and `recipe.test.tsx` (the hook, and the README recipe run), `VaultSwitcher.test.tsx` (jsdom: load per open, order and second lines, loading, error and retry, empty, pick, aria-current, Escape and focus, stale and late loads, words), `stylesheet.test.ts`, `exports.test.ts` and `hostAgnostic.test.ts`.

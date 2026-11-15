@@ -27,7 +27,7 @@ const { items, loading, error, add, edit, del, undo, pending, flushPending, relo
 
 Options:
 
-- `list(): Promise<readonly T[]>`, `create(draft): Promise<T>`, `update(item, patch): Promise<T>`, `remove(item): Promise<void>`: yours. `create` and `update` answer the record as the store now holds it.
+- `list(emit?): Promise<readonly T[]>`, `create(draft): Promise<T>`, `update(item, patch): Promise<T>`, `remove(item): Promise<void>`: yours. `create` and `update` answer the record as the store now holds it. A loader that reads in pages may call `emit(rows)` once per page: see "Streamed pages" (since 0.1.1).
 - `key`: the NAME of the id field (`"id"`), not a function.
 - `undoMs` (default `10000`), `sort(a, b)` (omitted: the order `list` gave, new records last).
 - `onProblem(err, where)`: every failed load, add, edit or delete. `where` is `{ action: "load" }`, `{ action: "add" }`, `{ action: "edit", id }` or `{ action: "delete", id }`. It is called after the list is back to what the store holds. Turning `err` into a sentence is yours (see `refusal-detail/describe`).
@@ -44,6 +44,24 @@ Result:
 - `flushPending(): Promise<void>`: makes every waiting delete real now and resolves when all are done. It never rejects. Call it before a sign-out or a vault switch drops the credential.
 - `reload()`: reads the list again. A waiting delete stays hidden, an add or an edit still being written stays shown, and an older `reload` that answers late never wins over a newer one.
 - `isSaving(id)`: true while a write for that id (a temporary id too) has not been answered. Use it to dim a row.
+
+## Streamed pages (since 0.1.1)
+
+A long list need not be waited for. If `list` takes the `emit` argument and calls `emit(rows)` as each page arrives, the hook shows the first page at once (`loading` is false from then on) and merges each later page:
+
+- a row that comes twice (a cumulative page, or a page that overlaps) shows once, by `key`;
+- an add or an edit still being written stays shown, and a page that arrives later is placed before an add that is not stored yet (set `sort` to fix the order, for example newest first);
+- a waiting delete stays hidden when its row streams in;
+- the promise `list` answers is still the whole, final list: it replaces what was shown, so a row the store no longer has goes, and an add made during the load is kept even when the final list was read before it was stored;
+- a page `emit`ted after the promise answered, or by an older `reload`, is ignored. If the load fails after pages arrived, they stay shown and `error` and `onProblem` tell it.
+
+A `list` that ignores `emit` and returns a promise works as before. With record-sync's `streamCopy` the loader is one line:
+
+```ts
+import { streamCopy } from "@kaigilb/gilbplatformcode-record-sync/stream-copy";
+
+useRecordList({ list: streamCopy(platform, vaultId, "Wristwatch", { map: watchOfRow }), create, update, remove, key: "id", sort: newestFirst });
+```
 
 ## Leaving
 
@@ -73,5 +91,7 @@ None. The state is per mount, in refs and React state.
 New code, written for EESpeed Round 9 (batch CB5) from the run-9 PictureRecords app's `src/records/useCameras.ts` (an optimistic add, edit and delete with an Undo bar). Repository `KaiGilb/GilbPlatformCode`, base commit `22ae1dfdc7e5ed84d5883664aa969612e03896b9`. Changes from `useCameras`: nothing is about cameras, pictures or `statedBy`; the temporary item, the sort, the problem report and the Undo wait are parameters; several deletes may wait together (`useCameras` made the first real when a second began); writes to one record go one after another from the last stored version; `onProblem` takes the raw error.
 
 ## Tests
+
+0.1.1 adds `src/streamedPages.test.tsx` (8): the first page before the last, dedupe, an add kept before and after it is stored and after the final answer, sort order, a waiting delete, late and older pages ignored, a promise-only loader, and a failure after pages.
 
 `npm test` (vitest, jsdom, fake timers): load and its failure, a late older reload; add (at once, swapped for the real record, failed write rolled back, two in flight, `optimisticItem`); edit (at once, rolled back, two quick edits one after the other, the first failing, ignored cases); delete and undo (default and set wait, undo, a refused delete, two quick deletes, ignored cases); `flushPending`, unmount, a hidden page, `flushOnHide: false`; `reload` with a waiting delete and an add in flight; the source names no kind of record and imports only React; the host-agnostic check with planted faults.

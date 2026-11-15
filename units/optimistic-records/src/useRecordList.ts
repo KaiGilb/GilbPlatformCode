@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type ProblemWhere = { action: "load" } | { action: "add" } | { action: "edit"; id: string } | { action: "delete"; id: string };
 
 export interface RecordListOptions<T, D = Partial<T>, P = Partial<T>> {
-  /** Reads the whole list. Called once on mount, and again on `reload()`. */
-  list(): Promise<readonly T[]>;
+  /**
+   * Reads the whole list. Called once on mount, and again on `reload()`.
+   * A loader that reads in pages may call `emit(rows)` for each page as it arrives (rows may be just the new page or everything so far): the
+   * first `emit` ends `loading` and shows those rows at once, later ones are merged in (a row seen twice shows once; an add, an edit or a
+   * waiting delete made meanwhile is kept). What the promise answers is still the whole, final list and replaces what was shown. A loader that
+   * ignores `emit` and only answers a promise works as before.
+   */
+  list(emit?: (rows: readonly T[]) => void): Promise<readonly T[]>;
   /** Writes a new record; answers it as the store now holds it (with its real id). */
   create(draft: D): Promise<T>;
   /** Writes a change to a record; answers the record as the store now holds it. Gets the last record the store answered, never an optimistic one. */
@@ -31,7 +37,7 @@ export interface RecordListOptions<T, D = Partial<T>, P = Partial<T>> {
 export interface RecordList<T, D = Partial<T>, P = Partial<T>> {
   /** The records to show: an add at once, an edit at once, a waiting delete hidden. */
   items: T[];
-  /** True until the first `list` has answered (or failed). */
+  /** True until the first `list` has answered (or failed), or its first streamed page has arrived. */
   loading: boolean;
   /** The last `list` failure, or null. `items` keep what they were. */
   error: unknown;
@@ -83,6 +89,7 @@ export function useRecordList<T, D = Partial<T>, P = Partial<T>>(o: RecordListOp
   const alive = useRef(true);
   const seq = useRef(0);
   const reloadSeq = useRef(0);
+  const addedWhileLoading = useRef(new Map<string, T>()); // adds the store answered while a load was running (kept when that load streamed)
   const confirmed = useRef(new Map<string, T>()); // the last record the store answered, by id
   const saving = useRef(new Set<string>()); // ids with a write in flight (temporary ids too)
   const inflight = useRef(new Map<string, number>()); // edits in flight, by id
@@ -108,8 +115,36 @@ export function useRecordList<T, D = Partial<T>, P = Partial<T>>(o: RecordListOp
 
   const reload = useCallback(async (): Promise<void> => {
     const mine = ++reloadSeq.current;
+    addedWhileLoading.current = new Map();
+    let streamed = false;
+    let ended = false;
+    /** A page of a streamed load: merged into what is shown. Never removes a row; the final answer does that. */
+    const emit = (rows: readonly T[]): void => {
+      if (!alive.current || ended || mine !== reloadSeq.current) return;
+      streamed = true;
+      const incoming = new Map<string, T>();
+      for (const f of rows) {
+        const id = idOf(f);
+        if (waiting.current.has(id)) continue; // its delete is waiting: stays hidden
+        confirmed.current.set(id, f);
+        incoming.set(id, f);
+      }
+      const shown = new Set<string>();
+      const next: T[] = itemsRef.current.map((x) => {
+        const id = idOf(x);
+        shown.add(id);
+        return incoming.has(id) && !inflight.current.has(id) && !saving.current.has(id) ? incoming.get(id)! : x;
+      });
+      const fresh = [...incoming].filter(([id]) => !shown.has(id)).map(([, f]) => f);
+      const firstLocal = next.findIndex((x) => isTemp(idOf(x)) && saving.current.has(idOf(x)));
+      if (firstLocal < 0) next.push(...fresh);
+      else next.splice(firstLocal, 0, ...fresh); // a page arriving later goes before an add still being written
+      commit(ordered(next));
+      setLoading(false);
+    };
     try {
-      const fetched = await opts.current.list();
+      const fetched = await opts.current.list(emit);
+      ended = true;
       if (!alive.current || mine !== reloadSeq.current) return;
       const next: T[] = [];
       const seen = new Set<string>();
@@ -121,12 +156,21 @@ export function useRecordList<T, D = Partial<T>, P = Partial<T>>(o: RecordListOp
         // an edit still in flight keeps what is shown
         next.push((inflight.current.has(id) ? itemsRef.current.find((x) => idOf(x) === id) : undefined) ?? f);
       }
+      // a streamed load can have been answered before an add made during it was stored: that add stays
+      if (streamed) {
+        for (const [id, made] of addedWhileLoading.current) {
+          if (seen.has(id) || waiting.current.has(id) || !itemsRef.current.some((x) => idOf(x) === id)) continue;
+          seen.add(id);
+          next.push(itemsRef.current.find((x) => idOf(x) === id) ?? made);
+        }
+      }
       for (const id of [...confirmed.current.keys()]) if (!seen.has(id) && !saving.current.has(id)) confirmed.current.delete(id);
       for (const x of itemsRef.current) if (isTemp(idOf(x)) && saving.current.has(idOf(x))) next.push(x); // an add still in flight
       commit(ordered(next));
       setError(null);
       setLoading(false);
     } catch (e) {
+      ended = true;
       if (!alive.current || mine !== reloadSeq.current) return;
       setError(e);
       setLoading(false);
@@ -143,6 +187,7 @@ export function useRecordList<T, D = Partial<T>, P = Partial<T>>(o: RecordListOp
       const made = await opts.current.create(draft);
       saving.current.delete(tempId);
       confirmed.current.set(idOf(made), made);
+      addedWhileLoading.current.set(idOf(made), made);
       commit(put(without(itemsRef.current, tempId), made));
       return made;
     } catch (e) {

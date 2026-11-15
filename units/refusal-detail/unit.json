@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/refusal-detail",
   "package": "@kaigilb/gilbplatformcode-refusal-detail",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "purpose": "Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.",
   "source": {
     "repo": "KaiGilb/TestFlowerPower (local, not published)",
@@ -25,12 +25,14 @@
     "S2. AskOwnerScreen is AccessDeniedScreen with props ownerName, placeName (default vault), backgroundImage, backgroundColor",
     "S3. the title is This ${placeName} is private; the tagline uses ownerName",
     "S4. the bg-layer div is drawn only when backgroundImage or backgroundColor is given",
-    "accessDenied.css holds only the rules for .bg-layer, .display, .signin-screen, .signin-panel, .signin-panel .display, .tagline, .btn, .btn.secondary, .btn.full and .refusal-details (summary, p): styles.css lines 22, 26-33 (not 34-37), 87-90, 93, 97, 127-129 and background.css 2-7"
+    "accessDenied.css holds only the rules for .bg-layer, .display, .signin-screen, .signin-panel, .signin-panel .display, .tagline, .btn, .btn.secondary, .btn.full and .refusal-details (summary, p): styles.css lines 22, 26-33 (not 34-37), 87-90, 93, 97, 127-129 and background.css 2-7",
+    "0.1.2 (additive): `isForbidden(err)` in `src/refusal.ts`, exported from the root: true for a `NoAccessError` or any error with `status` 403 or named `NoAccessError` or `RecordForbiddenError`. Matches by `status` and `name`, so it imports no other unit."
   ],
   "newFiles": [
     "src/index.ts",
     "src/describe.ts",
-    "src/describe.test.ts"
+    "src/describe.test.ts",
+    "src/isForbidden.test.ts"
   ],
   "host": [
     { "member": "ownerName", "replaces": "OWNER_NAME from the app's config, src/screens/AskOwnerScreen.tsx:3,14" },
@@ -40,5 +42,5 @@
     { "member": "placeName", "replaces": "the word garden, src/screens/AskOwnerScreen.tsx:13" },
     { "member": "NoAccessError message", "replaces": "the sentence You have no write access to this garden yet. Ask the owner., src/data/errors.ts:14" }
   ],
-  "library": { "admitted": true, "tag": "t:VaultRequestRefusal.detail", "title": "Access denied screen and refusal line", "note": "For a refused read; it classifies nothing and sends nothing. The banner for a refused write is the app's own words. Entry ./describe turns any error into one plain sentence to show (error message): no access, vault busy, a platform refusal sentence, sign in again, changed elsewhere, no connection. Also found as: error message; describe an error; error sentence; friendly error text." }
+  "library": { "admitted": true, "tag": "t:VaultRequestRefusal.detail", "title": "Access denied screen and refusal line", "note": "For a refused read; it classifies nothing and sends nothing. The banner for a refused write is the app's own words. Entry ./describe turns any error into one plain sentence to show (error message): no access, vault busy, a platform refusal sentence, sign in again, changed elsewhere, no connection. Is forbidden 403: `isForbidden(err)` tells a 403 refusal (NoAccessError, RecordForbiddenError, any error with status 403). Also found as: error message; describe an error; error sentence; friendly error text." }
 }

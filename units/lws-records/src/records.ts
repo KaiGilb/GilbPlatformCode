@@ -145,6 +145,8 @@ export class RecordConflictError extends Error {
 export class RecordForbiddenError extends Error {
   /** The server's own sentence, when it sent one. Null when the body carried no reason. */
   readonly reason: string | null;
+  /** The HTTP status that caused it, so a caller can tell a refusal by `err.status === 403` without knowing this class. */
+  readonly status = 403;
   constructor(reason?: string | null) {
     const carried = reason && reason.trim() ? reason.trim() : null;
     super(

@@ -12,6 +12,7 @@ The line carries no query, no headers and no token. The screen shows no codes an
 - `refusalLine(detail)`: `GET /lws/vault/x/records -> HTTP 403 - vault target denied: no read reach`. With no sentence: `... -> HTTP 403 - no sentence was sent`.
 - `readRefusal(method, url, res)`: the refusal a `Response` carries, as a `RefusalDetail`. It reads the body once (`res.text()`; a body that cannot be read counts as empty), takes the sentence from the peer `@kaigilb/gilbplatformcode-server-error` (`serverErrorText(status, parseServerErrorBody(text), "Refused")`), and takes the path from the URL: percent-encoding is kept (an encoded slash stays `%2F`) and the query is dropped. It never throws for a body. It does not look at the status: you call it only for a response you already treat as refused. A platform 400 that names `WrongVaultRoot` or `WrongSignInHost` with a `message` therefore reaches the line as its message.
 - `NoAccessError(serverSentence?, detail?, message?)`: "the person may read but not write here". `serverSentence` is the server's own words when it sent any; `detail` is the `RefusalDetail`; `message` defaults to `You have no write access here yet. Ask the owner.`
+- `isForbidden(err)` (since 0.1.2): true when the platform refused the request as forbidden (403): a `NoAccessError`, any error whose `status` is `403` (record-sync's `PlatformError` and `RecordListError`, lws-records' `RecordForbiddenError` since its 0.4.2, a `RefusalDetail`), or one named `NoAccessError` or `RecordForbiddenError`. By `status` and `name`, so it needs no other unit. False for 401, 404, 412, 5xx and anything that is not an object. Use it to drop a vault the person may not read: `if (isForbidden(list.error)) markGone(vaultId)`.
 - `VaultBusyError(status, message)`: the vault (or the edge in front of it) answered 502, 503 or 504. It carries `status`.
 - `AccessDeniedScreen({ onSignOut, ownerName, detail?, placeName?, backgroundImage?, backgroundColor? })`: the screen. Title "This <placeName> is private" (`placeName` defaults to `vault`), tagline "Ask its owner, <ownerName>, to add you.", the collapsed `details.refusal-details` with the line (or "No request details were kept for this refusal."), and a "Sign out" button that calls `onSignOut`. The `bg-layer` div is drawn only when `backgroundImage` or `backgroundColor` is given.
 
@@ -128,6 +129,10 @@ Also: React 19; the peer `@kaigilb/gilbplatformcode-server-error`; the styleshee
 - "The path is the decoded path." An encoded slash stays `%2F` and a lower-case `%2f` is written `%2F`.
 - "`NoAccessError` says garden." Its default says "here"; the source's own garden wording is what the source app passes.
 - "The screen has no dependencies on the page." It needs the page rules named in "Styling".
+
+## Changes in 0.1.2
+
+Additive: `isForbidden(err)` in the root entry. No new peer. 5 new tests (`src/isForbidden.test.ts`) and the export list in `src/exports.test.ts`.
 
 ## Changes in 0.1.1
 

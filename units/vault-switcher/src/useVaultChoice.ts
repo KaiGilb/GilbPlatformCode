@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   canWriteVault,
   forgetVault,
@@ -30,6 +30,11 @@ export interface UseVaultChoiceOptions {
   appKey: string;
   /** The type the app's vaults represent. Only vaults of that type (compared by its bare name) are offered; a vault that says nothing about itself is not. Omit for no filter. */
   represents?: string;
+  /**
+   * Reads the vault list again, for `refresh()`: the same call you made to get `listed` (the platform's `GET /lws/vaults`). Omit it and
+   * `refresh()` does nothing; then pass a new `listed` array when the list changes, which `options` follows at once.
+   */
+  load?: () => Promise<readonly ListedVaultRow[]>;
   /** Where the choice is kept; defaults to `localStorage`. A browser that refuses storage keeps nothing and the own vault opens. */
   store?: KeyValueStore;
 }
@@ -45,6 +50,13 @@ export interface VaultChoiceState {
   markGone(vaultId: string): void;
   /** The open vault is the person's own, or it lists `write`. False: read only. */
   canWrite: boolean;
+  /**
+   * Reads the list again with `load` and shows it without a remount: a vault shared since the page opened appears in `options`, one the platform
+   * no longer lists leaves it (and if it was open, `current` is the person's own). Answers the `options` now offered. A vault marked gone stays
+   * out until the page loads again. If `load` fails, the list stays as it was and the failure is thrown. An answer that arrives after a newer
+   * `refresh` was started is not shown. Without `load` it answers the current `options` and reads nothing.
+   */
+  refresh(): Promise<VaultChoice[]>;
 }
 
 const bareName = (iri: string): string => iri.replace(/[#/]+$/, "").split(/[/#]/).pop() ?? iri;
@@ -77,32 +89,40 @@ export function useVaultChoice(o: UseVaultChoiceOptions): VaultChoiceState {
   const store = useMemo(() => o.store ?? browserStore(), [o.store]);
   const key = `${appKey}:${principal}`;
 
-  const rows = useMemo<ListedVaultRow[]>(() => {
-    const typed = represents
-      ? vaultsOfType(
-          // the platform answers a type under its own host: compare by bare name
-          listed.map((v) => (v.represents && bareName(v.represents) === bareName(represents) ? { ...v, represents } : v)),
-          { represents, keepUnknown: false },
-        )
-      : [...listed];
-    return typed.some((v) => same(v.vaultId, ownVaultId)) ? typed : [{ vaultId: ownVaultId, modes: ["read", "write"] }, ...typed];
-  }, [listed, ownVaultId, represents]);
+  // What `refresh` read, valid only while `listed` is the array it was read against: a new `listed` from the host is newer and wins.
+  const [fresh, setFresh] = useState<{ against: readonly ListedVaultRow[]; rows: readonly ListedVaultRow[] } | null>(null);
+  const source = fresh && fresh.against === listed ? fresh.rows : listed;
+
+  const rowsOf = useCallback(
+    (from: readonly ListedVaultRow[]): ListedVaultRow[] => {
+      const typed = represents
+        ? vaultsOfType(
+            // the platform answers a type under its own host: compare by bare name
+            from.map((v) => (v.represents && bareName(v.represents) === bareName(represents) ? { ...v, represents } : v)),
+            { represents, keepUnknown: false },
+          )
+        : [...from];
+      return typed.some((v) => same(v.vaultId, ownVaultId)) ? typed : [{ vaultId: ownVaultId, modes: ["read", "write"] }, ...typed];
+    },
+    [ownVaultId, represents],
+  );
+  const rows = useMemo<ListedVaultRow[]>(() => rowsOf(source), [rowsOf, source]);
 
   const [gone, setGone] = useState<readonly string[]>([]);
-  const [chosen, setChosen] = useState<string>(() => rememberedVault(store, key, rows) ?? ownVaultId);
+  const [picked, setPicked] = useState<string | null>(null);
+  // The vault opened last time counts as soon as the list carries it, also when it arrives after the first render (a refresh, a later `listed`).
+  const chosen = picked ?? rememberedVault(store, key, rows) ?? ownVaultId;
 
-  const options = useMemo(
-    () => vaultChoices(rows, (v) => same(v.vaultId, ownVaultId)).filter((c) => c.yours || !gone.includes(c.vaultId)),
-    [rows, ownVaultId, gone],
-  );
+  const offered = useCallback((from: readonly ListedVaultRow[], goneIds: readonly string[]) => vaultChoices(from, (v) => same(v.vaultId, ownVaultId)).filter((c) => c.yours || !goneIds.includes(c.vaultId)), [ownVaultId]);
+  const options = useMemo(() => offered(rows, gone), [offered, rows, gone]);
   const current = options.find((c) => same(c.vaultId, chosen)) ?? options[0]!;
 
   const switchTo = useCallback(
     (vaultId: string) => {
-      const offered = options.find((c) => same(c.vaultId, vaultId));
-      if (!offered) return;
-      rememberVault(store, key, offered.vaultId);
-      setChosen(offered.vaultId);
+      const pick = options.find((c) => same(c.vaultId, vaultId));
+      if (!pick) return;
+      rememberVault(store, key, pick.vaultId);
+      setPicked(pick.vaultId);
     },
     [options, store, key],
   );
@@ -110,11 +130,29 @@ export function useVaultChoice(o: UseVaultChoiceOptions): VaultChoiceState {
     (vaultId: string) => {
       if (same(vaultId, ownVaultId)) return;
       setGone((g) => (g.includes(vaultId) ? g : [...g, vaultId]));
+      setPicked((p) => (p !== null && same(p, vaultId) ? null : p));
       if (rememberedVault(store, key, [{ vaultId }]) !== null) forgetVault(store, key);
     },
     [ownVaultId, store, key],
   );
 
+  const loadRef = useRef(o.load);
+  loadRef.current = o.load;
+  const latest = useRef({ listed, gone, offered, rowsOf });
+  latest.current = { listed, gone, offered, rowsOf };
+  const refreshSeq = useRef(0);
+  const refresh = useCallback(async (): Promise<VaultChoice[]> => {
+    const load = loadRef.current;
+    if (!load) return offered(rows, gone);
+    const mine = ++refreshSeq.current;
+    const against = latest.current.listed;
+    const got = await load();
+    const asked = latest.current;
+    if (mine !== refreshSeq.current) return asked.offered(asked.rowsOf(got), asked.gone);
+    if (asked.listed === against) setFresh({ against, rows: got });
+    return asked.offered(asked.rowsOf(got), asked.gone);
+  }, [offered, rows, gone]);
+
   const canWrite = current.yours || canWriteVault(rows.find((r) => r.vaultId === current.vaultId) ?? {});
-  return { options, current, switchTo, markGone, canWrite };
+  return { options, current, switchTo, markGone, canWrite, refresh };
 }
