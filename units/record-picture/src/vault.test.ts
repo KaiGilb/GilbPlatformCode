@@ -234,3 +234,40 @@ describe("vaultPictureFlowDeps", () => {
     expect(w.fake.violations).toEqual([]);
   });
 });
+
+describe("conditional delete through vaultPictureFlowDeps (0.1.3)", () => {
+  const mk = (copies: CopyMap) =>
+    vaultPictureFlowDeps<Boat, BoatForm>({
+      vaultId: w.vault.id, typeIri: "t:Sailboat", fact: FACT, pictures: w.pics, copies,
+      toFacts: (f) => ({ name: f.name }), fromRecord: (made, f, picture) => ({ ...made, name: f.name, picture }),
+    });
+  it("sends If-Match with the record's tag and deletes the record, then the files", async () => {
+    const added = await addWithPicture(mk(new Map()), { name: "Heron" }, prepared());
+    const boat = await w.read(added.record.id, added.record.entity);
+    const d = mk(await w.pics.loadCopies());
+    w.fake.calls.clear();
+    const r = await deleteWithPicture(d, boat, { order: "record-first", ifMatch: (b) => b.etag });
+    expect(r.notice).toBeNull();
+    const del = w.fake.calls.of("DELETE /lws/r/:id");
+    expect(del[0]!.headers["if-match"]).toBe(boat.etag);
+    expect(w.fake.state.records.get(boat.id)!.endedSeq).not.toBeNull();
+    expect(w.ended(boat.picture!.split("/").pop()!)).toBe(true);
+    const seq = w.fake.calls.all.map((c) => `${c.method} ${c.path}`);
+    expect(seq.findIndex((x) => x.startsWith("DELETE /lws/r/"))).toBeLessThan(seq.findIndex((x) => x.startsWith("DELETE /files/")));
+  });
+  it("a 412 (the record changed meanwhile) throws and leaves the record AND every file untouched", async () => {
+    const added = await addWithPicture(mk(new Map()), { name: "Heron" }, prepared());
+    const boat = await w.read(added.record.id, added.record.entity);
+    const d = mk(await w.pics.loadCopies());
+    w.fake.bump(boat.id);
+    await expect(deleteWithPicture(d, boat, { order: "record-first", ifMatch: (b) => b.etag })).rejects.toMatchObject({ name: "RecordConflictError" });
+    expect(w.fake.state.records.get(boat.id)!.endedSeq).toBeNull();
+    expect(w.ended(boat.picture!.split("/").pop()!)).toBe(false);
+    expect(w.fake.calls.of("DELETE /files/:id")).toHaveLength(0);
+  });
+  it("the default delete still sends no If-Match", async () => {
+    const added = await addWithPicture(mk(new Map()), { name: "Egret" }, prepared(4));
+    await deleteWithPicture(mk(await w.pics.loadCopies()), added.record);
+    expect(w.fake.calls.of("DELETE /lws/r/:id").every((c) => !c.headers["if-match"])).toBe(true);
+  });
+});

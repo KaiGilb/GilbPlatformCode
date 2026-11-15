@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CUT_TEXT, MAX_TURN_ROLLS, startConnector } from "../connector/gilb-connector.mjs";
+import { CONCEPT_PAUSED_NEXT } from "../connector/gilb-connector.mjs";
 import * as connectorModule from "../connector/gilb-connector.mjs";
 
 const TURN_ROUNDS_CEILING = connectorModule.TURN_ROUNDS_CEILING ?? 240;
@@ -249,7 +250,7 @@ describe("the Agent.Concept brake survives renewal", () => {
     const paused = JSON.parse(text(await concept(box)));
     expect(paused.conceptPaused).toBe(true);
     expect(paused.renewed).toBe(true);
-    expect(paused.next).toBe("Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.");
+    expect(paused.next).toBe(CONCEPT_PAUSED_NEXT.rounds);
     expect(posts(platform)).toHaveLength(2);
     expect(JSON.parse(text(await callTool(box, "ask_agent_concept", { need: "x" }))).conceptPaused).toBe(true);
     expect(posts(platform)).toHaveLength(2);
@@ -267,6 +268,14 @@ describe("the Agent.Concept brake survives renewal", () => {
     expect(roles.at(-1).body.arguments).toContain("Agent.Outcome");
     expect(roles.at(-1).body.turnId).not.toBe(TURN);
   }, 30000);
+
+  it("r11 (0.6.3) the pause says the round budget was reached, not a mint limit; the real mint-cap sentence is kept for a real mint cap", () => {
+    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("round budget");
+    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("the concept needs were not lost");
+    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("gilbplatform_task");
+    expect(CONCEPT_PAUSED_NEXT.rounds).not.toContain("mint limit");
+    expect(CONCEPT_PAUSED_NEXT.mint).toBe("Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.");
+  });
 
   it("r10 the person's next message (gilbplatform_task) clears the brake, and Concept is sent again", async () => {
     const platform = await scripted([ROUNDS, "role-ok"]);

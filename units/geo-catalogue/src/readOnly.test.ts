@@ -31,6 +31,9 @@ describe("the source can only read", () => {
     for (const m of c.matchAll(/method\s*:\s*("[^"]*"|'[^']*'|`[^`]*`)/g)) expect((m[1] ?? "").slice(1, -1)).toBe("GET");
     expect(c).not.toMatch(/XMLHttpRequest|sendBeacon|WebSocket|\bEventSource\b/);
     // `fetch(` is called twice and only twice, each with `method: "GET"` in its options
+    // `fake.ts` (the `/fake` entry) is a stand-in that makes no request of its own: its `fetch(next)` is a member that returns a fetch, and it
+    // hands a foreign request to the caller's `next`. It is held to the same no-verb rules above.
+    if (f === "fake.ts") return;
     const calls = f === "index.ts" ? 0 : 2;
     expect(c.match(/\bfetch \(/g) ?? []).toHaveLength(calls);
     expect(c.match(/\bfetch \( url , \{ method : "GET"/g) ?? []).toHaveLength(calls);

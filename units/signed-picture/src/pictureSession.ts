@@ -45,3 +45,77 @@ export function startPictureSession(o: { principal: string; deviceCachePrefix: s
     disablePictureDeviceCache();
   };
 }
+
+/** The part of record-picture's `vaultPictureService` the session uses. Declared here so signed-picture needs no new peer. */
+export interface PictureSessionService<M> {
+  fresh(vaultRoot: string): void;
+  copies(vaultRoot: string): Promise<M>;
+  forget(vaultRoot?: string): void;
+}
+
+export interface PictureSessionOptions<M> {
+  deviceCachePrefix: string;
+  queueLimit?: number;
+  /** record-picture's `vaultPictureService(...)`, or anything shaped like it. */
+  service: PictureSessionService<M>;
+  /** The vault whose copy map `refresh` lists. */
+  vaultId: string;
+  /** Gets the copy map each `refresh` lists, only while the session is still the current one (an answer that arrives after a stop or a switch is dropped). */
+  onCopies(map: M): void;
+}
+
+export interface PictureSession {
+  /**
+   * Makes `principal` the person of the session: the same principal is a no-op; another principal first ends the old person's session
+   * (URLs, device cache, the service's maps), then starts the new one and refreshes the copy map. `null` or "" ends the session (sign-out).
+   */
+  setPrincipal(principal: string | null): Promise<void>;
+  /** Lists the vault's copy map again (a changed picture) and hands it to `onCopies`; does nothing without a person or after `stop`. */
+  refresh(): Promise<void>;
+  /** Sign-out: ends the person's session as `setPrincipal(null)` does, and later answers are dropped. Safe to call twice. */
+  stop(): Promise<void>;
+}
+
+/**
+ * The per-principal picture session an app otherwise wires by hand: `startPictureSession` for the person, the copy map listed again on demand,
+ * and everything forgotten (picture URLs, the person's device cache, the service's maps and tracked previews) when the person changes or signs
+ * out. One person's pictures are never served to the next.
+ */
+export function createPictureSession<M>(o: PictureSessionOptions<M>): PictureSession {
+  let current: string | null = null;
+  let stopCurrent: (() => Promise<void>) | null = null;
+  let epoch = 0;
+
+  const end = async (): Promise<void> => {
+    epoch++;
+    const stop = stopCurrent;
+    current = null;
+    stopCurrent = null;
+    if (stop) {
+      await stop();
+      o.service.forget();
+    }
+  };
+  const refresh = async (): Promise<void> => {
+    if (current === null) return;
+    const mine = epoch;
+    o.service.fresh(o.vaultId);
+    const map = await o.service.copies(o.vaultId);
+    if (mine === epoch) o.onCopies(map);
+  };
+  return {
+    async setPrincipal(principal) {
+      if (!principal) return end();
+      if (principal === current) return;
+      const ending = end();
+      const ticket = epoch;
+      await ending;
+      if (ticket !== epoch) return; // a stop or another person came while the old session was ending
+      stopCurrent = startPictureSession({ principal, deviceCachePrefix: o.deviceCachePrefix, ...(o.queueLimit !== undefined ? { queueLimit: o.queueLimit } : {}) });
+      current = principal;
+      await refresh();
+    },
+    refresh,
+    stop: end,
+  };
+}

@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-vault-picture-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Opens a vault's pictures in the full-screen viewer: the small copy shows at once while the largest stored copy is fetched with the person's access, a picture on this device opens with no fetch, and the viewer's stylesheet is loaded for you.",

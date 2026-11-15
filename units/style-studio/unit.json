@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-studio",
   "package": "@kaigilb/gilbplatformcode-style-studio",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "purpose": "`<StyleStudio />` is a React screen for choosing the app's colours, fonts, buttons, windows and logo before building, and `saveStyle` writes the result to the app's resource vault.",
   "source": {
     "repo": "KaiGilb/gilb-style",
@@ -136,6 +136,7 @@
     ]
   },
   "namedChanges": [
+    "0.2.3. new, additive: the subpath `/vite` (`dev/vite.mjs`, types `dev/vite.d.mts`): `styleStudioSave({ tokensPath, logoPath?, route?, maxLogoBytes?, maxBodyBytes? })`, a Vite plugin that serves `POST /__studio/save` and writes the sheet and the logo (the dev-server half of `makeDevServerSave`, from the PictureRecords run's `vite.config.ts`); dev server only, paths inside the project root, `application/json` only, PNG or SVG by its bytes, size limits. README: the Vite and `@vitejs/plugin-react` versions, verified on 2026-11-15;",
     "0.2.2. `ThemeToggle` and `ModeButton` moved to `style-runtime` (subpath `/react`, since style-runtime 0.2.1) and `src/ThemeToggle.tsx` re-exports them; `ActionRow` keeps its spec-object API but is now an adapter over style-runtime's row (one component, one CSS; its private inline CSS is gone) and the barrel also exports the slot-based row as `ActionRowSlots`; the tests that pinned the inline `<style>` text and an empty `<head>` now test behaviour (DOM order, classes, the CSS present once); the host-agnostic check allows the `/react` subpath;",
     "0.2.1. new, additive: `ExtractClientOptions.credential` (anything with `authHeaders(method, url)`; it signs exactly `POST <baseUrl>/base/style/extract`, no import of signin), `splitLogo` (src/studio/splitLogo.ts) and `makeDevServerSave` (src/studio/devServerSave.ts); the README example wires From website by default",
     "the colour and sheet engine (`schema`, `color`, `css`, `palette`) is the separate unit `style-runtime`; every import of it is `@kaigilb/gilbplatformcode-style-runtime`, and `ThemeToggle` imports its theme functions from there;",
@@ -153,7 +154,10 @@
     "src/studio/splitLogo.ts",
     "src/studio/devServerSave.ts",
     "src/devSave.test.ts",
-    "src/extractFake.test.ts"
+    "src/extractFake.test.ts",
+    "dev/vite.mjs",
+    "dev/vite.d.mts",
+    "src/viteSave.test.ts"
   ],
   "host": [
     {
@@ -165,6 +169,6 @@
     "admitted": true,
     "tag": "t:AppStyleSheet.studio",
     "title": "App Style Studio (choose the app's style before building)",
-    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault or the dev server. From website works with the app's session through makeExtractFromUrl({ baseUrl, credential }); makeDevServerSave and splitLogo save to a dev server. A developer tool, taken once."
+    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault or the dev server. From website works with the app's session through makeExtractFromUrl({ baseUrl, credential }); makeDevServerSave and splitLogo save to a dev server, and the Vite plugin styleStudioSave (studio save) is the server half that writes the files. A developer tool, taken once."
   }
 }

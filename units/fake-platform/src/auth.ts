@@ -18,9 +18,9 @@ export function thumbprint(jwk: { kty?: unknown; crv?: unknown; x?: unknown; y?:
 }
 
 /** A JWT-shaped token the fake recognises by lookup. Mirrors the claims the platform's verifier needs (src/auth/verify.ts:375-389). */
-export function mintToken(core: Core, who: Caller, jkt: string | null): Session {
+export function mintToken(core: Core, who: Caller, jkt: string | null, ttlSec = 7 * 24 * 3600): Session {
   const iat = Math.floor(core.o.now() / 1000);
-  const exp = iat + 7 * 24 * 3600; // 7 days: src/config/index.ts:643
+  const exp = iat + Math.min(ttlSec, 7 * 24 * 3600); // 7 days at most: src/config/index.ts:643
   const head = b64url(utf8(JSON.stringify({ alg: "none", typ: "JWT" })));
   const body = b64url(utf8(JSON.stringify({ iss: core.o.origin, sub: who.principal, iat, exp, ...(jkt ? { cnf: { jkt } } : {}), n: core.s.sessions.size })));
   const token = `${head}.${body}.fake`;
@@ -34,6 +34,7 @@ const refuse = (reason: string, note?: string): Outcome => ({ caller: null, resp
 function checkToken(core: Core, token: string): Session | string {
   const s = core.s.sessions.get(token);
   if (!s) return "Invalid access token: this token was not issued by the fake platform";
+  if (s.ended) return "Invalid access token: this sign-in has ended";
   if (s.exp <= Math.floor(core.o.now() / 1000)) return "Invalid access token: expired";
   return s;
 }

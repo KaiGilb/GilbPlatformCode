@@ -18,6 +18,19 @@ Plain functions and types, no React, no credential. The platform serves the list
 - The platform client this talks through: `PlatformClient` (`{ origin, fetch }`), `PlatformFetch`, `PlatformError` (`status` 0 means not reached), `PlatformAnswer`, `request(platform, method, url, body?, headers?, cache?, bound?)`, `RequestBound` (`signal`, `timeoutMs`), `routeUrl(platform, path)`, `vaultSegment(vaultId)`, `locate(platform, iri)` (the IRI's own path and query, on the platform's origin; a `PlatformError` of status 0 when the IRI is not an address), `retryAfterMs(headers, now?)` (what a `Retry-After` header asks for, in milliseconds, or `null`), `isAbsoluteIri(value)` (a shape check for an absolute http(s) IRI), `originHostMismatch(platform, vaultId)` (why the client's origin cannot write in that vault, or `null`; the origin's host and port must be the vault's), and `expectStatus(answer, method, ok)`: the answer itself when its status is one of `ok`, else a `PlatformError` that says what was asked and what came back (`<METHOD> <url> answered <status>: <first 300 characters of the body>`).
 - Types: `RecordSyncState`, `RecordSync`, `RecordRow`, `RecordWalk`.
 
+## Connecting to GilbPlatform
+
+Every function here takes a `PlatformClient` (`{ origin, fetch }`). A GilbPlatform app builds it with `platformFetch` from `platform-fetch` (`@kaigilb/gilbplatformcode-platform-fetch`), which signs each request with the session's DPoP proof. Do not write your own signing shim. Set it up once as `platform-fetch`'s README says (`setBaseOrigin`, `setSystemVaultHosts`, `setLwsAuth`), then:
+
+```ts
+import { vaultOriginOf } from "@kaigilb/gilbplatformcode-vault-origin-rule";
+import { platformFetch } from "@kaigilb/gilbplatformcode-platform-fetch";
+import { headRecordState } from "@kaigilb/gilbplatformcode-record-sync";
+
+const platform = { origin: vaultOriginOf(vaultId), fetch: platformFetch() };
+const state = await headRecordState(platform, vaultId, ["t:MyRecordType"]);
+```
+
 ## What the platform must answer for `completeCopy`
 
 All requests are `GET /lws/vault/<vaultId>/records` (the vault id percent-encoded; `listBase` in `completeCopy.ts`). `<type>` is the type name with a leading `t:` taken off, so `t:CatalogEntry` is sent as `type=CatalogEntry` (the start of `completeCopy`). In order:

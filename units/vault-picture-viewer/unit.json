@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vault-picture-viewer",
   "package": "@kaigilb/gilbplatformcode-vault-picture-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Opens a vault's pictures in the full-screen viewer: the small copy shows at once while the largest stored copy is fetched with the person's access, a picture on this device opens with no fetch, and the viewer's stylesheet is loaded for you.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode (written new from PictureRecords run 7 and run 6, local folders that are not git repositories)",
@@ -10,6 +10,7 @@
     "files": []
   },
   "namedChanges": [
+    "0.1.1. new, additive: `PictureThumb({ stored, previewUrl?, copies, vaultOrigin, placeholder?, label, onOpen })`: the small copy in a button that hands its element to `onOpen` (for `openStored({ el })`), or the placeholder in a non-button box when there is no picture; no new peer",
     "V1. resolveSrc signs item.fileUri and answers the local URL for an item with none; openStored puts the largest copy in fileUri (run 7 chose it inside resolveSrc)",
     "V2. openStored's thumbnail address is thumbUriOf(copies, master) ?? master (run 7 showed no stand-in while copies was null)",
     "V3. el (focus return) is passed through to the viewer's item"
@@ -21,7 +22,9 @@
     "src/cssImport.test.ts",
     "src/exports.test.ts",
     "src/hostAgnostic.test.ts",
-    "scripts/check-host-agnostic.mjs"
+    "scripts/check-host-agnostic.mjs",
+    "src/PictureThumb.tsx",
+    "src/PictureThumb.test.tsx"
   ],
   "host": [
     {
@@ -37,6 +40,6 @@
     "admitted": true,
     "tag": "t:Vault.pictureViewer",
     "title": "Vault picture viewer (open a stored picture full screen, signed)",
-    "note": "Opens a vault picture in the full-screen viewer: thumbnail first, then the largest copy, both fetched signed; also a local picture with no fetch. Loads the viewer's CSS itself. Needs picture-viewer, signed-picture and picture-set."
+    "note": "Opens a vault picture in the full-screen viewer: thumbnail first, then the largest copy, both fetched signed; also a local picture with no fetch. Also a picture thumbnail for a record list (placeholder, tap to open the viewer). Loads the viewer's CSS itself. Needs picture-viewer, signed-picture and picture-set. Also found as: picture thumbnail; thumbnail that opens the full-screen picture; record thumb with placeholder."
   }
 }
