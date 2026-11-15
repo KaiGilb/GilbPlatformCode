@@ -17,6 +17,8 @@ The client of the shared world catalogue (GilbGeo), with no React. The app owns 
 - `resolveGeoGrains(signal?)`: the ontology's map (`byRung`, `rungOf`, `kindOf`, `unclassified`), read once per tab and asked again after a failure.
 - `GeoUnavailableError` (with `status` and a new `reason`: `unreachable` or `not-geo`), `GeoRowTooLargeError`, `RUNG_GRAIN`, `RUNG_SEARCH_GRAINS`, `MAX_RESTRICTED_CANDIDATES` (24), `__resetGeoCache`, `__resetGeoGrainCache`, `__resetGeoMemoryOnly`.
 
+- **A fake catalogue (`/fake`, new, 0.1.2).** `import { fakeGeo, FAKE_COUNTRIES } from "@kaigilb/gilbplatformcode-geo-catalogue/fake"`: a small fixed GilbGeo (fake geo, fake place search) for an app's fake mode and for tests. `fakeGeo({ origin?, termOrigin?, rows? })` gives `{ fetch(next), calls, add(row), fail(id), answer(url) }`. `fetch(next)` is a `fetch` that answers the four requests this unit makes (`GET <geo>/base/search` with `type`, `q` and `match=prefix`; `GET <geo>/base/e/<id>`; the ontology's `GET /base/t/GeoRegion/children` and `GET /base/t/<Type>` for the grain of City, Country, GeoAdminArea, Municipality and Town) and hands every other request to `next`; put it where the real `fetch` is (`vi.stubGlobal("fetch", f.fetch(fetch))`, or `window.fetch = ...` in an app's fake mode). Origins are read at each request from `geoOrigin()` and `termOrigin()` unless given, so the same `setGeoOrigin` and `setTermOrigin` as the real client work, and `place-picker` runs on it unchanged. Rows are `{ id, label, type?, memberOf? }` (`type` default `Country`; `id` a bare name or a full address inside the catalogue); the default set is `FAKE_COUNTRIES`, 15 countries (the first five ids were read from the live catalogue on 2026-11-15, the other ten are OpenStreetMap relation numbers not checked against GilbGeo). An unknown row is a 404 `{ error: "not_found" }`, which `getPlace` reads as an absence (`null`), as it does the real one; `fail(id)` makes a row answer 502, which `getPlace` throws as `GeoUnavailableError`. Not in the main entry: the real client never imports it.
+
 ## What this is not
 
 - Not the origin settings: the catalogue's is `geo-origin`, the ontology's is `term-origin`; both are set by the app.
@@ -114,7 +116,8 @@ Everything else is GilbApp's code. Each change is marked `CHANGED` in `src/geoCa
 7. **`resolveAncestry`** does not follow a parent outside the catalogue (the fence would refuse it); GilbApp followed it with a request.
 8. **`RestrictedSearch.unplaced`** (F13): the number of scanned candidates left out for want of a country. GilbApp dropped them without a word (its comment said the surface states the cost; the code counted nothing).
 9. **Search mode, `getPlaceLabel`** (0.1.1, new, not GilbApp's): see "What this is". `PLACE_LABEL_MAX_BYTES` and the `SearchMatch`/`SearchOptions` types are new exports of the module.
-10. **Not taken:** `immediateParent` and `searchPlacesInCountry` (no caller in GilbApp's Address or work location). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts.
+10. **`/fake`** (0.1.2, new, not GilbApp's): the fake catalogue above, from PictureRecords' `fakeGeo.ts`, widened to rows of any type with a parent, added rows, a failing row and the grain reads of all five types. `src/fake.ts` is exempt from the one-fetch-call count in `readOnly.test.ts` (it makes no request of its own) and keeps its other rules.
+11. **Not taken:** `immediateParent` and `searchPlacesInCountry` (no caller in GilbApp's Address or work location). The module header and the comments that named hosts, a cycle or an agent are reworded with the same facts.
 
 ## Where it came from
 
@@ -122,7 +125,9 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9
 
 ## Tests
 
-`npx vitest run`, 117 tests in 9 files:
+`npx vitest run`, 129 tests in 10 files:
+
+- `fake.test.ts` 12 (new, 0.1.2): the fake through the real client: prefix and whole-word search, a second word, a city search that finds no country, a row read, an unknown id (404, `null`), a failing row, an added row walked up to its country, a replaced row, the origin setters, a foreign request handed on, an empty start.
 
 - `placeKinds.s8cityfix.test.ts` 12: ported from GilbApp unchanged in its cases (the order of a City box's hits; `rankHitsForRung`).
 - `restricted.test.ts` 12: the catalogue behaviours of GilbApp's `PlacePicker.cycle168.test.tsx` put at the function level (N6, NEW-2, the 502 on the deepest hop, the bounded walk), plus the F13 cases (new).

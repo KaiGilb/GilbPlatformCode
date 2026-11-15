@@ -1,14 +1,19 @@
 {
   "name": "@kaigilb/gilbplatformcode-style-studio",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "App Style Studio: a developer tool for choosing the app's colours, fonts, buttons, windows and logo, and saving them to the app's resource vault.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./vite": {
+      "types": "./dev/vite.d.mts",
+      "default": "./dev/vite.mjs"
+    }
   },
   "files": [
     "src",
+    "dev",
     "LICENSE.md",
     "THIRD-PARTY-NOTICES.md"
   ],

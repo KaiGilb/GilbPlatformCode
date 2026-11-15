@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-place-picker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "The box where a place is searched in the catalogue and chosen, one rung at a time: city, region or country.",

@@ -6,7 +6,9 @@ The box where a place is searched in the catalogue and chosen, one rung at a tim
 
 The box where a place is searched in the catalogue and chosen, one rung at a time: city, region or country.
 
-`<PlacePicker rung label value onPick onClear restrictToCountryId? filledByCascade? foundInBoxLabel? pickLandedElsewhere? rungPill? disabled? searchMode? />`. Nothing is typeable into it as a value: a search of two letters or more lists up to eight places from the catalogue (`geo-catalogue`), each with its kind and where it is (`place-hit-details`) and, when it will land in another field, a line that says so before the pick; choosing one calls `onPick(place)` and the box waits for that to finish before it clears itself. A bound value shows its name; a tap opens it for edit with the text selected (it is not wiped); emptying the box clears it; Escape or leaving the box unchanged keeps it. `RUNG_LABEL` is the word of each rung ("City", "Region", "Country") and `PLACE_SEARCH_*` are the debounce (140 ms), the minimum (1), the listing (2) and the cap (8).
+`<PlacePicker rung label value onPick onClear restrictToCountryId? filledByCascade? foundInBoxLabel? pickLandedElsewhere? rungPill? disabled? searchMode? minGapMs? />`. Nothing is typeable into it as a value: a search of two letters or more lists up to eight places from the catalogue (`geo-catalogue`), each with its kind and where it is (`place-hit-details`) and, when it will land in another field, a line that says so before the pick; choosing one calls `onPick(place)` and the box waits for that to finish before it clears itself. A bound value shows its name; a tap opens it for edit with the text selected (it is not wiped); emptying the box clears it; Escape or leaving the box unchanged keeps it. `RUNG_LABEL` is the word of each rung ("City", "Region", "Country") and `PLACE_SEARCH_*` are the debounce (140 ms), the minimum (1), the listing (2) and the cap (8).
+
+**Search gap (`minGapMs?: number`, new, 0.1.2).** For a catalogue that limits how often it is asked (the live one: one search per 300 ms, so a place search throttle). The least time in milliseconds between the start of one search and the start of the next; default `0`, which is the behaviour before (the search starts 140 ms after the last key). With a gap the wait before a search is the longer of the 140 ms and what is left of the gap, counted from when the last search started (shared by every picker on the page). The newest text wins: a search still waiting for its turn is dropped when the text changes, and an answer to an older text is never shown. `<PlacePicker minGapMs={300} />`.
 
 **Search mode (`searchMode?: "word" | "prefix"`, new, 0.1.1).** The catalogue matches whole words by default, so "Jap" finds nothing there. The box's default is `"prefix"`: when the last word typed has two letters or more it asks with `match=prefix` ("Jap" finds Japan, "New Y" is asked as whole words because "Y" is one letter), and if the catalogue refuses the parameter (400) it asks again as whole words. `"word"` never sends `match`. Any other failure is still the one fixed sentence below, not a retry. `PLACE_PREFIX_MIN_LAST_WORD` (2) is exported.
 
@@ -88,7 +90,8 @@ Everything else is GilbApp's code. Each change is marked `CHANGED` in the source
 5. **No address or id tail as text** (F14). The second line of a row is `place-hit-details`'s, which says a position ("1 of 2 with this name") where GilbApp wrote `entry <end of the address>`. The box itself wrote no address as text; `data-place-id` stays.
 6. `RUNG_LABEL` says "Region", as GilbApp's picker did; `place-display` (the read-only address line) says "Region/State".
 7. The module header and the comments that named a cycle, an agent or a person are reworded with the same facts. No other code changed.
-8. **0.1.1, new:** the `pp-*` classes and `placePicker.css`; `searchMode`; `usePlaceLabels`. Each is marked in the source or is a new file.
+8. **0.1.2, new:** `minGapMs` (and the module's `lastSearchStart`, with `__resetPlaceSearchGap` for tests, not on the entry), from the PictureRecords app's `spacedGeoSearch` (300 ms), moved into the box: it spaces the start of a search by waiting before it, where that wrapper slept inside `fetch`.
+9. **0.1.1, new:** the `pp-*` classes and `placePicker.css`; `searchMode`; `usePlaceLabels`. Each is marked in the source or is a new file.
 
 ## Where it came from
 
@@ -96,7 +99,9 @@ GilbApp (private repo `KaiGilb/GilbApp`), commit `a703b3ed78e612e2cab77e94876ce9
 
 ## Tests
 
-`npx vitest run`, 108 tests in 11 files:
+`npx vitest run`, 113 tests in 12 files:
+
+- `minGapMs.test.tsx` 5 (new, 0.1.2): fake timers and geo-catalogue's `/fake`: default 0 unchanged, a second search held to 300 ms after the first started, a gap already over costs nothing, the newest text wins over a search waiting its turn, a late answer to an older text is dropped.
 
 - `PlacePicker.cycle168.test.tsx` 17 of GilbApp's 30 (the other 13 render the whole address card and go with the card parts and the Address view): the listbox owns options only (axe clean), a cut-short empty answer is not "no match", the country clause is conditional, the row says where it will land, a pick that lands at another rung is said in both places (over `test/AddressBoxes.tsx`, the card's three boxes with `place-draft` and `place-clear`), a failed commit is said and not an untouched form.
 - `PlacePicker.n6.test.tsx` 7, `.s8cardlook.test.tsx` 6, `.s8cityfix.test.tsx` 6 of 8 (the other 2 render the address card): changing a bound city by keyboard and pointer, the four Oslo rows told apart, the city first.
