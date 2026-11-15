@@ -37,7 +37,7 @@ export {
   PartialVaultError,
 } from "./appVault";
 export type { KeyValueStore, AppVaultConfig, AppVaultDeps, AppVaultStep, AppVaultResult, AppVaultService } from "./appVault";
-export { createLiveStart, vaultShortName, sentenceOfStartError } from "./liveStart";
+export { createLiveStart, vaultShortName, sentenceOfStartError, SIGN_OUT_NOT_RECORDED } from "./liveStart";
 export type { LiveStage, LiveStartState, LiveStartController, LiveStartOptions, LiveStartCredential } from "./liveStart";
 export { generateDpopKeyPair, dpopProof, dpopHeaders, htuFor } from "./dpop";
 export { fetchTransport } from "./transport";

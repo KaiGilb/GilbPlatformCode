@@ -2,6 +2,7 @@ import { thumbprint, mintToken, type Caller } from "./auth";
 import { badRequest, failure, forbidden, json, parseBody, schemaRefusal, type Core, type Req } from "./http";
 import type { Person, Vault } from "./types";
 import { makeVault } from "./vaults";
+import { checkRenewWindow, startRenewal } from "./renew";
 
 const PERSON_TYPE = "https://veda.gilb.com/base/t/Person";
 const SIGN_IN_ATTR = "a:signInVault";
@@ -116,6 +117,7 @@ export function requestCode(core: Core, req: Req): Response {
  * Four 200 answers: returning `{ token, principal, needsVaultName:false }`; new, no name `{ token, principal, needsVaultName:true, suggestedName, webIdDomain }`;
  * new with a name that was minted `{ token, principal (the vault's address), needsVaultName:false, vaultName, vault, vaultId, aliasUri }`;
  * new with a name taken or reserved `{ token, principal, needsVaultName:true, suggestedName, nameOutcome }`.
+ * With `renew: true` every answer also carries `renew` and `renewExpiresAt`; `renewWindowSec` (an integer of at least 300, capped at 14 days, default 14 days) sets the window and the first token lasts no longer.
  * Not faked: the failed-guess lockout (src/auth/email-otc.ts:67-71), review credentials, the session cookie.
  */
 export function verifyCode(core: Core, req: Req): Response {
@@ -125,13 +127,21 @@ export function verifyCode(core: Core, req: Req): Response {
   if (v === null || typeof v !== "object" || Array.isArray(v)) return schemaRefusal("body must be object");
   const o = v as Record<string, unknown>;
   for (const k of ["email", "code", "dpopJwk"]) if (!(k in o)) return schemaRefusal(`body must have required property '${k}'`);
-  if (Object.keys(o).some((k) => !["email", "code", "dpopJwk", "client", "name"].includes(k))) return schemaRefusal("body must NOT have additional properties");
+  if (Object.keys(o).some((k) => !["email", "code", "dpopJwk", "client", "name", "renew", "renewWindowSec"].includes(k))) return schemaRefusal("body must NOT have additional properties");
   if (typeof o.email !== "string" || o.email.length < 3) return schemaRefusal("body/email must NOT have fewer than 3 characters");
   if (typeof o.code !== "string" || o.code.length < 1) return schemaRefusal("body/code must NOT have fewer than 1 characters");
   if (o.code.length > 32) return schemaRefusal("body/code must NOT have more than 32 characters");
   if (o.dpopJwk === null || typeof o.dpopJwk !== "object" || Array.isArray(o.dpopJwk)) return schemaRefusal("body/dpopJwk must be object");
   if ("client" in o && (typeof o.client !== "string" || o.client.length < 1 || o.client.length > 256)) return schemaRefusal("body/client must NOT have fewer than 1 characters");
   if ("name" in o && typeof o.name !== "string") return schemaRefusal("body/name must be string");
+  if ("renew" in o && typeof o.renew !== "boolean") return schemaRefusal("body/renew must be boolean");
+  if ("renewWindowSec" in o && (typeof o.renewWindowSec !== "number" || !Number.isInteger(o.renewWindowSec))) return schemaRefusal("body/renewWindowSec must be integer");
+  // The window is judged only when renew is true, and before the code is spent (src/routes/email-auth.ts:462-468).
+  const renewing = o.renew === true;
+  if (renewing) {
+    const badWindow = checkRenewWindow(o.renewWindowSec);
+    if (badWindow) return badWindow;
+  }
   const email = normalizeEmail(o.email);
   const jwk = o.dpopJwk as Record<string, unknown>;
   const bad = (): Response => failure(401, "Unauthorized", "Invalid or expired email one-time code");
@@ -145,8 +155,12 @@ export function verifyCode(core: Core, req: Req): Response {
   if (typeof jwk.kty !== "string" || typeof jwk.crv !== "string" || typeof jwk.x !== "string" || typeof jwk.y !== "string") return badRequest("dpopJwk is not a public EC key (fake-platform: kty, crv, x and y are needed)");
 
   const person = ensurePerson(core, email);
-  const token = mintToken(core, { principal: person.principal, email }, thumbprint(jwk)).token;
-  if (hasVault(core, person)) return json(200, { token, principal: person.principal, needsVaultName: false });
+  const jkt = thumbprint(jwk);
+  // With a renewable sign-in the first token lasts no longer than the window (src/routes/email-auth.ts:455).
+  const family = renewing ? startRenewal(core, email, jkt, typeof o.renewWindowSec === "number" ? o.renewWindowSec : undefined) : null;
+  const token = mintToken(core, { principal: person.principal, email }, jkt, family?.windowSec).token;
+  const renewal = family ? { renew: family.renew, renewExpiresAt: family.renewExpiresAt } : {};
+  if (hasVault(core, person)) return json(200, { token, principal: person.principal, needsVaultName: false, ...renewal });
 
   const given = typeof o.name === "string" && o.name.trim() !== "" ? o.name : entry.name;
   if (given !== undefined) {
@@ -157,6 +171,7 @@ export function verifyCode(core: Core, req: Req): Response {
         principal: person.principal,
         needsVaultName: true,
         suggestedName: nextAvailableName(core, slugifyLocal(email)),
+        ...renewal,
         nameOutcome: { status: "reserved", desired, message: `'${desired}' is a reserved name — please choose another.` },
       });
     }
@@ -167,14 +182,15 @@ export function verifyCode(core: Core, req: Req): Response {
         principal: person.principal,
         needsVaultName: true,
         suggestedName: suggestion,
+        ...renewal,
         nameOutcome: { status: "collision", desired, suggestion, message: `'${desired}' was just taken — we picked '${suggestion}'. Accept it or edit, then create.` },
       });
     }
     const vault = mintFor(core, person, { name: desired, represents: PERSON_TYPE });
     const vaultId = addressFor(core, desired);
-    return json(200, { token, principal: person.principal, needsVaultName: false, vaultName: desired, vault: vault.entity, vaultId, aliasUri: vaultId });
+    return json(200, { token, principal: person.principal, needsVaultName: false, vaultName: desired, vault: vault.entity, vaultId, aliasUri: vaultId, ...renewal });
   }
-  return json(200, { token, principal: person.principal, needsVaultName: true, suggestedName: nextAvailableName(core, slugifyLocal(email)), webIdDomain: core.o.domain });
+  return json(200, { token, principal: person.principal, needsVaultName: true, suggestedName: nextAvailableName(core, slugifyLocal(email)), webIdDomain: core.o.domain, ...renewal });
 }
 
 /**

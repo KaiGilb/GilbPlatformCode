@@ -77,4 +77,31 @@ describe("useLiveStart", () => {
     await waitFor(() => expect(result.current.stage).toBe("ready"));
     expect(result.current.error).toBeNull();
   });
+
+  it("signOut calls the server first; the hook shows signing-out with an aborted signal, then a fresh signal and the card", async () => {
+    const r = setup("ann", [async () => RESULT]);
+    let release!: () => void;
+    const gate = new Promise<{ serverSignedOut: boolean }>((res) => (release = () => res({ serverSignedOut: true })));
+    const signOut = vi.fn(() => gate);
+    const credential = { ...r.credential, signOut };
+    const { result } = renderHook(() => useLiveStart({ credential, idOrigin: "https://id.example.test", app: APP, vaultConfig: CFG, service: r.service }));
+    await waitFor(() => expect(result.current.stage).toBe("ready"));
+    const live = result.current.signal;
+    expect(live.aborted).toBe(false);
+    let done!: Promise<void>;
+    act(() => {
+      done = result.current.signOut();
+    });
+    expect(result.current.stage).toBe("signing-out");
+    expect(result.current.signal.aborted).toBe(true);
+    expect(live.aborted).toBe(true);
+    expect(signOut).toHaveBeenCalledWith("https://id.example.test");
+    await act(async () => {
+      release();
+      await done;
+    });
+    expect(result.current.stage).toBe("signin");
+    expect(result.current.signal.aborted).toBe(false);
+    expect(result.current.signOutNotice).toBeNull();
+  });
 });

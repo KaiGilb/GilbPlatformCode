@@ -70,7 +70,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
     proofWindowSeconds: options.proofWindowSeconds ?? 60,
     now: options.now ?? Date.now,
   };
-  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), codes: new Map(), takenNames: new Set(), usedProofs: new Set(), style: newStyleState(), seq: 0 };
+  const s: FakeState = { people: new Map(), vaults: new Map(), grants: new Map(), revoked: new Set(), records: new Map(), files: new Map(), sessions: new Map(), renewals: new Map(), codes: new Map(), takenNames: new Set(), usedProofs: new Set(), style: newStyleState(), seq: 0 };
   let counter = 0;
   const core: Core = { o, s, nextId: () => opaqueId(++counter) };
 
@@ -356,6 +356,7 @@ export function createFakePlatform(options: FakePlatformOptions = {}): FakePlatf
       s.records.clear();
       s.files.clear();
       s.sessions.clear();
+      s.renewals.clear();
       s.codes.clear();
       s.takenNames.clear();
       o.partialCreate.times = 0;
