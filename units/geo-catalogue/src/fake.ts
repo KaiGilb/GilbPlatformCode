@@ -24,9 +24,8 @@ export interface FakeGeoOptions {
 }
 
 /**
- * Fifteen countries. The first five ids were read from the live catalogue by the app (`GET /base/search?type=Country&match=prefix`,
- * 2026-11-15). The other ten are OpenStreetMap relation numbers written from memory and NOT checked against GilbGeo: use them only
- * inside the fake.
+ * Fifteen countries. Every id was read live from GilbGeo on 2026-11-15: the search `type=Country&q=<name>` returned it and the row read at that
+ * id answered with that country's label (read-only GETs).
  */
 export const FAKE_COUNTRIES: readonly FakeGeoRow[] = Object.freeze([
   { id: "osm-r-51701", label: "Switzerland" },
