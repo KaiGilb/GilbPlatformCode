@@ -245,6 +245,8 @@ The person chooses, in the chat, which model answers and how hard it thinks, and
 - **`GET /v1/hello`** has `options: { models, efforts, delegateCoding: true }` so a page can feature-detect.
 - **The final `message`** carries `model` (from the CLI), `effort` when one was used, and `delegateCoding` (true or false) on a code turn.
 - **`POST /v1/tool-result`** (0.3.5) now checks the turn's owner like `/v1/approval`: another pairing gets the same 404 as for an unknown turn. A hand-off asked for under a turn whose cancel was requested (even before it has closed) is `404`, like a closed parent.
+- **Only the `sonnet-coder` subagent may be started** (`bridge_approve`): `Agent` or `Task` is allowed only with `subagent_type` exactly `"sonnet-coder"`, otherwise denied with "Only the sonnet-coder agent may be started in a code turn." A delegating folder code turn also puts `Agent(<type>)` and `Task(<type>)` deny rules for the 7 built-in types (`BUILTIN_AGENT_TYPES`) in its `--settings`, for session mode, which never asks.
+- **Init `tools` that is not an array is refused** (the folder limits check fails closed; before, a string passed).
 
 ## Relay window (for Safari)
 

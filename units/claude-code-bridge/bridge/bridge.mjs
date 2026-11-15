@@ -502,6 +502,9 @@ const effortAllowed = (e) => typeof e === "string" && EFFORTS.includes(e);
 /** Claude Code's subagent tool. The CLI (2.1.325) accepts `Agent` in --tools and lists it as `Task` in the init event. Present only when delegateCoding is on. */
 export const SUBAGENT_TOOL = "Agent";
 const SUBAGENT_TOOL_NAMES = ["Agent", "Task"];
+/** The built-in subagent types of Claude Code 2.1.325. A delegating folder code turn denies them in its settings, so only sonnet-coder can be started. */
+export const BUILTIN_AGENT_TYPES = ["general-purpose", "Explore", "Plan", "claude", "statusline-setup", "web-fetch", "claude-code-guide"];
+const ONLY_CODER_MSG = "Only the sonnet-coder agent may be started in a code turn.";
 /** Appended to a delegating code turn's system prompt. */
 export const DELEGATE_SENTENCE = "Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself.";
 const CODER_PROMPT = "You write and change code from a brief. Work only inside the folder you were started in. Follow the brief exactly: do not add or change anything it does not ask for. Run the project's tests and typecheck when it has them. Report the files you changed, the exact commands you ran and their results. Claim nothing you did not run.";
@@ -624,11 +627,12 @@ function configDirDeny(dir) {
     return [d.startsWith("~") ? d : path.resolve(d)];
 }
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "") {
+export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false) {
     void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
+    const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
     if (platform === "win32") {
         // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-        return { permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } };
+        return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } };
     }
     // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
     const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
@@ -645,7 +649,7 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
             filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
         },
         permissions: {
-            deny: ["WebFetch", "WebSearch"],
+            deny: ["WebFetch", "WebSearch", ...agentDeny],
             disableBypassPermissionsMode: "disable",
         },
     };
@@ -654,7 +658,9 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
 function codeInitOk(ev, approval = "session", filesOnly = false, computer = false, delegate = false) {
     if (computer)
         return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits"); // no tool-list check: Claude Code has its own tools
-    const tools = Array.isArray(ev.tools) ? ev.tools : [];
+    if (!Array.isArray(ev.tools))
+        return false; // fail closed: a tool list that is not an array is not checked
+    const tools = ev.tools;
     const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
     if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__"))))
         return false;
@@ -1501,9 +1507,9 @@ export function createBridge(opts = {}) {
         const keyProblem = inputKeyProblem(input);
         if (keyProblem.deny)
             return deny(keyProblem.deny);
-        // Starting the sonnet-coder subagent changes nothing by itself; each write and command it then makes is asked like any other.
+        // Starting the sonnet-coder subagent changes nothing by itself; each write and command it then makes is asked like any other. No other subagent type may start.
         if (turn.delegate && SUBAGENT_TOOL_NAMES.includes(tool))
-            return { behavior: "allow", updatedInput: input };
+            return input.subagent_type === "sonnet-coder" ? { behavior: "allow", updatedInput: input } : deny(ONLY_CODER_MSG);
         if (computer) {
             // Computer mode: every request is asked of the person, no automatic allow or deny by path.
             let summary;
@@ -1819,7 +1825,7 @@ export function createBridge(opts = {}) {
             "--permission-prompts", turn.approval === "each-write" ? "host" : "none",
             ...(turn.approval === "each-write" ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
             "--disable-slash-commands",
-            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")),
+            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
             "--append-system-prompt", turn.proj

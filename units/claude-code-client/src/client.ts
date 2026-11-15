@@ -1259,9 +1259,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
         const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown } | null | undefined;
-        const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null);
-        const models = o && typeof o === "object" ? strs(o.models) : null;
-        const efforts = o && typeof o === "object" ? strs(o.efforts) : null;
+        // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
+        const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
+        const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
+        const efforts = o && typeof o === "object" ? keep(o.efforts, (x) => (EFFORTS as readonly string[]).includes(x)) : null;
         return {
           reachable: body.bridge === BRIDGE_NAME,
           build: typeof body.build === "string" ? body.build : null,

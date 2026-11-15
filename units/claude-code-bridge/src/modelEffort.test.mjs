@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE } from "../bridge/bridge.mjs";
+import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -355,8 +355,61 @@ describe("each-write approval for a delegating turn", () => {
   it("starting the subagent is allowed only when delegating; its writes still ask (asking is unchanged)", async () => {
     const secret = await start();
     expect((await decisionOf(secret, {})).behavior).toBe("deny");
-    expect((await decisionOf(secret, { delegateCoding: true })).behavior).toBe("allow");
+    // ASKTASK starts a Task with no subagent_type: not the sonnet-coder, so it is denied even when delegating (R19-L1)
+    expect((await decisionOf(secret, { delegateCoding: true })).behavior).toBe("deny");
   });
+});
+
+describe("R19-L1: only the sonnet-coder subagent may be started", () => {
+  const MSG = "Only the sonnet-coder agent may be started in a code turn.";
+  const asks = (name) => [
+    { tool_name: name, input: { subagent_type: "sonnet-coder", prompt: "x" } },
+    { tool_name: name, input: { subagent_type: "general-purpose", prompt: "x" } },
+    { tool_name: name, input: { prompt: "x" } },
+    { tool_name: name, input: { subagent_type: "Sonnet-coder", prompt: "x" } },
+    { tool_name: name, input: { subagent_type: "sonnet-coder ", prompt: "x" } },
+    { tool_name: name, input: { subagent_type: ["sonnet-coder"], prompt: "x" } },
+  ];
+  for (const access of ["folder", "files-only", "computer"]) {
+    for (const name of ["Agent", "Task"]) {
+      it(`${access}, ${name}: sonnet-coder allowed, every other input denied with the exact text`, async () => {
+        const secret = await start({ access });
+        const res = await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: `ASKJSON:${JSON.stringify(asks(name))}`, mode: "code", approval: "each-write", delegateCoding: true }) });
+        await res.text();
+        const rows = logRows("askjson");
+        expect(rows).toHaveLength(6);
+        expect(rows[0].decision.behavior).toBe("allow");
+        for (const r of rows.slice(1)) expect(r.decision).toEqual({ behavior: "deny", message: MSG });
+      });
+    }
+  }
+
+  it("the settings of a delegating folder code turn deny the 14 built-in agent rules; a plain turn has none", async () => {
+    const want = ["Agent", "Task"].flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`));
+    expect(BUILTIN_AGENT_TYPES).toEqual(["general-purpose", "Explore", "Plan", "claude", "statusline-setup", "web-fetch", "claude-code-guide"]);
+    expect(want).toHaveLength(14);
+    const settingsOf = (r) => JSON.parse(after(r.argv, "--settings"));
+    const secret = await start();
+    await turn(secret, { mode: "code", delegateCoding: true });
+    const withIt = settingsOf(runs()[0]).permissions.deny;
+    for (const rule of want) expect(withIt).toContain(rule);
+    expect(withIt).toEqual(expect.arrayContaining(["WebFetch", "WebSearch"]));
+    await turn(secret, { mode: "code", delegateCoding: false });
+    const without = settingsOf(runs()[1]).permissions.deny;
+    expect(without).toEqual(["WebFetch", "WebSearch"]);
+    for (const rule of want) expect(without).not.toContain(rule);
+  });
+});
+
+describe("R19-L3: an init tool list that is not an array is refused", () => {
+  for (const [label, val] of [["a string", JSON.stringify("Bash,WebFetch")], ["null", "null"]]) {
+    it(`folder mode: tools ${label} ends the turn with the limits error`, async () => {
+      const secret = await start({ env: { FAKE_INIT_TOOLS: val } });
+      const r = await turn(secret, { mode: "code" });
+      expect(r.message).toBeUndefined();
+      expect(r.error?.message).toMatch(/limits|stopped|folder/i);
+    });
+  }
 });
 
 describe("L-D: /v1/tool-result checks the turn's owner", () => {

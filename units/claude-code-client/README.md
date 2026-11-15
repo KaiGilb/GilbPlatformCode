@@ -112,6 +112,7 @@ With a bridge started with `--workspace <folder>` (bridge 0.2.0), a turn can be 
 - A hand-off's nested turn does not carry them; the bridge gives it its parent's model and effort.
 - The reply carries `effort` and `delegateCoding` when the bridge says how it ran the turn.
 - `bridgeInfo()` has `options: { models, efforts, delegateCoding }` when the bridge sends it (0.3.5 and later) and no `options` key otherwise, so a page can show only what this bridge supports.
+- `bridgeInfo().options` keeps only the models `sendTurn` would send (an alias or a full `claude-...` name) and the five efforts; other strings in the hello are dropped.
 
 ## Running turns (0.3.2)
 

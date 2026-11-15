@@ -127,4 +127,9 @@ describe("bridgeInfo options", () => {
     fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", options: { models: ["opus", 3], efforts: ["low"] } }));
     expect(await client.bridgeInfo()).toMatchObject({ options: { models: ["opus"], efforts: ["low"], delegateCoding: false } });
   });
+
+  it("R19-L4: keeps only the models and efforts the client would send", async () => {
+    fetchMock.mockResolvedValueOnce(json(200, { bridge: "gilb-claude-code-bridge", options: { models: ["opus", "--x", "<img>", "claude-a"], efforts: ["low", "turbo"], delegateCoding: true } }));
+    expect((await client.bridgeInfo()).options).toEqual({ models: ["opus", "claude-a"], efforts: ["low"], delegateCoding: true });
+  });
 });
