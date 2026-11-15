@@ -354,7 +354,7 @@ describe("a stale supervisor.json never decides anything (M1)", () => {
       expect(await runSupervisor(cli(), io({ spawnChild: child }))).toBe("already-running");
       expect(spawned).toBe(1);
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
   it("a running supervisor keeps beating (the beat time moves) and records its child", async () => {
@@ -375,7 +375,7 @@ describe("a stale supervisor.json never decides anything (M1)", () => {
       fs.writeFileSync(path.join(state, "supervisor.stop"), "x");
       expect(await run).toBe("stopped");
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 });
@@ -591,7 +591,7 @@ describe("the supervisor loop (fake child, fake clock)", () => {
 describe("the supervisor process (real files, fake child)", () => {
   let dir;
   beforeEach(() => void (dir = fs.mkdtempSync(path.join(os.tmpdir(), "sup-"))));
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
   const io = (extra = {}) => ({ home: dir, env: { LOCALAPPDATA: path.join(dir, "local") }, platform: process.platform, pollMs: 20, ...extra });
   const cli = () => parseCli(["--supervise", "--state-dir", path.join(dir, "state"), "--port", "0", "--claude", FAKE]);
 
@@ -630,7 +630,7 @@ describe("the real bridge under the real supervisor", () => {
   beforeEach(() => void (dir = fs.mkdtempSync(path.join(os.tmpdir(), "sup-real-"))));
   afterEach(async () => {
     if (stopRun) await stopRun();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
   const until = async (fn, ms, what) => {
     const end = Date.now() + ms;

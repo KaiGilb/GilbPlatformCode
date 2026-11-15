@@ -49,7 +49,7 @@ async function start(opts = {}, env = {}) {
 afterEach(async () => {
   for (const b of bridges.splice(0)) await b.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   dir = undefined;
 });
 

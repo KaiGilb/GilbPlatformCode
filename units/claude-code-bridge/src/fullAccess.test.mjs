@@ -45,7 +45,7 @@ async function start({ fullAccess = true, workspace = true, env = {}, bridgeOpts
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const rows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
@@ -162,7 +162,7 @@ describe("the app-subfolder sentence", () => {
       const a = runs()[0].argv;
       prompts.push(a[a.indexOf("--append-system-prompt") + 1]);
       await bridge.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
     for (const x of prompts) expect(x).toContain(SENT);
     expect(prompts[0]).toContain("make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder.");
@@ -293,7 +293,7 @@ describe("the init check in computer mode", () => {
       const r = await post(secret, T({ approval }));
       expect(ev(r, "message").length > 0, `${mode}/${approval}`).toBe(ok);
       await bridge.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 
@@ -415,7 +415,7 @@ describe("hidden and control characters, line breaks, exact paths (N11, N12, L24
       expect(requests.map((q) => q.summary)).toEqual([fullAccess ? "/tmp/a  b" : "a  b"]);
       expect(rows("askjson").slice(1).map((r) => r.decision)).toEqual(Array(3).fill({ behavior: "deny", message: HIDDEN }));
       await bridge.close();
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
   it("limits count the shown text: 1000 shown characters of path are asked, 1001 denied; a command of 1100 breaks (2199 shown) is denied", async () => {

@@ -44,7 +44,7 @@ async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const logRows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);

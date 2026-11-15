@@ -51,7 +51,7 @@ async function start(extra = {}) {
 beforeEach(() => start());
 afterEach(async () => {
   await bridge.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 const runs = () =>
@@ -376,7 +376,7 @@ describe("adding an app's origin", () => {
 
   it("a bridge started with an added origin answers it, and still refuses a different one", async () => {
     await bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     await start({ bridgeOpts: { allowedOrigins: loadAllowedOrigins(["https://app.example.com"]) } });
     const { res } = await pair("https://app.example.com");
     expect(res.status).toBe(200);
@@ -448,7 +448,7 @@ describe("single file", () => {
       { cwd: os.tmpdir(), encoding: "utf8", env: { ...process.env, BRIDGE_COPY: copy } },
     );
     expect(JSON.parse(out.trim().split("\n").pop())).toEqual(DEFAULT_ALLOWED_ORIGINS);
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 });
 

@@ -75,7 +75,7 @@ describe("resolveBin on Windows", () => {
       expect(resolveBin("./a/b")).toBe(path.resolve("./a/b"));
       expect(resolveBin("thing", { PATH: "D:\\x;" + dir }, dir, "darwin")).toBeNull(); // ';' is not a separator here
     }
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 });
 
@@ -193,7 +193,7 @@ describe("the always-on commands on Windows", () => {
     fs.writeFileSync(path.join(dir, "status.json"), JSON.stringify({ ok: true, port: 1 }));
     const down = await fetchCode(parseCli(["--state-dir", dir]), { ...deps, home: dir });
     expect(down.message).toBe("The bridge is not answering on port 1. Check that the bridge is still running in its PowerShell window.");
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 });
 
@@ -207,7 +207,7 @@ describe.skipIf(process.platform !== "win32")("on a real Windows disk", () => {
     fs.writeFileSync(path.join(dir, "claude.cmd"), NODE_SHIM);
     const r = resolveClaudeLaunch("claude", { PATH: dir, PATHEXT: ".COM;.EXE;.BAT;.CMD" });
     expect(r).toEqual({ ok: true, command: process.execPath, prefix: [path.join(pkg, "cli.js")], shown: path.join(pkg, "cli.js") });
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 });
 

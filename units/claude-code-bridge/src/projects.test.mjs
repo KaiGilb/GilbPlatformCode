@@ -33,7 +33,7 @@ async function start({ fullAccess = false, platform = "darwin", bridgeOpts = {},
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 const rows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
 const runs = () => rows("run");
@@ -79,7 +79,7 @@ describe("POST /v1/projects", () => {
     await start();
     expect((await api("/v1/projects", {}, "")).status).toBe(401);
     await bridge.close();
-    dir && fs.rmSync(dir, { recursive: true, force: true });
+    dir && fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-proj-")));
     bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir, env: process.env });
     await bridge.start();

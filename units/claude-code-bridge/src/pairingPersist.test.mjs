@@ -46,7 +46,7 @@ const file = () => path.join(dir, "state", "pairings.json");
 
 afterEach(async () => {
   for (const b of open.splice(0)) await b.close().catch(() => {});
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   dir = undefined;
 });
 

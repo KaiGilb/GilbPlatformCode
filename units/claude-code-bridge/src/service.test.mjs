@@ -39,7 +39,7 @@ beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-svc-"));
   calls = [];
 });
-afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+afterEach(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 
 describe("argument handling", () => {
   it("no flag runs the bridge, as before; each service flag is its own mode", () => {

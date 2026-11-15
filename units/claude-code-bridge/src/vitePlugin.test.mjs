@@ -109,7 +109,7 @@ describe("injecting the default origins", () => {
         expect(run(["https://c.example.test"])).toEqual([origins, [...origins, "https://c.example.test"]]);
       }
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
 });

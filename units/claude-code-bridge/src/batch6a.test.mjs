@@ -42,7 +42,7 @@ async function start(opts = {}) {
 }
 afterEach(async () => {
   for (const b of bridges.splice(0)) await b.close();
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   dir = undefined;
 });
 const hdr = (secret, origin = APP) => ({ "content-type": "application/json", origin, "x-bridge-secret": secret });

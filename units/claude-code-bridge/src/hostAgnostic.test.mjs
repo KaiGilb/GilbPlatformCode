@@ -21,7 +21,7 @@ function runWithPlant(dirName, file, text) {
     writeFileSync(join(dir, dirName, file), text);
     return spawnSync(process.execPath, [script, dir], { encoding: "utf8" });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 
