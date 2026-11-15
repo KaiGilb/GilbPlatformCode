@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
+import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE, CODER_STANDARDS_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -262,9 +262,11 @@ describe("delegateCoding", () => {
     expect(agents["sonnet-coder"].prompt).toMatch(/only inside the folder/);
     expect(agents["sonnet-coder"].prompt).toMatch(/Claim nothing you did not run/);
     expect(after(argv, "--tools")).toBe([...CODE_TOOLS, "Agent"].join(","));
-    expect(after(argv, "--append-system-prompt")).toMatch(/When you finish, list the files you changed\. Hand each coding job to the sonnet-coder agent with a detailed brief/);
+    expect(after(argv, "--append-system-prompt")).toMatch(/When you finish, list the files you changed\. Before you write or change code, load your platform.s coding standards.* Hand each coding job to the sonnet-coder agent with a detailed brief/);
     expect(after(argv, "--append-system-prompt").endsWith(DELEGATE_SENTENCE)).toBe(true);
-    expect(DELEGATE_SENTENCE).toBe("Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself.");
+    expect(DELEGATE_SENTENCE).toBe("Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself. Put the Agent.Coder rules that apply, and the library units to reuse, into each brief by link and by their text, because the coder cannot read links.");
+    expect(agents["sonnet-coder"].prompt).toMatch(/Follow the standards the brief gives you; when the brief names a library unit to reuse, use it rather than writing your own\.$/);
+    expect(after(argv, "--append-system-prompt")).toContain(`${CODER_STANDARDS_SENTENCE} ${DELEGATE_SENTENCE}`);
     // the sandbox, the restriction and the permission flags are the same as a turn without delegation
     for (const f of ["--restricted", "--strict-mcp-config", "--disable-slash-commands"]) expect(argv).toContain(f);
     expect(after(argv, "--permission-mode")).toBe("acceptEdits");
@@ -303,6 +305,23 @@ describe("delegateCoding", () => {
       bridge = undefined;
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("every code turn carries CODER_STANDARDS_SENTENCE in folder, files-only and computer modes, delegating or not; a chat turn does not", async () => {
+    expect(CODER_STANDARDS_SENTENCE).toBe("Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.");
+    for (const access of ["folder", "files-only", "computer"]) {
+      for (const delegateCoding of [false, true]) {
+        const secret = await start({ access });
+        await turn(secret, { mode: "code", delegateCoding });
+        expect(after(runs()[0].argv, "--append-system-prompt")).toContain(CODER_STANDARDS_SENTENCE);
+        await bridge.close();
+        bridge = undefined;
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    const secret = await start();
+    await turn(secret, { model: "opus" });
+    expect(JSON.stringify(runs()[0].argv)).not.toContain("Agent.Coder");
   });
 
   it("a chat turn never gets --agents", async () => {
