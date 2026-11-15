@@ -116,6 +116,50 @@ export interface BridgeOptions {
   models: string[];
   efforts: string[];
   delegateCoding: boolean;
+  /** Pictures a turn may carry (bridge 0.3.6). Absent on an older bridge. */
+  images?: { maxCount: number; maxBytes: number; types: string[] };
+}
+
+/** One picture for a turn: base64 data (no `data:` prefix) and its type. */
+export interface ClaudeCodeImage {
+  mediaType: string;
+  data: string;
+}
+/** The rules for pictures in a turn. KEEP IN STEP with the IMAGE_* constants and validateTurnImages in units/claude-code-bridge/src/bridge.ts (the bridge checks again). */
+export const IMAGE_RULES = { maxCount: 4, maxBytes: 5 * 1024 * 1024, maxTotalBytes: 10 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] as readonly string[] };
+const IMAGE_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/; // flat (a grouped repeat overflows the regex stack on megabytes); the length is checked to be a multiple of 4 too
+function imageMagicOk(type: string, b: Uint8Array): boolean {
+  const at = (off: number, bytes: number[]) => b.length >= off + bytes.length && bytes.every((v, i) => b[off + i] === v);
+  if (type === "image/png") return at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (type === "image/jpeg") return at(0, [0xff, 0xd8, 0xff]);
+  if (type === "image/gif") return at(0, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || at(0, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  if (type === "image/webp") return at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50]);
+  return false;
+}
+function base64Bytes(data: string): Uint8Array {
+  const bin = atob(data);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+/** Throws ClaudeCodeBridgeError(400, sentence) for the first thing wrong with the pictures; returns nothing when they are fine. */
+function checkImages(raw: unknown): void {
+  if (raw === undefined) return;
+  if (!Array.isArray(raw)) throw new ClaudeCodeBridgeError(400, "images must be a list of pictures.");
+  if (raw.length > IMAGE_RULES.maxCount) throw new ClaudeCodeBridgeError(400, `A turn can carry at most ${IMAGE_RULES.maxCount} pictures.`);
+  let total = 0;
+  raw.forEach((it: { mediaType?: unknown; data?: unknown } | null, i: number) => {
+    const n = i + 1;
+    if (!it || typeof it !== "object" || typeof it.mediaType !== "string" || typeof it.data !== "string") throw new ClaudeCodeBridgeError(400, `Picture ${n} must have a mediaType and base64 data.`);
+    if (!IMAGE_RULES.types.includes(it.mediaType)) throw new ClaudeCodeBridgeError(400, `Picture ${n} is not a PNG, JPEG, GIF or WebP picture.`);
+    if (it.data.length === 0 || it.data.length % 4 !== 0 || !IMAGE_BASE64.test(it.data)) throw new ClaudeCodeBridgeError(400, `Picture ${n} is not valid base64 data.`);
+    const bytes = base64Bytes(it.data);
+    if (bytes.length === 0) throw new ClaudeCodeBridgeError(400, `Picture ${n} is empty.`);
+    if (!imageMagicOk(it.mediaType, bytes)) throw new ClaudeCodeBridgeError(400, `Picture ${n} does not look like the ${it.mediaType} picture it says it is.`);
+    if (bytes.length > IMAGE_RULES.maxBytes) throw new ClaudeCodeBridgeError(400, `Picture ${n} is larger than ${IMAGE_RULES.maxBytes / 1048576} MiB.`);
+    total += bytes.length;
+    if (total > IMAGE_RULES.maxTotalBytes) throw new ClaudeCodeBridgeError(400, `The pictures together are larger than ${IMAGE_RULES.maxTotalBytes / 1048576} MiB.`);
+  });
 }
 
 /** The text the page sends to go on after a turn ended because its tool rounds were used up. */
@@ -286,6 +330,12 @@ export interface SendClaudeCodeOpts {
    * (400, "delegateCoding is only for code turns.") before any request.
    */
   delegateCoding?: boolean;
+  /**
+   * Pictures for the last user turn (bridge 0.3.6): at most 4 of PNG, JPEG, GIF or WebP, each at most 5 MiB and 10 MiB together
+   * (decoded), base64 with no `data:` prefix. Checked before any request (ClaudeCodeBridgeError 400 with a plain sentence). They go to
+   * the bridge only; the platform context request carries the text alone. With pictures, the message text may be empty.
+   */
+  images?: ClaudeCodeImage[];
   /**
    * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
    * throws or rejects, answers "no". The turn keeps running while this waits.
@@ -811,6 +861,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
     if (opts.effort !== undefined && !(typeof opts.effort === "string" && (EFFORTS as readonly string[]).includes(opts.effort))) throw new ClaudeCodeBridgeError(400, "That effort is not allowed.");
     if (opts.delegateCoding !== undefined && typeof opts.delegateCoding !== "boolean") throw new ClaudeCodeBridgeError(400, "delegateCoding must be true or false.");
     if (opts.delegateCoding === true && opts.mode !== "code") throw new ClaudeCodeBridgeError(400, "delegateCoding is only for code turns.");
+    checkImages(opts.images);
     const conn = client.load();
     if (!conn) throw new ClaudeCodeBridgeError(401, "Claude Code is not connected. Press Connect.");
 
@@ -1211,6 +1262,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         ...(codeMode ? { mode: "code", approval: opts.approval === "each-write" ? "each-write" : "session", ...(project ? { project } : {}) } : {}),
         ...(opts.model !== undefined ? { model: opts.model } : {}),
         ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
+        ...(opts.images && opts.images.length > 0 ? { images: opts.images.map((im) => ({ mediaType: im.mediaType, data: im.data })) } : {}),
         ...(codeMode && opts.delegateCoding !== undefined ? { delegateCoding: opts.delegateCoding } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
@@ -1258,7 +1310,12 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
-        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown } | null | undefined;
+        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown } | null | undefined;
+        // Pictures (bridge 0.3.6): a count and a size that are whole positive numbers, and only the known types.
+        const im = o && typeof o === "object" && o.images && typeof o.images === "object" ? (o.images as { maxCount?: unknown; maxBytes?: unknown; types?: unknown }) : null;
+        const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
+        const imTypes = im && Array.isArray(im.types) ? im.types.filter((x): x is string => typeof x === "string" && IMAGE_RULES.types.includes(x)) : null;
+        const images = im && num(im.maxCount) !== null && num(im.maxBytes) !== null && imTypes ? { maxCount: num(im.maxCount)!, maxBytes: num(im.maxBytes)!, types: imTypes } : null;
         // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
         const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
         const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
@@ -1272,7 +1329,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
           access: body.access === "folder" || body.access === "computer" ? body.access : null,
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
-          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true } } : {}),
+          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}) } } : {}),
         };
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };

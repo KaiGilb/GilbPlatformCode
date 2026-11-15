@@ -124,7 +124,7 @@ describe("GET /v1/hello options", () => {
   it("lists the models, the efforts and delegateCoding so the page can feature-detect", async () => {
     await start();
     const body = await (await fetch(`${base}/v1/hello`)).json();
-    expect(body.options).toEqual({ models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true });
+    expect(body.options).toEqual({ models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } });
   });
 });
 

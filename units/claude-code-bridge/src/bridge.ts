@@ -57,6 +57,8 @@ type PairingRow = { hash?: unknown; origin?: unknown; principalHash?: unknown; i
 /** One chat turn (a hand-off is a nested turn). */
 interface Turn {
   id: string;
+  /** Pictures of this turn (sent to the child on stdin, never logged); empty for most turns and every hand-off. */
+  images: TurnImage[];
   mcpToken: string;
   system: string;
   tools: ToolSpec[];
@@ -163,7 +165,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.5";
+export const BRIDGE_BUILD = "0.3.6";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -890,6 +892,57 @@ export function diffSnapshots(a: { files: Map<string, string>; truncated: boolea
 }
 
 const MAX_BODY = 2 * 1024 * 1024;
+/** `/v1/turn` only: room for up to 4 pictures (10 MiB decoded is about 13.4 MiB of base64) plus the text. */
+const MAX_TURN_BODY = 16 * 1024 * 1024;
+
+// Pictures in a turn. KEEP IN STEP with IMAGE_RULES in units/claude-code-client/src/client.ts (the client checks the same rules first).
+export const IMAGE_MAX_COUNT = 4;
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+export const IMAGE_MAX_TOTAL_BYTES = 10 * 1024 * 1024;
+export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+const IMAGE_DEFAULT_PROMPT = "Please look at the attached picture.";
+const BASE64_STRICT = /^[A-Za-z0-9+/]*={0,2}$/; // flat (a grouped repeat overflows the regex stack on megabytes); the length is checked to be a multiple of 4 too
+export interface TurnImage { mediaType: string; data: string }
+
+function imageMagicOk(type: string, b: Buffer): boolean {
+  const at = (off: number, bytes: number[]) => b.length >= off + bytes.length && bytes.every((v, i) => b[off + i] === v);
+  if (type === "image/png") return at(0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (type === "image/jpeg") return at(0, [0xff, 0xd8, 0xff]);
+  if (type === "image/gif") return at(0, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || at(0, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+  if (type === "image/webp") return at(0, [0x52, 0x49, 0x46, 0x46]) && at(8, [0x57, 0x45, 0x42, 0x50]);
+  return false;
+}
+
+/** Checks the pictures of a turn before anything starts. Returns the pictures, or a plain sentence saying what is wrong. */
+export function validateTurnImages(raw: unknown): { images: TurnImage[] } | { error: string } {
+  if (raw === undefined) return { images: [] };
+  if (!Array.isArray(raw)) return { error: "images must be a list of pictures." };
+  if (raw.length > IMAGE_MAX_COUNT) return { error: `A turn can carry at most ${IMAGE_MAX_COUNT} pictures.` };
+  const out: TurnImage[] = [];
+  let total = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const n = i + 1;
+    const it = raw[i] as { mediaType?: unknown; data?: unknown } | null;
+    if (!it || typeof it !== "object" || typeof it.mediaType !== "string" || typeof it.data !== "string") return { error: `Picture ${n} must have a mediaType and base64 data.` };
+    if (!(IMAGE_TYPES as readonly string[]).includes(it.mediaType)) return { error: `Picture ${n} is not a PNG, JPEG, GIF or WebP picture.` };
+    if (it.data.length === 0 || it.data.length % 4 !== 0 || !BASE64_STRICT.test(it.data)) return { error: `Picture ${n} is not valid base64 data.` };
+    const bytes = Buffer.from(it.data, "base64");
+    if (bytes.length === 0) return { error: `Picture ${n} is empty.` };
+    if (!imageMagicOk(it.mediaType, bytes)) return { error: `Picture ${n} does not look like the ${it.mediaType} picture it says it is.` };
+    if (bytes.length > IMAGE_MAX_BYTES) return { error: `Picture ${n} is larger than ${IMAGE_MAX_BYTES / 1048576} MiB.` };
+    total += bytes.length;
+    if (total > IMAGE_MAX_TOTAL_BYTES) return { error: `The pictures together are larger than ${IMAGE_MAX_TOTAL_BYTES / 1048576} MiB.` };
+    out.push({ mediaType: it.mediaType, data: it.data });
+  }
+  return { images: out };
+}
+
+/** The one stdin line for a turn with pictures: the pictures first, then the text. */
+function imageStdin(images: TurnImage[], prompt: string): string {
+  const content: unknown[] = images.map((im) => ({ type: "image", source: { type: "base64", media_type: im.mediaType, data: im.data } }));
+  content.push({ type: "text", text: prompt.trim() ? prompt : IMAGE_DEFAULT_PROMPT });
+  return JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n";
+}
 // Matches the longest hand-off the connector allows (HOP_MAX_MS_BY_ROLE in gilb-connector).
 const TOOL_WAIT_MS = 30 * 60 * 1000;
 const MAX_TURNS_AT_ONCE = 4;
@@ -1274,13 +1327,13 @@ export function createBridge(opts: BridgeOptions = {}) {
     res.end(JSON.stringify(body));
   };
 
-  function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  function readBody(req: IncomingMessage, maxBody = MAX_BODY): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       let size = 0;
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => {
         size += c.length;
-        if (size > MAX_BODY) {
+        if (size > maxBody) {
           reject(Object.assign(new Error("too large"), { status: 413 }));
           req.destroy();
           return;
@@ -1865,7 +1918,11 @@ export function createBridge(opts: BridgeOptions = {}) {
 
   function claudeArgs(turn: Turn, mode: ClaudeMode) {
     const mcp = { mcpServers: { gilb: { type: "http", url: `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}` } } };
-    if (turn.code && computer) return computerArgs(turn, mode, mcp);
+    if (turn.code && computer) {
+      const a = computerArgs(turn, mode, mcp);
+      if (turn.images.length > 0) a.push("--input-format", "stream-json");
+      return a;
+    }
     const args = turn.code ? [
       "-p",
       "--output-format", "stream-json",
@@ -1909,6 +1966,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (turn.model) args.push("--model", turn.model);
     if (turn.effort) args.push("--effort", turn.effort);
     if (turn.delegate) args.push("--agents", delegateAgents(filesOnly, false));
+    // Pictures go on stdin as one stream-json line, so they are never in the argument list.
+    if (turn.images.length > 0) args.push("--input-format", "stream-json");
     return args;
   }
 
@@ -2054,17 +2113,21 @@ export function createBridge(opts: BridgeOptions = {}) {
         }
       });
       child.stdin!.on("error", () => {});
-      child.stdin!.end(prompt);
+      child.stdin!.end(turn.images.length > 0 ? imageStdin(turn.images, prompt) : prompt);
     });
   }
 
   async function handleTurn(req: IncomingMessage, res: ServerResponse) {
     let body;
     try {
-      body = await readBody(req);
+      body = await readBody(req, MAX_TURN_BODY);
     } catch (e) {
       return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
+    // Pictures are checked before anything is started. A hand-off is text only.
+    const imgCheck = validateTurnImages(body.images);
+    if ("error" in imgCheck) return json(res, 400, { error: imgCheck.error });
+    if (imgCheck.images.length > 0 && typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot carry pictures." });
     // Code mode: one folder the person chose, one code turn at a time. Chat is the default and is unchanged.
     if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "code") return json(res, 400, { error: 'mode must be "chat" or "code"' });
     if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write") return json(res, 400, { error: 'approval must be "session" or "each-write"' });
@@ -2126,7 +2189,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
     const system = typeof body.system === "string" ? body.system : "";
     const tools: ToolSpec[] = Array.isArray(body.tools) ? body.tools.filter((t: ToolSpec) => t && typeof t.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(t.name)) : [];
-    if (!prompt.trim() || !system.trim()) return json(res, 400, { error: "prompt and system are required." });
+    if ((!prompt.trim() && imgCheck.images.length === 0) || !system.trim()) return json(res, 400, { error: "prompt and system are required." });
     // A hand-off carries its own model and effort when it names them, otherwise it inherits its parent's.
     const model = typeof body.model === "string" ? body.model : parent ? parent.model : "";
     const effort = typeof body.effort === "string" ? body.effort : parent ? parent.effort : "";
@@ -2143,6 +2206,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     const turn: Turn = {
       id: crypto.randomBytes(8).toString("hex"),
+      images: imgCheck.images,
       mcpToken: crypto.randomBytes(24).toString("hex"),
       system,
       tools,
@@ -2254,6 +2318,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           content: String(out.result.result ?? ""),
           model: out.model,
           ...(turn.effort ? { effort: turn.effort } : {}),
+          ...(turn.images.length > 0 ? { images: turn.images.length } : {}),
           ...(isCode ? { delegateCoding: turn.delegate } : {}),
           payer: "person-claude-code",
           ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
@@ -2444,7 +2509,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true } });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -2497,6 +2562,7 @@ export function createBridge(opts: BridgeOptions = {}) {
             lastActivity: t.lastActivity,
             toolCalls: t.toolCalls,
             handoffs: t.handoffCount,
+            ...(t.images.length > 0 ? { images: t.images.length } : {}),
           })),
         });
       }
