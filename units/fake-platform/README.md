@@ -32,7 +32,7 @@ test("the app lists Ann's boats", async () => {
 - Another device or person acts: `edit`, `remove`, `bump` (the ETag moves, the facts do not), `revokeAccess`.
 - Failures: `failNext(match, { status, body?, message?, times?, skip? })`, `dropNext(match)` (a lost network), `hold(match, { skip? })` (waits until the returned function is called), `partialNextCreateNamed()` (the next create-named answers 202). `match` is `"GET /lws/vault/:vault/records"` or a RegExp on `"METHOD /path"`.
 
-What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-name`), `create-named` (a `parentVault` must be a vault the caller MINTED through create-named: the sign-up landing vault, a seeded vault and another person's vault are 403 `You do not own parent vault <entity> — nest only under vaults you have minted`, GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`; `Vault.mintedBy` is the email of the minter, null for a landing or seeded vault), `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) grants (`grant-vault`, `revoke-vault`, `vault-acl`) and the website style reader `POST /base/style/extract` (row 21: the credential is checked before the body, a body over 4096 bytes is 413, 10 calls per 60 s per principal then 429 `rate_limited`, an address that is not https is 400 `bad_url`, a private or local one is 400 `address_not_allowed`, GilbPlatform `src/routes/style-extract.ts:29`, `:33-36`, `:38-80`; it reads no site, it answers what `seedStyle` set or a stub of the address).
+What it answers: sign-in (`request-code`, `verify-code` including `renew` and `renewWindowSec`, `name-prep`, `check-name`), sign out server (`POST /base/auth/sign-out`, rows 30: 204, then the token is 401 and `renew` is refused), renew (`POST /base/auth/email/renew`, row 31), `create-named` (a `parentVault` must be a vault the caller MINTED through create-named: the sign-up landing vault, a seeded vault and another person's vault are 403 `You do not own parent vault <entity> — nest only under vaults you have minted`, GilbPlatform `src/auth/create-named-vault.ts:312` and `:571`; `Vault.mintedBy` is the email of the minter, null for a landing or seeded vault), `GET /lws/vaults`, records (create, read, patch, replace, delete, the list by type with `since`, `after`, `include=body`, `limit`, `offset`, `lifecycle=ended`), files (upload by PUT or POST, the listing, get, end, the `transcodedFrom` link by `PATCH /lws/r/<file id>`) grants (`grant-vault`, `revoke-vault`, `vault-acl`) and the website style reader `POST /base/style/extract` (row 21: the credential is checked before the body, a body over 4096 bytes is 413, 10 calls per 60 s per principal then 429 `rate_limited`, an address that is not https is 400 `bad_url`, a private or local one is 400 `address_not_allowed`, GilbPlatform `src/routes/style-extract.ts:29`, `:33-36`, `:38-80`; it reads no site, it answers what `seedStyle` set or a stub of the address).
 
 ## Options
 
@@ -55,9 +55,28 @@ What it answers: sign-in (`request-code`, `verify-code`, `name-prep`, `check-nam
 
 In `"strict"` mode the token must be one the fake issued (`signInAs`, or `verify-code`); the principal is the one the token names. The proof's `htm`, `htu` (`https://` + the request's host + its path as sent, percent-escapes kept, query dropped, even over http; a mismatch is 401 `{"error":"Unauthorized","message":"DPoP proof htu does not match the request URI"}`, verify.ts:319), `ath`, `iat`, `jti` (not used before) and key (the token's `cnf.jkt`) are checked. Signatures are not: there is no real crypto. Strict is stricter than the platform on `/lws` and `/files` on purpose, so a call that forgot to sign fails in the test.
 
+## Sign out server, renew, and the renew window
+
+- `verify-code` takes `renew: true` and an optional `renewWindowSec`, as the platform does (`src/routes/email-auth.ts:457-468`): an integer of at least 300 (else 400 before the code is spent), a window above 14 days is capped at 14 days and not refused, no window means 14 days. The answer carries `renew` (`rsi1.<id>.<secret>`) and `renewExpiresAt`; the first token lasts no longer than the window. Without `renew: true` neither field is sent and the window is not judged.
+- `POST /base/auth/email/renew` takes `{ renew }` and a DPoP proof with no `ath` and the family's key. It gives a new token, a new `renew` credential and a new `renewExpiresAt` (the window counts from last use). Every refusal is one 401, `renewal refused`. An old secret is reuse: the family ends and every token on its key is refused. The platform's 60 s grace for the previous secret and its Origin admission check are not faked.
+- `POST /base/auth/sign-out` (strict) ends the token's device key and the renewable families of that person and key: the token then gets 401 `Invalid access token: this sign-in has ended` and `renew` is refused. A token from `signInAs` without a `jwk` has no device key and is 400, as the platform's. Another key of the same person is untouched.
+
+## Fake platform browser: `installFakePlatform`
+
+For an app's `dev:fake` mode, in place of a hand-written fetch router and `indexedDB.deleteDatabase(...)`:
+
+```ts
+import { createFakePlatform, installFakePlatform } from "@kaigilb/gilbplatformcode-fake-platform";
+const fake = createFakePlatform({ origin: "https://fake.test" });
+installFakePlatform(fake);   // before the app makes its credential; returns a function that undoes it
+```
+
+`window.fetch` becomes a router: a request to the fake's host (`https://fake.test` and any `*.fake.test`) goes to `fake.fetch`, every other address goes to the fetch that was there. Before that it deletes the signin session database (`gilb-signin-session`), because the fake starts empty on each load and a sign-in an earlier load kept names a token this fake never issued. Options: `hosts(host)` (the host with its port decides; default the fake origin's host and its subdomains), `fallback` (the fetch for other addresses), `resetDatabases` (names to delete, or `false`), `target` (for tests). With the fake able to renew, the app no longer needs `renew: false` on its credential.
+
 ## Not faked
 
 - Real signature checking, token issuer keys, email delivery, the send guard and its caps, the failed-code lockout, the session cookie.
+- Renew: the Origin admission check and the 60 s grace for the previous secret. Sign-out: the identity-store 503 and the issuer check.
 - The first-day mint limit on create-named; machine, AI and review credentials; the `WrongSignInHost` refusal.
 - The ontology: `represents` is judged by a pattern or `knownTypes`; fact keys are open unless `undefinedTerms` lists them.
 - `?filter=` on the record list, `?thumbnail=`, `?face=` and `?fileType=` on an upload, `Range` on a download: each answers `400 fake_platform_not_faked`, never a silent pass.
@@ -75,6 +94,12 @@ Package: `@kaigilb/gilbplatformcode-fake-platform`. It has no dependencies of it
 ## Where it came from
 
 New code, written for the next app-building AI in EESpeed Round 5 (R5-C3). Repository `KaiGilb/GilbPlatformCode`, commit `73cc3dcf821ed0e80ffaf6a75bbd04491c5ecea7` (the main that holds `lws-records`, `record-sync`, `signin` and `vault-access` as the tests import them). No source file was copied. The routes mirror GilbPlatform at commit `619aca557597b1bc50dd6e1340ebc274039be9c2`.
+
+## Changes in 0.1.3
+
+- Row 30 `POST /base/auth/sign-out` and row 31 `POST /base/auth/email/renew` (read at GilbPlatform `c89b7d4b9f7e8abe7e851abf7b5de212806fe34e`, newer than `PLATFORM_SHA`). `verify-code` accepts `renew` and `renewWindowSec` (it used to refuse them as extra keys) and answers `renew` and `renewExpiresAt`. See "Sign out server, renew, and the renew window".
+- `installFakePlatform(fake, opts)`: the fake platform browser installer. See above.
+- Additive. A caller that sent neither key sees no change.
 
 ## Changes in 0.1.2
 

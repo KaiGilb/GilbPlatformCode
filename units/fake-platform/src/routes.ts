@@ -4,6 +4,7 @@ import { checkName, createNamed, namePrep, requestCode, verifyCode } from "./sig
 import { grantVault, revokeVault, vaultAcl } from "./access";
 import { endFileRoute, getFile, listFiles, uploadFile } from "./files";
 import { createRecord, deleteRecord, listRecords, patchRecord, readRecord, replaceRecord } from "./records";
+import { renew, signOut } from "./renew";
 import { styleExtract } from "./style";
 import { listVaults } from "./vaults";
 import type { Method } from "./types";
@@ -51,6 +52,9 @@ export const ROUTES: readonly Route[] = [
   { row: 20, method: "GET", path: "/base/consent/vault-acl", auth: "strict", mirrors: ["src/routes/consent.ts:119-135", "src/authz/entity-acl.ts:452-576"], handler: vaultAcl },
   // Row 21 was read at GilbPlatform origin/main 0d602ce8995dc672f241aff5e276f03b98dbad1b, which is newer than PLATFORM_SHA (the route is not in that tree).
   { row: 21, method: "POST", path: "/base/style/extract", auth: "strict", mirrors: ["src/routes/style-extract.ts:38-80", "src/routes/style-extract.ts:29", "src/routes/style-extract.ts:33-36", "src/routes/style-extract.ts:18-23", "src/style/fetch-site.ts:41-58", "src/style/fetch-site.ts:189-193", "src/style/limit.ts:15-34"], handler: styleExtract },
+  // Rows 30 and 31 were read (numbered 30 and 31 because DESIGN.md already uses 22 to 29 for its disagreement table) at GilbPlatform origin/main c89b7d4b9f7e8abe7e851abf7b5de212806fe34e (newer than PLATFORM_SHA).
+  { row: 30, method: "POST", path: "/base/auth/sign-out", auth: "strict", mirrors: ["src/routes/sign-out.ts:49-103", "src/routes/sign-out.ts:58-60"], handler: signOut },
+  { row: 31, method: "POST", path: "/base/auth/email/renew", auth: "none", mirrors: ["src/routes/renew-sign-in.ts:99-156", "src/routes/renew-sign-in.ts:27", "src/routes/renew-sign-in.ts:141", "src/auth/renewable-sign-in.ts:575"], handler: (c, r) => renew(c, r) },
 ];
 
 /** The row a method and path belong to, with its decoded `:params`; null when no row answers. */

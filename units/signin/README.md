@@ -119,7 +119,7 @@ The token is reused until 30 s before it expires. `invalidate()` after a 401. A 
 
 ## Start-up in 15 lines
 
-`useLiveStart` is the whole start-up of a live app: restore the sign-in or show the card, find or make the person's own app vault (first sign-in creates it, once), then say ready. Stages: `"signin"` (show the card), `"opening"` (show `step`), `"ready"` (show the app), `"error"` (show `error`, offer `retry()` and `signOut()`).
+`useLiveStart` is the whole start-up of a live app: restore the sign-in or show the card, find or make the person's own app vault (first sign-in creates it, once), then say ready. Stages: `"signin"` (show the card), `"opening"` (show `step`), `"ready"` (show the app), `"error"` (show `error`, offer `retry()` and `signOut()`), `"signing-out"` (the sign-out is running: show "Signing out...", start no read).
 
 ```tsx
 import { SignInCard, useLiveStart } from "@kaigilb/gilbplatformcode-signin";
@@ -142,8 +142,11 @@ export function Root() {
 - `vault` is the person's own app vault (`ListedVault`); `actor` is their own address (their landing vault's id, else the app vault's); `vaults` is every vault they reach; `principal` is who signed in. They are set only when `stage` is `"ready"`.
 - Pass stable `credential`, `app` and `vaultConfig` (module constants): a new one restarts the start-up.
 - `error` is a sentence in plain words (the platform's own words when it sent them). `retry()` works only from `"error"`; it never makes a second vault, because a half-made vault is finished, not repeated (`createAppVaultService`).
-- `signOut()` drops the key and the stored sign-in and goes to `"signin"`.
+- `signOut()` first sets `stage` to `"signing-out"` and aborts `signal`, then asks the server to end the sign-in (`credential.signOut(idOrigin)`: `POST {origin}/base/auth/sign-out`, signed with the held token, answer 204; the server ends the device key and its renewable credentials), then drops the key and the stored sign-in and goes to `"signin"`. A `SessionCredential` has `signOut`; a credential without it (a fake, a host key) only clears locally, as before. If the server call fails (no network, a non-204 answer), the sign-out still finishes locally and the card stage carries `signOutNotice`, a plain sentence (`SIGN_OUT_NOT_RECORDED`): "You are signed out on this device, but the sign-in service could not be told. Your sign-in there ends by itself." Show it above the card. A second `signOut()` while one runs joins it; `start()`, `signedIn()` and `retry()` do nothing until the card shows.
+- No reads after sign-out. `signal` (`AbortSignal`) aborts at the start of sign-out and is a fresh one once the card shows. The 3-line app pattern: (1) `const { signal, stage } = useLiveStart(...)`; (2) pass `{ signal }` to every `fetch` the app starts; (3) start no read while `stage !== "ready"` (an effect that reads checks `signal.aborted` first and returns). Do not abort a signing in flight; the credential already refuses a proof after sign-out.
+- Renew window. A credential that stores asks verify-code for a renewable sign-in; `new SessionCredential({ renewWindowSec })` (an integer from 300 to 1209600, else `TypeError`) shortens how long it stays valid from last use. Not set, the client asks for 14 days (the server default when `renew` is sent without a window). The server caps a window above 14 days at 14 days, it does not refuse it. After sign-out the renew credential is refused.
 - `vaultShortName(vault)` is a header name for a vault; `sentenceOfStartError(err)` is the sentence the hook uses. Both are in `./core` too.
+- Words for the library card: sign out server, no reads after sign out, renew window.
 - Not React? `createLiveStart(options)` (in `./core`) is the same machine: `getState()`, `subscribe()`, `start()`, `signedIn()`, `retry()`, `signOut()`, `dispose()`.
 
 ## Take
@@ -272,6 +275,10 @@ Errors are thrown unchanged. The pending name is cleared ONLY when (a) the creat
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.12
+
+Patch release, additive only. `useLiveStart` / `createLiveStart` sign-out now calls the server: new optional `LiveStartCredential.signOut?(origin)` (a `SessionCredential` has it), called before the local clear; a failed call still clears locally and sets `signOutNotice` (`SIGN_OUT_NOT_RECORDED`). New stage `"signing-out"` and `signal: AbortSignal` (aborts at the start of sign-out; `start`, `signedIn` and `retry` do nothing while it runs). New state field `signOutNotice`. A caller whose credential has no `signOut` keeps the old behaviour apart from the new stage and signal. Renew window: no code change, the `renewWindowSec` option already existed on `SessionCredential`; this README now says how it behaves.
 
 ## Changes in 0.2.10
 

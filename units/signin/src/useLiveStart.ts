@@ -16,13 +16,18 @@ export interface UseLiveStartOptions extends Omit<LiveStartOptions, "credential"
 export interface UseLiveStartResult extends LiveStartState {
   retry(): void;
   signOut(): Promise<void>;
+  /**
+   * Aborts when `signOut` starts (and `stage` becomes "signing-out"). Pass it to each read the app starts, so
+   * none starts or lands after sign-out begins. It is a fresh signal again once the card shows.
+   */
+  signal: AbortSignal;
   /** Spread onto `<SignInCard {...signInProps} />` while `stage` is "signin". */
   signInProps: { app: SignInApp; auth: SignInAuth; onSignedIn: () => void };
 }
 
 /**
  * Start-up of a live app: restore the sign-in or show the card, find or make the person's own app
- * vault, then say "ready". Stages: "signin" | "opening" | "ready" | "error".
+ * vault, then say "ready". Stages: "signin" | "opening" | "ready" | "error" | "signing-out".
  * Pass stable `credential`, `vaultConfig` and `app` (module constants or memoised): a new one restarts the start-up.
  *
  * @param o the credential, the sign-in origin, the app identity and the vault settings
@@ -60,7 +65,7 @@ export function useLiveStart(o: UseLiveStartOptions): UseLiveStartResult {
   );
   const signInProps = useMemo(() => ({ app, auth, onSignedIn: () => ctl.signedIn() }), [app, auth, ctl]);
   return useMemo(
-    () => ({ ...state, retry: () => ctl.retry(), signOut: () => ctl.signOut(), signInProps }),
+    () => ({ ...state, retry: () => ctl.retry(), signOut: () => ctl.signOut(), signal: ctl.signal, signInProps }),
     [state, ctl, signInProps],
   );
 }

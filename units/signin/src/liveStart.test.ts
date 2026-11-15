@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLiveStart, sentenceOfStartError, vaultShortName, type LiveStartCredential, type LiveStartState } from "./liveStart";
+import { createLiveStart, sentenceOfStartError, SIGN_OUT_NOT_RECORDED, vaultShortName, type LiveStartCredential, type LiveStartState } from "./liveStart";
 import type { AppVaultConfig, AppVaultResult, AppVaultService } from "./appVault";
 import type { Transport } from "./transport";
 import type { ListedVault } from "./vaults";
@@ -284,5 +284,139 @@ describe("sentenceOfStartError", () => {
     expect(sentenceOfStartError(new Error(""))).toBe("Something went wrong. Try again.");
     expect(sentenceOfStartError("odd")).toBe("Something went wrong. Try again.");
     expect(sentenceOfStartError(null)).toBe("Something went wrong. Try again.");
+  });
+});
+
+describe("createLiveStart server sign-out", () => {
+  const ID = "https://id.example.test";
+  const make = (cred: LiveStartCredential, svc = fakeService([Promise.resolve(RESULT)])) => ({ svc, ctl: createLiveStart({ credential: cred, idOrigin: ID, vaultConfig: CFG, service: svc }) });
+
+  it("calls credential.signOut once with the sign-in origin, then clears locally and shows the card", async () => {
+    const order: string[] = [];
+    const signOut = vi.fn(async () => (order.push("server"), { serverSignedOut: true }));
+    const cred = credential("p", { signOut });
+    const { ctl, svc } = make(cred);
+    (svc.reset as ReturnType<typeof vi.fn>).mockImplementation(() => void order.push("clear"));
+    ctl.start();
+    await tick();
+    await ctl.signOut();
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith(ID);
+    expect(order).toEqual(["server", "clear"]);
+    expect(ctl.getState()).toMatchObject({ stage: "signin", signOutNotice: null, vault: null });
+  });
+
+  it("a signOut that rejects still clears locally and says so in a plain sentence", async () => {
+    const cred = credential("p", { signOut: vi.fn(async () => Promise.reject(new Error("offline"))) });
+    const { ctl, svc } = make(cred);
+    ctl.start();
+    await tick();
+    await ctl.signOut();
+    expect(cred.invalidate).toHaveBeenCalledWith(true);
+    expect(svc.reset).toHaveBeenCalledTimes(1);
+    expect(ctl.getState()).toMatchObject({ stage: "signin", signOutNotice: SIGN_OUT_NOT_RECORDED });
+  });
+
+  it("a non-204 answer (serverSignedOut false) clears locally and says so", async () => {
+    const { ctl } = make(credential("p", { signOut: async () => ({ serverSignedOut: false }) }));
+    ctl.start();
+    await tick();
+    await ctl.signOut();
+    expect(ctl.getState()).toMatchObject({ stage: "signin", signOutNotice: SIGN_OUT_NOT_RECORDED });
+  });
+
+  it("the notice goes when the next sign-in opens", async () => {
+    const { ctl } = make(credential("p", { signOut: async () => ({ serverSignedOut: false }) }));
+    ctl.start();
+    await tick();
+    await ctl.signOut();
+    ctl.signedIn();
+    await tick();
+    expect(ctl.getState()).toMatchObject({ stage: "ready", signOutNotice: null });
+  });
+
+  it("a credential without signOut keeps the old path: invalidate(true), no notice", async () => {
+    const cred = credential("p");
+    const { ctl } = make(cred);
+    ctl.start();
+    await tick();
+    await ctl.signOut();
+    expect(cred.invalidate).toHaveBeenCalledWith(true);
+    expect(ctl.getState()).toMatchObject({ stage: "signin", signOutNotice: null });
+  });
+});
+
+describe("createLiveStart signing-out state and signal", () => {
+  const ID = "https://id.example.test";
+  it("stage is signing-out and the signal is aborted from the first moment, a fresh signal after", async () => {
+    const gate = later<{ serverSignedOut: boolean }>();
+    const cred = credential("p", { signOut: () => gate.promise });
+    const ctl = createLiveStart({ credential: cred, idOrigin: ID, vaultConfig: CFG, service: fakeService([Promise.resolve(RESULT)]) });
+    ctl.start();
+    await tick();
+    const before = ctl.signal;
+    expect(before.aborted).toBe(false);
+    const out = ctl.signOut();
+    expect(ctl.getState().stage).toBe("signing-out");
+    expect(before.aborted).toBe(true);
+    expect(ctl.signal.aborted).toBe(true);
+    gate.resolve({ serverSignedOut: true });
+    await out;
+    expect(ctl.getState().stage).toBe("signin");
+    expect(ctl.signal.aborted).toBe(false);
+    expect(ctl.signal).not.toBe(before);
+  });
+
+  it("no read starts after sign-out begins: signedIn, retry and start are ignored until the card shows", async () => {
+    const gate = later<{ serverSignedOut: boolean }>();
+    const getSession = vi.fn(async () => ({ principal: "p" }));
+    const restore = vi.fn(async () => ({ principal: "p" }));
+    const cred = credential("p", { signOut: () => gate.promise, getSession, restore });
+    const svc = fakeService([() => Promise.reject(new Error("x")), Promise.resolve(RESULT)]);
+    const ctl = createLiveStart({ credential: cred, idOrigin: ID, vaultConfig: CFG, service: svc });
+    ctl.start();
+    await tick();
+    expect(ctl.getState().stage).toBe("error");
+    const opens = svc.calls.length;
+    const out = ctl.signOut();
+    ctl.signedIn();
+    ctl.retry();
+    ctl.start();
+    await tick();
+    expect(getSession).not.toHaveBeenCalled();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(svc.calls.length).toBe(opens);
+    expect(ctl.getState().stage).toBe("signing-out");
+    gate.resolve({ serverSignedOut: true });
+    await out;
+    expect(svc.calls.length).toBe(opens);
+  });
+
+  it("an open that answers during sign-out is ignored", async () => {
+    const open = later<AppVaultResult>();
+    const gate = later<{ serverSignedOut: boolean }>();
+    const ctl = createLiveStart({ credential: credential("p", { signOut: () => gate.promise }), idOrigin: ID, vaultConfig: CFG, service: fakeService([open.promise]) });
+    ctl.start();
+    await tick();
+    const out = ctl.signOut();
+    open.resolve(RESULT);
+    await tick();
+    expect(ctl.getState().stage).toBe("signing-out");
+    gate.resolve({ serverSignedOut: true });
+    await out;
+    expect(ctl.getState().stage).toBe("signin");
+  });
+
+  it("a second signOut while one runs joins it: one server call", async () => {
+    const gate = later<{ serverSignedOut: boolean }>();
+    const signOut = vi.fn(() => gate.promise);
+    const ctl = createLiveStart({ credential: credential("p", { signOut }), idOrigin: ID, vaultConfig: CFG, service: fakeService([Promise.resolve(RESULT)]) });
+    ctl.start();
+    await tick();
+    const a = ctl.signOut();
+    const b = ctl.signOut();
+    gate.resolve({ serverSignedOut: true });
+    await Promise.all([a, b]);
+    expect(signOut).toHaveBeenCalledTimes(1);
   });
 });

@@ -54,6 +54,21 @@ export interface Session {
   /** RFC 7638 thumbprint of the key the token is bound to; null = unbound (no key check). */
   jkt: string | null;
   exp: number;
+  /** Set by POST /base/auth/sign-out: this sign-in has ended; the token is refused from then on. */
+  ended?: true;
+}
+/** One renewable sign-in (the platform's "family", src/auth/renewable-sign-in.ts). */
+export interface RenewFamily {
+  id: string;
+  email: string;
+  /** Thumbprint of the key the family is bound to. */
+  jkt: string;
+  windowSec: number;
+  /** Epoch ms: now + windowSec at the last start or renew (the window counts from last use). */
+  expiresAt: number;
+  /** Rotations so far; the current secret is derived from it. */
+  rotation: number;
+  ended: boolean;
 }
 /** What the platform's website reader answers (src/style/fetch-site.ts): the colours and fonts it found, and optionally the corner radius and a logo address. */
 export interface StyleExtractResult {
@@ -73,6 +88,8 @@ export interface FakeState {
   records: Map<string, FakeRecord>;
   files: Map<string, FakeFile>;
   sessions: Map<string, Session>;
+  /** Renewable sign-ins by family id (verify-code with `renew: true`; POST /base/auth/email/renew). */
+  renewals: Map<string, RenewFamily>;
   /** email to the one-time code last issued. */
   codes: Map<string, { code: string; expiresAt: number; name?: string }>;
   /** normalised names held by someone else (takeName). */

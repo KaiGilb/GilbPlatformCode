@@ -7,14 +7,24 @@ import { checkVaultName } from "./http";
 import type { Transport } from "./transport";
 import { createNamedVault, listVaults, type ListedVault, type SignedRequestSource } from "./vaults";
 
-/** What the screen shows: the sign-in card, the vault being found or made, the app, or a failure. */
-export type LiveStage = "signin" | "opening" | "ready" | "error";
+/**
+ * What the screen shows: the sign-in card, the vault being found or made, the app, a failure, or
+ * the sign-out in progress ("signing-out": the server is being told, nothing new may be read).
+ */
+export type LiveStage = "signin" | "opening" | "ready" | "error" | "signing-out";
 
 /** What the start-up needs from the session credential (a `SessionCredential` has all of it). */
 export interface LiveStartCredential extends SignedRequestSource {
   restore(): Promise<{ principal: string } | null>;
   getSession(): Promise<{ principal: string }>;
   invalidate(dropKey?: boolean): Promise<void>;
+  /**
+   * Optional: tell the sign-in server the person signed out (`POST {origin}/base/auth/sign-out`, signed
+   * with the held token), then drop the key and token locally. A `SessionCredential` has it. When it is
+   * absent, sign-out only clears locally, as before. It may resolve `{ serverSignedOut: false }` (the
+   * server was not reached or refused): that is reported in `signOutNotice`, and the local sign-out still happens.
+   */
+  signOut?(origin: string): Promise<{ serverSignedOut: boolean }>;
 }
 
 export interface LiveStartOptions {
@@ -49,7 +59,15 @@ export interface LiveStartState {
   actor: string | null;
   /** Every vault the person reaches, as last read. Set only when `stage` is "ready". */
   vaults: ListedVault[];
+  /**
+   * A plain sentence, set on the "signin" stage that follows a sign-out whose server call did not
+   * succeed (the person is signed out on this device; the server was not told). Null otherwise.
+   */
+  signOutNotice: string | null;
 }
+
+/** The sentence for a sign-out the server did not record. Exported so an app can match it in tests. */
+export const SIGN_OUT_NOT_RECORDED = "You are signed out on this device, but the sign-in service could not be told. Your sign-in there ends by itself.";
 
 export interface LiveStartController {
   getState(): LiveStartState;
@@ -60,8 +78,17 @@ export interface LiveStartController {
   signedIn(): void;
   /** From "error": tries the open again. Ignored in any other stage. */
   retry(): void;
-  /** Ends the sign-in and shows the card again. */
+  /**
+   * Tells the server (when the credential can), then clears locally and shows the card again. From the
+   * first moment `stage` is "signing-out" and `signal` is aborted; `start`, `signedIn` and `retry` do nothing
+   * until the card shows. A second call while one runs joins it.
+   */
   signOut(): Promise<void>;
+  /**
+   * Aborts when a sign-out starts. Pass it to every read the app starts (`fetch(url, { signal })`), so no
+   * read starts or finishes after sign-out begins. A fresh, unaborted signal replaces it when the card shows.
+   */
+  readonly signal: AbortSignal;
   /** Stops all running work; later answers are ignored. `start()` may run again after it. */
   dispose(): void;
 }
@@ -97,7 +124,7 @@ export function sentenceOfStartError(err: unknown): string {
   return err instanceof Error && err.message.trim() ? err.message.trim() : "Something went wrong. Try again.";
 }
 
-const INITIAL: LiveStartState = { stage: "opening", vault: null, error: null, step: null, principal: null, actor: null, vaults: [] };
+const INITIAL: LiveStartState = { stage: "opening", vault: null, error: null, step: null, principal: null, actor: null, vaults: [], signOutNotice: null };
 
 /**
  * The start-up as a small state machine.
@@ -122,6 +149,8 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
   let state: LiveStartState = INITIAL;
   let generation = 0;
   let disposed = false;
+  let signingOut: Promise<void> | null = null;
+  let abort = new AbortController();
   const listeners = new Set<() => void>();
 
   const set = (next: LiveStartState): void => {
@@ -130,6 +159,7 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
   };
 
   function open(principal: string): void {
+    if (signingOut) return;
     const mine = ++generation;
     set({ ...INITIAL, stage: "opening", step: "listing", principal });
     service
@@ -139,7 +169,7 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
       .then((r) => {
         if (mine !== generation || disposed) return;
         const landing = r.vaults.find((v) => v.isLandingVault);
-        set({ stage: "ready", vault: r.vault, error: null, step: null, principal, actor: landing?.vaultId ?? r.vault.vaultId, vaults: r.vaults });
+        set({ stage: "ready", vault: r.vault, error: null, step: null, principal, actor: landing?.vaultId ?? r.vault.vaultId, vaults: r.vaults, signOutNotice: null });
       })
       .catch((e: unknown) => {
         if (mine !== generation || disposed) return;
@@ -158,7 +188,11 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
       listeners.add(l);
       return () => void listeners.delete(l);
     },
+    get signal() {
+      return abort.signal;
+    },
     start() {
+      if (signingOut) return;
       disposed = false; // a StrictMode remount starts the same controller again
       const mine = ++generation;
       if (state !== INITIAL) set(INITIAL);
@@ -174,6 +208,7 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
       );
     },
     signedIn() {
+      if (signingOut) return;
       const mine = ++generation;
       o.credential.getSession().then(
         (s) => {
@@ -185,18 +220,42 @@ export function createLiveStart(o: LiveStartOptions): LiveStartController {
       );
     },
     retry() {
+      if (signingOut) return;
       if (state.stage !== "error") return;
       if (state.principal) open(state.principal);
       else self.signedIn(); // the error came before the session was read: read it again
     },
-    async signOut() {
+    signOut() {
+      if (signingOut) return signingOut;
       generation++;
-      try {
-        await o.credential.invalidate(true);
-      } finally {
-        service.reset();
-        if (!disposed) showCard();
-      }
+      abort.abort(); // first: nothing below this line may start a read
+      if (!disposed) set({ ...state, stage: "signing-out", step: null });
+      const run = async (): Promise<void> => {
+        let notice: string | null = null;
+        try {
+          if (o.credential.signOut) {
+            try {
+              const r = await o.credential.signOut(o.idOrigin);
+              if (!r || r.serverSignedOut !== true) notice = SIGN_OUT_NOT_RECORDED;
+            } catch {
+              notice = SIGN_OUT_NOT_RECORDED;
+              await o.credential.invalidate(true); // the server call failed: still clear locally
+            }
+          } else {
+            await o.credential.invalidate(true);
+          }
+        } finally {
+          service.reset();
+          signingOut = null;
+          abort = new AbortController();
+          if (!disposed) {
+            generation++;
+            set({ ...INITIAL, stage: "signin", signOutNotice: notice });
+          }
+        }
+      };
+      signingOut = run();
+      return signingOut;
     },
     dispose() {
       disposed = true;
