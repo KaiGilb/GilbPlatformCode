@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.6.2";
+export const CONNECTOR_VERSION = "0.6.3";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -177,6 +177,80 @@ function isTransientStatus(status) {
 function unknownOutcomeText(tool, what) {
     return `${tool} got no answer from GilbPlatform (${what}) and may or may not have run. It was not sent again. Read it back before sending it again.`;
 }
+/** The write tools whose input has an `idempotencyKey` field (GilbPlatform schema.ts). write_plan_table has none: its schema refuses unknown fields. */
+const IDEMPOTENT_WRITE_TOOLS = new Set(["write_plan_card"]);
+/** What the AI is told to do with a call whose outcome is unknown. */
+const UNKNOWN_NEXT_WITH_KEY = "Call gilbplatform_call_status with this callId: it sends the same request again with the same idempotency key, which is safe, and gives you the server's answer.";
+const UNKNOWN_NEXT_NO_KEY = "Call gilbplatform_call_status with this callId to see what is known, then read the record back before you send it again.";
+const UNKNOWN_CALLS_MAX = 200;
+const SECRET_NAME = /token|secret|password|authorization|cookie|private|credential|proof|assertion|bearer/i;
+/** The top-level argument names with short values. A value under a secret-looking name is not shown. Never the whole body. */
+function summariseArgs(args) {
+    const row = argsObject(args);
+    const out = {};
+    if (!row)
+        return out;
+    for (const [key, value] of Object.entries(row).slice(0, 12)) {
+        if (key === "idempotencyKey")
+            continue;
+        if (SECRET_NAME.test(key))
+            out[key] = "(hidden)";
+        else if (typeof value === "string")
+            out[key] = value.length > 80 ? `${value.slice(0, 79)}…` : value;
+        else if (Array.isArray(value))
+            out[key] = `[${value.length} items]`;
+        else if (value && typeof value === "object")
+            out[key] = "{…}";
+        else
+            out[key] = String(value);
+    }
+    return out;
+}
+/** The arguments with one idempotency key, made once per logical call. A key the caller sent is kept. Not for check mode, not for tools without the field. */
+function withIdempotencyKey(name, args) {
+    if (!IDEMPOTENT_WRITE_TOOLS.has(name))
+        return { args };
+    let row = null;
+    if (typeof args === "string") {
+        try {
+            const parsed = JSON.parse(args);
+            row = argsObject(parsed);
+        }
+        catch {
+            row = null;
+        }
+    }
+    else
+        row = argsObject(args);
+    if (!row || row.mode === "check")
+        return { args };
+    const given = row.idempotencyKey;
+    if (typeof given === "string" && given !== "")
+        return { args: row, key: given };
+    const key = randomUUID();
+    return { args: { ...row, idempotencyKey: key }, key, generated: true };
+}
+/** The platform's info warning for a key on an update (plan-card/adapter.ts). The AI never sent the key the connector made, so it is noise. */
+const KEY_NOT_USED_CODE = "IDEMPOTENCY_KEY_NOT_USED";
+/** The answer without that one warning. Any other warning, and any answer that is not a JSON report with a `warnings` list, is returned as it was. */
+function withoutKeyNotUsedWarning(result) {
+    let parsed;
+    try {
+        parsed = JSON.parse(result);
+    }
+    catch {
+        return result;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return result;
+    const row = parsed;
+    if (!Array.isArray(row.warnings))
+        return result;
+    const kept = row.warnings.filter((w) => !(w && typeof w === "object" && w.code === KEY_NOT_USED_CODE));
+    if (kept.length === row.warnings.length)
+        return result;
+    return JSON.stringify({ ...row, warnings: kept });
+}
 /** The sentence for a platform that is down or restarting. `what` is the HTTP status or the network error. */
 function unreachableMessage(what) {
     return `GilbPlatform is restarting or out of reach just now (${what}). Try again in a minute.`;
@@ -193,8 +267,9 @@ const CLIENT_ID_FILE = "client-id";
 export const HOP_MAX_MS_DEFAULT = 15 * 60 * 1000;
 /** The longer limit, for the level agents that read a lot before they write. */
 const HOP_MAX_MS_LONG = 30 * 60 * 1000;
-/** Role names as normalised below (lower case, letters and digits only). Agent.Concept is not listed: it keeps the default. */
+/** Role names as normalised below (lower case, letters and digits only). Agent.Concept has the long limit too (0.6.3). */
 export const HOP_MAX_MS_BY_ROLE = {
+    agentconcept: HOP_MAX_MS_LONG,
     agentvdt: HOP_MAX_MS_LONG,
     agentoutcome: HOP_MAX_MS_LONG,
     agentoutcomebusiness: HOP_MAX_MS_LONG,
@@ -395,7 +470,10 @@ function readVaultChoice(file) {
 }
 /** Added to a hand-off's answer when the server says the hand-off was cut by the round ceiling. */
 export const CUT_TEXT = "This hand-off ran out of tool rounds before it finished. Its answer is partial: say so, and hand the rest over again.";
-/** The two answers the server gives, before it runs anything, when a turn is out of room (POST /base/ai/claude-code/tool). */
+export const CONCEPT_PAUSED_NEXT = {
+    rounds: "The round budget for this turn was reached on the Agent.Concept hop, so it stopped; the concept needs were not lost. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept, and you can hand the needs over again. Tell the person in your report.",
+    mint: "Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.",
+};
 const TURN_LIMIT_NEXT = "tell the person what you did, and stop";
 const TURN_LIMIT_ROUNDS = "this turn has used all its tool rounds";
 const TURN_LIMIT_HOPS = "this turn has handed over as many times as one turn may";
@@ -486,19 +564,59 @@ class NotConnected extends Error {
 /** The platform was down or restarting, not a refused sign-in: the next call may open again. */
 class PlatformDown extends NotConnected {
 }
-/** A network failure, as a short word for the person: the cause code if there is one. */
+/** Every error under `err`: its cause, that cause's cause, and each entry of an AggregateError (Node's happy-eyeballs wraps connect failures there). Bounded. */
+function errorLeaves(err) {
+    const out = [];
+    const seen = new Set();
+    const walk = (e, depth) => {
+        if (!e || typeof e !== "object" || seen.has(e) || depth > 6)
+            return;
+        seen.add(e);
+        out.push(e);
+        const row = e;
+        if (row.cause !== undefined)
+            walk(row.cause, depth + 1);
+        if (Array.isArray(row.errors))
+            for (const inner of row.errors)
+                walk(inner, depth + 1);
+    };
+    walk(err, 0);
+    return out;
+}
+function codeOf(e) {
+    const code = e && typeof e === "object" ? e.code : undefined;
+    return typeof code === "string" ? code : undefined;
+}
+/** A network failure, as a short word for the person: the first cause code found, if there is one. */
 function networkWhat(err) {
-    const cause = err instanceof Error ? err.cause : undefined;
-    const code = cause && typeof cause === "object" ? cause.code : undefined;
-    if (typeof code === "string" && /^[A-Z0-9_]{3,30}$/.test(code))
-        return code;
+    for (const e of errorLeaves(err).slice(1)) {
+        const code = codeOf(e);
+        if (code && /^[A-Z0-9_]{3,30}$/.test(code))
+            return code;
+    }
     return "no answer";
 }
-/** The connection was refused or the host unknown: nothing reached a server, so a write was not run. */
+/** These end the same way only while the connection is being made: the same code on a read or a write means the request was sent. */
+const CONNECT_PHASE_CODES = new Set(["ETIMEDOUT", "EHOSTUNREACH", "ENETUNREACH"]);
+/** One error that proves nothing reached a server. A bare ETIMEDOUT does not: it counts only when its syscall is `connect`. */
+function provesNeverArrived(e) {
+    const code = codeOf(e);
+    if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "UND_ERR_CONNECT_TIMEOUT")
+        return true;
+    const syscall = e && typeof e === "object" ? e.syscall : undefined;
+    return code !== undefined && CONNECT_PHASE_CODES.has(code) && syscall === "connect";
+}
+/**
+ * Nothing reached a server, so a write was not run: the connection was refused, the host unknown, or the connect itself
+ * timed out or found no route. An AggregateError proves it only when every entry does; any other error found under
+ * `err` that is not connect-phase (a read or write timeout) leaves the outcome unknown.
+ */
 function neverArrived(err) {
-    const cause = err instanceof Error ? err.cause : undefined;
-    const code = cause && typeof cause === "object" ? cause.code : undefined;
-    return code === "ECONNREFUSED" || code === "ENOTFOUND";
+    const leaves = errorLeaves(err).filter((e) => !(e && typeof e === "object" && (e.errors instanceof Array) && e.errors.length > 0));
+    const coded = leaves.filter((e) => codeOf(e) !== undefined);
+    if (coded.length === 0)
+        return false;
+    return coded.every(provesNeverArrived);
 }
 const GILB_WHOAMI = {
     name: "gilbplatform_whoami",
@@ -526,6 +644,18 @@ const GILB_TASK = {
             text: { type: "string", description: "What the person is asking." },
         },
         required: ["text"],
+        additionalProperties: false,
+    },
+};
+const GILB_CALL_STATUS = {
+    name: "gilbplatform_call_status",
+    description: "Ask what became of a call that was sent and got no answer. Use the callId that call gave you. If the call carried an idempotency key, this sends the same request again with the same key (safe: the platform answers a repeat with the first result) and gives you the platform's answer. Otherwise it tells you what is known, and you read the record back before sending it again.",
+    inputSchema: {
+        type: "object",
+        properties: {
+            callId: { type: "string", description: "The callId from the answer that said outcome: unknown." },
+        },
+        required: ["callId"],
         additionalProperties: false,
     },
 };
@@ -886,6 +1016,53 @@ function createdVaultNamespace(result) {
     return record.vaultId;
 }
 /** Vault namespaces a hop wrote, one per line. A missing file means the hop made none. */
+/** The refusal sentences in a write answer: `notWritten[].reason`, word for word. Only a report that says it did not succeed (`ok: false`). */
+export function writeRefusalSentences(result) {
+    let parsed;
+    try {
+        parsed = JSON.parse(result);
+    }
+    catch {
+        return [];
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return [];
+    const row = parsed;
+    if (row.ok !== false || !Array.isArray(row.notWritten))
+        return [];
+    const out = [];
+    for (const item of row.notWritten) {
+        const reason = item && typeof item === "object" ? item.reason : undefined;
+        if (typeof reason === "string" && reason.trim() !== "" && !out.includes(reason))
+            out.push(reason);
+    }
+    return out;
+}
+/** The most refusal sentences one hand-off passes up. */
+const HOP_REFUSED_MAX = 20;
+function hopRefusedSentences(file) {
+    let text;
+    try {
+        text = readFileSync(file, "utf8");
+    }
+    catch {
+        return [];
+    }
+    const out = [];
+    for (const line of text.split("\n")) {
+        if (line.trim() === "")
+            continue;
+        try {
+            const sentence = JSON.parse(line);
+            if (typeof sentence === "string" && !out.includes(sentence))
+                out.push(sentence);
+        }
+        catch {
+            // A torn line is skipped.
+        }
+    }
+    return out.slice(0, HOP_REFUSED_MAX);
+}
 function hopCreatedNamespaces(file) {
     let text;
     try {
@@ -1280,6 +1457,7 @@ const KNOWN_FLAGS = new Set([
     "--turn",
     "--hop-tools",
     "--hop-created",
+    "--hop-refused",
     "--hop-deadline",
     "--upload-root",
     "--hop-model",
@@ -1305,6 +1483,7 @@ export function parseCli(argv, env = process.env) {
             turnId: undefined,
             hopToolsPath: undefined,
             hopCreatedPath: undefined,
+            hopRefusedPath: undefined,
             hopDeadline: undefined,
             uploadRoots: [],
             hopModel: undefined,
@@ -1346,6 +1525,7 @@ export function parseCli(argv, env = process.env) {
     const turnId = oneFlag(argv, "--turn") ?? (env.GILB_CONNECTOR_TURN || undefined);
     const hopToolsPath = oneFlag(argv, "--hop-tools") ?? (env.GILB_CONNECTOR_HOP_TOOLS || undefined);
     const hopCreatedPath = oneFlag(argv, "--hop-created");
+    const hopRefusedPath = oneFlag(argv, "--hop-refused");
     const hopDeadlineRaw = oneFlag(argv, "--hop-deadline") ?? (env.GILB_CONNECTOR_HOP_DEADLINE || undefined);
     let hopDeadline;
     if (hopDeadlineRaw !== undefined) {
@@ -1388,6 +1568,7 @@ export function parseCli(argv, env = process.env) {
         turnId,
         hopToolsPath,
         hopCreatedPath,
+        hopRefusedPath,
         hopDeadline,
         uploadRoots: flagValues(argv, "--upload-root").map((dir) => dir.trim()).filter((dir) => dir !== ""),
         hopModel,
@@ -2214,6 +2395,7 @@ export function startConnector(opts) {
     const hopMode = hopId !== undefined && hopId !== "";
     const hopTools = [...(opts.hopTools ?? [])];
     const hopCreatedPath = opts.hopCreatedPath;
+    const hopRefusedPath = opts.hopRefusedPath;
     const hopStart = Date.now();
     const hopDeadline = hopMode ? opts.hopDeadline : undefined;
     let turnId = opts.turnId ?? newTurnId();
@@ -2237,6 +2419,12 @@ export function startConnector(opts) {
      * so while this is set no Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn.
      */
     let conceptBrakedOnTurnChain = false;
+    /** Why the brake is set. The connector sets it only on a round or hand-off cut, so it is "rounds"; "mint" is kept for a real mint cap. */
+    let conceptBrakeReason = "rounds";
+    /** Calls that were sent and got no answer, by callId (newest last). Held in memory only. */
+    const unknownCalls = new Map();
+    /** Keys this connector made (not the caller). A call_status re-send carries the same key, so it is told apart here. */
+    const generatedKeys = new Set();
     const uploadCwd = opts.cwd ?? process.cwd();
     const uploadRoots = [...(opts.uploadRoots ?? [])];
     const contextUrl = `${origin}/base/ai/claude-code/context`;
@@ -2453,8 +2641,8 @@ export function startConnector(opts) {
         const useVault = mcpTool(GILB_USE_VAULT);
         const upload = mcpTool(GILB_UPLOAD_FILE);
         return asMode === "ai"
-            ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault, upload]
-            : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), useVault, upload];
+            ? [mcpTool(GILB_WHOAMI), mcpTool(GILB_AGENT), mcpTool(GILB_TASK), mcpTool(GILB_CALL_STATUS), useVault, upload]
+            : [mcpTool(GILB_AGENT), mcpTool(GILB_TASK), mcpTool(GILB_CALL_STATUS), useVault, upload];
     }
     async function fetchContext(forAgent) {
         const res = await postPlatform(contextUrl, turnFields(forAgent), undefined, true);
@@ -2597,7 +2785,8 @@ export function startConnector(opts) {
         const toolsFile = join(dir, "tools.json");
         writeFileSync(toolsFile, JSON.stringify({ tools: hop.tools, userText }), { mode: 0o600 });
         const createdFile = join(dir, "created-vaults");
-        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", hopTurn, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile, "--hop-created", createdFile];
+        const refusedFile = join(dir, "refused-sentences");
+        const args = [selfFile, "--as", asMode, "--hop", hop.id, "--turn", hopTurn, "--agent", agent, "--origin", origin, "--hop-tools", toolsFile, "--hop-created", createdFile, "--hop-refused", refusedFile];
         // The live list, not a copy taken at startup, so a vault selected later is passed on.
         for (const id of vaults)
             args.push("--vault", id);
@@ -2735,7 +2924,8 @@ export function startConnector(opts) {
                 else {
                     const text = outcome.text;
                     const created = hopCreatedNamespaces(createdFile);
-                    finish(() => resolve({ text, created }));
+                    const refused = hopRefusedSentences(refusedFile);
+                    finish(() => resolve({ text, created, refused }));
                 }
             });
             stdin.on("error", () => undefined);
@@ -2775,8 +2965,10 @@ export function startConnector(opts) {
     function rollAfterCut(hopTurn, conceptCut = false) {
         if (hopMode)
             return logRollSkipped("this process is a hand-off");
-        if (conceptCut && !agentIsConcept())
+        if (conceptCut && !agentIsConcept()) {
             conceptBrakedOnTurnChain = true;
+            conceptBrakeReason = "rounds";
+        }
         if (turnId !== hopTurn)
             return logRollSkipped("the turn was already renewed while the hand-off ran");
         renewTurn("a hand-off ran out of tool rounds");
@@ -2785,12 +2977,8 @@ export function startConnector(opts) {
     function isConceptCall(name, args) {
         return agentIsConcept() || name === "ask_agent_concept" || (name === "run_named_role" && !roleMayRoll(args));
     }
-    function conceptPausedAnswer() {
-        return toolResult(JSON.stringify({
-            renewed: true,
-            conceptPaused: true,
-            next: "Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.",
-        }), true);
+    function conceptPausedAnswer(reason = conceptBrakeReason) {
+        return toolResult(JSON.stringify({ renewed: true, conceptPaused: true, next: CONCEPT_PAUSED_NEXT[reason] }), true);
     }
     /** What the AI is told when a call was refused at a turn limit and was NOT re-sent. The turn is new (or says it could not be). */
     function renewedAnswer(name, renewed, why) {
@@ -2837,7 +3025,9 @@ export function startConnector(opts) {
             for (const namespace of ran.created)
                 selectVault(namespace);
             const content = ran.text;
-            return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, cut: CUT_TEXT } : { ...shaped.answer, content }), false);
+            // What the server refused inside the hop, word for word: the hand-off's own closing text may leave it out.
+            const refused = ran.refused.length > 0 ? { refused: ran.refused } : {};
+            return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, ...refused, cut: CUT_TEXT } : { ...shaped.answer, content, ...refused }), false);
         }
         catch (err) {
             const closed = await closeHop(shaped.id, hopTurn);
@@ -2926,7 +3116,56 @@ export function startConnector(opts) {
             slot.release();
         }
     }
-    async function callPlatformTool(name, args, signal, resent = false) {
+    /** A write that was sent and got no answer. Remembered by callId; the answer names the callId and what to do. */
+    function unknownOutcomeAnswer(callId, name, sendArgs, key, sentAt, what) {
+        const record = { callId, tool: name, args: sendArgs, argsSummary: summariseArgs(sendArgs), sentAt, lastError: what, ...(key ? { idempotencyKey: key } : {}) };
+        unknownCalls.delete(callId);
+        unknownCalls.set(callId, record);
+        while (unknownCalls.size > UNKNOWN_CALLS_MAX) {
+            const oldest = unknownCalls.keys().next().value;
+            if (oldest === undefined)
+                break;
+            unknownCalls.delete(oldest);
+        }
+        process.stderr.write(`gilb-connector: ${name} got no answer (${what}); call ${callId} is unknown.\n`);
+        // A hand-off has no gilbplatform_call_status: it repeats the call itself, with the same key when there is one.
+        const next = hopMode
+            ? key
+                ? `Send the same ${name} call again with idempotencyKey ${JSON.stringify(key)}: a repeat is safe and is answered with the first result. Or read the record back before sending it again.`
+                : "Read the record back before you send it again."
+            : key
+                ? UNKNOWN_NEXT_WITH_KEY
+                : UNKNOWN_NEXT_NO_KEY;
+        return toolResult(JSON.stringify({ outcome: "unknown", callId, tool: name, sentAt, ...(key ? { idempotencyKey: key } : {}), next, error: unknownOutcomeText(name, what) }), true);
+    }
+    /** gilbplatform_call_status: send a keyed call again with its key, or say what is known about an unkeyed one. */
+    async function onCallStatus(args, signal) {
+        const callId = fieldString(args, "callId");
+        const record = callId ? unknownCalls.get(callId) : undefined;
+        if (!record) {
+            return toolResult(JSON.stringify({ error: "This connector does not know that callId (it keeps them only while it runs).", next: "Read the record back with list_records or read_record before you send it again." }), true);
+        }
+        if (record.answer)
+            return toolResult(record.answer.text, record.answer.isError);
+        if (!record.idempotencyKey) {
+            return toolResult(JSON.stringify({
+                outcome: "unknown",
+                callId: record.callId,
+                tool: record.tool,
+                sentAt: record.sentAt,
+                args: record.argsSummary,
+                lastError: record.lastError,
+                next: "This call had no idempotency key, so it was not sent again. Read the record back with list_records or read_record before you send it again.",
+            }), false);
+        }
+        const res = await callPlatformTool(record.tool, record.args, signal, false, record.callId);
+        if (res === CANCELLED)
+            return CANCELLED;
+        if (!res.isError)
+            record.answer = { text: res.content[0]?.text ?? "", isError: false };
+        return res;
+    }
+    async function callPlatformTool(name, args, signal, resent = false, givenCallId) {
         if (!hopMode && conceptBrakedOnTurnChain && isConceptCall(name, args)) {
             process.stderr.write(`gilb-connector: ${name} not sent: Agent.Concept hit a turn limit and waits for the person's next message.\n`);
             return conceptPausedAnswer();
@@ -2942,13 +3181,24 @@ export function startConnector(opts) {
         }
         const sentTurn = turnId;
         const repeatableCall = isRepeatableCall(name, args);
+        // One key and one callId per logical call. Every retry in postPlatform, and a re-send on a new turn, carries the same body.
+        const keyed = withIdempotencyKey(name, args);
+        const sendArgs = keyed.args;
+        if (keyed.generated && keyed.key) {
+            if (generatedKeys.size >= 500)
+                generatedKeys.clear();
+            generatedKeys.add(keyed.key);
+        }
+        const ownKey = keyed.key !== undefined && generatedKeys.has(keyed.key);
+        const callId = givenCallId ?? randomUUID();
+        const sentAt = new Date().toISOString();
         let res;
         try {
-            res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(args), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal, repeatableCall);
+            res = await postPlatform(toolUrl, { ...turnFields(), name, arguments: argumentString(sendArgs), ...(hopMode && hopId ? { hop: { id: hopId } } : {}) }, signal, repeatableCall);
         }
         catch (err) {
             if (err instanceof PlatformError && err.maybeRan)
-                return toolResult(JSON.stringify({ error: unknownOutcomeText(name, err.what) }), true);
+                return unknownOutcomeAnswer(callId, name, sendArgs, keyed.key, sentAt, err.what);
             throw err;
         }
         if (signal.aborted)
@@ -2967,7 +3217,7 @@ export function startConnector(opts) {
         }
         if (isTransientStatus(res.status) && !repeatableCall) {
             // The proxy answered 5xx for a write: it may have run. It is never sent again by this connector.
-            return toolResult(JSON.stringify({ error: unknownOutcomeText(name, `HTTP ${res.status}`) }), true);
+            return unknownOutcomeAnswer(callId, name, sendArgs, keyed.key, sentAt, `HTTP ${res.status}`);
         }
         if (res.status < 200 || res.status >= 300) {
             return toolResult(JSON.stringify({ error: errorText(res.status, res.body, `${name} could not run`) }), true);
@@ -2976,7 +3226,8 @@ export function startConnector(opts) {
         if (body.hop && typeof body.hop === "object") {
             return runHop(body.hop, signal, sentTurn);
         }
-        const result = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+        const rawResult = typeof body.result === "string" ? body.result : JSON.stringify({ error: `${name} returned an unexpected answer.` });
+        const result = ownKey ? withoutKeyNotUsedWarning(rawResult) : rawResult;
         // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
         // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
         // Not re-sent: Agent.Concept or ask_agent_concept (their mint limits are per turn), an unreadable role, or a second refusal.
@@ -2991,7 +3242,7 @@ export function startConnector(opts) {
             const alreadyNew = turnId !== sentTurn;
             if (resendBarrier === "") {
                 if (alreadyNew || renewTurn("this chat reached a turn limit"))
-                    return callPlatformTool(name, args, signal, true);
+                    return callPlatformTool(name, sendArgs, signal, true, callId);
                 return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
             }
             if (agentIsConcept()) {
@@ -2999,8 +3250,10 @@ export function startConnector(opts) {
                 logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
                 return toolResult(result, toolAnswerIsError(result));
             }
-            if (isConceptCall(name, args))
+            if (isConceptCall(name, args)) {
                 conceptBrakedOnTurnChain = true;
+                conceptBrakeReason = "rounds";
+            }
             if (alreadyNew)
                 logRollSkipped("the turn was already renewed");
             const renewed = alreadyNew || renewTurn(`${name} was refused at a turn limit and ${resendBarrier}`);
@@ -3018,6 +3271,10 @@ export function startConnector(opts) {
             const namespace = createdVaultNamespace(result);
             if (namespace)
                 appendFileSync(hopCreatedPath, `${namespace}\n`);
+        }
+        if (hopMode && hopRefusedPath) {
+            for (const sentence of writeRefusalSentences(result))
+                appendFileSync(hopRefusedPath, `${JSON.stringify(sentence)}\n`);
         }
         if (!hopMode && name === "create_vault") {
             const namespace = createdVaultNamespace(result);
@@ -3279,6 +3536,8 @@ export function startConnector(opts) {
             }
             if (!hopMode && name === GILB_TASK.name)
                 return onTask(args);
+            if (!hopMode && name === GILB_CALL_STATUS.name)
+                return await onCallStatus(args, ac.signal);
             if (!hopMode && name === GILB_AGENT.name)
                 return await onAgent(args);
             if (!hopMode && name === GILB_USE_VAULT.name)
@@ -4474,6 +4733,7 @@ async function main() {
         ...(cli.hopId !== undefined ? { hopId: cli.hopId } : {}),
         ...(cli.turnId !== undefined ? { turnId: cli.turnId } : {}),
         ...(cli.hopCreatedPath !== undefined ? { hopCreatedPath: cli.hopCreatedPath } : {}),
+        ...(cli.hopRefusedPath !== undefined ? { hopRefusedPath: cli.hopRefusedPath } : {}),
         ...(cli.hopDeadline !== undefined ? { hopDeadline: cli.hopDeadline } : {}),
         ...(hopTools !== undefined ? { hopTools } : {}),
         ...(hopUserText !== undefined ? { userText: hopUserText } : {}),

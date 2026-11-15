@@ -334,10 +334,12 @@ describe("hand-off time per role", () => {
   const LONG = ["Agent.VDT", "Agent.Outcome", "Agent.Outcome.Business", "Agent.Outcome.Owner", "Agent.Outcome.Stakeholder", "Agent.Outcome.Product", "Agent.Outcome.Solution", "Agent.Stakeholder", "Agent.Architect", "Agent.Scaling", "Agent.ValueDeliveryStep"];
   const MIN = 60 * 1000;
 
-  it("the map gives level agents 30 minutes and every other role 15", () => {
+  it("the map gives level agents and Agent.Concept 30 minutes and every other role 15", () => {
     for (const role of LONG) expect(hopMaxFor(role), role).toBe(30 * MIN);
     expect(hopMaxFor("agent.outcome.stakeholder")).toBe(30 * MIN);
-    for (const role of ["Agent.Concept", "Jackfruit", "Kai-Zen", "Agent.Outcome.Other", ""]) expect(hopMaxFor(role), role).toBe(15 * MIN);
+    // 0.6.3 (EESpeed R10 C1): Concept gets the long limit too, in any spelling that folds to agentconcept.
+    for (const role of ["Agent.Concept", "agent concept", "AGENTCONCEPT"]) expect(hopMaxFor(role), role).toBe(30 * MIN);
+    for (const role of ["Jackfruit", "Kai-Zen", "Agent.Outcome.Other", ""]) expect(hopMaxFor(role), role).toBe(15 * MIN);
     expect(HOP_MAX_MS).toBe(30 * MIN);
     expect(Math.max(...Object.values(HOP_MAX_MS_BY_ROLE))).toBe(HOP_MAX_MS);
   });

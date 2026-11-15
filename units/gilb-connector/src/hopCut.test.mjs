@@ -341,4 +341,20 @@ describe("a hand-off cut by the round ceiling", () => {
     const box = connect({ origin: platform.origin, env: meEnv() });
     expect(answerOf(await run(box)).cut).toBeUndefined();
   }, 60000);
+
+  it("p1 (0.6.3) a refusal sentence the server gave to a write inside the hop is in the hop's answer, word for word", async () => {
+    const sentence = '"Acme Ltd" is a Organization record, which is not a kind of group the master gives a role relation for.';
+    const report = JSON.stringify({ ok: false, notWritten: [{ field: "card.group", code: "INVALID", reason: sentence, next: "x" }, { field: "card.other", code: "INVALID", reason: sentence }] });
+    const platform = await hopDoor(PLAIN, (rec) => (rec.body.hop && rec.body.name === "list_records" ? { body: { result: report } } : undefined));
+    const box = connect({ origin: platform.origin, env: meEnv() });
+    const answer = answerOf(await run(box));
+    expect(answer.refused).toEqual([sentence]);
+  }, 20000);
+
+  it("p2 a hop whose writes were not refused has no refused field, and ok:true reports are not mined", async () => {
+    const report = JSON.stringify({ ok: true, notWritten: [{ field: "a", code: "X", reason: "held, not a refusal" }] });
+    const platform = await hopDoor(PLAIN, (rec) => (rec.body.hop && rec.body.name === "list_records" ? { body: { result: report } } : undefined));
+    const box = connect({ origin: platform.origin, env: meEnv() });
+    expect(answerOf(await run(box)).refused).toBeUndefined();
+  }, 20000);
 });
