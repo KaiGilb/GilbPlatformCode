@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-claude-code-bridge",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "type": "module",
   "description": "A local-only bridge that lets a web app's agent pane talk to the Claude Code installed on the person's own computer.",
