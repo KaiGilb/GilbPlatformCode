@@ -73,6 +73,13 @@ export type PlaceSearchMode = "word" | "prefix";
 /** CHANGED (new): the last word of a query must have this many letters before a prefix search is made. */
 export const PLACE_PREFIX_MIN_LAST_WORD = 2;
 
+/** When a catalogue search last started (ms, `Date.now()`), shared by every picker on the page: the gap `minGapMs` asks for is between searches, not between boxes. */
+let lastSearchStart = Number.NEGATIVE_INFINITY;
+/** Test only: forget when the last search started. */
+export function __resetPlaceSearchGap(): void {
+  lastSearchStart = Number.NEGATIVE_INFINITY;
+}
+
 export interface PlacePickerProps {
   /** Which catalogue grain this control searches. */
   rung: GeoRung;
@@ -105,6 +112,13 @@ export interface PlacePickerProps {
    * (a 400) the same search is made again as `"word"`. `"word"` matches whole words only, as the catalogue does by default ("Jap" finds nothing).
    */
   searchMode?: PlaceSearchMode;
+  /**
+   * CHANGED (new, 0.1.2): the least time in milliseconds between the start of one catalogue search and the start of the next, for a catalogue that
+   * limits how often it is asked (the live one: one search per 300 ms). Default 0: no gap, the search starts after the {@link PLACE_SEARCH_DEBOUNCE_MS}
+   * wait as before. With a gap the wait is the longer of the two. The newest text wins: a search still waiting for its turn is dropped when
+   * the text changes (and gives its turn back), and an answer to an older text is never shown.
+   */
+  minGapMs?: number;
 }
 
 export function PlacePicker({
@@ -120,6 +134,7 @@ export function PlacePicker({
   disabled = false,
   rungPill = null,
   searchMode = "prefix",
+  minGapMs = 0,
 }: PlacePickerProps) {
   const [q, setQ] = useState("");
   /**
@@ -167,7 +182,9 @@ export function PlacePicker({
     const ac = new AbortController();
     acRef.current = ac;
     setState({ kind: "loading", q: needle });
+    const wait = Math.max(PLACE_SEARCH_DEBOUNCE_MS, lastSearchStart + Math.max(0, minGapMs) - Date.now());
     const timer = setTimeout(() => {
+      lastSearchStart = Date.now();
       void (async () => {
         try {
           // CHANGED (new): prefix when asked for and the last word is long enough; a catalogue that refuses `match` (400) is asked again as text.
@@ -200,12 +217,12 @@ export function PlacePicker({
           setState({ kind: "error", q: needle, message: SEARCH_FAILED_SENTENCE, notAnAbsence: true });
         }
       })();
-    }, PLACE_SEARCH_DEBOUNCE_MS);
+    }, wait);
     return () => {
       clearTimeout(timer);
       ac.abort();
     };
-  }, [q, rung, restrictToCountryId, searchMode]);
+  }, [q, rung, restrictToCountryId, searchMode, minGapMs]);
 
   if (value && !editingBound) {
     return (

@@ -75,7 +75,20 @@ const extractFromUrl = makeExtractFromUrl({ baseUrl: idOrigin, credential });
 
 - `makeExtractFromUrl({ baseUrl, credential })`: `credential` is anything with `authHeaders(method, url)`, such as `SessionCredential`; no import of `signin` is needed. It signs exactly `POST <baseUrl>/base/style/extract`, the route the platform serves (DPoP, signed in, 10 reads a minute, a page's colours and fonts only). `getAuthHeaders` still works; when both are given `credential` wins.
 - `splitLogo(sheet)`: `{ sheet, logoPng? }`. The sheet without its logo data URLs (too big for a JSON file) and the primary logo as a PNG data URL.
-- `makeDevServerSave({ endpoint?, fetchImpl?, onWarning? })`: the `onSave` that POSTs `splitLogo(sheet)` to the dev server (`/__studio/save`). A non-2xx answer throws `Error(message)`, which the Studio shows in its own "failed" line. The middleware that writes `style.tokens.json` and the logo is the app's.
+- `makeDevServerSave({ endpoint?, fetchImpl?, onWarning? })`: the `onSave` that POSTs `splitLogo(sheet)` to the dev server (`/__studio/save`). A non-2xx answer throws `Error(message)`, which the Studio shows in its own "failed" line. The server side that writes `style.tokens.json` and the logo is `styleStudioSave` below (or your own middleware).
+- `styleStudioSave({ tokensPath, logoPath?, route?, maxLogoBytes?, maxBodyBytes? })` from `@kaigilb/gilbplatformcode-style-studio/vite` (new, 0.2.3): a Vite plugin, the dev-server half of `makeDevServerSave()`. It serves `POST /__studio/save` and writes the sheet to `tokensPath` and the logo to `logoPath` (paths relative to the project root). It is fenced because it writes to your disk: dev server only (`apply: "serve"`, nothing in a build); both paths must stay inside the project root, checked at start-up with symlinks followed (a path outside stops the server with an error); the request must be `application/json`; the logo is a PNG (`logoPng`, checked by its first bytes) or, when `logoPath` ends `.svg`, an SVG (`logoSvg`, no script in it); the logo is at most 1,000,000 bytes and the whole body 4,000,000 (both options); every check runs before the first write, so a refused save leaves nothing behind. Answers `{ ok: true, files }`, or `{ ok: false, message }` with 400, 405, 413, 415 or 500.
+
+Setup, in the app's `vite.config.ts`:
+
+```ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { styleStudioSave } from "@kaigilb/gilbplatformcode-style-studio/vite";
+
+export default defineConfig({
+  plugins: [react(), styleStudioSave({ tokensPath: "saved/style.tokens.json", logoPath: "saved/logo.png" })],
+});
+```
 
 ## What the host must supply
 
@@ -84,6 +97,7 @@ const extractFromUrl = makeExtractFromUrl({ baseUrl: idOrigin, credential });
 - **`auth(method, url)`**, returning the headers (DPoP) for that exact request. Auth is injected; the unit never reads a key.
 - Optional: `fetch`, `toFetchUrl`, `toEntityUri` for a host whose addresses differ from the vault's; `extractFromUrl` (from `makeExtractFromUrl({ baseUrl, credential })`) for the From website tab. The platform serves the page reader at `POST /base/style/extract` on the identity host, so no server of yours is needed; the person must be signed in.
 - React `^19.0.0`.
+- A bundler that compiles TSX. Verified from the npm registry on 2026-11-15: `@vitejs/plugin-react` 4.7.0 accepts Vite `^4.2 || ^5 || ^6 || ^7`, 5.2.0 accepts Vite 4 to 8, and 6.3.0 (the `latest` tag that day) accepts only Vite `^8.0.0` (its other peers are optional). Take Vite 5.4 with `@vitejs/plugin-react` `^4.7.0` (Vite `^5.4` is what the code bank's own units use; the PictureRecords run's Studio used Vite `^5.4.21` with plugin-react `^4.7.0`), or Vite 8 with plugin-react 6. An unpinned `@vitejs/plugin-react` takes 6, whose peer range excludes Vite 5. Vite 8 needs Node `^20.19 || >=22.12`.
 - Wire contract (measured on GilbPlatform): create `POST {vaultBase}/lws/vault/{vaultId}/c`; replace `PUT {entityUri}` with `if-match`; public read `POST {origin}/base/authz/grant-direct`; logo `PUT .../files?name=logo.png`. A stale `etag` (412 or 428) is a `StaleEtagError`. Any failed step throws `StyleSaveError{step, status, message}` with the ids written so far in `.ids`; grants run only after every write succeeded.
 
 ## Do not
