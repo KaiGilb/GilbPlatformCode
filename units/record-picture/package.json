@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-record-picture",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Links a stored picture to a record's picture fact, reads the link back, and runs the add, replace, remove and delete order so no picture file is orphaned and no record is lost.",
@@ -23,6 +23,7 @@
     "@kaigilb/gilbplatformcode-lws-records": "file:../lws-records",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
     "@kaigilb/gilbplatformcode-photo-ref": "file:../photo-ref",
+    "@kaigilb/gilbplatformcode-picture-errors": "file:../picture-errors",
     "@kaigilb/gilbplatformcode-picture-pick": "file:../picture-pick",
     "@kaigilb/gilbplatformcode-picture-set": "file:../picture-set",
     "@kaigilb/gilbplatformcode-picture-shrink": "file:../picture-shrink",
@@ -43,6 +44,7 @@
     "@kaigilb/gilbplatformcode-lws-records": "^0.4.0",
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.2",
     "@kaigilb/gilbplatformcode-photo-ref": "^0.1.0",
+    "@kaigilb/gilbplatformcode-picture-errors": "^0.1.1",
     "@kaigilb/gilbplatformcode-picture-pick": "^0.1.0",
     "@kaigilb/gilbplatformcode-picture-set": "^0.1.6",
     "@kaigilb/gilbplatformcode-picture-shrink": "^0.2.1",
@@ -50,6 +52,7 @@
   },
   "peerDependenciesMeta": {
     "@kaigilb/gilbplatformcode-lws-session-bridge": { "optional": true },
+    "@kaigilb/gilbplatformcode-picture-errors": { "optional": true },
     "@kaigilb/gilbplatformcode-picture-pick": { "optional": true },
     "@kaigilb/gilbplatformcode-picture-set": { "optional": true },
     "@kaigilb/gilbplatformcode-picture-shrink": { "optional": true },

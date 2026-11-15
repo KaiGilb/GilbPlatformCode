@@ -2,4 +2,5 @@ export { pictureObjectUrl, pictureBytes, forgetPicture, forgetPictures, enablePi
 export type { ForgetPicturesOptions, PictureDeviceCacheOptions } from "./pictureUrl";
 export { queuePicture, setPictureQueueLimit } from "./pictureQueue";
 export { SignedImage } from "./SignedImage";
-export { startPictureSession, deviceCacheNameFor } from "./pictureSession";
+export { startPictureSession, deviceCacheNameFor, createPictureSession } from "./pictureSession";
+export type { PictureSession, PictureSessionOptions, PictureSessionService } from "./pictureSession";

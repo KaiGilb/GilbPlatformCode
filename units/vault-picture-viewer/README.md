@@ -14,11 +14,18 @@ One hook, `useVaultPictureViewer`, joins three units that apps used to wire by h
   - `words`: your words over the viewer's English ones (`Partial<LightboxWords>`).
 - `openStored({ master, alt, caption?, el? })`: a promise. It first fetches the thumbnail (`thumbUriOf(copies, master) ?? master`) through `pictureObjectUrl` and opens the viewer with that as the stand-in, then the viewer fetches the largest copy (`largestUriOf(copies, master)`, the master itself when none is listed or `copies` is null). A thumbnail that cannot be read never throws out of `openStored`: the viewer opens without a stand-in. A refused read of the large copy shows the viewer's own `loadFailed` words (yours through `words`). `caption` defaults to `alt`. `el` is the element that gets focus back when the viewer closes (the viewer's `LightboxItem.el`).
 - `openLocal({ url, alt, caption? })`: opens a picture the person has on this device by its local URL. Nothing is signed and nothing is fetched.
+- `PictureThumb({ stored, previewUrl?, copies, vaultOrigin, placeholder?, label, onOpen, className?, buttonClassName?, emptyClassName? })` (since 0.1.1): a record's picture as a list thumbnail. With a stored picture (or a local `previewUrl`) it is a `<button aria-label={label}>` holding signed-picture's `SignedImage` of the small copy (`thumbUriOf(copies, stored)`; no address while `copies` is null, so the placeholder shows); a tap calls `onOpen(button)`, which you pass on as `openStored({ ..., el })`. With no picture it is the placeholder in a `div` that is not a button.
 - `thumbUri(master)`: `thumbUriOf(copies, master)`: null while `copies` is null, else the smallest copy (the master itself when it has none).
 
 ### The CSS is imported for you
 
 The module itself does `import "@kaigilb/gilbplatformcode-picture-viewer/pictureViewer.css"`. An app that forgot that import drew the viewer off-screen (run 7, F13); with this unit the app cannot forget it. Your bundler must handle a CSS import (Vite, webpack and Next do).
+
+```tsx
+const { viewer, openStored, openLocal } = useVaultPictureViewer({ vaultOrigin, copies });
+<PictureThumb stored={w.picture} previewUrl={w.previewUrl ?? null} copies={copies} vaultOrigin={vaultOrigin} placeholder={<WatchIcon />} label={`View picture of ${w.name}`}
+  onOpen={(el) => (w.picture ? void openStored({ master: w.picture, alt: w.name, el }) : openLocal({ url: w.previewUrl!, alt: w.name }))} />
+```
 
 ## What this is not
 
@@ -82,3 +89,7 @@ Named changes, and only these:
 - V1. `resolveSrc` signs the file the item names (`item.fileUri`) and returns the local URL for an item with none; the run-7 code picked the largest copy inside `resolveSrc`, here `openStored` puts it in `fileUri`.
 - V2. `openStored` takes the thumbnail's address as `thumbUriOf(copies, master) ?? master`, so with `copies` null the master itself is the stand-in (run 7 showed none then).
 - V3. `el` (focus return) is passed through to the viewer.
+
+## Changes in 0.1.1
+
+Additive: `PictureThumb` and the type `PictureThumbProps` (`src/PictureThumb.tsx`). No new peer. 4 new tests (`src/PictureThumb.test.tsx`).

@@ -29,7 +29,7 @@ const bad = (file: string, text: string) => literalsOf(file, text).filter((l) =>
 describe("no default fact name in src", () => {
   const files = readdirSync(src).filter((f) => /\.ts$/.test(f) && !/\.test\.ts$/.test(f));
   it("scans the unit's source files", () => {
-    expect(files.sort()).toEqual(["flow.ts", "index.ts", "link.ts", "prepare.ts", "types.ts", "vault.ts"]);
+    expect(files.sort()).toEqual(["flow.ts", "index.ts", "link.ts", "listApi.ts", "prepare.ts", "types.ts", "vault.ts"]);
   });
   it.each(files)("%s has no string literal that is a fact name", (f) => {
     expect(bad(f, readFileSync(join(src, f), "utf8"))).toEqual([]);

@@ -109,6 +109,47 @@ describe("picture flow order (ported)", () => {
   });
 });
 
+describe("deleteWithPicture options (0.1.3)", () => {
+  const withDelete = (log: string[], calls: unknown[][], over: Partial<PictureFlowDeps<Rec, Form>> = {}) =>
+    fake(log, { deleteRecord: async (...a: unknown[]) => void (calls.push(a), log.push("delete")), ...over } as never);
+  it("default: files first, and deleteRecord is called with the record alone (no options argument)", async () => {
+    const log: string[] = [];
+    const calls: unknown[][] = [];
+    await deleteWithPicture(withDelete(log, calls), rec({ picture: E("old") }));
+    expect(log).toEqual([`end:${E("old")}+${E("oldt")}`, "delete"]);
+    expect(calls).toEqual([[rec({ picture: E("old") })]]);
+  });
+  it("ifMatch as a string is passed to deleteRecord", async () => {
+    const calls: unknown[][] = [];
+    await deleteWithPicture(withDelete([], calls), rec(), { ifMatch: '"v1"' });
+    expect(calls[0]![1]).toEqual({ ifMatch: '"v1"' });
+  });
+  it("ifMatch as a function reads the record; null sends none", async () => {
+    const calls: unknown[][] = [];
+    await deleteWithPicture(withDelete([], calls), rec({ id: "a" }), { ifMatch: (r) => `"${r.id}"` });
+    await deleteWithPicture(withDelete([], calls), rec(), { ifMatch: () => null });
+    expect(calls[0]![1]).toEqual({ ifMatch: '"a"' });
+    expect(calls[1]).toHaveLength(1);
+  });
+  it("record-first: deletes the record, THEN ends the files", async () => {
+    const log: string[] = [];
+    const r = await deleteWithPicture(withDelete(log, []), rec({ picture: E("old") }), { order: "record-first", ifMatch: '"v1"' });
+    expect(log).toEqual(["delete", `end:${E("old")}+${E("oldt")}`]);
+    expect(r.notice).toBeNull();
+  });
+  it("record-first: a refused delete (412) throws its error and ends no file", async () => {
+    const log: string[] = [];
+    const refused = Object.assign(new Error("This record changed elsewhere since you opened it — reloaded the latest."), { name: "RecordConflictError" });
+    const d = withDelete(log, [], { deleteRecord: async () => { throw refused; } });
+    await expect(deleteWithPicture(d, rec({ picture: E("old") }), { order: "record-first", ifMatch: '"v1"' })).rejects.toBe(refused);
+    expect(log).toEqual([]);
+  });
+  it("record-first: files that cannot be ended after the record went are the notice", async () => {
+    const r = await deleteWithPicture(withDelete([], [], { endFiles: async () => [E("oldt")] }), rec({ picture: E("old") }), { order: "record-first" });
+    expect(r.notice).toBe(FILES_NOT_REMOVED);
+  });
+});
+
 describe("what the unit adds to the flow", () => {
   it("the notice carries the storing warning", async () => {
     const up = async () => ({ master: E("new"), thumb: null, warning: "small copy not linked" });

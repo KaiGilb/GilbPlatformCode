@@ -5,6 +5,9 @@ import type { PictureFlowDeps } from "./flow";
 import { linkPicture, pictureLinkPatch, type RecordRef } from "./link";
 import type { PreparedPicture } from "./types";
 
+export { recordPictureListApi } from "./listApi";
+export type { ListedRecord, PictureDraft, RecordPictureListApi, RecordPictureListOptions } from "./listApi";
+
 export interface VaultPictures {
   /** The vault's files, listed once, as a copy map (never throws: a failed listing is an empty map). */
   loadCopies(): Promise<CopyMap>;
@@ -169,7 +172,7 @@ export function vaultPictureFlowDeps<R extends RecordRef & { picture: string | n
     },
     endFiles: (master, copies) => o.pictures.endFiles(master, copies),
     copiesOf: (master) => copiesOf(map(), master).map((c) => c.uri),
-    deleteRecord: (rec) => deleteRecord(rec.id, rec.entity),
+    deleteRecord: (rec, o) => (o?.ifMatch ? deleteRecord(rec.id, rec.entity, { ifMatch: o.ifMatch }) : deleteRecord(rec.id, rec.entity)),
     pictureOf: (rec) => rec.picture,
   };
 }
