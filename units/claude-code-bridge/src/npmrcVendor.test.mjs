@@ -15,13 +15,13 @@ const PAIR = `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}`;
 const SENTENCES = [GITHUB_ARCHIVE_SENTENCE, PLAIN_COMMANDS_SENTENCE, NPMRC_SENTENCE];
 
 let dir, bridge, base, logFile, secret;
-async function start(access) {
+async function start(access, extra = {}) {
   dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "npmrc-vendor-")));
   logFile = path.join(dir, "claude.log");
   const ws = path.join(dir, "MyCode"); fs.mkdirSync(ws);
   bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir,
     codeEnvExtraPrefixes: ["FAKE_"], codePlatform: access === "files-only" ? "win32" : "darwin", workspace: ws,
-    ...(access === "computer" ? { fullAccess: true } : {}), log: () => {}, env: { ...process.env, FAKE_CLAUDE_LOG: logFile } });
+    ...(access === "computer" ? { fullAccess: true } : {}), log: () => {}, env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...extra });
   await bridge.start(); base = `http://127.0.0.1:${bridge.port}`;
   const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
   secret = (await res.json()).secret;
@@ -135,11 +135,74 @@ describe("folder-mode vendor, plain commands and .npmrc sentences", () => {
     expect(GITHUB_ARCHIVE_SENTENCE).toContain("codeload.github.com");
     expect(NPMRC_SENTENCE).toContain("install-links=true");
     expect(NPMRC_SENTENCE).toContain("--install-links");
-    expect(NPMRC_SENTENCE).toContain("ask the person");
+    expect(NPMRC_SENTENCE).toContain("read this folder's .npmrc");
+    expect(NPMRC_SENTENCE).toContain("tell the person to add it");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -rf");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -r");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("$VARIABLE");
     expect(PROJECT_NPMRC_TEXT).toBe("install-links=true\n");
     for (const sentence of [...SENTENCES, PROJECT_NPMRC_TEXT]) expect(sentence).not.toContain("gilb.com");
+  });
+
+  it("a planted .npmrc file is left unchanged and the answer says it was not written", async () => {
+    await start("folder", { beforeProjectNpmrc: (projectPath) => { fs.writeFileSync(path.join(projectPath, ".npmrc"), "ORIGINAL\n"); } });
+    const r = await post("/v1/projects/create", { name: "kept" });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({ name: "kept", npmrc: false });
+    expect(fs.readFileSync(path.join(dir, "MyCode", "kept", ".npmrc"), "utf8")).toBe("ORIGINAL\n");
+  });
+
+  it.skipIf(process.platform === "win32")("a planted .npmrc symlink is not followed and the outside file stays", async () => {
+    await start("folder", { beforeProjectNpmrc: (projectPath) => {
+      const outside = path.join(dir, "outside.txt");
+      fs.writeFileSync(outside, "ORIGINAL\n");
+      fs.symlinkSync(outside, path.join(projectPath, ".npmrc"));
+    } });
+    const r = await post("/v1/projects/create", { name: "linked" });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({ name: "linked", npmrc: false });
+    const outside = path.join(dir, "outside.txt");
+    expect(fs.readFileSync(outside, "utf8")).toBe("ORIGINAL\n");
+    expect(fs.lstatSync(path.join(dir, "MyCode", "linked", ".npmrc")).isSymbolicLink()).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)("a read-only project folder answers npmrc false and logs the refusal without the secret or the pairing code", async () => {
+    const name = "readonly";
+    const lines = [];
+    const project = () => path.join(dir, "MyCode", name);
+    await start("folder", {
+      log: (line) => lines.push(line),
+      beforeProjectNpmrc: (projectPath) => { fs.chmodSync(projectPath, 0o555); },
+    });
+    // Pairing logs the next code on purpose. These lines are what the create itself wrote.
+    lines.length = 0;
+    try {
+      const r = await post("/v1/projects/create", { name });
+      expect(r.status).toBe(200);
+      expect(JSON.parse(r.text)).toEqual({ name, npmrc: false });
+      expect(fs.existsSync(project())).toBe(true);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].startsWith(`project ${name}: .npmrc not written: `)).toBe(true);
+      expect(lines[0].endsWith("EACCES") || lines[0].endsWith("EPERM")).toBe(true);
+      expect(lines.some((l) => l.includes(secret) || l.includes(bridge.pairingCode))).toBe(false);
+    } finally {
+      fs.chmodSync(project(), 0o755);
+    }
+  });
+
+  it("the project .npmrc write stays exclusive, so a planted file or symlink cannot be overwritten", () => {
+    const src = fs.readFileSync(path.join(HERE, "bridge.ts"), "utf8");
+    const needle = 'PROJECT_NPMRC_TEXT, { flag: "wx", mode: 0o644 })';
+    expect(src.split(needle).length - 1).toBe(1);
+  });
+
+  it("a session folder-mode turn's prompt contains the .npmrc sentence once, and the sentence says to read the line", async () => {
+    await start("folder");
+    const r = await post("/v1/turn", { system: "SYS", prompt: "hi", mode: "code" });
+    expect(r.status).toBe(200);
+    const s = sys(runs()[0].argv);
+    expect(s.split(NPMRC_SENTENCE).length - 1).toBe(1);
+    expect(NPMRC_SENTENCE).toContain("read this folder's .npmrc");
+    expect(NPMRC_SENTENCE).toContain("tell the person to add it");
   });
 });

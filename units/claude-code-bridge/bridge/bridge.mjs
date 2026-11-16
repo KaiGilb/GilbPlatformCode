@@ -583,10 +583,10 @@ const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can o
 const NETWORK_SENTENCE = "The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).";
 const APP_FOLDER_SENTENCE = "Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask.";
 export const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder.";
-/** A code turn in folder mode cannot answer an approval prompt, so a command Claude Code cannot check is refused: say so before it happens. */
+/** A session-approval code turn cannot answer an approval prompt, so a command Claude Code cannot check is refused: say so before it happens (not used in each-write turns, where the person is asked). */
 export const PLAIN_COMMANDS_SENTENCE = "Keep every command inside this folder and plain: no temporary folder or other folder outside it, no $VARIABLE in a path, and no recursive delete (rm -r or rm -rf, in any spelling). Claude Code asks before it runs a command it cannot check; nobody can answer here, so the command is refused, and Claude Code then refuses every later command that needs approval in this turn.";
-/** Claude Code refuses to write .npmrc in a code turn; npm takes its options on the command line. */
-export const NPMRC_SENTENCE = "Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. A project folder made in the chat already has a .npmrc with the one line install-links=true, so code-library units install as copies. If the folder you install in has no such .npmrc, ask the person to add that one line to that folder's .npmrc themselves, and until then pass --install-links to every npm install and npm ci.";
+/** Claude Code refuses to let a code turn write .npmrc; the bridge writes the project's install-links line itself, and the coder checks it is there. */
+export const NPMRC_SENTENCE = "Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. Before you install packages, read this folder's .npmrc: a project folder made in the chat gets the one line install-links=true from the bridge, so code-library units install as copies. If that line is not there, tell the person to add it to that folder's .npmrc themselves, and until then pass --install-links to every npm install and npm ci.";
 /** What the bridge writes into a project folder it creates, so code-library units install as copies (the agent may not write .npmrc). */
 export const PROJECT_NPMRC_TEXT = "install-links=true\n";
 /** The vendoring and .npmrc sentences of a folder-mode code turn; the plain-commands one only where nobody can answer an approval (session). */
@@ -2518,6 +2518,7 @@ export function createBridge(opts = {}) {
                 return json(res, 409, { error: exists });
             return json(res, 500, { error: `Could not make the project: ${e?.message ?? e}` });
         }
+        opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
         let npmrc = false;
         try {
             fs.writeFileSync(path.join(workspace.path, name, ".npmrc"), PROJECT_NPMRC_TEXT, { flag: "wx", mode: 0o644 });
