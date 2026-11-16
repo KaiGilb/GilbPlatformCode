@@ -1123,19 +1123,37 @@ const CLOCK_HINT =
   "This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.";
 
 /**
+ * A text the token door sent, made safe to show inside double quotes: control and direction
+ * characters removed, every JWT-shaped run replaced, a private key dropped, `"` turned into `'`,
+ * and cut to `max` characters.
+ *
+ * @param text the text the platform sent
+ * @param max the most characters to keep
+ * @returns the safe text, or "" when nothing is left to show
+ */
+function quotableReason(text: string, max: number): string {
+  const plain = text
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, " ")
+    .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[token removed]")
+    .replace(/"/g, "'");
+  return safeQuote(plain).slice(0, max);
+}
+
+/**
  * The message for a refused token request: the code, the platform's own reason quoted and cut to
- * 200 characters, and the clock hint when that reason names iat, nbf, exp or the clock.
+ * 200 characters, and the clock hint when that reason names iat, nbf, exp, expired or the clock.
  *
  * @param body the parsed JSON answer of the token door, or undefined
  * @returns the message to show
  */
 function tokenRefusalMessage(body: unknown): string {
   const row = body && typeof body === "object" ? (body as { error?: unknown; error_description?: unknown }) : {};
-  const code = typeof row.error === "string" ? safeQuote(row.error).slice(0, 80) : "";
-  const reason = typeof row.error_description === "string" ? safeQuote(row.error_description).slice(0, 200) : "";
+  const code = typeof row.error === "string" ? quotableReason(row.error, 80) : "";
+  const raw = typeof row.error_description === "string" ? row.error_description : "";
+  const reason = raw ? quotableReason(raw, 200) : "";
   let message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
   if (reason) message += ` The platform said: "${reason}"`;
-  if (/\b(iat|nbf|exp|clock)\b/i.test(reason)) message += ` ${CLOCK_HINT}`;
+  if (reason && /\b(iat|nbf|exp|expired|clock)\b/i.test(raw)) message += ` ${CLOCK_HINT}`;
   return message;
 }
 
