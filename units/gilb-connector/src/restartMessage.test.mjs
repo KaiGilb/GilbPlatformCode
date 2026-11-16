@@ -253,6 +253,20 @@ describe("a platform that is restarting", () => {
     }
   });
 
+  it("removes a JWT chopped every 15 characters by an invisible mark", async () => {
+    captureStderr();
+    const jwt = "eyJhbGciOiJFUzI1NiJ9.eyJpc3MiOiJhZ2VudC1hYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5eiJ9.c2lnbmF0dXJlLXNpZ25hdHVyZS1zaWduYXR1cmUtc2lnbmF0dXJl";
+    for (const mark of ["\u034f", "\ufe0f", "\u3164"]) {
+      const chopped = jwt.replace(/(.{15})/g, `$1${mark}`);
+      const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client", error_description: `bad ${chopped} end` } }] });
+      const box = connect(platform.origin);
+      const shown = text(await box.call("list_vaults"));
+      expect(shown).not.toContain(mark);
+      expect(shown).not.toContain("eyJhbGciOiJFUzI1");
+      expect(shown).toContain("[token removed]");
+    }
+  });
+
   it("gives the clock hint for 'expired' and for a clock word past the 200-character cut", async () => {
     captureStderr();
     const reason = "x".repeat(250) + " token expired";
