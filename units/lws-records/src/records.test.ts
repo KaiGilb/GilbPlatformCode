@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotSignedInError, lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import { typeUri } from "@kaigilb/gilbplatformcode-record-types";
-import { createRecord, patchRecord, readRecord, RecordConflictError, RecordForbiddenError } from "./records";
+import { createRecord, IdempotencyKeyReusedError, patchRecord, readRecord, RecordConflictError, RecordForbiddenError, RecordInFlightError } from "./records";
 import { ORIGIN, resp, setUp, tearDown, type FakeHost } from "../test/support";
 
 const NOTE_URI = () => typeUri("Note");
@@ -29,6 +29,26 @@ afterEach(() => {
 /** Extracts the [url, init] of the last fetch call. */
 function lastCall(): [string, RequestInit] {
   return fetchMock.mock.calls.at(-1) as [string, RequestInit];
+}
+
+/** A response whose body can be read once. `clone()` carries a fresh body, as fetch does. */
+function oneShot(status: number, raw: string): Response {
+  let used = false;
+  const take = async (): Promise<string> => {
+    if (used) throw new TypeError("body used already");
+    used = true;
+    return raw;
+  };
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(),
+    text: take,
+    json: async () => JSON.parse(await take()),
+    clone(): Response {
+      return oneShot(status, raw);
+    },
+  } as unknown as Response;
 }
 
 describe("createRecord (POST /lws/vault/:vaultId/c — Cycle053 VDS-4 FIX-1)", () => {
@@ -80,6 +100,139 @@ describe("createRecord (POST /lws/vault/:vaultId/c — Cycle053 VDS-4 FIX-1)", (
     expect(err.status).toBe(400);
     expect(err.message).toBe("no vault named");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends Idempotency-Key when idempotencyKey is set, and no such header without it", async () => {
+    fetchMock.mockResolvedValue(resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"' }, body: {} }));
+    const out = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" });
+    expect(out.replayed).toBeUndefined();
+    expect((lastCall()[1].headers as Record<string, string>)["Idempotency-Key"]).toBe("note-hello-1");
+    await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" });
+    expect((lastCall()[1].headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
+  });
+
+  it("sends a key with a space, a leading space, and 128 characters including spaces", async () => {
+    const keys = ["note hello", " note-hello-1", "a ".repeat(64)];
+    expect(keys[2]).toHaveLength(128);
+    for (const idempotencyKey of keys) {
+      fetchMock.mockResolvedValueOnce(resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"' }, body: {} }));
+      await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey });
+      expect((lastCall()[1].headers as Record<string, string>)["Idempotency-Key"]).toBe(idempotencyKey);
+    }
+  });
+
+  it("refuses an idempotencyKey that is empty, 129 characters, or outside printable ASCII, before any request", async () => {
+    const bad = ["", "x".repeat(129), "\x1f", "\x7f", "\t", "\n", "caf\u00e9"];
+    for (const idempotencyKey of bad) {
+      const err = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey }).catch((e) => e)) as Error;
+      expect(err).toBeInstanceOf(TypeError);
+      expect(err.message).toBe(
+        "lws-records: createRecord: idempotencyKey must be 1 to 128 printable ASCII characters (0x20-0x7E, space included)",
+      );
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.dpopWriteAuth).not.toHaveBeenCalled();
+  });
+
+  it("a replay (Idempotent-Replayed: true) answers the first record with replayed: true", async () => {
+    fetchMock.mockResolvedValue(
+      resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"', "idempotent-replayed": "true" }, body: {} }),
+    );
+    const out = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, "Hello", undefined, { idempotencyKey: "note-hello-1" });
+    expect(out).toEqual({
+      id: "note-abc123",
+      etag: '"sha256:aa"',
+      entity: "https://kaizen.platform.example.test/base/e/note-abc123",
+      replayed: true,
+    });
+  });
+
+  it("a keyed 409 IdempotencyKeyInFlight with retry-after 1 throws RecordInFlightError", async () => {
+    fetchMock.mockResolvedValue(resp(409, { headers: { "retry-after": "1" }, body: { error: "IdempotencyKeyInFlight" } }));
+    const err = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as RecordInFlightError;
+    expect(err).toBeInstanceOf(RecordInFlightError);
+    expect(err.retryAfter).toBe(1);
+    expect(err.status).toBe(409);
+    expect(err.message).toBe("A create with this Idempotency-Key is still in flight.");
+  });
+
+  it("a keyed 409 UndefinedTermError is not RecordInFlightError and matches the same answer without a key", async () => {
+    const body = { error: "UndefinedTermError", message: "S" };
+    fetchMock.mockResolvedValueOnce(resp(409, { body }));
+    const keyed = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as Error & { status?: number };
+    fetchMock.mockResolvedValueOnce(resp(409, { body }));
+    const plain = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(keyed).not.toBeInstanceOf(RecordInFlightError);
+    expect(keyed.constructor).toBe(plain.constructor);
+    expect(keyed.message).toBe(plain.message);
+    expect(keyed.status).toBe(plain.status);
+    expect(keyed.status).toBe(409);
+  });
+
+  it("a keyed 409 with a non-JSON body stays the plain Error of the same answer without a key", async () => {
+    fetchMock.mockResolvedValueOnce(oneShot(409, "not json"));
+    const keyed = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as Error & { status?: number };
+    fetchMock.mockResolvedValueOnce(oneShot(409, "not json"));
+    const plain = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(keyed).not.toBeInstanceOf(RecordInFlightError);
+    expect(keyed.constructor).toBe(plain.constructor);
+    expect(keyed.message).toBe(plain.message);
+    expect(keyed.message).toBe("not json");
+    expect(keyed.status).toBe(plain.status);
+    expect(keyed.status).toBe(409);
+  });
+
+  it("a keyed 422 IdempotencyKeyReused throws IdempotencyKeyReusedError", async () => {
+    fetchMock.mockResolvedValue(resp(422, { body: { error: "IdempotencyKeyReused" } }));
+    const err = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as IdempotencyKeyReusedError;
+    expect(err).toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(err).not.toBeInstanceOf(RecordInFlightError);
+    expect(err.status).toBe(422);
+    expect(err.message).toBe("This Idempotency-Key was already used for a different request. Nothing was created.");
+  });
+
+  it("a keyed 422 with another error stays the plain Error of the same answer without a key", async () => {
+    const body = { error: "IdentityCollisionError", message: "that name is taken" };
+    fetchMock.mockResolvedValueOnce(resp(422, { body }));
+    const keyed = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as Error & { status?: number };
+    fetchMock.mockResolvedValueOnce(resp(422, { body }));
+    const plain = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(keyed).not.toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(keyed).not.toBeInstanceOf(RecordInFlightError);
+    expect(keyed.constructor).toBe(plain.constructor);
+    expect(keyed.message).toBe(plain.message);
+    expect(keyed.status).toBe(plain.status);
+    expect(keyed.status).toBe(422);
+    expect(keyed.message).toBe("that name is taken");
+  });
+
+  it("uses the body's message string for the in-flight and reused errors", async () => {
+    fetchMock.mockResolvedValueOnce(resp(409, { headers: { "retry-after": "1" }, body: { error: "IdempotencyKeyInFlight", message: "still working" } }));
+    const inFlight = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as RecordInFlightError;
+    expect(inFlight).toBeInstanceOf(RecordInFlightError);
+    expect(inFlight.message).toBe("still working");
+    expect(inFlight.retryAfter).toBe(1);
+    fetchMock.mockResolvedValueOnce(resp(422, { body: { error: "IdempotencyKeyReused", message: "used elsewhere" } }));
+    const reused = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as IdempotencyKeyReusedError;
+    expect(reused).toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(reused.message).toBe("used elsewhere");
+    fetchMock.mockResolvedValueOnce(resp(409, { headers: { "retry-after": "1" }, body: { error: "IdempotencyKeyInFlight", message: 12 } }));
+    const fallback = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as RecordInFlightError;
+    expect(fallback).toBeInstanceOf(RecordInFlightError);
+    expect(fallback.message).toBe("A create with this Idempotency-Key is still in flight.");
+  });
+
+  it("without a key, 409 and 422 stay a plain Error that carries the status", async () => {
+    fetchMock.mockResolvedValueOnce(resp(409, { headers: { "retry-after": "3" }, body: { error: "Conflict", message: "that tag is taken" } }));
+    const conflict = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(conflict).not.toBeInstanceOf(RecordInFlightError);
+    expect(conflict.status).toBe(409);
+    expect(conflict.message).toBe("that tag is taken");
+    fetchMock.mockResolvedValueOnce(resp(422, { body: { error: "Unprocessable", message: "that key was reused" } }));
+    const reused = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(reused).not.toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(reused.status).toBe(422);
+    expect(reused.message).toBe("that key was reused");
   });
 });
 

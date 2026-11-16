@@ -6,6 +6,8 @@ Finding the record that is the holder's own card in a vault, by hard identity: t
 
 Finding the record that is the holder's own card in a vault, by hard identity: the id derived for that vault, or the record the vault's profile pointer names.
 
+Use it when you need the signed-in person's own card, the source (`a:statedBy`) of a record the person saves, "who made this record", or the person's profile card in a vault. Never derive the card id yourself or look for a `vaultSelfCard` fact by hand; this unit does it by `findOwnCard`, which returns `cardId` and `cardUri` from the vault's `a:mnbProfile` pointer when `isSeatOwnerCard` accepts it, and otherwise returns the derived card only when that card is there and `isSeatOwnerCard` accepts it (`deps.selfCardIdForVault`).
+
 Plain functions and types, no React. A record in the holder's seat is his own card only by identity: its id is the seat's derived self-card id, or it is the record his vault's `a:mnbProfile` pointer names, accepted only where the profile app's own pointer check accepts it. No listing road, no name, no id prefix: a contact merely named "MNB Profile ..." is an ordinary record. Every read is a transport the caller injects; nothing is written, repointed or deleted.
 
 - `findOwnCard(deps, vault)`: reads the pointer (1), the pointed record (0-1) and the derived card (0-1), and answers an `OwnCardFinding`: `cardId`, `cardUri`, `road` (`"pointer"`, `"derived"` or `"none"`), `otherOwnerCards` (a second own card seen on the way: reported, never repaired), `otherOwnerCardsKnown`, `ignoredPointer` (a pointer the check refuses: named, not followed). It throws when a read fails with anything but "absent", and when the vault root is empty.

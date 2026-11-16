@@ -30,6 +30,22 @@ The unit holds module state. An app must have ONE copy of it: every unit that re
 
 New settings only; nothing of 0.1.0 changed. `setOntologyApiOriginRaw` replaces the environment value `VITE_ONTOLOGY_API_ORIGIN` at `src/lib/base/heldTypes.ts` line 179 (read there as trimmed text with one trailing `/` removed, scheme included); `setVocabTypeBatchRevisions` replaces `VITE_VOCAB_TYPE_BATCH_REVISIONS` at `heldTypes.ts` line 229 (split at commas, trimmed, empty parts dropped). Both default to the no-environment value of the app (unset). Tests: 11 new in `src/baseOrigin.test.ts`. The peer range of `lws-records`, `lws-session-bridge`, `lws-vault-sets`, `ontology-reads`, `record-types`, `vault-origin-rule`, `lws-relations` and `record-cache-kit` on this unit is `^0.2.0`.
 
+## Live values (GilbPlatform production)
+
+The production platform origin is `https://gilb.com`:
+
+```ts
+setBaseOrigin("https://gilb.com");
+```
+
+The system vault hosts are `id.gilb.com`, `veda.gilb.com`, `geo.gilb.com`, `kaizen.gilb.com`, `connect.gilb.com` and `maintain.gilb.com`. The setter is `setSystemVaultHosts(hosts: readonly string[])`:
+
+```ts
+setSystemVaultHosts(["id.gilb.com", "veda.gilb.com", "geo.gilb.com", "kaizen.gilb.com", "connect.gilb.com", "maintain.gilb.com"]);
+```
+
+A local rig uses its own origin. The unit itself still names no host: the app sets them once at start-up.
+
 ## What this is not
 
 - Not an address builder and not a credential rule. It keeps the two facts; the unit that builds addresses and decides who gets the credential reads them.

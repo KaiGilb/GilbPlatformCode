@@ -160,6 +160,83 @@ export class RecordForbiddenError extends Error {
 }
 
 /**
+ * 409 from a create that sent `Idempotency-Key`, and only when the JSON body's `error` is exactly
+ * `IdempotencyKeyInFlight`. Any other 409 — another `error`, a body that is not JSON, or no key —
+ * stays the plain `Error` {@link throwForCreateStatus} already throws.
+ * `retryAfter` is the `Retry-After` header in seconds (a delay-seconds value, or the seconds until
+ * an HTTP-date). It is `NaN` when the header is missing or neither of those.
+ * The message is the body's `message` when that value is a string, otherwise the fixed sentence.
+ */
+export class RecordInFlightError extends Error {
+  readonly status = 409;
+  readonly retryAfter: number;
+  constructor(retryAfter: number, message?: string) {
+    super(message ?? "A create with this Idempotency-Key is still in flight.");
+    this.name = "RecordInFlightError";
+    this.retryAfter = retryAfter;
+  }
+}
+
+/**
+ * 422 from a create that sent `Idempotency-Key`, and only when the JSON body's `error` is exactly
+ * `IdempotencyKeyReused`. Any other 422 — another `error`, a body that is not JSON, or no key —
+ * stays the plain `Error` {@link throwForCreateStatus} already throws.
+ * The message is the body's `message` when that value is a string, otherwise the fixed sentence.
+ */
+export class IdempotencyKeyReusedError extends Error {
+  readonly status = 422;
+  constructor(message?: string) {
+    super(message ?? "This Idempotency-Key was already used for a different request. Nothing was created.");
+    this.name = "IdempotencyKeyReusedError";
+  }
+}
+
+/** `Retry-After` as seconds. `NaN` when the header is missing, blank, or not a delay and not a date. */
+function retryAfterSeconds(raw: string | null): number {
+  const v = raw?.trim() ?? "";
+  if (/^\d+(\.\d+)?$/.test(v)) return Number(v);
+  const t = Date.parse(v);
+  if (v !== "" && !Number.isNaN(t)) return Math.max(0, (t - Date.now()) / 1000);
+  return Number.NaN;
+}
+
+/** 1 to 128 printable ASCII characters (0x20–0x7E, space included). Throws before any request. */
+function assertIdempotencyKey(key: unknown): asserts key is string {
+  if (typeof key !== "string" || !/^[\x20-\x7E]{1,128}$/.test(key)) {
+    throw new TypeError(
+      "lws-records: createRecord: idempotencyKey must be 1 to 128 printable ASCII characters (0x20-0x7E, space included)",
+    );
+  }
+}
+
+/**
+ * The in-flight or reused error, or null when this answer is not one of those two.
+ * Null covers every other status, another `error` value, and a body that is not a JSON object
+ * (including a body that is not JSON). The caller then uses {@link throwForCreateStatus} on the
+ * original response. The body is read from a clone: a response body can be read only once, and
+ * `throwForCreateStatus` reads it itself.
+ */
+async function idempotencyKeyRefusal(res: Response): Promise<RecordInFlightError | IdempotencyKeyReusedError | null> {
+  if (res.status !== 409 && res.status !== 422) return null;
+  let body: unknown;
+  try {
+    body = await res.clone().json();
+  } catch {
+    return null;
+  }
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as { error?: unknown; message?: unknown };
+  const sentence = typeof record.message === "string" ? record.message : undefined;
+  if (res.status === 409 && record.error === "IdempotencyKeyInFlight") {
+    return new RecordInFlightError(retryAfterSeconds(res.headers.get("Retry-After")), sentence);
+  }
+  if (res.status === 422 && record.error === "IdempotencyKeyReused") {
+    return new IdempotencyKeyReusedError(sentence);
+  }
+  return null;
+}
+
+/**
  * A fact value as the VAULT stores it — the datom value shapes the write door actually
  * accepts, not a client narrowing of them.
  *
@@ -492,6 +569,13 @@ function slugFromName(name: string | undefined): string | undefined {
  * NEVER the writer's own sign-in vault). Authorizes with the sender-constrained DPoP credential.
  * Returns the minted id, the initial ETag, and `entity` (the absolute entity URI on this vault).
  * Always set by createRecord; optional in the type so hosts that stub createRecord still type-check.
+ * `options.idempotencyKey`, when set, is 1 to 128 printable ASCII characters (0x20-0x7E, space
+ * included) and is sent as `Idempotency-Key`. Any other value throws `TypeError` before a request.
+ * A replay (201 with `Idempotent-Replayed: true`) adds `replayed: true`. With no key the request
+ * is unchanged. A 409 is {@link RecordInFlightError} only when a key was sent and the JSON body's
+ * `error` is exactly `IdempotencyKeyInFlight`. A 422 is {@link IdempotencyKeyReusedError} only when
+ * a key was sent and `error` is exactly `IdempotencyKeyReused`. Every other non-ok answer goes
+ * through {@link throwForCreateStatus}.
  */
 export async function createRecord(
   vaultNamespace: string,
@@ -500,7 +584,11 @@ export async function createRecord(
   nameHint?: string,
   /** Where these slugs came from; omit for app-authored facts. {@link WriteSource} */
   source?: WriteSource,
-): Promise<{ id: string; etag: string | null; entity?: string }> {
+  /** Optional. `idempotencyKey` is 1 to 128 printable ASCII characters (0x20-0x7E, space included), sent as `Idempotency-Key`. */
+  options?: { idempotencyKey?: string },
+): Promise<{ id: string; etag: string | null; entity?: string; replayed?: true }> {
+  const idempotencyKey = options?.idempotencyKey;
+  if (idempotencyKey !== undefined) assertIdempotencyKey(idempotencyKey);
   const url = LWS_VAULT_CONTAINER_URL(vaultNamespace);
   const headers: Record<string, string> = {
     ...(await dpopWriteAuth("POST", url)),
@@ -508,6 +596,7 @@ export async function createRecord(
   };
   const slug = slugFromName(nameHint);
   if (slug) headers["slug"] = slug;
+  if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
   const res = await fetch(url, {
     method: "POST",
     headers,
@@ -517,14 +606,21 @@ export async function createRecord(
     // fetch the instant the page starts unloading, silently dropping the write.
     keepalive: true,
   });
-  if (!res.ok) await throwForCreateStatus(res);
+  if (!res.ok) {
+    if (idempotencyKey !== undefined) {
+      const refusal = await idempotencyKeyRefusal(res);
+      if (refusal) throw refusal;
+    }
+    await throwForCreateStatus(res);
+  }
   const location = res.headers.get("location");
   const etag = res.headers.get("etag");
   const id = location
     ? idFromResourceUrl(location)
     : idFromResourceUrl(String((await res.json().catch(() => ({})))["@id"] ?? ""));
+  const replayed = res.headers.get("Idempotent-Replayed")?.trim().toLowerCase() === "true";
   // Location is /lws/r/<id>. The entity URI uses the vault namespace's own host and segment.
-  return { id, etag, entity: entityUriOfCreated(vaultNamespace, id) };
+  return { id, etag, entity: entityUriOfCreated(vaultNamespace, id), ...(replayed ? { replayed: true as const } : {}) };
 }
 
 /** Absolute entity URI of a record just created in `vaultNamespace`. */

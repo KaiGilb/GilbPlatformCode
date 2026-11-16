@@ -182,6 +182,39 @@ npm install <path-to-the-library>/units/signin
 
 Every later `npm install` and `npm ci`, CI included, then keeps the copy. Without that line a plain install makes a link, the unit brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist". A one-off `npm install --install-links <path>` works only until the next plain install, and `npm ci` then refuses the lock file.
 
+## Use a vault you already have (a project vault)
+
+When the app works in one named vault the person already has (for example the project's vault), sign in with the code sign-in only. Do not call `useLiveStart`, `ensureAppVault` or `createAppVaultService`. `useLiveStart` and `createLiveStart` open through `createAppVaultService`, and `ensureAppVault` finds a vault of the app's type or makes one with `createNamedVault`.
+
+Sign in, keep the one `SessionCredential`, then address the vault by the `vaultId` `listVaults` returns:
+
+```ts
+import { SignInCard } from "@kaigilb/gilbplatformcode-signin";
+import { SessionCredential, makeSignInAuth } from "@kaigilb/gilbplatformcode-signin/session";
+import { listVaults, normaliseVaultName, sameVaultHost } from "@kaigilb/gilbplatformcode-signin/core";
+
+const credential = new SessionCredential(); // holds the token after the code is accepted
+const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "MyApp" }); // leave createsVault unset
+// <SignInCard app={app} auth={auth} onSignedIn={() => void openProject()} />
+
+async function openProject() {
+  const vaults = await listVaults(ID_ORIGIN, { credential });
+  const project = vaults.find((v) => v.name === normaliseVaultName("the-project"));
+  // project.vaultId is the namespace later calls address.
+  // sameVaultHost(project.vaultId, knownUrl) matches on the host when the segment is unknown.
+}
+```
+
+Headless, the same three steps. Omit `name` so verify-code does not ask for a new vault:
+
+```ts
+await credential.signInWithCode(ID_ORIGIN, email, code);
+const vaults = await listVaults(ID_ORIGIN, { credential });
+const project = vaults.find((v) => v.name === normaliseVaultName("the-project"));
+```
+
+`signInWithCode` stores the token on the credential, then reads `GET /lws/vaults` into `session.vaults` as `{ vaultId, modes }` and leaves `session.vault` null. The vault's `name`, and its `shortName` when the platform sent `podName` with `podNameKnown`, are on the `listVaults` result. `makeSignInAuth` without `createsVault: true` makes `completeNamedVault` reject with a sentence that making a vault is not part of the product, so the card does not finish by creating one.
+
 ## Make a vault for your app
 
 `createNamedVault` posts once to `{origin}/base/vault/create-named` (signed, DPoP):
@@ -272,6 +305,17 @@ create-named answers 201 (made) or 202 (partly made). Sending the IDENTICAL requ
 4. the next call finds a pending name and sends it again without calling check-name, whatever caused the earlier stop (a 202, a closed tab, a crash).
 
 Errors are thrown unchanged. The pending name is cleared ONLY when (a) the create completed (201), or (b) it threw a `VaultRequestRefusedError` with a 4xx status (400 to 499) and no 202 was seen for this name in this call: a definite "no" before anything was made. It is KEPT for an unreachable platform, any status of 500 or more, any error at all after a 202 (so 202 then 503, or 202 then 409, keeps it), and `PartialVaultError`. The rule is the exported function `keepsPending(e, saw202)`. Why: the platform may have half-made the vault, and a forgotten name makes the next check-name answer "taken, suggest name2", which makes a second vault. On success the pending name is cleared, the vault list is read again and the new vault is found by the id the answer gave (`sameVaultHost`), else by name; if the list still lacks it, a sentence is thrown rather than a made-up vault.
+
+## Testing the sign-in form
+
+Taken from `src/SignInCard.tsx`. These selectors are stable; the card already sets them.
+
+- Email field. A label with the text `Email`, `htmlFor` `gilb-signin-email-${app.id}`, which is the input's `id`. `getByLabelText("Email")` and `getByRole("textbox", { name: "Email" })`. `data-testid="sign-in-email"`. Placeholder `you@domain.com`.
+- Send button. `getByRole("button", { name: "Send Code to Email" })`. While the request runs the accessible name is `Sending a code…` and the button is disabled. `data-testid="sign-in-send-code"`.
+- Code field. No label and no `aria-label`, so `getByLabelText` does not find it. It is a textbox, `data-testid="sign-in-code"`, `id` `gilb-signin-code-${app.id}`, placeholder `6-digit code`. Select it with that test id.
+- Verify. There is no verify button. When the code field holds 6 digits the card calls `verifyCode` itself.
+
+The code step also renders `Change email` (`data-testid="sign-in-change-email"`, `getByRole("button", { name: "Change email" })`). The vault-name step renders `Create my vault` (`data-testid="create-vault-button"`).
 
 ## Do not
 
