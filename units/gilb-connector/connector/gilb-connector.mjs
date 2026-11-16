@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.6.3";
+export const CONNECTOR_VERSION = "0.6.4";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -862,6 +862,27 @@ function quotedFailure(body) {
     const error = typeof row.error === "string" ? safeQuote(row.error) : "";
     const desc = typeof row.error_description === "string" ? safeQuote(row.error_description) : typeof row.message === "string" ? safeQuote(row.message) : "";
     return [error, desc].filter((part) => part !== "").join(": ");
+}
+/** The plain hint shown when the token door names a time claim. A computer clock a few seconds
+ *  off made every sign-in fail on a new user's PC (2026-11-16) and the reason was not shown. */
+const CLOCK_HINT = "This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.";
+/**
+ * The message for a refused token request: the code, the platform's own reason quoted and cut to
+ * 200 characters, and the clock hint when that reason names iat, nbf, exp or the clock.
+ *
+ * @param body the parsed JSON answer of the token door, or undefined
+ * @returns the message to show
+ */
+function tokenRefusalMessage(body) {
+    const row = body && typeof body === "object" ? body : {};
+    const code = typeof row.error === "string" ? safeQuote(row.error).slice(0, 80) : "";
+    const reason = typeof row.error_description === "string" ? safeQuote(row.error_description).slice(0, 200) : "";
+    let message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+    if (reason)
+        message += ` The platform said: "${reason}"`;
+    if (/\b(iat|nbf|exp|clock)\b/i.test(reason))
+        message += ` ${CLOCK_HINT}`;
+    return message;
 }
 function registrationMessage(body) {
     const detail = quotedFailure(body);
@@ -2291,8 +2312,7 @@ async function openSessionCredential(input) {
                 return requestMachineToken("base.read", false);
             }
             if (res.status < 200 || res.status >= 300) {
-                const code = typeof errorCode === "string" ? safeQuote(errorCode) : "";
-                const message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+                const message = tokenRefusalMessage(parsed);
                 say(message);
                 throw new NotConnected(message);
             }

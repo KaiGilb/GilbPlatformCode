@@ -188,7 +188,7 @@ function toolPosts(requests) {
 }
 
 function whoamiBound(principal, vaultsLine) {
-  return `connector: 0.6.3\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${principal}\nstate: bound\nvaults: ${vaultsLine}`;
+  return `connector: 0.6.4\nmode: ai\nclient id: ${CLIENT_ID}\nprincipal: ${principal}\nstate: bound\nvaults: ${vaultsLine}`;
 }
 
 async function openBox(state) {

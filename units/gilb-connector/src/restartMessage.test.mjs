@@ -48,7 +48,7 @@ function captureStderr() {
   return { text: () => chunks.join("") };
 }
 
-/** `plan[path]` is a list of statuses to answer first (for example [503, 503]); after that the normal answer. */
+/** `plan[path]` is a list of statuses to answer first (for example [503, 503]), or `{ status, body }`; after that the normal answer. */
 function listen(plan, toolPlan = {}) {
   const requests = [];
   const toolCalls = [];
@@ -74,6 +74,7 @@ function listen(plan, toolPlan = {}) {
     // A forced status on the tool door is for the write only; the list_vaults read goes through.
     const skip = url.endsWith("/tool") && !raw.includes("make_thing");
     const forced = skip ? undefined : (plan[url] ?? []).shift();
+    if (forced && typeof forced === "object") return send(forced.status, forced.body);
     if (forced !== undefined) return send(forced, forced === 401 ? { error: "invalid_client" } : { error: "down" });
     if (url.endsWith("/base/client/register")) return send(200, { clientId: "agent-restart", created: true, confersAuthority: false });
     if (url.endsWith("/base/oauth/token")) return send(200, { access_token: `atk-${requests.length}`, token_type: "DPoP", expires_in: 300, scope: "base.write" });
@@ -193,6 +194,29 @@ describe("a platform that is restarting", () => {
     expect(out.result.isError).toBe(true);
     expect(text(out)).toContain("This AI could not sign in to GilbPlatform.");
     expect(count(platform.requests, "/base/oauth/token")).toBe(1);
+  });
+
+  it("quotes the platform's reason for a 401 and adds the clock hint when it names iat", async () => {
+    captureStderr();
+    const reason = 'client authentication failed: "iat" claim timestamp check failed (it should be in the past)';
+    const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client", error_description: reason } }] });
+    const box = connect(platform.origin);
+    const out = await box.call("list_vaults");
+    expect(out.result.isError).toBe(true);
+    expect(text(out)).toContain("This AI could not sign in to GilbPlatform. (invalid_client)");
+    expect(text(out)).toContain(`The platform said: "${reason}"`);
+    expect(text(out)).toContain("This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.");
+  });
+
+  it("caps a long reason at 200 characters and gives no clock hint when the reason is not about time", async () => {
+    captureStderr();
+    const reason = "client authentication failed " + "x".repeat(400);
+    const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client", error_description: reason } }] });
+    const box = connect(platform.origin);
+    const out = await box.call("list_vaults");
+    expect(text(out)).toContain(`The platform said: "${reason.slice(0, 200)}"`);
+    expect(text(out)).not.toContain(reason.slice(0, 201));
+    expect(text(out)).not.toContain("clock may be wrong");
   });
 
   it("tries a read again after a 503, but never sends a write twice", async () => {
