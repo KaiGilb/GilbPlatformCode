@@ -75,30 +75,57 @@ process.stdin.on("end", async () => {
     return;
   }
   // A second init in the same process: INITTWICE (both "none"), INITTWICEKEY (second is an API key),
-  // INITTWICENOFIELD (second has no apiKeySource), INITTWICECWD (second cwd is "/"), INITTWICEBEFORE (second init before any result).
+  // INITTWICEKEYTOOL (second is an API key, then a Bash tool_use), INITTWICENOFIELD (second has no apiKeySource),
+  // INITTWICECWD (second cwd is "/"), INITTWICEBEFORE (second init before any result).
+  // INITGLUED: one line, an API-key init immediately followed by a "none" init. INITNONEWLINE: an API-key init with no trailing newline.
+  // NOISELINE: one unreadable line that is not an init, then a normal result.
+  const makeInit = () => {
+    const init = {
+      type: "system",
+      subtype: "init",
+      session_id: sessionId,
+      tools: process.env.FAKE_INIT_TOOLS ? JSON.parse(process.env.FAKE_INIT_TOOLS) : ["mcp__gilb__list_vaults"],
+      mcp_servers: [{ name: "gilb", status: "connected" }],
+      model: "fake-model",
+      apiKeySource: "none",
+    };
+    const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
+    if (pm !== "omit") init.permissionMode = pm;
+    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd();
+    return init;
+  };
+  const answer = (text) => out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
+  if (prompt.includes("INITGLUED")) {
+    out(makeInit());
+    answer("first answer");
+    const bad = makeInit();
+    bad.apiKeySource = "ANTHROPIC_API_KEY";
+    process.stdout.write(JSON.stringify(bad) + JSON.stringify(makeInit()) + "\n");
+    answer("LEAKED");
+    return;
+  }
+  if (prompt.includes("INITNONEWLINE")) {
+    out(makeInit());
+    answer("ANSWER");
+    const bad = makeInit();
+    bad.apiKeySource = "ANTHROPIC_API_KEY";
+    process.stdout.write(JSON.stringify(bad));
+    return;
+  }
+  if (prompt.includes("NOISELINE")) {
+    out(makeInit());
+    process.stdout.write("not json at all\n");
+    answer("fine");
+    return;
+  }
   const laterInit = prompt.includes("INITTWICEBEFORE") ? "before"
+    : prompt.includes("INITTWICEKEYTOOL") ? "keytool"
     : prompt.includes("INITTWICEKEY") ? "key"
     : prompt.includes("INITTWICENOFIELD") ? "nofield"
     : prompt.includes("INITTWICECWD") ? "cwd"
     : prompt.includes("INITTWICE") ? "twice"
     : "";
   if (laterInit) {
-    const makeInit = () => {
-      const init = {
-        type: "system",
-        subtype: "init",
-        session_id: sessionId,
-        tools: process.env.FAKE_INIT_TOOLS ? JSON.parse(process.env.FAKE_INIT_TOOLS) : ["mcp__gilb__list_vaults"],
-        mcp_servers: [{ name: "gilb", status: "connected" }],
-        model: "fake-model",
-        apiKeySource: "none",
-      };
-      const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
-      if (pm !== "omit") init.permissionMode = pm;
-      if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd();
-      return init;
-    };
-    const answer = (text) => out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
     if (laterInit === "before") {
       out(makeInit());
       out(makeInit());
@@ -108,10 +135,16 @@ process.stdin.on("end", async () => {
     out(makeInit());
     answer("first answer");
     const second = makeInit();
-    if (laterInit === "key") second.apiKeySource = "ANTHROPIC_API_KEY";
+    if (laterInit === "key" || laterInit === "keytool") second.apiKeySource = "ANTHROPIC_API_KEY";
     if (laterInit === "nofield") delete second.apiKeySource;
     if (laterInit === "cwd") second.cwd = "/";
-    out(second);
+    if (laterInit === "keytool") {
+      const tool = { type: "assistant", message: { content: [{ type: "tool_use", id: "tuLeak", name: "Bash", input: { command: "echo LEAKED_TOOL", description: "leaked tool" } }] } };
+      const toolErr = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tuLeak", is_error: true, content: "leaked error" }] } };
+      process.stdout.write(JSON.stringify(second) + "\n" + JSON.stringify(tool) + "\n" + JSON.stringify(toolErr) + "\n");
+    } else {
+      out(second);
+    }
     answer("final answer");
     return;
   }

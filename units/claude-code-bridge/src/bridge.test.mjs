@@ -348,6 +348,58 @@ describe("billing guard fails closed on the init event", () => {
     expect(message).toMatch(/not your Claude subscription/);
     expect(message).toMatch(/another credential/);
   });
+  it("a later init glued onto the same line as another JSON value is refused and no answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITGLUED" });
+    refused(t);
+    expect(JSON.stringify(t.events)).not.toMatch(/LEAKED/);
+    expect(JSON.stringify(t.events)).not.toMatch(/first answer/);
+  });
+  it("a later init with no trailing newline is refused and no answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITNONEWLINE" });
+    refused(t);
+    otherCredential(t);
+    expect(JSON.stringify(t.events)).not.toMatch(/ANSWER/);
+  });
+  it("an unreadable line that is not an init is skipped and the answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "NOISELINE" });
+    expect(t.events.find((e) => e[0] === "error")).toBeUndefined();
+    const messages = t.events.filter((e) => e[0] === "message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0][1].content).toBe("fine");
+  });
+  it("a code turn does not forward tool events after a later init reports another credential", async () => {
+    await bridge.close();
+    const home = fs.realpathSync.native(dir);
+    const ws = path.join(home, "MyCode");
+    fs.mkdirSync(ws);
+    bridge = createBridge({
+      port: 0,
+      claudeBin: FAKE,
+      allowedOrigins: [APP, "https://app.example.test"],
+      workDir: path.join(home, "work"),
+      home,
+      workspace: ws,
+      codePlatform: "darwin",
+      codeEnvExtraPrefixes: ["FAKE_"],
+      env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ANTHROPIC_API_KEY: "FAKE-api-key-not-for-the-child", ANTHROPIC_BASE_URL: "http://gateway.invalid", ANTHROPIC_AUTH_TOKEN: "tok", KEEP_ME: "yes" },
+    });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    const { body } = await pair();
+    const t = await turn(body.secret, { mode: "code", prompt: "INITTWICEKEYTOOL" });
+    refused(t);
+    otherCredential(t);
+    const names = t.events.map((e) => e[0]);
+    const statusAt = names.indexOf("status");
+    expect(statusAt).toBeGreaterThanOrEqual(0);
+    expect(names.slice(statusAt + 1)).not.toContain("activity");
+    expect(names.slice(statusAt + 1)).not.toContain("tool_error");
+    expect(t.events.find((e) => e[0] === "activity" && e[1].summary === "leaked tool")).toBeUndefined();
+    expect(t.events.find((e) => e[0] === "tool_error")).toBeUndefined();
+  });
 });
 
 describe("who may talk to the bridge", () => {

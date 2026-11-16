@@ -2076,21 +2076,36 @@ export function createBridge(opts = {}) {
             child.stderr.on("data", (d) => {
                 stderr = (stderr + d).slice(-2000);
             });
-            child.stdout.on("data", (d) => {
-                buf += d;
+            // A line that is not one JSON object, but names an init or an apiKeySource, fails closed (a forged stream can
+            // glue two values onto one line, or leave the last line without a newline). Any other unreadable line is skipped.
+            const lineNamesInit = (line) => line.includes('"init"') || line.includes("apiKeySource");
+            const refuseUnreadable = () => {
+                refused = true;
+                void stopChild(child);
+            };
+            const drain = () => {
                 let i;
                 while ((i = buf.indexOf("\n")) >= 0) {
                     const line = buf.slice(0, i).trim();
                     buf = buf.slice(i + 1);
                     if (!line)
                         continue;
-                    let ev;
+                    let parsed;
                     try {
-                        ev = JSON.parse(line);
+                        parsed = JSON.parse(line);
                     }
                     catch {
+                        if (lineNamesInit(line))
+                            refuseUnreadable();
                         continue;
                     }
+                    // A value that parses but is not an object (array, number, string, null) is not an init event. The same text still fails closed.
+                    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+                        if (lineNamesInit(line))
+                            refuseUnreadable();
+                        continue;
+                    }
+                    const ev = parsed;
                     if (ev.type === "system" && ev.subtype === "init") {
                         const later = sawInit;
                         sawInit = true;
@@ -2130,10 +2145,14 @@ export function createBridge(opts = {}) {
                     else if (ev.type === "result") {
                         result = ev;
                     }
-                    else if (turn.code && !limitsRefused && !cwdRefused && (ev.type === "assistant" || ev.type === "user")) {
+                    else if (turn.code && !refused && !limitsRefused && !cwdRefused && (ev.type === "assistant" || ev.type === "user")) {
                         codeEvents(turn, ev, tracked);
                     }
                 }
+            };
+            child.stdout.on("data", (d) => {
+                buf += d;
+                drain();
             });
             child.on("error", (e) => resolve({ error: `Could not start Claude Code: ${e.message}`, sessionId: mode.sessionId, model }));
             child.on("close", () => {
@@ -2141,6 +2160,11 @@ export function createBridge(opts = {}) {
                 // This claude is gone: nothing waits for the calls it still had open.
                 for (const pid of [...turn.pending.keys()])
                     cancelCall(turn, pid);
+                // A last line with no newline is still one event: a result may be the answer, an init runs the same checks.
+                if (buf.trim()) {
+                    buf += "\n";
+                    drain();
+                }
                 // Fail closed: an answer is shown only after an init event that proved the subscription. The one exception is a
                 // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
                 if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit))
