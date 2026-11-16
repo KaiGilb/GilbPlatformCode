@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotSignedInError, lwsAuthFromSession, setLwsAuth } from "@kaigilb/gilbplatformcode-lws-session-bridge";
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
 import { typeUri } from "@kaigilb/gilbplatformcode-record-types";
-import { createRecord, patchRecord, readRecord, RecordConflictError, RecordForbiddenError } from "./records";
+import { createRecord, IdempotencyKeyReusedError, patchRecord, readRecord, RecordConflictError, RecordForbiddenError, RecordInFlightError } from "./records";
 import { ORIGIN, resp, setUp, tearDown, type FakeHost } from "../test/support";
 
 const NOTE_URI = () => typeUri("Note");
@@ -80,6 +80,67 @@ describe("createRecord (POST /lws/vault/:vaultId/c — Cycle053 VDS-4 FIX-1)", (
     expect(err.status).toBe(400);
     expect(err.message).toBe("no vault named");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends Idempotency-Key when idempotencyKey is set, and no such header without it", async () => {
+    fetchMock.mockResolvedValue(resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"' }, body: {} }));
+    const out = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" });
+    expect(out.replayed).toBeUndefined();
+    expect((lastCall()[1].headers as Record<string, string>)["Idempotency-Key"]).toBe("note-hello-1");
+    await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" });
+    expect((lastCall()[1].headers as Record<string, string>)["Idempotency-Key"]).toBeUndefined();
+  });
+
+  it("refuses an idempotencyKey that is empty, 129 characters, a space or non-ASCII, before any request", async () => {
+    const bad = ["", "x".repeat(129), "bad key", "caf\u00e9"];
+    for (const idempotencyKey of bad) {
+      const err = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey }).catch((e) => e)) as Error;
+      expect(err).toBeInstanceOf(TypeError);
+      expect(err.message.startsWith("lws-records: createRecord: idempotencyKey")).toBe(true);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.dpopWriteAuth).not.toHaveBeenCalled();
+  });
+
+  it("a replay (Idempotent-Replayed: true) answers the first record with replayed: true", async () => {
+    fetchMock.mockResolvedValue(
+      resp(201, { headers: { location: `${ORIGIN}/lws/r/note-abc123`, etag: '"sha256:aa"', "idempotent-replayed": "true" }, body: {} }),
+    );
+    const out = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, "Hello", undefined, { idempotencyKey: "note-hello-1" });
+    expect(out).toEqual({
+      id: "note-abc123",
+      etag: '"sha256:aa"',
+      entity: "https://kaizen.platform.example.test/base/e/note-abc123",
+      replayed: true,
+    });
+  });
+
+  it("a 409 with a key throws RecordInFlightError and carries retryAfter in seconds", async () => {
+    fetchMock.mockResolvedValue(resp(409, { headers: { "retry-after": "3" }, body: { error: "Conflict" } }));
+    const err = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e)) as RecordInFlightError;
+    expect(err).toBeInstanceOf(RecordInFlightError);
+    expect(err.retryAfter).toBe(3);
+    expect(err.status).toBe(409);
+  });
+
+  it("a 422 with a key throws IdempotencyKeyReusedError", async () => {
+    fetchMock.mockResolvedValue(resp(422, { body: { error: "IdempotencyKeyReused" } }));
+    const err = await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }, undefined, undefined, { idempotencyKey: "note-hello-1" }).catch((e) => e);
+    expect(err).toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(err).not.toBeInstanceOf(RecordInFlightError);
+  });
+
+  it("without a key, 409 and 422 stay a plain Error that carries the status", async () => {
+    fetchMock.mockResolvedValueOnce(resp(409, { headers: { "retry-after": "3" }, body: { error: "Conflict", message: "that tag is taken" } }));
+    const conflict = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(conflict).not.toBeInstanceOf(RecordInFlightError);
+    expect(conflict.status).toBe(409);
+    expect(conflict.message).toBe("that tag is taken");
+    fetchMock.mockResolvedValueOnce(resp(422, { body: { error: "Unprocessable", message: "that key was reused" } }));
+    const reused = (await createRecord(KAIZEN_VAULT, NOTE_URI(), { title: "x" }).catch((e) => e)) as Error & { status?: number };
+    expect(reused).not.toBeInstanceOf(IdempotencyKeyReusedError);
+    expect(reused.status).toBe(422);
+    expect(reused.message).toBe("that key was reused");
   });
 });
 

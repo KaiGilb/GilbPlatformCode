@@ -5,9 +5,11 @@ import * as unit from "./index";
 describe("lws-records exports", () => {
   it("are exactly these", () => {
     expect(Object.keys(unit).sort()).toEqual([
+      "IdempotencyKeyReusedError",
       "NO_REASON_TAIL",
       "RecordConflictError",
       "RecordForbiddenError",
+      "RecordInFlightError",
       "ServedLinkUnreadableError",
       "ServedShortFormError",
       "VAULT_CONTEXT_READ_MS",
@@ -49,6 +51,8 @@ describe("lws-records exports", () => {
     for (const name of ["readRecord", "patchRecord", "createRecord", "deleteRecord", "retypeRecord", "withTypeUri", "hasSubstitutedType", "factsAsServed", "writeSource"] as const) expect(typeof unit[name]).toBe("function");
     expect(new unit.RecordConflictError()).toBeInstanceOf(Error);
     expect(new unit.RecordForbiddenError()).toBeInstanceOf(Error);
+    expect(new unit.RecordInFlightError(1).retryAfter).toBe(1);
+    expect(new unit.IdempotencyKeyReusedError()).toBeInstanceOf(Error);
     expect(new unit.ServedShortFormError("fvParent", "base:e/x")).toBeInstanceOf(Error);
     expect(new unit.ServedLinkUnreadableError("fvParent", "https://x.example.test/")).toBeInstanceOf(Error);
   });
