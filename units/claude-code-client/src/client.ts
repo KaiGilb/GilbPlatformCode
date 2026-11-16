@@ -104,6 +104,41 @@ export interface ClaudeCodeReply {
   effort?: Effort;
   /** Code turn only (bridge 0.3.5): whether the turn was set to hand coding jobs to the sonnet-coder subagent. */
   delegateCoding?: boolean;
+  /** Token use for this turn (bridge 0.3.7). Absent on an older bridge, or when the bridge sent no valid context window. */
+  usage?: TurnUsage;
+}
+
+/** Token counts for one turn (bridge 0.3.7). A count is a whole number from 0 to 1e9; a missing one was not valid. */
+export interface TurnUsage {
+  model: string;
+  contextWindow: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
+const USAGE_MAX = 1_000_000_000;
+function usageCount(v: unknown): number | undefined {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > USAGE_MAX) return undefined;
+  return v;
+}
+/** The bridge's `usage`, rebuilt from the fields that check out. No valid context window or model means none. Other fields are dropped. */
+function readTurnUsage(raw: unknown): TurnUsage | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.model !== "string") return undefined;
+  const contextWindow = usageCount(o.contextWindow);
+  if (contextWindow === undefined) return undefined;
+  const usage: TurnUsage = { model: o.model, contextWindow };
+  const inputTokens = usageCount(o.inputTokens);
+  const outputTokens = usageCount(o.outputTokens);
+  const cacheReadInputTokens = usageCount(o.cacheReadInputTokens);
+  const cacheCreationInputTokens = usageCount(o.cacheCreationInputTokens);
+  if (inputTokens !== undefined) usage.inputTokens = inputTokens;
+  if (outputTokens !== undefined) usage.outputTokens = outputTokens;
+  if (cacheReadInputTokens !== undefined) usage.cacheReadInputTokens = cacheReadInputTokens;
+  if (cacheCreationInputTokens !== undefined) usage.cacheCreationInputTokens = cacheCreationInputTokens;
+  return usage;
 }
 
 /** The model names a turn may ask for (bridge 0.3.5); a full name like `claude-opus-5-5` is allowed too. */
@@ -456,6 +491,7 @@ interface BridgeTurnOut {
   project?: string;
   effort?: Effort;
   delegateCoding?: boolean;
+  usage?: TurnUsage;
 }
 
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
@@ -1075,6 +1111,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
             }
             const content = typeof data.content === "string" ? data.content.trim() : "";
             if (content) {
+              const usage = readTurnUsage(data.usage);
               out = {
                 content,
                 model: typeof data.model === "string" ? data.model : "",
@@ -1084,6 +1121,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 ...(typeof data.project === "string" && data.project ? { project: data.project } : {}),
                 ...(typeof data.effort === "string" && (EFFORTS as readonly string[]).includes(data.effort) ? { effort: data.effort as Effort } : {}),
                 ...(typeof data.delegateCoding === "boolean" ? { delegateCoding: data.delegateCoding } : {}),
+                ...(usage ? { usage } : {}),
               };
             }
           } else if (ev.event === "error") {
@@ -1287,6 +1325,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       ...(out.project ? { project: out.project } : {}),
       ...(out.effort ? { effort: out.effort } : {}),
       ...(out.delegateCoding !== undefined ? { delegateCoding: out.delegateCoding } : {}),
+      ...(out.usage ? { usage: out.usage } : {}),
     };
   }
 

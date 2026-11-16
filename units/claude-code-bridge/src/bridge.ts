@@ -117,6 +117,64 @@ interface ClaudeEvent {
   result?: unknown;
   permissionMode?: unknown;
   message?: { content?: unknown };
+  /** Per-model token counts on a `result` line. Only the fields named here are read. */
+  modelUsage?: Record<string, ModelUsageCounts>;
+}
+/** The counts a `modelUsage` entry may carry. Anything else on the entry is ignored. */
+interface ModelUsageCounts {
+  inputTokens?: unknown;
+  outputTokens?: unknown;
+  cacheReadInputTokens?: unknown;
+  cacheCreationInputTokens?: unknown;
+  contextWindow?: unknown;
+}
+/** A count the page may be shown: a finite integer from 0 to 1e9. Anything else is left out. */
+const USAGE_MAX = 1_000_000_000;
+function usageCount(v: unknown): number | undefined {
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > USAGE_MAX) return undefined;
+  return v;
+}
+/** Token summary for one result: `model`, `contextWindow`, and whichever of the four counts are valid. */
+interface TurnUsage {
+  model: string;
+  contextWindow: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+}
+/**
+ * The token summary of one result. Picks `modelUsage[reportedModel]`, or the only entry when there is exactly one.
+ * A missing or invalid context window means no summary. No other field of the result is copied.
+ */
+function turnUsage(modelUsage: ClaudeEvent["modelUsage"], reportedModel: string): TurnUsage | undefined {
+  if (!modelUsage || typeof modelUsage !== "object" || Array.isArray(modelUsage)) return undefined;
+  let key: string | undefined;
+  let raw: ModelUsageCounts | undefined;
+  if (Object.prototype.hasOwnProperty.call(modelUsage, reportedModel)) {
+    key = reportedModel;
+    raw = modelUsage[reportedModel];
+  } else {
+    const entries = Object.entries(modelUsage);
+    if (entries.length !== 1) return undefined;
+    const only = entries[0];
+    if (!only) return undefined;
+    key = only[0];
+    raw = only[1];
+  }
+  if (key === undefined || !raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const contextWindow = usageCount(raw.contextWindow);
+  if (contextWindow === undefined) return undefined;
+  const usage: TurnUsage = { model: key, contextWindow };
+  const inputTokens = usageCount(raw.inputTokens);
+  const outputTokens = usageCount(raw.outputTokens);
+  const cacheReadInputTokens = usageCount(raw.cacheReadInputTokens);
+  const cacheCreationInputTokens = usageCount(raw.cacheCreationInputTokens);
+  if (inputTokens !== undefined) usage.inputTokens = inputTokens;
+  if (outputTokens !== undefined) usage.outputTokens = outputTokens;
+  if (cacheReadInputTokens !== undefined) usage.cacheReadInputTokens = cacheReadInputTokens;
+  if (cacheCreationInputTokens !== undefined) usage.cacheCreationInputTokens = cacheCreationInputTokens;
+  return usage;
 }
 interface RunClaudeOut { result?: ClaudeEvent; error?: string; sessionId: string; model: string; apiKeyRefused?: boolean }
 interface ClaudeMode { sessionId: string; resume: boolean }
@@ -165,7 +223,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.6";
+export const BRIDGE_BUILD = "0.3.7";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -2318,6 +2376,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       } else if (out.result.is_error) {
         send("error", { message: `Claude Code: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
       } else {
+        // Usage is only for the person's turn. A hand-off already sends its own message; that message stays as it was.
+        const usage = parent ? undefined : turnUsage(out.result.modelUsage, out.model);
         send("message", {
           role: "assistant",
           content: String(out.result.result ?? ""),
@@ -2328,6 +2388,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           payer: "person-claude-code",
           ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
           sessionId: out.sessionId,
+          ...(usage ? { usage } : {}),
           // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
           ...(turn.budgetSpent ? { budgetSpent: true } : {}),
         });
