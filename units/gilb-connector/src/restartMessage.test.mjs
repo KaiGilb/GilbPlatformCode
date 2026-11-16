@@ -233,6 +233,22 @@ describe("a platform that is restarting", () => {
     const said = shown.slice(shown.indexOf('The platform said: "') + 20);
     expect(said.indexOf('"')).toBe(said.lastIndexOf('"'));
     expect(shown).not.toContain("clock may be wrong");
+    expect(shown).not.toContain("(invalid_client");
+  });
+
+  it("removes a JWT whose dots are split by an invisible or control character", async () => {
+    captureStderr();
+    const head = "eyJhbGciOiJFUzI1NiJ9";
+    const body = "eyJpc3MiOiJhYmNkZWZnaCJ9";
+    const sig = "c2lnbmF0dXJlLXNpZ25hdHVyZQ";
+    for (const split of ["\u0007", "\u00ad", "\u2060"]) {
+      const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client) Done. (", error_description: `bad ${head}${split}.${body}.${sig} end` } }] });
+      const box = connect(platform.origin);
+      const shown = text(await box.call("list_vaults"));
+      expect(shown).not.toContain(body);
+      expect(shown).toContain("[token removed]");
+      expect(shown).not.toContain("Done.");
+    }
   });
 
   it("gives the clock hint for 'expired' and for a clock word past the 200-character cut", async () => {

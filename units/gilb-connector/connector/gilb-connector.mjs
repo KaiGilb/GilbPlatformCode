@@ -867,8 +867,8 @@ function quotedFailure(body) {
  *  off made every sign-in fail on a new user's PC (2026-11-16) and the reason was not shown. */
 const CLOCK_HINT = "This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.";
 /**
- * A text the token door sent, made safe to show inside double quotes: control and direction
- * characters removed, every JWT-shaped run replaced, a private key dropped, `"` turned into `'`,
+ * A text the token door sent, made safe to show inside double quotes: white space made one
+ * space, every other control and format character (direction marks, soft hyphen, joiners) removed, every JWT-shaped run replaced, a private key dropped, `"` turned into `'`,
  * and cut to `max` characters.
  *
  * @param text the text the platform sent
@@ -877,7 +877,8 @@ const CLOCK_HINT = "This computer's clock may be wrong. Sync it (Windows: Settin
  */
 function quotableReason(text, max) {
     const plain = text
-        .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/[\p{Cc}\p{Cf}]/gu, "")
         .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[token removed]")
         .replace(/"/g, "'");
     return safeQuote(plain).slice(0, max);
@@ -891,7 +892,9 @@ function quotableReason(text, max) {
  */
 function tokenRefusalMessage(body) {
     const row = body && typeof body === "object" ? body : {};
-    const code = typeof row.error === "string" ? quotableReason(row.error, 80) : "";
+    // An OAuth error code is letters, digits and _ . - only (RFC 6749 §5.2 uses no other), so a code
+    // with anything else is not shown: it cannot close the brackets around it.
+    const code = typeof row.error === "string" && /^[A-Za-z0-9_.-]{1,80}$/.test(row.error) ? row.error : "";
     const raw = typeof row.error_description === "string" ? row.error_description : "";
     const reason = raw ? quotableReason(raw, 200) : "";
     let message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
