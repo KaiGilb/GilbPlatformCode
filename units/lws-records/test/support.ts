@@ -38,7 +38,7 @@ export function tearDown(): void {
   resetLocalRigHosts();
 }
 
-/** A fetch Response stand-in with a real Headers bag. */
+/** A fetch Response stand-in with a real Headers bag. `clone` is a fresh copy, as a real response is. */
 export function resp(status: number, opts: { body?: unknown; headers?: Record<string, string> } = {}): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -46,5 +46,8 @@ export function resp(status: number, opts: { body?: unknown; headers?: Record<st
     headers: new Headers(opts.headers ?? {}),
     json: async () => opts.body,
     text: async () => (typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body ?? "")),
+    clone(): Response {
+      return resp(status, opts);
+    },
   } as unknown as Response;
 }
