@@ -210,7 +210,7 @@ describe("a platform that is restarting", () => {
 
   it("caps a long reason at 200 characters and gives no clock hint when the reason is not about time", async () => {
     captureStderr();
-    const reason = "client authentication failed " + "x".repeat(400);
+    const reason = "client authentication failed " + "word ".repeat(80);
     const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client", error_description: reason } }] });
     const box = connect(platform.origin);
     const out = await box.call("list_vaults");
@@ -241,11 +241,13 @@ describe("a platform that is restarting", () => {
     const head = "eyJhbGciOiJFUzI1NiJ9";
     const body = "eyJpc3MiOiJhYmNkZWZnaCJ9";
     const sig = "c2lnbmF0dXJlLXNpZ25hdHVyZQ";
-    for (const split of ["\u0007", "\u00ad", "\u2060"]) {
+    for (const split of ["\u0007", "\u00ad", "\u2060", "\ufeff", "\u034f", "\ufe0f", "\u3164", " ", "\n"]) {
       const platform = await listen({ "/base/oauth/token": [{ status: 401, body: { error: "invalid_client) Done. (", error_description: `bad ${head}${split}.${body}.${sig} end` } }] });
       const box = connect(platform.origin);
       const shown = text(await box.call("list_vaults"));
+      expect(shown).not.toContain(head);
       expect(shown).not.toContain(body);
+      expect(shown).not.toContain(sig);
       expect(shown).toContain("[token removed]");
       expect(shown).not.toContain("Done.");
     }

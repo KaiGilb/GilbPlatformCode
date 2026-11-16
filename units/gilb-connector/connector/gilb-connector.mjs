@@ -868,7 +868,7 @@ function quotedFailure(body) {
 const CLOCK_HINT = "This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.";
 /**
  * A text the token door sent, made safe to show inside double quotes: white space made one
- * space, every other control and format character (direction marks, soft hyphen, joiners) removed, every JWT-shaped run replaced, a private key dropped, `"` turned into `'`,
+ * space, every other control and format character (direction marks, soft hyphen, joiners) removed, every base64url run of 20 or more characters replaced, a private key dropped, `"` turned into `'`,
  * and cut to `max` characters.
  *
  * @param text the text the platform sent
@@ -879,7 +879,10 @@ function quotableReason(text, max) {
     const plain = text
         .replace(/\s+/g, " ")
         .replace(/[\p{Cc}\p{Cf}]/gu, "")
-        .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[token removed]")
+        // Each long base64url run on its own, whatever separates it from the next: every part of a JWT
+        // (header, payload, signature) and every key body is at least 20 such characters, and no
+        // reason the platform writes has a word that long.
+        .replace(/[A-Za-z0-9_-]{20,}/g, "[token removed]")
         .replace(/"/g, "'");
     return safeQuote(plain).slice(0, max);
 }
