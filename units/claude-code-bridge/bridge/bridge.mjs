@@ -90,7 +90,7 @@ function turnUsage(modelUsage, reportedModel) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.7";
+export const BRIDGE_BUILD = "0.3.8";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1480,8 +1480,12 @@ export function createBridge(opts = {}) {
             turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}), ...(notice ? { notice } : {}) });
         });
     }
-    /** Approval text is never cut: a run of whitespace is one space, and a text over the limit is not asked about at all. */
-    const APPROVAL_COMMAND_MAX = 2000;
+    /**
+     * Approval text is never cut: a run of whitespace is one space.
+     * The app shows a long request folded; the person can open the whole text, and approving approves all of it.
+     * The ceiling is the relay's practical size: a text over it is not asked about at all.
+     */
+    const APPROVAL_COMMAND_MAX = 200_000;
     const APPROVAL_PATH_MAX = 1000;
     /** Any character that could hide part of a question: C0/C1 controls (but not TAB, LF, CR), Unicode format characters (bidi, zero-width, soft hyphen, BOM ...) and blank fillers. */
     const HIDDEN_CHARS = /[\p{Cc}\p{Cf}\u115F\u1160\u3164\uFFA0\u2800\u180E]/u;

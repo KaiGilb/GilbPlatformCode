@@ -152,9 +152,9 @@ describe("turn usage", () => {
     expect(JSON.stringify(msg(nested))).not.toMatch(LEAK);
   });
 
-  it("hello reports build 0.3.7", async () => {
+  it("hello reports build 0.3.8", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.7");
+    expect(hello.build).toBe("0.3.8");
   });
 });
