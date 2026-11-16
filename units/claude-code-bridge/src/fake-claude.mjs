@@ -166,5 +166,28 @@ process.stdin.on("end", async () => {
     return;
   }
   out({ type: "assistant", message: { content: [{ type: "text", text }] } });
-  out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
+  // The model this process reports on its init line. modelUsage is keyed by that id, as the real CLI keys it.
+  const modelReported = "fake-model";
+  const goodCounts = { inputTokens: 1200, outputTokens: 340, cacheReadInputTokens: 50000, cacheCreationInputTokens: 2000, contextWindow: 1000000 };
+  // BADUSAGE: a malformed modelUsage (strings, a negative, a number past 1e9, two models that are not the reported one).
+  // BADUSAGEFIELDS: the reported model, with those bad counts plus one good count and a good context window.
+  // BADUSAGENOW: the reported model, but the context window is not a count (a second, valid model must not be used instead).
+  // USAGEONE: exactly one entry, under a different model id. USAGETWO: the reported model plus another. NOUSAGE: no modelUsage.
+  let modelUsage;
+  if (prompt.includes("NOUSAGE")) modelUsage = undefined;
+  else if (prompt.includes("BADUSAGEFIELDS")) {
+    modelUsage = { [modelReported]: { inputTokens: "1200", outputTokens: -5, cacheReadInputTokens: 1000000001, cacheCreationInputTokens: 2000, contextWindow: 1000000, costUSD: 1.25 } };
+  } else if (prompt.includes("BADUSAGENOW")) {
+    modelUsage = { [modelReported]: { ...goodCounts, contextWindow: "1000000", costUSD: 1.25 }, "other-model": { ...goodCounts } };
+  } else if (prompt.includes("BADUSAGE")) {
+    modelUsage = {
+      "other-a": { inputTokens: "1200", outputTokens: -5, cacheReadInputTokens: 1000000001, cacheCreationInputTokens: 2000, contextWindow: 1000000, costUSD: 1.25 },
+      "other-b": { inputTokens: 10, outputTokens: 20, cacheReadInputTokens: 30, cacheCreationInputTokens: 40, contextWindow: 500000 },
+    };
+  } else if (prompt.includes("USAGEONE")) modelUsage = { "other-model": { ...goodCounts } };
+  else if (prompt.includes("USAGETWO")) modelUsage = { "other-model": { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 3, cacheCreationInputTokens: 4, contextWindow: 5 }, [modelReported]: { ...goodCounts, costUSD: 0.01 } };
+  else modelUsage = { [modelReported]: { ...goodCounts, costUSD: 0.01 } };
+  const result = { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text, usage: { input_tokens: 999, output_tokens: 1 }, total_cost_usd: 0.42, duration_ms: 17 };
+  if (modelUsage) result.modelUsage = modelUsage;
+  out(result);
 });
