@@ -135,8 +135,10 @@ describe("folder-mode vendor, plain commands and .npmrc sentences", () => {
     expect(GITHUB_ARCHIVE_SENTENCE).toContain("codeload.github.com");
     expect(NPMRC_SENTENCE).toContain("install-links=true");
     expect(NPMRC_SENTENCE).toContain("--install-links");
-    expect(NPMRC_SENTENCE).toContain("read this folder's .npmrc");
-    expect(NPMRC_SENTENCE).toContain("tell the person to add it");
+    expect(NPMRC_SENTENCE).toContain("open this folder's .npmrc");
+    expect(NPMRC_SENTENCE).toContain("with the Read tool, never with cat or another shell command");
+    expect(NPMRC_SENTENCE).toContain("or the Read tool refuses the file");
+    expect(NPMRC_SENTENCE).toContain("tell the person to add the line");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -rf");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -r");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("$VARIABLE");
@@ -202,7 +204,9 @@ describe("folder-mode vendor, plain commands and .npmrc sentences", () => {
     expect(r.status).toBe(200);
     const s = sys(runs()[0].argv);
     expect(s.split(NPMRC_SENTENCE).length - 1).toBe(1);
-    expect(NPMRC_SENTENCE).toContain("read this folder's .npmrc");
-    expect(NPMRC_SENTENCE).toContain("tell the person to add it");
+    expect(NPMRC_SENTENCE).toContain("open this folder's .npmrc");
+    expect(NPMRC_SENTENCE).toContain("with the Read tool, never with cat or another shell command");
+    expect(NPMRC_SENTENCE).toContain("or the Read tool refuses the file");
+    expect(NPMRC_SENTENCE).toContain("tell the person to add the line");
   });
 });
