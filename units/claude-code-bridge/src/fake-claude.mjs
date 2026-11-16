@@ -74,6 +74,47 @@ process.stdin.on("end", async () => {
     out({ type: "system", subtype: "init", session_id: sessionId, tools: [], mcp_servers: [], model: "fake-model", apiKeySource: "none" });
     return;
   }
+  // A second init in the same process: INITTWICE (both "none"), INITTWICEKEY (second is an API key),
+  // INITTWICENOFIELD (second has no apiKeySource), INITTWICECWD (second cwd is "/"), INITTWICEBEFORE (second init before any result).
+  const laterInit = prompt.includes("INITTWICEBEFORE") ? "before"
+    : prompt.includes("INITTWICEKEY") ? "key"
+    : prompt.includes("INITTWICENOFIELD") ? "nofield"
+    : prompt.includes("INITTWICECWD") ? "cwd"
+    : prompt.includes("INITTWICE") ? "twice"
+    : "";
+  if (laterInit) {
+    const makeInit = () => {
+      const init = {
+        type: "system",
+        subtype: "init",
+        session_id: sessionId,
+        tools: process.env.FAKE_INIT_TOOLS ? JSON.parse(process.env.FAKE_INIT_TOOLS) : ["mcp__gilb__list_vaults"],
+        mcp_servers: [{ name: "gilb", status: "connected" }],
+        model: "fake-model",
+        apiKeySource: "none",
+      };
+      const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
+      if (pm !== "omit") init.permissionMode = pm;
+      if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd();
+      return init;
+    };
+    const answer = (text) => out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
+    if (laterInit === "before") {
+      out(makeInit());
+      out(makeInit());
+      answer("final answer");
+      return;
+    }
+    out(makeInit());
+    answer("first answer");
+    const second = makeInit();
+    if (laterInit === "key") second.apiKeySource = "ANTHROPIC_API_KEY";
+    if (laterInit === "nofield") delete second.apiKeySource;
+    if (laterInit === "cwd") second.cwd = "/";
+    out(second);
+    answer("final answer");
+    return;
+  }
   const initMode = prompt.includes("INITOMIT") ? "omit" : prompt.includes("INITNOFIELD") ? "nofield" : (process.env.FAKE_INIT ?? "");
   if (initMode !== "omit") {
     const init = {

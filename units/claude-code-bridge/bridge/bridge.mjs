@@ -600,6 +600,10 @@ const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make su
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
+/** A refused init named a credential other than the subscription (a non-empty apiKeySource other than "none"). */
+export const API_KEY_REFUSED_ERROR = "Claude Code did not confirm that this run uses your Claude subscription: it reported another credential (an API key or a key helper), not your Claude subscription, so the bridge stopped it. Remove ANTHROPIC_API_KEY / apiKeyHelper from your Claude Code settings, or run `claude auth login` with your subscription.";
+/** Every other billing refusal: no init, init after the answer, or a missing, null, empty or non-string apiKeySource. */
+export const SUBSCRIPTION_UNPROVEN_ERROR = "Claude Code did not confirm that this run uses your Claude subscription (it did not say how it is signed in before it answered), so the bridge stopped the run. The bridge never runs on an API key. Send your message again; if this repeats, run `claude auth status` in Terminal.";
 /** A project name: 1 to 64 letters, digits, dots, dashes or underscores, starting with a letter or digit (so never "." or ".."). */
 export const validProjectName = (n) => typeof n === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(n);
 /** Windows reserved device names (with or without an extension), refused on every platform so a project folder can move between computers. */
@@ -2064,7 +2068,8 @@ export function createBridge(opts = {}) {
             let result = null;
             let refused = false;
             let sawInit = false;
-            let initOk = false; // fail closed: a good init event (apiKeySource "none") must have been seen
+            let initOk = false; // fail closed: the first init must have said apiKeySource "none" before any answer
+            let otherCredential = false; // a refused init named a credential other than the subscription
             let limitsRefused = false; // code turn: the init event did not show the folder limits
             let cwdRefused = false; // code turn: the child is not running in the checked code folder
             const tracked = new Map(); // code turn: tool_use id -> what it was
@@ -2087,18 +2092,27 @@ export function createBridge(opts = {}) {
                         continue;
                     }
                     if (ev.type === "system" && ev.subtype === "init") {
-                        model = ev.model ?? "";
+                        const later = sawInit;
                         sawInit = true;
-                        // What the CLI itself says it is running with: no API key, and which tools exist. Shown to the page.
-                        turn.send("status", { apiKeySource: ev.apiKeySource ?? null, tools: ev.tools ?? [], mcpServers: ev.mcp_servers ?? [], model });
-                        // The CLI says where its credential comes from. Only the exact string "none" (the subscription login) passes;
-                        // an API key, a helper, a missing field or any other shape stops the turn.
-                        if (ev.apiKeySource === "none" && result === null)
-                            initOk = true; // an init after the answer proves nothing
-                        else {
+                        if (!later)
+                            model = ev.model ?? ""; // the model stays the one from the first init
+                        // The CLI says where its credential comes from. The first init must arrive before any answer and must be the
+                        // exact string "none" (the subscription login). A later init is re-checked and must also say "none"; it is
+                        // accepted only when the first init was already accepted, and it does not change that. An API key, a helper,
+                        // a missing field or any other shape stops the turn.
+                        const subscription = ev.apiKeySource === "none";
+                        const accept = subscription && (later ? initOk : result === null);
+                        if (accept && !later)
+                            initOk = true;
+                        else if (!accept) {
                             refused = true;
+                            if (typeof ev.apiKeySource === "string" && ev.apiKeySource !== "" && ev.apiKeySource !== "none")
+                                otherCredential = true;
                             void stopChild(child);
                         }
+                        // What the CLI itself says it is running with, shown once, for the first init that proved the subscription.
+                        if (accept && !later)
+                            turn.send("status", { apiKeySource: ev.apiKeySource ?? null, tools: ev.tools ?? [], mcpServers: ev.mcp_servers ?? [], model });
                         // A code turn must show the folder limits too: only the code tools (and this bridge's MCP tools), and no other permission mode.
                         if (turn.code && !codeInitOk(ev, turn.approval, filesOnly, computer, turn.delegate)) {
                             limitsRefused = true;
@@ -2145,7 +2159,7 @@ export function createBridge(opts = {}) {
                 }
                 else if (refused) {
                     resolve({
-                        error: "Claude Code did not confirm that this run uses your Claude subscription, so the bridge stopped it: a run that would use an API key, not your Claude subscription, is refused. The bridge refuses that. Remove ANTHROPIC_API_KEY / apiKeyHelper from your Claude Code settings, or run `claude auth login` with your subscription.",
+                        error: otherCredential ? API_KEY_REFUSED_ERROR : SUBSCRIPTION_UNPROVEN_ERROR,
                         sessionId: mode.sessionId,
                         model,
                         apiKeyRefused: true,
