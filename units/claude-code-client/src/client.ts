@@ -245,8 +245,8 @@ export interface ApprovalRequest {
   notice?: string;
 }
 
-/** The bridge never cuts an approval question: it sends the whole summary (up to 2000 characters) or does not ask. `detail` is only the model's description (200 at most); `notice` is the bridge's own text (400 at most). A longer one is dropped as malformed. */
-const APPROVAL_SUMMARY_MAX = 2000;
+/** The bridge never cuts an approval question: it sends the whole summary (up to 200000 characters, the relay's practical size) or does not ask. The app shows a long summary folded; the person can open the whole text, and approving approves all of it. `detail` is only the model's description (200 at most); `notice` is the bridge's own text (400 at most). A longer one is dropped as malformed. */
+const APPROVAL_SUMMARY_MAX = 200_000;
 const APPROVAL_DETAIL_MAX = 200;
 const APPROVAL_NOTICE_MAX = 400;
 const isStr = (v: unknown): v is string => typeof v === "string";

@@ -369,13 +369,27 @@ describe("access (0.3.0)", () => {
     expect(await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A3", mode: "code" })).not.toHaveProperty("access");
   });
 
-  it("an approval_request with a summary over 2000 characters, a detail over 200 or a notice over 400, is dropped as malformed; the limits themselves are accepted", async () => {
+  it("an approval_request with a summary over 200000 characters, a detail over 200 or a notice over 400, is dropped as malformed; 5000, 150000 and the 200000 limit are accepted whole", async () => {
     client.save("s3cret");
     const seen: unknown[] = [];
     const ok = (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined);
-    fakeBridge([["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(2001) }], ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(201) }], ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: "y".repeat(2000), detail: "d".repeat(200), notice: "n".repeat(400) }], ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }]], ok);
+    const five = "a".repeat(5_000);
+    const big = "b".repeat(150_000);
+    const cap = "y".repeat(200_000);
+    fakeBridge([
+      ["approval_request", { id: "0123456789abcdef", tool: "Bash", summary: "x".repeat(200_001) }],
+      ["approval_request", { id: "0123456789abcde0", tool: "Bash", summary: "ok", detail: "d".repeat(201) }],
+      ["approval_request", { id: "0123456789abcde2", tool: "Bash", summary: five }],
+      ["approval_request", { id: "0123456789abcde3", tool: "run_named_role", summary: big }],
+      ["approval_request", { id: "0123456789abcde1", tool: "Bash", summary: cap, detail: "d".repeat(200), notice: "n".repeat(400) }],
+      ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }],
+    ], ok);
     await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A5", mode: "code", onEvent: (e) => seen.push(e), onApproval: async () => true });
-    expect(seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data.id)).toEqual(["0123456789abcde1"]);
+    const approvals = seen.filter((e: any) => e.event === "approval_request").map((e: any) => e.data);
+    expect(approvals.map((e: any) => e.id)).toEqual(["0123456789abcde2", "0123456789abcde3", "0123456789abcde1"]);
+    expect(approvals[0].summary).toBe(five);
+    expect(approvals[1].summary).toBe(big);
+    expect(approvals[2].summary).toBe(cap);
   });
 
   it("an approval_request whose tool is not a plain name (line break, tab, space, empty, over 128) is dropped; plain names are kept", async () => {
@@ -393,12 +407,12 @@ describe("access (0.3.0)", () => {
     const seen: unknown[] = [];
     const asked: string[] = [];
     const calls = fakeBridge([
-      ["approval_request", { id: "aaaa000000000001", tool: "Bash", summary: "x".repeat(2001) }],
+      ["approval_request", { id: "aaaa000000000001", tool: "Bash", summary: "x".repeat(200_001) }],
       ["approval_request", { id: "aaaa000000000002", tool: "mcp__a\nb", summary: "s" }],
       ["approval_request", { id: "aaaa000000000003", tool: "Bash", summary: "ok" }],
-      ["approval_request", { tool: "Bash", summary: "x".repeat(2001) }],
-      ["approval_request", { id: 7, tool: "Bash", summary: "x".repeat(2001) }],
-      ["approval_request", { id: "", tool: "Bash", summary: "x".repeat(2001) }],
+      ["approval_request", { tool: "Bash", summary: "x".repeat(200_001) }],
+      ["approval_request", { id: 7, tool: "Bash", summary: "x".repeat(200_001) }],
+      ["approval_request", { id: "", tool: "Bash", summary: "x".repeat(200_001) }],
       ["message", { role: "assistant", content: "ok", model: "m", sessionId: SESSION }],
     ], (url: string) => (url === `${BRIDGE}/v1/approval` ? json(200, { ok: true }) : undefined));
     await client.sendTurn([{ role: "user", content: "hi" }], { thread: "A7", mode: "code", onEvent: (e) => seen.push(e), onApproval: async (r) => { asked.push(r.id); return true; } });
