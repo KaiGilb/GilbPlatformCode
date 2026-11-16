@@ -5,12 +5,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, GITHUB_ARCHIVE_SENTENCE, PLAIN_COMMANDS_SENTENCE, NPMRC_SENTENCE } from "../bridge/bridge.mjs";
+import { createBridge, GITHUB_ARCHIVE_SENTENCE, PLAIN_COMMANDS_SENTENCE, NPMRC_SENTENCE, PROJECT_NPMRC_TEXT } from "../bridge/bridge.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const APP = "http://localhost:5197";
 const TRIPLE = `${GITHUB_ARCHIVE_SENTENCE} ${PLAIN_COMMANDS_SENTENCE} ${NPMRC_SENTENCE}`;
+const PAIR = `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}`;
 const SENTENCES = [GITHUB_ARCHIVE_SENTENCE, PLAIN_COMMANDS_SENTENCE, NPMRC_SENTENCE];
 
 let dir, bridge, base, logFile, secret;
@@ -80,12 +81,65 @@ describe("folder-mode vendor, plain commands and .npmrc sentences", () => {
     expect(settings.permissions.disableBypassPermissionsMode).toBe("disable");
   });
 
+  it("an each-write folder-mode code turn with no project says the archive and .npmrc sentences once, and not the plain-commands sentence", async () => {
+    await start("folder");
+    const r = await post("/v1/turn", { system: "SYS", prompt: "hi", mode: "code", approval: "each-write" });
+    expect(r.status).toBe(200);
+    const s = sys(runs()[0].argv);
+    expect(s.split(PAIR).length - 1).toBe(1);
+    expect(s).not.toContain(PLAIN_COMMANDS_SENTENCE);
+  });
+
+  it("an each-write folder-mode code turn in a project says the archive and .npmrc sentences once, and not the plain-commands sentence", async () => {
+    await start("folder");
+    expect((await post("/v1/projects/create", { name: "proj" })).status).toBe(200);
+    const r = await post("/v1/turn", { system: "SYS", prompt: "hi", mode: "code", approval: "each-write", project: "proj" });
+    expect(r.status).toBe(200);
+    const s = sys(runs()[0].argv);
+    expect(s.split(PAIR).length - 1).toBe(1);
+    expect(s).not.toContain(PLAIN_COMMANDS_SENTENCE);
+  });
+
+  it("POST /v1/projects/create writes install-links=true, the project still lists, and a later code turn leaves the file unchanged", async () => {
+    await start("folder");
+    const r = await post("/v1/projects/create", { name: "p1" });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.text)).toEqual({ name: "p1", npmrc: true });
+    const npmrcPath = path.join(dir, "MyCode", "p1", ".npmrc");
+    const st = fs.lstatSync(npmrcPath);
+    expect(st.isSymbolicLink()).toBe(false);
+    expect(st.isFile()).toBe(true);
+    expect(fs.readFileSync(npmrcPath, "utf8")).toBe(PROJECT_NPMRC_TEXT);
+    if (process.platform !== "win32") expect(st.mode & 0o777).toBe(0o644);
+    const list = await post("/v1/projects", {});
+    expect(list.status).toBe(200);
+    expect(JSON.parse(list.text).projects.map((p) => p.name)).toEqual(["p1"]);
+    const before = fs.readFileSync(npmrcPath);
+    const turn = await post("/v1/turn", { system: "SYS", prompt: "hi", mode: "code", project: "p1" });
+    expect(turn.status).toBe(200);
+    expect(fs.readFileSync(npmrcPath)).toEqual(before);
+  });
+
+  it("POST /v1/workspace/create does not write a .npmrc into the code folder", async () => {
+    await start("folder");
+    const r = await post("/v1/workspace/create", { name: "FreshCode" });
+    expect(r.status).toBe(200);
+    const folder = path.join(dir, "FreshCode");
+    expect(fs.existsSync(folder)).toBe(true);
+    expect(fs.existsSync(path.join(folder, ".npmrc"))).toBe(false);
+  });
+
   it("the three sentences name the archive flags, install-links and plain commands, and name no host", () => {
     expect(GITHUB_ARCHIVE_SENTENCE).toContain("--strip-components=2");
+    expect(GITHUB_ARCHIVE_SENTENCE).toContain("--strip-components");
     expect(GITHUB_ARCHIVE_SENTENCE).toContain("codeload.github.com");
+    expect(NPMRC_SENTENCE).toContain("install-links=true");
     expect(NPMRC_SENTENCE).toContain("--install-links");
+    expect(NPMRC_SENTENCE).toContain("ask the person");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -rf");
+    expect(PLAIN_COMMANDS_SENTENCE).toContain("rm -r");
     expect(PLAIN_COMMANDS_SENTENCE).toContain("$VARIABLE");
-    for (const sentence of SENTENCES) expect(sentence).not.toContain("gilb.com");
+    expect(PROJECT_NPMRC_TEXT).toBe("install-links=true\n");
+    for (const sentence of [...SENTENCES, PROJECT_NPMRC_TEXT]) expect(sentence).not.toContain("gilb.com");
   });
 });

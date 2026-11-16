@@ -113,6 +113,8 @@ describe("POST /v1/projects/create", () => {
     await start({ bridgeOpts: { pathPlatform: "darwin" } }); // the case rule follows the pretend platform, so it holds on a case-sensitive disk too
     const r = await api("/v1/projects/create", { name: "alpha" });
     expect(r).toMatchObject({ status: 200, json: { name: "alpha" } });
+    expect(r.json.npmrc).toBe(true);
+    expect(fs.readFileSync(path.join(ws, "alpha", ".npmrc"), "utf8")).toBe("install-links=true\n");
     if (process.platform !== "win32") expect(fs.statSync(path.join(ws, "alpha")).mode & 0o777).toBe(0o700);
     expect(await api("/v1/projects/create", { name: "alpha" })).toMatchObject({ status: 409, json: { error: "A project with this name already exists." } });
     expect((await api("/v1/projects/create", { name: "ALPHA" })).status).toBe(409);
