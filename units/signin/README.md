@@ -312,7 +312,7 @@ Taken from `src/SignInCard.tsx`. These selectors are stable; the card already se
 
 - Email field. A label with the text `Email`, `htmlFor` `gilb-signin-email-${app.id}`, which is the input's `id`. `getByLabelText("Email")` and `getByRole("textbox", { name: "Email" })`. `data-testid="sign-in-email"`. Placeholder `you@domain.com`.
 - Send button. `getByRole("button", { name: "Send Code to Email" })`. While the request runs the accessible name is `Sending a code…` and the button is disabled. `data-testid="sign-in-send-code"`.
-- Code field. No label and no `aria-label`, so `getByLabel` does not find it. It is a textbox, `data-testid="sign-in-code"`, `id` `gilb-signin-code-${app.id}`, placeholder `6-digit code`. Select it with that test id.
+- Code field. No label and no `aria-label`, so `getByLabelText` does not find it. It is a textbox, `data-testid="sign-in-code"`, `id` `gilb-signin-code-${app.id}`, placeholder `6-digit code`. Select it with that test id.
 - Verify. There is no verify button. When the code field holds 6 digits the card calls `verifyCode` itself.
 
 The code step also renders `Change email` (`data-testid="sign-in-change-email"`, `getByRole("button", { name: "Change email" })`). The vault-name step renders `Create my vault` (`data-testid="create-vault-button"`).
