@@ -31,10 +31,12 @@ Take it together with its peers `description-parts-model` and `help-doc`, and th
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them:
 
 ```sh
-npm install <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/id-tail <path-to-the-library>/units/entity-ref <path-to-the-library>/units/relation-role <path-to-the-library>/units/base-record <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/plan-links-model <path-to-the-library>/units/description-parts-model <path-to-the-library>/units/help-doc <path-to-the-library>/units/description-help
+npm install --install-links <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/id-tail <path-to-the-library>/units/entity-ref <path-to-the-library>/units/relation-role <path-to-the-library>/units/base-record <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/plan-links-model <path-to-the-library>/units/description-parts-model <path-to-the-library>/units/help-doc <path-to-the-library>/units/description-help
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. React 19 is a peer. With Tailwind v4, add the source to the scan: `@source "<path>/units/description-help/src";`.

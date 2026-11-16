@@ -39,10 +39,12 @@ Take it together with its peers `plan-button-row` and `qualifier-values`. Put th
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them together:
 
 ```sh
-npm install <path-to-the-library>/units/plan-button-row <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/qualifier-value-picker
+npm install --install-links <path-to-the-library>/units/plan-button-row <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/qualifier-value-picker
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. React 19 is a peer. With Tailwind v4, add the unit's source to the scan: `@source "<path>/units/qualifier-value-picker/src";`.

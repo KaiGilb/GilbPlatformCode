@@ -39,6 +39,8 @@ const back = unzipStore(zip); // read-back check of an export
 
 Package `@kaigilb/gilbplatformcode-zip`. No peers. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## Where it came from
 
 New code, written for EESpeed Round 8 (batch CB3) from the run-8 app's `src/services/zip.ts` (`zipStore`, `crc32`, `zipList`), made general: bytes instead of `data`, the central directory read with every bound checked, the CRC verified, names and sizes refused when a zip could not hold them. Repository `KaiGilb/GilbPlatformCode`, commit `a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c`.

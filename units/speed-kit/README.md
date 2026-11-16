@@ -66,10 +66,12 @@ Put this line in your app's own `.npmrc`:
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install the units in order (the line `node scripts/peers.mjs speed-kit` prints):
 
 ```sh
-npm install react@^19.0.0 <path-to-the-library>/units/device-store <path-to-the-library>/units/principal-hub <path-to-the-library>/units/background-jobs <path-to-the-library>/units/prefetch-registry <path-to-the-library>/units/record-sync <path-to-the-library>/units/session-cache <path-to-the-library>/units/updated-line <path-to-the-library>/units/use-cached <path-to-the-library>/units/speed-kit
+npm install --install-links react@^19.0.0 <path-to-the-library>/units/device-store <path-to-the-library>/units/principal-hub <path-to-the-library>/units/background-jobs <path-to-the-library>/units/prefetch-registry <path-to-the-library>/units/record-sync <path-to-the-library>/units/session-cache <path-to-the-library>/units/updated-line <path-to-the-library>/units/use-cached <path-to-the-library>/units/speed-kit
 ```
 
 An app that renders also needs `npm install react-dom@^19.0.0`. To build and test it needs `vite`, `vitest`, `jsdom`, `@testing-library/react` and `fake-indexeddb`; `apps/speed-lab/package.json` has the versions.

@@ -34,10 +34,12 @@ Take it together with its peer `type-picture` (which itself needs `type-name`). 
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them:
 
 ```sh
-npm install <path-to-the-library>/units/type-name <path-to-the-library>/units/type-picture <path-to-the-library>/units/plan-type-level-version
+npm install --install-links <path-to-the-library>/units/type-name <path-to-the-library>/units/type-picture <path-to-the-library>/units/plan-type-level-version
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. React 19 is a peer.

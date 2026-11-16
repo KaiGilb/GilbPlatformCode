@@ -39,7 +39,7 @@ Package: `@kaigilb/gilbplatformcode-main-tag`
 From a clone of this repository, install the unit's peers in the order `node scripts/peers.mjs units/main-tag` prints, then the unit:
 
 ```sh
-npm install @tanstack/react-query@^5.101.2 react@^19.0.0 <path-to-the-library>/units/base-origin <path-to-the-library>/units/direct-shares <path-to-the-library>/units/folder-part <path-to-the-library>/units/narrow-total <path-to-the-library>/units/record-sync <path-to-the-library>/units/record-types <path-to-the-library>/units/relation-role <path-to-the-library>/units/result-total <path-to-the-library>/units/share-refusal <path-to-the-library>/units/signin <path-to-the-library>/units/tag-client <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/vault-origin-rule <path-to-the-library>/units/lws-session-bridge <path-to-the-library>/units/lws-records <path-to-the-library>/units/lws-vault-sets <path-to-the-library>/units/ontology-reads <path-to-the-library>/units/lws-relations <path-to-the-library>/units/platform-fetch <path-to-the-library>/units/main-tag
+npm install --install-links @tanstack/react-query@^5.101.2 react@^19.0.0 <path-to-the-library>/units/base-origin <path-to-the-library>/units/direct-shares <path-to-the-library>/units/folder-part <path-to-the-library>/units/narrow-total <path-to-the-library>/units/record-sync <path-to-the-library>/units/record-types <path-to-the-library>/units/relation-role <path-to-the-library>/units/result-total <path-to-the-library>/units/share-refusal <path-to-the-library>/units/signin <path-to-the-library>/units/tag-client <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/vault-origin-rule <path-to-the-library>/units/lws-session-bridge <path-to-the-library>/units/lws-records <path-to-the-library>/units/lws-vault-sets <path-to-the-library>/units/ontology-reads <path-to-the-library>/units/lws-relations <path-to-the-library>/units/platform-fetch <path-to-the-library>/units/main-tag
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -47,6 +47,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency of its own. Peers: `tag-client` (`^0.1.0`), `platform-fetch` (`^0.1.0`), `record-sync` (`^0.2.0`, the type `PlatformClient`), `lws-relations` (`^0.1.0 || ^0.2.0`, `boundAwait`), `vault-origin-rule` (`^0.1.0`), `@tanstack/react-query` (`^5.101.2`) and `react` (`^19.0.0`).
 

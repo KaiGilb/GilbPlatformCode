@@ -36,10 +36,12 @@ Take it together with its peers: `open-popups`, `qualifier-value-picker`, `type-
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them together:
 
 ```sh
-npm install <path-to-the-library>/units/date-rules <path-to-the-library>/units/plan-button-row <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-key <path-to-the-library>/units/type-name <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/open-popups <path-to-the-library>/units/qualifier-value-picker <path-to-the-library>/units/type-picture <path-to-the-library>/units/type-term-popover <path-to-the-library>/units/value-card-model <path-to-the-library>/units/value-graph-geometry <path-to-the-library>/units/value-graph
+npm install --install-links <path-to-the-library>/units/date-rules <path-to-the-library>/units/plan-button-row <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-key <path-to-the-library>/units/type-name <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/open-popups <path-to-the-library>/units/qualifier-value-picker <path-to-the-library>/units/type-picture <path-to-the-library>/units/type-term-popover <path-to-the-library>/units/value-card-model <path-to-the-library>/units/value-graph-geometry <path-to-the-library>/units/value-graph
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. The source is the app's, compiled without `noUncheckedIndexedAccess`, so this unit's `tsconfig.json` leaves it off, as those of `value-card-model` and `value-graph-geometry` do.

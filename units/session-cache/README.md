@@ -45,10 +45,12 @@ It depends on `principal-hub` by `file:` path. The unit's own `.npmrc` sets `ins
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install the units in order (the line `node scripts/peers.mjs session-cache` prints):
 
 ```sh
-npm install <path-to-the-library>/units/principal-hub <path-to-the-library>/units/session-cache
+npm install --install-links <path-to-the-library>/units/principal-hub <path-to-the-library>/units/session-cache
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. No third-party runtime dependency. Its `tsconfig.json` leaves out `noUncheckedIndexedAccess`, as the other units of this kind do.

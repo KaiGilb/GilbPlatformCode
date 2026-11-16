@@ -30,7 +30,7 @@ Package: `@kaigilb/gilbplatformcode-person-connections`
 From a clone of this repository, install the peers first, then the unit's folder:
 
 ```sh
-npm install <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections
+npm install --install-links <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -38,6 +38,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency. `record-sync` (`^0.3.0`) is a peer: the unit takes its `PlatformClient`, and a failure to reach the platform is its `PlatformError`, so an app must have ONE copy of `record-sync` for `instanceof` to answer the same everywhere. `online-card-link` (`^0.1.0`) is a peer for the `LinkReading` type only.
 

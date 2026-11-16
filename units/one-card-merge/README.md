@@ -54,7 +54,7 @@ Package: `@kaigilb/gilbplatformcode-one-card-merge`
 From a clone of this repository, install the peers first, then the unit's folder (this is the line `node scripts/peers.mjs units/one-card-merge` prints):
 
 ```sh
-npm install <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/one-card-merge
+npm install --install-links <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/one-card-merge
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -62,6 +62,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency. `online-card` (`^0.1.0`), `stakeholder-field-sets` (`^0.1.0`) and `vocabulary-source` (`^0.2.0`) are peers. The merge imports `bareForm` from `vocabulary-source`, the type `StakeholderField` from `stakeholder-field-sets`, and `cardName`, `rungChipWords` and the type `OnlineCard` from `online-card`.
 

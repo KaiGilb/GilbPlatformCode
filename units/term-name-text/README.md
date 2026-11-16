@@ -27,7 +27,7 @@ Package: `@kaigilb/gilbplatformcode-term-name-text`
 From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/term-name-text` prints:
 
 ```sh
-npm install <path-to-the-library>/units/skill-uri-label <path-to-the-library>/units/term-origin <path-to-the-library>/units/term-name-text
+npm install --install-links <path-to-the-library>/units/skill-uri-label <path-to-the-library>/units/term-origin <path-to-the-library>/units/term-name-text
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links (one copy of each peer):
@@ -35,6 +35,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it.
 
