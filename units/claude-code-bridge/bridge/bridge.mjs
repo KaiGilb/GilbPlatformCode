@@ -55,7 +55,7 @@ function stepUsage(ev, reportedModel) {
     const m = ev.message;
     if (!m || typeof m !== "object")
         return undefined;
-    if (typeof m.model === "string" && m.model !== "" && reportedModel !== "" && m.model !== reportedModel)
+    if (typeof m.model === "string" && m.model !== "" && reportedModel !== "" && baseModelId(m.model) !== baseModelId(reportedModel))
         return undefined;
     const raw = m.usage;
     if (!raw || typeof raw !== "object" || Array.isArray(raw))
@@ -71,7 +71,14 @@ function stepUsage(ev, reportedModel) {
         step.cacheReadInputTokens = cacheReadInputTokens;
     if (cacheCreationInputTokens !== undefined)
         step.cacheCreationInputTokens = cacheCreationInputTokens;
+    // A line that carries no context (usage {} or only output_tokens) is not a step: it must not replace a good one.
+    if (!((inputTokens ?? 0) > 0 || (cacheReadInputTokens ?? 0) > 0 || (cacheCreationInputTokens ?? 0) > 0))
+        return undefined;
     return step;
+}
+/** A model id without a trailing bracket suffix such as `[1m]`, lower-cased, for comparing the init id with a step's id. */
+function baseModelId(id) {
+    return id.replace(/\[[^\]]*\]$/, "").trim().toLowerCase();
 }
 /**
  * The token summary of one result. Picks `modelUsage[reportedModel]`, or the only entry when there is exactly one.
@@ -105,11 +112,14 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
     if (contextWindow === undefined)
         return undefined;
     const usage = { model: key, contextWindow };
-    const src = lastStep ?? {
-        inputTokens: usageCount(raw.inputTokens),
-        cacheReadInputTokens: usageCount(raw.cacheReadInputTokens),
-        cacheCreationInputTokens: usageCount(raw.cacheCreationInputTokens),
-    };
+    // A kept last step is used whole: a count it lacks is 0, never filled from the summed modelUsage.
+    const src = lastStep
+        ? { inputTokens: lastStep.inputTokens ?? 0, cacheReadInputTokens: lastStep.cacheReadInputTokens ?? 0, cacheCreationInputTokens: lastStep.cacheCreationInputTokens ?? 0 }
+        : {
+            inputTokens: usageCount(raw.inputTokens),
+            cacheReadInputTokens: usageCount(raw.cacheReadInputTokens),
+            cacheCreationInputTokens: usageCount(raw.cacheCreationInputTokens),
+        };
     const { inputTokens, cacheReadInputTokens, cacheCreationInputTokens } = src;
     const outputTokens = usageCount(raw.outputTokens);
     if (inputTokens !== undefined)

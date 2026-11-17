@@ -192,10 +192,10 @@ describe("turn usage", () => {
     expect(msg(await turn(secret, { prompt: "plain" })).usage).toEqual(GOOD);
   });
 
-  it("bad counts on the last step are left out (not replaced by the sum); the window and output stay", async () => {
+  it("bad counts on the last step count as 0 (not replaced by the sum); the window and output stay", async () => {
     const secret = await start();
     const m = msg(await turn(secret, { prompt: "MULTISTEPBAD" }));
-    expect(m.usage).toEqual({ model: "fake-model", contextWindow: 1000000, outputTokens: 340, cacheCreationInputTokens: 600 });
+    expect(m.usage).toEqual({ model: "fake-model", contextWindow: 1000000, outputTokens: 340, inputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 600 });
   });
 
   it("hello reports build 0.3.11", async () => {
