@@ -1,5 +1,6 @@
 // The on-device queue of unsent work: every add, edit and delete is written here first and removed once the vault has it.
 // Raw IndexedDB (store `pending`, database name set at start-up), behind a tiny storage interface so tests use an in-memory one.
+import type { LinkFailure } from "./policy";
 
 export type PendingOp<T = unknown> = {
   id: string;
@@ -18,9 +19,10 @@ export type PendingOp<T = unknown> = {
   /** The full-size copy waiting to be sent, and the steps already done for it. */
   fullBlob?: Blob;
   fullEntity?: string;
- 
   masterLinked?: boolean;
   thumbRelinked?: boolean;
+  /** Links to the full copy that failed, as picture-set last reported them. picture-set 0.1.2 does not always report an emptied list after a later try succeeds, so a list can be stale: read thumbRelinked / masterLinked for the truth. */
+  linkFailures?: LinkFailure[];
   /** ISO. For a create this is also the record's made-date, which is how a resend finds its own earlier success. */
   createdAt: string;
   tries: number;

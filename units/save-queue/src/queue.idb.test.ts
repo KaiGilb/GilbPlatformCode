@@ -30,4 +30,13 @@ describe("the IndexedDB store", () => {
     const names = (await indexedDB.databases()).map((d) => d.name);
     expect(names).toContain("example-queue");
   });
+
+  test("an op with linkFailures round-trips through the store", async () => {
+    setQueueDbName("example-queue");
+    const store = idbStore();
+    await store.put({ ...op("d", "2026-11-07T12:00:00.000Z"), fullEntity: "f", linkFailures: [{ which: "thumb", message: "m" }] });
+    const back = (await store.getAll()).find((o) => o.id === "d");
+    expect(back?.linkFailures).toEqual([{ which: "thumb", message: "m" }]);
+    expect(back?.fullEntity).toBe("f");
+  });
 });
