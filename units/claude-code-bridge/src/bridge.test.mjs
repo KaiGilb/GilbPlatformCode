@@ -218,17 +218,28 @@ describe("billing guard fails closed on the init event", () => {
     expect(names).not.toContain("message");
     expect(JSON.stringify(t.events)).toMatch(/did not confirm/);
   };
+  const unproven = (t) => expect(JSON.stringify(t.events)).toMatch(/did not say how it is signed in/);
+  const otherCredential = (t) => {
+    expect(JSON.stringify(t.events)).toMatch(/not your Claude subscription/);
+    expect(JSON.stringify(t.events)).toMatch(/another credential/);
+  };
   it("an init event without apiKeySource is refused", async () => {
     const { body } = await pair();
-    refused(await turn(body.secret, { prompt: "INITNOFIELD" }));
+    const t = await turn(body.secret, { prompt: "INITNOFIELD" });
+    refused(t);
+    unproven(t);
   });
   it("no init event at all is refused, even if an answer comes", async () => {
     const { body } = await pair();
-    refused(await turn(body.secret, { prompt: "INITOMIT" }));
+    const t = await turn(body.secret, { prompt: "INITOMIT" });
+    refused(t);
+    unproven(t);
   });
   it("an init event that arrives after the answer proves nothing", async () => {
     const { body } = await pair();
-    refused(await turn(body.secret, { prompt: "INITLATE" }));
+    const t = await turn(body.secret, { prompt: "INITLATE" });
+    refused(t);
+    unproven(t);
   });
   it("a 'no turn ran' result that carries an answer, with no init, is refused", async () => {
     const { body } = await pair();
@@ -238,14 +249,19 @@ describe("billing guard fails closed on the init event", () => {
     await bridge.close();
     await start({ FAKE_INIT: "null" });
     const { body } = await pair();
-    refused(await turn(body.secret, { prompt: "hello" }));
+    const t = await turn(body.secret, { prompt: "hello" });
+    refused(t);
+    unproven(t);
   });
   for (const v of ["user", "project", "ANTHROPIC_API_KEY", "apiKeyHelper", "None", "", " none"]) {
     it(`apiKeySource ${JSON.stringify(v)} is refused`, async () => {
       await bridge.close();
       await start({ FAKE_API_KEY_SOURCE: v });
       const { body } = await pair();
-      refused(await turn(body.secret, { prompt: "hello" }));
+      const t = await turn(body.secret, { prompt: "hello" });
+      refused(t);
+      if (v === "") unproven(t);
+      else otherCredential(t);
     });
   }
   it('apiKeySource "none" proceeds', async () => {
@@ -253,6 +269,57 @@ describe("billing guard fails closed on the init event", () => {
     const t = await turn(body.secret, { prompt: "hello" });
     expect(t.events.map((e) => e[0])).toContain("message");
     expect(t.events.map((e) => e[0])).not.toContain("error");
+  });
+  it("a later init that also says none keeps the run open and shows the last answer, with one status", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITTWICE" });
+    expect(t.events.find((e) => e[0] === "error")).toBeUndefined();
+    const messages = t.events.filter((e) => e[0] === "message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0][1].content).toBe("final answer");
+    expect(t.events.filter((e) => e[0] === "status")).toHaveLength(1);
+  });
+  it("a later init before any result that says none is accepted", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITTWICEBEFORE" });
+    expect(t.events.find((e) => e[0] === "error")).toBeUndefined();
+    expect(t.events.find((e) => e[0] === "message")[1].content).toBe("final answer");
+  });
+  it("a later init that reports another credential is refused", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITTWICEKEY" });
+    refused(t);
+    otherCredential(t);
+  });
+  it("a later init with no apiKeySource is refused", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITTWICENOFIELD" });
+    refused(t);
+    unproven(t);
+  });
+  it("a code turn whose later init is not in the code folder is refused", async () => {
+    await bridge.close();
+    const home = fs.realpathSync.native(dir);
+    const ws = path.join(home, "MyCode");
+    fs.mkdirSync(ws);
+    bridge = createBridge({
+      port: 0,
+      claudeBin: FAKE,
+      allowedOrigins: [APP, "https://app.example.test"],
+      workDir: path.join(home, "work"),
+      home,
+      workspace: ws,
+      codePlatform: "darwin",
+      codeEnvExtraPrefixes: ["FAKE_"],
+      env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ANTHROPIC_API_KEY: "FAKE-api-key-not-for-the-child", ANTHROPIC_BASE_URL: "http://gateway.invalid", ANTHROPIC_AUTH_TOKEN: "tok", KEEP_ME: "yes" },
+    });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    const { body } = await pair();
+    const t = await turn(body.secret, { mode: "code", prompt: "INITTWICECWD" });
+    expect(t.events.find((e) => e[0] === "message")).toBeUndefined();
+    expect(t.events.find((e) => e[0] === "error")[1].message).toBe("The bridge stopped this code turn: Claude Code did not start in the code folder.");
+    expect(fs.realpathSync.native(runs().find((r) => r.event === "run").cwd)).toBe(fs.realpathSync.native(ws));
   });
   it("a hand-off whose init event has no apiKeySource, or no init, is refused", async () => {
     const { body } = await pair();
@@ -267,6 +334,71 @@ describe("billing guard fails closed on the init event", () => {
       expect(h.events.find((e) => e[0] === "message")).toBeUndefined();
       expect(h.events.find((e) => e[0] === "error")[1].message).toMatch(/did not confirm/);
     }
+  });
+  it("a hand-off whose later init reports another credential is refused", async () => {
+    const { body } = await pair();
+    const hs = [];
+    await turn(body.secret, { prompt: "CALLTOOL" }, async (req, turnId) => {
+      hs.push(await hop(body.secret, turnId, { prompt: "INITTWICEKEY" }));
+      return { result: "{}", isError: false };
+    });
+    expect(hs.length).toBe(1);
+    expect(hs[0].events.find((e) => e[0] === "message")).toBeUndefined();
+    const message = hs[0].events.find((e) => e[0] === "error")[1].message;
+    expect(message).toMatch(/not your Claude subscription/);
+    expect(message).toMatch(/another credential/);
+  });
+  it("a later init glued onto the same line as another JSON value is refused and no answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITGLUED" });
+    refused(t);
+    expect(JSON.stringify(t.events)).not.toMatch(/LEAKED/);
+    expect(JSON.stringify(t.events)).not.toMatch(/first answer/);
+  });
+  it("a later init with no trailing newline is refused and no answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "INITNONEWLINE" });
+    refused(t);
+    otherCredential(t);
+    expect(JSON.stringify(t.events)).not.toMatch(/ANSWER/);
+  });
+  it("an unreadable line that is not an init is skipped and the answer is shown", async () => {
+    const { body } = await pair();
+    const t = await turn(body.secret, { prompt: "NOISELINE" });
+    expect(t.events.find((e) => e[0] === "error")).toBeUndefined();
+    const messages = t.events.filter((e) => e[0] === "message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0][1].content).toBe("fine");
+  });
+  it("a code turn does not forward tool events after a later init reports another credential", async () => {
+    await bridge.close();
+    const home = fs.realpathSync.native(dir);
+    const ws = path.join(home, "MyCode");
+    fs.mkdirSync(ws);
+    bridge = createBridge({
+      port: 0,
+      claudeBin: FAKE,
+      allowedOrigins: [APP, "https://app.example.test"],
+      workDir: path.join(home, "work"),
+      home,
+      workspace: ws,
+      codePlatform: "darwin",
+      codeEnvExtraPrefixes: ["FAKE_"],
+      env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ANTHROPIC_API_KEY: "FAKE-api-key-not-for-the-child", ANTHROPIC_BASE_URL: "http://gateway.invalid", ANTHROPIC_AUTH_TOKEN: "tok", KEEP_ME: "yes" },
+    });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    const { body } = await pair();
+    const t = await turn(body.secret, { mode: "code", prompt: "INITTWICEKEYTOOL" });
+    refused(t);
+    otherCredential(t);
+    const names = t.events.map((e) => e[0]);
+    const statusAt = names.indexOf("status");
+    expect(statusAt).toBeGreaterThanOrEqual(0);
+    expect(names.slice(statusAt + 1)).not.toContain("activity");
+    expect(names.slice(statusAt + 1)).not.toContain("tool_error");
+    expect(t.events.find((e) => e[0] === "activity" && e[1].summary === "leaked tool")).toBeUndefined();
+    expect(t.events.find((e) => e[0] === "tool_error")).toBeUndefined();
   });
 });
 
@@ -1261,7 +1393,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.9", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.10", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });
