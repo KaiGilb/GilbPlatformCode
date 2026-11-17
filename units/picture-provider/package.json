@@ -1,0 +1,28 @@
+{
+  "name": "@kaigilb/gilbplatformcode-picture-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One picture from a picture-making service (WaveSpeed): config and price gate, two guarded fetches, the client, the secret redactor, and the one make-picture flow with the attempt written before the call.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

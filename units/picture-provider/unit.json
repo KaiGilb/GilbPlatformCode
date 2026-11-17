@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "unit": "units/picture-provider",
+  "package": "@kaigilb/gilbplatformcode-picture-provider",
+  "version": "0.1.0",
+  "purpose": "One picture from a picture-making service, recorded before and after the call.",
+  "source": {
+    "repo": "KaiGilb/Social",
+    "commit": "309ffea0e63aeae6f43ef05472599658c4efcaf9",
+    "files": [
+      {
+        "path": "shared/imageProvider.ts",
+        "lines": null,
+        "to": "src/redact.ts"
+      },
+      {
+        "path": "shared/imageProvider.ts",
+        "lines": null,
+        "to": "src/bytes.ts"
+      },
+      {
+        "path": "workers/social-worker/src/pictures/config.ts",
+        "lines": null,
+        "to": "src/config.ts"
+      },
+      {
+        "path": "workers/social-worker/src/pictures/wavespeed.ts",
+        "lines": null,
+        "to": "src/wavespeed.ts"
+      },
+      {
+        "path": "workers/social-worker/src/pictures/makePicture.ts",
+        "lines": null,
+        "to": "src/make.ts"
+      },
+      {
+        "path": "workers/social-worker/src/egress.ts",
+        "lines": null,
+        "to": "src/egress.ts"
+      }
+    ]
+  },
+  "namedChanges": [
+    "makePicture takes a host (reserve, writeAttempt, store, finish) instead of Social's month counter and vault client; the attempt's facts are the host's.",
+    "The picture egress is self-contained: https, the base origin or a listed output host, no IP address, no machine name, no port but 443; the app's own rules come in through extraGuard.",
+    "The client sends output_format when asked."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "test/make.test.ts"
+  ],
+  "host": [
+    {
+      "member": "reserve",
+      "replaces": "Social's month counter reserve (workers/social-worker/src/pictures/monthCount.ts) inside makePicture"
+    },
+    {
+      "member": "writeAttempt",
+      "replaces": "Social's vault.create of t:PictureMakingAttempt with attemptFacts inside makePicture"
+    },
+    {
+      "member": "store",
+      "replaces": "Social's vault.putFile with three tries inside makePicture"
+    },
+    {
+      "member": "finish",
+      "replaces": "Social's vault.patch with attemptOutcomeFacts inside makePicture"
+    },
+    {
+      "member": "env",
+      "replaces": "the Worker variables and secret read by pictureConfig"
+    }
+  ],
+  "library": {
+    "admitted": false
+  }
+}
