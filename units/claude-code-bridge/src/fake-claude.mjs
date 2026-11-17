@@ -239,7 +239,24 @@ process.stdin.on("end", async () => {
     setInterval(() => {}, 1000);
     return;
   }
-  out({ type: "assistant", message: { content: [{ type: "text", text }] } });
+  // MULTISTEP: six model calls (five tool steps, then the answer), each re-sending a growing context, as the real CLI does:
+  // input 10, then cache reads 25000, 30000, ... and cache creation 100 more each step. The last call is the real context.
+  // MULTISTEPBAD: the same, but the last call's counts are bad (a string, a negative, past 1e9) apart from one good count.
+  // SUBAGENTSTEP: after the last call, a sub-agent line (parent_tool_use_id set) with huge counts; it must not count.
+  const stepUsageOf = (n) => ({ input_tokens: 10 + n, output_tokens: 5, cache_read_input_tokens: 25000 + 5000 * n, cache_creation_input_tokens: 100 * (n + 1) });
+  if (prompt.includes("MULTISTEP")) {
+    for (let n = 0; n < 5; n++) {
+      out({ type: "assistant", message: { model: "fake-model", content: [{ type: "tool_use", id: "ms" + n, name: "Read", input: {} }], usage: stepUsageOf(n) } });
+      out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "ms" + n, content: "ok" }] } });
+    }
+    const last = prompt.includes("MULTISTEPBAD")
+      ? { input_tokens: "10", output_tokens: 5, cache_read_input_tokens: -1, cache_creation_input_tokens: 600 }
+      : stepUsageOf(5);
+    out({ type: "assistant", message: { model: "fake-model", content: [{ type: "text", text }], usage: last } });
+  } else out({ type: "assistant", message: { content: [{ type: "text", text }] } });
+  if (prompt.includes("SUBAGENTSTEP")) {
+    out({ type: "assistant", parent_tool_use_id: "ms0", message: { model: "fake-model", content: [{ type: "text", text: "sub" }], usage: { input_tokens: 777777, cache_read_input_tokens: 888888, cache_creation_input_tokens: 999999 } } });
+  }
   // The model this process reports on its init line. modelUsage is keyed by that id, as the real CLI keys it.
   const modelReported = "fake-model";
   const goodCounts = { inputTokens: 1200, outputTokens: 340, cacheReadInputTokens: 50000, cacheCreationInputTokens: 2000, contextWindow: 1000000 };

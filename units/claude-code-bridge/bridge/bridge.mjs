@@ -46,10 +46,41 @@ function usageCount(v) {
     return v;
 }
 /**
+ * The usage of one top-level `assistant` line, or undefined when the line is a sub-agent's, is for another model than
+ * `reportedModel`, or carries no usage object. A bad count is left out of the answer (never replaced by another number).
+ */
+function stepUsage(ev, reportedModel) {
+    if (ev.parent_tool_use_id !== undefined && ev.parent_tool_use_id !== null)
+        return undefined;
+    const m = ev.message;
+    if (!m || typeof m !== "object")
+        return undefined;
+    if (typeof m.model === "string" && m.model !== "" && reportedModel !== "" && m.model !== reportedModel)
+        return undefined;
+    const raw = m.usage;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        return undefined;
+    const u = raw;
+    const step = {};
+    const inputTokens = usageCount(u.input_tokens);
+    const cacheReadInputTokens = usageCount(u.cache_read_input_tokens);
+    const cacheCreationInputTokens = usageCount(u.cache_creation_input_tokens);
+    if (inputTokens !== undefined)
+        step.inputTokens = inputTokens;
+    if (cacheReadInputTokens !== undefined)
+        step.cacheReadInputTokens = cacheReadInputTokens;
+    if (cacheCreationInputTokens !== undefined)
+        step.cacheCreationInputTokens = cacheCreationInputTokens;
+    return step;
+}
+/**
  * The token summary of one result. Picks `modelUsage[reportedModel]`, or the only entry when there is exactly one.
  * A missing or invalid context window means no summary. No other field of the result is copied.
+ * Since 0.3.11 the three context counts come from `lastStep` (the turn's last top-level model call) when there was one:
+ * the result's modelUsage adds up every call of the turn, and each tool step re-sends the whole context, so its sum is
+ * several times the real context. Without a last step the result's counts are used. outputTokens stays the turn's sum.
  */
-function turnUsage(modelUsage, reportedModel) {
+function turnUsage(modelUsage, reportedModel, lastStep) {
     if (!modelUsage || typeof modelUsage !== "object" || Array.isArray(modelUsage))
         return undefined;
     let key;
@@ -74,10 +105,13 @@ function turnUsage(modelUsage, reportedModel) {
     if (contextWindow === undefined)
         return undefined;
     const usage = { model: key, contextWindow };
-    const inputTokens = usageCount(raw.inputTokens);
+    const src = lastStep ?? {
+        inputTokens: usageCount(raw.inputTokens),
+        cacheReadInputTokens: usageCount(raw.cacheReadInputTokens),
+        cacheCreationInputTokens: usageCount(raw.cacheCreationInputTokens),
+    };
+    const { inputTokens, cacheReadInputTokens, cacheCreationInputTokens } = src;
     const outputTokens = usageCount(raw.outputTokens);
-    const cacheReadInputTokens = usageCount(raw.cacheReadInputTokens);
-    const cacheCreationInputTokens = usageCount(raw.cacheCreationInputTokens);
     if (inputTokens !== undefined)
         usage.inputTokens = inputTokens;
     if (outputTokens !== undefined)
@@ -90,7 +124,7 @@ function turnUsage(modelUsage, reportedModel) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.10";
+export const BRIDGE_BUILD = "0.3.11";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -2066,6 +2100,7 @@ export function createBridge(opts = {}) {
             let stderr = "";
             let model = "";
             let result = null;
+            let lastStep; // usage of the last top-level assistant line seen (the context at the end of the turn)
             let refused = false;
             let sawInit = false;
             let initOk = false; // fail closed: the first init must have said apiKeySource "none" before any answer
@@ -2106,6 +2141,11 @@ export function createBridge(opts = {}) {
                         continue;
                     }
                     const ev = parsed;
+                    if (ev.type === "assistant" && result === null) {
+                        const step = stepUsage(ev, model);
+                        if (step)
+                            lastStep = step;
+                    }
                     if (ev.type === "system" && ev.subtype === "init") {
                         const later = sawInit;
                         sawInit = true;
@@ -2190,7 +2230,7 @@ export function createBridge(opts = {}) {
                     });
                 }
                 else if (result) {
-                    resolve({ result, sessionId: mode.sessionId, model });
+                    resolve({ result, sessionId: mode.sessionId, model, lastStep });
                 }
                 else {
                     resolve({ error: `Claude Code stopped without an answer.${stderr ? ` ${stderr.trim().split("\n").slice(-2).join(" ")}` : ""}`, sessionId: mode.sessionId, model });
@@ -2424,7 +2464,7 @@ export function createBridge(opts = {}) {
             }
             else {
                 // Usage is only for the person's turn. A hand-off already sends its own message; that message stays as it was.
-                const usage = parent ? undefined : turnUsage(out.result.modelUsage, out.model);
+                const usage = parent ? undefined : turnUsage(out.result.modelUsage, out.model, out.lastStep);
                 send("message", {
                     role: "assistant",
                     content: String(out.result.result ?? ""),
