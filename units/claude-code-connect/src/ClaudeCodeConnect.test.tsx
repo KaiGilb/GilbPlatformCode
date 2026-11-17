@@ -210,7 +210,7 @@ describe("<ClaudeCodeConnect> wording round CM2", () => {
     const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
     renderIt();
     const one = screen.getByRole("group", { name: "1 · Before you start" });
-    const expected = "V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\\t' 'NR>1 && $10!=\"-\" {print $1; exit}') && curl -fsSL \"https://nodejs.org/dist/$V/node-$V.pkg\" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /";
+    const expected = "V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\\t' 'NR>1 && $10!=\"-\" && v==\"\" {v=$1} END {print v}') && curl -fsSL \"https://nodejs.org/dist/$V/node-$V.pkg\" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /";
     expect(NODE_INSTALL_MAC).toBe(expected);
     expect(screen.getByTestId("claude-code-node-install").textContent).toBe(expected);
     expect(one).toHaveTextContent("If it is missing, paste this in Terminal. It downloads the official installer from nodejs.org and asks for your Mac password:");

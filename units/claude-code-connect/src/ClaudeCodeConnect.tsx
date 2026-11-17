@@ -73,7 +73,7 @@ export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"
 export const NOT_YET_BROWSERS: readonly string[] = [];
 
 /** Mac: look up the newest LTS release on nodejs.org, download its official .pkg, run the installer (asks for the Mac password). Raw string: the shell must see \t, $10, $1 and $V as written. */
-export const NODE_INSTALL_MAC = String.raw`V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\t' 'NR>1 && $10!="-" {print $1; exit}') && curl -fsSL "https://nodejs.org/dist/$V/node-$V.pkg" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /`;
+export const NODE_INSTALL_MAC = String.raw`V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\t' 'NR>1 && $10!="-" && v=="" {v=$1} END {print v}') && curl -fsSL "https://nodejs.org/dist/$V/node-$V.pkg" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /`;
 /** Windows: winget installs the LTS release of Node.js. */
 export const NODE_INSTALL_WINDOWS = "winget install OpenJS.NodeJS.LTS";
 
