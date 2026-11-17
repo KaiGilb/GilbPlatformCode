@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-picture-provider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "One picture from a picture-making service (WaveSpeed): config and price gate, two guarded fetches, the client, the secret redactor, and the one make-picture flow with the attempt written before the call.",

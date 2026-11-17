@@ -24,7 +24,7 @@ Runs in Node 22 and in a Cloudflare Worker: `fetch`, `AbortSignal.timeout` and `
 
 ## How to take it
 
-Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.0.tgz`, then depend on it with `file:`.
+Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.1.tgz`, then depend on it with `file:`.
 
 ```ts
 import { makePicture } from "@kaigilb/gilbplatformcode-picture-provider";
