@@ -153,9 +153,54 @@ describe("turn usage", () => {
     expect(JSON.stringify(msg(nested))).not.toMatch(LEAK);
   });
 
-  it("hello reports build 0.3.8", async () => {
+  // Bridge 0.3.11: the counts are the context of the turn's LAST model call, not the sum over its tool steps.
+  it("a six-step turn reports the last step's context, not the sum", async () => {
+    const secret = await start();
+    const m = msg(await turn(secret, { prompt: "MULTISTEP go" }));
+    // Step 5 of the fake: input 15, cache read 50000, cache creation 600. modelUsage (the sum) would say 1200 / 50000 / 2000.
+    expect(m.usage).toEqual({ model: "fake-model", contextWindow: 1000000, inputTokens: 15, outputTokens: 340, cacheReadInputTokens: 50000, cacheCreationInputTokens: 600 });
+    const total = m.usage.inputTokens + m.usage.cacheReadInputTokens + m.usage.cacheCreationInputTokens;
+    expect(total).toBe(50615);
+    expect(total / m.usage.contextWindow).toBeLessThan(0.06);
+    expect(JSON.stringify(m)).not.toMatch(LEAK);
+  });
+
+  it("a sub-agent line after the last step is ignored", async () => {
+    const secret = await start();
+    const m = msg(await turn(secret, { prompt: "MULTISTEP SUBAGENTSTEP" }));
+    expect(m.usage).toMatchObject({ inputTokens: 15, cacheReadInputTokens: 50000, cacheCreationInputTokens: 600 });
+  });
+
+  it("a hand-off's assistant usage is ignored, and does not change the person's turn", async () => {
+    const secret = await start();
+    let nested;
+    const parent = await turn(secret, { prompt: "MULTISTEP CALLTOOL" }, async (_req, turnId) => {
+      nested = await turn(secret, {
+        parentTurnId: turnId,
+        system: "You are Agent.Outcome.",
+        tools: [{ name: "read_record", description: "d", inputSchema: { type: "object", properties: {} } }],
+        prompt: "MULTISTEP the task",
+      });
+      return { result: "{}", isError: false };
+    });
+    expect(msg(nested)).not.toHaveProperty("usage");
+    expect(msg(parent).usage).toMatchObject({ inputTokens: 15, cacheReadInputTokens: 50000, cacheCreationInputTokens: 600, outputTokens: 340 });
+  });
+
+  it("a turn with no assistant usage falls back to the result's modelUsage", async () => {
+    const secret = await start();
+    expect(msg(await turn(secret, { prompt: "plain" })).usage).toEqual(GOOD);
+  });
+
+  it("bad counts on the last step count as 0 (not replaced by the sum); the window and output stay", async () => {
+    const secret = await start();
+    const m = msg(await turn(secret, { prompt: "MULTISTEPBAD" }));
+    expect(m.usage).toEqual({ model: "fake-model", contextWindow: 1000000, outputTokens: 340, inputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 600 });
+  });
+
+  it("hello reports build 0.3.11", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.10");
+    expect(hello.build).toBe("0.3.11");
   });
 });
