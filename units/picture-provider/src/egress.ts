@@ -92,11 +92,17 @@ export function pictureEgress(
   const toUrl = (input: Parameters<typeof fetch>[0]): URL => new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
   const api: typeof fetch = async (input, init) => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const url = toUrl(input);
+    // Read the RAW address too: the URL parser resolves "%2e%2e" and ".." before the path below is seen.
+    if (raw.includes("..") || /%(?:2e|2f|5c|00)/i.test(raw) || raw.includes("\\")) refuse(url, "has a dot, slash or backslash the path may not carry");
     const method = (init?.method ?? "GET").toUpperCase();
     common(url, method);
     const inPath = url.pathname === prefix || url.pathname.startsWith(`${prefix}/`);
     if (hostKey(url.host) !== baseKey || !inPath) refuse(url, "is not the picture service");
+    // The path rules Social's checkProviderUrl held: no climbing out of the base, no query, no fragment.
+    if (!url.pathname.startsWith(`${prefix}/api/`)) refuse(url, "is not a provider API path");
+    if (url.search !== "" || url.hash !== "") refuse(url, "carries a query or a fragment");
     log.allowed.push(url.host);
     return inner(url.href, { ...init, ...PROVIDER_FETCH_INIT });
   };

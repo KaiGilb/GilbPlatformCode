@@ -347,3 +347,17 @@ describe("p153 S8: the poll cadence", () => {
     expect(posts(svc)).toHaveLength(1);
   });
 });
+
+describe("the api fetch keeps checkProviderUrl's path rules (lifted from Social shared/imageProvider.ts)", () => {
+  test("a query, a fragment, '..' and an encoded dot, slash or backslash are refused before a socket opens", async () => {
+    const calls: string[] = [];
+    const inner = (async (u: string) => { calls.push(u); return new Response("{}"); }) as unknown as typeof fetch;
+    const eg = pictureEgress(BASE, [OUT_HOST], inner);
+    for (const bad of [`${BASE}/api/v3/x?k=1`, `${BASE}/api/v3/x#f`, `${BASE}/api/v3/%2e%2e/admin`, `${BASE}/api/v3/a%2fb`, `${BASE}/api/v3/a%5cb`]) {
+      await expect(eg.api(bad, { method: "POST" })).rejects.toBeInstanceOf(EgressRefused);
+    }
+    expect(calls).toHaveLength(0);
+    await eg.api(`${BASE}/api/v3/wavespeed-ai/flux-schnell`, { method: "POST" });
+    expect(calls).toHaveLength(1);
+  });
+});
