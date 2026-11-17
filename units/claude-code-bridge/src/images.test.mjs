@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBridge } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -39,7 +40,7 @@ async function start({ access = "folder" } = {}) {
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  if (dir) await removeTestDir(dir);
 });
 
 const runs = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === "run") : []);
@@ -220,7 +221,7 @@ describe("pictures in a turn", () => {
   it("/v1/turns lists the picture count of a running turn, and /v1/hello gives the picture options", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.8");
+    expect(hello.build).toBe("0.3.9");
     expect(hello.options.images).toEqual({ maxCount: 4, maxBytes: 5 * MiB, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] });
     const ctl = new AbortController();
     const res = await fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "WAITFOREVER", images: [img(), img()] }) });

@@ -24,6 +24,7 @@ import {
   DEFAULT_ALLOWED_ORIGINS,
   newPairingCode,
 } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -51,7 +52,7 @@ async function start(extra = {}) {
 beforeEach(() => start());
 afterEach(async () => {
   await bridge.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  await removeTestDir(dir);
 });
 
 const runs = () =>
@@ -376,7 +377,7 @@ describe("adding an app's origin", () => {
 
   it("a bridge started with an added origin answers it, and still refuses a different one", async () => {
     await bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTestDir(dir);
     await start({ bridgeOpts: { allowedOrigins: loadAllowedOrigins(["https://app.example.com"]) } });
     const { res } = await pair("https://app.example.com");
     expect(res.status).toBe(200);
@@ -1260,7 +1261,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.8", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.9", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });

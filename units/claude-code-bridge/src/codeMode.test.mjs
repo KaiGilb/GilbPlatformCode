@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeTurnSettings, createBridge, parseCli, validateWorkspace, CODE_TOOLS } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -44,7 +45,7 @@ async function start({ workspace = true, env = {}, bridgeOpts = {} } = {}) {
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) await removeTestDir(dir);
 });
 
 const logRows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
@@ -365,7 +366,7 @@ describe("--workspace on the command line", () => {
 });
 
 describe("approval: each-write", () => {
-  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com). Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder. To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder. Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed. Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
+  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com). Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder. To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder. Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. Before you install packages, open this folder's .npmrc with the Read tool, never with cat or another shell command: a project folder made in the chat gets the one line install-links=true from the bridge, so code-library units install as copies. If that line is not there, or the Read tool refuses the file, tell the person to add the line to a plain .npmrc file in that folder themselves, and until then pass --install-links to every npm install and npm ci. Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed. Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
 
   it("the argument lists of a session and an each-write code turn differ only in the asking places", async () => {
     const secret = await start();
@@ -382,10 +383,11 @@ describe("approval: each-write", () => {
     expect(JSON.parse(val(b, "--settings"))).toEqual(codeTurnSettings(os.homedir(), "darwin", [], "each-write", process.env.CLAUDE_CONFIG_DIR ?? ""));
     expect(JSON.parse(val(b, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(false);
     expect(JSON.parse(val(a, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(true);
-    // everything else is identical once those places are taken out (the MCP url carries the turn's own id and token)
+    // everything else is identical once those places, and the prompt, are taken out (the MCP url carries the turn's own id and token).
+    // The prompt also differs: the plain-commands sentence is session-only, and the next test checks that text.
     const strip = (x) => {
       const o = [...x];
-      for (const f of ["--permission-mode", "--permission-prompts", "--permission-prompt-tool", "--settings", "--mcp-config", "--session-id"]) {
+      for (const f of ["--permission-mode", "--permission-prompts", "--permission-prompt-tool", "--settings", "--mcp-config", "--session-id", "--append-system-prompt"]) {
         const i = o.indexOf(f);
         if (i >= 0) o.splice(i, 2);
       }
@@ -405,11 +407,15 @@ describe("approval: each-write", () => {
     await post(secret, T({ mode: "code", approval: "each-write" }));
     await post(secret, T());
     const [a, b, c] = runs().map((r) => r.argv);
+    const prompt = (x) => x[x.indexOf("--append-system-prompt") + 1];
+    const plain = "Keep every command inside this folder and plain: no temporary folder or other folder outside it, no $VARIABLE in a path, and no recursive delete (rm -r or rm -rf, in any spelling). Claude Code asks before it runs a command it cannot check; nobody can answer here, so the command is refused, and Claude Code then refuses every later command that needs approval in this turn.";
     for (const x of [a, b]) {
       expect(x.filter((f) => f === "--append-system-prompt")).toHaveLength(1);
-      expect(x[x.indexOf("--append-system-prompt") + 1]).toBe(ASK_PROMPT);
       expect(x[x.indexOf("--system-prompt") + 1]).toBe("You are the agent.");
     }
+    expect(prompt(b)).toBe(ASK_PROMPT);
+    expect(prompt(a).split(plain).length - 1).toBe(1);
+    expect(prompt(a).replace(` ${plain}`, "")).toBe(ASK_PROMPT);
     expect(c).not.toContain("--append-system-prompt");
   });
 

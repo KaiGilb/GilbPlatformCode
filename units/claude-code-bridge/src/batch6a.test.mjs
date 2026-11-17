@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBridge, validateWorkspace } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -42,7 +43,7 @@ async function start(opts = {}) {
 }
 afterEach(async () => {
   for (const b of bridges.splice(0)) await b.close();
-  if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  if (dir) await removeTestDir(dir);
   dir = undefined;
 });
 const hdr = (secret, origin = APP) => ({ "content-type": "application/json", origin, "x-bridge-secret": secret });

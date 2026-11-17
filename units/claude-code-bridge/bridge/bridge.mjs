@@ -90,7 +90,7 @@ function turnUsage(modelUsage, reportedModel) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.8";
+export const BRIDGE_BUILD = "0.3.9";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -582,7 +582,15 @@ const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
 const NETWORK_SENTENCE = "The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).";
 const APP_FOLDER_SENTENCE = "Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask.";
-const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit from https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> (for example with curl) and unpack it here; git clone, pull and push do not work in this folder.";
+export const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder.";
+/** A session-approval code turn cannot answer an approval prompt, so a command Claude Code cannot check is refused: say so before it happens (not used in each-write turns, where the person is asked). */
+export const PLAIN_COMMANDS_SENTENCE = "Keep every command inside this folder and plain: no temporary folder or other folder outside it, no $VARIABLE in a path, and no recursive delete (rm -r or rm -rf, in any spelling). Claude Code asks before it runs a command it cannot check; nobody can answer here, so the command is refused, and Claude Code then refuses every later command that needs approval in this turn.";
+/** Claude Code refuses to let a code turn write .npmrc; the bridge writes the project's install-links line itself, and the coder checks it is there. */
+export const NPMRC_SENTENCE = "Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. Before you install packages, open this folder's .npmrc with the Read tool, never with cat or another shell command: a project folder made in the chat gets the one line install-links=true from the bridge, so code-library units install as copies. If that line is not there, or the Read tool refuses the file, tell the person to add the line to a plain .npmrc file in that folder themselves, and until then pass --install-links to every npm install and npm ci.";
+/** What the bridge writes into a project folder it creates, so code-library units install as copies (the agent may not write .npmrc). */
+export const PROJECT_NPMRC_TEXT = "install-links=true\n";
+/** The vendoring and .npmrc sentences of a folder-mode code turn; the plain-commands one only where nobody can answer an approval (session). */
+const vendorSentences = (approval) => approval === "each-write" ? `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}` : `${GITHUB_ARCHIVE_SENTENCE} ${PLAIN_COMMANDS_SENTENCE} ${NPMRC_SENTENCE}`;
 /** Printed by a start and by --install when --full-access is on. */
 export const FULL_ACCESS_NOTICE = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.";
 const computerProjectParagraph = (project, p, folder) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
@@ -1952,8 +1960,8 @@ export function createBridge(opts = {}) {
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
             "--append-system-prompt", turn.proj
-                ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
-                : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${GITHUB_ARCHIVE_SENTENCE}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
+                ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
+                : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
         ] : [
             "-p",
             "--output-format", "stream-json",
@@ -2510,7 +2518,16 @@ export function createBridge(opts = {}) {
                 return json(res, 409, { error: exists });
             return json(res, 500, { error: `Could not make the project: ${e?.message ?? e}` });
         }
-        return json(res, 200, { name });
+        opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
+        let npmrc = false;
+        try {
+            fs.writeFileSync(path.join(workspace.path, name, ".npmrc"), PROJECT_NPMRC_TEXT, { flag: "wx", mode: 0o644 });
+            npmrc = true;
+        }
+        catch (e) {
+            log(`project ${name}: .npmrc not written: ${e?.code ?? e?.message ?? e}`);
+        }
+        return json(res, 200, { name, npmrc });
     }
     async function handleCreate(req, res) {
         let body;
