@@ -72,6 +72,11 @@ export const SUPPORTED_BROWSERS: readonly string[] = ["Chrome", "Edge", "Safari"
 /** Browsers measured to fail. None now. */
 export const NOT_YET_BROWSERS: readonly string[] = [];
 
+/** Mac: look up the newest LTS release on nodejs.org, download its official .pkg, run the installer (asks for the Mac password). Raw string: the shell must see \t, $10, $1 and $V as written. */
+export const NODE_INSTALL_MAC = String.raw`V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\t' 'NR>1 && $10!="-" {print $1; exit}') && curl -fsSL "https://nodejs.org/dist/$V/node-$V.pkg" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /`;
+/** Windows: winget installs the LTS release of Node.js. */
+export const NODE_INSTALL_WINDOWS = "winget install OpenJS.NodeJS.LTS";
+
 const BRAVE_OTHER_BROWSERS_SENTENCE = "Brave needs one setting, shown here when you open this page in Brave.";
 export const BRAVE_STEPS_HEADING = "Brave: allow it once yourself. Brave does not ask.";
 /** The five steps; the last one differs between the Mac supported-browsers item and step 3. */
@@ -174,6 +179,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
   const [copiedAuth, setCopiedAuth] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedNode, setCopiedNode] = useState(false);
+  const [copiedNodeInstall, setCopiedNodeInstall] = useState(false);
   const [relay, setRelay] = useState<"closed" | "opening" | "open">(() => client.relayState());
   const [relayFailed, setRelayFailed] = useState(false);
   const [system, setSystem] = useState<ClaudeCodeSystem>(detectSystem);
@@ -431,13 +437,35 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             <strong>Node.js 18 or newer</strong>, the free program that runs the bridge. To check, type this in {T}; it should show v18 or higher:
           </p>
           {cmdBox({ text: "node --version", testId: "claude-code-node-check", copyLabel: "Copy node check command", copiedFlag: copiedNode, onCopied: () => setCopiedNode(true) })}
-          <p className="gcc-text">
-            Get it from{" "}
-            <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
-              nodejs.org
-            </a>{" "}
-            if it is missing{win ? " (choose the LTS Windows installer)." : "."}
-          </p>
+          {system === "linux" ? (
+            <p className="gcc-text">
+              Get it from{" "}
+              <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
+                nodejs.org
+              </a>{" "}
+              if it is missing.
+            </p>
+          ) : (
+            <>
+              <p className="gcc-text">
+                {win ? `If it is missing, paste this in ${T}:` : `If it is missing, paste this in ${T}. It downloads the official installer from nodejs.org and asks for your Mac password:`}
+              </p>
+              {cmdBox({
+                text: win ? NODE_INSTALL_WINDOWS : NODE_INSTALL_MAC,
+                testId: "claude-code-node-install",
+                copyLabel: "Copy Node install command",
+                copiedFlag: copiedNodeInstall,
+                onCopied: () => setCopiedNodeInstall(true),
+              })}
+              <p className="gcc-text">
+                Then close and reopen {T} and check again with node --version. Or get it from{" "}
+                <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
+                  nodejs.org
+                </a>
+                {win ? " (choose the LTS Windows installer)." : "."}
+              </p>
+            </>
+          )}
         </li>
       </ul>
       <p className="gcc-text">It is billed to your Claude subscription, and your turns stay on your computer.</p>
