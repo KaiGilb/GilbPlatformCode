@@ -3,7 +3,7 @@ import { render, screen, within, fireEvent, act, waitFor } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { bridgeCommands, createClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import { ClaudeCodeConnect, ClaudeCodeBadge, ClaudeCodeRelayButton, SUPPORTED_BROWSERS, NOT_YET_BROWSERS } from "./index";
-import { defaultSystem, isRelayBrowser, isBraveBrowser } from "./ClaudeCodeConnect";
+import { defaultSystem, isRelayBrowser, isBraveBrowser, NODE_INSTALL_MAC } from "./ClaudeCodeConnect";
 
 const PRINCIPAL = "https://pelle.example/base";
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -137,8 +137,8 @@ describe("<ClaudeCodeConnect>", () => {
   it("an app's own Button component is used for every button", () => {
     const Button = ({ variant, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string }) => <button data-my-button={variant} {...rest} />;
     const { container } = render(<ClaudeCodeConnect relayBrowser={false} client={client()} commands={commands} onConnected={() => {}} Button={Button} />);
-    expect(container.querySelectorAll("button")).toHaveLength(9);
-    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(5);
+    expect(container.querySelectorAll("button")).toHaveLength(10);
+    expect(container.querySelectorAll("button[data-my-button=ghost]")).toHaveLength(6);
     expect(container.querySelectorAll(".gcc-btn")).toHaveLength(0);
   });
 });
@@ -203,6 +203,30 @@ describe("<ClaudeCodeConnect> wording round CM2", () => {
     expect(link).toHaveAttribute("href", "https://nodejs.org");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("Mac Node step shows the exact installer command, Copy copies it, and the nodejs.org link stays", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    renderIt();
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    const expected = "V=$(curl -fsSL https://nodejs.org/dist/index.tab | awk -F'\\t' 'NR>1 && $10!=\"-\" && v==\"\" {v=$1} END {print v}') && curl -fsSL \"https://nodejs.org/dist/$V/node-$V.pkg\" -o /tmp/node.pkg && sudo installer -pkg /tmp/node.pkg -target /";
+    expect(NODE_INSTALL_MAC).toBe(expected);
+    expect(screen.getByTestId("claude-code-node-install").textContent).toBe(expected);
+    expect(one).toHaveTextContent("If it is missing, paste this in Terminal. It downloads the official installer from nodejs.org and asks for your Mac password:");
+    expect(one).toHaveTextContent("Then close and reopen Terminal and check again with node --version. Or get it from nodejs.org.");
+    await user.click(screen.getByRole("button", { name: "Copy Node install command" }));
+    expect(writeText).toHaveBeenLastCalledWith(expected);
+    expect(within(one).getByRole("link", { name: "nodejs.org" })).toHaveAttribute("href", "https://nodejs.org");
+  });
+
+  it("Linux has no Node install command (the Mac installer does not apply) and keeps the nodejs.org line", async () => {
+    const user = userEvent.setup();
+    renderIt();
+    await user.click(screen.getByTestId("claude-code-tab-linux"));
+    const one = screen.getByRole("group", { name: "1 · Before you start" });
+    expect(screen.queryByTestId("claude-code-node-install")).not.toBeInTheDocument();
+    expect(one).toHaveTextContent("Get it from nodejs.org if it is missing.");
   });
 
   it("section 2 has the two option headings", () => {
@@ -978,7 +1002,12 @@ describe("<ClaudeCodeConnect> Windows tab", () => {
     expect(one).toHaveTextContent("Claude Code for Windows, signed in with your Claude subscription. Install it from Anthropic's setup page (code.claude.com/docs/en/setup), then sign in once in PowerShell:");
     expect(within(one).getByRole("link", { name: "code.claude.com/docs/en/setup" })).toHaveAttribute("href", "https://code.claude.com/docs/en/setup");
     expect(one).toHaveTextContent("Node.js 18 or newer, the free program that runs the bridge. To check, type this in PowerShell; it should show v18 or higher:");
-    expect(one).toHaveTextContent("Get it from nodejs.org if it is missing (choose the LTS Windows installer).");
+    expect(one).toHaveTextContent("If it is missing, paste this in PowerShell:");
+    expect(one).toHaveTextContent("Then close and reopen PowerShell and check again with node --version. Or get it from nodejs.org (choose the LTS Windows installer).");
+    expect(screen.getByTestId("claude-code-node-install").textContent).toBe("winget install OpenJS.NodeJS.LTS");
+    expect(within(one).getByRole("link", { name: "nodejs.org" })).toHaveAttribute("href", "https://nodejs.org");
+    await user.click(within(one).getByRole("button", { name: "Copy Node install command" }));
+    expect(writeText).toHaveBeenLastCalledWith("winget install OpenJS.NodeJS.LTS");
     expect(one).toHaveTextContent("It is billed to your Claude subscription, and your turns stay on your computer.");
     expect(screen.getByTestId("claude-code-windows-allow").textContent).toBe("When you pair, Chrome may ask to let this page use apps on this device. Choose Allow.");
     expect(screen.queryByTestId("claude-code-supported-browsers")).not.toBeInTheDocument();
