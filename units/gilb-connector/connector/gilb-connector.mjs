@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.6.3";
+export const CONNECTOR_VERSION = "0.6.4";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -862,6 +862,50 @@ function quotedFailure(body) {
     const error = typeof row.error === "string" ? safeQuote(row.error) : "";
     const desc = typeof row.error_description === "string" ? safeQuote(row.error_description) : typeof row.message === "string" ? safeQuote(row.message) : "";
     return [error, desc].filter((part) => part !== "").join(": ");
+}
+/** The plain hint shown when the token door names a time claim. A computer clock a few seconds
+ *  off made every sign-in fail on a new user's PC (2026-11-16) and the reason was not shown. */
+const CLOCK_HINT = "This computer's clock may be wrong. Sync it (Windows: Settings › Time & language › Date & time › Sync now), then try again.";
+/**
+ * A text the token door sent, made safe to show inside double quotes: white space made one
+ * space, every other control, format and combining character and the Hangul fillers removed, every base64url run of 20 or more characters replaced, a private key dropped, `"` turned into `'`,
+ * and cut to `max` characters.
+ *
+ * @param text the text the platform sent
+ * @param max the most characters to keep
+ * @returns the safe text, or "" when nothing is left to show
+ */
+function quotableReason(text, max) {
+    const plain = text
+        .replace(/\s+/g, " ")
+        .replace(/[\p{Cc}\p{Cf}\p{M}\u115f\u1160\u3164\uffa0]/gu, "")
+        // Each long base64url run on its own, whatever separates it from the next: every part of a JWT
+        // (header, payload, signature) and every key body is at least 20 such characters, and no
+        // reason the platform writes has a word that long.
+        .replace(/[A-Za-z0-9_-]{20,}/g, "[token removed]")
+        .replace(/"/g, "'");
+    return safeQuote(plain).slice(0, max);
+}
+/**
+ * The message for a refused token request: the code, the platform's own reason quoted and cut to
+ * 200 characters, and the clock hint when that reason names iat, nbf, exp, expired or the clock.
+ *
+ * @param body the parsed JSON answer of the token door, or undefined
+ * @returns the message to show
+ */
+function tokenRefusalMessage(body) {
+    const row = body && typeof body === "object" ? body : {};
+    // An OAuth error code is letters, digits and _ . - only (RFC 6749 §5.2 uses no other), so a code
+    // with anything else is not shown: it cannot close the brackets around it.
+    const code = typeof row.error === "string" && /^[A-Za-z0-9_.-]{1,80}$/.test(row.error) ? row.error : "";
+    const raw = typeof row.error_description === "string" ? row.error_description : "";
+    const reason = raw ? quotableReason(raw, 200) : "";
+    let message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+    if (reason)
+        message += ` The platform said: "${reason}"`;
+    if (reason && /\b(iat|nbf|exp|expired|clock)\b/i.test(raw))
+        message += ` ${CLOCK_HINT}`;
+    return message;
 }
 function registrationMessage(body) {
     const detail = quotedFailure(body);
@@ -2291,8 +2335,7 @@ async function openSessionCredential(input) {
                 return requestMachineToken("base.read", false);
             }
             if (res.status < 200 || res.status >= 300) {
-                const code = typeof errorCode === "string" ? safeQuote(errorCode) : "";
-                const message = code ? `${AI_SIGN_IN_FAILED} (${code})` : AI_SIGN_IN_FAILED;
+                const message = tokenRefusalMessage(parsed);
                 say(message);
                 throw new NotConnected(message);
             }
