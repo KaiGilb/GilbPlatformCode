@@ -24,6 +24,7 @@ import {
   DEFAULT_ALLOWED_ORIGINS,
   newPairingCode,
 } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -51,7 +52,7 @@ async function start(extra = {}) {
 beforeEach(() => start());
 afterEach(async () => {
   await bridge.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  await removeTestDir(dir);
 });
 
 const runs = () =>
@@ -376,7 +377,7 @@ describe("adding an app's origin", () => {
 
   it("a bridge started with an added origin answers it, and still refuses a different one", async () => {
     await bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTestDir(dir);
     await start({ bridgeOpts: { allowedOrigins: loadAllowedOrigins(["https://app.example.com"]) } });
     const { res } = await pair("https://app.example.com");
     expect(res.status).toBe(200);

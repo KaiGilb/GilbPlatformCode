@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBridge, GITHUB_ARCHIVE_SENTENCE, PLAIN_COMMANDS_SENTENCE, NPMRC_SENTENCE, PROJECT_NPMRC_TEXT } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -26,7 +27,7 @@ async function start(access, extra = {}) {
   const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
   secret = (await res.json()).secret;
 }
-afterEach(async () => { await bridge?.close(); bridge = undefined; if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
+afterEach(async () => { await bridge?.close(); bridge = undefined; if (dir) await removeTestDir(dir); });
 const runs = () => fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === "run");
 const post = async (route, o) => { const r = await fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify(o) }); return { status: r.status, text: await r.text() }; };
 const sys = (argv) => { const i = argv.indexOf("--append-system-prompt"); return i < 0 ? "" : argv[i + 1]; };

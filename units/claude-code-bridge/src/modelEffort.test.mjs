@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE, CODER_STANDARDS_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -50,7 +51,7 @@ afterEach(async () => {
   open = [];
   await bridge?.close();
   bridge = undefined;
-  if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  if (dir) await removeTestDir(dir);
 });
 
 const runs = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === "run") : []);
@@ -153,7 +154,7 @@ describe("model and effort on a turn", () => {
       expect(after(argv, "--effort")).toBe("xhigh");
       await bridge.close();
       bridge = undefined;
-      fs.rmSync(dir, { recursive: true, force: true });
+      await removeTestDir(dir);
     }
   });
 
@@ -303,7 +304,7 @@ describe("delegateCoding", () => {
       }
       await bridge.close();
       bridge = undefined;
-      fs.rmSync(dir, { recursive: true, force: true });
+      await removeTestDir(dir);
     }
   });
 
@@ -316,7 +317,7 @@ describe("delegateCoding", () => {
         expect(after(runs()[0].argv, "--append-system-prompt")).toContain(CODER_STANDARDS_SENTENCE);
         await bridge.close();
         bridge = undefined;
-        fs.rmSync(dir, { recursive: true, force: true });
+        await removeTestDir(dir);
       }
     }
     const secret = await start();
@@ -347,7 +348,7 @@ describe("the init check lets the subagent tool through only with delegateCoding
     const secret = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "Agent", "mcp__gilb__x"]) } });
     expect((await turn(secret, { mode: "code", delegateCoding: true })).message).toBeDefined();
     await bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTestDir(dir);
     const secret2 = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "Task", "WebFetch"]) } });
     const r = await turn(secret2, { mode: "code", delegateCoding: true });
     expect(r.message).toBeUndefined();
@@ -359,7 +360,7 @@ describe("the init check lets the subagent tool through only with delegateCoding
     expect((await turn(secret, { mode: "code" })).error).toBeDefined();
     expect((await turn(secret, { mode: "code", delegateCoding: true })).message).toBeDefined();
     await bridge.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    await removeTestDir(dir);
     const secret2 = await start({ access: "files-only", env: { FAKE_INIT_TOOLS: JSON.stringify(["Read", "Bash", "Task"]) } });
     expect((await turn(secret2, { mode: "code", delegateCoding: true })).error).toBeDefined();
   });

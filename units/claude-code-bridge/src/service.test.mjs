@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildPlist, createBridge, fetchCode, parseCli, resolveBin, serviceInstall, serviceStatus, serviceUninstall, DEFAULT_LABEL } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
@@ -39,7 +40,7 @@ beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-svc-"));
   calls = [];
 });
-afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+afterEach(() => removeTestDir(home));
 
 describe("argument handling", () => {
   it("no flag runs the bridge, as before; each service flag is its own mode", () => {
