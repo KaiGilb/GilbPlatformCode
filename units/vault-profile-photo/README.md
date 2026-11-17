@@ -34,7 +34,7 @@ Package: `@kaigilb/gilbplatformcode-vault-profile-photo`
 From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/vault-profile-photo` prints:
 
 ```sh
-npm install <path-to-the-library>/units/base-origin <path-to-the-library>/units/file-words <path-to-the-library>/units/photo-term <path-to-the-library>/units/record-types <path-to-the-library>/units/signin <path-to-the-library>/units/vault-origin-rule <path-to-the-library>/units/lws-session-bridge <path-to-the-library>/units/lws-records <path-to-the-library>/units/file-download-outcome <path-to-the-library>/units/vault-profile-photo
+npm install --install-links <path-to-the-library>/units/base-origin <path-to-the-library>/units/file-words <path-to-the-library>/units/photo-term <path-to-the-library>/units/record-types <path-to-the-library>/units/signin <path-to-the-library>/units/vault-origin-rule <path-to-the-library>/units/lws-session-bridge <path-to-the-library>/units/lws-records <path-to-the-library>/units/file-download-outcome <path-to-the-library>/units/vault-profile-photo
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -42,6 +42,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. Seven peers: `base-origin ^0.2.0`, `file-download-outcome ^0.1.0`, `lws-records ^0.4.0`, `lws-session-bridge ^0.1.0`, `photo-term ^0.1.0`, `record-types ^0.1.0`, `vault-origin-rule ^0.1.0`.
 

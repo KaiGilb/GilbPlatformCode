@@ -73,6 +73,8 @@ In the Studio page, `onSave={makeDevServerSave()}` (from `style-studio`) posts t
 
 Package: `@kaigilb/gilbplatformcode-style-app-files`. Put `install-links=true` in your app's `.npmrc`. It ships plain ES modules (`.mjs`), so Node and a Vite config can import it as it is. The bin is `style-app-fonts`. Peer: `@kaigilb/gilbplatformcode-style-runtime` `^0.2.0`, used for types only.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## Where it came from
 
 New code, written for EESpeed Round 7 (U4) from the hand-written files of the PictureRecords run-7 app (not in a repository): `vite.config.ts` (`studioSave`) and `scripts/exportFonts.mjs`, with its test. Repository `KaiGilb/GilbPlatformCode`, commit `4340ee4838d77dabd5ed3f3eea9e3a2048f97fde`. No source file was copied. Added over the original: the PNG signature check, the body limit answered 413, the method answered 405 with `Allow`, atomic writes, the safe-name rule, and the marker that makes stale-folder removal safe.

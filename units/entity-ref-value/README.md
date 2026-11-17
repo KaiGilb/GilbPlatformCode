@@ -33,10 +33,12 @@ Take it together with its peers `entity-ref` and `id-tail`. Put this line in you
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them:
 
 ```sh
-npm install <path-to-the-library>/units/entity-ref <path-to-the-library>/units/id-tail <path-to-the-library>/units/entity-ref-value
+npm install --install-links <path-to-the-library>/units/entity-ref <path-to-the-library>/units/id-tail <path-to-the-library>/units/entity-ref-value
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. React 19 is a peer. Its `tsconfig.json` leaves out `noUncheckedIndexedAccess`, as `platform-fetch`'s and `lws-records`' do, because the type check of the tests reads the source of the dev-dependency units (`main-tag` and what it needs), which do not pass it.

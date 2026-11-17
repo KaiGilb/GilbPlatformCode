@@ -37,7 +37,7 @@ Package: `@kaigilb/gilbplatformcode-stakeholder-list-state`
 From a clone of this repository, install the unit's folder; `npm install` takes its peers in the order `node scripts/peers.mjs units/stakeholder-list-state` prints:
 
 ```sh
-npm install <path-to-the-library>/units/stakeholder-list-state
+npm install --install-links <path-to-the-library>/units/stakeholder-list-state
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -45,6 +45,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. Its `tsconfig.json` leaves out `noUncheckedIndexedAccess`, as `lws-records` does. `@tanstack/react-query` is a dev dependency only (a peer of `lws-vault-sets`); the unit does not call it. Its peers are `lws-vault-sets` (`idFromUri`, `VaultRecordRef`), `online-card-link` (`readLink`, `LinkReading`) and, for one type, `stakeholder-list-reader` (`ListedRecord`); `node scripts/peers.mjs units/stakeholder-list-state` prints the 15 units of the install.
 

@@ -58,7 +58,7 @@ Package: `@kaigilb/gilbplatformcode-vault-share-sheet`
 From a clone of this repository, install the unit's folder; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/vault-share-sheet` prints:
 
 ```sh
-npm install react@^19.0.0 <path-to-the-library>/units/vault-share-sheet
+npm install --install-links react@^19.0.0 <path-to-the-library>/units/vault-share-sheet
 ```
 
 (use the peers.mjs line for the full list.) Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -66,6 +66,8 @@ npm install react@^19.0.0 <path-to-the-library>/units/vault-share-sheet
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 Peers: `vault-access`, `vault-address`, `principal-row`, `base-origin` always. `react` and `modal-sheet` only for the `.` entry; `./model` alone needs neither. The package ships TypeScript source and one stylesheet, `vaultShareSheet.css`, which the sheet module imports itself (the dialog's own stylesheet is imported by `modal-sheet`).
 

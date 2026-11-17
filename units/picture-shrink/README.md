@@ -48,7 +48,7 @@ Package: `@kaigilb/gilbplatformcode-picture-shrink`
 From a clone of this repository, install the unit's folder. It has no peers:
 
 ```sh
-npm install <path-to-the-library>/units/picture-shrink
+npm install --install-links <path-to-the-library>/units/picture-shrink
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -56,6 +56,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. It must run in a browser (it uses `document`, `Image`, `URL.createObjectURL`).
 

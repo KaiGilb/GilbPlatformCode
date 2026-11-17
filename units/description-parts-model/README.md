@@ -56,10 +56,12 @@ Take it together with its four peers: `plan-card-facts`, `plan-links-model`, `id
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them together:
 
 ```sh
-npm install <path-to-the-library>/units/base-record <path-to-the-library>/units/id-tail <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/entity-ref <path-to-the-library>/units/relation-role <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/plan-links-model <path-to-the-library>/units/description-parts-model
+npm install --install-links <path-to-the-library>/units/base-record <path-to-the-library>/units/id-tail <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/entity-ref <path-to-the-library>/units/relation-role <path-to-the-library>/units/type-curie <path-to-the-library>/units/type-key <path-to-the-library>/units/plan-links-model <path-to-the-library>/units/description-parts-model
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. No runtime dependency of its own.

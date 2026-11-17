@@ -59,7 +59,7 @@ for (const n of Object.keys(askedBy).sort()) {
 if (conflicts.length) { console.error("conflicting third-party peer ranges:\n" + conflicts.join("\n")); process.exit(3); }
 
 const tp = Object.keys(third).sort().map((n) => `${n}@${third[n]}`);
-const npm = ["npm install", ...tp, ...placed.map((k) => `<path-to-the-library>/${k}`)].join(" ");
+const npm = ["npm install --install-links", ...tp, ...placed.map((k) => `<path-to-the-library>/${k}`)].join(" ");
 if (json) {
   console.log(JSON.stringify({ unit: short(key), order: placed.map(short), thirdParty: Object.fromEntries(Object.keys(third).sort().map((n) => [n, third[n]])), npm }, null, 2));
 } else {

@@ -57,6 +57,8 @@ download(new Blob([r.zipBytes], { type: "application/zip" }), "teapots.zip");
 
 Package `@kaigilb/gilbplatformcode-vault-export`. No peers. The functions you pass in come from other units (`vault-records-of-type` or `lws-records` for the listing, `signed-picture` `pictureBytes`, `zip`), but none is imported here. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## Where it came from
 
 New code, written for EESpeed Round 8 (batch CB4) from the run-8 app's `src/services/exportService.ts` (`exportTeapots`, `differences`, `slug`), made general: the listing, the mapping, the picture read and the zip are passed in; the archive is checked by file name and size; a name used twice is reported instead of overwritten. Repository `KaiGilb/GilbPlatformCode`, commit `a5e8f8cd1ff677b5f1cb2645c4d49f44a6f1823c`.

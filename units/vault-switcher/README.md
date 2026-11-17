@@ -28,6 +28,8 @@ Package: `@kaigilb/gilbplatformcode-vault-switcher`
 
 Install the unit's folder from a clone of this repository; `npm install` takes its peers first, in the order `node scripts/peers.mjs units/vault-switcher` prints. Put `install-links=true` in your app's `.npmrc` so the units are installed as copies.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Peers: `react` (^19), `vault-list` (^0.1.4), `modal-sheet` (^0.1.0). Nothing else. The package ships TypeScript source and one stylesheet, `vaultSwitcher.css` (also exported as `@kaigilb/gilbplatformcode-vault-switcher/vaultSwitcher.css`), which the component module imports itself.
 
 ## Several vaults: let the person switch

@@ -78,6 +78,8 @@ A waiting delete is made real when the component unmounts (React 19 StrictMode's
 
 Package `@kaigilb/gilbplatformcode-optimistic-records`. Peer: `react` (^19). Nothing else. Put `install-links=true` in your app's `.npmrc` so the unit is installed as a copy. Key the screen that holds the hook by the vault (or anything else `list` depends on) so a switch starts with fresh state, and call `flushPending()` first.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## What the host must supply
 
 The four calls and `key`. No origin, no credential and no type: the unit never calls anything itself.

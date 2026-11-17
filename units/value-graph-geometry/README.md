@@ -35,10 +35,12 @@ Take it with its peers `date-rules` and `value-card-model` (and the peers of `va
 install-links=true
 ```
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 Then install them together:
 
 ```sh
-npm install <path-to-the-library>/units/date-rules <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-key <path-to-the-library>/units/value-card-model <path-to-the-library>/units/value-graph-geometry
+npm install --install-links <path-to-the-library>/units/date-rules <path-to-the-library>/units/plan-card-facts <path-to-the-library>/units/plan-kinds <path-to-the-library>/units/qualifier-values <path-to-the-library>/units/term-origin <path-to-the-library>/units/type-key <path-to-the-library>/units/value-card-model <path-to-the-library>/units/value-graph-geometry
 ```
 
 The package ships TypeScript source (`src/`); your bundler compiles it. The unit's source needs `value-card-model` at run time for `kindClass` (in `markerHalf`) and for its types. Building the card with `readValueCard` needs the app's type origin (`setTermOrigin` of `term-origin`, once at start-up); the geometry itself does not.

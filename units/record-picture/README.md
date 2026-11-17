@@ -162,6 +162,8 @@ const records = useRecordList(api, { /* ... */ });
 
 Package `@kaigilb/gilbplatformcode-record-picture`. Install the required peers `lws-records` and `photo-ref`, plus the optional peers of each entry you import. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## Changes in 0.1.1
 
 Additive, in `"./vault"`: `vaultPictureService` and the types `VaultPictureService`, `VaultPictureServiceDeps`. No new peer (it uses only `createVaultPictures` and picture-set's `CopyMap` type). 10 new tests (`src/vault.test.ts`).

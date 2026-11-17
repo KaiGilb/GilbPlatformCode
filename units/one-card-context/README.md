@@ -33,7 +33,7 @@ Package: `@kaigilb/gilbplatformcode-one-card-context`
 From a clone of this repository, install the peers first, then the unit's folder (this is the line `node scripts/peers.mjs units/one-card-context` prints):
 
 ```sh
-npm install react@^19.0.0 <path-to-the-library>/units/card-mode <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/stakeholder-ui-kit <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/one-card-merge <path-to-the-library>/units/one-card-rows <path-to-the-library>/units/one-card-context
+npm install --install-links react@^19.0.0 <path-to-the-library>/units/card-mode <path-to-the-library>/units/online-card-link <path-to-the-library>/units/record-sync <path-to-the-library>/units/person-connections <path-to-the-library>/units/online-card <path-to-the-library>/units/stakeholder-ui-kit <path-to-the-library>/units/vocabulary-source <path-to-the-library>/units/stakeholder-kinds <path-to-the-library>/units/stakeholder-field-sets <path-to-the-library>/units/one-card-merge <path-to-the-library>/units/one-card-rows <path-to-the-library>/units/one-card-context
 ```
 
 Put this line in your app's own `.npmrc` so the units are installed as copies and not links:
@@ -41,6 +41,8 @@ Put this line in your app's own `.npmrc` so the units are installed as copies an
 ```
 install-links=true
 ```
+
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
 
 The package ships TypeScript source (`src/`); your bundler compiles it. React 19, `card-mode`, `one-card-merge`, `one-card-rows` and `online-card` (all `^0.1.0`; the last for the type `OnlineCard`) are peers.
 

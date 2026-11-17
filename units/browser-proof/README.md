@@ -85,6 +85,8 @@ try {
 
 Package `@kaigilb/gilbplatformcode-browser-proof`, as a dev dependency. No peers. Put `install-links=true` in your `.npmrc` so the unit is installed as a copy. It is plain `.mjs`, so a Node script can import it from `node_modules`.
 
+In the GilbApp chat, a project folder the chat made already has this line: the bridge writes it when it makes the folder. A coding agent may not write `.npmrc` (Claude Code refuses it as a sensitive file), so when the line is missing it asks you to add it, and until then it passes `--install-links` to every `npm install` and `npm ci`.
+
 ## Where it came from
 
 Round 9 (batch CB2) adds the button-row check (`src/buttonRows.mjs`), headed runs and `waitForHuman`, and `makeTools` (`src/pageTools.mjs`), which absorbs the generic helpers of the run-9 app's `scripts/e2e-lib.mjs` (`exists`, `wait`, `gone`, `click`, `clickText`, `set`, the picture wait, the file-input step, `noHorizontalScroll`, the test-id selector); its app-specific ones (rows, the country picker, the menu, the fixture picture) stay with the app.
