@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, protectedPlaces, protectedHit, globHitsProtected, askedCommand, computerSandboxSettings, ASKED_COMMAND_RULES, FULL_ACCESS_NOTICE } from "../bridge/bridge.mjs";
+import { createBridge, writeBlock, claudeDirs, claudeGlobs, writeOnlyPlaces, writableAreas, protectedPlaces, protectedHit, globHitsProtected, askedCommand, computerSandboxSettings, ASKED_COMMAND_RULES, FULL_ACCESS_NOTICE } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -22,12 +22,14 @@ let logFile;
 let ws;
 
 async function start({ fullAccess = true, platform = "darwin", bridgeOpts = {}, extraFake = false } = {}) {
-  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-sbx-")));
+  dir = fs.realpathSync.native(fs.mkdtempSync(path.join(HERE, "..", ".tmp-sbx-"))); // NOT under the temp folder (that is writable)
   logFile = path.join(dir, "claude.log");
   for (const d of [".ssh", "Developer/.base-deploy", ".gilb-claude-code-bridge", "Library/LaunchAgents", ".aws", ".gnupg", ".config/gh", "Library/Keychains"]) fs.mkdirSync(path.join(dir, d), { recursive: true });
-  for (const f of [".netrc", ".gilb-claude-code-bridge.mjs", ".ssh/id_rsa", "Developer/.base-deploy/key"]) fs.writeFileSync(path.join(dir, f), "SECRET");
+  for (const d of ["Developer/GilbServerOps", "Developer/other/.claude", ".local/bin", ".local/share/fnm"]) fs.mkdirSync(path.join(dir, d), { recursive: true });
+  fs.mkdirSync(path.join(dir, "MyCode", "p1", ".claude"), { recursive: true });
+  for (const f of [".claude.json", ".gilb-connector.mjs", ".zshrc", ".local/bin/claude", ".netrc", ".gilb-claude-code-bridge.mjs", ".ssh/id_rsa", "Developer/.base-deploy/key"]) fs.writeFileSync(path.join(dir, f), "SECRET");
   ws = path.join(dir, "MyCode");
-  fs.mkdirSync(ws);
+  fs.mkdirSync(ws, { recursive: true });
   ws = fs.realpathSync.native(ws);
   bridge = createBridge({
     port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir,
@@ -98,7 +100,18 @@ describe("the settings of a sandboxed computer turn", () => {
       expect(settings.sandbox.filesystem.denyWrite).toContain(path.join(dir, p));
       expect(places).toContain(path.join(dir, p));
     }
-    expect(settings.sandbox.filesystem.allowWrite).toEqual(expect.arrayContaining([dir, ws, "/tmp", os.tmpdir()]));
+    expect(settings.sandbox.filesystem.allowWrite).toEqual(expect.arrayContaining([ws, path.join(dir, "Developer"), "/tmp", os.tmpdir()]));
+    expect(settings.sandbox.filesystem.allowWrite).not.toContain(dir); // the home folder is NOT writable
+    expect(settings.sandbox.filesystem.allowWrite).toHaveLength(new Set(settings.sandbox.filesystem.allowWrite).size);
+    for (const w of settings.sandbox.filesystem.allowWrite) expect([ws, path.join(dir, "Developer"), "/tmp", "/private/tmp", os.tmpdir(), fs.realpathSync.native(os.tmpdir())].some((a) => w === a || w.startsWith(a + "/"))).toBe(true);
+    for (const p of [".claude.json", ".gilb-connector.mjs"]) {
+      expect(settings.sandbox.filesystem.denyRead).toContain(path.join(dir, p));
+      expect(settings.sandbox.filesystem.denyWrite).toContain(path.join(dir, p));
+    }
+    const dw = settings.sandbox.filesystem.denyWrite;
+    expect(dw).toContain(path.join(dir, "Developer", "GilbServerOps"));
+    expect(settings.sandbox.filesystem.denyRead).not.toContain(path.join(dir, "Developer", "GilbServerOps")); // write-only
+    expect(dw).toEqual(expect.arrayContaining([path.join(ws, "p1", ".claude"), path.join(dir, "Developer", "other", ".claude"), `${ws}/**/.claude`, `${ws}/**/.claude/**`, `${dir}/Developer/**/.claude`]));
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${dir}/.ssh/**)`, `Edit(/${dir}/.ssh)`, `Read(/${dir}/.netrc)`]));
     expect(settings.permissions.ask).toEqual(ASKED_COMMAND_RULES);
     for (const c of ["sudo", "security", "launchctl", "osascript"]) expect(settings.permissions.ask).toContain(`Bash(${c} *)`);
@@ -110,7 +123,7 @@ describe("the settings of a sandboxed computer turn", () => {
 
   it("Linux gets the same block; a project turn writes in the project folder", async () => {
     const secret = await start({ platform: "linux" });
-    fs.mkdirSync(path.join(ws, "p1"));
+    fs.mkdirSync(path.join(ws, "p1"), { recursive: true });
     const pr = await (await fetch(`${base}/v1/projects`, { headers: { "x-bridge-secret": secret } })).json().catch(() => null);
     void pr;
     await ask(secret, []);
@@ -155,7 +168,7 @@ describe("the settings of a sandboxed computer turn", () => {
   it("hello: approvals sandboxed on macOS and Linux, absent on Windows and in folder mode; the notice is the agreed one", async () => {
     let secret = await start();
     expect((await hello()).options.approvals).toEqual({ mode: "sandboxed" });
-    expect(FULL_ACCESS_NOTICE).toContain("Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files.");
+    expect(FULL_ACCESS_NOTICE).toContain("Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked.");
     await bridge.close(); await removeTestDir(dir);
     secret = await start({ platform: "win32" });
     expect((await hello()).options.approvals).toBeUndefined();
@@ -223,12 +236,11 @@ describe("file tools on protected places are denied outright; the rest runs unas
   it("ordinary file tools, commands, searches and web search run with no question", async () => {
     const secret = await start();
     fs.writeFileSync(path.join(ws, "ok.txt"), "x");
-    fs.mkdirSync(path.join(dir, "Documents"));
     const calls = [
       F("Read", { file_path: path.join(ws, "ok.txt") }),
       F("Read", { file_path: "ok.txt" }),
       F("Write", { file_path: path.join(ws, "new.txt"), content: "x" }),
-      F("Edit", { file_path: path.join(dir, "Documents", "a.txt"), old_string: "a", new_string: "b" }), // the home folder is writable
+      F("Edit", { file_path: path.join(dir, "Developer", "a.txt"), old_string: "a", new_string: "b" }), // ~/Developer is writable
       F("Write", { file_path: "/tmp/x-outside.txt", content: "x" }),
       F("Read", { file_path: path.join(dir, ".sshx", "y") }), // a sibling name, not the protected one
       F("Read", { file_path: path.join(dir, "Developer", "other", "y") }),
@@ -257,6 +269,91 @@ describe("file tools on protected places are denied outright; the rest runs unas
     const r = await ask(secret, [F("Bash", { command: "ls", dangerouslyDisableSandbox: true })]);
     expect(r.decisions[0]).toEqual({ behavior: "deny", message: "Commands run only inside the sandbox on this computer." });
     expect(r.questions).toEqual([]);
+  });
+});
+
+describe("writes are allowed only in the code folder, ~/Developer and temp; .claude settings are never written", () => {
+  it("file tools: the home folder, bin folders, shell files, the claude and node binaries, .claude, .mcp.json, GilbServerOps, links out", async () => {
+    const secret = await start();
+    fs.symlinkSync(path.join(dir, ".local", "bin"), path.join(ws, "binlink"));
+    fs.symlinkSync(path.join(dir, ".zshrc"), path.join(ws, "rclink"));
+    const W = (file_path) => F("Write", { file_path, content: "x" });
+    const bad = [
+      W(path.join(dir, ".local", "bin", "claude")),
+      W(path.join(dir, ".local", "share", "fnm", "node")),
+      W("~/.local/bin/claude"),
+      W("$HOME/.zshrc"),
+      W(path.join(dir, ".bashrc")),
+      W(path.join(dir, "newfile-in-home")),
+      W(path.join(dir, ".npm", "x")),
+      W(path.join(ws, "binlink", "claude")),
+      W(path.join(ws, "rclink")),
+      W(path.join(ws, "..", ".zshrc")),
+      W(path.join(ws, "p1", ".claude", "settings.json")),
+      W(path.join(ws, "p1", ".claude", "settings.local.json")),
+      W(path.join(ws, "new-project", ".claude", "hooks", "h.sh")),
+      W(path.join(dir, "Developer", "other", ".claude", "settings.json")),
+      W(path.join(dir, "Developer", "x", ".CLAUDE", "settings.json")),
+      W(path.join(ws, ".mcp.json")),
+      W(path.join(dir, ".claude.json")),
+      W(path.join(dir, ".claude", "settings.json")),
+      W(path.join(dir, "Developer", "GilbServerOps", "ship", "x.sh")),
+      F("Edit", { file_path: path.join(dir, ".zshrc"), old_string: "a", new_string: "b" }),
+      F("MultiEdit", { file_path: path.join(dir, ".zshrc"), edits: [] }),
+      F("NotebookEdit", { notebook_path: path.join(dir, "n.ipynb"), new_source: "x" }),
+    ];
+    const r = await ask(secret, bad);
+    expect(r.questions).toEqual([]);
+    for (const [i, d] of r.decisions.entries()) expect(d.behavior, JSON.stringify(bad[i])).toBe("deny");
+    expect(r.decisions[0].message).toBe("Writes are allowed only in the code folder, ~/Developer and the temp folder.");
+    expect(r.decisions[10].message).toMatch(/\.claude folder/);
+    expect(r.decisions[18].message).toBe(protectedMsg(path.join(dir, "Developer", "GilbServerOps")));
+  });
+
+  it("writes inside the code folder, ~/Developer and temp, and reads anywhere outside the protected list, run unasked", async () => {
+    const secret = await start();
+    const ok = [
+      F("Write", { file_path: path.join(ws, "p1", "src", "a.ts"), content: "x" }),
+      F("Write", { file_path: path.join(dir, "Developer", "proj", "a.ts"), content: "x" }),
+      F("Write", { file_path: path.join(os.tmpdir(), "b234-x.txt"), content: "x" }),
+      F("Write", { file_path: "/tmp/b234-y.txt", content: "x" }),
+      F("Edit", { file_path: path.join(ws, ".npm-cache", "z"), old_string: "a", new_string: "b" }),
+      F("Read", { file_path: path.join(dir, ".zshrc") }),
+      F("Read", { file_path: path.join(dir, ".local", "bin", "claude") }),
+      F("Read", { file_path: path.join(ws, "p1", ".claude", "settings.json") }), // reading is not writing
+    ];
+    const r = await ask(secret, ok);
+    expect(r.questions).toEqual([]);
+    for (const [i, d] of r.decisions.entries()) expect(d.behavior, JSON.stringify(ok[i])).toBe("allow");
+  });
+
+  it("reads of the connector files and ~/.claude.json are denied", async () => {
+    const secret = await start();
+    const r = await ask(secret, [F("Read", { file_path: path.join(dir, ".gilb-connector.mjs") }), F("Read", { file_path: "~/.claude.json" }), F("Read", { file_path: path.join(dir, ".gilb-connector-keys", "k") })]);
+    for (const d of r.decisions) expect(d.behavior).toBe("deny");
+  });
+
+  it("the npm cache of a sandboxed turn lives in the code folder; an each-write turn keeps the person's environment", async () => {
+    const secret = await start();
+    await ask(secret, []);
+    expect(rows("run")[0].envKeys).toContain("npm_config_cache");
+  });
+
+  it("helpers: writeBlock, claudeDirs, claudeGlobs", () => {
+    const home = fs.realpathSync.native(fs.mkdtempSync(path.join(HERE, "..", ".tmp-wb-")));
+    try {
+      fs.mkdirSync(path.join(home, "w", "a", ".claude"), { recursive: true });
+      fs.mkdirSync(path.join(home, "w", "node_modules", "x", ".claude"), { recursive: true });
+      expect(claudeDirs([path.join(home, "w")])).toEqual([path.join(home, "w", "a", ".claude")]);
+      const o = { home, places: [], base: path.join(home, "w"), ci: true };
+      const areas = writableAreas(home, path.join(home, "w"), []);
+      expect(writeBlock("a/b.ts", o, areas, writeOnlyPlaces(home))).toBeNull();
+      expect(writeBlock("../x", o, areas, writeOnlyPlaces(home))).toMatch(/^Writes are allowed only/);
+      expect(writeBlock("a/.claude/settings.json", o, areas, [])).toMatch(/\.claude/);
+      expect(claudeGlobs("/w", "/h")).toEqual(["/w/**/.claude", "/w/**/.claude/**", "/h/Developer/**/.claude", "/h/Developer/**/.claude/**"]);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 

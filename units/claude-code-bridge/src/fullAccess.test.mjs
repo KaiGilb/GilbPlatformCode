@@ -359,7 +359,7 @@ describe("hello", () => {
   });
 
   it("the notice text is the agreed one", () => {
-    expect(FULL_ACCESS_NOTICE.startsWith("Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files.")).toBe(true);
+    expect(FULL_ACCESS_NOTICE.startsWith("Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked.")).toBe(true);
   });
 });
 

@@ -118,7 +118,7 @@ describe("--install, --uninstall", () => {
     const on = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode", "--full-access"]), deps());
     expect(on.ok).toBe(true);
     expect(fs.readFileSync(plist, "utf8")).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>\s*<string>--full-access<\/string>/);
-    expect(on.message).toContain("Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files. Turn it off: run the install line again without --full-access.");
+    expect(on.message).toContain("Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: run the install line again without --full-access.");
     const off = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode"]), deps());
     expect(off.ok).toBe(true);
     expect(fs.readFileSync(plist, "utf8")).not.toContain("--full-access");

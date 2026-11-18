@@ -641,7 +641,7 @@ export const PROJECT_NPMRC_TEXT = "install-links=true\n";
 /** The vendoring and .npmrc sentences of a folder-mode code turn; the plain-commands one only where nobody can answer an approval (session). */
 const vendorSentences = (approval) => approval === "each-write" ? `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}` : `${GITHUB_ARCHIVE_SENTENCE} ${PLAIN_COMMANDS_SENTENCE} ${NPMRC_SENTENCE}`;
 /** Printed by a start and by --install when --full-access is on. */
-export const FULL_ACCESS_NOTICE = "Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files. Turn it off: run the install line again without --full-access.";
+export const FULL_ACCESS_NOTICE = "Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: run the install line again without --full-access.";
 /** Windows has no sandbox here: computer mode there asks about every call. */
 export const FULL_ACCESS_NOTICE_WINDOWS = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Windows has no sandbox here, so every call is asked in the chat. Turn it off: run the install line again without --full-access.";
 const computerProjectParagraph = (project, p, folder) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
@@ -774,6 +774,8 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
 }
 /** Where `~/.gilb-claude-code-bridge*` begins: the bridge's state folder, its file and any other install's folder. */
 const BRIDGE_STATE_PREFIX = ".gilb-claude-code-bridge";
+/** The connector's keys and script (`~/.gilb-connector*`): unreadable and unwritable in a sandboxed turn. */
+const CONNECTOR_PREFIX = ".gilb-connector";
 /**
  * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folder, the bridge's own files and
  * state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
@@ -781,10 +783,10 @@ const BRIDGE_STATE_PREFIX = ".gilb-claude-code-bridge";
  */
 export function protectedPlaces(home, extra = [], readdir = (p) => fs.readdirSync(p)) {
     const j = (...p) => path.join(home, ...p);
-    const list = [j(".ssh"), j("Developer", ".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains")];
+    const list = [j(".ssh"), j("Developer", ".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains"), j(".claude.json"), j(CONNECTOR_PREFIX)];
     try {
         for (const e of readdir(home))
-            if (e.startsWith(BRIDGE_STATE_PREFIX))
+            if (e.startsWith(BRIDGE_STATE_PREFIX) || e.startsWith(CONNECTOR_PREFIX))
                 list.push(j(e));
     }
     catch {
@@ -864,8 +866,9 @@ export function protectedHit(raw, o) {
         const rel = lowerIf(o.ci, real);
         if (rel.startsWith(`${prefixHome}/`)) {
             const first = rel.slice(prefixHome.length + 1).split("/")[0] ?? "";
-            if (first.startsWith(lowerIf(o.ci, BRIDGE_STATE_PREFIX)))
-                return path.join(home, BRIDGE_STATE_PREFIX) + "*";
+            for (const pre of [BRIDGE_STATE_PREFIX, CONNECTOR_PREFIX])
+                if (first.startsWith(lowerIf(o.ci, pre)))
+                    return path.join(home, pre) + "*";
         }
     }
     return null;
@@ -932,6 +935,70 @@ export function globHitsProtected(pattern, o) {
     }
     return null;
 }
+/** Places a sandboxed command may not WRITE although they sit inside a writable area: the server-ops checkout. (Reads stay open.) */
+export function writeOnlyPlaces(home) {
+    return [path.join(home, "Developer", "GilbServerOps")];
+}
+/** Where a sandboxed turn may write: the code folder (the workspace root, which holds every project), ~/Developer, /tmp and the temp folders. Nothing else in home. */
+export function writableAreas(home, workspaceRoot, tmpDirs = []) {
+    return [workspaceRoot, path.join(home, "Developer"), "/tmp", ...tmpDirs];
+}
+const WRITE_PRUNE = new Set(["node_modules", ".git", ".npm-cache", "Library", ".Trash"]);
+/** Every existing `.claude` folder under these roots (settings and hooks that Claude Code would run outside the sandbox). Bounded: depth 6, 20000 entries. */
+export function claudeDirs(roots, max = 20000) {
+    const found = [];
+    let seen = 0;
+    const walk = (dir, depth) => {
+        if (depth > 6 || seen > max)
+            return;
+        let ents;
+        try {
+            ents = fs.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const e of ents) {
+            seen++;
+            if (!e.isDirectory())
+                continue;
+            const full = path.join(dir, e.name);
+            if (e.name === ".claude")
+                found.push(full);
+            else if (!WRITE_PRUNE.has(e.name))
+                walk(full, depth + 1);
+        }
+    };
+    for (const r of roots)
+        walk(r, 0);
+    return found;
+}
+/** Glob forms of the same rule, so a `.claude` folder made DURING the turn is covered too (checked live: see the README). */
+export function claudeGlobs(workspaceRoot, home) {
+    return [`${workspaceRoot}/**/.claude`, `${workspaceRoot}/**/.claude/**`, `${home}/Developer/**/.claude`, `${home}/Developer/**/.claude/**`];
+}
+/** Why a file tool may not WRITE this path (null = it may): outside the writable areas, a `.claude` settings or hooks place, or a write-only-protected place. Links are followed. */
+export function writeBlock(raw, o, areas, writeOnly) {
+    if (raw.includes("\0"))
+        return "The path is not valid.";
+    const x = raw === "~" || raw.startsWith("~/") ? path.join(o.home, raw.slice(1)) : /^\$(?:\{HOME\}|HOME)(?=\/|$)/.test(raw) ? path.join(o.home, raw.replace(/^\$(?:\{HOME\}|HOME)/, "")) : raw;
+    const abs = path.isAbsolute(x) ? x : path.join(o.base, x);
+    const real = resolveThroughLinks(abs);
+    const lex = resolveThroughLinks(path.resolve(abs));
+    for (const c of [real, lex]) {
+        const segs = lowerIf(o.ci, c).split("/");
+        const last = segs[segs.length - 1] ?? "";
+        if (segs.includes(".claude") || last === ".claude.json" || last === ".mcp.json")
+            return "Claude Code settings and hooks cannot be written here (a .claude folder, .claude.json or .mcp.json).";
+        for (const w of writeOnly)
+            if (underPlace(o.ci, c, w) || underPlace(o.ci, c, resolveThroughLinks(w)))
+                return `This place is protected: ${w}.`;
+    }
+    const roots = areas.flatMap((a) => [a, resolveThroughLinks(a)]);
+    if (!roots.some((a) => underPlace(o.ci, real, a)) || !roots.some((a) => underPlace(o.ci, lex, a)))
+        return "Writes are allowed only in the code folder, ~/Developer and the temp folder.";
+    return null;
+}
 /**
  * Computer mode with the OS sandbox (0.3.13). Commands run with no question inside Claude Code's own sandbox (Seatbelt on macOS, bubblewrap
  * on Linux): they may write the home folder, the temp folders and the code folder, reach any host, and can neither read nor write the
@@ -939,7 +1006,7 @@ export function globHitsProtected(pattern, o) {
  * Glob and Grep; the short `ask` list sends sudo, security, launchctl, osascript and GilbServerOps ship/server commands to the person.
  */
 export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
-export function computerSandboxSettings(home, folder, places, tmpDirs = []) {
+export function computerSandboxSettings(home, folder, places, tmpDirs = [], extraWriteDeny = []) {
     const withReal = (list) => [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
     const deny = withReal(places);
     const ruleDeny = deny.flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
@@ -951,13 +1018,13 @@ export function computerSandboxSettings(home, folder, places, tmpDirs = []) {
             autoAllowBashIfSandboxed: true,
             network: { allowedDomains: ["*"] },
             filesystem: {
-                allowWrite: withReal([home, folder, "/tmp", ...tmpDirs]),
-                denyWrite: deny,
+                allowWrite: withReal(writableAreas(home, folder, tmpDirs)),
+                denyWrite: [...deny, ...withReal([...writeOnlyPlaces(home), ...extraWriteDeny])],
                 denyRead: deny,
             },
         },
         permissions: {
-            deny: ruleDeny,
+            deny: [...ruleDeny, ...withReal(writeOnlyPlaces(home)).flatMap((p) => [`Edit(/${p})`, `Edit(/${p}/**)`])],
             ask: [...ASKED_COMMAND_RULES],
             disableBypassPermissionsMode: "disable",
         },
@@ -1240,6 +1307,7 @@ export function createBridge(opts = {}) {
     const filesOnly = codePlatform === "win32" && !computer;
     /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). */
     const sandboxedComputer = computer && codePlatform !== "win32";
+    const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
     const sandboxedTurn = (t) => sandboxedComputer && t.code && t.approval === "session";
     const protectOpts = (t) => ({ home, places: protectedPlaces(home, opts.extraProtected ?? []), base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
@@ -1988,6 +2056,16 @@ export function createBridge(opts = {}) {
             if (k === "path" && (tool === "Glob" || tool === "Grep"))
                 root = path.resolve(po.base, expand(v));
         }
+        if (tool === "Edit" || tool === "Write" || tool === "MultiEdit" || tool === "NotebookEdit") {
+            for (const k of ["file_path", "notebook_path", "path"]) {
+                const v = input[k];
+                if (typeof v !== "string")
+                    continue;
+                const why = writeBlock(v, po, writableAreas(home, workspace?.path ?? home, sandboxTmpDirs()), writeOnlyPlaces(home));
+                if (why)
+                    return deny(why);
+            }
+        }
         if (tool === "Glob") {
             if (typeof input.pattern !== "string")
                 return deny("The pattern is not valid.");
@@ -2351,7 +2429,7 @@ export function createBridge(opts = {}) {
             "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, turn.proj?.path ?? workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
+            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
             "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
             "--system-prompt-snapshot", "off",
         ];
@@ -2482,7 +2560,7 @@ export function createBridge(opts = {}) {
                     cwd: turn.code && scope ? scope.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
                     // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-                    env: turn.code ? (computer ? childEnv(env) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
+                    env: turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });
