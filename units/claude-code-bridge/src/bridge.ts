@@ -378,6 +378,114 @@ export function codeChildEnv(env: NodeJS.ProcessEnv = process.env, platform: str
 // (claudeCodeBridgeFile({ defaultAllowedOrigins })) writes them into this one line when it serves or emits the file.
 export const DEFAULT_ALLOWED_ORIGINS: string[] = [];
 
+// Self-update (SU-1: the pure checks only; nothing here reads the network or writes a file). Like DEFAULT_ALLOWED_ORIGINS,
+// the source keeps both lines EMPTY and the host app's build writes them in: the address the manifest and the file are
+// fetched from, and the pinned public keys (32 raw bytes, base64). Each line must appear exactly once, as written.
+export const UPDATE_ORIGIN = "";
+export const UPDATE_KEYS: { id: string; key: string }[] = [];
+
+/** The manifest of one signed bridge file (`format` and `signature` are checked, then dropped). */
+export interface UpdateManifest { version: string; sha256: string; size: number; signedAt: string; minBridge?: string; keyId: string }
+export type UpdateVerdict = { ok: true; manifest: UpdateManifest } | { ok: false; code: string; message: string };
+
+const UPDATE_LABEL = "gilb-claude-code-bridge-update-v1";
+const UPDATE_MAX_BYTES = 5 * 1024 * 1024;
+const UPDATE_MAX_FUTURE_MS = 24 * 60 * 60 * 1000;
+/** DER prefix of an ed25519 SubjectPublicKeyInfo; the 32 raw key bytes follow. */
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+/**
+ * The exact text a bridge update signature covers (UTF-8, LF, no trailing newline). The fixed first line binds the
+ * signature to this purpose, so a signature made for anything else (e.g. an ontology snapshot) can never be replayed.
+ * When `minBridge` is absent the last line is `minBridge=` with nothing after the equals sign: the line is always
+ * present, so the signed text has one shape and an absent value cannot be confused with a dropped line.
+ */
+export function updateSignedText(m: { version: string; sha256: string; size: number; signedAt: string; minBridge?: string }): string {
+  return [UPDATE_LABEL, `version=${m.version}`, `sha256=${m.sha256}`, `size=${m.size}`, `signedAt=${m.signedAt}`, `minBridge=${m.minBridge ?? ""}`].join("\n");
+}
+
+/**
+ * Compares two dotted build numbers ("0.3.15"): -1, 0 or 1; null when either is not digits separated by dots. A missing
+ * part counts as 0, so "0.3" equals "0.3.0". (No equivalent helper existed in this file, so this is new.)
+ */
+export function compareBuilds(a: string, b: string): number | null {
+  if (typeof a !== "string" || typeof b !== "string") return null;
+  const shape = /^\d+(\.\d+)*$/;
+  if (!shape.test(a) || !shape.test(b)) return null;
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+const updateFail = (code: string, message: string): { ok: false; code: string; message: string } => ({ ok: false, code, message });
+const UPDATE_BAD_MSG = "The update information from the server could not be read. Try again later.";
+const UPDATE_SIG_MSG = "The update did not pass the signature check, so it was NOT installed. Your bridge is unchanged. Tell support.";
+
+/**
+ * Decides whether a downloaded manifest may be acted on. Pure: no network, no files. Order matters: the signature is
+ * checked BEFORE any version is compared, so an unsigned manifest learns nothing about versions.
+ * Codes: UpdateBad (shape, version, or a signing time more than 24 h ahead), UpdateOff (no pinned keys, or a pinned key
+ * that is not 32 bytes), UpdateSignature (unknown key id, wrong or unverifiable signature), UpdateCurrent (version not
+ * strictly higher than `running`; not an error, nothing is installed), UpdateTooOld (`minBridge` above `running`).
+ */
+export function verifyUpdateManifest(raw: unknown, ctx: { running: string; keys: { id: string; key: string }[]; now: Date }): UpdateVerdict {
+  // a. shape
+  const r = raw as Record<string, unknown> | null;
+  const isPlain = r !== null && typeof r === "object" && !Array.isArray(r) && (Object.getPrototypeOf(r) === Object.prototype || Object.getPrototypeOf(r) === null);
+  if (!isPlain) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  const { format, version, sha256, size, signedAt, minBridge, keyId, signature } = r;
+  if (format !== 1 || typeof version !== "string" || typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  if (typeof size !== "number" || !Number.isInteger(size) || size < 1 || size > UPDATE_MAX_BYTES) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  const isoShape = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+  if (typeof signedAt !== "string" || !isoShape.test(signedAt) || Number.isNaN(Date.parse(signedAt))) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  if (typeof keyId !== "string" || keyId === "" || typeof signature !== "string" || signature === "") return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  if (minBridge !== undefined && typeof minBridge !== "string") return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  const m: UpdateManifest = { version, sha256, size, signedAt, keyId, ...(minBridge !== undefined ? { minBridge } : {}) };
+  // b. keys
+  if (ctx.keys.length === 0) return updateFail("UpdateOff", "This bridge cannot update itself. Use the command below.");
+  // c. key id
+  const pinned = ctx.keys.find((k) => k.id === keyId);
+  if (!pinned) return updateFail("UpdateSignature", UPDATE_SIG_MSG);
+  // d. signature
+  const rawKey = Buffer.from(pinned.key, "base64");
+  if (rawKey.length !== 32) return updateFail("UpdateOff", "This bridge cannot update itself. Use the command below.");
+  let good = false;
+  try {
+    const publicKey = crypto.createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, rawKey]), format: "der", type: "spki" });
+    good = crypto.verify(null, Buffer.from(updateSignedText(m), "utf8"), publicKey, Buffer.from(signature, "base64"));
+  } catch {
+    good = false;
+  }
+  if (!good) return updateFail("UpdateSignature", UPDATE_SIG_MSG);
+  // e. strictly higher than the running build
+  const cmp = compareBuilds(version, ctx.running);
+  if (cmp === null) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  if (cmp <= 0) return updateFail("UpdateCurrent", "This bridge is already the newest.");
+  // f. minimum bridge
+  if (minBridge !== undefined) {
+    const floor = compareBuilds(minBridge as string, ctx.running);
+    if (floor === null) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+    if (floor > 0) return updateFail("UpdateTooOld", "This bridge is too old to update by itself. Use the command below.");
+  }
+  // g. signing time not in the future
+  if (Date.parse(signedAt) - ctx.now.getTime() > UPDATE_MAX_FUTURE_MS) return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  return { ok: true, manifest: m };
+}
+
+/** Whether downloaded bytes are the file the manifest describes: same length, same sha256, and the version it names inside. */
+export function fileMatchesManifest(bytes: Uint8Array, m: { version: string; sha256: string; size: number }): { ok: true } | { ok: false; code: "UpdateMismatch"; message: string } {
+  const bad = { ok: false as const, code: "UpdateMismatch" as const, message: "The downloaded file did not match what the server announced. Nothing was installed. Try again in a minute." };
+  if (bytes.length !== m.size) return bad;
+  if (crypto.createHash("sha256").update(bytes).digest("hex") !== m.sha256) return bad;
+  if (!Buffer.from(bytes).toString("utf8").includes(`BRIDGE_BUILD = "${m.version}"`)) return bad;
+  return { ok: true };
+}
+
 /**
  * The relay window (for Safari). Safari blocks an https page's fetch to http://127.0.0.1 as mixed content, so the page opens
  * this bridge-served window instead and talks to it by postMessage; this window's fetches are same-origin. One self-contained
