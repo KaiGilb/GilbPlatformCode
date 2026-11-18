@@ -1107,7 +1107,30 @@ export function claudeDirs(roots: readonly string[], max = 20000): string[] {
 }
 /** Glob forms of the same rule, so a `.claude` folder made DURING the turn is covered too (checked live: see the README). */
 export function claudeGlobs(workspaceRoot: string, home: string): string[] {
-  return [`${workspaceRoot}/**/.claude`, `${workspaceRoot}/**/.claude/**`, `${home}/Developer/**/.claude`, `${home}/Developer/**/.claude/**`];
+  return [workspaceRoot, `${home}/Developer`].flatMap((r) => [`${r}/.claude`, `${r}/.claude/**`, `${r}/**/.claude`, `${r}/**/.claude/**`]);
+}
+/** Git runs code from these on the person's next `git`: hooks; config (hooksPath, fsmonitor, sshCommand, pager, `!` aliases, filter and textconv drivers); info/attributes (selects the filters). They are denied for every repo that EXISTS when the turn starts. A deny glob on .git/config would also refuse `git init`, so none is used: a repo created during the turn is the documented gap. The rest of .git (index, objects, refs, COMMIT_EDITMSG) stays writable. */
+export function gitPlaces(roots: readonly string[], max = 20000): string[] {
+  const found: string[] = [];
+  let seen = 0;
+  const walk = (dir: string, depth: number) => {
+    if (depth > 6 || seen > max) return;
+    let ents: fs.Dirent[];
+    try {
+      ents = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of ents) {
+      seen++;
+      if (!e.isDirectory()) continue;
+      const full = path.join(dir, e.name);
+      if (e.name === ".git") found.push(path.join(full, "hooks"), path.join(full, "config"), path.join(full, "info", "attributes"));
+      else if (!WRITE_PRUNE.has(e.name)) walk(full, depth + 1);
+    }
+  };
+  for (const r of roots) walk(r, 0);
+  return found;
 }
 /** Why a file tool may not WRITE this path (null = it may): outside the writable areas, a `.claude` settings or hooks place, or a write-only-protected place. Links are followed. */
 export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[], writeOnly: readonly string[]): string | null {
@@ -1120,6 +1143,8 @@ export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[]
     const segs = lowerIf(o.ci, c).split("/");
     const last = segs[segs.length - 1] ?? "";
     if (segs.includes(".claude") || last === ".claude.json" || last === ".mcp.json") return "Claude Code settings and hooks cannot be written here (a .claude folder, .claude.json or .mcp.json).";
+    const gi = segs.indexOf(".git");
+    if (gi >= 0 && (segs[gi + 1] === "hooks" || segs[gi + 1] === "config" || (segs[gi + 1] === "info" && segs[gi + 2] === "attributes"))) return "Git hooks and config cannot be written here (.git/hooks, .git/config, .git/info/attributes).";
     for (const w of writeOnly) if (underPlace(o.ci, c, w) || underPlace(o.ci, c, resolveThroughLinks(w))) return `This place is protected: ${w}.`;
   }
   const roots = areas.flatMap((a) => [a, resolveThroughLinks(a)]);
@@ -2438,7 +2463,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
       "--system-prompt-snapshot", "off",
     ];

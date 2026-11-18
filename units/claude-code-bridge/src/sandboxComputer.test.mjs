@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, writeBlock, claudeDirs, claudeGlobs, writeOnlyPlaces, writableAreas, protectedPlaces, protectedHit, globHitsProtected, askedCommand, computerSandboxSettings, ASKED_COMMAND_RULES, FULL_ACCESS_NOTICE } from "../bridge/bridge.mjs";
+import { createBridge, gitPlaces, writeBlock, claudeDirs, claudeGlobs, writeOnlyPlaces, writableAreas, protectedPlaces, protectedHit, globHitsProtected, askedCommand, computerSandboxSettings, ASKED_COMMAND_RULES, FULL_ACCESS_NOTICE } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -27,6 +27,8 @@ async function start({ fullAccess = true, platform = "darwin", bridgeOpts = {}, 
   for (const d of [".ssh", "Developer/.base-deploy", ".gilb-claude-code-bridge", "Library/LaunchAgents", ".aws", ".gnupg", ".config/gh", "Library/Keychains"]) fs.mkdirSync(path.join(dir, d), { recursive: true });
   for (const d of ["Developer/GilbServerOps", "Developer/other/.claude", ".local/bin", ".local/share/fnm"]) fs.mkdirSync(path.join(dir, d), { recursive: true });
   fs.mkdirSync(path.join(dir, "MyCode", "p1", ".claude"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "MyCode", "p1", ".git", "hooks"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "Developer", "other", ".git"), { recursive: true });
   for (const f of [".claude.json", ".gilb-connector.mjs", ".zshrc", ".local/bin/claude", ".netrc", ".gilb-claude-code-bridge.mjs", ".ssh/id_rsa", "Developer/.base-deploy/key"]) fs.writeFileSync(path.join(dir, f), "SECRET");
   ws = path.join(dir, "MyCode");
   fs.mkdirSync(ws, { recursive: true });
@@ -111,6 +113,8 @@ describe("the settings of a sandboxed computer turn", () => {
     const dw = settings.sandbox.filesystem.denyWrite;
     expect(dw).toContain(path.join(dir, "Developer", "GilbServerOps"));
     expect(settings.sandbox.filesystem.denyRead).not.toContain(path.join(dir, "Developer", "GilbServerOps")); // write-only
+    for (const g of [path.join(ws, "p1", ".git"), path.join(dir, "Developer", "other", ".git")]) expect(dw).toEqual(expect.arrayContaining([path.join(g, "hooks"), path.join(g, "config"), path.join(g, "info", "attributes")]));
+    expect(dw).not.toContain(path.join(ws, "p1", ".git", "index")); // the rest of .git stays writable
     expect(dw).toEqual(expect.arrayContaining([path.join(ws, "p1", ".claude"), path.join(dir, "Developer", "other", ".claude"), `${ws}/**/.claude`, `${ws}/**/.claude/**`, `${dir}/Developer/**/.claude`]));
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${dir}/.ssh/**)`, `Edit(/${dir}/.ssh)`, `Read(/${dir}/.netrc)`]));
     expect(settings.permissions.ask).toEqual(ASKED_COMMAND_RULES);
@@ -298,6 +302,12 @@ describe("writes are allowed only in the code folder, ~/Developer and temp; .cla
       W(path.join(dir, ".claude.json")),
       W(path.join(dir, ".claude", "settings.json")),
       W(path.join(dir, "Developer", "GilbServerOps", "ship", "x.sh")),
+      W(path.join(ws, "p1", ".git", "hooks", "pre-commit")),
+      W(path.join(ws, "p1", ".git", "config")),
+      W(path.join(ws, "p1", ".git", "info", "attributes")),
+      W(path.join(dir, "Developer", "other", ".git", "hooks", "post-checkout")),
+      W(path.join(dir, "Developer", "other", ".GIT", "config")),
+      W(path.join(ws, "newrepo", ".git", "config")),
       F("Edit", { file_path: path.join(dir, ".zshrc"), old_string: "a", new_string: "b" }),
       F("MultiEdit", { file_path: path.join(dir, ".zshrc"), edits: [] }),
       F("NotebookEdit", { notebook_path: path.join(dir, "n.ipynb"), new_source: "x" }),
@@ -318,6 +328,11 @@ describe("writes are allowed only in the code folder, ~/Developer and temp; .cla
       F("Write", { file_path: path.join(os.tmpdir(), "b234-x.txt"), content: "x" }),
       F("Write", { file_path: "/tmp/b234-y.txt", content: "x" }),
       F("Edit", { file_path: path.join(ws, ".npm-cache", "z"), old_string: "a", new_string: "b" }),
+      F("Write", { file_path: path.join(ws, "p1", ".git", "COMMIT_EDITMSG"), content: "x" }), // normal git work
+      F("Write", { file_path: path.join(ws, "p1", ".git", "index"), content: "x" }),
+      F("Write", { file_path: path.join(ws, "p1", ".git", "refs", "heads", "main"), content: "x" }),
+      F("Write", { file_path: path.join(ws, "p1", ".gitattributes"), content: "x" }),
+      F("Read", { file_path: path.join(ws, "p1", ".git", "config") }),
       F("Read", { file_path: path.join(dir, ".zshrc") }),
       F("Read", { file_path: path.join(dir, ".local", "bin", "claude") }),
       F("Read", { file_path: path.join(ws, "p1", ".claude", "settings.json") }), // reading is not writing
@@ -350,7 +365,11 @@ describe("writes are allowed only in the code folder, ~/Developer and temp; .cla
       expect(writeBlock("a/b.ts", o, areas, writeOnlyPlaces(home))).toBeNull();
       expect(writeBlock("../x", o, areas, writeOnlyPlaces(home))).toMatch(/^Writes are allowed only/);
       expect(writeBlock("a/.claude/settings.json", o, areas, [])).toMatch(/\.claude/);
-      expect(claudeGlobs("/w", "/h")).toEqual(["/w/**/.claude", "/w/**/.claude/**", "/h/Developer/**/.claude", "/h/Developer/**/.claude/**"]);
+      fs.mkdirSync(path.join(home, "w", "r", ".git"), { recursive: true });
+      expect(gitPlaces([path.join(home, "w")])).toEqual([path.join(home, "w", "r", ".git", "hooks"), path.join(home, "w", "r", ".git", "config"), path.join(home, "w", "r", ".git", "info", "attributes")]);
+      expect(writeBlock("r/.git/config", o, areas, [])).toMatch(/Git hooks and config/);
+      expect(writeBlock("r/.git/index", o, areas, [])).toBeNull();
+      expect(claudeGlobs("/w", "/h")).toEqual(["/w/.claude", "/w/.claude/**", "/w/**/.claude", "/w/**/.claude/**", "/h/Developer/.claude", "/h/Developer/.claude/**", "/h/Developer/**/.claude", "/h/Developer/**/.claude/**"]);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
