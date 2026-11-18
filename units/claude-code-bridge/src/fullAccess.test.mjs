@@ -113,13 +113,13 @@ describe("computer mode arguments", () => {
       "--permission-mode", "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", "mcp__gilb__bridge_approve",
-      "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
+      "--settings", expect.any(String), // 0.3.13: the sandbox block (see sandboxComputer.test.mjs)
       "--append-system-prompt", `You are the agent.\n\nYou are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "MyCode" (${wsReal}). Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.\n\nBefore you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.`,
       "--system-prompt-snapshot", "off",
       "--session-id", expect.stringMatching(/^[0-9a-f-]{36}$/),
     ]);
     for (const f of ["--restricted", "--tools", "--disable-slash-commands", "--strict-mcp-config", "--system-prompt"]) expect(run.argv).not.toContain(f);
-    expect(JSON.stringify(run.argv)).not.toContain("sandbox");
+    expect(JSON.parse(run.argv[run.argv.indexOf("--settings") + 1]).sandbox.enabled).toBe(true);
     expect(fs.realpathSync.native(run.cwd)).toBe(wsReal);
   });
 
@@ -359,7 +359,7 @@ describe("hello", () => {
   });
 
   it("the notice text is the agreed one", () => {
-    expect(FULL_ACCESS_NOTICE.startsWith("Full computer access is ON: chat code turns can read and change anything your user can")).toBe(true);
+    expect(FULL_ACCESS_NOTICE.startsWith("Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files.")).toBe(true);
   });
 });
 

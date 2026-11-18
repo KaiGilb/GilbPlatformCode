@@ -118,7 +118,7 @@ describe("--install, --uninstall", () => {
     const on = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode", "--full-access"]), deps());
     expect(on.ok).toBe(true);
     expect(fs.readFileSync(plist, "utf8")).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>\s*<string>--full-access<\/string>/);
-    expect(on.message).toContain("Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.");
+    expect(on.message).toContain("Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files. Turn it off: run the install line again without --full-access.");
     const off = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode"]), deps());
     expect(off.ok).toBe(true);
     expect(fs.readFileSync(plist, "utf8")).not.toContain("--full-access");

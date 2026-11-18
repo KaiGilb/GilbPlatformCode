@@ -272,7 +272,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.12";
+export const BRIDGE_BUILD = "0.3.13";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -793,7 +793,9 @@ export const PROJECT_NPMRC_TEXT = "install-links=true\n";
 /** The vendoring and .npmrc sentences of a folder-mode code turn; the plain-commands one only where nobody can answer an approval (session). */
 const vendorSentences = (approval: "session" | "each-write") => approval === "each-write" ? `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}` : `${GITHUB_ARCHIVE_SENTENCE} ${PLAIN_COMMANDS_SENTENCE} ${NPMRC_SENTENCE}`;
 /** Printed by a start and by --install when --full-access is on. */
-export const FULL_ACCESS_NOTICE = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Anything Claude Code would ask you about is asked in the chat. Turn it off: run the install line again without --full-access.";
+export const FULL_ACCESS_NOTICE = "Full access: commands run without asking inside a sandbox that locks your keys and the bridge's own files. Turn it off: run the install line again without --full-access.";
+/** Windows has no sandbox here: computer mode there asks about every call. */
+export const FULL_ACCESS_NOTICE_WINDOWS = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Windows has no sandbox here, so every call is asked in the chat. Turn it off: run the install line again without --full-access.";
 const computerProjectParagraph = (project: string, p: string, folder: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
 const PROJECT_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this project folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 const computerParagraph = (name: string, p: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
@@ -922,6 +924,189 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
       disableBypassPermissionsMode: "disable",
     },
   };
+}
+
+/** Where `~/.gilb-claude-code-bridge*` begins: the bridge's state folder, its file and any other install's folder. */
+const BRIDGE_STATE_PREFIX = ".gilb-claude-code-bridge";
+
+/**
+ * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folder, the bridge's own files and
+ * state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
+ * permission rules both take them). `extra` only ADDS places (tests use it for fake ones); nothing here can be switched off.
+ */
+export function protectedPlaces(home: string, extra: readonly string[] = [], readdir: (p: string) => string[] = (p) => fs.readdirSync(p)): string[] {
+  const j = (...p: string[]) => path.join(home, ...p);
+  const list = [j(".ssh"), j("Developer", ".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains")];
+  try {
+    for (const e of readdir(home)) if (e.startsWith(BRIDGE_STATE_PREFIX)) list.push(j(e));
+  } catch {
+    /* an unreadable home leaves the fixed list */
+  }
+  list.push(...extra.filter((e) => typeof e === "string" && path.isAbsolute(e)));
+  return [...new Set(list)];
+}
+
+/** A path as the system would reach it: every link followed (a link whose target is missing resolves to where the target would be), `..` applied after the links. */
+export function resolveThroughLinks(p: string): string {
+  const parts = p.split("/").filter((x) => x !== "");
+  let cur = "/";
+  let hops = 0;
+  while (parts.length > 0) {
+    const seg = parts.shift()!;
+    if (seg === ".") continue;
+    if (seg === "..") {
+      cur = path.dirname(cur);
+      continue;
+    }
+    const next = path.join(cur, seg);
+    let target: string | null = null;
+    try {
+      if (fs.lstatSync(next).isSymbolicLink()) target = fs.readlinkSync(next);
+    } catch {
+      /* does not exist: kept as written */
+    }
+    if (target !== null) {
+      if (++hops > 40) return path.join(cur, seg, ...parts); // a loop: stop following, keep the rest
+      if (path.isAbsolute(target)) cur = "/";
+      parts.unshift(...target.split("/").filter((x) => x !== ""));
+    } else {
+      cur = next;
+    }
+  }
+  return cur;
+}
+
+export interface ProtectOpts {
+  home: string;
+  places: readonly string[];
+  /** The folder a relative path is resolved against (the turn's start folder). */
+  base: string;
+  /** Names are compared without case (macOS and Windows disks). */
+  ci: boolean;
+}
+const lowerIf = (ci: boolean, s: string) => (ci ? s.toLowerCase() : s);
+const underPlace = (ci: boolean, real: string, place: string) => {
+  const a = lowerIf(ci, real);
+  const b = lowerIf(ci, place);
+  return a === b || a.startsWith(b.endsWith("/") ? b : `${b}/`);
+};
+/** The protected place this path reaches (written plainly, through `~`, `$HOME`, `..` or a link, even a dangling one), or null. A path that cannot be read as one (a NUL byte) counts as protected: it is refused. */
+export function protectedHit(raw: string, o: ProtectOpts): string | null {
+  if (raw.includes("\0")) return raw;
+  const home = o.home;
+  const forms = new Set<string>();
+  const expand = (s: string) => {
+    if (s === "~" || s.startsWith("~/")) return path.join(home, s.slice(1));
+    const m = /^\$(?:\{HOME\}|HOME)(?=\/|$)/.exec(s);
+    return m ? path.join(home, s.slice(m[0].length)) : s;
+  };
+  const x = expand(raw);
+  const abs = path.isAbsolute(x) ? x : path.join(o.base, x);
+  forms.add(abs); // as written, links followed after `..` was applied to the real folders
+  forms.add(path.resolve(abs)); // after a plain lexical normalisation
+  const prefixHome = lowerIf(o.ci, resolveThroughLinks(home));
+  for (const f of forms) {
+    const real = resolveThroughLinks(f);
+    for (const cand of [f, path.resolve(f), real]) {
+      for (const place of o.places) {
+        const placeReal = resolveThroughLinks(place);
+        if (underPlace(o.ci, cand, place) || underPlace(o.ci, cand, placeReal) || underPlace(o.ci, real, placeReal) || underPlace(o.ci, real, place)) return place;
+      }
+    }
+    // `~/.gilb-claude-code-bridge*`: any name that starts so, directly in the home folder (also one that does not exist yet).
+    const rel = lowerIf(o.ci, real);
+    if (rel.startsWith(`${prefixHome}/`)) {
+      const first = rel.slice(prefixHome.length + 1).split("/")[0] ?? "";
+      if (first.startsWith(lowerIf(o.ci, BRIDGE_STATE_PREFIX))) return path.join(home, BRIDGE_STATE_PREFIX) + "*";
+    }
+  }
+  return null;
+}
+
+/** Does this Glob pattern name a protected place before any `**`? Absolute, `~` and `$HOME` patterns are read segment by segment; a pattern that starts with `**` is left to the permission deny rules. */
+export function globHitsProtected(pattern: string, o: ProtectOpts): string | null {
+  if (pattern.includes("\0")) return pattern;
+  let pat = pattern;
+  if (pat === "~" || pat.startsWith("~/")) pat = path.join(o.home, pat.slice(1));
+  else if (/^\$(?:\{HOME\}|HOME)(?=\/|$)/.test(pat)) pat = path.join(o.home, pat.replace(/^\$(?:\{HOME\}|HOME)/, ""));
+  const segs = (path.isAbsolute(pat) ? pat : path.join(o.base, pat)).split("/").filter((x) => x !== "");
+  if (!/[*?[\]{}]/.test(pat)) return protectedHit(pattern, o);
+  const segRe = (g: string) => {
+    let r = "";
+    for (let i = 0; i < g.length; i++) {
+      const c = g[i]!;
+      if (c === "*") r += "[^/]*";
+      else if (c === "?") r += "[^/]";
+      else if (c === "[") {
+        const e = g.indexOf("]", i + 1);
+        if (e < 0) r += "\\[";
+        else {
+          r += `[${g.slice(i + 1, e).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`;
+          i = e;
+        }
+      } else if (c === "{") {
+        const e = g.indexOf("}", i + 1);
+        if (e < 0) r += "\\{";
+        else {
+          r += `(?:${g.slice(i + 1, e).split(",").map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`;
+          i = e;
+        }
+      } else r += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+    return new RegExp(`^${r}$`, o.ci ? "i" : "");
+  };
+  for (const place of o.places) {
+    for (const pl of new Set([place, resolveThroughLinks(place)])) {
+      const ps = pl.split("/").filter((x) => x !== "");
+      let ok = true;
+      for (let i = 0; i < ps.length && ok; i++) {
+        const s = segs[i];
+        if (s === undefined) ok = false; // the pattern ends above the place: it names the folder at most
+        else if (s === "**") ok = false; // anything may follow: the deny rules decide
+        else if (!segRe(s).test(ps[i]!)) ok = false;
+      }
+      if (ok && segs.length > ps.length) return place; // a pattern that ends AT the place lists its name only
+    }
+  }
+  return null;
+}
+
+/**
+ * Computer mode with the OS sandbox (0.3.13). Commands run with no question inside Claude Code's own sandbox (Seatbelt on macOS, bubblewrap
+ * on Linux): they may write the home folder, the temp folders and the code folder, reach any host, and can neither read nor write the
+ * protected places, however the command is written. The permission rules are the second line for Claude Code's own file tools and for
+ * Glob and Grep; the short `ask` list sends sudo, security, launchctl, osascript and GilbServerOps ship/server commands to the person.
+ */
+export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
+export function computerSandboxSettings(home: string, folder: string, places: readonly string[], tmpDirs: readonly string[] = []) {
+  const withReal = (list: readonly string[]) => [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+  const deny = withReal(places);
+  const ruleDeny = deny.flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
+  return {
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+      autoAllowBashIfSandboxed: true,
+      network: { allowedDomains: ["*"] },
+      filesystem: {
+        allowWrite: withReal([home, folder, "/tmp", ...tmpDirs]),
+        denyWrite: deny,
+        denyRead: deny,
+      },
+    },
+    permissions: {
+      deny: ruleDeny,
+      ask: [...ASKED_COMMAND_RULES],
+      disableBypassPermissionsMode: "disable",
+    },
+  };
+}
+
+/** Is this Bash command one of the short list the person is asked about (second line only: the sandbox already blocks what they would do to a protected place)? */
+const ASKED_WORD = /(?:^|[;&|(`{\n]|\$\()\s*(?:(?:[A-Za-z_][A-Za-z0-9_]*=\S*|env|command|exec|nohup|time|timeout|caffeinate|arch|setsid|ionice|nice|xargs|builtin|sh|bash|zsh|-\S+|[0-9][0-9.]*[smhd]?|\S*\/)\s+)*["']?(?:\S*\/)?(?:sudo|security|launchctl|osascript)(?![A-Za-z0-9_.-])/;
+export function askedCommand(c: string): boolean {
+  return ASKED_WORD.test(c) || (/GilbServerOps/i.test(c) && /ship|server/i.test(c));
 }
 
 /** Fail closed: a code turn's init event may list only the code tools and this bridge's MCP tools, and no other permission mode. */
@@ -1188,6 +1373,8 @@ export interface BridgeOptions {
   which?: ((cmd: string) => boolean) | undefined;
   /** TEST-ONLY, undocumented: extra folders added to the sandbox's denyRead list (the probe uses it for its decoy secret folder). */
   extraDenyRead?: string[] | undefined;
+  /** TEST-ONLY, undocumented: absolute places ADDED to the protected list of a sandboxed computer-mode turn (fake keys for a live test). It can only add; the fixed list is always there. */
+  extraProtected?: string[] | undefined;
   /** How long an approval question waits for the person before it is denied (default APPROVAL_WAIT_MS). Tests make it short. */
   approvalWaitMs?: number | undefined;
   /** TEST-ONLY, undocumented: log the raw arguments object `bridge_approve` receives (the probe prints it). Off otherwise: it holds tool inputs. */
@@ -1222,6 +1409,10 @@ export function createBridge(opts: BridgeOptions = {}) {
   const codePlatform = opts.codePlatform ?? platform;
   const computer = opts.fullAccess === true;
   const filesOnly = codePlatform === "win32" && !computer;
+  /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). */
+  const sandboxedComputer = computer && codePlatform !== "win32";
+  const sandboxedTurn = (t: Turn) => sandboxedComputer && t.code && t.approval === "session";
+  const protectOpts = (t: Turn): ProtectOpts => ({ home, places: protectedPlaces(home, opts.extraProtected ?? []), base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
   /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
   const idOf = (p: string): string => {
     try {
@@ -1864,6 +2055,41 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
   const BUDGET_MSG = "This turn has used all its tool rounds. Tell the person what you did, and stop.";
 
+  /** Tools of Claude Code that touch no place by themselves (subagents and todo lists): they run unasked in a sandboxed computer turn; their own file and shell calls come here like any other. */
+  const SANDBOX_FREE_TOOLS = new Set(["TodoWrite", "BashOutput", "KillShell", "KillBash", "ExitPlanMode", "EnterPlanMode", "Task", "Agent", "TaskOutput", "TaskStop", "Skill", "SlashCommand", "ToolSearch"]);
+  /**
+   * 0.3.13, computer mode with the OS sandbox (approval `session`): what `bridge_approve` answers WITHOUT asking the person.
+   * A file tool is allowed unless a path it names is a protected place (read through `~`, `$HOME`, `..` and every link); a command is allowed
+   * (the sandbox, not this text, is what locks the protected places) unless it is on the short asked list; null = ask the person like each-write does.
+   */
+  function sandboxDecision(turn: Turn, tool: string, input: Record<string, unknown>): Record<string, unknown> | null {
+    const deny = (message: string) => ({ behavior: "deny", message });
+    const allow = () => ({ behavior: "allow", updatedInput: input });
+    const po = protectOpts(turn);
+    const expand = (raw: string) => (raw === "~" || raw.startsWith("~/") ? path.join(home, raw.slice(1)) : /^\$(?:\{HOME\}|HOME)(?=\/|$)/.test(raw) ? path.join(home, raw.replace(/^\$(?:\{HOME\}|HOME)/, "")) : raw);
+    let root = po.base;
+    for (const k of ["file_path", "notebook_path", "path"]) {
+      const v = input[k];
+      if (v === undefined) continue;
+      if (typeof v !== "string" || v === "") return deny("The path is not valid.");
+      const hit = protectedHit(v, po);
+      if (hit) return deny(`This place is protected: ${hit}.`);
+      if (k === "path" && (tool === "Glob" || tool === "Grep")) root = path.resolve(po.base, expand(v));
+    }
+    if (tool === "Glob") {
+      if (typeof input.pattern !== "string") return deny("The pattern is not valid.");
+      const hit = globHitsProtected(input.pattern, { ...po, base: root });
+      if (hit) return deny(`This place is protected: ${hit}.`);
+    }
+    if (tool === "Bash") {
+      if (input.dangerouslyDisableSandbox === true) return deny("Commands run only inside the sandbox on this computer.");
+      return askedCommand(typeof input.command === "string" ? input.command : "") ? null : allow();
+    }
+    if (tool === "Read" || tool === "Edit" || tool === "Write" || tool === "MultiEdit" || tool === "NotebookEdit" || tool === "Glob" || tool === "Grep") return allow();
+    if (SANDBOX_FREE_TOOLS.has(tool)) return allow();
+    return null;
+  }
+
   /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
   async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (opts.logApproveArgs) log(`bridge_approve raw arguments: ${JSON.stringify(args)}`);
@@ -1877,8 +2103,13 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (keyProblem.deny) return deny(keyProblem.deny);
     // Starting the sonnet-coder subagent changes nothing by itself; each write and command it then makes is asked like any other. No other subagent type may start.
     if (turn.delegate && SUBAGENT_TOOL_NAMES.includes(tool)) return input.subagent_type === "sonnet-coder" ? { behavior: "allow", updatedInput: input } : deny(ONLY_CODER_MSG);
-    if (computer) {
-      // Computer mode: every request is asked of the person, no automatic allow or deny by path.
+    const sandboxed = sandboxedTurn(turn);
+    if (sandboxed && tool !== "WebFetch" && tool !== "WebSearch") {
+      const d = sandboxDecision(turn, tool, input);
+      if (d) return d;
+    }
+    if (computer && !(sandboxed && (tool === "WebFetch" || tool === "WebSearch"))) {
+      // Computer mode (each-write, Windows, and what the sandbox leaves to the person): every request is asked of the person, no automatic allow or deny by path.
       let summary: string;
       let detail = "";
       let notice = "";
@@ -2142,7 +2373,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify({ permissions: { disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, turn.proj?.path ?? workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
       "--system-prompt-snapshot", "off",
     ];
@@ -2362,7 +2593,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         // Fail closed: an answer is shown only after an init event that proved the subscription. The one exception is a
         // result that says no turn ran (num_turns 0, e.g. a lost session to resume): nothing was billed, and the retry is checked itself.
         if (!initOk && result && !(result.num_turns === 0 && result.is_error === true && !sawInit)) refused = true;
-        const noStart = turn.code && !filesOnly && !computer && !sawInit && !initOk && !limitsRefused && !cwdRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
+        const noStart = turn.code && !filesOnly && (!computer || sandboxedTurn(turn)) && !sawInit && !initOk && !limitsRefused && !cwdRefused && /sandbox/i.test(`${stderr}\n${result && typeof result.result === "string" ? result.result : ""}`);
         if (noStart) {
           const lines = stderr.trim().split("\n").map((l) => l.trim()).filter(Boolean);
           const last = lines.length > 0 ? lines[lines.length - 1]! : String(result?.result ?? "").trim().split("\n").pop()!.trim();
@@ -2793,7 +3024,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -3581,7 +3812,7 @@ async function installWindows(opts: CliOptions, deps: ServiceDeps, ctx: { claude
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
   Remove it:              node ${cmd} --uninstall${flags}
-  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE}` : ""}`,
+  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE_WINDOWS}` : ""}`,
   };
 }
 
@@ -3960,7 +4191,7 @@ Gilb Claude Code bridge
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
   Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${cli.fullAccess ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
-${cli.fullAccess ? `  ${FULL_ACCESS_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${cli.fullAccess ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
+${cli.fullAccess ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${cli.fullAccess ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 
