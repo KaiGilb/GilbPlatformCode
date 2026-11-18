@@ -5000,6 +5000,16 @@ ${cli.fullAccess ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL
         process.on("SIGHUP", stop); // the console window was closed (Windows ends node about 10 seconds later)
     }
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Started as a program? Compare real paths: node gives import.meta.url the real path, while argv[1] keeps the symlink a person
+// (or a symlinked home or app folder) reached the file through.
+const isMain = (() => {
+    try {
+        return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+    }
+    catch {
+        return false;
+    }
+})();
+if (isMain) {
     main();
 }

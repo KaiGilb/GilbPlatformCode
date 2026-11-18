@@ -90,6 +90,7 @@ In tests, `@kaigilb/gilbplatformcode-claude-code-bridge/fake-claude.mjs` is a st
 ## What the host must supply
 
 - The origins its pages are served from: `defaultAllowedOrigins`. The bridge ships with none.
+- Self-update (optional): `updateOrigin` (an https origin, no path) and `updateKeys` (`[{ id, key }]`, `id` of a-z, 0-9, dash; `key` 32 raw bytes as base64). The plugin writes them into the `UPDATE_ORIGIN` and `UPDATE_KEYS` lines with `injectBridge(source, { allowedOrigins, updateOrigin, updateKeys })`, the one function that decides the served bytes (a signing script can call it too). Leave them out and that build cannot update itself.
 - The place the file is served from (the plugin does this under Vite's `base`), and the commands the person types, with the app's own address.
 - The page side that pairs with the bridge and relays tool calls. Not in this unit.
 - A person with Node 18 or newer and Claude Code logged in with a Claude subscription.
