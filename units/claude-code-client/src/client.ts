@@ -155,6 +155,8 @@ export interface BridgeOptions {
   images?: { maxCount: number; maxBytes: number; types: string[] };
   /** The web the agent may use in a code turn (bridge 0.3.12): `search` on or off; `fetch` "ask" (each page is asked about) or "off". Absent on an older bridge. */
   web?: { search: boolean; fetch: "ask" | "off" };
+  /** How a computer-mode bridge answers the agent's requests (bridge 0.3.13): `{ mode: "sandboxed" }` runs commands without asking inside the OS sandbox. Absent when it is not that (Windows, folder mode, an older bridge). */
+  approvals?: { mode: "sandboxed" };
 }
 
 /** One picture for a turn: base64 data (no `data:` prefix) and its type. */
@@ -1377,7 +1379,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
-        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown } | null | undefined;
+        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown; approvals?: unknown } | null | undefined;
         // Pictures (bridge 0.3.6): a count and a size that are whole positive numbers, and only the known types.
         const im = o && typeof o === "object" && o.images && typeof o.images === "object" ? (o.images as { maxCount?: unknown; maxBytes?: unknown; types?: unknown }) : null;
         const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
@@ -1386,6 +1388,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         // Web (bridge 0.3.12): a search flag and a fetch mode of "ask" or "off"; anything else leaves it off.
         const wb = o && typeof o === "object" && o.web && typeof o.web === "object" ? (o.web as { search?: unknown; fetch?: unknown }) : null;
         const web = wb && typeof wb.search === "boolean" && (wb.fetch === "ask" || wb.fetch === "off") ? { search: wb.search, fetch: wb.fetch as "ask" | "off" } : null;
+        // Approvals (bridge 0.3.13): only { mode: "sandboxed" } is kept; anything else leaves it off.
+        const ap = o && typeof o === "object" && o.approvals && typeof o.approvals === "object" ? (o.approvals as { mode?: unknown }) : null;
+        const approvals = ap && ap.mode === "sandboxed" ? { mode: "sandboxed" as const } : null;
         // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
         const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
         const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
@@ -1399,7 +1404,10 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
           access: body.access === "folder" || body.access === "computer" ? body.access : null,
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
-          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}) } } : {}),
+          // `options` is also returned when the hello has only `web` or `approvals`: models and efforts are then empty.
+          ...((models && efforts) || web || approvals
+            ? { options: { models: models ?? [], efforts: efforts ?? [], delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}), ...(approvals ? { approvals } : {}) } }
+            : {}),
         };
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };

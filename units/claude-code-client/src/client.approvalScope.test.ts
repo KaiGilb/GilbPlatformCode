@@ -120,4 +120,27 @@ describe("approval scope (bridge 0.3.12)", () => {
     hello(base);
     expect((await client.bridgeInfo()).options).not.toHaveProperty("web");
   });
+  it("bridgeInfo keeps options.approvals only for mode sandboxed, and returns options when it is the only key", async () => {
+    const hello = (options: unknown) => fetchMock.mockImplementation(async () => json(200, { bridge: "gilb-claude-code-bridge", build: "0.3.13", options }));
+    const base = { models: ["opus"], efforts: ["low"], delegateCoding: true };
+    hello({ ...base, approvals: { mode: "sandboxed" } });
+    expect((await client.bridgeInfo()).options?.approvals).toEqual({ mode: "sandboxed" });
+    for (const approvals of [{ mode: "ask" }, { mode: 1 }, {}, "sandboxed", null, [], 5]) {
+      hello({ ...base, approvals });
+      expect((await client.bridgeInfo()).options).not.toHaveProperty("approvals");
+    }
+    hello(base);
+    expect((await client.bridgeInfo()).options).not.toHaveProperty("approvals");
+    // only approvals: options still comes back, with no models or efforts
+    hello({ approvals: { mode: "sandboxed" } });
+    expect((await client.bridgeInfo()).options).toEqual({ models: [], efforts: [], delegateCoding: false, approvals: { mode: "sandboxed" } });
+    // only web
+    hello({ web: { search: true, fetch: "ask" } });
+    expect((await client.bridgeInfo()).options).toEqual({ models: [], efforts: [], delegateCoding: false, web: { search: true, fetch: "ask" } });
+    // a malformed lone key, or no known key: no options at all (as before)
+    for (const o of [{ approvals: { mode: "ask" } }, { web: "x" }, {}, null]) {
+      hello(o);
+      expect(await client.bridgeInfo()).not.toHaveProperty("options");
+    }
+  });
 });
