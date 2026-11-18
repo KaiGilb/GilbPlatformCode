@@ -3,7 +3,11 @@
 import { describe, expect, it } from "vitest";
 import crypto from "node:crypto";
 import http from "node:http";
-import { fileMatchesManifest, realFetch, runUpdate, updateSignedText } from "../bridge/bridge.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { cleanForLog, fileMatchesManifest, realFetch, realFs, realSelfTest, runUpdate, selfTestEnv, updateCanWrite, updateSignedText } from "../bridge/bridge.mjs";
+import { removeTestDir } from "./testTeardown.mjs";
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
 const KEYS = [{ id: "bu1", key: publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") }];
@@ -17,7 +21,7 @@ const enc = (o) => new TextEncoder().encode(JSON.stringify(o));
 
 function signed(over = {}, key = privateKey) {
   const f = { version: "0.3.16", sha256: sha(NEW), size: NEW.length, signedAt: "2026-11-19T11:00:00Z", ...over };
-  return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText(f), "utf8"), key).toString("base64") };
+  return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText({ origin: ORIGIN, ...f }), "utf8"), key).toString("base64") };
 }
 
 function rig(opts = {}) {
@@ -42,7 +46,8 @@ function rig(opts = {}) {
       unlink: async (p) => { calls.push(["unlink", p]); files.delete(p); },
       writeFile: async (p, t, mode) => { calls.push(["writeFile", p, mode]); files.set(p, t); },
       realpath: async (p) => (opts.symlink ? "/elsewhere/bridge.mjs" : p),
-      lstat: async () => ({ isFile: () => true }),
+      lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
+      stat: async () => ({ uid: process.getuid?.() ?? 0, mode: 0o40755 }),
     },
     selfTest: async (p) => { calls.push(["selftest", p]); return opts.selfTest ?? { code: 0, stdout: "build 0.3.16\n" }; },
     ...opts.deps,
@@ -57,7 +62,7 @@ describe("runUpdate", () => {
     const { deps, calls, files } = rig();
     const r = await runUpdate(deps);
     expect(r).toEqual({ updated: true, from: "0.3.15", to: "0.3.16" });
-    expect(kinds(calls)).toEqual(["fetch", "fetch", "write", "selftest", "read", "copy", "rename", "writeFile"]);
+    expect(kinds(calls)).toEqual(["fetch", "fetch", "write", "selftest", "read", "read", "write", "rename", "rename", "writeFile"]);
     expect(calls[0][1]).toBe(ORIGIN + "/app/claude-code-bridge.json");
     expect(calls[1][1]).toBe(ORIGIN + "/app/claude-code-bridge.mjs");
     expect(calls[1][2].maxBytes).toBe(NEW.length + 1);
@@ -200,5 +205,102 @@ describe("realFetch", () => {
     } finally {
       await new Promise((r) => server.close(r));
     }
+  });
+});
+
+describe("SU-5a: can-write", () => {
+  const stat = (uid, mode) => async () => ({ uid, mode });
+  const lst = (link) => async () => ({ isFile: () => !link, isSymbolicLink: () => link });
+  const io = (over = {}) => ({ realpath: async (p) => p, lstat: lst(false), stat: stat(501, 0o40755), ...over });
+  const opts = { getuid: () => 501, platform: "darwin" };
+  it("L1 a good folder is true", async () => expect(await updateCanWrite(io(), FILE, opts)).toBe(true));
+  it("L1 the path the person ran being a symlink is false, and runUpdate says UpdateCannotWrite before any fetch", async () => {
+    expect(await updateCanWrite(io({ lstat: lst(true) }), FILE, opts)).toBe(false);
+    const { deps, calls } = rig({ deps: { runPath: "/home/u/link.mjs", fs: { ...rig().deps.fs, lstat: lst(true) } } });
+    expect(await runUpdate(deps)).toMatchObject({ code: "UpdateCannotWrite" });
+    expect(calls).toEqual([]);
+  });
+  it("L1 a folder writable by group or others, or owned by someone else, is false", async () => {
+    expect(await updateCanWrite(io({ stat: stat(501, 0o40775) }), FILE, opts)).toBe(false);
+    expect(await updateCanWrite(io({ stat: stat(501, 0o40757) }), FILE, opts)).toBe(false);
+    expect(await updateCanWrite(io({ stat: stat(502, 0o40755) }), FILE, opts)).toBe(false);
+    expect(await updateCanWrite(io({ stat: stat(501, 0o40700) }), FILE, opts)).toBe(true);
+  });
+  it("L1 Windows has no mode check, but the symlink check stays", async () => {
+    expect(await updateCanWrite(io({ stat: stat(0, 0o40777) }), FILE, { platform: "win32" })).toBe(true);
+    expect(await updateCanWrite(io({ lstat: lst(true) }), FILE, { platform: "win32" })).toBe(false);
+  });
+});
+
+describe("SU-5a: .prev by rename", () => {
+  it("L2 a symlink planted at .prev is replaced, never followed: the victim is untouched", async () => {
+    const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "su5a-prev-")));
+    try {
+      const home = path.join(dir, "home");
+      fs.mkdirSync(path.join(home, "state"), { recursive: true });
+      const file = path.join(home, "bridge.mjs");
+      fs.writeFileSync(file, OLD);
+      const victim = path.join(dir, "victim.txt");
+      fs.writeFileSync(victim, "PRECIOUS");
+      fs.symlinkSync(victim, file + ".prev");
+      const { deps } = rig();
+      const r = await runUpdate({ ...deps, file, stateDir: path.join(home, "state"), fs: realFs, runPath: undefined });
+      expect(r).toEqual({ updated: true, from: "0.3.15", to: "0.3.16" });
+      expect(fs.readFileSync(victim, "utf8")).toBe("PRECIOUS");
+      expect(fs.lstatSync(file + ".prev").isSymbolicLink()).toBe(false);
+      expect(fs.lstatSync(file + ".prev").isFile()).toBe(true);
+      expect(fs.readFileSync(file + ".prev")).toEqual(Buffer.from(OLD));
+      expect(fs.readFileSync(file)).toEqual(Buffer.from(NEW));
+      expect(fs.readdirSync(home).filter((n) => n.includes(".update-") || n.includes(".prev-"))).toEqual([]);
+    } finally {
+      await removeTestDir(dir);
+    }
+  });
+});
+
+describe("SU-5a: realFetch timeout", () => {
+  it("L4 on the time limit the socket is closed (the server sees it go) and the call fails", async () => {
+    let closed = false;
+    let sockets = 0;
+    const server = http.createServer((req, res) => {
+      sockets++;
+      res.writeHead(200);
+      const iv = setInterval(() => res.write(" "), 50);
+      res.on("close", () => { closed = true; clearInterval(iv); });
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      await expect(realFetch(`http://127.0.0.1:${server.address().port}/x`, { timeoutMs: 300, maxBytes: 1000 })).rejects.toThrow("timeout");
+      for (let i = 0; i < 100 && !closed; i++) await new Promise((r) => setTimeout(r, 20));
+      expect(sockets).toBe(1);
+      expect(closed).toBe(true);
+    } finally {
+      server.closeAllConnections?.();
+      await new Promise((r) => server.close(r));
+    }
+  });
+});
+
+describe("SU-5a: self-test environment and log text", () => {
+  it("L7a the self-test child gets no variable of the parent beyond PATH and HOME", async () => {
+    process.env.FOO_SECRET = "hunter2";
+    const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "su5a-env-")));
+    try {
+      const f = path.join(dir, "probe.mjs");
+      fs.writeFileSync(f, "console.log(process.env.FOO_SECRET === undefined ? 'absent' : 'LEAK'); console.log(Object.keys(process.env).sort().join(','));\n");
+      const r = await realSelfTest(f);
+      expect(r.code).toBe(0);
+      const [first, keys] = r.stdout.trim().split("\n");
+      expect(first).toBe("absent");
+      expect(keys.split(",").filter((k) => !["PATH", "HOME", "SystemRoot", "TEMP", "TMP", "__CF_USER_TEXT_ENCODING"].includes(k))).toEqual([]);
+      expect(selfTestEnv({ PATH: "/bin", HOME: "/h", FOO_SECRET: "x", ANTHROPIC_API_KEY: "k" })).toEqual({ PATH: "/bin", HOME: "/h" });
+    } finally {
+      delete process.env.FOO_SECRET;
+      await removeTestDir(dir);
+    }
+  });
+  it("L7b control characters are removed from logged values", () => {
+    expect(cleanForLog("0.3.16\u001b[31m\r\nEVIL\u007f\u0000")).toBe("0.3.16[31mEVIL");
+    expect(cleanForLog(12)).toBe("12");
   });
 });

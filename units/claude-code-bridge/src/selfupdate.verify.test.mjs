@@ -14,11 +14,12 @@ const bu2 = newKeys();
 const other = newKeys();
 const NOW = new Date("2026-11-19T12:00:00Z");
 const RUNNING = "0.3.15";
+const ORIGIN = "https://host.example.test";
 const KEYS = [{ id: "bu1", key: bu1.b64 }];
 const BASE = { version: "0.3.16", sha256: "a".repeat(64), size: 1000, signedAt: "2026-11-19T11:00:00Z", minBridge: "0.3.10" };
 
 function sign(fields, priv = bu1.privateKey, label) {
-  let text = updateSignedText(fields);
+  let text = updateSignedText({ origin: ORIGIN, ...fields });
   if (label) text = text.replace(/^[^\n]*/, label);
   return crypto.sign(null, Buffer.from(text, "utf8"), priv).toString("base64");
 }
@@ -26,7 +27,7 @@ function manifest(over = {}, signWith = bu1.privateKey, keyId = "bu1") {
   const f = { ...BASE, ...over };
   return { format: 1, ...f, keyId, signature: sign(f, signWith) };
 }
-const verify = (raw, over = {}) => verifyUpdateManifest(raw, { running: RUNNING, keys: KEYS, now: NOW, ...over });
+const verify = (raw, over = {}) => verifyUpdateManifest(raw, { running: RUNNING, keys: KEYS, now: NOW, origin: ORIGIN, ...over });
 const code = (r) => (r.ok ? "ok" : r.code);
 
 describe("verifyUpdateManifest", () => {
@@ -38,7 +39,7 @@ describe("verifyUpdateManifest", () => {
 
   it("V1b a manifest without minBridge is ok (signed with an empty minBridge line)", () => {
     const { minBridge, ...f } = BASE;
-    expect(updateSignedText(f).endsWith("\nminBridge=")).toBe(true);
+    expect(updateSignedText({ origin: ORIGIN, ...f }).endsWith("\nminBridge=")).toBe(true);
     expect(code(verify({ format: 1, ...f, keyId: "bu1", signature: sign(f) }))).toBe("ok");
   });
 
@@ -118,7 +119,7 @@ describe("verifyUpdateManifest", () => {
 
 describe("updateSignedText", () => {
   it("is the label then six fields, LF, no trailing newline", () => {
-    expect(updateSignedText(BASE)).toBe("gilb-claude-code-bridge-update-v1\nversion=0.3.16\nsha256=" + "a".repeat(64) + "\nsize=1000\nsignedAt=2026-11-19T11:00:00Z\nminBridge=0.3.10");
+    expect(updateSignedText({ origin: ORIGIN, ...BASE })).toBe("gilb-claude-code-bridge-update-v1\norigin=https://host.example.test\nversion=0.3.16\nsha256=" + "a".repeat(64) + "\nsize=1000\nsignedAt=2026-11-19T11:00:00Z\nminBridge=0.3.10");
   });
 });
 
@@ -157,5 +158,30 @@ describe("hardening", () => {
   });
   it("V7 a signed minBridge that is not dotted digits is UpdateBad", () => {
     expect(code(verify(manifest({ minBridge: "0.3.1\n" })))).toBe("UpdateBad");
+  });
+});
+
+describe("SU-5a signature rules", () => {
+  it("L5 a manifest signed for another origin is UpdateSignature", () => {
+    expect(code(verify(manifest(), { origin: "https://other.example.test" }))).toBe("UpdateSignature");
+    expect(code(verify(manifest()))).toBe("ok");
+  });
+  it("L5 a bridge with no origin cannot verify (UpdateOff)", () => {
+    expect(code(verify(manifest(), { origin: "" }))).toBe("UpdateOff");
+  });
+  it("L5 signedAt 401 days old is UpdateBad (too old to trust); 399 days is ok", () => {
+    const at = (days) => new Date(NOW.getTime() - days * 86400000).toISOString().replace(/\.\d+Z$/, "Z");
+    const old = verify(manifest({ signedAt: at(401) }));
+    expect(code(old)).toBe("UpdateBad");
+    expect(old.message).toContain("too old to trust");
+    expect(code(verify(manifest({ signedAt: at(399) })))).toBe("ok");
+  });
+  it("L6 a signature spelled any other way is UpdateSignature (unpadded, newline, trailing junk, wrong length)", () => {
+    const m = manifest();
+    const sig = m.signature;
+    expect(sig).toMatch(/^[A-Za-z0-9+/]{86}==$/);
+    for (const bad of [sig.replace(/=+$/, ""), sig.slice(0, 20) + "\n" + sig.slice(20), sig + "!!", sig + "\n", sig.replace(/\+/g, "-").replace(/\//g, "_").replace(/==$/, ""), sig.slice(0, 40) + "==", Buffer.alloc(63, 1).toString("base64")]) {
+      expect(code(verify({ ...m, signature: bad }))).toBe("UpdateSignature");
+    }
   });
 });

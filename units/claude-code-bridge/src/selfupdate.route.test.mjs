@@ -26,7 +26,7 @@ const OLD = new TextEncoder().encode("old");
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 function signed(version = "0.3.17") {
   const f = { version, sha256: sha(NEW), size: NEW.length, signedAt: new Date().toISOString() };
-  return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText(f), "utf8"), privateKey).toString("base64") };
+  return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText({ origin: ORIGIN, ...f }), "utf8"), privateKey).toString("base64") };
 }
 
 /** Fake update dependencies that record every call. */
@@ -49,7 +49,8 @@ function fakes(over = {}) {
       unlink: async (p) => { calls.push(["unlink", p]); files.delete(p); },
       writeFile: async (p, t) => { calls.push(["writeFile", p]); files.set(p, t); },
       realpath: async (p) => p,
-      lstat: async () => ({ isFile: () => true }),
+      lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
+      stat: async () => ({ uid: process.getuid?.() ?? 0, mode: 0o40755 }),
     },
     selfTest: async () => ({ code: 0, stdout: "build 0.3.17\n" }),
     ...over.deps,
@@ -88,7 +89,7 @@ const until = async (fn, ms = 10000) => {
   }
   throw new Error("timed out waiting");
 };
-const hello = async () => (await (await fetch(`${base}/v1/hello`)).json()).update;
+const hello = async (secret) => (await (await fetch(`${base}/v1/hello`, { headers: secret ? { "x-bridge-secret": secret } : {} })).json()).update;
 
 describe("POST /v1/update", () => {
   it("U1 no secret is 401; a wrong origin is 403", async () => {
@@ -167,30 +168,53 @@ describe("POST /v1/update", () => {
 
 describe("hello.update", () => {
   it("U7 supported follows origin and keys; busy is true while an update hangs", async () => {
-    await start();
-    expect((await hello()).supported).toBe(false);
+    let secret = await start();
+    expect((await hello(secret)).supported).toBe(false);
     await bridge.close();
     let release;
     const hold = new Promise((r) => { release = r; });
     const { d } = fakes({ hold });
-    const secret = await start({ updateDeps: d });
-    const h = await hello();
+    secret = await start({ updateDeps: d });
+    const h = await hello(secret);
     expect(h).toEqual({ supported: true, supervised: false, canWrite: true, busy: false });
     const pending = post(secret);
-    await until(async () => (await hello()).busy === true);
+    await until(async () => (await hello(secret)).busy === true);
     release();
     await pending;
-    expect((await hello()).busy).toBe(false);
+    expect((await hello(secret)).busy).toBe(false);
   });
 
   it("U7b empty keys or a non-https origin is not supported", async () => {
     const { d } = fakes({ deps: { keys: [] } });
-    await start({ updateDeps: d });
-    expect((await hello()).supported).toBe(false);
+    let secret = await start({ updateDeps: d });
+    expect((await hello(secret)).supported).toBe(false);
     await bridge.close();
     const e = fakes({ deps: { origin: "http://x.example.test" } });
-    await start({ updateDeps: e.d });
-    expect((await hello()).supported).toBe(false);
+    secret = await start({ updateDeps: e.d });
+    expect((await hello(secret)).supported).toBe(false);
+  });
+
+  it("L1 hello.canWrite is false for a symlinked run path and for a folder others can write; true for a good one", async () => {
+    const mk = (fsOver) => { const f = fakes(); return { ...f.d, fs: { ...f.d.fs, ...fsOver } }; };
+    let secret = await start({ updateDeps: mk({ lstat: async () => ({ isFile: () => false, isSymbolicLink: () => true }) }) });
+    expect((await hello(secret)).canWrite).toBe(false);
+    await bridge.close();
+    secret = await start({ updateDeps: mk({ stat: async () => ({ uid: process.getuid?.() ?? 0, mode: 0o40775 }) }) });
+    expect((await hello(secret)).canWrite).toBe(process.platform === "win32");
+    await bridge.close();
+    secret = await start({ updateDeps: mk({}) });
+    expect((await hello(secret)).canWrite).toBe(true);
+  });
+
+  it("L7c an unpaired hello (no secret, or a wrong one) has no update field; the rest is unchanged", async () => {
+    const { d } = fakes();
+    await start({ updateDeps: d });
+    for (const headers of [{}, { "x-bridge-secret": "0".repeat(64) }]) {
+      const body = await (await fetch(`${base}/v1/hello`, { headers })).json();
+      expect("update" in body).toBe(false);
+      expect(body.bridge).toBe("gilb-claude-code-bridge");
+      expect(body.build).toBe(BRIDGE_BUILD);
+    }
   });
 });
 
@@ -249,5 +273,102 @@ describe("service files", () => {
   it("P1 the LaunchAgent plist sets GILB_BRIDGE_SUPERVISED", () => {
     const text = buildPlist({ label: "com.x", node: "/n", file: "/f.mjs", pathEnv: "/bin", logFile: "/l", workDir: "/w" });
     expect(text).toContain("<key>GILB_BRIDGE_SUPERVISED</key>\n    <string>1</string>");
+  });
+});
+
+describe("SU-5a: no turn during an update, and a clean exit", () => {
+  const TOOLS = [{ name: "list_vaults", description: "d", inputSchema: { type: "object", properties: {} } }];
+  const startTurn = async (secret, prompt = "WAITFOREVER") => {
+    const ctl = new AbortController();
+    const res = await fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", tools: TOOLS, prompt }) });
+    return { res, ctl };
+  };
+  const turnCount = async (secret) => (await (await fetch(`${base}/v1/turns`, { method: "POST", headers: { "x-bridge-secret": secret } })).json()).turns.length;
+  const logRows = (file, event) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
+
+  it("M1a a turn is refused (409 UpdateRunning) while an update runs, and no claude child is started", async () => {
+    let release;
+    const hold = new Promise((r) => { release = r; });
+    const { d } = fakes({ hold });
+    const logFile = path.join(os.tmpdir(), `su5a-m1a-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    const secret = await start({ updateDeps: d, env: { FAKE_CLAUDE_LOG: logFile } });
+    const pending = post(secret);
+    await until(async () => (await hello(secret)).busy === true);
+    const t = await startTurn(secret, "hello");
+    expect(t.res.status).toBe(409);
+    expect(await t.res.json()).toEqual({ error: "The bridge is updating. Send your message again in a minute.", code: "UpdateRunning" });
+    expect(logRows(logFile, "run")).toEqual([]);
+    release();
+    await pending;
+    fs.rmSync(logFile, { force: true });
+  });
+
+  it("M1b a turn that exists when the update finishes defers the restart until it ends; then exit 75", async () => {
+    const exits = [];
+    const logFile = path.join(os.tmpdir(), `su5a-m1b-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    let turn;
+    const secret = await start({
+      env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
+      updateRestart: { pollMs: 20, capMs: 20000 },
+      exit: (c) => exits.push([c, bridge.server.listening]),
+      // the defended race: a turn exists although the route refuses new ones (the hook does not set the update flag)
+      updateRun: async () => {
+        turn = await startTurn(secret);
+        await until(async () => (await turnCount(secret)) > 0);
+        await until(() => logRows(logFile, "run").length > 0); // the child has started and can log its SIGTERM
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.17" };
+      },
+    });
+    const r = await post(secret);
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.17", restart: "automatic" });
+    await new Promise((x) => setTimeout(x, 700));
+    expect(exits).toEqual([]); // still waiting: the turn runs
+    expect(await turnCount(secret)).toBe(1);
+    turn.ctl.abort(); // the turn ends
+    await until(() => exits.length > 0);
+    expect(exits).toEqual([[75, false]]);
+  });
+
+  it("M1b after the cap the running turn is stopped (its child gets SIGTERM), then exit 75", async () => {
+    const exits = [];
+    const logFile = path.join(os.tmpdir(), `su5a-cap-${process.pid}.log`);
+    fs.rmSync(logFile, { force: true });
+    const secret = await start({
+      env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
+      updateRestart: { pollMs: 20, capMs: 500 },
+      exit: (c) => exits.push([c, bridge.server.listening]),
+      updateRun: async () => {
+        const st = await startTurn(secret);
+        if (st.res.status !== 200) throw new Error("turn refused: " + st.res.status + " " + (await st.res.text()));
+        await until(async () => (await turnCount(secret)) > 0);
+        await until(() => logRows(logFile, "run").length > 0); // the child has started and can log its SIGTERM
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.17" };
+      },
+    });
+    await post(secret);
+    await until(() => exits.length > 0, 15000);
+    expect(exits).toEqual([[75, false]]);
+    await until(() => logRows(logFile, "sigterm").length > 0, 5000); // the child was told to stop
+    expect(logRows(logFile, "run")).toHaveLength(1); // and no second child was started
+  });
+
+  it("M1c the listener is closed through the bridge's close() before exit(75)", async () => {
+    const exits = [];
+    const { d } = fakes();
+    const secret = await start({ updateDeps: d, env: { GILB_BRIDGE_SUPERVISED: "1" }, exit: (c) => exits.push([c, bridge.server.listening]) });
+    const r = await post(secret);
+    expect(r.json.restart).toBe("automatic");
+    await until(() => exits.length > 0);
+    expect(exits).toEqual([[75, false]]);
+  });
+
+  it("M1a also holds between the answer and the exit: a turn sent then is refused", async () => {
+    const { d } = fakes();
+    const secret = await start({ updateDeps: d, env: { GILB_BRIDGE_SUPERVISED: "1" }, updateRestart: { pollMs: 20 }, exit: () => {} });
+    await post(secret);
+    const t = await startTurn(secret, "hello").catch((e) => ({ err: e }));
+    if (t.res) expect(t.res.status).toBe(409);
   });
 });

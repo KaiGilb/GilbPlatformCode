@@ -1406,7 +1406,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
 
     async bridgeInfo() {
       try {
-        const res = await bridgeRequest("/v1/hello", { method: "GET" });
+        // The pairing secret goes along when there is one: since bridge 0.3.16 only a paired caller is told `update`.
+        const conn = client.load();
+        const res = await bridgeRequest("/v1/hello", { method: "GET", ...(conn ? { headers: { "x-bridge-secret": conn.secret } } : {}) });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown };
         // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
