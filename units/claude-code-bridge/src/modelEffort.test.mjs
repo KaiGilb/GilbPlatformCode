@@ -278,7 +278,7 @@ describe("delegateCoding", () => {
     await turn(secret, { mode: "code", delegateCoding: true });
     const argv = runs()[0].argv;
     expect(JSON.parse(after(argv, "--agents"))["sonnet-coder"].tools).toEqual(FILES_ONLY_TOOLS);
-    expect(after(argv, "--tools")).toBe([...FILES_ONLY_TOOLS, ...WEB_TOOLS, "Agent"].join(","));
+    expect(after(argv, "--tools")).toBe([...FILES_ONLY_TOOLS, "Agent"].join(","));
   });
 
   it("computer mode: the subagent has no tools key (it inherits), there is no --tools, and the sentence is appended", async () => {

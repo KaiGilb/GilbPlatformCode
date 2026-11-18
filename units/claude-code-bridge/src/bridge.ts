@@ -901,7 +901,7 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
   const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
   if (platform === "win32") {
     // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-    return { permissions: { deny: [...agentDeny], disableBypassPermissionsMode: "disable" } };
+    return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
   }
   // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
   const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
@@ -929,7 +929,7 @@ function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "sessi
   if (computer) return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits"); // no tool-list check: Claude Code has its own tools
   if (!Array.isArray(ev.tools)) return false; // fail closed: a tool list that is not an array is not checked
   const tools = ev.tools;
-  const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...WEB_TOOLS, ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
+  const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : [...CODE_TOOLS, ...WEB_TOOLS]), ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
   if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__")))) return false;
   // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
   return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
@@ -1521,7 +1521,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (method === "ping") return ok({});
     // Every code turn has the bridge's approval tool: a folder turn's WebFetch is asked in both approval settings.
-    const askingTurn = turn.code;
+    const askingTurn = turn.code && (computer || turn.approval === "each-write" || !filesOnly);
     if (method === "tools/list") {
       return ok({
         tools: [
@@ -1665,7 +1665,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           if (entry.answered) return;
           entry.answered = true;
           if (timer !== undefined) clearTimeout(timer);
-          const sc: WebScope = allow ? scope : "once"; // a deny has no reach
+          const sc: WebScope = allow && scopes?.includes(scope) ? scope : "once"; // a deny has no reach; neither has a scope the question did not offer
           turn.send("approval_done", { id, allow, ...(scopes ? { scope: sc } : {}) });
           resolve({ allow, message, scope: sc });
         },
@@ -1793,8 +1793,43 @@ export function createBridge(opts: BridgeOptions = {}) {
   const TOO_LONG_PATH = "The path is too long to show for approval.";
   const TOO_LONG_REQUEST = "The request is too long to show for approval; ask for it in smaller steps.";
 
+  /** Is this host the person's own computer or local network? `host` is the URL parser's hostname (IPv4 forms already decoded to dotted decimal). */
+  const v4Local = (a: number, b: number) => a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  const isOwnNetworkHost = (hostname: string): boolean => {
+    let h = hostname.toLowerCase().replace(/\.$/, "");
+    if (h.startsWith("[") && h.endsWith("]")) {
+      h = h.slice(1, -1);
+      const sides = h.split("::");
+      if (sides.length > 2) return true;
+      const parse = (x: string) => (x === "" ? [] : x.split(":"));
+      let l = parse(sides[0]!);
+      let r = sides.length === 2 ? parse(sides[1]!) : [];
+      const exp = (g: string[]) => g.flatMap((x) => (x.includes(".") ? (() => { const q = x.split(".").map(Number); return [((q[0]! << 8) | q[1]!).toString(16), ((q[2]! << 8) | q[3]!).toString(16)]; })() : [x]));
+      l = exp(l);
+      r = exp(r);
+      if (sides.length === 1 && l.length !== 8) return true;
+      if (l.length + r.length > 8) return true;
+      const g = [...l, ...Array(8 - l.length - r.length).fill("0"), ...r].map((x) => parseInt(x, 16));
+      if (g.some((x) => !Number.isFinite(x))) return true;
+      if (g.every((x) => x === 0) || (g.slice(0, 7).every((x) => x === 0) && g[7] === 1)) return true; // :: and ::1
+      if ((g[0]! & 0xffc0) === 0xfe80 || (g[0]! & 0xffc0) === 0xfec0 || (g[0]! & 0xfe00) === 0xfc00 || (g[0]! & 0xff00) === 0xff00) return true; // link-local, site-local, fc00::/7, multicast
+      const embedded = (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && (g[5] === 0xffff || g[5] === 0)) || (g[0] === 0x64 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0);
+      if (embedded && v4Local(g[6]! >> 8, g[6]! & 255)) return true; // IPv4-mapped / compatible / NAT64
+      return false;
+    }
+    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+    if (m) return v4Local(Number(m[1]), Number(m[2]));
+    if (!h.includes(".")) return true; // single label (a name on this network)
+    return /\.(local|localhost|internal|lan|localdomain|intranet|home\.arpa)$/.test(h);
+  };
+  /** An IP written in a form other than plain dotted decimal (a bare decimal, octal or hex number): asked once, like a local host, so a look-alike cannot slip past. */
+  const oddIpForm = (rawUrl: string, hostname: string): boolean => {
+    const raw = /^[A-Za-z][A-Za-z0-9+.-]*:[\\/]*([^\\/?#]*)/.exec(rawUrl)?.[1]?.replace(/:\d*$/, "") ?? "";
+    return /^\d+\.\d+\.\d+\.\d+$/.test(hostname) && raw.toLowerCase() !== hostname;
+  };
+  const LOCAL_NOTICE = " \u2014 this computer or your local network";
   /** The WebFetch display, shared by every mode: the URL shown (non-ASCII as <U+XXXX>) with a `Host:` notice, or a denial message. */
-  const webFetchView = (input: Record<string, unknown>): { deny: string } | { summary: string; notice: string } => {
+  const webFetchView = (input: Record<string, unknown>): { deny: string } | { summary: string; notice: string; local: boolean; origin: string; rest: string } => {
     const t = typeof input.url === "string" ? input.url : "";
     if (hasHidden(t)) return { deny: HIDDEN_MSG };
     const summary = showCommand(t) || "WebFetch";
@@ -1810,8 +1845,24 @@ export function createBridge(opts: BridgeOptions = {}) {
     const line = `Host: ${host}`;
     if (line.length > HOST_LINE_MAX) return { deny: TOO_LONG_ADDRESS };
     if (summary.length > APPROVAL_COMMAND_MAX) return { deny: TOO_LONG_REQUEST };
-    return { summary, notice: line };
+    const local = isOwnNetworkHost(host) || oddIpForm(t, host);
+    const u2 = new URL(t);
+    return { summary, notice: local ? `${line}${LOCAL_NOTICE}` : line, local, origin: `${u2.protocol}//${u2.host}`, rest: escapeNonAscii(u2.pathname + u2.search + u2.hash) };
   };
+  /** The `activity` text of a web call: the URL as shown; over the cap, the scheme and host stay whole and the rest is cut. */
+  const webActivity = (view: { summary: string; origin: string; rest: string }): string => (view.summary.length <= SUMMARY_CAP ? view.summary : `${view.origin}${cap(view.rest, Math.max(SUMMARY_CAP - view.origin.length, 2))}`);
+  /** One more tool call against the turn's budget. False (and the page told, once) when it is spent. */
+  function spendToolCall(turn: Turn): boolean {
+    turn.root.calls += 1;
+    if (turn.root.calls <= maxToolCalls) return true;
+    const root = personTurn(turn);
+    if (!root.budgetSpent) {
+      root.budgetSpent = true;
+      root.send("budget_spent", { type: "budget_spent", maxToolCalls });
+    }
+    return false;
+  }
+  const BUDGET_MSG = "This turn has used all its tool rounds. Tell the person what you did, and stop.";
 
   /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
   async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1890,7 +1941,13 @@ export function createBridge(opts: BridgeOptions = {}) {
       return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
     // Folder mode on the web (0.3.12): a search is free; a page is always asked, once or for the rest of this turn.
-    if (tool === "WebSearch") return { behavior: "allow", updatedInput: input };
+    if (tool === "WebSearch") {
+      if (!spendToolCall(turn)) return deny(BUDGET_MSG);
+      const q = showCommand(str(input.query));
+      noteActivity(turn, cap(q || tool), false);
+      turn.send("activity", { tool, summary: cap(q || tool) });
+      return { behavior: "allow", updatedInput: input };
+    }
     if (tool === "WebFetch") {
       if (hasHidden(str(input.description))) return deny(HIDDEN_MSG);
       const view = webFetchView(input);
@@ -1898,11 +1955,19 @@ export function createBridge(opts: BridgeOptions = {}) {
       let notice = view.notice;
       if (keyProblem.ctor) notice = `${notice}\n${CTOR_NOTICE}`;
       if (notice.length > NOTICE_MAX) return deny(TOO_LONG_ADDRESS);
-      if (turn.webTurnGrant) return { behavior: "allow", updatedInput: input }; // the display denials above still applied
-      const a = await askPerson(turn, tool, view.summary, "", notice, WEB_SCOPES);
+      const runs = (): Record<string, unknown> => {
+        // A page that runs is always shown to the person, and counts against the turn's tool budget.
+        if (!spendToolCall(turn)) return deny(BUDGET_MSG);
+        noteActivity(turn, cap(view.summary), false);
+        turn.send("activity", { tool, summary: webActivity(view) });
+        return { behavior: "allow", updatedInput: input };
+      };
+      // A local or private host is asked every time, once only: a turn grant never covers it. Other pages: the display denials above still applied.
+      if (turn.webTurnGrant && !view.local) return runs();
+      const a = await askPerson(turn, tool, view.summary, "", notice, view.local ? ["once"] : WEB_SCOPES);
       if (!a.allow) return deny(a.message);
       if (a.scope === "turn") turn.webTurnGrant = true;
-      return { behavior: "allow", updatedInput: input };
+      return runs();
     }
     // A session turn cannot ask the person anything else: what Claude Code would ask about is refused.
     if (turn.approval === "session") return deny("Nobody can answer here, so this is refused.");
@@ -2100,22 +2165,22 @@ export function createBridge(opts: BridgeOptions = {}) {
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--tools", [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...WEB_TOOLS, ...(turn.delegate ? [SUBAGENT_TOOL] : [])].join(","),
+      "--tools", [...(filesOnly ? FILES_ONLY_TOOLS : [...CODE_TOOLS, ...WEB_TOOLS]), ...(turn.delegate ? [SUBAGENT_TOOL] : [])].join(","),
       "--restricted",
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcp),
       "--allowedTools", "mcp__gilb",
       // session: edits are accepted; the bridge's own tool answers every other ask (only a WebFetch is put to the person; the rest is refused). each-write: `manual` asks, and the bridge's own tool answers.
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
-      "--permission-prompts", "host",
-      "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
+      "--permission-prompts", turn.approval === "each-write" || !filesOnly ? "host" : "none",
+      ...(turn.approval === "each-write" || !filesOnly ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
       "--disable-slash-commands",
       "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
-        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${WEB_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
-        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} ${WEB_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
+        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
+        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -2158,7 +2223,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (!Array.isArray(content)) return;
     for (const b of content as Array<Record<string, unknown>>) {
       if (!b || typeof b !== "object") continue;
-      if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__")) {
+      if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__") && !(!computer && (b.name === "WebFetch" || b.name === "WebSearch"))) { // folder mode: bridge_approve shows the URL or query itself
         const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, turnRoots(turn));
         if (typeof b.id === "string") tracked.set(b.id, { tool: b.name, summary });
         noteActivity(turn, cap(summary), true);
@@ -2728,7 +2793,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(workspace ? { web: { search: !computer, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;

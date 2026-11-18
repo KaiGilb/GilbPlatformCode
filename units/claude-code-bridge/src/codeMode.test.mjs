@@ -156,7 +156,7 @@ describe("claude arguments", () => {
     expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure", "~/Library/Keychains", "/tmp/x"]));
     expect(s.permissions).toEqual({ deny: [], disableBypassPermissionsMode: "disable" });
     // Windows is files-only: no sandbox block at all, the permission rules stay.
-    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: [], disableBypassPermissionsMode: "disable" } });
+    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } });
   });
 });
 
