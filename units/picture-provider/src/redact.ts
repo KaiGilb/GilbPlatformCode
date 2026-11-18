@@ -1,6 +1,6 @@
 // The secret redactor. Every reason, log line and error text that leaves this unit passes through it, so a key never
-// reaches a log, a record or an answer: the whole key, any run of 8 or more of its characters, and its base64, base64url
-// and URL-encoded forms.
+// reaches a log, a record or an answer: the whole key, any run of 8 or more of its characters (also when split by spaces
+// or line breaks), and its base64, base64url, URL-encoded and hex forms.
 
 /** The shortest string treated as a secret. A shorter one would blank ordinary words. */
 export const MIN_SECRET_LENGTH = 12;
@@ -34,9 +34,10 @@ export function redactSecrets(text: string, secrets: readonly string[] = []): st
 /** The shortest run of a secret's characters that is redacted where it appears (Agent.Hacker L2). */
 export const MIN_FRAGMENT = 8;
 
-/** A secret as it may be echoed: itself, base64, base64url and URL-encoded. */
+/** A secret as it may be echoed: itself, base64, base64url, URL-encoded and hex. */
 function encodings(sec: string): string[] {
-  const out = [sec, encodeURIComponent(sec)];
+  const hex = [...new TextEncoder().encode(sec)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const out = [sec, encodeURIComponent(sec), hex];
   try {
     const b64 = btoa(sec);
     out.push(b64, b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
@@ -59,11 +60,15 @@ function redactFragments(text: string, secrets: readonly string[]): string {
     }
   }
   if (grams.size === 0 || text.length < MIN_FRAGMENT) return text;
-  const low = text.toLowerCase();
+  // Matched on the text with its white space taken out, so a key split by spaces or line breaks is found too; each
+  // match covers the original span from its first to its last character (the white space between included).
+  const idx: number[] = [];
+  let compact = "";
+  for (let i = 0; i < text.length; i++) if (!/\s/.test(text[i]!)) { idx.push(i); compact += text[i]!.toLowerCase(); }
   const covered = new Uint8Array(text.length);
   let any = false;
-  for (let i = 0; i + MIN_FRAGMENT <= low.length; i++) {
-    if (grams.has(low.slice(i, i + MIN_FRAGMENT))) { covered.fill(1, i, i + MIN_FRAGMENT); any = true; }
+  for (let i = 0; i + MIN_FRAGMENT <= compact.length; i++) {
+    if (grams.has(compact.slice(i, i + MIN_FRAGMENT))) { covered.fill(1, idx[i]!, idx[i + MIN_FRAGMENT - 1]! + 1); any = true; }
   }
   if (!any) return text;
   let out = "";

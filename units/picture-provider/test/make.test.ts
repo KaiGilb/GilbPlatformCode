@@ -178,3 +178,13 @@ describe("the redactor removes fragments and encodings of the key (Agent.Hacker 
     expect(redactSecrets("an ordinary sentence about a lamp", [k])).toBe("an ordinary sentence about a lamp");
   });
 });
+
+describe("the redactor: hex and split forms of the key (QA R5 lead)", () => {
+  test("hex, spaced and line-split forms are removed", () => {
+    const hex = [...new TextEncoder().encode(KEY)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    expect(redactSecrets(`hex ${hex}`, [KEY])).toBe("hex [redacted]");
+    expect(redactSecrets(`spaced ${KEY.slice(0, 16).split("").join(" ")} end`, [KEY])).toBe("spaced [redacted] end");
+    expect(redactSecrets(`split ${KEY.slice(0, 12)}\n${KEY.slice(12, 24)} end`, [KEY])).toBe("split [redacted] end");
+    expect(redactSecrets("a cream lamp on a small round base", [KEY])).toBe("a cream lamp on a small round base");
+  });
+});

@@ -11,7 +11,7 @@ One picture from a picture-making service, recorded before and after the call. T
 - `pictureEgress(apiBase, outputHosts, fetch, { extraGuard, hostCheck })`: two guarded fetches. `api` reaches only api.wavespeed.ai (pinned) under the configured base; `output` reaches only the listed output hosts. Both hold the public-address rule (`addressProblem`: https, port 443, no IP address, no private, carrier-grade-NAT or local name, no hidden or host-changing character), then the app's `extraGuard`, then its async `hostCheck` (a DNS lookup where the runtime has one).
 - `addressGlobal`, `ipv4Global`, `ipv6Global`: whether a resolved address is public, for a `hostCheck`.
 - `pictureConfig(env, modelId)`: on or off, with one sentence why. No price for the model means no call.
-- `redactSecrets(text, secrets)`: removes keys, any run of 8 or more of their characters, their base64, base64url and URL-encoded forms, and Bearer values, from any text that leaves the unit.
+- `redactSecrets(text, secrets)`: removes keys, any run of 8 or more of their characters, their base64, base64url, URL-encoded and hex forms, a key split by spaces or line breaks, and Bearer values, from any text that leaves the unit.
 - `pngSize`, `imageBytesMatch`: checks the bytes by their magic numbers.
 
 Runs in Node 22 and in a Cloudflare Worker: `fetch`, `AbortSignal.timeout` and `URL` only.
@@ -25,7 +25,7 @@ Runs in Node 22 and in a Cloudflare Worker: `fetch`, `AbortSignal.timeout` and `
 
 ## How to take it
 
-Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.5.tgz`, then depend on it with `file:`.
+Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.6.tgz`, then depend on it with `file:`.
 
 ```ts
 import { makePicture } from "@kaigilb/gilbplatformcode-picture-provider";
