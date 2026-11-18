@@ -15,6 +15,7 @@ import {
   childEnv,
   createBridge,
   HOP_MAX_MS,
+  TURN_MAX_TOOL_CALLS,
   MAX_HANDOFFS_AT_ONCE,
   MCP_TOOL_TIMEOUT_MS,
   BRIDGE_BUILD,
@@ -852,6 +853,30 @@ describe("a hand-off to another agent is a nested turn on the same bridge", () =
 });
 
 describe("the page is told when the tool-call budget is spent", () => {
+  it("B1 the default budget is 600 tool calls for one message and its hand-offs", () => {
+    expect(TURN_MAX_TOOL_CALLS).toBe(600);
+  });
+
+  it("B2 by default the 241st tool call is relayed, not refused", async () => {
+    const { body } = await pair();
+    let relayed = 0;
+    let spent = 0;
+    const t = await turn(body.secret, { prompt: "CALLTOOL" }, async (_req, turnId) => {
+      relayed++;
+      for (let i = 0; i < 240; i++) {
+        const h = await hop(body.secret, turnId, { prompt: `CALLTOOL ${i}` }, async () => {
+          relayed++;
+          return { result: "{}", isError: false };
+        });
+        spent += h.events.filter((e) => e[0] === "budget_spent").length;
+      }
+      return { result: "{}", isError: false };
+    });
+    expect(relayed).toBe(241);
+    expect(spent).toBe(0);
+    expect(t.events.filter((e) => e[0] === "budget_spent")).toHaveLength(0);
+  }, 120000);
+
   it("a turn whose tool calls exceed a small budget gets one budget_spent event, and its final message carries budgetSpent", async () => {
     await bridge.close();
     await start({ bridgeOpts: { maxToolCalls: 0 } });
@@ -1393,7 +1418,7 @@ describe("hello reports the build", () => {
     const res = await fetch(`${base}/v1/hello`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.14", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.15", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });
