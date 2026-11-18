@@ -25,4 +25,4 @@ export {
   stampOp,
   stopsFlush,
 } from "./policy";
-export type { Failure, FailureTests, UploadSteps } from "./policy";
+export type { Failure, FailureTests, LinkFailure, UploadSteps } from "./policy";

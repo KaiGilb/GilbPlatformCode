@@ -69,6 +69,34 @@ describe("progressOf, the full-copy steps", () => {
   });
 });
 
+describe("progressOf, linkFailures", () => {
+  test("a non-empty list is carried", () => {
+    expect(progressOf(op({ linkFailures: [{ which: "thumb", message: "x" }] })).progress).toStrictEqual({ linkFailures: [{ which: "thumb", message: "x" }] });
+  });
+  test("an empty list is left out", () => {
+    expect(progressOf(op({ linkFailures: [] })).progress).toStrictEqual({});
+  });
+  test("the carried list is a copy", () => {
+    const o = op({ linkFailures: [{ which: "full", message: "m" }] });
+    const { progress } = progressOf(o);
+    expect(progress.linkFailures).not.toBe(o.linkFailures);
+    progress.linkFailures![0]!.message = "changed";
+    expect(o.linkFailures![0]!.message).toBe("m");
+  });
+  test("the 0.1.0 answer holds byte for byte with an empty linkFailures on the op", () => {
+    const o = op({ masterEntity: "m", thumbEntity: "t", thumbLinked: true, linkFailures: [] });
+    expect(JSON.stringify(progressOf(o).progress)).toBe(JSON.stringify(progressOf010(o)));
+  });
+  test("onProgress({ linkFailures }) lands on the op and in the store, and the next progressOf carries it", async () => {
+    const o = op({ id: "r4" });
+    const step = { linkFailures: [{ which: "full" as const, message: "m" }] };
+    await progressOf(o).onProgress(step);
+    expect(o.linkFailures).toEqual(step.linkFailures);
+    expect((await listOps()).find((x) => x.id === "r4")?.linkFailures).toEqual(step.linkFailures);
+    expect(progressOf(o).progress).toStrictEqual(step);
+  });
+});
+
 describe("the steps carry exactly what picture-set reports", () => {
   const keysOf = (src: string, typeName: string): string[] => {
     const m = new RegExp(`export type ${typeName} = \\{([^}]*)\\}`).exec(src);
@@ -83,7 +111,7 @@ describe("the steps carry exactly what picture-set reports", () => {
     expect(queueKeys).toEqual(setKeys);
   });
   test("progressOf carries every one of those keys when set", () => {
-    const all = Object.fromEntries(setKeys.map((k) => [k, k.endsWith("Entity") ? "e" : true]));
+    const all = Object.fromEntries(setKeys.map((k) => [k, k.endsWith("Entity") ? "e" : k === "linkFailures" ? [{ which: "full", message: "m" }] : true]));
     expect(Object.keys(progressOf(op(all)).progress).sort()).toEqual(setKeys);
   });
 });

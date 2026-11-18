@@ -21,8 +21,11 @@ export function classifyWith(e: unknown, tests: FailureTests): Failure {
   return "other";
 }
 
-/** The upload steps a queued op can hold. The last three belong to a full-size copy. */
-export type UploadSteps = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; masterLinked?: boolean; thumbRelinked?: boolean };
+/** A link to the full copy that did not land (same shape as picture-set's LinkFailure). The picture is stored; it is not tied to its record. */
+export type LinkFailure = { which: "full" | "thumb"; message: string };
+
+/** The six upload steps a queued op can hold (the last three belong to a full-size copy), plus `linkFailures`, the failed links of the last run. The key list must equal picture-set's `UploadProgress`. */
+export type UploadSteps = { masterEntity?: string; thumbEntity?: string; thumbLinked?: boolean; fullEntity?: string; masterLinked?: boolean; thumbRelinked?: boolean; linkFailures?: LinkFailure[] };
 
 /** Upload steps done so far go onto the op itself and into the queue, so a retry resumes where this stopped. */
 export const progressOf = (op: PendingOp) => ({
@@ -33,6 +36,7 @@ export const progressOf = (op: PendingOp) => ({
     ...(op.fullEntity ? { fullEntity: op.fullEntity } : {}),
     ...(op.masterLinked ? { masterLinked: true } : {}),
     ...(op.thumbRelinked ? { thumbRelinked: true } : {}),
+    ...(Array.isArray(op.linkFailures) && op.linkFailures.length > 0 ? { linkFailures: op.linkFailures.map((f) => ({ ...f })) } : {}),
   } as UploadSteps,
   onProgress: async (p: UploadSteps) => {
     Object.assign(op, p);
