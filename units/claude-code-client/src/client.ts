@@ -153,6 +153,8 @@ export interface BridgeOptions {
   delegateCoding: boolean;
   /** Pictures a turn may carry (bridge 0.3.6). Absent on an older bridge. */
   images?: { maxCount: number; maxBytes: number; types: string[] };
+  /** The web the agent may use in a code turn (bridge 0.3.12): `search` on or off; `fetch` "ask" (each page is asked about) or "off". Absent on an older bridge. */
+  web?: { search: boolean; fetch: "ask" | "off" };
 }
 
 /** One picture for a turn: base64 data (no `data:` prefix) and its type. */
@@ -221,7 +223,7 @@ export type ClaudeCodeStreamEvent =
   | { event: "code_tool_error"; data: { tool: string; summary: string; text: string }; hop?: true }
   | { event: "files_changed"; data: FilesChanged }
   | { event: "approval_request"; data: ApprovalRequest }
-  | { event: "approval_done"; data: { id: string; allow: boolean } };
+  | { event: "approval_done"; data: { id: string; allow: boolean; scope?: ApprovalScope } };
 
 /** What a code turn changed in the folder, as the bridge counted it. Each list holds at most 200 relative paths. */
 export interface FilesChanged {
@@ -234,6 +236,13 @@ export interface FilesChanged {
   truncated: boolean;
 }
 
+/** How far an allow reaches: "once" is this one request; "turn" is every request of this kind for the rest of the turn (bridge 0.3.12, web pages). */
+export type ApprovalScope = "once" | "turn";
+const APPROVAL_SCOPES: readonly string[] = ["once", "turn"];
+
+/** What an approval handler may resolve: a plain yes/no (true = allow once), or an answer that names the scope. A scope on a refusal is ignored. */
+export type ApprovalAnswer = boolean | { allow: boolean; scope?: ApprovalScope };
+
 /** One question the bridge puts to the person before a write or a command (approval "each-write"). */
 export interface ApprovalRequest {
   id: string;
@@ -243,6 +252,8 @@ export interface ApprovalRequest {
   detail?: string;
   /** The bridge's own lines about the request ("Host: …", "Path contains non-ASCII characters: …"), kept apart from the model's `detail`. Show it as the bridge's words, never as the model's. */
   notice?: string;
+  /** The scopes the bridge will take for an allow (bridge 0.3.12): ["once","turn"] or ["once"]. Absent on an older bridge: only a plain allow or refuse. */
+  scopes?: ApprovalScope[];
 }
 
 /** The bridge never cuts an approval question: it sends the whole summary (up to 200000 characters, the relay's practical size) or does not ask. The app shows a long summary folded; the person can open the whole text, and approving approves all of it. `detail` is only the model's description (200 at most); `notice` is the bridge's own text (400 at most). A longer one is dropped as malformed. */
@@ -253,6 +264,14 @@ const isStr = (v: unknown): v is string => typeof v === "string";
 const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 
+/** The known scopes of an approval_request, in the bridge's order and without repeats; null when none (absent, not a list, or nothing known). An unknown scope is dropped, never thrown. */
+function approvalScopes(v: unknown): ApprovalScope[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: ApprovalScope[] = [];
+  for (const x of v) if (isStr(x) && APPROVAL_SCOPES.includes(x) && !out.includes(x as ApprovalScope)) out.push(x as ApprovalScope);
+  return out.length ? out : null;
+}
+
 /** Turns one bridge code event into a stream event, or null when its shape is wrong. */
 function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeStreamEvent | null {
   if (name === "activity" && isStr(d.tool) && isStr(d.summary)) return { event: "code_activity", data: { tool: d.tool, summary: d.summary } };
@@ -260,8 +279,8 @@ function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeSt
   if (name === "files_changed" && isStrList(d.added) && isStrList(d.changed) && isStrList(d.removed) && isCount(d.addedCount) && isCount(d.changedCount) && isCount(d.removedCount) && typeof d.truncated === "boolean") {
     return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
   }
-  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && TOOL_NAME_OK.test(d.tool) && isStr(d.summary) && d.summary.length <= APPROVAL_SUMMARY_MAX && !(isStr(d.detail) && d.detail.length > APPROVAL_DETAIL_MAX) && !(isStr(d.notice) && d.notice.length > APPROVAL_NOTICE_MAX)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}), ...(isStr(d.notice) && d.notice !== "" ? { notice: d.notice } : {}) } };
-  if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow } };
+  if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && TOOL_NAME_OK.test(d.tool) && isStr(d.summary) && d.summary.length <= APPROVAL_SUMMARY_MAX && !(isStr(d.detail) && d.detail.length > APPROVAL_DETAIL_MAX) && !(isStr(d.notice) && d.notice.length > APPROVAL_NOTICE_MAX)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}), ...(isStr(d.notice) && d.notice !== "" ? { notice: d.notice } : {}), ...(approvalScopes(d.scopes) ? { scopes: approvalScopes(d.scopes)! } : {}) } };
+  if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow, ...(isStr(d.scope) && APPROVAL_SCOPES.includes(d.scope) ? { scope: d.scope as ApprovalScope } : {}) } };
   return null;
 }
 
@@ -372,10 +391,11 @@ export interface SendClaudeCodeOpts {
    */
   images?: ClaudeCodeImage[];
   /**
-   * Called when the bridge asks the person to approve a write or a command. Resolve true to allow. No handler, or a handler that
+   * Called when the bridge asks the person to approve a write or a command. Resolve true to allow (this request only), or
+   * `{ allow: true, scope: "turn" }` to allow every request of this kind for the rest of the turn (only when `req.scopes` lists "turn"). No handler, or a handler that
    * throws or rejects, answers "no". The turn keeps running while this waits.
    */
-  onApproval?: (req: ApprovalRequest) => Promise<boolean>;
+  onApproval?: (req: ApprovalRequest) => Promise<ApprovalAnswer>;
   /**
    * Aborting closes the stream to the bridge, which stops Claude Code for this turn. The returned promise then rejects with a
    * ClaudeCodeBridgeError (status 499, "The turn was stopped."). Through the relay window the client posts `gilb-bridge-abort`.
@@ -1040,8 +1060,16 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         handlers.push(
           (async () => {
             let allow = false;
+            let scope: ApprovalScope | undefined;
             try {
-              allow = (await Promise.race([Promise.resolve(opts.onApproval?.(req)), released])) === true;
+              const answer = await Promise.race([Promise.resolve(opts.onApproval?.(req)), released]);
+              if (answer === true) allow = true;
+              else if (answer && typeof answer === "object" && (answer as { allow?: unknown }).allow === true) {
+                allow = true;
+                const asked = (answer as { scope?: unknown }).scope;
+                // Only a scope the bridge offered for this request goes back; any other is a plain allow (once).
+                if (asked === "turn" && req.scopes?.includes("turn")) scope = "turn";
+              }
             } catch {
               allow = false;
             }
@@ -1051,7 +1079,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
                 signal: stop.signal,
                 method: "POST",
                 headers: { "content-type": "application/json", "x-bridge-secret": conn!.secret },
-                body: JSON.stringify({ turnId, id: req.id, allow }),
+                body: JSON.stringify({ turnId, id: req.id, allow, ...(allow && scope ? { scope } : {}) }),
               });
               if (back.status === 401) throw bridgeForgotUs();
               // 404 or 409: the question timed out or was answered already; nothing more to do.
@@ -1349,12 +1377,15 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const res = await bridgeRequest("/v1/hello", { method: "GET" });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
         const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
-        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown } | null | undefined;
+        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown } | null | undefined;
         // Pictures (bridge 0.3.6): a count and a size that are whole positive numbers, and only the known types.
         const im = o && typeof o === "object" && o.images && typeof o.images === "object" ? (o.images as { maxCount?: unknown; maxBytes?: unknown; types?: unknown }) : null;
         const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
         const imTypes = im && Array.isArray(im.types) ? im.types.filter((x): x is string => typeof x === "string" && IMAGE_RULES.types.includes(x)) : null;
         const images = im && num(im.maxCount) !== null && num(im.maxBytes) !== null && imTypes ? { maxCount: num(im.maxCount)!, maxBytes: num(im.maxBytes)!, types: imTypes } : null;
+        // Web (bridge 0.3.12): a search flag and a fetch mode of "ask" or "off"; anything else leaves it off.
+        const wb = o && typeof o === "object" && o.web && typeof o.web === "object" ? (o.web as { search?: unknown; fetch?: unknown }) : null;
+        const web = wb && typeof wb.search === "boolean" && (wb.fetch === "ask" || wb.fetch === "off") ? { search: wb.search, fetch: wb.fetch as "ask" | "off" } : null;
         // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
         const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
         const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
@@ -1368,7 +1399,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
           access: body.access === "folder" || body.access === "computer" ? body.access : null,
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
-          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}) } } : {}),
+          ...(models && efforts ? { options: { models, efforts, delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}) } } : {}),
         };
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
