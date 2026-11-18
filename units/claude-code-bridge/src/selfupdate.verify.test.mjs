@@ -150,3 +150,12 @@ describe("compareBuilds", () => {
     expect(compareBuilds("0.3.0", "")).toBeNull();
   });
 });
+
+describe("hardening", () => {
+  it("V7 a signed version carrying a newline and a field is UpdateBad", () => {
+    expect(code(verify(manifest({ version: "0.3.16\nsha256=x" })))).toBe("UpdateBad");
+  });
+  it("V7 a signed minBridge that is not dotted digits is UpdateBad", () => {
+    expect(code(verify(manifest({ minBridge: "0.3.1\n" })))).toBe("UpdateBad");
+  });
+});

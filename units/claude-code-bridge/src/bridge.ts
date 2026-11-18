@@ -33,6 +33,7 @@
 // Zero dependencies. Node 18 or newer.
 
 import http from "node:http";
+import https from "node:https";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -445,6 +446,9 @@ export function verifyUpdateManifest(raw: unknown, ctx: { running: string; keys:
   if (typeof signedAt !== "string" || !isoShape.test(signedAt) || Number.isNaN(Date.parse(signedAt))) return updateFail("UpdateBad", UPDATE_BAD_MSG);
   if (typeof keyId !== "string" || keyId === "" || typeof signature !== "string" || signature === "") return updateFail("UpdateBad", UPDATE_BAD_MSG);
   if (minBridge !== undefined && typeof minBridge !== "string") return updateFail("UpdateBad", UPDATE_BAD_MSG);
+  // Dotted numbers only, before the signature: a newline or "=" must never reach the signed text.
+  const dotted = /^\d+(\.\d+)*$/;
+  if (!dotted.test(version) || (minBridge !== undefined && !dotted.test(minBridge as string))) return updateFail("UpdateBad", UPDATE_BAD_MSG);
   const m: UpdateManifest = { version, sha256, size, signedAt, keyId, ...(minBridge !== undefined ? { minBridge } : {}) };
   // b. keys
   if (ctx.keys.length === 0) return updateFail("UpdateOff", "This bridge cannot update itself. Use the command below.");
@@ -484,6 +488,220 @@ export function fileMatchesManifest(bytes: Uint8Array, m: { version: string; sha
   if (crypto.createHash("sha256").update(bytes).digest("hex") !== m.sha256) return bad;
   if (!Buffer.from(bytes).toString("utf8").includes(`BRIDGE_BUILD = "${m.version}"`)) return bad;
   return { ok: true };
+}
+
+/** One answer of the injected fetch. `truncated` is set when the byte cap stopped the read (bytes then holds exactly the cap). */
+export interface UpdateFetchResult { status: number; finalUrl: string; bytes: Uint8Array; truncated?: boolean }
+export interface UpdateFs {
+  writeFileExclusive(p: string, bytes: Uint8Array, mode: number): Promise<void>;
+  readFile(p: string): Promise<Uint8Array>;
+  copyFile(src: string, dst: string): Promise<void>;
+  rename(src: string, dst: string): Promise<void>;
+  unlink(p: string): Promise<void>;
+  writeFile(p: string, text: string, mode: number): Promise<void>;
+  realpath(p: string): Promise<string>;
+  lstat(p: string): Promise<{ isFile(): boolean }>;
+}
+export interface UpdateDeps {
+  origin: string;
+  keys: { id: string; key: string }[];
+  running: string;
+  file: string;
+  stateDir: string;
+  fetch: (url: string, opts: { timeoutMs: number; maxBytes: number }) => Promise<UpdateFetchResult>;
+  fs: UpdateFs;
+  selfTest: (p: string) => Promise<{ code: number; stdout: string }>;
+  now: () => Date;
+  random: () => string;
+  log: (msg: string) => void;
+}
+export type UpdateResult =
+  | { updated: true; from: string; to: string }
+  | { updated: false; reason: "current" }
+  | { updated: false; code: string; message: string };
+
+const UPDATE_MANIFEST_PATH = "/app/claude-code-bridge.json";
+const UPDATE_FILE_PATH = "/app/claude-code-bridge.mjs";
+const UPDATE_MANIFEST_MAX_BYTES = 8 * 1024;
+let updateRunning = false;
+const rfail = (code: string, message: string): { updated: false; code: string; message: string } => ({ updated: false, code, message });
+
+/**
+ * The install pipeline (design section 3). Every effect is injected, so it is testable. Order: origin check, can-write
+ * check (no network), manifest fetch, verify, file fetch, size/hash/version check, temp write (0600, exclusive), self-test,
+ * re-hash from disk, copy the old file to `.prev`, atomic rename. The running file is changed ONLY by the rename; any
+ * failure before it removes the temp file and leaves the file and `.prev` as they were. One run at a time.
+ */
+export async function runUpdate(deps: UpdateDeps): Promise<UpdateResult> {
+  if (updateRunning) return rfail("UpdateRunning", "An update is already running.");
+  updateRunning = true;
+  try {
+    return await runUpdateInner(deps);
+  } finally {
+    updateRunning = false;
+  }
+}
+
+async function runUpdateInner(deps: UpdateDeps): Promise<UpdateResult> {
+  const { fs: dfs } = deps;
+  const NET_MSG = "Could not reach the server to fetch the update. Check your internet and try again.";
+  // a. fixed origin, https only; no network
+  let origin: string;
+  try {
+    const u = new URL(deps.origin);
+    if (u.protocol !== "https:") throw new Error("not https");
+    origin = u.origin;
+  } catch {
+    return rfail("UpdateOff", "This bridge cannot update itself. Use the command below.");
+  }
+  // f. (first, it needs no network) the bridge file must be a plain file at its real path
+  try {
+    const real = await dfs.realpath(deps.file);
+    const st = await dfs.lstat(deps.file);
+    if (real !== path.resolve(deps.file) || !st.isFile()) return rfail("UpdateCannotWrite", "This bridge file cannot be replaced from the app. Use the command below.");
+  } catch {
+    return rfail("UpdateCannotWrite", "This bridge file cannot be replaced from the app. Use the command below.");
+  }
+  const get = async (urlPath: string, timeoutMs: number, maxBytes: number): Promise<UpdateFetchResult | null> => {
+    try {
+      const r = await deps.fetch(origin + urlPath, { timeoutMs, maxBytes });
+      if (r.status !== 200 || new URL(r.finalUrl).origin !== origin) return null;
+      return r;
+    } catch {
+      return null;
+    }
+  };
+  // b. manifest
+  const mr = await get(UPDATE_MANIFEST_PATH, 10_000, UPDATE_MANIFEST_MAX_BYTES);
+  if (!mr) return rfail("UpdateNetwork", NET_MSG);
+  let parsed: unknown;
+  try {
+    if (mr.truncated) throw new Error("too big");
+    parsed = JSON.parse(Buffer.from(mr.bytes).toString("utf8"));
+  } catch {
+    return rfail("UpdateBad", UPDATE_BAD_MSG);
+  }
+  // c. verify
+  const v = verifyUpdateManifest(parsed, { running: deps.running, keys: deps.keys, now: deps.now() });
+  if (!v.ok) return v.code === "UpdateCurrent" ? { updated: false, reason: "current" } : { updated: false, code: v.code, message: v.message };
+  const manifest = v.manifest;
+  // d. file
+  const fr = await get(UPDATE_FILE_PATH, 60_000, manifest.size + 1);
+  if (!fr) return rfail("UpdateNetwork", NET_MSG);
+  // e. size, hash, version inside
+  const first = fileMatchesManifest(fr.bytes, manifest);
+  if (!first.ok) return { updated: false, code: first.code, message: first.message };
+  // g. temp file next to the bridge file, exclusive, 0600
+  const temp = path.join(path.dirname(deps.file), `${path.basename(deps.file)}.update-${deps.random()}`);
+  const diskFail = (err: unknown): UpdateResult => {
+    const why = String((err as ErrLike)?.code ?? "error").replace(/[^A-Za-z0-9_]/g, "").slice(0, 24) || "error";
+    return rfail("UpdateDisk", `Could not write the update to your computer (${why}). Nothing was changed.`);
+  };
+  const cleanup = async (): Promise<void> => {
+    try { await dfs.unlink(temp); } catch { /* ignore */ }
+  };
+  try {
+    await dfs.writeFileExclusive(temp, fr.bytes, 0o600);
+  } catch (err) {
+    if ((err as ErrLike)?.code !== "EEXIST") await cleanup(); // never remove a file we did not create
+    return diskFail(err);
+  }
+  try {
+    // h. self-test
+    let st: { code: number; stdout: string };
+    try { st = await deps.selfTest(temp); } catch { st = { code: -1, stdout: "" }; }
+    if (st.code !== 0 || st.stdout.trim() !== `build ${manifest.version}`) {
+      await cleanup();
+      return rfail("UpdateSelfTest", "The new version could not start on this computer, so it was NOT installed.");
+    }
+    // i. re-hash what is on disk
+    let again: Uint8Array;
+    try { again = await dfs.readFile(temp); } catch (err) { await cleanup(); return diskFail(err); }
+    const second = fileMatchesManifest(again, manifest);
+    if (!second.ok) {
+      await cleanup();
+      return { updated: false, code: second.code, message: second.message };
+    }
+    // j. keep the old file
+    try { await dfs.copyFile(deps.file, deps.file + ".prev"); } catch (err) { await cleanup(); return diskFail(err); }
+    // k. the one step that changes the running file
+    try { await dfs.rename(temp, deps.file); } catch (err) { await cleanup(); return diskFail(err); }
+  } catch (err) {
+    await cleanup();
+    return diskFail(err);
+  }
+  // l. a note for the next start; the install already happened, so a failure here is only logged
+  try {
+    await dfs.writeFile(path.join(deps.stateDir, "update.json"), JSON.stringify({ from: deps.running, to: manifest.version, at: deps.now().toISOString(), sha256: manifest.sha256 }), 0o600);
+  } catch {
+    deps.log("update: installed, but update.json could not be written");
+  }
+  // m.
+  return { updated: true, from: deps.running, to: manifest.version };
+}
+
+/** GET with a hard byte cap and same-origin redirects only (at most 3). Stops reading once the cap is passed. */
+export function realFetch(url: string, opts: { timeoutMs: number; maxBytes: number }): Promise<UpdateFetchResult> {
+  return new Promise((resolve, reject) => {
+    const origin = new URL(url).origin;
+    const timer = setTimeout(() => { reject(new Error("timeout")); }, opts.timeoutMs);
+    const done = (fn: () => void): void => { clearTimeout(timer); fn(); };
+    const go = (u: string, redirects: number): void => {
+      const mod = u.startsWith("https:") ? https : http;
+      const req = mod.get(u, { headers: { "user-agent": "gilb-claude-code-bridge-update" } }, (res) => {
+        const status = res.statusCode ?? 0;
+        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location) {
+          res.resume();
+          let next: URL;
+          try { next = new URL(res.headers.location, u); } catch { return done(() => reject(new Error("bad redirect"))); }
+          if (next.origin !== origin || redirects >= 3) return done(() => resolve({ status, finalUrl: next.href, bytes: new Uint8Array(0) }));
+          return go(next.href, redirects + 1);
+        }
+        const chunks: Buffer[] = [];
+        let total = 0;
+        res.on("data", (c: Buffer) => {
+          total += c.length;
+          if (total > opts.maxBytes) {
+            const keep = opts.maxBytes - (total - c.length);
+            chunks.push(c.subarray(0, keep));
+            const bytes = new Uint8Array(Buffer.concat(chunks));
+            req.destroy();
+            return done(() => resolve({ status, finalUrl: u, bytes, truncated: true }));
+          }
+          chunks.push(c);
+        });
+        res.on("end", () => done(() => resolve({ status, finalUrl: u, bytes: new Uint8Array(Buffer.concat(chunks)) })));
+        res.on("error", (e) => done(() => reject(e)));
+      });
+      req.on("error", (e) => done(() => reject(e)));
+    };
+    go(url, 0);
+  });
+}
+
+/** The real file operations for `runUpdate`. */
+export const realFs: UpdateFs = {
+  async writeFileExclusive(p, bytes, mode) {
+    const h = await fs.promises.open(p, "wx", mode);
+    try { await h.writeFile(bytes); } finally { await h.close(); }
+  },
+  async readFile(p) { return new Uint8Array(await fs.promises.readFile(p)); },
+  copyFile: (src, dst) => fs.promises.copyFile(src, dst),
+  rename: (src, dst) => fs.promises.rename(src, dst),
+  unlink: (p) => fs.promises.unlink(p),
+  async writeFile(p, text, mode) { await fs.promises.writeFile(p, text, { mode }); },
+  realpath: (p) => fs.promises.realpath(p),
+  lstat: (p) => fs.promises.lstat(p),
+};
+
+/** Runs the new file with `--selftest` in its own process (no shell, 15 s). */
+export function realSelfTest(p: string): Promise<{ code: number; stdout: string }> {
+  return new Promise((resolve) => {
+    execFile(process.execPath, [p, "--selftest"], { timeout: 15_000, shell: false }, (err, stdout) => {
+      const code = err ? (typeof (err as ExecFileException).code === "number" ? ((err as ExecFileException).code as number) : 1) : 0;
+      resolve({ code, stdout: String(stdout ?? "") });
+    });
+  });
 }
 
 /**
