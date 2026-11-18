@@ -272,7 +272,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.13";
+export const BRIDGE_BUILD = "0.3.14";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -4156,15 +4156,31 @@ export async function runSupervisor(cli: CliOptions, io: SuperviseIo = {}): Prom
   }
 }
 
-/** The node to record in the plist: the name on the person's PATH (survives a brew upgrade) when it is this very node, else this node's own path. */
-function stableNodePath() {
-  const named = resolveBin("node");
+/**
+ * True for a node path that will not last: fnm's per-terminal link (`fnm_multishells`, either separator) or anything under the temp folder.
+ * Recording one in the login item breaks it once that folder is cleaned up.
+ */
+export function isEphemeralNodePath(p: string): boolean {
+  if (/[\\/]fnm_multishells[\\/]/.test(p)) return true;
+  const tmp = path.resolve(os.tmpdir());
+  const r = path.resolve(p);
+  return r === tmp || r.startsWith(tmp + path.sep);
+}
+
+/**
+ * The node to record in the plist: the name on the person's PATH (survives a brew upgrade) when it is this very node and will last,
+ * else this node's own path. fnm's per-terminal multishell link is never recorded.
+ */
+export function stableNodePath(t: { named?: string | null; execPath?: string; realpath?: (p: string) => string } = {}) {
+  const named = t.named !== undefined ? t.named : resolveBin("node");
+  const execPath = t.execPath ?? process.execPath;
+  const realpath = t.realpath ?? ((p: string) => fs.realpathSync(p));
   try {
-    if (named && fs.realpathSync(named) === fs.realpathSync(process.execPath)) return named;
+    if (named && !isEphemeralNodePath(named) && realpath(named) === realpath(execPath)) return named;
   } catch {
     /* fall through */
   }
-  return process.execPath;
+  return execPath;
 }
 
 // ---- command line ----------------------------------------------------------------------------------------------------
