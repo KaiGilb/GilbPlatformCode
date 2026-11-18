@@ -87,9 +87,11 @@ async function ask(secret, calls, { allow = false, body = {} } = {}) {
   return { decisions: rows("askjson").map((r) => r.decision), questions };
 }
 const F = (tool_name, input) => ({ tool_name, input });
+// The sandbox cases assert macOS/Linux behaviour (POSIX paths, links, Seatbelt/bubblewrap settings). Windows computer mode has NO sandbox: see the last describe.
+const S = describe.skipIf(process.platform === "win32");
 const protectedMsg = (p) => `This place is protected: ${p}.`;
 
-describe("the settings of a sandboxed computer turn", () => {
+S("the settings of a sandboxed computer turn", () => {
   it("macOS: the sandbox block, the protected places denied for read and write, the network open, the folders writable", async () => {
     const secret = await start();
     await ask(secret, []);
@@ -191,7 +193,7 @@ describe("the settings of a sandboxed computer turn", () => {
   });
 });
 
-describe("file tools on protected places are denied outright; the rest runs unasked", () => {
+S("file tools on protected places are denied outright; the rest runs unasked", () => {
   it("direct, ~, $HOME, .., a link in the folder and a dangling link", async () => {
     const secret = await start();
     fs.symlinkSync(path.join(dir, ".ssh"), path.join(ws, "lnk"));
@@ -276,7 +278,7 @@ describe("file tools on protected places are denied outright; the rest runs unas
   });
 });
 
-describe("writes are allowed only in the code folder, ~/Developer and temp; .claude settings are never written", () => {
+S("writes are allowed only in the code folder, ~/Developer and temp; .claude settings are never written", () => {
   it("file tools: the home folder, bin folders, shell files, the claude and node binaries, .claude, .mcp.json, GilbServerOps, links out", async () => {
     const secret = await start();
     fs.symlinkSync(path.join(dir, ".local", "bin"), path.join(ws, "binlink"));
@@ -376,7 +378,7 @@ describe("writes are allowed only in the code folder, ~/Developer and temp; .cla
   });
 });
 
-describe("the short asked list still asks", () => {
+S("the short asked list still asks", () => {
   it("sudo, security, launchctl, osascript (also in a wrapper, a path or a pipe) and GilbServerOps ship/server are put to the person; a refusal denies", async () => {
     const secret = await start();
     const cmds = ["sudo rm /x", "security find-generic-password -a x", "launchctl list", "osascript -e 'return 1'", "ls && /usr/bin/sudo ls", "env FOO=1 osascript -e x", "echo a | sudo tee /x", "timeout 5 launchctl list", "bash ship/ship-static.sh x aaaa # GilbServerOps", "cd ~/Developer/GilbServerOps && ls server"];
@@ -399,21 +401,9 @@ describe("the short asked list still asks", () => {
     expect(r.questions).toHaveLength(2);
     expect(r.questions[1].scopes).toEqual(["once", "turn"]);
   });
-
-  it("each-write still asks everything, files and commands included", async () => {
-    const secret = await start();
-    const r = await ask(secret, [F("Read", { file_path: path.join(ws, "ok.txt") }), F("Bash", { command: "ls" })], { allow: true, body: { approval: "each-write" } });
-    expect(r.questions).toHaveLength(2);
-  });
-
-  it("Windows computer mode still asks about every call", async () => {
-    const secret = await start({ platform: "win32" });
-    const r = await ask(secret, [F("Read", { file_path: path.join(ws, "ok.txt") }), F("Bash", { command: "dir" })], { allow: true });
-    expect(r.questions).toHaveLength(2);
-  });
 });
 
-describe("the helpers", () => {
+S("the helpers", () => {
   it("protectedHit: lexical forms, links, case, the bridge prefix", () => {
     const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-ph-")));
     try {
@@ -454,14 +444,53 @@ describe("the helpers", () => {
     expect(globHitsProtected("/h/*", o)).toBeNull();
   });
 
-  it("askedCommand is command-position text matching only", () => {
-    for (const c of ["sudo ls", "ls; sudo ls", "(osascript -e x)", "FOO=1 security dump", "/usr/bin/security x", "`launchctl list`", "bash -c 'sudo ls'", "echo $(sudo id)", "bash ~/Developer/GilbServerOps/ship/ship-backend.sh"]) expect(askedCommand(c), c).toBe(true);
-    for (const c of ["ls", "echo sudo", "grep -rn osascript .", "npm run security", "ls security", "git commit -m 'security fix'", "cat sudoers.md", "security-audit --fix"]) expect(askedCommand(c), c).toBe(false);
-  });
-
   it("computerSandboxSettings: real-path spellings are added", () => {
     const real = fs.realpathSync.native(os.tmpdir());
     const s = computerSandboxSettings(real, real, [path.join(real, ".ssh")], []);
     expect(s.sandbox.filesystem.denyRead).toContain(path.join(real, ".ssh"));
   });
+});
+
+// Runs on every platform, Windows included: no sandbox, so every call is put to the person and nothing is allowed or denied by path.
+describe("without the sandbox: each-write, and Windows computer mode", () => {
+  it("each-write asks everything, files and commands included", async () => {
+    const secret = await start();
+    const r = await ask(secret, [F("Read", { file_path: path.join(ws, "ok.txt") }), F("Bash", { command: "ls" })], { allow: true, body: { approval: "each-write" } });
+    expect(r.questions).toHaveLength(2);
+  });
+
+  it("Windows computer mode asks about EVERY call; nothing is auto-allowed or denied by path", async () => {
+    const secret = await start({ platform: "win32" });
+    const calls = [
+      F("Read", { file_path: path.join(ws, "ok.txt") }),
+      F("Read", { file_path: path.join(dir, ".ssh", "id_rsa") }), // asked, not denied by the bridge
+      F("Write", { file_path: path.join(ws, "new.txt"), content: "x" }),
+      F("Write", { file_path: path.join(dir, "elsewhere.txt"), content: "x" }),
+      F("Bash", { command: "dir" }),
+      F("Bash", { command: "echo sudo" }),
+      F("WebSearch", { query: "node 22" }),
+      F("TodoWrite", { todos: [] }),
+    ];
+    const r = await ask(secret, calls, { allow: true });
+    const decisions = r.decisions;
+    expect(decisions).toHaveLength(calls.length);
+    for (const d of decisions) expect(d.behavior).toBe("allow"); // only because the stand-in page said yes
+    expect(r.questions.map((q) => q.tool)).toEqual(calls.map((c) => c.tool_name));
+  });
+
+  it("Windows computer mode: no sandbox block in the settings and no approvals line in hello; a refusal is final", async () => {
+    const secret = await start({ platform: "win32" });
+    expect((await hello()).options.approvals).toBeUndefined();
+    const r = await ask(secret, [F("Write", { file_path: path.join(ws, "x.txt"), content: "x" }), F("Bash", { command: "dir" })], { allow: false });
+    expect(r.questions).toHaveLength(2);
+    for (const d of r.decisions) expect(d.behavior).toBe("deny");
+    const run = rows("run")[0];
+    expect(JSON.parse(run.argv[run.argv.indexOf("--settings") + 1])).toEqual({ permissions: { disableBypassPermissionsMode: "disable" } });
+  });
+
+  it("askedCommand is command-position text matching only", () => {
+    for (const c of ["sudo ls", "ls; sudo ls", "(osascript -e x)", "FOO=1 security dump", "/usr/bin/security x", "`launchctl list`", "bash -c 'sudo ls'", "echo $(sudo id)", "bash ~/Developer/GilbServerOps/ship/ship-backend.sh"]) expect(askedCommand(c), c).toBe(true);
+    for (const c of ["ls", "echo sudo", "grep -rn osascript .", "npm run security", "ls security", "git commit -m 'security fix'", "cat sudoers.md", "security-audit --fix"]) expect(askedCommand(c), c).toBe(false);
+  });
+
 });

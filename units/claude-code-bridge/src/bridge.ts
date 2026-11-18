@@ -1082,12 +1082,13 @@ export function writableAreas(home: string, workspaceRoot: string, tmpDirs: read
   return [workspaceRoot, path.join(home, "Developer"), "/tmp", ...tmpDirs];
 }
 const WRITE_PRUNE = new Set(["node_modules", ".git", ".npm-cache", "Library", ".Trash"]);
-/** Every existing `.claude` folder under these roots (settings and hooks that Claude Code would run outside the sandbox). Bounded: depth 6, 20000 entries. */
-export function claudeDirs(roots: readonly string[], max = 20000): string[] {
+/** Every existing `.claude` folder under these roots (settings and hooks that Claude Code would run outside the sandbox). Bounded: depth 6, 5000 entries, one second. */
+export function claudeDirs(roots: readonly string[], max = 5000, ms = 1000): string[] {
   const found: string[] = [];
   let seen = 0;
+  const stop = Date.now() + ms;
   const walk = (dir: string, depth: number) => {
-    if (depth > 6 || seen > max) return;
+    if (depth > 6 || seen > max || Date.now() > stop) return;
     let ents: fs.Dirent[];
     try {
       ents = fs.readdirSync(dir, { withFileTypes: true });
@@ -1110,11 +1111,12 @@ export function claudeGlobs(workspaceRoot: string, home: string): string[] {
   return [workspaceRoot, `${home}/Developer`].flatMap((r) => [`${r}/.claude`, `${r}/.claude/**`, `${r}/**/.claude`, `${r}/**/.claude/**`]);
 }
 /** Git runs code from these on the person's next `git`: hooks; config (hooksPath, fsmonitor, sshCommand, pager, `!` aliases, filter and textconv drivers); info/attributes (selects the filters). They are denied for every repo that EXISTS when the turn starts. A deny glob on .git/config would also refuse `git init`, so none is used: a repo created during the turn is the documented gap. The rest of .git (index, objects, refs, COMMIT_EDITMSG) stays writable. */
-export function gitPlaces(roots: readonly string[], max = 20000): string[] {
+export function gitPlaces(roots: readonly string[], max = 5000, ms = 1000): string[] {
   const found: string[] = [];
   let seen = 0;
+  const stop = Date.now() + ms;
   const walk = (dir: string, depth: number) => {
-    if (depth > 6 || seen > max) return;
+    if (depth > 6 || seen > max || Date.now() > stop) return;
     let ents: fs.Dirent[];
     try {
       ents = fs.readdirSync(dir, { withFileTypes: true });

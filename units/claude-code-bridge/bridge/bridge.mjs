@@ -944,12 +944,13 @@ export function writableAreas(home, workspaceRoot, tmpDirs = []) {
     return [workspaceRoot, path.join(home, "Developer"), "/tmp", ...tmpDirs];
 }
 const WRITE_PRUNE = new Set(["node_modules", ".git", ".npm-cache", "Library", ".Trash"]);
-/** Every existing `.claude` folder under these roots (settings and hooks that Claude Code would run outside the sandbox). Bounded: depth 6, 20000 entries. */
-export function claudeDirs(roots, max = 20000) {
+/** Every existing `.claude` folder under these roots (settings and hooks that Claude Code would run outside the sandbox). Bounded: depth 6, 5000 entries, one second. */
+export function claudeDirs(roots, max = 5000, ms = 1000) {
     const found = [];
     let seen = 0;
+    const stop = Date.now() + ms;
     const walk = (dir, depth) => {
-        if (depth > 6 || seen > max)
+        if (depth > 6 || seen > max || Date.now() > stop)
             return;
         let ents;
         try {
@@ -978,11 +979,12 @@ export function claudeGlobs(workspaceRoot, home) {
     return [workspaceRoot, `${home}/Developer`].flatMap((r) => [`${r}/.claude`, `${r}/.claude/**`, `${r}/**/.claude`, `${r}/**/.claude/**`]);
 }
 /** Git runs code from these on the person's next `git`: hooks; config (hooksPath, fsmonitor, sshCommand, pager, `!` aliases, filter and textconv drivers); info/attributes (selects the filters). They are denied for every repo that EXISTS when the turn starts. A deny glob on .git/config would also refuse `git init`, so none is used: a repo created during the turn is the documented gap. The rest of .git (index, objects, refs, COMMIT_EDITMSG) stays writable. */
-export function gitPlaces(roots, max = 20000) {
+export function gitPlaces(roots, max = 5000, ms = 1000) {
     const found = [];
     let seen = 0;
+    const stop = Date.now() + ms;
     const walk = (dir, depth) => {
-        if (depth > 6 || seen > max)
+        if (depth > 6 || seen > max || Date.now() > stop)
             return;
         let ents;
         try {
