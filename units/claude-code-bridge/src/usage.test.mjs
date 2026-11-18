@@ -198,9 +198,9 @@ describe("turn usage", () => {
     expect(m.usage).toEqual({ model: "fake-model", contextWindow: 1000000, outputTokens: 340, inputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 600 });
   });
 
-  it("hello reports build 0.3.12", async () => {
+  it("hello reports build 0.3.13", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.12");
+    expect(hello.build).toBe("0.3.13");
   });
 });
