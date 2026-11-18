@@ -166,3 +166,15 @@ describe("QA L1 — a 200 whose envelope carries the refusal", () => {
     expect(steps.at(-1)).toBe("finish:Failed:-:true");
   });
 });
+
+describe("the redactor removes fragments and encodings of the key (Agent.Hacker L2)", () => {
+  test("a 27-character slice, an 8-character slice, base64, base64url and URL-encoded forms are removed; 7 characters are not", () => {
+    const k = KEY;
+    expect(redactSecrets(`echo ${k.slice(3, 30)} end`, [k])).toBe("echo [redacted] end");
+    expect(redactSecrets(`echo ${k.slice(10, 18)} end`, [k])).toBe("echo [redacted] end");
+    expect(redactSecrets(`echo ${k.slice(10, 17)} end`, [k])).toBe(`echo ${k.slice(10, 17)} end`);
+    expect(redactSecrets(`b64 ${btoa(k)}`, [k])).toBe("b64 [redacted]");
+    expect(redactSecrets(`url ${encodeURIComponent(k).toUpperCase()}`, [k])).toBe("url [redacted]");
+    expect(redactSecrets("an ordinary sentence about a lamp", [k])).toBe("an ordinary sentence about a lamp");
+  });
+});
