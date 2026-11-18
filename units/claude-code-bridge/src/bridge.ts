@@ -99,8 +99,13 @@ interface Turn {
   handoffCount: number;
   /** Set when the person's pairing asked for the turn to be cancelled (POST /v1/turn/cancel). */
   cancelRequested: boolean;
-  approvals: Map<string, { settle: (allow: boolean, message?: string) => void; answered: boolean }>;
+  approvals: Map<string, { settle: (allow: boolean, message?: string, scope?: WebScope) => void; answered: boolean }>;
+  /** Folder mode: the person allowed every WebFetch for the rest of THIS turn. Never copied to a hand-off, a later turn or another pairing. */
+  webTurnGrant: boolean;
 }
+/** How far an allowed WebFetch reaches: this page only, or every page for the rest of the turn. */
+export type WebScope = "once" | "turn";
+export const WEB_SCOPES: WebScope[] = ["once", "turn"];
 /** A JSON-RPC message from the local claude process. */
 interface McpMsg { id?: unknown; method?: string; params?: { _meta?: { progressToken?: unknown }; protocolVersion?: string; name?: unknown; arguments?: unknown; requestId?: unknown } }
 /** One line of claude's stream-json output (only the fields read here). */
@@ -267,7 +272,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.11";
+export const BRIDGE_BUILD = "0.3.12";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -736,6 +741,8 @@ const approveSchema = { type: "object", properties: { tool_name: { type: "string
 export const CODE_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"];
 /** Native Windows runs a reduced code mode: files only, no commands (and so no sandbox to start). */
 export const FILES_ONLY_TOOLS = ["Read", "Edit", "Write", "Glob", "Grep"];
+/** The two web tools of a folder-mode code turn (0.3.12): WebSearch runs freely; every WebFetch is asked of the person through bridge_approve. */
+export const WEB_TOOLS = ["WebSearch", "WebFetch"];
 /** The model names a turn may ask for: these aliases, or a full model name. Anything else is refused. */
 export const MODEL_ALIASES = ["opus", "sonnet", "haiku", "fable"];
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
@@ -772,6 +779,8 @@ const FOLDER_SUGGEST = /^[A-Za-z0-9 ._-]{1,64}$/;
 const folderNameOk = (n: unknown): n is string => typeof n === "string" && FOLDER_SUGGEST.test(n) && n === n.trim() && !/^[ .]+$/.test(n);
 const DIALOG_MAX_MS = 5 * 60 * 1000;
 const FILES_ONLY_SENTENCE = "You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.";
+/** Folder mode, 0.3.12: the web tools. A search is free; a page is asked of the person. */
+export const WEB_SENTENCE = "You may search the web; opening a web page asks the person first.";
 const NETWORK_SENTENCE = "The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).";
 const APP_FOLDER_SENTENCE = "Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask.";
 export const GITHUB_ARCHIVE_SENTENCE = "To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder.";
@@ -892,7 +901,7 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
   const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
   if (platform === "win32") {
     // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-    return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } };
+    return { permissions: { deny: [...agentDeny], disableBypassPermissionsMode: "disable" } };
   }
   // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
   const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
@@ -909,7 +918,7 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
       filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
     },
     permissions: {
-      deny: ["WebFetch", "WebSearch", ...agentDeny],
+      deny: [...agentDeny],
       disableBypassPermissionsMode: "disable",
     },
   };
@@ -920,7 +929,7 @@ function codeInitOk(ev: ClaudeEvent, approval: "session" | "each-write" = "sessi
   if (computer) return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits"); // no tool-list check: Claude Code has its own tools
   if (!Array.isArray(ev.tools)) return false; // fail closed: a tool list that is not an array is not checked
   const tools = ev.tools;
-  const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
+  const allowed = [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...WEB_TOOLS, ...(delegate ? SUBAGENT_TOOL_NAMES : [])];
   if (!tools.every((t) => typeof t === "string" && (allowed.includes(t) || t.startsWith("mcp__gilb__")))) return false;
   // The asking mode is passed as `manual`, an alias of `default`; the real CLI 2.1.323 reports it as "default" (probe, 2026-11-13).
   return ev.permissionMode === (approval === "each-write" ? "default" : "acceptEdits");
@@ -1511,7 +1520,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       });
     }
     if (method === "ping") return ok({});
-    const askingTurn = turn.code && (computer || turn.approval === "each-write");
+    // Every code turn has the bridge's approval tool: a folder turn's WebFetch is asked in both approval settings.
+    const askingTurn = turn.code;
     if (method === "tools/list") {
       return ok({
         tools: [
@@ -1645,23 +1655,24 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   /** Puts one question to the person and waits. Resolves true only when the person allowed it. */
-  function askPerson(turn: Turn, tool: string, summary: string, detail = "", notice = ""): Promise<{ allow: boolean; message: string }> {
+  function askPerson(turn: Turn, tool: string, summary: string, detail = "", notice = "", scopes: WebScope[] | null = null): Promise<{ allow: boolean; message: string; scope: WebScope }> {
     return new Promise((resolve) => {
       const id = crypto.randomBytes(8).toString("hex");
       let timer: ReturnType<typeof setTimeout> | undefined;
       const entry = {
         answered: false,
-        settle: (allow: boolean, message = "The person declined.") => {
+        settle: (allow: boolean, message = "The person declined.", scope: WebScope = "once") => {
           if (entry.answered) return;
           entry.answered = true;
           if (timer !== undefined) clearTimeout(timer);
-          turn.send("approval_done", { id, allow });
-          resolve({ allow, message });
+          const sc: WebScope = allow ? scope : "once"; // a deny has no reach
+          turn.send("approval_done", { id, allow, ...(scopes ? { scope: sc } : {}) });
+          resolve({ allow, message, scope: sc });
         },
       };
       turn.approvals.set(id, entry);
       timer = setTimeout(() => entry.settle(false, "The person did not answer."), approvalWaitMs);
-      turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}), ...(notice ? { notice } : {}) });
+      turn.send("approval_request", { id, tool, summary, ...(detail ? { detail } : {}), ...(notice ? { notice } : {}), ...(scopes ? { scopes } : {}) });
     });
   }
 
@@ -1782,6 +1793,26 @@ export function createBridge(opts: BridgeOptions = {}) {
   const TOO_LONG_PATH = "The path is too long to show for approval.";
   const TOO_LONG_REQUEST = "The request is too long to show for approval; ask for it in smaller steps.";
 
+  /** The WebFetch display, shared by every mode: the URL shown (non-ASCII as <U+XXXX>) with a `Host:` notice, or a denial message. */
+  const webFetchView = (input: Record<string, unknown>): { deny: string } | { summary: string; notice: string } => {
+    const t = typeof input.url === "string" ? input.url : "";
+    if (hasHidden(t)) return { deny: HIDDEN_MSG };
+    const summary = showCommand(t) || "WebFetch";
+    let host: string;
+    try {
+      const u = new URL(t);
+      if ((u.protocol !== "http:" && u.protocol !== "https:") || !u.hostname) return { deny: ONLY_HTTP_MSG };
+      if (u.username || u.password) return { deny: USERINFO_MSG };
+      host = u.hostname;
+    } catch {
+      return { deny: ONLY_HTTP_MSG }; // does not parse: nothing to ask about
+    }
+    const line = `Host: ${host}`;
+    if (line.length > HOST_LINE_MAX) return { deny: TOO_LONG_ADDRESS };
+    if (summary.length > APPROVAL_COMMAND_MAX) return { deny: TOO_LONG_REQUEST };
+    return { summary, notice: line };
+  };
+
   /** What `bridge_approve` answers to Claude Code: {"behavior":"allow","updatedInput":...} or {"behavior":"deny","message":...}. */
   async function decideApproval(turn: Turn, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (opts.logApproveArgs) log(`bridge_approve raw arguments: ${JSON.stringify(args)}`);
@@ -1858,6 +1889,23 @@ export function createBridge(opts: BridgeOptions = {}) {
       const a = await askPerson(turn, tool, summary, detail, notice);
       return a.allow ? { behavior: "allow", updatedInput: input } : deny(a.message);
     }
+    // Folder mode on the web (0.3.12): a search is free; a page is always asked, once or for the rest of this turn.
+    if (tool === "WebSearch") return { behavior: "allow", updatedInput: input };
+    if (tool === "WebFetch") {
+      if (hasHidden(str(input.description))) return deny(HIDDEN_MSG);
+      const view = webFetchView(input);
+      if ("deny" in view) return deny(view.deny);
+      let notice = view.notice;
+      if (keyProblem.ctor) notice = `${notice}\n${CTOR_NOTICE}`;
+      if (notice.length > NOTICE_MAX) return deny(TOO_LONG_ADDRESS);
+      if (turn.webTurnGrant) return { behavior: "allow", updatedInput: input }; // the display denials above still applied
+      const a = await askPerson(turn, tool, view.summary, "", notice, WEB_SCOPES);
+      if (!a.allow) return deny(a.message);
+      if (a.scope === "turn") turn.webTurnGrant = true;
+      return { behavior: "allow", updatedInput: input };
+    }
+    // A session turn cannot ask the person anything else: what Claude Code would ask about is refused.
+    if (turn.approval === "session") return deny("Nobody can answer here, so this is refused.");
     if (tool === "Read") {
       if (!insideWorkspace(str(input.file_path), scope)) return deny("Outside the code folder.");
       return { behavior: "allow", updatedInput: input };
@@ -2052,22 +2100,22 @@ export function createBridge(opts: BridgeOptions = {}) {
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--tools", [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...(turn.delegate ? [SUBAGENT_TOOL] : [])].join(","),
+      "--tools", [...(filesOnly ? FILES_ONLY_TOOLS : CODE_TOOLS), ...WEB_TOOLS, ...(turn.delegate ? [SUBAGENT_TOOL] : [])].join(","),
       "--restricted",
       "--strict-mcp-config",
       "--mcp-config", JSON.stringify(mcp),
       "--allowedTools", "mcp__gilb",
-      // session: edits are accepted and nothing may prompt. each-write: `manual` asks, and the bridge's own tool answers.
+      // session: edits are accepted; the bridge's own tool answers every other ask (only a WebFetch is put to the person; the rest is refused). each-write: `manual` asks, and the bridge's own tool answers.
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
-      "--permission-prompts", turn.approval === "each-write" ? "host" : "none",
-      ...(turn.approval === "each-write" ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
+      "--permission-prompts", "host",
+      "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
       "--disable-slash-commands",
       "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
-        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
-        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
+        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${WEB_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
+        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} ${WEB_SENTENCE} When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -2386,6 +2434,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       proj,
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
+      webTurnGrant: false,
       owner: me,
       startedAt: now(),
       lastActivityAt: now(),
@@ -2679,7 +2728,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(workspace ? { web: { search: !computer, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -2768,8 +2817,9 @@ export function createBridge(opts: BridgeOptions = {}) {
         const a = t && t.owner === callerKey(req) ? t.approvals.get(body.id) : undefined;
         if (!a) return json(res, 404, { error: "no such approval question" });
         if (typeof body.allow !== "boolean") return json(res, 400, { error: "allow must be true or false" });
+        if (body.scope !== undefined && body.scope !== "once" && body.scope !== "turn") return json(res, 400, { error: 'scope must be "once" or "turn"' });
         if (a.answered) return json(res, 409, { error: "already answered" });
-        a.settle(body.allow);
+        a.settle(body.allow, undefined, body.scope === "turn" ? "turn" : "once");
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/v1/tool-result") {

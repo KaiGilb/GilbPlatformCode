@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeTurnSettings, createBridge, parseCli, validateWorkspace, CODE_TOOLS } from "../bridge/bridge.mjs";
+import { codeTurnSettings, createBridge, parseCli, validateWorkspace, CODE_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -134,12 +134,13 @@ describe("claude arguments", () => {
     const once = (flag) => expect(a.filter((x) => x === flag), flag).toHaveLength(1);
     for (const f of ["-p", "--output-format", "--verbose", "--tools", "--restricted", "--strict-mcp-config", "--mcp-config", "--allowedTools", "--permission-mode", "--permission-prompts", "--disable-slash-commands", "--settings", "--system-prompt", "--system-prompt-snapshot", "--session-id"]) once(f);
     const val = (f) => a[a.indexOf(f) + 1];
-    expect(val("--tools")).toBe("Bash,Read,Edit,Write,Glob,Grep,NotebookEdit");
-    expect(val("--tools")).toBe(CODE_TOOLS.join(","));
+    expect(val("--tools")).toBe("Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebSearch,WebFetch");
+    expect(val("--tools")).toBe([...CODE_TOOLS, ...WEB_TOOLS].join(","));
     expect(a).not.toContain("");
     expect(val("--allowedTools")).toBe("mcp__gilb");
     expect(val("--permission-mode")).toBe("acceptEdits");
-    expect(val("--permission-prompts")).toBe("none");
+    expect(val("--permission-prompts")).toBe("host");
+    expect(val("--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
     expect(val("--system-prompt")).toBe("You are the agent.");
     expect(val("--system-prompt-snapshot")).toBe("off");
     expect(fs.realpathSync.native(run.cwd)).toBe(wsReal);
@@ -153,9 +154,9 @@ describe("claude arguments", () => {
     expect(s.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"]);
     for (const h of ["github.com", "api.github.com", "objects.githubusercontent.com"]) expect(s.sandbox.network.allowedDomains).not.toContain(h);
     expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure", "~/Library/Keychains", "/tmp/x"]));
-    expect(s.permissions).toEqual({ deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" });
+    expect(s.permissions).toEqual({ deny: [], disableBypassPermissionsMode: "disable" });
     // Windows is files-only: no sandbox block at all, the permission rules stay.
-    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } });
+    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: [], disableBypassPermissionsMode: "disable" } });
   });
 });
 
@@ -232,7 +233,7 @@ describe("code turn events", () => {
     for (const n of ["activity", "tool_error", "files_changed"]) expect(names).not.toContain(n);
   });
   it("an init that lists a tool the folder limits do not allow stops the turn", async () => {
-    const secret = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "WebFetch"]) } });
+    const secret = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "Task"]) } });
     const r = await post(secret, T({ mode: "code" }));
     expect(ev(r, "message")).toHaveLength(0);
     expect(ev(r, "error")[0].message).toBe("The bridge stopped this code turn: Claude Code did not start with the folder limits.");
@@ -366,7 +367,7 @@ describe("--workspace on the command line", () => {
 });
 
 describe("approval: each-write", () => {
-  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com). Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder. To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder. Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. Before you install packages, open this folder's .npmrc with the Read tool, never with cat or another shell command: a project folder made in the chat gets the one line install-links=true from the bridge, so code-library units install as copies. If that line is not there, or the Read tool refuses the file, tell the person to add the line to a plain .npmrc file in that folder themselves, and until then pass --install-links to every npm install and npm ci. Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed. Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
+  const ASK_PROMPT = "You are working in the code folder \"MyCode\" on the person's own computer. Read, write and run commands only inside this folder. The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com). Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder. To use code from a public GitHub repository, download the archive of a pinned commit and unpack only the folder you need straight into this folder, in one command, for example: mkdir -p vendor && curl -sSfL https://codeload.github.com/<owner>/<repo>/tar.gz/<commit> | tar -xz -C vendor --strip-components=2 <repo>-<commit>/units/<name> (this gives vendor/<name> for a folder at units/<name>, as in the platform's code library; for a folder at another depth, set --strip-components to the number of path parts before its name). git clone, pull and push do not work in this folder. Never write or change a .npmrc or .yarnrc file here: Claude Code refuses it as a sensitive file. Before you install packages, open this folder's .npmrc with the Read tool, never with cat or another shell command: a project folder made in the chat gets the one line install-links=true from the bridge, so code-library units install as copies. If that line is not there, or the Read tool refuses the file, tell the person to add the line to a plain .npmrc file in that folder themselves, and until then pass --install-links to every npm install and npm ci. Make each new app in its own subfolder of the code folder, named after the app in lower case with dashes (for example hello-gilbapp). Never put app files at the top level of the code folder. When the person asks about an existing app, work in its subfolder; if it is unclear which app they mean, ask. You may search the web; opening a web page asks the person first. When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed. Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
 
   it("the argument lists of a session and an each-write code turn differ only in the asking places", async () => {
     const secret = await start();
@@ -376,10 +377,10 @@ describe("approval: each-write", () => {
     const val = (x, f) => x[x.indexOf(f) + 1];
     expect(val(a, "--permission-mode")).toBe("acceptEdits");
     expect(val(b, "--permission-mode")).toBe("manual");
-    expect(val(a, "--permission-prompts")).toBe("none");
+    expect(val(a, "--permission-prompts")).toBe("host"); // since 0.3.12 a session turn has the approval tool too (a WebFetch is asked)
     expect(val(b, "--permission-prompts")).toBe("host");
     expect(val(b, "--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
-    expect(a).not.toContain("--permission-prompt-tool");
+    expect(val(a, "--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
     expect(JSON.parse(val(b, "--settings"))).toEqual(codeTurnSettings(os.homedir(), "darwin", [], "each-write", process.env.CLAUDE_CONFIG_DIR ?? ""));
     expect(JSON.parse(val(b, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(false);
     expect(JSON.parse(val(a, "--settings")).sandbox.autoAllowBashIfSandboxed).toBe(true);
@@ -387,7 +388,7 @@ describe("approval: each-write", () => {
     // The prompt also differs: the plain-commands sentence is session-only, and the next test checks that text.
     const strip = (x) => {
       const o = [...x];
-      for (const f of ["--permission-mode", "--permission-prompts", "--permission-prompt-tool", "--settings", "--mcp-config", "--session-id", "--append-system-prompt"]) {
+      for (const f of ["--permission-mode", "--settings", "--mcp-config", "--session-id", "--append-system-prompt"]) {
         const i = o.indexOf(f);
         if (i >= 0) o.splice(i, 2);
       }
@@ -446,16 +447,15 @@ describe("approval: each-write", () => {
     expect(r.json.error).toBe('approval must be "session" or "each-write"');
   });
 
-  it("bridge_approve is listed only in an each-write code turn", async () => {
+  it("bridge_approve is listed in every code turn (0.3.12: a WebFetch is asked in both settings), never in a chat turn", async () => {
     const secret = await start();
     await post(secret, T({ mode: "code", prompt: "LISTTOOLS" }));
     await post(secret, T({ prompt: "LISTTOOLS" }));
     await post(secret, T({ mode: "code", approval: "each-write", prompt: "LISTTOOLS" }));
     const [sess, chat, each] = logRows("mcpTools").map((r) => r.names);
-    expect(sess).not.toContain("bridge_approve");
+    expect(sess).toEqual(["bridge_approve"]);
     expect(chat).not.toContain("bridge_approve");
     expect(each).toEqual(["bridge_approve"]);
-    expect(sess).toEqual([]);
   });
 
   it("a write inside the folder asks the person; allow reaches Claude Code as allow; no tool_request, nothing counted", async () => {
@@ -493,14 +493,13 @@ describe("approval: each-write", () => {
     expect(logRows("approve")[0].decision).toEqual({ behavior: "deny", message: "Outside the code folder." });
   });
 
-  it("any other tool (WebFetch, Task) is denied at once with the not-allowed message, with no question", async () => {
+  it("any other tool (Task) is denied at once with the not-allowed message, with no question; a WebFetch is asked (0.3.12)", async () => {
     const secret = await start();
-    for (const prompt of ["ASKWEB", "ASKTASK"]) {
+    for (const prompt of ["ASKTASK"]) {
       const r = await approvingTurn(secret, { mode: "code", approval: "each-write", prompt }, async () => true);
       expect(r.events.map((e) => e[0])).not.toContain("approval_request");
     }
     expect(logRows("approve").map((r) => r.decision)).toEqual([
-      { behavior: "deny", message: "This tool is not allowed in a code turn." },
       { behavior: "deny", message: "This tool is not allowed in a code turn." },
     ]);
   });

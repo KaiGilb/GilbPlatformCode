@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, DELEGATE_SENTENCE, CODER_STANDARDS_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
+import { createBridge, CODE_TOOLS, FILES_ONLY_TOOLS, WEB_TOOLS, DELEGATE_SENTENCE, CODER_STANDARDS_SENTENCE, BUILTIN_AGENT_TYPES } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -125,7 +125,7 @@ describe("GET /v1/hello options", () => {
   it("lists the models, the efforts and delegateCoding so the page can feature-detect", async () => {
     await start();
     const body = await (await fetch(`${base}/v1/hello`)).json();
-    expect(body.options).toEqual({ models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } });
+    expect(body.options).toEqual({ web: { search: true, fetch: "ask" }, models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } });
   });
 });
 
@@ -262,7 +262,7 @@ describe("delegateCoding", () => {
     expect(agents["sonnet-coder"]).toMatchObject({ ...CODER, tools: CODE_TOOLS });
     expect(agents["sonnet-coder"].prompt).toMatch(/only inside the folder/);
     expect(agents["sonnet-coder"].prompt).toMatch(/Claim nothing you did not run/);
-    expect(after(argv, "--tools")).toBe([...CODE_TOOLS, "Agent"].join(","));
+    expect(after(argv, "--tools")).toBe([...CODE_TOOLS, ...WEB_TOOLS, "Agent"].join(","));
     expect(after(argv, "--append-system-prompt")).toMatch(/When you finish, list the files you changed\. Before you write or change code, load your platform.s coding standards.* Hand each coding job to the sonnet-coder agent with a detailed brief/);
     expect(after(argv, "--append-system-prompt").endsWith(DELEGATE_SENTENCE)).toBe(true);
     expect(DELEGATE_SENTENCE).toBe("Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself. Put the Agent.Coder rules that apply, and the library units to reuse, into each brief by link and by their text, because the coder cannot read links.");
@@ -278,7 +278,7 @@ describe("delegateCoding", () => {
     await turn(secret, { mode: "code", delegateCoding: true });
     const argv = runs()[0].argv;
     expect(JSON.parse(after(argv, "--agents"))["sonnet-coder"].tools).toEqual(FILES_ONLY_TOOLS);
-    expect(after(argv, "--tools")).toBe([...FILES_ONLY_TOOLS, "Agent"].join(","));
+    expect(after(argv, "--tools")).toBe([...FILES_ONLY_TOOLS, ...WEB_TOOLS, "Agent"].join(","));
   });
 
   it("computer mode: the subagent has no tools key (it inherits), there is no --tools, and the sentence is appended", async () => {
@@ -349,7 +349,7 @@ describe("the init check lets the subagent tool through only with delegateCoding
     expect((await turn(secret, { mode: "code", delegateCoding: true })).message).toBeDefined();
     await bridge.close();
     await removeTestDir(dir);
-    const secret2 = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "Task", "WebFetch"]) } });
+    const secret2 = await start({ env: { FAKE_INIT_TOOLS: JSON.stringify(["Bash", "Task", "Skill"]) } });
     const r = await turn(secret2, { mode: "code", delegateCoding: true });
     expect(r.message).toBeUndefined();
     expect(r.error).toBeDefined();
@@ -413,10 +413,10 @@ describe("R19-L1: only the sonnet-coder subagent may be started", () => {
     await turn(secret, { mode: "code", delegateCoding: true });
     const withIt = settingsOf(runs()[0]).permissions.deny;
     for (const rule of want) expect(withIt).toContain(rule);
-    expect(withIt).toEqual(expect.arrayContaining(["WebFetch", "WebSearch"]));
+    expect(withIt).not.toContain("WebFetch");
     await turn(secret, { mode: "code", delegateCoding: false });
     const without = settingsOf(runs()[1]).permissions.deny;
-    expect(without).toEqual(["WebFetch", "WebSearch"]);
+    expect(without).toEqual([]);
     for (const rule of want) expect(without).not.toContain(rule);
   });
 });

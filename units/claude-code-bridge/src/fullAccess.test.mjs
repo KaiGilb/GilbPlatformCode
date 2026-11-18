@@ -299,9 +299,9 @@ describe("bridge_approve in computer mode", () => {
     expect(requests.map((q) => q.summary)).toEqual(["~/x", "$HOME/y", path.join(wsReal, "sub", "z.txt"), "/etc/hosts"]);
   });
 
-  it("folder mode still denies those at once, with no question", async () => {
+  it("folder mode still denies the others at once, with no question (a WebFetch is asked since 0.3.12)", async () => {
     const secret = await start({ fullAccess: false });
-    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK({ tool_name: "Read", input: { file_path: "/etc/hosts" } }, { tool_name: "WebFetch", input: { url: "https://example.com" } }) });
+    const { requests } = await askingTurn(secret, { approval: "each-write", prompt: ASK({ tool_name: "Read", input: { file_path: "/etc/hosts" } }, { tool_name: "Task", input: { prompt: "x" } }) });
     expect(requests).toEqual([]);
     expect(rows("askjson").map((r) => r.decision.behavior)).toEqual(["deny", "deny"]);
   });

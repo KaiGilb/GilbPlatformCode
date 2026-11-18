@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeTurnSettings, createBridge, FILES_ONLY_TOOLS } from "../bridge/bridge.mjs";
+import { codeTurnSettings, createBridge, FILES_ONLY_TOOLS, WEB_TOOLS } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -301,14 +301,14 @@ describe("files-only mode (Windows)", () => {
     const run = runs()[0];
     const a = run.argv;
     const val = (f) => a[a.indexOf(f) + 1];
-    expect(val("--tools")).toBe("Read,Edit,Write,Glob,Grep");
-    expect(val("--tools")).toBe(FILES_ONLY_TOOLS.join(","));
+    expect(val("--tools")).toBe("Read,Edit,Write,Glob,Grep,WebSearch,WebFetch");
+    expect(val("--tools")).toBe([...FILES_ONLY_TOOLS, ...WEB_TOOLS].join(","));
     expect(a).toContain("--restricted");
     expect(val("--permission-mode")).toBe("acceptEdits");
-    expect(val("--permission-prompts")).toBe("none");
+    expect(val("--permission-prompts")).toBe("host");
     const settings = JSON.parse(val("--settings"));
     expect(settings).not.toHaveProperty("sandbox");
-    expect(settings.permissions).toEqual({ deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" });
+    expect(settings.permissions).toEqual({ deny: [], disableBypassPermissionsMode: "disable" });
     expect(settings).toEqual(codeTurnSettings(os.homedir(), "win32"));
     const sys = val("--append-system-prompt");
     expect(sys).toContain("You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.");
@@ -322,7 +322,7 @@ describe("files-only mode (Windows)", () => {
     await turn(secret, { mode: "code", approval: "each-write" });
     const a = runs()[0].argv;
     expect(a[a.indexOf("--permission-mode") + 1]).toBe("manual");
-    expect(a[a.indexOf("--tools") + 1]).toBe("Read,Edit,Write,Glob,Grep");
+    expect(a[a.indexOf("--tools") + 1]).toBe("Read,Edit,Write,Glob,Grep,WebSearch,WebFetch");
   });
   it("the init check allows only the five tools: Bash in the init stops the turn", async () => {
     const ws = mk("W3");
