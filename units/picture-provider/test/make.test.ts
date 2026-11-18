@@ -156,3 +156,13 @@ describe("the cause of a failure, and what is billed (QA F10)", () => {
     expect(r).toMatchObject({ outcome: "Failed", cause: "output" });
   });
 });
+
+describe("QA L1 — a 200 whose envelope carries the refusal", () => {
+  test.each([[401, "auth"], [403, "auth"], [429, "rate"], [400, "refused"]] as const)("envelope code %i, no data: cause %s, not billed", async (code, cause) => {
+    const svc = service({ submit: () => new Response(JSON.stringify({ code, message: "no" }), { status: 200 }) });
+    const { h, steps } = host();
+    const r = await makePicture({ host: h, env: ENV, fetch: svc.inner, sleep: async () => {}, clock: () => 0 }, ASK);
+    expect(r).toMatchObject({ outcome: "Failed", cause });
+    expect(steps.at(-1)).toBe("finish:Failed:-:true");
+  });
+});

@@ -123,7 +123,7 @@ export function requestProblem(req: PictureRequest): string | null {
 type Reading =
   | { kind: "completed"; id: string; outputs: unknown[] }
   | { kind: "pending"; id: string }
-  | { kind: "failed"; id: string | null; why: string }
+  | { kind: "failed"; id: string | null; why: string; code?: number }
   | { kind: "unclear"; why: string };
 
 function read(body: unknown): Reading {
@@ -131,7 +131,7 @@ function read(body: unknown): Reading {
   const data = asRec(env?.["data"]);
   if (!data) {
     const code = typeof env?.["code"] === "number" ? (env["code"] as number) : null;
-    return code !== null && code >= 400 && code < 500 ? { kind: "failed", id: null, why: `the service answered code ${code}` } : { kind: "unclear", why: "the answer has no data" };
+    return code !== null && code >= 400 && code < 500 ? { kind: "failed", id: null, why: `the service answered code ${code}`, code } : { kind: "unclear", why: "the answer has no data" };
   }
   const id = typeof data["id"] === "string" && PREDICTION_ID.test(data["id"]) ? data["id"] : null;
   const status = typeof data["status"] === "string" ? data["status"].toLowerCase() : "";
@@ -206,6 +206,12 @@ export async function makeWaveSpeedPicture(deps: WaveSpeedDeps, req: PictureRequ
     }
     reading = read(await res.json().catch(() => null));
     if (reading.kind === "unclear") return unknown(`${reading.why}, so a picture may have been made and billed`, "service");
+    // QA L1: a 200 whose envelope carries a 4xx code and no data accepted nothing (not billed). Its code says why:
+    // 401/403 the key (auth), 429 busy (rate), any other this request (refused).
+    if (reading.kind === "failed" && reading.id === null && reading.code !== undefined) {
+      const c = reading.code;
+      return { outcome: "Failed", reason: safe(reading.why), cause: c === 401 || c === 403 ? "auth" : c === 429 ? "rate" : "refused", submitRefused: true };
+    }
   } catch (e) {
     if (e instanceof EgressRefused) return failed("the request was refused before it was sent", "not-sent");
     if (neverConnected(e)) return failed("the request never reached the service (no connection was made); nothing was billed", "not-sent");
