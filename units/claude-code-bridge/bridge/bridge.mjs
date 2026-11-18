@@ -136,7 +136,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.15";
+export const BRIDGE_BUILD = "0.3.16";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -368,6 +368,8 @@ const UPDATE_MANIFEST_PATH = "/app/claude-code-bridge.json";
 const UPDATE_FILE_PATH = "/app/claude-code-bridge.mjs";
 const UPDATE_MANIFEST_MAX_BYTES = 8 * 1024;
 let updateRunning = false;
+/** Is an update running now? (hello reports it.) */
+export const isUpdateRunning = () => updateRunning;
 const rfail = (code, message) => ({ updated: false, code, message });
 /**
  * The install pipeline (design section 3). Every effect is injected, so it is testable. Order: origin check, can-write
@@ -386,10 +388,32 @@ export async function runUpdate(deps) {
         updateRunning = false;
     }
 }
-async function runUpdateInner(deps) {
-    const { fs: dfs } = deps;
-    const NET_MSG = "Could not reach the server to fetch the update. Check your internet and try again.";
-    // a. fixed origin, https only; no network
+/** Is the bridge file a plain file at its real path (not a symlink), so it can be replaced by a rename? Needs no network. */
+export async function updateCanWrite(dfs, file) {
+    try {
+        const real = await dfs.realpath(file);
+        const st = await dfs.lstat(file);
+        return real === path.resolve(file) && st.isFile();
+    }
+    catch {
+        return false;
+    }
+}
+const UPDATE_NET_MSG = "Could not reach the server to fetch the update. Check your internet and try again.";
+/** GET one file from the fixed origin: null on a thrown error, a timeout, a status other than 200, or a final address on another origin. */
+async function updateGet(deps, origin, urlPath, timeoutMs, maxBytes) {
+    try {
+        const r = await deps.fetch(origin + urlPath, { timeoutMs, maxBytes });
+        if (r.status !== 200 || new URL(r.finalUrl).origin !== origin)
+            return null;
+        return r;
+    }
+    catch {
+        return null;
+    }
+}
+/** Steps 2 to 5 of the pipeline: the fixed https origin, the manifest fetch (10 s, 8 KB), the shape and signature check, the version check. No file is touched. */
+export async function checkUpdate(deps) {
     let origin;
     try {
         const u = new URL(deps.origin);
@@ -398,33 +422,11 @@ async function runUpdateInner(deps) {
         origin = u.origin;
     }
     catch {
-        return rfail("UpdateOff", "This bridge cannot update itself. Use the command below.");
+        return { kind: "fail", result: rfail("UpdateOff", "This bridge cannot update itself. Use the command below.") };
     }
-    // f. (first, it needs no network) the bridge file must be a plain file at its real path
-    try {
-        const real = await dfs.realpath(deps.file);
-        const st = await dfs.lstat(deps.file);
-        if (real !== path.resolve(deps.file) || !st.isFile())
-            return rfail("UpdateCannotWrite", "This bridge file cannot be replaced from the app. Use the command below.");
-    }
-    catch {
-        return rfail("UpdateCannotWrite", "This bridge file cannot be replaced from the app. Use the command below.");
-    }
-    const get = async (urlPath, timeoutMs, maxBytes) => {
-        try {
-            const r = await deps.fetch(origin + urlPath, { timeoutMs, maxBytes });
-            if (r.status !== 200 || new URL(r.finalUrl).origin !== origin)
-                return null;
-            return r;
-        }
-        catch {
-            return null;
-        }
-    };
-    // b. manifest
-    const mr = await get(UPDATE_MANIFEST_PATH, 10_000, UPDATE_MANIFEST_MAX_BYTES);
+    const mr = await updateGet(deps, origin, UPDATE_MANIFEST_PATH, 10_000, UPDATE_MANIFEST_MAX_BYTES);
     if (!mr)
-        return rfail("UpdateNetwork", NET_MSG);
+        return { kind: "fail", result: rfail("UpdateNetwork", UPDATE_NET_MSG) };
     let parsed;
     try {
         if (mr.truncated)
@@ -432,23 +434,40 @@ async function runUpdateInner(deps) {
         parsed = JSON.parse(Buffer.from(mr.bytes).toString("utf8"));
     }
     catch {
-        return rfail("UpdateBad", UPDATE_BAD_MSG);
+        return { kind: "fail", result: rfail("UpdateBad", UPDATE_BAD_MSG) };
     }
-    // c. verify
     const v = verifyUpdateManifest(parsed, { running: deps.running, keys: deps.keys, now: deps.now() });
-    if (!v.ok)
-        return v.code === "UpdateCurrent" ? { updated: false, reason: "current" } : { updated: false, code: v.code, message: v.message };
-    const manifest = v.manifest;
+    if (v.ok)
+        return { kind: "available", manifest: v.manifest, origin };
+    // UpdateCurrent comes only after the signature passed, so the version it names is a signed one.
+    if (v.code === "UpdateCurrent")
+        return { kind: "current", latest: String(parsed.version) };
+    return { kind: "fail", result: rfail(v.code, v.message) };
+}
+async function runUpdateInner(deps) {
+    const { fs: dfs } = deps;
+    // The can-write check comes first: it needs no network.
+    if (!(await updateCanWrite(dfs, deps.file)))
+        return rfail("UpdateCannotWrite", "This bridge file cannot be replaced from the app. Use the command below.");
+    // Steps 2 to 5
+    const c = await checkUpdate(deps);
+    if (c.kind === "current")
+        return { updated: false, reason: "current" };
+    if (c.kind === "fail")
+        return c.result;
+    const manifest = c.manifest;
+    const origin = c.origin;
     // d. file
-    const fr = await get(UPDATE_FILE_PATH, 60_000, manifest.size + 1);
+    const fr = await updateGet(deps, origin, UPDATE_FILE_PATH, 60_000, manifest.size + 1);
     if (!fr)
-        return rfail("UpdateNetwork", NET_MSG);
+        return rfail("UpdateNetwork", UPDATE_NET_MSG);
     // e. size, hash, version inside
     const first = fileMatchesManifest(fr.bytes, manifest);
     if (!first.ok)
         return { updated: false, code: first.code, message: first.message };
     // g. temp file next to the bridge file, exclusive, 0600
-    const temp = path.join(path.dirname(deps.file), `${path.basename(deps.file)}.update-${deps.random()}`);
+    // The name ends in .mjs: node loads any other extension as CommonJS and would refuse the self-test.
+    const temp = path.join(path.dirname(deps.file), `${path.basename(deps.file).replace(/\.mjs$/, "")}.update-${deps.random()}.mjs`);
     const diskFail = (err) => {
         const why = String(err?.code ?? "error").replace(/[^A-Za-z0-9_]/g, "").slice(0, 24) || "error";
         return rfail("UpdateDisk", `Could not write the update to your computer (${why}). Nothing was changed.`);
@@ -522,7 +541,7 @@ async function runUpdateInner(deps) {
     catch {
         deps.log("update: installed, but update.json could not be written");
     }
-    // m.
+    deps.log(`update: ok from ${deps.running} to ${manifest.version} sha256 ${manifest.sha256.slice(0, 12)}`);
     return { updated: true, from: deps.running, to: manifest.version };
 }
 /** GET with a hard byte cap and same-origin redirects only (at most 3). Stops reading once the cap is passed. */
@@ -588,6 +607,56 @@ export const realFs = {
     realpath: (p) => fs.promises.realpath(p),
     lstat: (p) => fs.promises.lstat(p),
 };
+/** The exit code that asks the supervisor (launchd, the Windows supervisor) to start the bridge again right after an update. */
+export const UPDATE_EXIT_CODE = 75;
+/** A supervisor.json beat this young counts as alive. */
+const SUPERVISOR_LIVE_MS = 10_000;
+/**
+ * Will something start this bridge again when it exits? True when launchd runs it under the install label (`XPC_SERVICE_NAME`),
+ * when `GILB_BRIDGE_SUPERVISED=1` is set (the plist and the Windows supervisor set it), or when supervisor.json (its text, read
+ * by the caller; null if none) beats within 10 s and names this process as its child. Pure.
+ */
+export function isSupervised(env, files) {
+    if (env.GILB_BRIDGE_SUPERVISED === "1")
+        return true;
+    if (env.XPC_SERVICE_NAME !== undefined && env.XPC_SERVICE_NAME === files.label)
+        return true;
+    if (files.supervisorJson) {
+        try {
+            const r = JSON.parse(files.supervisorJson);
+            if (r && typeof r.beat === "number" && Math.abs(files.now - r.beat) <= SUPERVISOR_LIVE_MS && r.child === files.pid)
+                return true;
+        }
+        catch {
+            /* not a record */
+        }
+    }
+    return false;
+}
+/** --rollback: put `<file>.prev` back as the bridge file, by a copy next to it and a rename (never a half-written file). */
+export function rollbackBridge(file, io = { stat: (p) => fs.statSync(p), copyFile: (a, b) => fs.copyFileSync(a, b), rename: (a, b) => fs.renameSync(a, b), rm: (p) => fs.rmSync(p, { force: true }) }) {
+    const prev = `${file}.prev`;
+    try {
+        if (!io.stat(prev).isFile())
+            throw new Error("not a file");
+    }
+    catch {
+        return { ok: false, message: "No previous bridge to roll back to." };
+    }
+    const tmp = path.join(path.dirname(file), `${path.basename(file).replace(/\.mjs$/, "")}.rollback-${process.pid}.mjs`);
+    try {
+        io.copyFile(prev, tmp);
+        io.rename(tmp, file);
+    }
+    catch (e) {
+        try {
+            io.rm(tmp);
+        }
+        catch { /* ignore */ }
+        return { ok: false, message: `Could not roll back: ${e?.code ?? "error"}. The bridge file is unchanged.` };
+    }
+    return { ok: true, message: `Rolled back to the previous bridge. Restart it: stop the bridge window (Ctrl+C) and start it again, or, if it runs always-on, run  node ${file} --install  again.` };
+}
 /** Runs the new file with `--selftest` in its own process (no shell, 15 s). */
 export function realSelfTest(p) {
     return new Promise((resolve) => {
@@ -3524,6 +3593,83 @@ export function createBridge(opts = {}) {
         return json(res, 200, { name: v.name, path: v.path });
     }
     // ---- routing -----------------------------------------------------------------------------------------------------
+    // ---- self-update (POST /v1/update; the pure checks and the pipeline are above, in runUpdate) ----
+    const updateStateDir = opts.stateDir ?? path.join(home, ".gilb-claude-code-bridge");
+    const updateFile = () => {
+        try {
+            return fs.realpathSync(fileURLToPath(import.meta.url));
+        }
+        catch {
+            return fileURLToPath(import.meta.url);
+        }
+    };
+    /** The real update dependencies, with whatever a test replaced. */
+    const realUpdateDeps = () => ({
+        origin: UPDATE_ORIGIN, keys: UPDATE_KEYS, running: BRIDGE_BUILD, file: updateFile(), stateDir: updateStateDir,
+        fetch: realFetch, fs: realFs, selfTest: realSelfTest, now: () => new Date(), random: () => crypto.randomBytes(6).toString("hex"),
+        log: (l) => log(l),
+        ...opts.updateDeps,
+    });
+    const supervisedNow = () => {
+        let supervisorJson = null;
+        if (!env.GILB_BRIDGE_SUPERVISED && platform === "win32") {
+            try {
+                supervisorJson = fs.readFileSync(path.join(updateStateDir, "supervisor.json"), "utf8");
+            }
+            catch { /* none */ }
+        }
+        return isSupervised(env, { label: opts.label ?? DEFAULT_LABEL, supervisorJson, now: Date.now(), pid: process.pid });
+    };
+    const UPDATE_HTTP = { UpdateRunning: 409, UpdateCannotWrite: 409, UpdateOff: 501, UpdateNetwork: 502, UpdateBad: 502, UpdateSignature: 422, UpdateMismatch: 422, UpdateTooOld: 422, UpdateSelfTest: 422, UpdateDisk: 500 };
+    const updateFailure = (res, code, message, from) => {
+        log(`update: ${code} (running ${from})`);
+        return json(res, UPDATE_HTTP[code] ?? 500, { error: message, code });
+    };
+    async function handleUpdate(req, res) {
+        let body = {};
+        try {
+            body = await readBody(req);
+        }
+        catch {
+            body = {}; // the body is ignored except { check: true }
+        }
+        if (turns.size > 0)
+            return json(res, 409, { error: "A chat turn is still running. Update when it has finished.", code: "TurnRunning" });
+        const deps = realUpdateDeps();
+        if (body.check === true) {
+            const c = await checkUpdate(deps);
+            if (c.kind === "available")
+                return json(res, 200, { current: deps.running, latest: c.manifest.version, available: true });
+            if (c.kind === "current")
+                return json(res, 200, { current: deps.running, latest: c.latest, available: false });
+            return updateFailure(res, c.result.code, c.result.message, deps.running);
+        }
+        const r = await (opts.updateRun ?? runUpdate)(deps);
+        if ("code" in r)
+            return updateFailure(res, r.code, r.message, deps.running);
+        if (!r.updated) {
+            log(`update: current (running ${deps.running})`);
+            return json(res, 200, { updated: false, reason: "current" });
+        }
+        const automatic = supervisedNow();
+        if (automatic) {
+            // Only when the answer has been sent: close the listener, give the client a moment to read it, then end the process.
+            // The supervisor (launchd, the Windows supervisor) starts the new file with the same flags.
+            res.once("finish", () => {
+                server.close();
+                setTimeout(() => (opts.exit ?? ((c) => process.exit(c)))(UPDATE_EXIT_CODE), 150);
+            });
+        }
+        else {
+            log(`Updated to ${r.to}. Stop this window (Ctrl+C) and start the bridge again.`);
+        }
+        return json(res, 200, { updated: true, from: r.from, to: r.to, restart: automatic ? "automatic" : "manual" });
+    }
+    /** hello.update: no network, only a look at the file. */
+    async function updateHello() {
+        const d = realUpdateDeps();
+        return { supported: d.origin.startsWith("https://") && d.keys.length > 0, supervised: supervisedNow(), canWrite: await updateCanWrite(d.fs, d.file), busy: isUpdateRunning() };
+    }
     async function handle(req, res) {
         if (!hostOk(req))
             return json(res, 403, { error: "bad host" });
@@ -3568,7 +3714,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } } });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, update: await updateHello() });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -3619,6 +3765,8 @@ export function createBridge(opts = {}) {
             }
             if (req.method === "POST" && url.pathname === "/v1/turn")
                 return handleTurn(req, res);
+            if (req.method === "POST" && url.pathname === "/v1/update")
+                return handleUpdate(req, res);
             if (req.method === "POST" && url.pathname === "/v1/turns") {
                 const me = callerKey(req);
                 const iso = (ms) => new Date(ms).toISOString();
@@ -3806,6 +3954,8 @@ ${items}
   <dict>
     <key>PATH</key>
     <string>${xmlEsc(pathEnv)}</string>
+    <key>GILB_BRIDGE_SUPERVISED</key>
+    <string>1</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>${xmlEsc(workDir)}</string>
@@ -4609,7 +4759,7 @@ export async function runSupervisor(cli, io = {}) {
             /* no log yet */
         }
         const fd = fs.openSync(f.logFile, "a");
-        const c = spawn(process.execPath, [bridgeFile, ...childArgs], { stdio: ["ignore", fd, fd], windowsHide: true, env: { ...env, GILB_BRIDGE_SUPERVISOR_PID: String(process.pid) } });
+        const c = spawn(process.execPath, [bridgeFile, ...childArgs], { stdio: ["ignore", fd, fd], windowsHide: true, env: { ...env, GILB_BRIDGE_SUPERVISOR_PID: String(process.pid), GILB_BRIDGE_SUPERVISED: "1" } });
         fs.closeSync(fd);
         const exited = new Promise((resolve) => {
             c.once("exit", (code, signal) => resolve({ code, signal }));
@@ -4683,19 +4833,31 @@ export function stableNodePath(t = {}) {
 // ---- command line ----------------------------------------------------------------------------------------------------
 async function main() {
     const argv = process.argv.slice(2);
+    // --selftest comes before anything else: the update checks the new file with it. It opens no port, reads no state, starts nothing.
+    if (argv.includes("--selftest")) {
+        console.log(`build ${BRIDGE_BUILD}`);
+        process.exit(0);
+    }
+    if (argv.includes("--rollback")) {
+        const r = rollbackBridge(fs.realpathSync(fileURLToPath(import.meta.url)));
+        (r.ok ? console.log : console.error)(r.message);
+        process.exit(r.ok ? 0 : 1);
+    }
     const cli = parseCli(argv);
     if (cli.mode === "help") {
         console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access]
        node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
+       node bridge.mjs --selftest   prints the build number and exits (the app's update uses it to check a new file)
+       node bridge.mjs --rollback   puts the previous bridge file (kept as <file>.prev by an update) back; restart the bridge after it
        --label L: letters, digits, dot, dash, underscore, 1 to 64 characters.${process.platform === "win32" ? `
        Windows: a second --label is a separate install (own state folder, log, launcher, start-up entry) and needs its own --port.` : ""}`);
         return;
     }
     // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"]);
+    const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
     const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]));
     if (unknown.length > 0) {
-        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --label, --install, --uninstall, --status, --code, --unpair-all, --help`);
+        console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --label, --install, --uninstall, --status, --code, --unpair-all, --selftest, --rollback, --help`);
         process.exit(2);
     }
     if (cli.modes.length > 1) {
@@ -4774,7 +4936,7 @@ async function main() {
     // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
     // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
     const controlToken = crypto.randomBytes(32).toString("hex");
-    const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), log: (l) => console.log(`  ${l}`) });
+    const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
     try {
         await bridge.start();
     }
@@ -4792,6 +4954,22 @@ async function main() {
     }
     catch {
         /* --code will say there is no token */
+    }
+    // A note left by an update that restarted this bridge: say so once, then remove it.
+    const updateNote = path.join(f.stateDir, "update.json");
+    try {
+        const n = JSON.parse(fs.readFileSync(updateNote, "utf8"));
+        console.log(`  updated from ${String(n.from)} to ${String(n.to)} at ${String(n.at)}`);
+        fs.rmSync(updateNote, { force: true });
+    }
+    catch (e) {
+        if (e.code !== "ENOENT") {
+            console.log("  update.json could not be read; removed it");
+            try {
+                fs.rmSync(updateNote, { force: true });
+            }
+            catch { /* ignore */ }
+        }
     }
     const who = login.info.email ? ` (${login.info.email})` : "";
     const billing = `Claude subscription${who}, plan ${login.info.subscriptionType}`;
