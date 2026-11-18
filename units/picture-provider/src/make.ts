@@ -12,7 +12,7 @@
 // Every step's failure is a returned value, never a throw past makePicture and never silent.
 import { pictureConfig, type PictureEnv, type PicturePrice } from "./config.js";
 import { pictureEgress, type EgressLog, type ExtraGuard, type HostCheck } from "./egress.js";
-import { makeWaveSpeedPicture, requestProblem, type PictureRequest } from "./wavespeed.js";
+import { makeWaveSpeedPicture, requestProblem, type PictureFailureCause, type PictureRequest } from "./wavespeed.js";
 import type { PictureType } from "./bytes.js";
 
 /** The four outcomes an attempt ends with. "Not stored": the picture was made but the host did not keep it. */
@@ -59,6 +59,8 @@ export type MakePictureResult =
     file?: string;
     reason?: string;
     predictionId?: string;
+    /** Why the service made no picture (absent on Made and on Not stored): see PictureFailureCause. */
+    cause?: PictureFailureCause;
     /** False when the finishing write failed: the attempt then has no outcome (read as "cannot tell"). */
     patched: boolean;
     patchError?: string;
@@ -121,7 +123,7 @@ export async function makePicture(deps: MakePictureDeps, ask: PictureRequest): P
       ...(deps.redact ? { redact: deps.redact } : {}), ...(deps.log ? { log: deps.log } : {}),
     }, ask);
   } catch {
-    made = { outcome: "Unknown", reason: "the picture client stopped unexpectedly, so a picture may have been made and billed" };
+    made = { outcome: "Unknown", reason: "the picture client stopped unexpectedly, so a picture may have been made and billed", cause: "service" };
   }
 
   // (e)
@@ -139,11 +141,13 @@ export async function makePicture(deps: MakePictureDeps, ask: PictureRequest): P
     }
     if (reason) say(reason);
   }
-  const notBilled = made.outcome === "Failed" && made.submitRefused === true;
+  // Nothing was billed when the service refused the submit (4xx) or the request never reached it (QA F10).
+  const notBilled = made.outcome === "Failed" && (made.submitRefused === true || made.cause === "not-sent");
   const predictionId = made.predictionId;
 
   // (f)
-  const out = { attempt, outcome, ...(file ? { file } : {}), ...(reason ? { reason } : {}), ...(predictionId ? { predictionId } : {}) };
+  const cause = made.outcome === "Made" ? undefined : made.cause;
+  const out = { attempt, outcome, ...(file ? { file } : {}), ...(reason ? { reason } : {}), ...(predictionId ? { predictionId } : {}), ...(cause ? { cause } : {}) };
   try {
     await deps.host.finish({ attempt, outcome, ...(file ? { file } : {}), notBilled, price: cfg.price });
     return { ...out, patched: true };

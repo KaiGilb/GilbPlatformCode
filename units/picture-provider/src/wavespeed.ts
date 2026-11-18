@@ -59,7 +59,35 @@ export type PictureResult =
    * `submitRefused` is true ONLY when the submit itself was answered with a 4xx: the service accepted nothing, so
    * nothing was billed. Every other Failed leaves it off: it cannot be told that nothing was billed.
    */
-  | { outcome: "Failed" | "Unknown"; reason: string; predictionId?: string; submitRefused?: true };
+  | { outcome: "Failed" | "Unknown"; reason: string; cause: PictureFailureCause; predictionId?: string; submitRefused?: true };
+
+/**
+ * WHY a picture was not made, so a host can tell a term's own failure from a fault of the whole service:
+ *   bad-request  the request could not be sent as asked (the prompt, the size): this term's own
+ *   refused      the service refused this request (a 4xx that is not auth or rate): this term's own
+ *   ended        the service ended this picture (failed, cancelled, timeout, deleted): this term's own
+ *   auth         the service refused the key (401, 403): the whole service, until the key is fixed
+ *   rate         the service is busy (429): the whole service, for a while
+ *   not-sent     the request never reached the service (refused by the egress guard, the name did not resolve, the
+ *                connection was not made): the whole service or the network; nothing was billed
+ *   service      a 5xx, no answer, an answer that cannot be read, a wait that ran out: the whole service; may be billed
+ *   output       the picture was made but could not be fetched from its output host: the output host; billed
+ */
+export type PictureFailureCause = "bad-request" | "refused" | "ended" | "auth" | "rate" | "not-sent" | "service" | "output";
+
+/** The causes that say nothing about the term: the host should put the term back to wait, not end it. */
+export const TRANSIENT_CAUSES: ReadonlySet<PictureFailureCause> = new Set(["auth", "rate", "not-sent", "service", "output"]);
+
+/** Error codes a runtime gives when a connection was never made (so nothing was sent). */
+const NOT_CONNECTED = new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_NONAME", "ECONNREFUSED", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
+/** True when a thrown fetch error proves the request never reached the service. */
+function neverConnected(e: unknown): boolean {
+  for (let x: unknown = e, i = 0; x && i < 4; x = (x as { cause?: unknown }).cause, i++) {
+    const code = (x as { code?: unknown }).code;
+    if (typeof code === "string" && NOT_CONNECTED.has(code)) return true;
+  }
+  return false;
+}
 
 /** The wait before the first poll; each wait is half as long again, never over POLL_MAX_MS. */
 export const POLL_FIRST_MS = 1_500;
@@ -129,11 +157,11 @@ export async function makeWaveSpeedPicture(deps: WaveSpeedDeps, req: PictureRequ
     return t.replace(/[^\x20-\x7e]/g, " ").slice(0, 200);
   };
   const say = (line: string) => { try { deps.log?.(safe(`pictures: ${line}`)); } catch { /* a logger must not stop a picture */ } };
-  const failed = (reason: string, predictionId?: string): PictureResult => ({ outcome: "Failed", reason: safe(reason), ...(predictionId ? { predictionId } : {}) });
-  const unknown = (reason: string, predictionId?: string): PictureResult => ({ outcome: "Unknown", reason: safe(reason), ...(predictionId ? { predictionId } : {}) });
+  const failed = (reason: string, cause: PictureFailureCause, predictionId?: string): PictureResult => ({ outcome: "Failed", reason: safe(reason), cause, ...(predictionId ? { predictionId } : {}) });
+  const unknown = (reason: string, cause: PictureFailureCause, predictionId?: string): PictureResult => ({ outcome: "Unknown", reason: safe(reason), cause, ...(predictionId ? { predictionId } : {}) });
 
   const problem = requestProblem(req);
-  if (problem) return failed(`${problem}; nothing was sent`);
+  if (problem) return failed(`${problem}; nothing was sent`, "bad-request");
 
   const started = now();
   const deadline = started + waitMs;
@@ -169,25 +197,27 @@ export async function makeWaveSpeedPicture(deps: WaveSpeedDeps, req: PictureRequ
     say(`submit answered HTTP ${res.status}`);
     if (res.status >= 400 && res.status < 500) {
       void res.body?.cancel().catch(() => undefined);
-      return { outcome: "Failed", reason: safe(`the service refused the request (HTTP ${res.status})`), submitRefused: true };
+      const cause: PictureFailureCause = res.status === 401 || res.status === 403 ? "auth" : res.status === 429 ? "rate" : "refused";
+      return { outcome: "Failed", reason: safe(`the service refused the request (HTTP ${res.status})`), cause, submitRefused: true };
     }
     if (res.status < 200 || res.status >= 300) {
       void res.body?.cancel().catch(() => undefined);
-      return unknown(`the service answered HTTP ${res.status} to the request, so a picture may have been made and billed`);
+      return unknown(`the service answered HTTP ${res.status} to the request, so a picture may have been made and billed`, "service");
     }
     reading = read(await res.json().catch(() => null));
-    if (reading.kind === "unclear") return unknown(`${reading.why}, so a picture may have been made and billed`);
+    if (reading.kind === "unclear") return unknown(`${reading.why}, so a picture may have been made and billed`, "service");
   } catch (e) {
-    if (e instanceof EgressRefused) return failed("the request was refused before it was sent");
+    if (e instanceof EgressRefused) return failed("the request was refused before it was sent", "not-sent");
+    if (neverConnected(e)) return failed("the request never reached the service (no connection was made); nothing was billed", "not-sent");
     say("submit got no answer");
-    return unknown("the request got no answer, so a picture may have been made and billed");
+    return unknown("the request got no answer, so a picture may have been made and billed", "service");
   }
 
   // wait: poll the result (the only repeated call)
   let delay = POLL_FIRST_MS;
   while (reading.kind === "pending") {
     const id = reading.id;
-    if (now() >= deadline) return unknown("the wait ran out before the picture was ready; it may still be made and billed", id);
+    if (now() >= deadline) return unknown("the wait ran out before the picture was ready; it may still be made and billed", "service", id);
     await sleep(Math.min(delay, Math.max(0, deadline - now())));
     delay = Math.min(Math.round(delay * 1.5), POLL_MAX_MS);
     try {
@@ -196,52 +226,52 @@ export async function makeWaveSpeedPicture(deps: WaveSpeedDeps, req: PictureRequ
       }, POLL_TRIES);
       say(`poll answered HTTP ${res.status}`);
       if (res.status === 429 || res.status >= 500) { void res.body?.cancel().catch(() => undefined); continue; }
-      if (res.status !== 200) { void res.body?.cancel().catch(() => undefined); return unknown(`the result could not be read (HTTP ${res.status})`, id); }
+      if (res.status !== 200) { void res.body?.cancel().catch(() => undefined); return unknown(`the result could not be read (HTTP ${res.status})`, "service", id); }
       const r = read(await res.json().catch(() => null));
       if (r.kind === "unclear") continue;
       reading = r;
     } catch (e) {
-      if (e instanceof EgressRefused) return unknown("the result request was refused before it was sent", id);
+      if (e instanceof EgressRefused) return unknown("the result request was refused before it was sent", "service", id);
       say("poll got no answer");
     }
   }
-  if (reading.kind === "failed") return failed(reading.why, reading.id ?? undefined);
-  if (reading.kind !== "completed") return unknown("the answer could not be read, so a picture may have been made and billed");
+  if (reading.kind === "failed") return failed(reading.why, reading.id === null ? "refused" : "ended", reading.id ?? undefined);
+  if (reading.kind !== "completed") return unknown("the answer could not be read, so a picture may have been made and billed", "service");
 
   // fetch the picture: the first output, from a listed host only
   const { id } = reading;
   const first = reading.outputs.find((o): o is string => typeof o === "string" && o.length > 0);
-  if (!first) return failed("the picture was completed but names no output", id);
+  if (!first) return failed("the picture was completed but names no output", "output", id);
   let u: URL;
-  try { u = new URL(first); } catch { return failed("the output address is not an address", id); }
+  try { u = new URL(first); } catch { return failed("the output address is not an address", "output", id); }
   const allowed = new Set(deps.outputHosts.map(hostKey));
-  if (u.protocol !== "https:" || u.username || u.password) return failed("the output address is not a plain https address", id);
-  if (!allowed.has(hostKey(u.host))) return failed(`the output is on a host (${u.hostname.slice(0, 80)}) that is not listed; it was not fetched`, id);
+  if (u.protocol !== "https:" || u.username || u.password) return failed("the output address is not a plain https address", "output", id);
+  if (!allowed.has(hostKey(u.host))) return failed(`the output is on a host (${u.hostname.slice(0, 80)}) that is not listed; it was not fetched`, "output", id);
   try {
     const res = await deps.output(u.href, { method: "GET", headers: { accept: "image/png,image/jpeg,image/webp" }, signal: AbortSignal.timeout(CALL_MS) });
-    if (res.status !== 200) { void res.body?.cancel().catch(() => undefined); return failed(`the picture could not be fetched (HTTP ${res.status})`, id); }
+    if (res.status !== 200) { void res.body?.cancel().catch(() => undefined); return failed(`the picture could not be fetched (HTTP ${res.status})`, "output", id); }
     const contentType = (res.headers.get("content-type") ?? "").split(";", 1)[0]!.trim().toLowerCase();
-    if (!(PICTURE_TYPES as readonly string[]).includes(contentType)) { void res.body?.cancel().catch(() => undefined); return failed("the picture is not png, jpeg or webp", id); }
+    if (!(PICTURE_TYPES as readonly string[]).includes(contentType)) { void res.body?.cancel().catch(() => undefined); return failed("the picture is not png, jpeg or webp", "output", id); }
     const declared = Number(res.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > PICTURE_BYTES_MAX) { void res.body?.cancel().catch(() => undefined); return failed(`the picture is larger than ${PICTURE_BYTES_MAX} bytes`, id); }
+    if (Number.isFinite(declared) && declared > PICTURE_BYTES_MAX) { void res.body?.cancel().catch(() => undefined); return failed(`the picture is larger than ${PICTURE_BYTES_MAX} bytes`, "output", id); }
     const reader = res.body?.getReader();
-    if (!reader) return failed("the picture came with no body", id);
+    if (!reader) return failed("the picture came with no body", "output", id);
     const chunks: Uint8Array[] = [];
     let total = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > PICTURE_BYTES_MAX) { await reader.cancel().catch(() => undefined); return failed(`the picture is larger than ${PICTURE_BYTES_MAX} bytes`, id); }
+      if (total > PICTURE_BYTES_MAX) { await reader.cancel().catch(() => undefined); return failed(`the picture is larger than ${PICTURE_BYTES_MAX} bytes`, "output", id); }
       chunks.push(value);
     }
-    if (total === 0) return failed("the picture came empty", id);
+    if (total === 0) return failed("the picture came empty", "output", id);
     const bytes = new Uint8Array(total);
     let at = 0;
     for (const c of chunks) { bytes.set(c, at); at += c.byteLength; }
     say(`picture fetched (${total} bytes)`);
     return { outcome: "Made", bytes, contentType: contentType as PictureType, predictionId: id };
   } catch (e) {
-    return failed(e instanceof EgressRefused ? "the output address was refused before it was fetched" : "the picture could not be fetched", id);
+    return failed(e instanceof EgressRefused ? "the output address was refused before it was fetched" : "the picture could not be fetched", "output", id);
   }
 }

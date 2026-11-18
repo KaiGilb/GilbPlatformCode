@@ -116,3 +116,43 @@ describe("the redactor", () => {
     expect(redactSecrets("api_key=sk_live_0123456789abcdef")).toBe("api_key=[redacted]");
   });
 });
+
+describe("the cause of a failure, and what is billed (QA F10)", () => {
+  const causeOf = async (svc: ReturnType<typeof service>, extra: Partial<Parameters<typeof makePicture>[0]> = {}) => {
+    const { h, steps } = host();
+    const r = await makePicture({ host: h, env: ENV, fetch: svc.inner, sleep: async () => {}, clock: () => 0, ...extra }, ASK);
+    return { r, steps };
+  };
+  test.each([[401, "auth"], [403, "auth"], [429, "rate"], [400, "refused"]] as const)("a %i on the submit is cause %s and not billed", async (status, cause) => {
+    const { r, steps } = await causeOf(service({ submit: () => new Response("{}", { status }) }));
+    expect(r).toMatchObject({ outcome: "Failed", cause });
+    expect(steps.at(-1)).toBe("finish:Failed:-:true");
+  });
+  test("a 5xx is cause service and may be billed", async () => {
+    const { r, steps } = await causeOf(service({ submit: () => new Response("{}", { status: 502 }) }));
+    expect(r).toMatchObject({ outcome: "Unknown", cause: "service" });
+    expect(steps.at(-1)).toBe("finish:Unknown:-:false");
+  });
+  test("a name that does not resolve (the runtime's ENOTFOUND) is cause not-sent and not billed", async () => {
+    const dead = (async () => { throw new TypeError("fetch failed", { cause: Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" }) }); }) as unknown as typeof fetch;
+    const { h, steps } = host();
+    const r = await makePicture({ host: h, env: ENV, fetch: dead, sleep: async () => {}, clock: () => 0 }, ASK);
+    expect(r).toMatchObject({ outcome: "Failed", cause: "not-sent" });
+    expect(steps.at(-1)).toBe("finish:Failed:-:true");
+  });
+  test("the host's DNS check refusing the API host is cause not-sent and not billed", async () => {
+    const svc = service({});
+    const { r, steps } = await causeOf(svc, { hostCheck: async () => "could not be resolved" });
+    expect(r).toMatchObject({ outcome: "Failed", cause: "not-sent" });
+    expect(steps.at(-1)).toBe("finish:Failed:-:true");
+    expect(svc.seen).toHaveLength(0);
+  });
+  test("the service ends the picture as failed: cause ended (this request's own)", async () => {
+    const { r } = await causeOf(service({ submit: () => new Response(JSON.stringify({ code: 200, data: { id: "p9", status: "failed", error: "nsfw" } }), { status: 200 }) }));
+    expect(r).toMatchObject({ outcome: "Failed", cause: "ended" });
+  });
+  test("the output host answers 503: cause output", async () => {
+    const { r } = await causeOf(service({ output: () => new Response("", { status: 503 }) }));
+    expect(r).toMatchObject({ outcome: "Failed", cause: "output" });
+  });
+});

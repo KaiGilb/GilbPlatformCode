@@ -7,7 +7,7 @@ export {
   type PictureConfig, type PictureEnv, type PicturePrice,
 } from "./config.js";
 export {
-  makeWaveSpeedPicture, requestProblem, POLL_FIRST_MS, PICTURE_WAIT_MS, PICTURE_PROMPT_CHARS,
-  type PictureRequest, type PictureResult, type WaveSpeedDeps,
+  makeWaveSpeedPicture, requestProblem, POLL_FIRST_MS, PICTURE_WAIT_MS, PICTURE_PROMPT_CHARS, TRANSIENT_CAUSES,
+  type PictureFailureCause, type PictureRequest, type PictureResult, type WaveSpeedDeps,
 } from "./wavespeed.js";
 export { makePicture, timedOut, type PictureHost, type PictureOutcome, type MakePictureDeps, type MakePictureResult, type MakePictureFailure } from "./make.js";

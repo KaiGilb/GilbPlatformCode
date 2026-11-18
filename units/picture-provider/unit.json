@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/picture-provider",
   "package": "@kaigilb/gilbplatformcode-picture-provider",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "purpose": "One picture from a picture-making service, recorded before and after the call.",
   "source": {
     "repo": "KaiGilb/Social",
