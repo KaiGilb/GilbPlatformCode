@@ -11,7 +11,7 @@
 //       was refused with a 4xx, `notBilled` is true (nothing was billed).
 // Every step's failure is a returned value, never a throw past makePicture and never silent.
 import { pictureConfig, type PictureEnv, type PicturePrice } from "./config.js";
-import { pictureEgress, type EgressLog, type ExtraGuard } from "./egress.js";
+import { pictureEgress, type EgressLog, type ExtraGuard, type HostCheck } from "./egress.js";
 import { makeWaveSpeedPicture, requestProblem, type PictureRequest } from "./wavespeed.js";
 import type { PictureType } from "./bytes.js";
 
@@ -36,8 +36,10 @@ export interface MakePictureDeps {
   env: PictureEnv;
   /** The runtime fetch. makePicture holds it to the picture egress itself. */
   fetch: typeof fetch;
-  /** The host app's own extra egress rule (a deny list, a public-address rule). */
+  /** The host app's own extra egress rule (a deny list). */
   extraGuard?: ExtraGuard;
+  /** The host app's async host check (Node: a DNS lookup refusing a non-public address). */
+  hostCheck?: HostCheck;
   egressLog?: EgressLog;
   redact?: (s: string) => string;
   log?: (line: string) => void;
@@ -108,6 +110,7 @@ export async function makePicture(deps: MakePictureDeps, ask: PictureRequest): P
   // (d)
   const eg = pictureEgress(cfg.apiBase, cfg.outputHosts, deps.fetch, {
     ...(deps.egressLog ? { log: deps.egressLog } : {}), ...(deps.extraGuard ? { extraGuard: deps.extraGuard } : {}),
+    ...(deps.hostCheck ? { hostCheck: deps.hostCheck } : {}),
   });
   let made: Awaited<ReturnType<typeof makeWaveSpeedPicture>>;
   try {

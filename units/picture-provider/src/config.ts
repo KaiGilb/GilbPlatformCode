@@ -4,6 +4,7 @@
 // Off (with one sentence saying why, and never the key) when the base is empty or not a plain https address, the key
 // is missing or unusable, no output host is listed, or the model has no listed price. No price, no call.
 import { MIN_SECRET_LENGTH } from "./redact.js";
+import { PROVIDER_HOSTS } from "./egress.js";
 
 /** The configuration as the host app holds it, by the names Social's worker uses. */
 export interface PictureEnv { WAVESPEED_API_BASE?: string; WAVESPEED_API_KEY?: string; PICTURE_OUTPUT_HOSTS?: string; PICTURE_PRICES?: string }
@@ -91,6 +92,7 @@ export type PictureConfig =
 export function pictureConfig(env: PictureEnv, modelId: string): PictureConfig {
   const apiBase = waveSpeedBaseOf(env.WAVESPEED_API_BASE);
   if (!apiBase) return { on: false, why: "WAVESPEED_API_BASE is empty or not a plain https address: pictures are off" };
+  if (new URL(apiBase).host !== PROVIDER_HOSTS.wavespeed) return { on: false, why: `WAVESPEED_API_BASE is not on ${PROVIDER_HOSTS.wavespeed}: pictures are off` };
   const keyWhy = pictureKeyProblem(env.WAVESPEED_API_KEY);
   if (keyWhy) return { on: false, why: `WAVESPEED_API_KEY ${keyWhy}: pictures are off` };
   const { hosts } = parseOutputHosts(env.PICTURE_OUTPUT_HOSTS);

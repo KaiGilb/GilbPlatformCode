@@ -48,6 +48,12 @@ describe("nothing written, nothing called", () => {
     expect(steps).toEqual([]);
     expect(svc.seen).toHaveLength(0);
   });
+  test("a base off the pinned host → Off, no call", async () => {
+    const svc = service({});
+    const { h, steps } = host();
+    expect(await run(svc, h, { ...ENV, WAVESPEED_API_BASE: "https://wavespeed.example.net" })).toMatchObject({ failure: "Off" });
+    expect(steps).toEqual([]);
+  });
   test("no price for the model → Off, no call", async () => {
     const svc = service({});
     const { h, steps } = host();

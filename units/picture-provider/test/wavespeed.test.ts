@@ -303,11 +303,34 @@ describe("the picture egress: two guarded fetches", () => {
     }
     expect(calls).toHaveLength(1);
   });
-  test("a base with a path holds the API to it", async () => {
+  test("the API host is pinned to api.wavespeed.ai: a base on any other host reaches nothing", async () => {
     const calls: string[] = [];
     const eg = pictureEgress("https://gateway.example.net/wavespeed", [], (async (u: string) => { calls.push(u); return new Response("{}"); }) as unknown as typeof fetch, { log: log() });
-    await eg.api("https://gateway.example.net/wavespeed/api/v3/x", { method: "GET" });
-    await expect(eg.api("https://gateway.example.net/other", { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    await expect(eg.api("https://gateway.example.net/wavespeed/api/v3/x", { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    expect(calls).toHaveLength(0);
+  });
+  test("a base with a path on the pinned host holds the API to it", async () => {
+    const calls: string[] = [];
+    const eg = pictureEgress(`${BASE}/v`, [], (async (u: string) => { calls.push(u); return new Response("{}"); }) as unknown as typeof fetch, { log: log() });
+    await eg.api(`${BASE}/v/api/v3/x`, { method: "GET" });
+    await expect(eg.api(`${BASE}/api/v3/x`, { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    expect(calls).toHaveLength(1);
+  });
+  test("the public-address rule (lifted from Social netGuard): private, CGNAT, metadata, local names and hidden characters are refused even when listed", async () => {
+    const calls: string[] = [];
+    const inner = (async (u: string) => { calls.push(u); return new Response("{}"); }) as unknown as typeof fetch;
+    const hosts = ["100.64.103.65", "169.254.169.254", "cdn.internal", "pics.local", "a.localhost", "[::1]", "[fd00::1]"];
+    const eg = pictureEgress(BASE, hosts, inner);
+    for (const h of hosts) await expect(eg.output(`https://${h}/a.png`, { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    await expect(eg.output(`https://${OUT_HOST}\u200b/a.png`, { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    expect(calls).toHaveLength(0);
+  });
+  test("the host app's async hostCheck (a DNS lookup) refuses a name that resolves to a private address", async () => {
+    const calls: string[] = [];
+    const inner = (async (u: string) => { calls.push(u); return new Response("{}"); }) as unknown as typeof fetch;
+    const eg = pictureEgress(BASE, [OUT_HOST], inner, { hostCheck: async (h) => (h === OUT_HOST ? "resolves to 10.0.0.5, not a public address" : null) });
+    await expect(eg.output(`https://${OUT_HOST}/a.png`, { method: "GET" })).rejects.toBeInstanceOf(EgressRefused);
+    await eg.api(`${BASE}/api/v3/x`, { method: "POST" });
     expect(calls).toHaveLength(1);
   });
   test("output reaches the listed hosts only, GET only, never the API host (the key's place)", async () => {

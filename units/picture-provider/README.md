@@ -8,7 +8,8 @@ One picture from a picture-making service, recorded before and after the call. T
 
 - `makePicture(deps, ask)`: the one flow. Config and price check, the host's gate, the attempt written BEFORE the call, one call, the host keeps the bytes, ONE finishing write. Never throws.
 - `makeWaveSpeedPicture(deps, req)`: one submit, polls, and the fetch of the bytes. The submit POST is sent once and never repeated.
-- `pictureEgress(apiBase, outputHosts, fetch, { extraGuard })`: two guarded fetches. `api` reaches only the configured base; `output` reaches only the listed output hosts. https only, no IP address, no machine name, no port but 443.
+- `pictureEgress(apiBase, outputHosts, fetch, { extraGuard, hostCheck })`: two guarded fetches. `api` reaches only api.wavespeed.ai (pinned) under the configured base; `output` reaches only the listed output hosts. Both hold the public-address rule (`addressProblem`: https, port 443, no IP address, no private, carrier-grade-NAT or local name, no hidden or host-changing character), then the app's `extraGuard`, then its async `hostCheck` (a DNS lookup where the runtime has one).
+- `addressGlobal`, `ipv4Global`, `ipv6Global`: whether a resolved address is public, for a `hostCheck`.
 - `pictureConfig(env, modelId)`: on or off, with one sentence why. No price for the model means no call.
 - `redactSecrets(text, secrets)`: removes keys and Bearer values from any text that leaves the unit.
 - `pngSize`, `imageBytesMatch`: checks the bytes by their magic numbers.
@@ -24,7 +25,7 @@ Runs in Node 22 and in a Cloudflare Worker: `fetch`, `AbortSignal.timeout` and `
 
 ## How to take it
 
-Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.1.tgz`, then depend on it with `file:`.
+Package: `@kaigilb/gilbplatformcode-picture-provider`. Pack it from a clone at a commit (`npm pack` in this folder runs the build) and keep the packed file in your repository, for example `vendor/gilbplatformcode-picture-provider/kaigilb-gilbplatformcode-picture-provider-0.1.2.tgz`, then depend on it with `file:`.
 
 ```ts
 import { makePicture } from "@kaigilb/gilbplatformcode-picture-provider";
@@ -43,6 +44,7 @@ const r = await makePicture(
 - `host.finish({ attempt, outcome, file?, notBilled, price })`: the one finishing write.
 - `env`: `WAVESPEED_API_BASE` (https), `WAVESPEED_API_KEY` (from the host's secret store), `PICTURE_OUTPUT_HOSTS` (comma list), `PICTURE_PRICES` (JSON `{"<model>": {"amount": "0.003", "currency": "USD"}}`).
 - Optional `extraGuard(url, method)`: the host's own egress rule; throw to refuse.
+- Optional `hostCheck(hostname)`: resolve the name and return why it is refused (a non-public address), or null. A Node host should give one; a Worker relies on its runtime's public network.
 
 ## Do not
 

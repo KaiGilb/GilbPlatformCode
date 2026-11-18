@@ -1,6 +1,7 @@
 export { redactSecrets, MIN_SECRET_LENGTH } from "./redact.js";
 export { PICTURE_TYPES, PICTURE_BYTES_MAX, pngSize, imageBytesMatch, type PictureType } from "./bytes.js";
-export { pictureEgress, hostKey, EgressRefused, PROVIDER_FETCH_INIT, PROVIDER_HOSTS, type EgressLog, type ExtraGuard } from "./egress.js";
+export { pictureEgress, hostKey, EgressRefused, PROVIDER_FETCH_INIT, PROVIDER_HOSTS, type EgressLog, type ExtraGuard, type HostCheck } from "./egress.js";
+export { addressProblem, addressGlobal, ipv4Global, ipv6Global, hostChanges } from "./address.js";
 export {
   pictureConfig, waveSpeedBaseOf, pictureKeyProblem, usablePictureKey, parseOutputHosts, priceOf,
   type PictureConfig, type PictureEnv, type PicturePrice,
