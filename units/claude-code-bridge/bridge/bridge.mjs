@@ -135,7 +135,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.14";
+export const BRIDGE_BUILD = "0.3.15";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1244,8 +1244,8 @@ export const MAX_HANDOFFS_AT_ONCE = 4;
 /** `parentCallId` on a nested turn: the bridge's own id for the relayed call that asked. */
 const PARENT_CALL_ID = /^[0-9a-f]{16}$/;
 // A person turn and every hand-off it opens (a nested `claude -p`) draw on ONE budget of tool calls, as /base/ai/chat's
-// turn and its hops draw on one round ceiling (TURN_MAX_MODEL_ROUNDS = 240 on the server, which refuses past it too).
-export const TURN_MAX_TOOL_CALLS = 240;
+// turn and its hops draw on one round ceiling (the server's Claude Code route allows the same 600 and refuses past it).
+export const TURN_MAX_TOOL_CALLS = 600;
 // A hand-off may run this long before the bridge stops it (its parent turn gets an error for that tool call).
 export const HOP_MAX_MS = 30 * 60 * 1000;
 // How long the Claude CLI is told to wait for one tool call (MCP_TOOL_TIMEOUT): the longest hand-off plus a minute.
