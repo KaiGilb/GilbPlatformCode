@@ -136,7 +136,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.17";
+export const BRIDGE_BUILD = "0.3.18";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1786,6 +1786,20 @@ function onPath(cmd) {
         catch {
             return false;
         }
+    });
+}
+/** Opens `abs` in the system's file manager. execFile, never a shell; the path is one argument. explorer.exe exits 1 even when it worked, so only a failure to start counts. */
+function systemOpenFolder(platform, abs) {
+    const file = platform === "darwin" ? "open" : platform === "win32" ? "explorer.exe" : "xdg-open";
+    return new Promise((resolve, reject) => {
+        execFile(file, [abs], { timeout: 10_000, windowsHide: false }, (err) => {
+            const e = err;
+            if (!e)
+                return resolve();
+            if (platform === "win32" && typeof e.code === "number" && !e.killed)
+                return resolve();
+            reject(e);
+        });
     });
 }
 const WINDOWS_FOLDER_SCRIPT = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '${FOLDER_PROMPT}'; $d.ShowNewFolderButton = $true; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }`;
@@ -3692,6 +3706,64 @@ export function createBridge(opts = {}) {
         switchTo(v);
         return json(res, 200, { name: v.name, path: v.path });
     }
+    // ---- opening the code folder (or a project) in Finder / Explorer ------------------------------------------------
+    const OPEN_PER_MIN = 10;
+    const openStamps = new Map();
+    const canOpenFolder = () => !!opts.openFolder || platform === "darwin" || platform === "win32" || (opts.which ?? onPath)("xdg-open");
+    async function handleOpenFolder(req, res) {
+        if (updating())
+            return json(res, 409, UPDATING);
+        let body;
+        try {
+            body = await readBody(req);
+        }
+        catch (e) {
+            return json(res, e.status ?? 400, { error: e.message });
+        }
+        if (updating())
+            return json(res, 409, UPDATING);
+        if (workspace)
+            folderStillGood();
+        if (!workspace)
+            return json(res, 404, { error: NO_WORKSPACE });
+        if (!canOpenFolder())
+            return json(res, 501, { error: "This computer cannot open folders from the bridge." });
+        let target = workspace.path;
+        if (body.project !== undefined && body.project !== null) {
+            if (!projectNameOk(body.project))
+                return json(res, 400, { error: "project must be a plain folder name." });
+            const cand = path.join(workspace.path, body.project);
+            let real;
+            try {
+                if (!fs.statSync(cand).isDirectory())
+                    return json(res, 404, { error: NO_SUCH_PROJECT });
+                real = realPath(cand);
+            }
+            catch {
+                return json(res, 404, { error: NO_SUCH_PROJECT });
+            }
+            if (!within(real))
+                return json(res, 400, { error: "That folder is outside the code folder." });
+            target = real;
+        }
+        // At most OPEN_PER_MIN opens a minute for each pairing.
+        const me = callerKey(req);
+        const t = now();
+        const recent = (openStamps.get(me) ?? []).filter((x) => t - x < 60_000);
+        if (recent.length >= OPEN_PER_MIN) {
+            openStamps.set(me, recent);
+            return json(res, 429, { error: "Too many folder opens. Wait a minute." });
+        }
+        recent.push(t);
+        openStamps.set(me, recent);
+        try {
+            await (opts.openFolder ?? ((abs) => systemOpenFolder(platform, abs)))(path.resolve(target));
+        }
+        catch {
+            return json(res, 500, { error: "The folder could not be opened." });
+        }
+        return json(res, 200, { opened: true });
+    }
     // ---- routing -----------------------------------------------------------------------------------------------------
     // ---- self-update (POST /v1/update; the pure checks and the pipeline are above, in runUpdate) ----
     const updateStateDir = opts.stateDir ?? path.join(home, ".gilb-claude-code-bridge");
@@ -3851,7 +3923,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello() } : {}) });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello() } : {}) });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -3895,6 +3967,8 @@ export function createBridge(opts = {}) {
                 return handleChoose(req, res);
             if (req.method === "POST" && url.pathname === "/v1/workspace/create")
                 return handleCreate(req, res);
+            if (req.method === "POST" && url.pathname === "/v1/workspace/open")
+                return handleOpenFolder(req, res);
             if (req.method === "POST" && url.pathname === "/v1/unpair") {
                 pairings.delete(sha(String(req.headers["x-bridge-secret"])).toString("hex"));
                 savePairings();
