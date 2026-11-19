@@ -152,13 +152,19 @@ S("the settings of a sandboxed computer turn", () => {
     await ask(secret, [], { body: { approval: "each-write" } });
     let run = rows("run")[0];
     expect(run.argv[run.argv.indexOf("--permission-mode") + 1]).toBe("manual");
-    expect(JSON.parse(run.argv[run.argv.indexOf("--settings") + 1])).toEqual({ permissions: { disableBypassPermissionsMode: "disable" } });
+    const wst = JSON.parse(run.argv[run.argv.indexOf("--settings") + 1]);
+    expect(wst.sandbox).toBeUndefined();
+    expect(wst.permissions.disableBypassPermissionsMode).toBe("disable");
+    expect(wst.permissions.deny).toContain(`Read(/${path.join(dir, ".ssh")})`); // 0.3.17: the file tools are denied the protected and credential places
     await bridge.close();
     await removeTestDir(dir);
     secret = await start({ platform: "win32" });
     await ask(secret, []);
     run = rows("run")[0];
-    expect(JSON.parse(run.argv[run.argv.indexOf("--settings") + 1])).toEqual({ permissions: { disableBypassPermissionsMode: "disable" } });
+    const wst2 = JSON.parse(run.argv[run.argv.indexOf("--settings") + 1]);
+    expect(wst2.sandbox).toBeUndefined();
+    expect(wst2.permissions.disableBypassPermissionsMode).toBe("disable");
+    expect(wst2.permissions.deny).toContain(`Read(/${path.join(dir, ".ssh")})`); // 0.3.17: the file tools are denied the protected and credential places
   });
 
   it("folder mode is unchanged: the folder sandbox with the allow-listed hosts", async () => {
@@ -463,7 +469,6 @@ describe("without the sandbox: each-write, and Windows computer mode", () => {
     const secret = await start({ platform: "win32" });
     const calls = [
       F("Read", { file_path: path.join(ws, "ok.txt") }),
-      F("Read", { file_path: path.join(dir, ".ssh", "id_rsa") }), // asked, not denied by the bridge
       F("Write", { file_path: path.join(ws, "new.txt"), content: "x" }),
       F("Write", { file_path: path.join(dir, "elsewhere.txt"), content: "x" }),
       F("Bash", { command: "dir" }),
@@ -485,7 +490,10 @@ describe("without the sandbox: each-write, and Windows computer mode", () => {
     expect(r.questions).toHaveLength(2);
     for (const d of r.decisions) expect(d.behavior).toBe("deny");
     const run = rows("run")[0];
-    expect(JSON.parse(run.argv[run.argv.indexOf("--settings") + 1])).toEqual({ permissions: { disableBypassPermissionsMode: "disable" } });
+    const wst = JSON.parse(run.argv[run.argv.indexOf("--settings") + 1]);
+    expect(wst.sandbox).toBeUndefined();
+    expect(wst.permissions.disableBypassPermissionsMode).toBe("disable");
+    expect(wst.permissions.deny).toContain(`Read(/${path.join(dir, ".ssh")})`); // 0.3.17: the file tools are denied the protected and credential places
   });
 
   it("askedCommand is command-position text matching only", () => {
@@ -493,4 +501,14 @@ describe("without the sandbox: each-write, and Windows computer mode", () => {
     for (const c of ["ls", "echo sudo", "grep -rn osascript .", "npm run security", "ls security", "git commit -m 'security fix'", "cat sudoers.md", "security-audit --fix"]) expect(askedCommand(c), c).toBe(false);
   });
 
+});
+
+// 0.3.17: Windows computer mode (no sandbox) refuses a file tool on a protected or credential place instead of asking the person.
+describe("Windows computer mode: protected and credential places are refused, not asked", () => {
+  it("Read of <home>/.base-deploy/x and <home>/.npmrc is denied without a question; an ordinary file is still asked", async () => {
+    const secret = await start({ platform: "win32" });
+    const r = await ask(secret, [F("Read", { file_path: path.join(dir, ".base-deploy", "x") }), F("Read", { file_path: path.join(dir, ".npmrc") }), F("Read", { file_path: path.join(ws, "ok.txt") })], { allow: true });
+    expect(r.decisions.map((d) => d.behavior)).toEqual(["deny", "deny", "allow"]);
+    expect(r.questions).toHaveLength(1);
+  });
 });

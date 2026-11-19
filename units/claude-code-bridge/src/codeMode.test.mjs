@@ -154,9 +154,10 @@ describe("claude arguments", () => {
     expect(s.sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"]);
     for (const h of ["github.com", "api.github.com", "objects.githubusercontent.com"]) expect(s.sandbox.network.allowedDomains).not.toContain(h);
     expect(s.sandbox.filesystem.denyRead).toEqual(expect.arrayContaining(["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure", "~/Library/Keychains", "/tmp/x"]));
-    expect(s.permissions).toEqual({ deny: [], disableBypassPermissionsMode: "disable" });
+    expect({ ...s.permissions, deny: s.permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r)) }).toEqual({ deny: [], disableBypassPermissionsMode: "disable" });
     // Windows is files-only: no sandbox block at all, the permission rules stay.
-    expect(codeTurnSettings("C:\\Users\\a", "win32")).toEqual({ permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } });
+    const w = codeTurnSettings("C:\\Users\\a", "win32");
+    expect({ permissions: { ...w.permissions, deny: w.permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r)) } }).toEqual({ permissions: { deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" } });
   });
 });
 

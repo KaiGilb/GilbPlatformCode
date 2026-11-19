@@ -274,7 +274,7 @@ describe("QA hello shapes, Windows files-only turn, README", () => {
     expect(val("--tools")).toBe("Read,Edit,Write,Glob,Grep");
     expect(val("--permission-prompts")).toBe("none");
     expect(a).not.toContain("--permission-prompt-tool");
-    expect(JSON.parse(val("--settings")).permissions.deny).toEqual(["WebFetch", "WebSearch"]);
+    expect(JSON.parse(val("--settings")).permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r))).toEqual(["WebFetch", "WebSearch"]);
     expect(val("--append-system-prompt")).not.toContain("search the web");
     const h = await (await fetch(`${base}/v1/hello`)).json();
     expect(h.codeMode).toBe("files-only");
@@ -286,12 +286,12 @@ describe("QA hello shapes, Windows files-only turn, README", () => {
     for (const s of ['scopes: ["once","turn"]', "`approval_done` echoes `{id, allow, scope}`", "options.web", "any other scope value is a 400", "0.3.12:"]) expect(readme).toContain(s);
   });
 
-  it("the README's /v1/hello line lists web and images, and the 0.3.16 release note is last", () => {
+  it("the README's /v1/hello line lists web and images, and the 0.3.17 release note is last", () => {
     const readme = fs.readFileSync(path.join(HERE, "..", "README.md"), "utf8");
     const line = readme.split("\n").find((l) => l.startsWith("- **`GET /v1/hello`** has `options:"));
     expect(line).toContain("{ web,");
     expect(line).toContain("images");
     const notes = readme.split("\n").filter((l) => /^- 0\.\d+\.\d+/.test(l));
-    expect(notes[notes.length - 1].startsWith("- 0.3.16:")).toBe(true);
+    expect(notes[notes.length - 1].startsWith("- 0.3.17:")).toBe(true);
   });
 });

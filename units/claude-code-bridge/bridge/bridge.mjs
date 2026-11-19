@@ -136,7 +136,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.16";
+export const BRIDGE_BUILD = "0.3.17";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1223,19 +1223,41 @@ function configDirDeny(dir) {
         return [];
     return [d.startsWith("~") ? d : path.resolve(d)];
 }
+/**
+ * Folders and single files that hold credentials, `~/`-relative (0.3.17). ONE list for both modes: folder mode (codeTurnSettings) and full
+ * access (computerSandboxSettings) both deny reading all of it, so full access can never read more than folder mode. `~/.config` also covers
+ * `~/.config/gcloud`; `~/.base-deploy` and `~/Developer/.base-deploy` hold the signing and deploy keys.
+ */
+export function credentialReadDeny(platform) {
+    const list = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.base-deploy", "~/Developer/.base-deploy", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
+    if (platform !== "win32") {
+        list.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
+    }
+    return list;
+}
+/** The credential list as absolute paths for this home (`~` expanded), plus a CLAUDE_CONFIG_DIR the person set. One source for the sandbox, the permission rules and the approval check. */
+export function credentialPlaces(home, platform, claudeConfigDir = "") {
+    const absHome = (p) => (p.startsWith("~/") ? path.join(home, p.slice(2)) : p.startsWith("~") ? path.join(home, p.slice(1)) : p);
+    return [...new Set([...credentialReadDeny(platform), ...configDirDeny(claudeConfigDir)].map(absHome))];
+}
+/** Each place and its real-path spelling. */
+function withRealPaths(list) {
+    return [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+}
+/** Permission rules (0.3.17) that keep Claude Code's own file tools out of these absolute places: Read and Edit (Edit covers Write), the place and everything under it. */
+export function fileToolDenyRules(places) {
+    return withRealPaths(places).flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
+}
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
 export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false) {
-    void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
+    // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
+    const fileRules = fileToolDenyRules(credentialPlaces(home, platform, claudeConfigDir));
     const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
     if (platform === "win32") {
         // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-        return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
+        return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny, ...fileRules], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
     }
-    // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
-    const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
-    if (platform !== "win32") {
-        denyRead.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
-    }
+    const denyRead = credentialReadDeny(platform);
     return {
         sandbox: {
             enabled: true,
@@ -1246,7 +1268,7 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
             filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
         },
         permissions: {
-            deny: [...agentDeny],
+            deny: [...agentDeny, ...fileRules],
             disableBypassPermissionsMode: "disable",
         },
     };
@@ -1256,13 +1278,13 @@ const BRIDGE_STATE_PREFIX = ".gilb-claude-code-bridge";
 /** The connector's keys and script (`~/.gilb-connector*`): unreadable and unwritable in a sandboxed turn. */
 const CONNECTOR_PREFIX = ".gilb-connector";
 /**
- * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folder, the bridge's own files and
- * state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
+ * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folders (`~/Developer/.base-deploy`
+ * and, since 0.3.17, `~/.base-deploy` where the signing keys live), the bridge's own files and state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
  * permission rules both take them). `extra` only ADDS places (tests use it for fake ones); nothing here can be switched off.
  */
 export function protectedPlaces(home, extra = [], readdir = (p) => fs.readdirSync(p)) {
     const j = (...p) => path.join(home, ...p);
-    const list = [j(".ssh"), j("Developer", ".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains"), j(".claude.json"), j(CONNECTOR_PREFIX)];
+    const list = [j(".ssh"), j("Developer", ".base-deploy"), j(".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains"), j(".claude.json"), j(CONNECTOR_PREFIX)];
     try {
         for (const e of readdir(home))
             if (e.startsWith(BRIDGE_STATE_PREFIX) || e.startsWith(CONNECTOR_PREFIX))
@@ -1274,10 +1296,14 @@ export function protectedPlaces(home, extra = [], readdir = (p) => fs.readdirSyn
     list.push(...extra.filter((e) => typeof e === "string" && path.isAbsolute(e)));
     return [...new Set(list)];
 }
+/** Splits a path into its names. On Windows both `\` and `/` separate; elsewhere only `/` does (a backslash is a name character there). */
+const pathNames = (p) => p.split(path.sep === "\\" ? /[\\/]+/ : /\/+/).filter((x) => x !== "");
 /** A path as the system would reach it: every link followed (a link whose target is missing resolves to where the target would be), `..` applied after the links. */
 export function resolveThroughLinks(p) {
-    const parts = p.split("/").filter((x) => x !== "");
-    let cur = "/";
+    // An absolute path starts at its root ("/" or "C:\\"); the root is not a name to walk.
+    const root0 = path.isAbsolute(p) ? path.parse(p).root : "/";
+    const parts = pathNames(p.slice(path.isAbsolute(p) ? root0.length : 0));
+    let cur = root0;
     let hops = 0;
     while (parts.length > 0) {
         const seg = parts.shift();
@@ -1300,8 +1326,8 @@ export function resolveThroughLinks(p) {
             if (++hops > 40)
                 return path.join(cur, seg, ...parts); // a loop: stop following, keep the rest
             if (path.isAbsolute(target))
-                cur = "/";
-            parts.unshift(...target.split("/").filter((x) => x !== ""));
+                cur = path.parse(target).root;
+            parts.unshift(...pathNames(path.isAbsolute(target) ? target.slice(path.parse(target).root.length) : target));
         }
         else {
             cur = next;
@@ -1313,7 +1339,7 @@ const lowerIf = (ci, s) => (ci ? s.toLowerCase() : s);
 const underPlace = (ci, real, place) => {
     const a = lowerIf(ci, real);
     const b = lowerIf(ci, place);
-    return a === b || a.startsWith(b.endsWith("/") ? b : `${b}/`);
+    return a === b || a.startsWith(b.endsWith(path.sep) || b.endsWith("/") ? b : `${b}${path.sep}`);
 };
 /** The protected place this path reaches (written plainly, through `~`, `$HOME`, `..` or a link, even a dangling one), or null. A path that cannot be read as one (a NUL byte) counts as protected: it is refused. */
 export function protectedHit(raw, o) {
@@ -1343,8 +1369,8 @@ export function protectedHit(raw, o) {
         }
         // `~/.gilb-claude-code-bridge*`: any name that starts so, directly in the home folder (also one that does not exist yet).
         const rel = lowerIf(o.ci, real);
-        if (rel.startsWith(`${prefixHome}/`)) {
-            const first = rel.slice(prefixHome.length + 1).split("/")[0] ?? "";
+        if (rel.startsWith(`${prefixHome}${path.sep}`)) {
+            const first = rel.slice(prefixHome.length + 1).split(/[\\/]/)[0] ?? "";
             for (const pre of [BRIDGE_STATE_PREFIX, CONNECTOR_PREFIX])
                 if (first.startsWith(lowerIf(o.ci, pre)))
                     return path.join(home, pre) + "*";
@@ -1361,7 +1387,7 @@ export function globHitsProtected(pattern, o) {
         pat = path.join(o.home, pat.slice(1));
     else if (/^\$(?:\{HOME\}|HOME)(?=\/|$)/.test(pat))
         pat = path.join(o.home, pat.replace(/^\$(?:\{HOME\}|HOME)/, ""));
-    const segs = (path.isAbsolute(pat) ? pat : path.join(o.base, pat)).split("/").filter((x) => x !== "");
+    const segs = (path.isAbsolute(pat) ? pat : path.join(o.base, pat)).split(path.sep === "\\" ? /[\\/]+/ : /\/+/).filter((x) => x !== "");
     if (!/[*?[\]{}]/.test(pat))
         return protectedHit(pattern, o);
     const segRe = (g) => {
@@ -1397,7 +1423,7 @@ export function globHitsProtected(pattern, o) {
     };
     for (const place of o.places) {
         for (const pl of new Set([place, resolveThroughLinks(place)])) {
-            const ps = pl.split("/").filter((x) => x !== "");
+            const ps = pathNames(pl);
             let ok = true;
             for (let i = 0; i < ps.length && ok; i++) {
                 const s = segs[i];
@@ -1519,10 +1545,12 @@ export function writeBlock(raw, o, areas, writeOnly) {
  * Glob and Grep; the short `ask` list sends sudo, security, launchctl, osascript and GilbServerOps ship/server commands to the person.
  */
 export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
-export function computerSandboxSettings(home, folder, places, tmpDirs = [], extraWriteDeny = []) {
-    const withReal = (list) => [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+export function computerSandboxSettings(home, folder, places, tmpDirs = [], extraWriteDeny = [], claudeConfigDir = "", platform = process.platform) {
+    const withReal = withRealPaths;
     const deny = withReal(places);
-    const ruleDeny = deny.flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
+    // Full access never reads less-protected than folder mode (0.3.17): the folder-mode credential list and the CLAUDE_CONFIG_DIR are denied for reading too.
+    const denyReadAll = withReal([...places, ...credentialPlaces(home, platform, claudeConfigDir)]);
+    const ruleDeny = fileToolDenyRules(denyReadAll); // Claude Code's own Read and Edit tools: the same places as the sandbox's denyRead
     return {
         sandbox: {
             enabled: true,
@@ -1533,7 +1561,7 @@ export function computerSandboxSettings(home, folder, places, tmpDirs = [], extr
             filesystem: {
                 allowWrite: withReal(writableAreas(home, folder, tmpDirs)),
                 denyWrite: [...deny, ...withReal([...writeOnlyPlaces(home), ...extraWriteDeny])],
-                denyRead: deny,
+                denyRead: denyReadAll,
             },
         },
         permissions: {
@@ -1822,7 +1850,7 @@ export function createBridge(opts = {}) {
     const sandboxedComputer = computer && codePlatform !== "win32";
     const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
     const sandboxedTurn = (t) => sandboxedComputer && t.code && t.approval === "session";
-    const protectOpts = (t) => ({ home, places: protectedPlaces(home, opts.extraProtected ?? []), base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
+    const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, opts.extraProtected ?? []), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
     const idOf = (p) => {
         try {
@@ -2625,6 +2653,18 @@ export function createBridge(opts = {}) {
             let summary;
             let detail = "";
             let notice = "";
+            // 0.3.17: a protected place or a credential place is refused outright here too (Windows, each-write); the person is not asked.
+            if (tool !== "Bash") {
+                const po = protectOpts(turn);
+                for (const k of ["file_path", "notebook_path", "path"]) {
+                    const v = input[k];
+                    if (typeof v !== "string" || v === "")
+                        continue;
+                    const hit = protectedHit(v, po);
+                    if (hit)
+                        return deny(`This place is protected: ${hit}.`);
+                }
+            }
             // A path is shown exactly: a line break or a hidden character in any path field is a denial; so is a path over the limit.
             for (const k of ["file_path", "notebook_path", "path"]) {
                 const v = input[k];
@@ -2942,7 +2982,7 @@ export function createBridge(opts = {}) {
             "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
+            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
             "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
             "--system-prompt-snapshot", "off",
         ];
