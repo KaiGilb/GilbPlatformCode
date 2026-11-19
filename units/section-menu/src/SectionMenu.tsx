@@ -4,7 +4,7 @@
  * (`menuList.ts`) and its acts through `api`; this component draws them and owns the behaviour.
  *
  * Behaviour:
- *  • Opens when a pointer that can hover finely rests on the button ~200 ms (a swipe across it opens
+ *  • Opens when a pointer that can hover finely rests on the button ~400 ms (a swipe across it opens
  *    nothing), and at once on click or tap everywhere.
  *    It does NOT close when the pointer leaves: it is too big for that.
  *  • Instant: the panel is always mounted, and opening it is a class change. Nothing here fetches.
@@ -40,7 +40,7 @@ export const HOVER_INTENT_MS = 120;
  * across the button on its way elsewhere leaves before this runs out, and nothing opens (Kai
  * 2026-11-01). Click, tap and keyboard are not delayed.
  */
-export const HOVER_OPEN_DELAY_MS = 200;
+export const HOVER_OPEN_DELAY_MS = 400;
 /** A click this soon after a hover opened the menu is the same gesture, not a request to close. */
 export const HOVER_CLICK_GRACE_MS = 600;
 
