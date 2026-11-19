@@ -2874,7 +2874,7 @@ export function createBridge(opts = {}) {
             busy = true;
             void (async () => { for (const tr of [...tracks.values()])
                 await snapshotTrack(tr); })().finally(() => { busy = false; });
-        }, opts.snapshotMs ?? (platform === "win32" ? 2000 : 250)); // Windows: each look starts PowerShell, so it is rarer there
+        }, opts.snapshotMs ?? (platform === "win32" ? 5000 : 250)); // Windows: each look starts PowerShell, so it is rarer there
         snapTimer.unref();
     }
     function trackCodeChild(child) {
@@ -2885,7 +2885,8 @@ export function createBridge(opts = {}) {
         const tr = { pid, start: "", desc: new Map() };
         tracks.set(pid, tr);
         persistTracks();
-        void snapshotTrack(tr);
+        if (platform !== "win32")
+            void snapshotTrack(tr); // Windows: each look starts PowerShell, so none at the start of a turn (a turn is often over before it would finish)
         ensureSnapTimer();
         if (platform !== "win32")
             child[GROUP_LEADER] = pid;
