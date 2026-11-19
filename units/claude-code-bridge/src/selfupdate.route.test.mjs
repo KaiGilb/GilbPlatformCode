@@ -333,11 +333,13 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
 
   it("M1b after the cap the running turn is stopped (its child gets SIGTERM), then exit 75", async () => {
     const exits = [];
+    const closeErrors = [];
     const logFile = path.join(os.tmpdir(), `su5a-cap-${process.pid}.log`);
     fs.rmSync(logFile, { force: true });
     const secret = await start({
       env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
       updateRestart: { pollMs: 20, capMs: 500 },
+      log: (l) => { if (/close failed/.test(l)) closeErrors.push(l); },
       exit: (c) => exits.push([c, bridge.server.listening]),
       updateRun: async () => {
         const st = await startTurn(secret);
@@ -352,6 +354,7 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     expect(exits).toEqual([[75, false]]);
     await until(() => logRows(logFile, "sigterm").length > 0, 5000); // the child was told to stop
     expect(logRows(logFile, "run")).toHaveLength(1); // and no second child was started
+    expect(closeErrors).toEqual([]); // close() did not throw (a throw would be logged as "restart: close failed: ...")
   });
 
   it("M1c the listener is closed through the bridge's close() before exit(75)", async () => {

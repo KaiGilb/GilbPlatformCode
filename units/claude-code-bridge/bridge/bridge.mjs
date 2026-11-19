@@ -3716,7 +3716,7 @@ export function createBridge(opts = {}) {
             await Promise.race([closeBridge(), sleepMs(3000)]);
         }
         catch (e) {
-            log(`update restart: close failed: ${e?.message ?? e}`); // still exit: the new file is installed
+            log(`restart: close failed: ${cleanForLog(e?.name ?? "Error")}: ${cleanForLog(e?.message ?? e)}`); // one line, no stack; still exit: the new file is installed
         }
         (opts.exit ?? ((c) => process.exit(c)))(UPDATE_EXIT_CODE);
     }
