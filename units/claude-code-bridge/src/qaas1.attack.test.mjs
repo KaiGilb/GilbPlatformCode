@@ -14,6 +14,8 @@ import * as B from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const { createBridge, readAccessFile, parseCli, systemAccessDialog } = B;
+// These tests rely on POSIX behaviour (process groups, chmod, symlinks, ps); on Windows only the pure ones run (the real Windows paths are covered by the Windows end-to-end jobs).
+const D = process.platform === "win32" ? describe.skip : describe;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const APP = "http://localhost:5197";
@@ -123,7 +125,7 @@ const pathAwareRun = () => async (file, args, o) => {
   return { code: 1, stdout: "", stderr: "execution error: User canceled. (-128)", killed: false, spawnError: false };
 };
 
-describe("QAAS1 H1 (HIGH): the dialog program is run by absolute path with a minimal environment", () => {
+D("QAAS1 H1 (HIGH): the dialog program is run by absolute path with a minimal environment", () => {
   it("a fake osascript earlier on PATH can no longer answer: the program is /usr/bin/osascript and PATH is fixed", async () => {
     const evil = plantOsascript();
     const r = await systemAccessDialog("darwin", { PATH: `${evil}:/usr/bin:/bin`, HOME: home, DYLD_INSERT_LIBRARIES: "/tmp/x.dylib", NODE_OPTIONS: "--require /tmp/x.js" }, pathAwareRun(), { origin: APP });
@@ -162,7 +164,7 @@ describe("QAAS1 H1 (HIGH): the dialog program is run by absolute path with a min
   });
 });
 
-describe("QAAS1 H2 (HIGH): lowering to folder kills the whole process group", () => {
+D("QAAS1 H2 (HIGH): lowering to folder kills the whole process group", () => {
   it("a grandchild of the computer-mode claude is gone when POST folder answers (SIGTERM, then SIGKILL to the group)", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     await codeTurn(secret, { prompt: "SPAWNCHILD WAITFOREVER" });
@@ -193,7 +195,7 @@ describe("QAAS1 H2 (HIGH): lowering to folder kills the whole process group", ()
   });
 });
 
-describe("QAAS1 H3 (HIGH): ON is refused while any code child is still alive", () => {
+D("QAAS1 H3 (HIGH): ON is refused while any code child is still alive", () => {
   it("the page hangs up; the SIGTERM-ignoring claude lives on; ON is 409 and the dialog stays shut until it is gone", async () => {
     const dialog = vi.fn(async () => "cancel");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -213,7 +215,7 @@ describe("QAAS1 H3 (HIGH): ON is refused while any code child is still alive", (
   });
 });
 
-describe("QAAS1 H4 (MED): counters are global, escalate and survive a restart", () => {
+D("QAAS1 H4 (MED): counters are global, escalate and survive a restart", () => {
   it("a restart keeps the cooldown", async () => {
     const dialog = vi.fn(async () => "cancel");
     let { secret, bridge } = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -247,7 +249,7 @@ describe("QAAS1 H4 (MED): counters are global, escalate and survive a restart", 
   });
 });
 
-describe("QAAS1 MED-6: the window names the asking page", () => {
+D("QAAS1 MED-6: the window names the asking page", () => {
   it("the dialog is told the request's Origin, and a page not on the allowed list cannot ask", async () => {
     const dialog = vi.fn(async () => "cancel");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -283,7 +285,7 @@ describe("QAAS1 MED-6: the window names the asking page", () => {
   });
 });
 
-describe("QAAS1 H5: access.json tamper", () => {
+D("QAAS1 H5: access.json tamper", () => {
   const good = JSON.stringify({ version: 1, mode: "computer" });
   it("symlink, fifo, directory, group-writable, oversize, BOM, hardlink", () => {
     prep();
@@ -316,7 +318,7 @@ describe("QAAS1 H5: access.json tamper", () => {
   });
 });
 
-describe("QAAS1 H6 (MED): lowering that cannot be saved", () => {
+D("QAAS1 H6 (MED): lowering that cannot be saved", () => {
   it("both the write and the removal fail: 500, no code turn starts, hello says so; once saving works again it recovers", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("computer");
@@ -353,7 +355,7 @@ describe("QAAS1 H6 (MED): lowering that cannot be saved", () => {
   });
 });
 
-describe("QAAS1 H7 / LOW-10: hello shows the access fields only to a paired caller", () => {
+D("QAAS1 H7 / LOW-10: hello shows the access fields only to a paired caller", () => {
   it("unpaired keeps exactly what it had before 0.3.19; paired also gets accessChangeable and accessSource", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     const open = await helloFor(null);
@@ -381,7 +383,7 @@ describe("QAAS1 H8 / LOW-8: every --access value is checked", () => {
   });
 });
 
-describe("QAAS1 H9 (MED): the service no longer carries --full-access", () => {
+D("QAAS1 H9 (MED): the service no longer carries --full-access", () => {
   const svc = () => ({
     launchctl: async () => ({ code: 0, out: "state = running\n\tpid = 1" }), uid: 501, home, nodePath: "/opt/node/bin/node", file: "/Users/p/.gilb-claude-code-bridge.mjs",
     env: { PATH: "/usr/bin" }, platform: "darwin", sleep: async () => {}, check: async () => ({ ok: true, info: { subscriptionType: "max" } }),
@@ -411,7 +413,7 @@ describe("QAAS1 H9 (MED): the service no longer carries --full-access", () => {
   });
 });
 
-describe("QAAS1 LOW-9: no update while the window is open", () => {
+D("QAAS1 LOW-9: no update while the window is open", () => {
   it("POST /v1/update is 409 AccessDialogOpen while the access window is up", async () => {
     let answer;
     const dialog = vi.fn(() => new Promise((r) => { answer = r; }));
@@ -426,7 +428,7 @@ describe("QAAS1 LOW-9: no update while the window is open", () => {
   });
 });
 
-describe("QAAS1 MED-7: a custom --state-dir is protected and may not sit in the code folder or ~/Developer", () => {
+D("QAAS1 MED-7: a custom --state-dir is protected and may not sit in the code folder or ~/Developer", () => {
   it("stateDirProblem refuses a state folder inside the code folder or ~/Developer, and accepts one outside", () => {
     prep();
     expect(B.stateDirProblem(path.join(home, "Work", "state"), path.join(home, "Work"), home)).toContain("inside the code folder");

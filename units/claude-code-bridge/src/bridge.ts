@@ -2506,6 +2506,8 @@ export interface BridgeOptions {
   killGraceMs?: number | undefined;
   /** TEST-ONLY: replaces the process list (default: ps on macOS, /proc on Linux, PowerShell on Windows). */
   procList?: (() => Promise<ProcRow[] | null>) | undefined;
+  /** TEST-ONLY: awaited right after the post-Allow scan, where a slow process list would leave a gap (a test switches to folder in it). */
+  afterAllowScan?: (() => Promise<void>) | undefined;
   /** TEST-ONLY: replaces the synchronous process list of the exit hook. */
   procListSync?: (() => ProcRow[] | null) | undefined;
   /** How often the descendants of a running code child are noted (default 250 ms). */
@@ -2765,7 +2767,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
   const stopChild = async (c: ChildProcess | null | undefined): Promise<void> => {
     const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
-    if (tr) await snapshotTrack(tr);
+    if (tr) await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // a last look, but a stop never waits long for it
     return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
   };
   /**
@@ -2814,20 +2816,22 @@ export function createBridge(opts: BridgeOptions = {}) {
   };
   /** The recorded descendants (and survivors) of this install's code turns that are alive: what ON must wait for. */
   async function livingTurnProcs(except: ReadonlySet<number> = new Set()): Promise<{ pids: number[]; known: boolean }> {
-    const rows = await procList();
-    if (!rows) return { pids: [], known: false };
     const entries: [number, string][] = [...residual];
     for (const tr of tracks.values()) {
       if (except.has(tr.pid)) continue;
       entries.push(...tr.desc);
       if (platform === "win32") entries.push([tr.pid, tr.start]);
     }
+    if (entries.length === 0) return { pids: [], known: true }; // nothing recorded: no process list is needed (on Windows that is a PowerShell start)
+    const rows = await procList();
+    if (!rows) return { pids: [], known: false };
     const pids = stillMatching(entries, rows);
     for (const [pid] of [...residual]) if (!pids.includes(pid)) residual.delete(pid);
     return { pids, known: true };
   }
   /** Ends recorded processes: SIGTERM, then SIGKILL, after a fresh look at each one's start time; whatever survives is remembered. Returns how many survive. */
   async function killEntries(entries: [number, string][]): Promise<number> {
+    if (entries.length === 0) return 0;
     const rows = await procList();
     if (!rows) return entries.length;
     const startOf = new Map(entries);
@@ -2854,7 +2858,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (busy) return;
       busy = true;
       void (async () => { for (const tr of [...tracks.values()]) await snapshotTrack(tr); })().finally(() => { busy = false; });
-    }, opts.snapshotMs ?? 250);
+    }, opts.snapshotMs ?? (platform === "win32" ? 2000 : 250)); // Windows: each look starts PowerShell, so it is rarer there
     snapTimer.unref();
   }
   function trackCodeChild(child: ChildProcess) {
@@ -4629,6 +4633,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (updating()) return json(res, 409, UPDATING);
       if (epoch !== accessEpoch) return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
       const after = await codeActivity(); // checked again after Allow, before anything is written
+      await opts.afterAllowScan?.();
       if (after !== "free") return json(res, 409, after === "busy" ? TURN_RUNNING : { error: "The bridge could not check what is running on this computer, so nothing was changed.", code: "AccessScanFailed" });
       // A Folder request that landed during the scan wins: checked once more, with nothing awaited between here and the write.
       if (epoch !== accessEpoch) return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
@@ -4915,7 +4920,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
   /** Adds this process's start time to the lock, off the start-up path. */
   function recordLockStart() {
-    if (!lockFile || !lockHeld) return;
+    if (!lockFile || !lockHeld || platform === "win32") return; // Windows: no PowerShell for it; the pid alone holds the lock (a lock with no start time goes stale after a minute)
     void procList().then((rows) => {
       const mine = rows?.find((r) => r.pid === process.pid)?.start;
       if (mine && lockHeld) { try { fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, start: mine }), { mode: 0o600 }); } catch { /* the pid alone still holds the lock */ } }

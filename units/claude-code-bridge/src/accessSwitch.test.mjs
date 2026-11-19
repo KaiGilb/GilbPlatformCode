@@ -15,6 +15,8 @@ import { removeTestDir } from "./testTeardown.mjs";
 // A namespace import: on a bridge without these exports the tests fail one by one instead of the whole file failing to load.
 const { createBridge, parseCli } = B;
 
+// These tests rely on POSIX behaviour (process groups, chmod, symlinks, ps); on Windows only the pure ones run (the real Windows paths are covered by the Windows end-to-end jobs).
+const D = process.platform === "win32" ? describe.skip : describe;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const APP = "http://localhost:5197";
@@ -127,7 +129,7 @@ async function codeTurn(secret, extra = {}) {
 }
 const dialogReturning = (v) => vi.fn(async () => v);
 
-describe("POST /v1/access: the guard", () => {
+D("POST /v1/access: the guard", () => {
   it("unpaired is 401, a wrong origin is 403, a bad mode is 400; the dialog never opens", async () => {
     const dialog = dialogReturning("allow");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -140,7 +142,7 @@ describe("POST /v1/access: the guard", () => {
   });
 });
 
-describe("folder: immediate", () => {
+D("folder: immediate", () => {
   it("writes access.json (0600), says changed false when already folder, and cancels a running computer-mode code turn", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true, accessDialog: dialogReturning("cancel") });
     expect((await hello()).access).toBe("computer");
@@ -167,7 +169,7 @@ describe("folder: immediate", () => {
   });
 });
 
-describe("computer: only the person's Allow", () => {
+D("computer: only the person's Allow", () => {
   it("Allow: 200, the file says computer, hello says so, and the next code turn runs in computer mode", async () => {
     const dialog = dialogReturning("allow");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -302,7 +304,7 @@ describe("computer: only the person's Allow", () => {
   });
 });
 
-describe("cooldown, the hourly and daily caps, the lock", () => {
+D("cooldown, the hourly and daily caps, the lock", () => {
   const limitsPath = () => path.join(stateDir, "access-limits.json");
   const writeLimits = (o) => fs.writeFileSync(limitsPath(), JSON.stringify({ version: 1, stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0, ...o }), { mode: 0o600 });
   it("each Cancel lengthens the wait (30 s, 2 min); the third in a row locks asking for 24 h (429 AccessLocked)", async () => {
@@ -371,7 +373,7 @@ describe("cooldown, the hourly and daily caps, the lock", () => {
   });
 });
 
-describe("the per-turn snapshot", () => {
+D("the per-turn snapshot", () => {
   it("a turn keeps the mode it started with; a switch to folder cancels it, and the next turn gets the folder-mode run", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true, accessDialog: dialogReturning("cancel") });
     const t = await codeTurn(secret);
@@ -402,7 +404,7 @@ describe("the per-turn snapshot", () => {
   });
 });
 
-describe("access.json is read strictly", () => {
+D("access.json is read strictly", () => {
   const uid = process.getuid?.();
   const put = (text, mode = 0o600) => {
     prep();
@@ -457,7 +459,7 @@ describe("access.json is read strictly", () => {
   });
 });
 
-describe("precedence: the file, --full-access, --access", () => {
+D("precedence: the file, --full-access, --access", () => {
   it("--full-access seeds the first value (source flag) and writes the file", async () => {
     await startBridge({ workspace: ws(), fullAccess: true });
     expect(await hello()).toMatchObject({ access: "computer", accessSource: "flag" });
@@ -527,7 +529,7 @@ describe("precedence: the file, --full-access, --access", () => {
   });
 });
 
-describe("hello", () => {
+D("hello", () => {
   it("reports access, accessChangeable and accessSource always, also without a code folder", async () => {
     await startBridge({});
     expect(await hello()).toMatchObject({ workspace: false, codeMode: null, access: "folder", accessChangeable: true, accessSource: "default" });
@@ -542,7 +544,7 @@ describe("hello", () => {
   });
 });
 
-describe("survives a restart", () => {
+D("survives a restart", () => {
   it("Allow, close, start again with no flag: still computer; lower, start with --full-access: folder", async () => {
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialogReturning("allow") });
     await accessReq(secret, { mode: "computer" });

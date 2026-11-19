@@ -14,6 +14,8 @@ import * as B from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const { createBridge, parseCli } = B;
+// These tests rely on POSIX behaviour (process groups, chmod, symlinks, ps); on Windows only the pure ones run (the real Windows paths are covered by the Windows end-to-end jobs).
+const D = process.platform === "win32" ? describe.skip : describe;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const RUNNER = path.join(HERE, "qaas2.runner.mjs");
@@ -83,7 +85,7 @@ async function codeTurn(b, secret, prompt) {
   return t;
 }
 
-describe("QAAS2 G1 (HIGH): a child that leaves the process group is found as a recorded descendant", () => {
+D("QAAS2 G1 (HIGH): a child that leaves the process group is found as a recorded descendant", () => {
   for (const [kind, prompt] of [["setsid (node detached)", "ESC_SETSID"], ["perl POSIX::setsid", "ESC_PERLSETSID"]]) {
     it(`${kind}: POST folder ends the escapee before it answers`, async () => {
       const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
@@ -178,7 +180,7 @@ describe("QAAS2 G1 (HIGH): a child that leaves the process group is found as a r
   });
 });
 
-describe("QAAS2 G2 (MED): orphans after the bridge dies", () => {
+D("QAAS2 G2 (MED): orphans after the bridge dies", () => {
   const startRunner = async (extraEnv = {}) => {
     prep(); ws();
     const p = spawn(process.execPath, [RUNNER, dir, home, stateDir, FAKE, logFile, path.join(home, "Work")], { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, ...extraEnv } });
@@ -268,7 +270,7 @@ describe("QAAS2 G3 (MED): Windows", () => {
   });
 });
 
-describe("QAAS2 G4/G5 (MED): a restart never re-raises full access", () => {
+D("QAAS2 G4/G5 (MED): a restart never re-raises full access", () => {
   it("lowering could not be saved at all: the restart (state folder still read-only) starts in folder mode", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     fs.chmodSync(accessFile, 0o400);
@@ -343,7 +345,7 @@ describe("QAAS2 MED-5: an old --full-access service entry is rewritten (carefull
     expect(B.migrateServiceFlag(cli, home, "darwin", SVC)).toBe("");
     expect(fs.readFileSync(outside, "utf8")).toBe(plistText(["--full-access"], "other"));
   });
-  it("a symlinked plist is left alone (the link stays a link, the target is not rewritten)", () => {
+  it.skipIf(process.platform === "win32")("a symlinked plist is left alone (the link stays a link, the target is not rewritten)", () => {
     const { plist, args, cli } = mk();
     const target = path.join(dir, "dotfiles-plist");
     fs.renameSync(plist, target);
@@ -379,7 +381,7 @@ describe("QAAS2 MED-5: an old --full-access service entry is rewritten (carefull
   });
 });
 
-describe("QAAS2 MED-6: three refusals in a row lock asking for a day, persisted", () => {
+D("QAAS2 MED-6: three refusals in a row lock asking for a day, persisted", () => {
   it("the lock survives a restart and is lifted by --access-reset", async () => {
     const dialog = vi.fn(async () => "cancel");
     let started = await startBridge({ workspace: ws(), accessDialog: dialog });
@@ -396,7 +398,7 @@ describe("QAAS2 MED-6: three refusals in a row lock asking for a day, persisted"
   });
 });
 
-describe("QAAS3: the limits and the CLI", () => {
+D("QAAS3: the limits and the CLI", () => {
   const limFile = () => path.join(stateDir, "access-limits.json");
   it("a window nobody answers (timeout) is not a refusal: three of them never lock asking", async () => {
     const dialog = vi.fn(async () => "timeout");
@@ -436,20 +438,17 @@ describe("QAAS3: the limits and the CLI", () => {
   });
 });
 
-describe("QAAS3 MED-4: a Folder request during the post-Allow scan wins", () => {
+D("QAAS3 MED-4: a Folder request during the post-Allow scan wins", () => {
   it("ON is answered 409 AccessChanged and nothing is saved: the bridge ends in folder mode", async () => {
-    let slowNext = false;
     let gate;
     const wait = new Promise((r) => { gate = r; });
-    const dialog = vi.fn(async () => { slowNext = true; return "allow"; });
-    const procList = async () => {
-      if (slowNext) { slowNext = false; await wait; } // the scan after Allow takes a while
-      return [];
-    };
-    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog, procList });
+    let inGap;
+    const reached = new Promise((r) => { inGap = r; });
+    const dialog = vi.fn(async () => "allow");
+    const afterAllowScan = async () => { inGap(); await wait; }; // the scan after Allow takes a while
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog, afterAllowScan });
     const on = accessReq(secret, { mode: "computer" });
-    await until(() => dialog.mock.calls.length === 1);
-    await sleep(100);
+    await reached;
     expect((await accessReq(secret, { mode: "folder" })).status).toBe(200);
     gate();
     const r = await on;
@@ -460,7 +459,7 @@ describe("QAAS3 MED-4: a Folder request during the post-Allow scan wins", () => 
   });
 });
 
-describe("QAAS3 MED-3: one bridge per state folder", () => {
+D("QAAS3 MED-3: one bridge per state folder", () => {
   it("a second bridge on the same state folder refuses to start (naming --state-dir) and leaves the first one's turn alone; a stale lock is replaced", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     await codeTurn(base, secret, "WAITFOREVER");
@@ -483,7 +482,7 @@ describe("QAAS3 MED-3: one bridge per state folder", () => {
   });
 });
 
-describe("QAAS3 LOW-6: exit-time kills and the recorded list check start times", () => {
+D("QAAS3 LOW-6: exit-time kills and the recorded list check start times", () => {
   it("killAllSync leaves a recorded pid alone when its start time no longer matches", async () => {
     prep();
     const stray = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -523,7 +522,7 @@ describe("QAAS3 LOW-6: exit-time kills and the recorded list check start times",
   });
 });
 
-describe("QAAS2 LOW-7: access-limits.json is read like access.json and fails closed", () => {
+D("QAAS2 LOW-7: access-limits.json is read like access.json and fails closed", () => {
   const limFile = () => path.join(stateDir, "access-limits.json");
   const good = (o = {}) => JSON.stringify({ version: 1, stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0, ...o });
   const askOnce = async (opts = {}) => {
@@ -579,7 +578,7 @@ describe("QAAS2 LOW-7: access-limits.json is read like access.json and fails clo
   });
 });
 
-describe("QAAS2 LOW-8: the page is shown plainly, local pages say so", () => {
+D("QAAS2 LOW-8: the page is shown plainly, local pages say so", () => {
   it("a non-https origin gets (local); https does not; bracketed IPv6 is fit to show and can ask", async () => {
     expect(B.accessDialogText("darwin", "http://localhost:5197").split("\n")[1]).toBe("Asked by: http://localhost:5197 (local)");
     expect(B.accessDialogText("darwin", "https://gilb.example.test").split("\n")[1]).toBe("Asked by: https://gilb.example.test");
