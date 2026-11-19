@@ -1296,10 +1296,14 @@ export function protectedPlaces(home, extra = [], readdir = (p) => fs.readdirSyn
     list.push(...extra.filter((e) => typeof e === "string" && path.isAbsolute(e)));
     return [...new Set(list)];
 }
+/** Splits a path into its names. On Windows both `\` and `/` separate; elsewhere only `/` does (a backslash is a name character there). */
+const pathNames = (p) => p.split(path.sep === "\\" ? /[\\/]+/ : /\/+/).filter((x) => x !== "");
 /** A path as the system would reach it: every link followed (a link whose target is missing resolves to where the target would be), `..` applied after the links. */
 export function resolveThroughLinks(p) {
-    const parts = p.split("/").filter((x) => x !== "");
-    let cur = "/";
+    // An absolute path starts at its root ("/" or "C:\\"); the root is not a name to walk.
+    const root0 = path.isAbsolute(p) ? path.parse(p).root : "/";
+    const parts = pathNames(p.slice(path.isAbsolute(p) ? root0.length : 0));
+    let cur = root0;
     let hops = 0;
     while (parts.length > 0) {
         const seg = parts.shift();
@@ -1322,8 +1326,8 @@ export function resolveThroughLinks(p) {
             if (++hops > 40)
                 return path.join(cur, seg, ...parts); // a loop: stop following, keep the rest
             if (path.isAbsolute(target))
-                cur = "/";
-            parts.unshift(...target.split("/").filter((x) => x !== ""));
+                cur = path.parse(target).root;
+            parts.unshift(...pathNames(path.isAbsolute(target) ? target.slice(path.parse(target).root.length) : target));
         }
         else {
             cur = next;
@@ -1335,7 +1339,7 @@ const lowerIf = (ci, s) => (ci ? s.toLowerCase() : s);
 const underPlace = (ci, real, place) => {
     const a = lowerIf(ci, real);
     const b = lowerIf(ci, place);
-    return a === b || a.startsWith(b.endsWith("/") ? b : `${b}/`);
+    return a === b || a.startsWith(b.endsWith(path.sep) || b.endsWith("/") ? b : `${b}${path.sep}`);
 };
 /** The protected place this path reaches (written plainly, through `~`, `$HOME`, `..` or a link, even a dangling one), or null. A path that cannot be read as one (a NUL byte) counts as protected: it is refused. */
 export function protectedHit(raw, o) {
@@ -1365,8 +1369,8 @@ export function protectedHit(raw, o) {
         }
         // `~/.gilb-claude-code-bridge*`: any name that starts so, directly in the home folder (also one that does not exist yet).
         const rel = lowerIf(o.ci, real);
-        if (rel.startsWith(`${prefixHome}/`)) {
-            const first = rel.slice(prefixHome.length + 1).split("/")[0] ?? "";
+        if (rel.startsWith(`${prefixHome}${path.sep}`)) {
+            const first = rel.slice(prefixHome.length + 1).split(/[\\/]/)[0] ?? "";
             for (const pre of [BRIDGE_STATE_PREFIX, CONNECTOR_PREFIX])
                 if (first.startsWith(lowerIf(o.ci, pre)))
                     return path.join(home, pre) + "*";
@@ -1383,7 +1387,7 @@ export function globHitsProtected(pattern, o) {
         pat = path.join(o.home, pat.slice(1));
     else if (/^\$(?:\{HOME\}|HOME)(?=\/|$)/.test(pat))
         pat = path.join(o.home, pat.replace(/^\$(?:\{HOME\}|HOME)/, ""));
-    const segs = (path.isAbsolute(pat) ? pat : path.join(o.base, pat)).split("/").filter((x) => x !== "");
+    const segs = (path.isAbsolute(pat) ? pat : path.join(o.base, pat)).split(path.sep === "\\" ? /[\\/]+/ : /\/+/).filter((x) => x !== "");
     if (!/[*?[\]{}]/.test(pat))
         return protectedHit(pattern, o);
     const segRe = (g) => {
@@ -1419,7 +1423,7 @@ export function globHitsProtected(pattern, o) {
     };
     for (const place of o.places) {
         for (const pl of new Set([place, resolveThroughLinks(place)])) {
-            const ps = pl.split("/").filter((x) => x !== "");
+            const ps = pathNames(pl);
             let ok = true;
             for (let i = 0; i < ps.length && ok; i++) {
                 const s = segs[i];
