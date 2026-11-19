@@ -104,7 +104,8 @@ async function waitForExit(pids) {
         continue;
       }
       live = true;
-      if (elapsed >= KILL_AFTER_MS && !signaled.has(pid)) {
+      // Windows reuses a pid within moments: a stale pid from a log may now be another process (even a test worker), so there it is only waited for, never killed.
+      if (process.platform !== "win32" && elapsed >= KILL_AFTER_MS && !signaled.has(pid)) {
         signaled.add(pid);
         try {
           process.kill(pid, "SIGKILL");
