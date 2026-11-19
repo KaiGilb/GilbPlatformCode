@@ -30,6 +30,28 @@ export class ClaudeCodeBridgeError extends Error {
   }
 }
 
+/** The bridge refused or failed a self-update (`POST /v1/update`): `code` is its code, for example TurnRunning, UpdateSignature, UpdateOff. Its text is the bridge's own sentence. */
+export class BridgeUpdateError extends ClaudeCodeBridgeError {
+  readonly code: string;
+  constructor(status: number, message: string, code: string) {
+    super(status, message);
+    this.name = "BridgeUpdateError";
+    this.code = code;
+  }
+}
+
+/** The answer of {@link ClaudeCodeClient.updateBridge}. */
+export type BridgeUpdateResult =
+  /** `check: true`: nothing was changed. */
+  | { check: true; current: string; latest: string; available: boolean }
+  /** This bridge is already the newest. */
+  | { updated: false; reason: "current" }
+  /** Installed. `restart` "automatic": the bridge restarted itself and `cameBack` says whether it answered with the new build within the wait. "manual": the person stops the window and starts it again (`cameBack` is false). */
+  | { updated: true; from: string; to: string; restart: "automatic" | "manual"; cameBack: boolean };
+
+/** What `/v1/hello` says about self-update (bridge 0.3.16). */
+export interface BridgeUpdateInfo { supported: boolean; supervised: boolean; canWrite: boolean; busy: boolean }
+
 /** The bridge refused a code turn because one is already running in that project (HTTP 429, code CodeTurnRunning). Its text is the bridge's own sentence. */
 export class BridgeTurnRunningError extends ClaudeCodeBridgeError {
   readonly code = "CodeTurnRunning" as const;
@@ -435,7 +457,15 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo }>;
+  /**
+   * Updates the bridge from the app (`POST /v1/update`, bridge 0.3.16; needs the pairing; goes through the relay when open).
+   * `{ check: true }` only asks: `{ check, current, latest, available }`. Otherwise the bridge downloads, checks our signature and
+   * installs; when it restarts itself ("automatic") this polls `bridgeInfo()` every second, up to `timeoutMs` (default 60 s), until
+   * the build is the new one. Failure: throws {@link BridgeUpdateError} (`code`, for example TurnRunning, UpdateSignature, UpdateOff).
+   * An older bridge without the route answers 404: a ClaudeCodeBridgeError.
+   */
+  updateBridge(opts?: { check?: boolean; timeoutMs?: number }): Promise<BridgeUpdateResult>;
   /** The code folder this bridge was started with (`POST /v1/workspace`, needs the pairing), or null when it has none (or you are not connected). */
   workspaceInfo(): Promise<{ name: string; path: string } | null>;
   /**
@@ -1376,9 +1406,14 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
 
     async bridgeInfo() {
       try {
-        const res = await bridgeRequest("/v1/hello", { method: "GET" });
+        // The pairing secret goes along when there is one: since bridge 0.3.16 only a paired caller is told `update`.
+        const conn = client.load();
+        const res = await bridgeRequest("/v1/hello", { method: "GET", ...(conn ? { headers: { "x-bridge-secret": conn.secret } } : {}) });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown };
+        // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
+        const up = body.update && typeof body.update === "object" ? (body.update as Record<string, unknown>) : null;
+        const update = up && typeof up.supported === "boolean" && typeof up.supervised === "boolean" && typeof up.canWrite === "boolean" && typeof up.busy === "boolean" ? { supported: up.supported, supervised: up.supervised, canWrite: up.canWrite, busy: up.busy } : null;
         const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown; approvals?: unknown } | null | undefined;
         // Pictures (bridge 0.3.6): a count and a size that are whole positive numbers, and only the known types.
         const im = o && typeof o === "object" && o.images && typeof o.images === "object" ? (o.images as { maxCount?: unknown; maxBytes?: unknown; types?: unknown }) : null;
@@ -1403,6 +1438,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           workspace: body.workspace === true,
           codeMode: body.codeMode === "full" || body.codeMode === "files-only" ? body.codeMode : null,
           access: body.access === "folder" || body.access === "computer" ? body.access : null,
+          ...(update ? { update } : {}),
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
           // `options` is also returned when the hello has only `web` or `approvals`: models and efforts are then empty.
           ...((models && efforts) || web || approvals
@@ -1412,6 +1448,42 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       } catch {
         return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
       }
+    },
+
+    async updateBridge(opts) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const check = opts?.check === true;
+      // The bridge downloads and tests a file before it answers, so the relay waits longer than for a small request.
+      const res = await bridgeFetch("/v1/update", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify(check ? { check: true } : {}) }, 150_000);
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        const text = typeof body?.error === "string" && body.error ? body.error : "The bridge could not update itself.";
+        if (typeof body?.code === "string") throw new BridgeUpdateError(res.status, text, body.code);
+        throw new ClaudeCodeBridgeError(res.status, text);
+      }
+      if (!body) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+      if (check) {
+        if (typeof body.current !== "string" || typeof body.latest !== "string" || typeof body.available !== "boolean") throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+        return { check: true, current: body.current, latest: body.latest, available: body.available };
+      }
+      if (body.updated === false) return { updated: false, reason: "current" };
+      if (body.updated !== true || typeof body.from !== "string" || typeof body.to !== "string" || (body.restart !== "automatic" && body.restart !== "manual")) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+      const { from, to, restart } = body as { from: string; to: string; restart: "automatic" | "manual" };
+      if (restart === "manual") return { updated: true, from, to, restart, cameBack: false };
+      // Automatic: the bridge ends itself right after answering and is started again. Wait for the new build.
+      const waitMs = typeof opts?.timeoutMs === "number" && opts.timeoutMs >= 0 ? opts.timeoutMs : 60_000;
+      const until = Date.now() + waitMs;
+      let cameBack = false;
+      while (Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const info = await client.bridgeInfo();
+        if (info.reachable && info.build === to) {
+          cameBack = true;
+          break;
+        }
+      }
+      return { updated: true, from, to, restart, cameBack };
     },
 
     async workspaceInfo() {
