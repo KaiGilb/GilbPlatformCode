@@ -399,6 +399,8 @@ export async function runUpdate(deps) {
         updateRunning = false;
     }
 }
+/** Two paths name the same place? Windows paths differ only in case (C:\\ and c:\\), so there they are compared without case. */
+const samePath = (a, b, platform = process.platform) => (platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 /**
  * Can this bridge file be replaced safely from the app? (1) The path the person RUNS is a plain file, not a symlink (a symlink
  * would send the update to the link's target folder). (2) That is also its real path. (3) Its folder is owned by this user and
@@ -411,9 +413,9 @@ export async function updateCanWrite(dfs, file, o = {}) {
         const st = await dfs.lstat(run);
         if (st.isSymbolicLink?.() === true || !st.isFile())
             return false;
-        if ((await dfs.realpath(file)) !== path.resolve(file))
-            return false;
         const platform = o.platform ?? process.platform;
+        if (!samePath(await dfs.realpath(file), path.resolve(file), platform))
+            return false;
         if (platform !== "win32") {
             const uid = (o.getuid ?? process.getuid?.bind(process))?.();
             const dir = await dfs.stat(path.dirname(file));
@@ -3665,7 +3667,7 @@ export function createBridge(opts = {}) {
     const updateRunPath = () => {
         try {
             const a = process.argv[1];
-            if (a && fs.realpathSync(a) === updateFile())
+            if (a && samePath(fs.realpathSync(a), updateFile(), platform))
                 return path.resolve(a);
         }
         catch {

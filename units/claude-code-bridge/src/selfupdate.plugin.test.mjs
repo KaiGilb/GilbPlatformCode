@@ -41,10 +41,10 @@ describe("injectBridge", () => {
     try {
       const f = path.join(dir, "b.mjs");
       fs.writeFileSync(f, out);
-      const m = await import(pathToFileURL(f).href);
-      expect(m.UPDATE_ORIGIN).toBe(ORIGIN);
-      expect(m.UPDATE_KEYS).toEqual(KEYS);
-      expect(m.DEFAULT_ALLOWED_ORIGINS).toEqual(AO);
+      // A plain node process imports it (the test runner's own loader refuses a temp path on Windows).
+      const r = spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(pathToFileURL(f).href)}); console.log(JSON.stringify({ o: m.UPDATE_ORIGIN, k: m.UPDATE_KEYS, a: m.DEFAULT_ALLOWED_ORIGINS }));`], { encoding: "utf8", timeout: 20000 });
+      expect(r.status).toBe(0);
+      expect(JSON.parse(r.stdout)).toEqual({ o: ORIGIN, k: KEYS, a: AO });
     } finally {
       await removeTestDir(dir);
     }

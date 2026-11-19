@@ -19,6 +19,8 @@ const arg = (n) => {
   const i = argv.indexOf(n);
   return i >= 0 ? argv[i + 1] : undefined;
 };
+// First thing, before anything can fail or be stopped: tells testTeardown.mjs this process exists, so a folder is not removed under a stand-in that has not logged "run" yet.
+log({ event: "boot", pid: process.pid });
 process.on("SIGTERM", () => {
   log({ event: "sigterm" });
   process.exit(143);

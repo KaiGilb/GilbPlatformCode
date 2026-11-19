@@ -17,7 +17,8 @@ const FAKE = path.join(HERE, "fake-claude.mjs");
 const BUILT = path.join(HERE, "..", "bridge", "bridge.mjs");
 const APP = "http://localhost:5197";
 const ORIGIN = "https://host.example.test";
-const FILE = "/fake/home/bridge.mjs";
+// Native paths on every OS (path.resolve gives "C:\\..." on Windows, and the bridge compares it with the real path).
+const FILE = path.resolve(os.tmpdir(), "su-fake-home", "bridge.mjs");
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
 const KEYS = [{ id: "bu1", key: publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") }];
@@ -34,7 +35,7 @@ function fakes(over = {}) {
   const calls = [];
   const files = new Map([[FILE, OLD]]);
   const d = {
-    origin: ORIGIN, keys: KEYS, file: FILE, stateDir: "/fake/home/state",
+    origin: ORIGIN, keys: KEYS, file: FILE, stateDir: path.join(path.dirname(FILE), "state"),
     fetch: async (url) => {
       calls.push(["fetch", url]);
       if (over.hold) await over.hold;

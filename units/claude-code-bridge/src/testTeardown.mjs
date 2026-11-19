@@ -1,6 +1,6 @@
 // Off Windows, the bridge's killChild sends SIGTERM and returns before the stand-in exits, so the
 // stand-in can still write its log into the temp folder and fs.rm then fails with ENOTEMPTY.
-// The stand-in records its pid on the "run" event in FAKE_CLAUDE_LOG. Wait those pids out, then remove the folder.
+// The stand-in records its pid on its first "boot" event (and again on "run") in FAKE_CLAUDE_LOG. Wait those pids out, then remove the folder.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -32,7 +32,7 @@ function takePids(text, into) {
       continue;
     }
     const pid = row?.pid;
-    if (row?.event === "run" && Number.isInteger(pid) && pid > 1 && pid !== process.pid && pid !== process.ppid) into.add(pid);
+    if ((row?.event === "run" || row?.event === "boot") && Number.isInteger(pid) && pid > 1 && pid !== process.pid && pid !== process.ppid) into.add(pid);
   }
 }
 
@@ -50,7 +50,7 @@ function readLogFile(file, into) {
   } catch {
     return;
   }
-  if (!text.includes('"event":"run"') && !text.includes('"event": "run"')) return;
+  if (!text.includes('"event":"run"') && !text.includes('"event": "run"') && !text.includes('"event":"boot"')) return;
   takePids(text, into);
 }
 

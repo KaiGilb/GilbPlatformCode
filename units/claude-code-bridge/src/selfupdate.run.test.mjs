@@ -12,7 +12,9 @@ import { removeTestDir } from "./testTeardown.mjs";
 const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
 const KEYS = [{ id: "bu1", key: publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") }];
 const ORIGIN = "https://host.example.test";
-const FILE = "/home/u/bridge.mjs";
+// Native paths on every OS: path.resolve gives "C:\\..." on Windows, and the bridge compares the resolved path with the real one.
+const FILE = path.resolve(os.tmpdir(), "su-fake-home", "bridge.mjs");
+const STATE = path.join(path.dirname(FILE), "state");
 const NEW_TEXT = 'export const BRIDGE_BUILD = "0.3.16";\n// new body\n';
 const NEW = new TextEncoder().encode(NEW_TEXT);
 const OLD = new TextEncoder().encode("old bridge bytes");
@@ -30,7 +32,7 @@ function rig(opts = {}) {
   const manifest = opts.manifest ?? signed();
   const fileBytes = opts.fileBytes ?? NEW;
   const deps = {
-    origin: ORIGIN, keys: KEYS, running: "0.3.15", file: FILE, stateDir: "/home/u/state",
+    origin: ORIGIN, keys: KEYS, running: "0.3.15", file: FILE, stateDir: STATE,
     now: () => new Date("2026-11-19T12:00:00Z"), random: () => "r1", log: () => {},
     fetch: async (url, o) => {
       calls.push(["fetch", url, o]);
@@ -69,7 +71,7 @@ describe("runUpdate", () => {
     expect(calls[2][2]).toBe(0o600);
     expect(files.get(FILE)).toBe(NEW);
     expect(files.get(FILE + ".prev")).toBe(OLD);
-    expect(JSON.parse(files.get("/home/u/state/update.json"))).toMatchObject({ from: "0.3.15", to: "0.3.16", sha256: sha(NEW) });
+    expect(JSON.parse(files.get(path.join(STATE, "update.json")))).toMatchObject({ from: "0.3.15", to: "0.3.16", sha256: sha(NEW) });
     expect([...files.keys()].some((k) => k.includes(".update-"))).toBe(false);
   });
 
@@ -216,7 +218,7 @@ describe("SU-5a: can-write", () => {
   it("L1 a good folder is true", async () => expect(await updateCanWrite(io(), FILE, opts)).toBe(true));
   it("L1 the path the person ran being a symlink is false, and runUpdate says UpdateCannotWrite before any fetch", async () => {
     expect(await updateCanWrite(io({ lstat: lst(true) }), FILE, opts)).toBe(false);
-    const { deps, calls } = rig({ deps: { runPath: "/home/u/link.mjs", fs: { ...rig().deps.fs, lstat: lst(true) } } });
+    const { deps, calls } = rig({ deps: { runPath: path.join(path.dirname(FILE), "link.mjs"), fs: { ...rig().deps.fs, lstat: lst(true) } } });
     expect(await runUpdate(deps)).toMatchObject({ code: "UpdateCannotWrite" });
     expect(calls).toEqual([]);
   });
@@ -229,6 +231,19 @@ describe("SU-5a: can-write", () => {
   it("L1 Windows has no mode check, but the symlink check stays", async () => {
     expect(await updateCanWrite(io({ stat: stat(0, 0o40777) }), FILE, { platform: "win32" })).toBe(true);
     expect(await updateCanWrite(io({ lstat: lst(true) }), FILE, { platform: "win32" })).toBe(false);
+  });
+});
+
+describe("SU-5a: can-write on Windows paths", () => {
+  const io = (real) => ({ realpath: async () => real, lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }), stat: async () => ({ uid: 0, mode: 0o40777 }) });
+  it("L1 on win32 a drive letter or folder in another case is the same path; on other systems it is not", async () => {
+    const file = path.resolve("/Users/Runner/Bridge.mjs");
+    const recased = file.toLowerCase();
+    expect(await updateCanWrite(io(recased), file, { platform: "win32" })).toBe(true);
+    expect(await updateCanWrite(io(recased), file, { platform: "darwin", getuid: () => 0 })).toBe(file === recased);
+  });
+  it("L1 on win32 a really different real path (a link target elsewhere) is false", async () => {
+    expect(await updateCanWrite(io(path.resolve("/elsewhere/bridge.mjs")), FILE, { platform: "win32" })).toBe(false);
   });
 });
 
@@ -284,18 +299,22 @@ describe("SU-5a: realFetch timeout", () => {
 describe("SU-5a: self-test environment and log text", () => {
   it("L7a the self-test child gets no variable of the parent beyond PATH and HOME", async () => {
     process.env.FOO_SECRET = "hunter2";
+    process.env.BAR_TOKEN = "t0ken";
     const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "su5a-env-")));
     try {
       const f = path.join(dir, "probe.mjs");
-      fs.writeFileSync(f, "console.log(process.env.FOO_SECRET === undefined ? 'absent' : 'LEAK'); console.log(Object.keys(process.env).sort().join(','));\n");
+      fs.writeFileSync(f, "console.log(process.env.FOO_SECRET === undefined && process.env.BAR_TOKEN === undefined ? 'absent' : 'LEAK'); console.log(Object.keys(process.env).sort().join(','));\n");
       const r = await realSelfTest(f);
       expect(r.code).toBe(0);
       const [first, keys] = r.stdout.trim().split("\n");
       expect(first).toBe("absent");
-      expect(keys.split(",").filter((k) => !["PATH", "HOME", "SystemRoot", "TEMP", "TMP", "__CF_USER_TEXT_ENCODING"].includes(k))).toEqual([]);
+      // Windows adds a few variables of its own to any process; elsewhere the child has only what was passed.
+      if (process.platform !== "win32") expect(keys.split(",").filter((k) => !["PATH", "HOME", "__CF_USER_TEXT_ENCODING"].includes(k))).toEqual([]);
+      expect(keys).not.toMatch(/FOO_SECRET|BAR_TOKEN/);
       expect(selfTestEnv({ PATH: "/bin", HOME: "/h", FOO_SECRET: "x", ANTHROPIC_API_KEY: "k" })).toEqual({ PATH: "/bin", HOME: "/h" });
     } finally {
       delete process.env.FOO_SECRET;
+      delete process.env.BAR_TOKEN;
       await removeTestDir(dir);
     }
   });
