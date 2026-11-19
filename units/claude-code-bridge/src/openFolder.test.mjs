@@ -126,7 +126,8 @@ describe("POST /v1/workspace/open", () => {
   it("a folder swapped under the bridge is noticed: 404 and nothing opens", async () => {
     const ws = mkWs();
     const secret = await start({ workspace: ws });
-    fs.rmSync(ws, { recursive: true });
+    // Rename the old folder away and KEEP it, then make a new one: both exist, so the new folder cannot get the old inode (rm + mkdir can, on ext4 and tmpfs).
+    fs.renameSync(ws, `${ws}-old`);
     fs.mkdirSync(ws);
     const r = await open(secret);
     expect(r.status).toBe(404);
