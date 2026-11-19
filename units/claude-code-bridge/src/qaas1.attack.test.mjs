@@ -131,7 +131,8 @@ describe("QAAS1 H1 (HIGH): the dialog program is run by absolute path with a min
   });
   it("end to end: a bridge whose env PATH has the planted dir does not turn computer mode on", async () => {
     const evil = plantOsascript();
-    const { secret } = await startBridge({ workspace: ws(), accessRun: pathAwareRun(), env: { ...process.env, PATH: `${evil}:${process.env.PATH}`, FAKE_CLAUDE_LOG: logFile } });
+    // platform is pretended to be macOS on every OS, so the same dialog path (osascript, the planted program) is reached on a Linux runner too (there is no zenity there)
+    const { secret } = await startBridge({ workspace: ws(), platformOpts: { platform: "darwin" }, accessRun: pathAwareRun(), env: { ...process.env, PATH: `${evil}:${process.env.PATH}`, FAKE_CLAUDE_LOG: logFile } });
     const r = await accessReq(secret, { mode: "computer" });
     expect(r.status).toBe(403);
     expect(r.json.code).toBe("AccessDenied");

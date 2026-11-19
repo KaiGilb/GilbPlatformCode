@@ -102,3 +102,27 @@ describe("GUI guard", () => {
     expect((src.match(/\bexecFile\(/g) ?? []).length).toBeGreaterThan(0);
   });
 });
+
+// The Windows install line failed in CI (the bridge did not answer within 20 s): start-up must not wait for a process list or a PowerShell owner check.
+describe("start-up speed", () => {
+  it("start() does not wait for the process list (on Windows that is a PowerShell start): a list that takes 5 s still lets the bridge listen at once", async () => {
+    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-fast-")));
+    const home = path.join(dir, "home");
+    const stateDir = path.join(home, ".gilb-claude-code-bridge");
+    fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(stateDir, "install-id"), "0123456789abcdef");
+    fs.writeFileSync(path.join(stateDir, "live-groups.json"), JSON.stringify({ version: 1, groups: [] }), { mode: 0o600 });
+    let calls = 0;
+    const procList = async () => { calls += 1; await new Promise((r) => setTimeout(r, 5000)); return []; };
+    bridge = B.createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home, stateDir, procList });
+    const t0 = Date.now();
+    await bridge.start();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(calls).toBeLessThanOrEqual(1); // at most the background note of this process's own start time
+  });
+  it("the Windows owner check (PowerShell) is not used for the install-id marker or the live-groups list", () => {
+    const src = fs.readFileSync(path.join(HERE, "bridge.ts"), "utf8");
+    expect(src).not.toMatch(/readStrictText\(idFile/);
+    expect(src).toMatch(/readStrictText\(liveFile, platform, undefined, \(\) => true\)/);
+  });
+});

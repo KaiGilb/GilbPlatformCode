@@ -473,6 +473,13 @@ describe("QAAS3 MED-3: one bridge per state folder", () => {
     fs.writeFileSync(path.join(stateDir, "bridge.lock"), JSON.stringify({ pid: 2147483000, start: "x" })); // an owner that is gone
     await startBridge({ workspace: ws() });
     expect(JSON.parse(fs.readFileSync(path.join(stateDir, "bridge.lock"), "utf8")).pid).toBe(process.pid);
+    await bridges.pop().close();
+    // a lock with no start time, older than a minute, whose pid is alive (here: this test's parent, standing for a recycled pid) is stale too
+    fs.writeFileSync(path.join(stateDir, "bridge.lock"), JSON.stringify({ pid: process.ppid, start: "" }));
+    const old = new Date(Date.now() - 120_000);
+    fs.utimesSync(path.join(stateDir, "bridge.lock"), old, old);
+    await startBridge({ workspace: ws() });
+    expect(JSON.parse(fs.readFileSync(path.join(stateDir, "bridge.lock"), "utf8")).pid).toBe(process.pid);
   });
 });
 

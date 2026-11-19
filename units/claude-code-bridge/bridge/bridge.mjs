@@ -2565,8 +2565,13 @@ export function createBridge(opts = {}) {
     let installFresh = true;
     if (opts.stateDir) {
         const idFile = path.join(opts.stateDir, "install-id");
-        const got = readStrictText(idFile, platform, undefined, opts.winOwnerOk);
-        if (got.text !== null && /^[0-9a-f]{16}$/.test(got.text.trim())) {
+        // A plain read: it is only a "started before" marker, so it needs none of the owner checks (on Windows those start PowerShell, which is slow).
+        let idText = "";
+        try {
+            idText = fs.readFileSync(idFile, "utf8");
+        }
+        catch { /* none */ }
+        if (/^[0-9a-f]{16}$/.test(idText.trim())) {
             installFresh = false;
         }
         else {
@@ -5207,7 +5212,8 @@ export function createBridge(opts = {}) {
             return;
         let entries = [];
         const roots = [];
-        const r = readStrictText(liveFile, platform, undefined, opts.winOwnerOk);
+        // The owner check is skipped on Windows (it starts PowerShell): the entries only ever stop a process whose pid AND start time match, which same-user code could stop anyway.
+        const r = readStrictText(liveFile, platform, undefined, () => true);
         try {
             const v = r.text === null ? null : JSON.parse(r.text);
             if (v && Array.isArray(v.groups)) {
@@ -5245,12 +5251,11 @@ export function createBridge(opts = {}) {
             return;
         if (HELD_LOCKS.has(lockFile))
             throw new Error(`another bridge in this process is already using the state folder ${opts.stateDir}. Give this one its own --state-dir.`);
-        const rows = await procList();
-        const mine = rows?.find((r) => r.pid === process.pid)?.start ?? "";
         fs.mkdirSync(path.dirname(lockFile), { recursive: true, mode: 0o700 });
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
-                fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, start: mine }), { flag: "wx", mode: 0o600 });
+                // No process list here: on Windows that is a PowerShell start, which would delay the listener by seconds. The start time is added once the port is open.
+                fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, start: "" }), { flag: "wx", mode: 0o600 });
                 lockHeld = true;
                 HELD_LOCKS.add(lockFile);
                 return;
@@ -5265,7 +5270,15 @@ export function createBridge(opts = {}) {
             }
             catch { /* a damaged lock is stale */ }
             const pidOk = typeof owner.pid === "number" && Number.isInteger(owner.pid) && owner.pid !== process.pid;
-            const ownerAlive = pidOk && pidAliveNow(owner.pid) && (rows === null || typeof owner.start !== "string" || owner.start === "" || rows.find((r) => r.pid === owner.pid)?.start === owner.start);
+            let ownerAlive = pidOk && pidAliveNow(owner.pid);
+            // A lock with no start time that is older than a minute was left by a bridge that died before it could add one: its pid may belong to something else now.
+            if (ownerAlive && owner.start === "" && Date.now() - (fs.statSync(lockFile, { throwIfNoEntry: false })?.mtimeMs ?? 0) > 60_000)
+                ownerAlive = false;
+            if (ownerAlive && typeof owner.start === "string" && owner.start !== "") {
+                const rows = await procList(); // only when there is a live owner to tell apart from a recycled pid
+                if (rows !== null && rows.find((r) => r.pid === owner.pid)?.start !== owner.start)
+                    ownerAlive = false;
+            }
             if (ownerAlive)
                 throw new Error(`another bridge (process ${owner.pid}) is already using the state folder ${opts.stateDir}. Give this one its own --state-dir.`);
             try {
@@ -5274,6 +5287,20 @@ export function createBridge(opts = {}) {
             catch { /* the next attempt tells */ }
         }
         throw new Error(`could not lock the state folder ${opts.stateDir}`);
+    }
+    /** Adds this process's start time to the lock, off the start-up path. */
+    function recordLockStart() {
+        if (!lockFile || !lockHeld)
+            return;
+        void procList().then((rows) => {
+            const mine = rows?.find((r) => r.pid === process.pid)?.start;
+            if (mine && lockHeld) {
+                try {
+                    fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, start: mine }), { mode: 0o600 });
+                }
+                catch { /* the pid alone still holds the lock */ }
+            }
+        }, () => { });
     }
     const releaseLock = () => {
         if (lockHeld && lockFile) {
@@ -5330,6 +5357,7 @@ export function createBridge(opts = {}) {
                         port = server.address().port;
                         // The folder is ours and so is the port: stop exactly what an earlier run recorded.
                         sweepLeftovers().then(() => resolve(port), () => resolve(port));
+                        recordLockStart();
                     });
                 });
             }
