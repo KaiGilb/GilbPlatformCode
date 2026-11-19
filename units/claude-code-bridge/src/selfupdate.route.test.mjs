@@ -62,6 +62,8 @@ function fakes(over = {}) {
 let dir;
 let bridge;
 let base;
+/** Stand-in logs kept outside the test folder; the teardown reads their pids so it waits for the stand-ins before removing the folder (Windows holds a running child's folder). */
+let extraLogs = [];
 async function start(opts = {}) {
   dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-su3-")));
   const env = { ...process.env, ...opts.env };
@@ -75,8 +77,9 @@ async function start(opts = {}) {
 afterEach(async () => {
   await bridge?.close();
   bridge = undefined;
-  if (dir) await removeTestDir(dir);
+  if (dir) await removeTestDir(dir, extraLogs);
   dir = undefined;
+  extraLogs = [];
 });
 const post = async (secret, body = {}, headers = {}) => {
   const res = await fetch(`${base}/v1/update`, { method: "POST", headers: { "content-type": "application/json", ...(secret ? { "x-bridge-secret": secret } : {}), ...headers }, body: JSON.stringify(body) });
@@ -293,6 +296,7 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     const { d } = fakes({ hold });
     const logFile = path.join(os.tmpdir(), `su5a-m1a-${process.pid}.log`);
     fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
     const secret = await start({ updateDeps: d, env: { FAKE_CLAUDE_LOG: logFile } });
     const pending = post(secret);
     await until(async () => (await hello(secret)).busy === true);
@@ -309,6 +313,7 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     const exits = [];
     const logFile = path.join(os.tmpdir(), `su5a-m1b-${process.pid}.log`);
     fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
     let turn;
     const secret = await start({
       env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
@@ -337,6 +342,7 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     const closeErrors = [];
     const logFile = path.join(os.tmpdir(), `su5a-cap-${process.pid}.log`);
     fs.rmSync(logFile, { force: true });
+    extraLogs.push(logFile);
     const secret = await start({
       env: { GILB_BRIDGE_SUPERVISED: "1", FAKE_CLAUDE_LOG: logFile },
       updateRestart: { pollMs: 20, capMs: 500 },
@@ -353,7 +359,13 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
     await post(secret);
     await until(() => exits.length > 0, 15000);
     expect(exits).toEqual([[75, false]]);
-    await until(() => logRows(logFile, "sigterm").length > 0, 5000); // the child was told to stop
+    // The child was told to stop. Off Windows the stand-in logs the SIGTERM; Windows ends the tree with taskkill /F (nothing to catch), so there its process is gone.
+    if (process.platform === "win32") {
+      const pid = logRows(logFile, "run")[0].pid;
+      await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, 5000);
+    } else {
+      await until(() => logRows(logFile, "sigterm").length > 0, 5000);
+    }
     expect(logRows(logFile, "run")).toHaveLength(1); // and no second child was started
     expect(closeErrors).toEqual([]); // close() did not throw (a throw would be logged as "restart: close failed: ...")
   });
