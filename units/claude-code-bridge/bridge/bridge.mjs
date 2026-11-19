@@ -2030,7 +2030,7 @@ export function windowsOwnerIsMe(file) {
     try {
         const root = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
         const ps = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-        const script = `$f = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(file, "utf8").toString("base64")}')); $o = (Get-Acl -LiteralPath $f).GetOwner([System.Security.Principal.SecurityIdentifier]).Value; $m = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; if ($o -eq $m) { [Console]::Out.Write('OWNER-OK') }`;
+        const script = `$f = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(file, "utf8").toString("base64")}')); $o = (Get-Acl -LiteralPath $f).GetOwner([System.Security.Principal.SecurityIdentifier]).Value; $id = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $m = $id.User.Value; $admin = (New-Object System.Security.Principal.WindowsPrincipal($id)).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator); if ($o -eq $m -or ($admin -and $o -eq 'S-1-5-32-544')) { [Console]::Out.Write('OWNER-OK') }`; // an elevated user's new files are owned by the Administrators group, not by the user SID
         const out = execFileSync(ps, ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 15000, windowsHide: true, encoding: "utf8", env: dialogEnv("win32", process.env) });
         return out === "OWNER-OK";
     }
@@ -2075,7 +2075,8 @@ export function readStrictText(file, platform = process.platform, uid = process.
         const st = fs.fstatSync(fd);
         if (!st.isFile() || st.size > ACCESS_FILE_MAX || st.ino !== ls.ino || st.dev !== ls.dev)
             return { exists: true, text: null };
-        if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0 || st.nlink > 1))
+        // The POSIX owner / mode / link checks apply where the file system has them (a pretend platform on a Windows host has none).
+        if (platform !== "win32" && process.platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0 || st.nlink > 1))
             return { exists: true, text: null };
         if (platform === "win32" && !winOwnerOk(file))
             return { exists: true, text: null };

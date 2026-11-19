@@ -29,7 +29,9 @@ async function start() {
   fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
   fs.mkdirSync(ws, { recursive: true });
   // NO accessDialog, accessRun, chooseFolder or openFolder: the real functions are what would run.
-  bridge = B.createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home, stateDir, workspace: fs.realpathSync.native(ws), codePlatform: "darwin", platformOpts: { platform: "darwin" } });
+  // macOS is pretended on the other systems; on Windows the real platform is used (a pretend one would reject the Windows folder paths).
+  const pretend = process.platform === "win32" ? {} : { codePlatform: "darwin", platformOpts: { platform: "darwin" } };
+  bridge = B.createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home, stateDir, workspace: fs.realpathSync.native(ws), winOwnerOk: () => true, ...pretend });
   await bridge.start();
   const base = `http://127.0.0.1:${bridge.port}`;
   const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: bridge.pairingCode }) });
