@@ -273,7 +273,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.16";
+export const BRIDGE_BUILD = "0.3.17";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1350,6 +1350,19 @@ function configDirDeny(dir: string): string[] {
   return [d.startsWith("~") ? d : path.resolve(d)];
 }
 
+/**
+ * Folders and single files that hold credentials, `~/`-relative (0.3.17). ONE list for both modes: folder mode (codeTurnSettings) and full
+ * access (computerSandboxSettings) both deny reading all of it, so full access can never read more than folder mode. `~/.config` also covers
+ * `~/.config/gcloud`; `~/.base-deploy` and `~/Developer/.base-deploy` hold the signing and deploy keys.
+ */
+export function credentialReadDeny(platform: string): string[] {
+  const list = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.base-deploy", "~/Developer/.base-deploy", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
+  if (platform !== "win32") {
+    list.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
+  }
+  return list;
+}
+
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
 export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session", claudeConfigDir = "", delegate = false) {
   void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
@@ -1358,11 +1371,7 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
     // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
     return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
   }
-  // Folders and single files that hold credentials. (~/.config also covers ~/.config/gcloud.)
-  const denyRead = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config", "~/.claude", "~/.gilb-claude-code-bridge", "~/.npmrc", "~/.yarnrc", "~/.yarnrc.yml", "~/.pypirc", "~/.netrc", "~/.git-credentials", "~/.docker", "~/.kube", "~/.azure"];
-  if (platform !== "win32") {
-    denyRead.push("~/Library/Keychains", "~/Library/Application Support/Google/Chrome", "~/Library/Application Support/Firefox", "~/Library/Safari");
-  }
+  const denyRead = credentialReadDeny(platform);
   return {
     sandbox: {
       enabled: true,
@@ -1385,13 +1394,13 @@ const BRIDGE_STATE_PREFIX = ".gilb-claude-code-bridge";
 const CONNECTOR_PREFIX = ".gilb-connector";
 
 /**
- * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folder, the bridge's own files and
- * state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
+ * The places a sandboxed computer-mode turn can neither read nor write (0.3.13): ssh keys, the deploy folders (`~/Developer/.base-deploy`
+ * and, since 0.3.17, `~/.base-deploy` where the signing keys live), the bridge's own files and state, LaunchAgents, the cloud and gpg logins, .netrc, the gh login and the macOS Keychain folders. Absolute paths (the sandbox and the
  * permission rules both take them). `extra` only ADDS places (tests use it for fake ones); nothing here can be switched off.
  */
 export function protectedPlaces(home: string, extra: readonly string[] = [], readdir: (p: string) => string[] = (p) => fs.readdirSync(p)): string[] {
   const j = (...p: string[]) => path.join(home, ...p);
-  const list = [j(".ssh"), j("Developer", ".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains"), j(".claude.json"), j(CONNECTOR_PREFIX)];
+  const list = [j(".ssh"), j("Developer", ".base-deploy"), j(".base-deploy"), j(BRIDGE_STATE_PREFIX), j("Library", "LaunchAgents"), j(".aws"), j(".gnupg"), j(".netrc"), j(".config", "gh"), j("Library", "Keychains"), j(".claude.json"), j(CONNECTOR_PREFIX)];
   try {
     for (const e of readdir(home)) if (e.startsWith(BRIDGE_STATE_PREFIX) || e.startsWith(CONNECTOR_PREFIX)) list.push(j(e));
   } catch {
@@ -1614,9 +1623,12 @@ export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[]
  * Glob and Grep; the short `ask` list sends sudo, security, launchctl, osascript and GilbServerOps ship/server commands to the person.
  */
 export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
-export function computerSandboxSettings(home: string, folder: string, places: readonly string[], tmpDirs: readonly string[] = [], extraWriteDeny: readonly string[] = []) {
+export function computerSandboxSettings(home: string, folder: string, places: readonly string[], tmpDirs: readonly string[] = [], extraWriteDeny: readonly string[] = [], claudeConfigDir = "", platform: string = process.platform) {
   const withReal = (list: readonly string[]) => [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
   const deny = withReal(places);
+  // Full access never reads less-protected than folder mode (0.3.17): the folder-mode credential list and the CLAUDE_CONFIG_DIR are denied for reading too.
+  const absHome = (p: string) => (p.startsWith("~/") ? path.join(home, p.slice(2)) : p.startsWith("~") ? path.join(home, p.slice(1)) : p);
+  const denyReadAll = withReal([...places, ...[...credentialReadDeny(platform), ...configDirDeny(claudeConfigDir)].map(absHome)]);
   const ruleDeny = deny.flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
   return {
     sandbox: {
@@ -1628,7 +1640,7 @@ export function computerSandboxSettings(home: string, folder: string, places: re
       filesystem: {
         allowWrite: withReal(writableAreas(home, folder, tmpDirs)),
         denyWrite: [...deny, ...withReal([...writeOnlyPlaces(home), ...extraWriteDeny])],
-        denyRead: deny,
+        denyRead: denyReadAll,
       },
     },
     permissions: {
@@ -2930,7 +2942,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)]) : { permissions: { disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
       "--system-prompt-snapshot", "off",
     ];
