@@ -149,6 +149,18 @@ describe("SectionMenu", () => {
       vi.useRealTimers();
     });
 
+    test("hover must last the full delay: closed just before it, open just after (Kai 2026-11-19, 400 ms)", () => {
+      vi.useFakeTimers();
+      hoverable = true;
+      renderMenu();
+      fireEvent.pointerEnter(trigger(), { pointerType: "mouse" });
+      act(() => { vi.advanceTimersByTime(390); });
+      expect(isOpen()).toBe(false);
+      act(() => { vi.advanceTimersByTime(11); }); // 401 ms in total
+      expect(isOpen()).toBe(true);
+      vi.useRealTimers();
+    });
+
     test("a pointer that only swipes across the button opens nothing (it leaves before the delay)", () => {
       vi.useFakeTimers();
       hoverable = true;

@@ -1,6 +1,6 @@
 # section-menu
 
-The header menu (menu, more, three dots, overflow): the section menu, a header button that says where you are, and a large panel that opens on a short rest of the pointer (200 ms) or at once on tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
+The header menu (menu, more, three dots, overflow): the section menu, a header button that says where you are, and a large panel that opens on a short rest of the pointer (400 ms) or at once on tap, with the sections on the left and the hovered section's options on the right. One column on a phone. The host passes its sections as data.
 
 It is meant to be the default menu of an app built on GilbPlatform when the person asking for the app describes no menu of their own; the rule that makes it so is still to be written (handoff 2026-10-18 §4, held for Kai's go). GilbApp's branch `kai/section-menu-shared-unit` takes it (not yet on GilbApp main). The website counterpart is `web-units/section-menu`.
 
@@ -10,7 +10,7 @@ The header menu of an app: the section menu (a header button and a large panel o
 
 `<SectionMenu sections current api sizeClass layers ...>` draws:
 
-- **a header button** with the current section's icon and name and a ▾, the header's main control (0.2.0): 48 px high, 16 px text, a 2 px accent outline. Closed it has the accent tint, the icon in accent and the chevron pointing down; a hover or keyboard focus deepens the tint; open it is the full accent with the chevron turned up, so closed and open are told apart. The open label, icon and chevron take whichever of `--on-accent` and `--ink` reads better on the accent as drawn; when neither reaches 4.5:1 (a mid-tone accent a person picked), the fill is mixed toward the darker token until the label does (0.2.1, `openColors`). Below `sm` the name is hidden and the padding is tighter, so the phone button stays 64 px wide. Keyboard focus draws a 3 px accent ring outside a 2 px gap. It opens the panel when a pointer that can hover finely (a mouse) has rested on the button for 200 ms (0.2.2, `HOVER_OPEN_DELAY_MS`; a pointer that only swipes across the button on its way elsewhere opens nothing), and at once on click or tap everywhere. A click right after a hover-open (within 600 ms) keeps it open; a later click closes it.
+- **a header button** with the current section's icon and name and a ▾, the header's main control (0.2.0): 48 px high, 16 px text, a 2 px accent outline. Closed it has the accent tint, the icon in accent and the chevron pointing down; a hover or keyboard focus deepens the tint; open it is the full accent with the chevron turned up, so closed and open are told apart. The open label, icon and chevron take whichever of `--on-accent` and `--ink` reads better on the accent as drawn; when neither reaches 4.5:1 (a mid-tone accent a person picked), the fill is mixed toward the darker token until the label does (0.2.1, `openColors`). Below `sm` the name is hidden and the padding is tighter, so the phone button stays 64 px wide. Keyboard focus draws a 3 px accent ring outside a 2 px gap. It opens the panel when a pointer that can hover finely (a mouse) has rested on the button for 400 ms (0.2.2; 200 ms until 0.2.5, `HOVER_OPEN_DELAY_MS`; a pointer that only swipes across the button on its way elsewhere opens nothing), and at once on click or tap everywhere. A click right after a hover-open (within 600 ms) keeps it open; a later click closes it.
 - **a dimmed edge** below the host's header. A click on it closes the menu.
 - **the panel**, always in the page, so opening it is a class change and nothing more. While closed it is `inert` and `aria-hidden`. It is a modal dialog named "Go to".
   - Left: the sections. The one you are in is marked "You are here". Resting the pointer on another section for 120 ms, or focusing it, previews its options; a quick pass does not. Each opening starts from the section you are in.
@@ -143,6 +143,10 @@ The button, the dimmed edge and the panel, side by side in the page. Test hooks:
 - Do not list a destination that is not built (Rule_Code_gilb-app-nav-truth). `coming` is only for an entry the owner names as coming.
 - Do not fire a window event for an act in the destination; leave an intent (`createIntentChannel`).
 - Do not pick private paint-order numbers in a new app; use `overlay-layers`.
+
+## Changes in 0.2.6
+
+Patch release: the pointer must rest on the header button 400 ms (was 200 ms, `HOVER_OPEN_DELAY_MS`) before the menu opens. Click, tap and keyboard are not delayed. `HOVER_CLICK_GRACE_MS` (600 ms) is counted from the moment the menu opens, so it is unchanged.
 
 ## Changes in 0.2.5
 
