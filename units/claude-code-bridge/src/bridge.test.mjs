@@ -875,7 +875,7 @@ describe("the page is told when the tool-call budget is spent", () => {
     expect(relayed).toBe(241);
     expect(spent).toBe(0);
     expect(t.events.filter((e) => e[0] === "budget_spent")).toHaveLength(0);
-  }, 120000);
+  }, 300000); // 241 sequential claude starts: about 100 s on a Windows runner, so the old 120 s was too tight
 
   it("a turn whose tool calls exceed a small budget gets one budget_spent event, and its final message carries budgetSpent", async () => {
     await bridge.close();
@@ -1419,7 +1419,7 @@ describe("hello reports the build", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     delete body.openFolder; // 0.3.18: true or absent depending on this computer; covered in openFolder.test.mjs
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.18", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.19", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });

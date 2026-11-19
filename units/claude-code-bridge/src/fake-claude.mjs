@@ -218,6 +218,15 @@ process.stdin.on("end", async () => {
     const kid = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
     log({ event: "child", pid: kid.pid });
   }
+  // 0.3.19 (QAAS2): helpers that leave the process group, or the group of the bridge's tracking, on purpose.
+  const KIDJS = "setInterval(() => {}, 1000)";
+  const KIDJS_IGN = "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000)";
+  if (prompt.includes("ESC_SETSID")) { const k = spawn(process.execPath, ["-e", KIDJS], { stdio: "ignore", detached: true }); k.unref(); log({ event: "esc", kind: "setsid", pid: k.pid }); }
+  if (prompt.includes("ESC_PERLSETSID")) { const k = spawn("/usr/bin/perl", ["-e", "use POSIX; POSIX::setsid(); sleep 600"], { stdio: "ignore" }); k.unref(); log({ event: "esc", kind: "perlsetsid", pid: k.pid }); }
+  if (prompt.includes("ESC_SCRUBENV")) { const k = spawn(process.execPath, ["-e", KIDJS], { stdio: "ignore", detached: true, env: { PATH: process.env.PATH } }); k.unref(); log({ event: "esc", kind: "scrubenv", pid: k.pid }); }
+  if (prompt.includes("GRP_IGNTERM")) { const k = spawn(process.execPath, ["-e", KIDJS_IGN], { stdio: "ignore" }); k.unref(); log({ event: "grp", kind: "ignterm", pid: k.pid }); }
+  if (prompt.includes("GRP_PLAIN")) { const k = spawn(process.execPath, ["-e", KIDJS], { stdio: "ignore" }); k.unref(); log({ event: "grp", kind: "plain", pid: k.pid }); }
+  if (prompt.includes("EXITNOW")) { await new Promise((r) => setTimeout(r, 300)); process.exit(0); }
   if (prompt.includes("WAITFOREVER")) {
     setInterval(() => {}, 1000);
     return;

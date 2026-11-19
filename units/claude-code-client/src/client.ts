@@ -40,6 +40,16 @@ export class BridgeUpdateError extends ClaudeCodeBridgeError {
   }
 }
 
+/** The bridge refused the access switch (`POST /v1/access`). `code` is its code when it sent one: AccessDenied (the person did not click Allow), AccessDialogUnavailable, AccessCooldown, AccessTooMany, TurnRunning, AccessDialogOpen, UpdateRunning. Its text is the bridge's own sentence. */
+export class BridgeAccessError extends ClaudeCodeBridgeError {
+  readonly code: string | null;
+  constructor(status: number, message: string, code: string | null) {
+    super(status, message);
+    this.name = "BridgeAccessError";
+    this.code = code;
+  }
+}
+
 /** The answer of {@link ClaudeCodeClient.updateBridge}. */
 export type BridgeUpdateResult =
   /** `check: true`: nothing was changed. */
@@ -457,7 +467,7 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true; accessChangeable?: true; accessSource?: "flag" | "file" | "default"; accessSaveFailed?: true }>;
   /**
    * Updates the bridge from the app (`POST /v1/update`, bridge 0.3.16; needs the pairing; goes through the relay when open).
    * `{ check: true }` only asks: `{ check, current, latest, available }`. Otherwise the bridge downloads, checks our signature and
@@ -481,6 +491,13 @@ export interface ClaudeCodeClient {
    * ClaudeCodeBridgeError carrying the bridge's own sentence.
    */
   openFolder(project?: string): Promise<void>;
+  /**
+   * Switches the bridge's access mode (`POST /v1/access`, bridge 0.3.19; needs the pairing). Offer it only when `bridgeInfo().accessChangeable` is true.
+   * "folder" is immediate (code turns running in computer mode are cancelled: `cancelled` says how many). "computer" opens a window ON THE COMPUTER THE
+   * BRIDGE RUNS ON and waits for the person to click Allow (up to two minutes): show "click Allow on this computer" while it waits. Cancel or no answer
+   * throws a {@link BridgeAccessError} with code AccessDenied; any other refusal throws one with the bridge's own code and sentence.
+   */
+  setAccess(mode: "folder" | "computer"): Promise<{ access: "folder" | "computer"; changed: boolean; cancelled?: number }>;
   /** Makes ~/<name> on the bridge's computer (no dialog), and keeps it as the code folder. A folder that already has files -> 409 with the bridge's sentence. */
   createWorkspace(name: string): Promise<{ name: string; path: string }>;
   /** The projects (direct subfolders) of the bridge's code folder: `{ name, modified }`, sorted by name. Needs the pairing; goes through the relay when open. */
@@ -1416,7 +1433,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const conn = client.load();
         const res = await bridgeRequest("/v1/hello", { method: "GET", ...(conn ? { headers: { "x-bridge-secret": conn.secret } } : {}) });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown; accessChangeable?: unknown; accessSource?: unknown; accessSaveFailed?: unknown };
         // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
         const up = body.update && typeof body.update === "object" ? (body.update as Record<string, unknown>) : null;
         const update = up && typeof up.supported === "boolean" && typeof up.supervised === "boolean" && typeof up.canWrite === "boolean" && typeof up.busy === "boolean" ? { supported: up.supported, supervised: up.supervised, canWrite: up.canWrite, busy: up.busy } : null;
@@ -1447,6 +1464,11 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           ...(update ? { update } : {}),
           // Bridge 0.3.18: only a literal true; an older bridge sends none.
           ...(body.openFolder === true ? { openFolder: true as const } : {}),
+          // Bridge 0.3.19: only a literal true, and only the three known sources.
+          ...(body.accessChangeable === true ? { accessChangeable: true as const } : {}),
+          // Bridge 0.3.19: only a literal true: "folder" could not be saved on this computer, so code turns are stopped.
+          ...(body.accessSaveFailed === true ? { accessSaveFailed: true as const } : {}),
+          ...(body.accessSource === "flag" || body.accessSource === "file" || body.accessSource === "default" ? { accessSource: body.accessSource } : {}),
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
           // `options` is also returned when the hello has only `web` or `approvals`: models and efforts are then empty.
           ...((models && efforts) || web || approvals
@@ -1536,6 +1558,22 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       if (res.ok) return;
       const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
       throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not open the folder.");
+    },
+
+    async setAccess(mode) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const res = await bridgeFetch("/v1/access", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bridge-secret": conn.secret },
+        body: JSON.stringify({ mode }),
+      });
+      const body = (await res.json().catch(() => null)) as { access?: unknown; changed?: unknown; cancelled?: unknown; error?: unknown; code?: unknown } | null;
+      if (!res.ok) throw new BridgeAccessError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not change the access.", typeof body?.code === "string" ? body.code : null);
+      if (body && (body.access === "folder" || body.access === "computer") && typeof body.changed === "boolean") {
+        return { access: body.access, changed: body.changed, ...(typeof body.cancelled === "number" ? { cancelled: body.cancelled } : {}) };
+      }
+      throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
     },
 
     async createWorkspace(name) {

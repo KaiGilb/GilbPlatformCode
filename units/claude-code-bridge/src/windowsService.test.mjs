@@ -132,18 +132,21 @@ describe("--install on Windows", () => {
     expect(js).toContain(`sh.Run(${JSON.stringify(cmd)}, 0, false);`);
   });
 
-  it("carries --full-access into the launcher command; a plain install drops it", async () => {
+  it("saves full access in access.json and keeps --full-access OUT of the launcher command; a plain install keeps the saved mode", async () => {
     const w = world();
     const out = await install(w, ["--workspace", "C:\\Users\\Anna Maria\\MyCode", "--full-access"]);
     expect(out.ok).toBe(true);
     expect(out.message).toContain("Full computer access is ON");
     const key = `${LOCAL}\\start-com.gilb.claude-code-bridge.js`.toLowerCase();
-    const cmd = `"${NODE}" "${FILE}" --supervise --port 47821 --claude "${CLAUDE}" --state-dir "${STATE}" --workspace "C:\\Users\\Anna Maria\\MyCode" --full-access --label ${DEFAULT_LABEL}`;
+    const cmd = `"${NODE}" "${FILE}" --supervise --port 47821 --claude "${CLAUDE}" --state-dir "${STATE}" --workspace "C:\\Users\\Anna Maria\\MyCode" --label ${DEFAULT_LABEL}`;
     expect(decode(Buffer.from(w.files.get(key)))).toContain(`sh.Run(${JSON.stringify(cmd)}, 0, false);`);
+    expect(decode(Buffer.from(w.files.get(key)))).not.toContain("--full-access");
+    const accessKey = [...w.files.keys()].find((k) => k.toLowerCase().endsWith("access.json"));
+    expect(JSON.parse(String(w.files.get(accessKey)))).toMatchObject({ version: 1, mode: "computer" });
     const w2 = world();
     const out2 = await install(w2, ["--workspace", "C:\\Users\\Anna Maria\\MyCode"]);
     expect(out2.ok).toBe(true);
-    expect(decode(Buffer.from(w2.files.get(key)))).not.toContain("--full-access");
+    expect([...w2.files.keys()].some((k) => k.toLowerCase().endsWith("access.json"))).toBe(false); // nothing saved: folder
     expect(out2.message).not.toContain("Full computer access");
   });
 

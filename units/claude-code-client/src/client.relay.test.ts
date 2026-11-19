@@ -70,6 +70,12 @@ const waitReq = async () => {
   for (let i = 0; i < 100000 && reqCount() <= seenReqs; i++) await new Promise((r) => setImmediate(r));
   seenReqs = reqCount();
 };
+/** Waits (real time) until the client has posted `n` more requests than the last time a wait returned. */
+const waitReqs = async (n: number) => {
+  const want = seenReqs + n;
+  for (let i = 0; i < 100000 && reqCount() < want; i++) await new Promise((r) => setImmediate(r));
+  seenReqs = reqCount();
+};
 const fakeTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
 
 describe("every bridge call goes through one transport", () => {
@@ -321,7 +327,7 @@ describe("the window closes", () => {
     client.onRelayChange((s) => states.push(s));
     const a = client.requestSecret("a").catch((e) => e);
     const b = client.requestSecret("b").catch((e) => e);
-    await waitReq();
+    await waitReqs(2); // both requests must be in flight before the window closes (waiting for one raced on a slower machine: the second then went out after the close)
     win.closed = true;
     await vi.advanceTimersByTimeAsync(1100);
     for (const e of [await a, await b]) {

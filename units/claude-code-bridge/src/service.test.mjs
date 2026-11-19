@@ -113,16 +113,24 @@ describe("--install, --uninstall", () => {
     expect(x).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>/);
   });
 
-  it("--install --full-access carries it into the LaunchAgent and prints the notice; a plain --install drops it", async () => {
+  it("--install --full-access saves full access once (access.json) and keeps the flag OUT of the LaunchAgent; a plain --install keeps the saved mode", async () => {
     const plist = path.join(home, "Library", "LaunchAgents", "com.gilb.claude-code-bridge.plist");
+    const accessJson = path.join(home, ".gilb-claude-code-bridge", "access.json");
     const on = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode", "--full-access"]), deps());
     expect(on.ok).toBe(true);
-    expect(fs.readFileSync(plist, "utf8")).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>\s*<string>--full-access<\/string>/);
-    expect(on.message).toContain("Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: run the install line again without --full-access.");
+    expect(fs.readFileSync(plist, "utf8")).toMatch(/<string>--workspace<\/string>\s*<string>\/Users\/p\/MyCode<\/string>/);
+    expect(fs.readFileSync(plist, "utf8")).not.toContain("--full-access");
+    expect(JSON.parse(fs.readFileSync(accessJson, "utf8"))).toMatchObject({ version: 1, mode: "computer" });
+    expect(on.message).toContain("Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: use the access switch in GilbApp, or run the bridge with --access folder. Running the install line again without --full-access keeps the mode saved on this computer.");
     const off = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode"]), deps());
     expect(off.ok).toBe(true);
     expect(fs.readFileSync(plist, "utf8")).not.toContain("--full-access");
-    expect(off.message).not.toContain("Full computer access");
+    expect(JSON.parse(fs.readFileSync(accessJson, "utf8")).mode).toBe("computer"); // the plain line keeps the saved mode
+    expect(off.message).toContain("Full access"); // and says so
+    const lowered = await serviceInstall(parseCli(["--install", "--claude", FAKE, "--workspace", "/Users/p/MyCode", "--access", "folder"]), deps());
+    expect(lowered.ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(accessJson, "utf8")).mode).toBe("folder");
+    expect(lowered.message).not.toContain("Full access: commands");
   });
 
   it("--install refuses a wildcard or plain-http origin and writes nothing", async () => {

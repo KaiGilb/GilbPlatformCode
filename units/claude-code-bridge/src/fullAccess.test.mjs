@@ -339,7 +339,7 @@ describe("the init check in computer mode", () => {
 });
 
 describe("hello", () => {
-  it("access is null without a folder, folder by default, computer with --full-access", async () => {
+  it("access is null without a folder (unpaired, as before 0.3.19), folder by default, computer with --full-access", async () => {
     await start({ workspace: false });
     expect(await hello()).toMatchObject({ workspace: false, codeMode: null, access: null });
     await bridge.close();
