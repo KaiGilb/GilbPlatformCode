@@ -22,10 +22,10 @@ const FILE = path.resolve(os.tmpdir(), "su-fake-home", "bridge.mjs");
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
 const KEYS = [{ id: "bu1", key: publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("base64") }];
-const NEW = new TextEncoder().encode('export const BRIDGE_BUILD = "0.3.19";\n// next\n');
+const NEW = new TextEncoder().encode('export const BRIDGE_BUILD = "0.3.20";\n// next\n');
 const OLD = new TextEncoder().encode("old");
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
-function signed(version = "0.3.19") {
+function signed(version = "0.3.20") {
   const f = { version, sha256: sha(NEW), size: NEW.length, signedAt: new Date().toISOString() };
   return { format: 1, ...f, keyId: "bu1", signature: crypto.sign(null, Buffer.from(updateSignedText({ origin: ORIGIN, ...f }), "utf8"), privateKey).toString("base64") };
 }
@@ -53,7 +53,7 @@ function fakes(over = {}) {
       lstat: async () => ({ isFile: () => true, isSymbolicLink: () => false }),
       stat: async () => ({ uid: process.getuid?.() ?? 0, mode: 0o40755 }),
     },
-    selfTest: async () => ({ code: 0, stdout: "build 0.3.19\n" }),
+    selfTest: async () => ({ code: 0, stdout: "build 0.3.20\n" }),
     ...over.deps,
   };
   return { d, calls, files };
@@ -123,7 +123,7 @@ describe("POST /v1/update", () => {
     const r = await post(secret);
     order.push(["received"]);
     expect(r.status).toBe(200);
-    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.19", restart: "automatic" });
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.20", restart: "automatic" });
     expect(files.get(FILE)).toBe(NEW);
     await until(() => order.some((o) => o[0] === "exit"));
     expect(order).toEqual([["received"], ["exit", 75]]);
@@ -134,7 +134,7 @@ describe("POST /v1/update", () => {
     const { d } = fakes();
     const secret = await start({ updateDeps: d, exit, label: "com.test.not-this-one", env: {} });
     const r = await post(secret);
-    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.19", restart: "manual" });
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.20", restart: "manual" });
     await new Promise((x) => setTimeout(x, 400));
     expect(exit).not.toHaveBeenCalled();
   });
@@ -160,7 +160,7 @@ describe("POST /v1/update", () => {
   it("U6 check:true answers { current, latest, available } and writes no file", async () => {
     const a = fakes();
     let secret = await start({ updateDeps: a.d });
-    expect(await post(secret, { check: true })).toEqual({ status: 200, json: { current: BRIDGE_BUILD, latest: "0.3.19", available: true } });
+    expect(await post(secret, { check: true })).toEqual({ status: 200, json: { current: BRIDGE_BUILD, latest: "0.3.20", available: true } });
     expect(a.calls.map((c) => c[0])).toEqual(["fetch"]);
     await bridge.close();
     const b = fakes({ manifest: signed("0.3.16") });
@@ -246,7 +246,7 @@ describe("command line", () => {
     const r = spawnSync(process.execPath, [BUILT, "--selftest", "--port", String(free), "--state-dir", "/nonexistent/should-not-be-read"], { encoding: "utf8", timeout: 15000 });
     expect(r.status).toBe(0);
     expect(r.stdout.trim()).toBe(`build ${BRIDGE_BUILD}`);
-    expect(BRIDGE_BUILD).toBe("0.3.18");
+    expect(BRIDGE_BUILD).toBe("0.3.19");
     await new Promise((resolve, reject) => { const s = net.createServer().once("error", reject).listen(free, "127.0.0.1", () => s.close(() => resolve())); });
   });
 
@@ -324,11 +324,11 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
         turn = await startTurn(secret);
         await until(async () => (await turnCount(secret)) > 0);
         await until(() => logRows(logFile, "run").length > 0); // the child has started and can log its SIGTERM
-        return { updated: true, from: BRIDGE_BUILD, to: "0.3.19" };
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.20" };
       },
     });
     const r = await post(secret);
-    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.19", restart: "automatic" });
+    expect(r.json).toEqual({ updated: true, from: BRIDGE_BUILD, to: "0.3.20", restart: "automatic" });
     await new Promise((x) => setTimeout(x, 700));
     expect(exits).toEqual([]); // still waiting: the turn runs
     expect(await turnCount(secret)).toBe(1);
@@ -353,7 +353,7 @@ describe("SU-5a: no turn during an update, and a clean exit", () => {
         if (st.res.status !== 200) throw new Error("turn refused: " + st.res.status + " " + (await st.res.text()));
         await until(async () => (await turnCount(secret)) > 0);
         await until(() => logRows(logFile, "run").length > 0); // the child has started and can log its SIGTERM
-        return { updated: true, from: BRIDGE_BUILD, to: "0.3.19" };
+        return { updated: true, from: BRIDGE_BUILD, to: "0.3.20" };
       },
     });
     await post(secret);

@@ -84,6 +84,9 @@ interface Turn {
   budgetSpent: boolean;
   /** A code turn: Claude Code may read, edit and run commands inside the workspace folder. */
   code: boolean;
+  /** 0.3.19: the access mode as it was when this turn was created. The turn never looks at the live mode again. */
+  computer: boolean;
+  filesOnly: boolean;
   /** Code turn only: the project (a direct subfolder of the code folder) this turn runs inside, or null for the code folder itself. */
   proj: { path: string; name: string; id: string } | null;
   /** Code turn only: "each-write" makes Claude Code ask the bridge (bridge_approve) before a write or a command. */
@@ -273,7 +276,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.18";
+export const BRIDGE_BUILD = "0.3.19";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1245,10 +1248,12 @@ export const NPMRC_SENTENCE = "Never write or change a .npmrc or .yarnrc file he
 export const PROJECT_NPMRC_TEXT = "install-links=true\n";
 /** The vendoring and .npmrc sentences of a folder-mode code turn; the plain-commands one only where nobody can answer an approval (session). */
 const vendorSentences = (approval: "session" | "each-write") => approval === "each-write" ? `${GITHUB_ARCHIVE_SENTENCE} ${NPMRC_SENTENCE}` : `${GITHUB_ARCHIVE_SENTENCE} ${PLAIN_COMMANDS_SENTENCE} ${NPMRC_SENTENCE}`;
-/** Printed by a start and by --install when --full-access is on. */
-export const FULL_ACCESS_NOTICE = "Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: run the install line again without --full-access.";
+/** Printed by a start and by --install when full access is on. 0.3.19: the way off is the access switch in GilbApp or `--access folder`; running the install line again without --full-access keeps the saved mode. */
+export const FULL_ACCESS_NOTICE = "Full access: commands run without asking inside a sandbox; they can write only in your code folder, ~/Developer and temp, and your keys and the bridge's files are locked. Turn it off: use the access switch in GilbApp, or run the bridge with --access folder. Running the install line again without --full-access keeps the mode saved on this computer.";
 /** Windows has no sandbox here: computer mode there asks about every call. */
-export const FULL_ACCESS_NOTICE_WINDOWS = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Windows has no sandbox here, so every call is asked in the chat. Turn it off: run the install line again without --full-access.";
+export const FULL_ACCESS_NOTICE_WINDOWS = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Windows has no sandbox here, so every call is asked in the chat. Turn it off: use the access switch in GilbApp, or run the bridge with --access folder. Running the install line again without --full-access keeps the mode saved on this computer.";
+/** Printed when --full-access is given but the saved mode on this computer says folder: the saved mode wins. */
+export const FULL_ACCESS_SAVED_FOLDER_NOTICE = "The mode saved on this computer is folder mode, and it wins over --full-access. To turn full access on, use the access switch in GilbApp (a window on this computer asks you to allow it).";
 const computerProjectParagraph = (project: string, p: string, folder: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
 const PROJECT_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this project folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
 const computerParagraph = (name: string, p: string) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
@@ -1920,6 +1925,192 @@ function systemFolderDialog(platform: string, env: NodeJS.ProcessEnv): Promise<s
   });
 }
 
+// ---- the access mode, kept between runs (0.3.19) ----------------------------------------------------------------------
+export type AccessMode = "folder" | "computer";
+/** Where the mode is kept: `access.json` in the state folder. */
+export const ACCESS_FILE = "access.json";
+const ACCESS_FILE_MAX = 4096;
+/**
+ * Reads the saved mode. `exists` is whether anything is at the path (a bad file still counts: it says folder and `--full-access` does
+ * not override it). Only `{"version":1,"mode":"folder"|"computer"}` gives computer; a bad shape, a read error, a link, a thing that is not
+ * a regular file, one over 4 KB, or (macOS, Linux) one that is not owned by this user or that others can write: folder.
+ */
+export function readAccessFile(file: string, platform: string = process.platform, uid: number | undefined = process.getuid?.()): { exists: boolean; mode: AccessMode } {
+  let ls: fs.Stats;
+  try {
+    ls = fs.lstatSync(file);
+  } catch (e) {
+    return { exists: (e as ErrLike).code !== "ENOENT", mode: "folder" };
+  }
+  if (ls.isSymbolicLink() || !ls.isFile() || ls.size > ACCESS_FILE_MAX) return { exists: true, mode: "folder" };
+  let fd = -1;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > ACCESS_FILE_MAX || st.ino !== ls.ino || st.dev !== ls.dev) return { exists: true, mode: "folder" };
+    if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0)) return { exists: true, mode: "folder" };
+    const buf = Buffer.alloc(ACCESS_FILE_MAX + 1);
+    const n = fs.readSync(fd, buf, 0, ACCESS_FILE_MAX + 1, 0);
+    if (n > ACCESS_FILE_MAX) return { exists: true, mode: "folder" };
+    const v = JSON.parse(buf.subarray(0, n).toString("utf8")) as { version?: unknown; mode?: unknown } | null;
+    if (v && typeof v === "object" && !Array.isArray(v) && v.version === 1 && v.mode === "computer") return { exists: true, mode: "computer" };
+    return { exists: true, mode: "folder" };
+  } catch {
+    return { exists: true, mode: "folder" };
+  } finally {
+    if (fd >= 0) {
+      try { fs.closeSync(fd); } catch { /* closed anyway */ }
+    }
+  }
+}
+/** Writes the saved mode: a temp file (mode 0600) renamed over the old one. Throws when it cannot. */
+export function writeAccessFile(file: string, mode: AccessMode, at: string = new Date().toISOString()): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.rmSync(tmp, { force: true });
+  fs.writeFileSync(tmp, JSON.stringify({ version: 1, mode, at }), { mode: 0o600, flag: "wx" });
+  fs.renameSync(tmp, file);
+}
+/** `--access`: only `folder` is accepted on the command line (it can lower the mode, never raise it). Returns the refusal text, or "" when fine. */
+export function accessFlagProblem(v: string | undefined): string {
+  if (v === undefined || v === "folder") return "";
+  if (v === "computer") return "--access computer is refused: full access can only be turned on in GilbApp, where a window on this computer asks you to allow it. (--access folder turns it off.)";
+  return `--access takes "folder" (it turns full access off). Got "${cleanForLog(v)}".`;
+}
+/** `--access folder`: writes the saved mode as folder. Always wins over --full-access and over what the file said. */
+export function applyAccessFlag(stateDir: string, v: string | undefined): { ok: boolean; message: string } {
+  const bad = accessFlagProblem(v);
+  if (bad) return { ok: false, message: bad };
+  if (v === undefined) return { ok: true, message: "" };
+  try {
+    writeAccessFile(path.join(stateDir, ACCESS_FILE), "folder");
+  } catch (e) {
+    return { ok: false, message: `Could not save folder mode in ${path.join(stateDir, ACCESS_FILE)}: ${(e as ErrLike).message}` };
+  }
+  return { ok: true, message: "" };
+}
+/** `--uninstall`: forget the saved mode (no file = folder, and a later `--install --full-access` seeds again). Never throws. */
+export function clearAccessFile(stateDir: string): void {
+  try { fs.rmSync(path.join(stateDir, ACCESS_FILE), { force: true }); } catch { /* the next start reads a bad file as folder */ }
+}
+/** `--unpair-all` with no bridge running: the saved mode becomes folder (written even when there was no file, so --full-access cannot seed it again). Never throws. */
+export function resetAccessFile(stateDir: string): void {
+  try { writeAccessFile(path.join(stateDir, ACCESS_FILE), "folder"); } catch { /* the next start reads what is there */ }
+}
+
+// ---- the access dialog: the system's own window on this computer ---------------------------------------------------------
+const ACCESS_DIALOG_TITLE = "GilbApp: full access for Claude Code";
+const ACCESS_DIALOG_SECONDS = 120;
+const ACCESS_ALLOW_LABEL = "Allow full access";
+const ACCESS_MAC_LINES = [
+  "Let the AI use this Mac like Claude Code in your Terminal?",
+  "",
+  "It can read most files on this Mac.",
+  "It can run commands without asking you first.",
+  "It can use the internet.",
+  "It can change files only in your code folder, ~/Developer and temp.",
+  "Locked, never read or changed: your keys (~/.ssh, ~/.base-deploy, ~/.aws), your logins (~/.config, ~/.npmrc, git and Docker logins, browser profiles) and the bridge's own files.",
+  "sudo, security, launchctl, osascript and server ship commands still ask you first.",
+  "",
+  "Folder mode is safer. You can switch back in GilbApp at any time.",
+];
+/** Linux: the macOS text with the computer named plainly. */
+const ACCESS_LINUX_LINES = ACCESS_MAC_LINES.map((l) => l.replace("this Mac like Claude Code in your Terminal", "this computer like Claude Code in your terminal").replace("on this Mac", "on this computer"));
+const ACCESS_WINDOWS_LINES = [
+  "Let the AI use this PC like Claude Code in your terminal?",
+  "",
+  "It can read and change anything your Windows user can.",
+  "It can run commands and use the internet and your logins.",
+  "Windows has no safety box for this,",
+  "so the AI asks you in the chat before every single action.",
+  "",
+  "Folder mode is safer: it can only edit files in your code folder.",
+  "You can switch back in GilbApp at any time.",
+];
+export const ACCESS_DIALOG_TEXT = { darwin: ACCESS_MAC_LINES.join("\n"), win32: ACCESS_WINDOWS_LINES.join("\n"), linux: ACCESS_LINUX_LINES.join("\n") };
+/** What macOS prints when Allow was clicked. Nothing else counts. */
+export const ACCESS_MAC_ALLOW_OUT = "button returned:Allow full access, gave up:false";
+/** What the Windows form prints when Allow was clicked. Nothing else counts. */
+export const ACCESS_WINDOWS_ALLOW_OUT = "GILB-ACCESS-ALLOWED";
+const psQuote = (t: string) => `'${t.replace(/'/g, "''")}'`;
+const ACCESS_WINDOWS_SCRIPT = [
+  "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing",
+  "$script:ok = $false",
+  "$f = New-Object System.Windows.Forms.Form",
+  `$f.Text = ${psQuote(ACCESS_DIALOG_TITLE)}`,
+  "$f.TopMost = $true; $f.StartPosition = 'CenterScreen'; $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false; $f.ShowInTaskbar = $true",
+  "$f.ClientSize = New-Object System.Drawing.Size(540, 290)",
+  "$l = New-Object System.Windows.Forms.Label",
+  `$l.Text = (@(${ACCESS_WINDOWS_LINES.map(psQuote).join(",")}) -join [Environment]::NewLine)`,
+  "$l.Location = New-Object System.Drawing.Point(14, 14); $l.Size = New-Object System.Drawing.Size(512, 220)",
+  "$c = New-Object System.Windows.Forms.Button; $c.Text = 'Cancel'; $c.DialogResult = [System.Windows.Forms.DialogResult]::Cancel",
+  "$c.Location = New-Object System.Drawing.Point(300, 248); $c.Size = New-Object System.Drawing.Size(110, 30)",
+  `$a = New-Object System.Windows.Forms.Button; $a.Text = ${psQuote(ACCESS_ALLOW_LABEL)}`,
+  "$a.Location = New-Object System.Drawing.Point(416, 248); $a.Size = New-Object System.Drawing.Size(110, 30)",
+  "$a.Add_Click({ $script:ok = $true; $f.Close() })",
+  "$f.Controls.Add($l); $f.Controls.Add($c); $f.Controls.Add($a)",
+  "$f.AcceptButton = $c; $f.CancelButton = $c",
+  `$t = New-Object System.Windows.Forms.Timer; $t.Interval = ${ACCESS_DIALOG_SECONDS * 1000}; $t.Add_Tick({ $t.Stop(); $f.Close() }); $t.Start()`,
+  "$f.Add_Shown({ $f.Activate(); $c.Focus() })",
+  "[void]$f.ShowDialog()",
+  `if ($script:ok) { [Console]::Out.Write(${psQuote(ACCESS_WINDOWS_ALLOW_OUT)}) }`,
+].join("\n");
+/** The command a platform runs for the access dialog. Constant text only: nothing from a request goes in. */
+export function accessDialogCommand(platform: string): { file: string; args: string[] } {
+  if (platform === "darwin") {
+    // The text and the title go in as arguments of the script's `run` handler, so no character of either can end the script.
+    return {
+      file: "osascript",
+      args: [
+        "-e", "on run argv",
+        "-e", `display dialog (item 1 of argv) with title (item 2 of argv) buttons {"Cancel", "${ACCESS_ALLOW_LABEL}"} default button "Cancel" cancel button "Cancel" with icon caution giving up after ${ACCESS_DIALOG_SECONDS}`,
+        "-e", "end run",
+        ACCESS_DIALOG_TEXT.darwin,
+        ACCESS_DIALOG_TITLE,
+      ],
+    };
+  }
+  if (platform === "win32") return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", ACCESS_WINDOWS_SCRIPT] };
+  return { file: "zenity", args: ["--question", "--no-markup", `--title=${ACCESS_DIALOG_TITLE}`, `--text=${ACCESS_DIALOG_TEXT.linux}`, `--ok-label=${ACCESS_ALLOW_LABEL}`, "--cancel-label=Cancel", `--timeout=${ACCESS_DIALOG_SECONDS}`, "--width=520"] };
+}
+/** Did this finished dialog command mean Allow? Only the exact success of each platform: macOS's exact line (trailing newline only), Windows' exact token, zenity's exit 0. */
+export function accessDialogAllowed(platform: string, code: number, stdout: string): boolean {
+  const out = stdout.replace(/\r?\n$/, "");
+  if (platform === "darwin") return code === 0 && out === ACCESS_MAC_ALLOW_OUT;
+  if (platform === "win32") return code === 0 && out === ACCESS_WINDOWS_ALLOW_OUT;
+  return code === 0;
+}
+export type AccessDialogResult = "allow" | "cancel" | "timeout";
+type AccessRun = (file: string, args: string[], o: { timeout: number; env: NodeJS.ProcessEnv }) => Promise<{ code: number | null; stdout: string; stderr: string; killed: boolean; spawnError: boolean }>;
+const realAccessRun: AccessRun = (file, args, o) =>
+  new Promise((resolve) => {
+    execFile(file, args, { timeout: o.timeout, windowsHide: false, env: o.env }, (err, stdout, stderr) => {
+      const e = err as (ErrLike & { killed?: boolean; code?: number | string }) | null;
+      const code = !e ? 0 : typeof e.code === "number" ? e.code : null;
+      resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), killed: !!e?.killed, spawnError: !!e && typeof e.code !== "number" });
+    });
+  });
+/** Opens the access dialog and waits. Resolves allow / cancel / timeout; REJECTS when the dialog could not be shown (the caller never allows then). `run` is replaceable by tests. */
+export async function systemAccessDialog(platform: string, env: NodeJS.ProcessEnv, run: AccessRun = realAccessRun): Promise<AccessDialogResult> {
+  const c = accessDialogCommand(platform);
+  const r = await run(c.file, c.args, { timeout: (ACCESS_DIALOG_SECONDS + 30) * 1000, env: childEnv(env) });
+  if (r.killed) return "timeout";
+  if (r.spawnError) throw new Error(`could not open the dialog (${c.file})`);
+  if (accessDialogAllowed(platform, r.code ?? -1, r.stdout)) return "allow";
+  if (platform === "darwin") {
+    if (r.code === 0 && /gave up:true/.test(r.stdout)) return "timeout";
+    if (r.code === 0 || /-128|cancel/i.test(r.stderr) || r.code === 1) return "cancel";
+    throw new Error("the dialog failed");
+  }
+  if (platform === "win32") {
+    if (r.code === 0) return "cancel";
+    throw new Error("the dialog failed");
+  }
+  if (r.code === 5) return "timeout";
+  if (r.code === 1) return "cancel";
+  throw new Error("the dialog failed");
+}
+
 export interface BridgeOptions {
   port?: number | undefined;
   claudeBin?: string | undefined;
@@ -1940,8 +2131,15 @@ export interface BridgeOptions {
   platformOpts?: PlatformOpts | undefined;
   /** The one folder a code turn may work in (already checked by validateWorkspace). Unset: no code mode. */
   workspace?: string | undefined;
-  /** Computer mode: code turns run like Claude Code in the person's terminal. Set only from the command line (--full-access); no route, body field, header, env var or stored file sets it. */
+  /**
+   * Computer mode: code turns run like Claude Code in the person's terminal. The mode is runtime state (0.3.19) kept in `access.json` in the
+   * state folder. The command line can only SEED it (`--full-access` counts only when no access.json exists yet) or LOWER it (`--access folder`);
+   * it is raised only by POST /v1/access after the person clicks Allow in a window the bridge opens on this computer. No body field, header or
+   * env var sets it, and a file that is not exactly {"version":1,"mode":"computer"} (owned by the user, not a link, not writable by others) reads as folder.
+   */
   fullAccess?: boolean | undefined;
+  /** Opens the access dialog and resolves allow / cancel / timeout, or rejects when no dialog can open. Tests inject this so no real dialog opens. */
+  accessDialog?: (() => Promise<AccessDialogResult>) | undefined;
   /** TEST-ONLY, undocumented: extra name prefixes a code child's environment keeps (the stand-in claude is configured through FAKE_* variables). */
   codeEnvExtraPrefixes?: string[] | undefined;
   /** TEST-ONLY, undocumented: the platform whose case rules the folder-prefix test follows (default: the real one). */
@@ -2012,12 +2210,20 @@ export function createBridge(opts: BridgeOptions = {}) {
   const platform = opts.platformOpts?.platform ?? process.platform;
   const home = opts.home ?? opts.platformOpts?.home ?? os.homedir();
   const codePlatform = opts.codePlatform ?? platform;
-  const computer = opts.fullAccess === true;
-  const filesOnly = codePlatform === "win32" && !computer;
-  /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). */
-  const sandboxedComputer = computer && codePlatform !== "win32";
+  // 0.3.19: the access mode is runtime state. Every turn takes its own copy at creation (turn.computer, turn.filesOnly) and uses only that;
+  // the live value is read for /v1/hello and for NEW turns.
+  const accessFile = opts.stateDir ? path.join(opts.stateDir, ACCESS_FILE) : null;
+  const savedAccess = accessFile ? readAccessFile(accessFile, platform) : { exists: false, mode: "folder" as AccessMode };
+  let accessMode: AccessMode = savedAccess.exists ? savedAccess.mode : opts.fullAccess === true ? "computer" : "folder";
+  let accessSource: "flag" | "file" | "default" = savedAccess.exists ? "file" : opts.fullAccess === true ? "flag" : "default";
+  if (!savedAccess.exists && accessMode === "computer" && accessFile) {
+    try { writeAccessFile(accessFile, "computer"); } catch (e) { log(`could not save the access mode: ${(e as ErrLike)?.message ?? e}`); }
+  }
+  /** Windows folder mode is files only; computer mode never is. */
+  const filesOnlyFor = (m: AccessMode) => codePlatform === "win32" && m !== "computer";
   const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
-  const sandboxedTurn = (t: Turn) => sandboxedComputer && t.code && t.approval === "session";
+  /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). Decided by the turn's own copy of the mode. */
+  const sandboxedTurn = (t: Turn) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
   const protectOpts = (t: Turn): ProtectOpts => ({ home, places: [...new Set([...protectedPlaces(home, opts.extraProtected ?? []), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
   /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
   const idOf = (p: string): string => {
@@ -2318,7 +2524,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (method === "ping") return ok({});
     // Every code turn has the bridge's approval tool: a folder turn's WebFetch is asked in both approval settings.
-    const askingTurn = turn.code && (computer || turn.approval === "each-write" || !filesOnly);
+    const askingTurn = turn.code && (turn.computer || turn.approval === "each-write" || !turn.filesOnly);
     if (method === "tools/list") {
       return ok({
         tools: [
@@ -2722,7 +2928,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       const d = sandboxDecision(turn, tool, input);
       if (d) return d;
     }
-    if (computer && !(sandboxed && (tool === "WebFetch" || tool === "WebSearch"))) {
+    if (turn.computer && !(sandboxed && (tool === "WebFetch" || tool === "WebSearch"))) {
       // Computer mode (each-write, Windows, and what the sandbox leaves to the person): every request is asked of the person, no automatic allow or deny by path.
       let summary: string;
       let detail = "";
@@ -3011,7 +3217,8 @@ export function createBridge(opts: BridgeOptions = {}) {
 
   function claudeArgs(turn: Turn, mode: ClaudeMode) {
     const mcp = { mcpServers: { gilb: { type: "http", url: `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}` } } };
-    if (turn.code && computer) {
+    const filesOnly = turn.filesOnly;
+    if (turn.code && turn.computer) {
       const a = computerArgs(turn, mode, mcp);
       if (turn.images.length > 0) a.push("--input-format", "stream-json");
       return a;
@@ -3078,7 +3285,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (!Array.isArray(content)) return;
     for (const b of content as Array<Record<string, unknown>>) {
       if (!b || typeof b !== "object") continue;
-      if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__") && !(!computer && (b.name === "WebFetch" || b.name === "WebSearch"))) { // folder mode: bridge_approve shows the URL or query itself
+      if (ev.type === "assistant" && b.type === "tool_use" && typeof b.name === "string" && !b.name.startsWith("mcp__") && !(!turn.computer && (b.name === "WebFetch" || b.name === "WebSearch"))) { // folder mode: bridge_approve shows the URL or query itself
         const summary = toolSummary(b.name, (b.input ?? {}) as Record<string, unknown>, turnRoots(turn));
         if (typeof b.id === "string") tracked.set(b.id, { tool: b.name, summary });
         noteActivity(turn, cap(summary), true);
@@ -3096,6 +3303,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused? }. */
   function runClaude(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
     return new Promise((resolve) => {
+      const { computer, filesOnly } = turn; // this turn's own copy of the mode
       if (!launch.ok) return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
       // The last look at the folder before the child starts there.
       if (turn.code && !folderStillGood()) return resolve({ error: CODE_FOLDER_CHANGED, sessionId: mode.sessionId, model: "" });
@@ -3275,6 +3483,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
       if (!workspace) return json(res, 409, { error: NO_WORKSPACE });
       if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+      if (accessDialogOpen) return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
       if (body.project !== undefined) {
         proj = resolveProject(body.project);
         if (!proj) return json(res, 400, { error: NO_SUCH_PROJECT });
@@ -3356,6 +3565,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       root: parent ? parent.root : { calls: 0 },
       budgetSpent: false,
       code: isCode,
+      computer: accessMode === "computer",
+      filesOnly: filesOnlyFor(accessMode),
       proj,
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
@@ -3456,7 +3667,7 @@ export function createBridge(opts: BridgeOptions = {}) {
           ...(turn.images.length > 0 ? { images: turn.images.length } : {}),
           ...(isCode ? { delegateCoding: turn.delegate } : {}),
           payer: "person-claude-code",
-          ...(isCode ? { mode: "code", ...(filesOnly ? { codeMode: "files-only" } : {}), ...(computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
+          ...(isCode ? { mode: "code", ...(turn.filesOnly ? { codeMode: "files-only" } : {}), ...(turn.computer ? { access: "computer" } : {}), ...(proj ? { project: proj.name } : {}) } : {}),
           sessionId: out.sessionId,
           ...(usage ? { usage } : {}),
           // Only the person's turn is marked, so a nested hand-off's message leaves the field out.
@@ -3491,6 +3702,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (body.suggest !== undefined && !folderNameOk(body.suggest)) return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
     if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is already open on this computer." });
+    if (accessDialogOpen) return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
     if (workspace) folderStillGood();
     const which = opts.which ?? onPath;
     if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !which("zenity")) {
@@ -3719,6 +3931,101 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     (opts.exit ?? ((c: number) => process.exit(c)))(UPDATE_EXIT_CODE);
   }
+  // ---- the access switch (0.3.19) ---------------------------------------------------------------------------------------
+  /** True while the access window is open on this computer: no new code turn starts, no folder dialog opens, no second access window. */
+  let accessDialogOpen = false;
+  /** Counts every lowering, so a window answered after the person switched to folder cannot raise the mode again. */
+  let accessEpoch = 0;
+  let accessCooldownUntil = 0;
+  const ACCESS_COOLDOWN_MS = 30_000;
+  const ACCESS_ON_PER_HOUR = 5;
+  const accessOnStamps = new Map<string, number[]>();
+  const canAccessDialog = () => !!opts.accessDialog || platform === "darwin" || platform === "win32" || (opts.which ?? onPath)("zenity");
+  const saveAccess = (m: AccessMode): boolean => {
+    if (!accessFile) return true; // memory only (tests, a bridge made without a state folder)
+    try {
+      writeAccessFile(accessFile, m, new Date(now()).toISOString());
+      return true;
+    } catch (e) {
+      log(`could not save the access mode: ${(e as ErrLike)?.message ?? e}`);
+      return false;
+    }
+  };
+  /** Folder mode now, no questions. Code turns that run in computer mode are cancelled the way the Stop route cancels one: a turn in flight must not keep more power than the person just allowed. */
+  function lowerAccess(): { changed: boolean; cancelled: number; saved: boolean } {
+    const changed = accessMode !== "folder";
+    accessEpoch += 1;
+    accessMode = "folder";
+    accessSource = "file";
+    let cancelled = 0;
+    for (const t of [...turns.values()]) {
+      if (!t.code || !t.computer || t.parent || t.closed) continue;
+      t.cancelRequested = true;
+      for (const h of t.handoffs) {
+        h.closed = true;
+        void stopChild(h.child);
+      }
+      void stopChild(t.child);
+      cancelled += 1;
+    }
+    return { changed, cancelled, saved: saveAccess("folder") };
+  }
+  async function handleAccess(req: IncomingMessage, res: ServerResponse) {
+    if (updating()) return json(res, 409, UPDATING);
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    if (body.mode !== "folder" && body.mode !== "computer") return json(res, 400, { error: 'mode must be "folder" or "computer"' });
+    if (updating()) return json(res, 409, UPDATING);
+    if (body.mode === "folder") {
+      const r = lowerAccess();
+      if (!r.saved) return json(res, 500, { error: "Folder mode is on now, but it could not be saved on this computer, so a restart may bring the old mode back.", access: "folder", changed: r.changed, cancelled: r.cancelled, code: "AccessNotSaved" });
+      return json(res, 200, { access: "folder", changed: r.changed, cancelled: r.cancelled });
+    }
+    // Turning it ON: never without the window, and only when nothing else is going on.
+    if (accessMode === "computer") return json(res, 200, { access: "computer", changed: false });
+    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Switch when it has finished.", code: "TurnRunning" });
+    if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+    if (accessDialogOpen) return json(res, 409, { error: "The full access window is already open on this computer.", code: "AccessDialogOpen" });
+    if (!canAccessDialog()) return json(res, 501, { error: "This computer cannot show the full access window (zenity is missing), so full access cannot be turned on from the app.", code: "AccessDialogUnavailable" });
+    const t0 = now();
+    if (t0 < accessCooldownUntil) return json(res, 429, { error: "You just said no. Try again in a moment.", code: "AccessCooldown", retryAfterSec: Math.ceil((accessCooldownUntil - t0) / 1000) });
+    const me = callerKey(req);
+    const stamps = (accessOnStamps.get(me) ?? []).filter((x) => t0 - x < 3_600_000);
+    if (stamps.length >= ACCESS_ON_PER_HOUR) {
+      accessOnStamps.set(me, stamps);
+      return json(res, 429, { error: "Too many requests to turn on full access. Try again later.", code: "AccessTooMany", retryAfterSec: Math.ceil((stamps[0]! + 3_600_000 - t0) / 1000) });
+    }
+    stamps.push(t0);
+    accessOnStamps.set(me, stamps);
+    // From here to the answer no code turn can start (accessDialogOpen), and nothing awaits between the checks above and this line.
+    accessDialogOpen = true;
+    const epoch = accessEpoch;
+    let result: AccessDialogResult | "failed";
+    try {
+      result = await (opts.accessDialog ?? (() => systemAccessDialog(platform, env)))();
+    } catch (e) {
+      log(`access dialog could not open: ${cleanForLog((e as ErrLike)?.message ?? e)}`);
+      result = "failed";
+    } finally {
+      accessDialogOpen = false;
+    }
+    if (result === "failed") return json(res, 501, { error: "The full access window could not open on this computer, so nothing was changed.", code: "AccessDialogUnavailable" });
+    if (result !== "allow") {
+      accessCooldownUntil = now() + ACCESS_COOLDOWN_MS;
+      return json(res, 403, { error: "Full access was not allowed on this computer.", code: "AccessDenied" });
+    }
+    if (updating()) return json(res, 409, UPDATING);
+    if (epoch !== accessEpoch) return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
+    if (!saveAccess("computer")) return json(res, 500, { error: "Could not save the mode on this computer, so nothing was changed.", code: "AccessNotSaved" });
+    accessMode = "computer";
+    accessSource = "file";
+    return json(res, 200, { access: "computer", changed: true });
+  }
+
   async function handleUpdate(req: IncomingMessage, res: ServerResponse) {
     let body: Record<string, unknown> = {};
     try {
@@ -3777,6 +4084,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         const n = pairings.size;
         pairings.clear();
         savePairings();
+        lowerAccess(); // --unpair-all also puts the mode back to folder
         return json(res, 200, { removed: n });
       }
       return json(res, 200, { code: pairingCode });
@@ -3802,7 +4110,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnly ? "files-only" : "full") : null, access: workspace ? (computer ? "computer" : "folder") : null, options: { ...(sandboxedComputer ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnly ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello() } : {}) });
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: accessMode, accessChangeable: true, accessSource, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello() } : {}) });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -3844,6 +4152,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       }
       if (req.method === "POST" && url.pathname === "/v1/turn") return handleTurn(req, res);
       if (req.method === "POST" && url.pathname === "/v1/update") return handleUpdate(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/access") return handleAccess(req, res);
       if (req.method === "POST" && url.pathname === "/v1/turns") {
         const me = callerKey(req);
         const iso = (ms: number) => new Date(ms).toISOString();
@@ -3947,6 +4256,13 @@ export function createBridge(opts: BridgeOptions = {}) {
     get workspacePath() {
       return workspace ? workspace.path : null;
     },
+    /** The access mode now ("folder" | "computer") and where it came from. */
+    get access() {
+      return accessMode;
+    },
+    get accessSource() {
+      return accessSource;
+    },
     start() {
       fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
       return new Promise<number>((resolve, reject) => {
@@ -4001,6 +4317,8 @@ export function parseCli(argv: string[]) {
     stateDir: val("--state-dir"),
     workspace,
     fullAccess: argv.includes("--full-access"),
+    /** `--access folder`: lowers the saved mode (never raises it). Any other value is refused by main() and --install. */
+    access: valAll("--access")[0],
   };
 }
 
@@ -4136,6 +4454,8 @@ export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promi
   } catch (e) {
     return { ok: false, message: `Not installed.\n${(e as ErrLike).message}` };
   }
+  const accessBad = accessFlagProblem(opts.access);
+  if (accessBad) return { ok: false, message: `Not installed.\n${accessBad}` };
   if (platform === "win32") return installWindows(opts, deps, { claudeBin, port, extraOrigins });
   const f = serviceFiles(opts, home);
   const args = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
@@ -4147,6 +4467,8 @@ export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promi
   fs.mkdirSync(path.dirname(f.logFile), { recursive: true });
   fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
   fs.chmodSync(f.stateDir, 0o700);
+  const accessSet = applyAccessFlag(f.stateDir, opts.access);
+  if (!accessSet.ok) return { ok: false, message: `Not installed.\n${accessSet.message}` };
   if (!fs.existsSync(f.logFile)) fs.writeFileSync(f.logFile, "", { mode: 0o600 }); // the log shows the pairing code: this user only
   fs.chmodSync(f.logFile, 0o600);
   fs.writeFileSync(f.plist, buildPlist({ label: opts.label, node: nodePath, file, args, pathEnv, logFile: f.logFile, workDir: f.stateDir }), { mode: 0o644 });
@@ -4175,8 +4497,16 @@ export async function serviceInstall(opts: CliOptions, deps: ServiceDeps): Promi
   Get your pairing code:  node ${file} --code${flags}
   Check it:               node ${file} --status${flags}
   Remove it:              node ${file} --uninstall${flags}
-  If a bridge is already running in a Terminal window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE}` : ""}`,
+  If a bridge is already running in a Terminal window, close that window: only one can hold port ${port}.${installAccessNotice(f.stateDir, opts, "darwin")}`,
   };
+}
+
+/** The access lines of an install message: what the saved mode on this computer is, and what the flags did to it. Reads the real state folder. */
+function installAccessNotice(stateDir: string, opts: CliOptions, platform: string): string {
+  const saved = readAccessFile(path.join(stateDir, ACCESS_FILE), platform);
+  const on = platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE;
+  if (saved.exists) return saved.mode === "computer" ? `\n  ${on}` : opts.fullAccess && opts.access !== "folder" ? `\n  ${FULL_ACCESS_SAVED_FOLDER_NOTICE}` : "";
+  return opts.fullAccess ? `\n  ${on}` : "";
 }
 
 export async function serviceUninstall(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
@@ -4187,6 +4517,7 @@ export async function serviceUninstall(opts: CliOptions, deps: ServiceDeps): Pro
   const r = await deps.launchctl(["bootout", `gui/${deps.uid}/${opts.label}`]);
   const had = fs.existsSync(f.plist);
   fs.rmSync(f.plist, { force: true });
+  clearAccessFile(f.stateDir); // uninstall puts the mode back to folder (no saved mode)
   return { ok: true, message: had || r.code === 0 ? `Removed ${opts.label}. The bridge no longer starts at login.` : `${opts.label} was not installed.` };
 }
 
@@ -4249,6 +4580,7 @@ export async function unpairAll(opts: CliOptions, deps: ServiceDeps): Promise<Se
       /* not answering: clear the file below */
     }
   }
+  resetAccessFile(f.stateDir); // no bridge answered: the saved mode becomes folder here
   let n = 0;
   try {
     n = JSON.parse(fs.readFileSync(f.pairingsFile, "utf8")).pairings.length;
@@ -4554,6 +4886,8 @@ async function installWindows(opts: CliOptions, deps: ServiceDeps, ctx: { claude
   if (prev.stillRunning) return { ok: false, message: `Not installed.\nThe bridge started by an earlier install (process ${prev.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab), then run --install again.` };
   sfs.rm(f.stopFile);
   sfs.mkdirp(f.stateDir);
+  const accessSet = applyAccessFlag(f.stateDir, opts.access);
+  if (!accessSet.ok) return { ok: false, message: `Not installed.\n${accessSet.message}` };
   sfs.mkdirp(f.localDir);
   sfs.write(f.ownerFile, JSON.stringify({ label: opts.label }));
   // The log shows the pairing code. It sits under %LOCALAPPDATA%, inside the user's own profile folder, whose default access rights
@@ -4597,7 +4931,7 @@ async function installWindows(opts: CliOptions, deps: ServiceDeps, ctx: { claude
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
   Remove it:              node ${cmd} --uninstall${flags}
-  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${opts.fullAccess ? `\n  ${FULL_ACCESS_NOTICE_WINDOWS}` : ""}`,
+  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${installAccessNotice(f.stateDir, opts, "win32")}`,
   };
 }
 
@@ -4624,6 +4958,7 @@ async function uninstallWindows(opts: CliOptions, deps: ServiceDeps): Promise<Se
     if (d.code !== 0) return { ok: false, message: `Windows would not remove the start-up entry ${opts.label}: ${d.out || `exit ${d.code}`}` };
   }
   const stop = await stopSupervisor(f, deps, sfs, opts.label);
+  clearAccessFile(f.stateDir); // uninstall puts the mode back to folder (no saved mode)
   if (stop.stillRunning) return { ok: false, message: `The start-up entry is removed, but the bridge (process ${stop.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab).` };
   if (had) {
     sfs.rm(f.launcher);
@@ -4891,19 +5226,25 @@ async function main() {
   }
   const cli = parseCli(argv);
   if (cli.mode === "help") {
-    console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access]
+    console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
        node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
        node bridge.mjs --selftest   prints the build number and exits (the app's update uses it to check a new file)
        node bridge.mjs --rollback   puts the previous bridge file (kept as <file>.prev by an update) back; restart the bridge after it
+       --full-access only sets the first value: once this computer has a saved mode, the saved mode wins. The access switch in GilbApp changes it (turning it on opens a window here that you must allow). --access folder turns full access off; --access computer is refused.
        --label L: letters, digits, dot, dash, underscore, 1 to 64 characters.${process.platform === "win32" ? `
        Windows: a second --label is a separate install (own state folder, log, launcher, start-up entry) and needs its own --port.` : ""}`);
     return;
   }
   // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-  const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
+  const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
   const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]!));
   if (unknown.length > 0) {
-    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --label, --install, --uninstall, --status, --code, --unpair-all, --selftest, --rollback, --help`);
+    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --selftest, --rollback, --help`);
+    process.exit(2);
+  }
+  const accessBad = accessFlagProblem(cli.access);
+  if (accessBad) {
+    console.error(accessBad);
     process.exit(2);
   }
   if (cli.modes.length > 1) {
@@ -4944,6 +5285,11 @@ async function main() {
     process.exit(2);
   }
   const f = serviceFiles(cli, home);
+  const accessSet = applyAccessFlag(f.stateDir, cli.access); // --access folder always wins, before the bridge reads the saved mode
+  if (!accessSet.ok) {
+    console.error(`\n${accessSet.message}\n`);
+    process.exit(2);
+  }
   let workspace: string | undefined;
   if (cli.workspace !== undefined) {
     const stateDirs = [f.stateDir, defaultStateDir(home)];
@@ -5015,8 +5361,8 @@ Gilb Claude Code bridge
   Listening:    http://127.0.0.1:${bridge.port}  (this computer only)
   Billing:      ${billing}
                 API keys are removed from every Claude Code run; none is ever used.
-  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${cli.fullAccess ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
-${cli.fullAccess ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${cli.fullAccess ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
+  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${bridge.access === "computer" ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
+${bridge.access === "computer" ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE}\n` : cli.fullAccess ? `  ${FULL_ACCESS_SAVED_FOLDER_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${bridge.access === "computer" ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 

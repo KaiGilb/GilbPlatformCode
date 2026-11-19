@@ -217,7 +217,7 @@ describe("hello and computer mode", () => {
     const h = await (await fetch(`${base}/v1/hello`)).json();
     expect(h.options.web).toEqual({ search: true, fetch: "ask" });
     expect(h.build).toBe(BRIDGE_BUILD);
-    expect(BRIDGE_BUILD).toBe("0.3.18");
+    expect(BRIDGE_BUILD).toBe("0.3.19");
   });
 
   it("computer mode: fetch is ask; every tool is asked as before, with no scopes; the grant does nothing", async () => {
