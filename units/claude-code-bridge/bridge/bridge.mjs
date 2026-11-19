@@ -1966,7 +1966,16 @@ export function openFolderCommand(platform, abs) {
     return { file: "xdg-open", args: [abs] };
 }
 /** Opens `abs` in the system's file manager. explorer.exe exits 1 even when it worked, so only a failure to start counts. */
+/**
+ * The structural guarantee that no test ever opens a real window or a real file manager: the three leaves that start a GUI program call this first.
+ * Under a test runner (VITEST, or NODE_ENV=test) it throws. A person running the bridge never sets either, so it never refuses there.
+ */
+export function guiAllowed(what) {
+    if (process.env.VITEST || process.env.NODE_ENV === "test")
+        throw new Error(`GUI refused under test: ${what}`);
+}
 function systemOpenFolder(platform, abs) {
+    guiAllowed("open folder");
     const { file, args } = openFolderCommand(platform, abs);
     return new Promise((resolve, reject) => {
         execFile(file, args, { timeout: 10_000, windowsHide: false }, (err) => {
@@ -1990,6 +1999,12 @@ export function folderDialogCommand(platform, env, zenity = null) {
 }
 /** The system's own folder dialog, on this computer. The commands and their text are constants: no page text goes into them. Resolves the path, or null for cancel. */
 function systemFolderDialog(platform, env, zenity = null) {
+    try {
+        guiAllowed("folder dialog");
+    }
+    catch (e) {
+        return Promise.reject(e);
+    }
     const cmd = folderDialogCommand(platform, env, zenity);
     if (!cmd)
         return Promise.reject(new Error("no zenity in /usr/bin or /bin"));
@@ -2444,13 +2459,16 @@ export function accessDialogAllowed(platform, code, stdout) {
         return code === 0 && out === ACCESS_WINDOWS_ALLOW_OUT;
     return code === 0;
 }
-const realAccessRun = (file, args, o) => new Promise((resolve) => {
-    execFile(file, args, { timeout: o.timeout, windowsHide: false, env: o.env }, (err, stdout, stderr) => {
-        const e = err;
-        const code = !e ? 0 : typeof e.code === "number" ? e.code : null;
-        resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), killed: !!e?.killed, spawnError: !!e && typeof e.code !== "number" });
+const realAccessRun = (file, args, o) => {
+    guiAllowed("access dialog");
+    return new Promise((resolve) => {
+        execFile(file, args, { timeout: o.timeout, windowsHide: false, env: o.env }, (err, stdout, stderr) => {
+            const e = err;
+            const code = !e ? 0 : typeof e.code === "number" ? e.code : null;
+            resolve({ code, stdout: String(stdout ?? ""), stderr: String(stderr ?? ""), killed: !!e?.killed, spawnError: !!e && typeof e.code !== "number" });
+        });
     });
-});
+};
 /** Opens the access dialog and waits. Resolves allow / cancel / timeout; REJECTS when the dialog could not be shown (the caller never allows then). `run` is replaceable by tests. */
 export async function systemAccessDialog(platform, env, run = realAccessRun, o = {}) {
     if (platform !== "darwin" && platform !== "win32" && !o.zenity)
