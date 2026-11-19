@@ -1006,29 +1006,24 @@ export async function killGroup(pid, graceMs = KILL_GRACE_MS) {
     catch { /* gone */ }
     await wait(3000);
 }
-// ---- finding what a code turn started, wherever it went (0.3.19) -------------------------------------------------------
-/** The environment variable every code-turn child carries: `<install id>.<turn token>`, 16 hex + 16 hex. */
-export const TURN_TAG_ENV = "GILB_BRIDGE_TURN";
-const TAG_RE = /GILB_BRIDGE_TURN=([0-9a-f]{16}\.[0-9a-f]{16})(?![0-9a-f])/;
-export const tagOf = (s) => TAG_RE.exec(s)?.[1] ?? null;
-/** macOS `ps -axwwE -o pid=,ppid=,lstart=,command=`: the environment follows the command text, so the tag is found in the row. */
-export function parseMacPs(text) {
+/** macOS and Linux `ps -A -o pid=,ppid=,lstart=` (no environment, no command line). */
+export function parsePs(text) {
     const rows = [];
     for (const line of text.split("\n")) {
-        const m = /^\s*(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]{8}\s+\d{4})\s+(.*)$/.exec(line);
+        const m = /^\s*(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]{8}\s+\d{4})\s*$/.exec(line);
         if (m)
-            rows.push({ pid: Number(m[1]), ppid: Number(m[2]), start: m[3].replace(/\s+/g, " "), tag: tagOf(m[4]) });
+            rows.push({ pid: Number(m[1]), ppid: Number(m[2]), start: m[3].replace(/\s+/g, " ") });
     }
     return rows;
 }
-/** Windows: the process list as JSON from `Get-CimInstance Win32_Process`. The environment of a process is not readable there, so no tag. */
+/** Windows: the process list as JSON from `Get-CimInstance Win32_Process`. */
 export function parseWinProcs(text) {
     try {
         const v = JSON.parse(text);
         const arr = Array.isArray(v) ? v : [v];
         return arr.flatMap((r) => {
             const o = r;
-            return typeof o?.ProcessId === "number" && typeof o.ParentProcessId === "number" ? [{ pid: o.ProcessId, ppid: o.ParentProcessId, start: String(o.CreationDate ?? ""), tag: null }] : [];
+            return typeof o?.ProcessId === "number" && typeof o.ParentProcessId === "number" ? [{ pid: o.ProcessId, ppid: o.ParentProcessId, start: String(o.CreationDate ?? "") }] : [];
         });
     }
     catch {
@@ -1037,36 +1032,23 @@ export function parseWinProcs(text) {
 }
 export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress";
 const realListRun = (file, args, env) => new Promise((resolve) => {
-    execFile(file, args, { timeout: 20000, maxBuffer: 256 * 1024 * 1024, env, windowsHide: true }, (err, stdout) => resolve(err ? null : String(stdout)));
+    execFile(file, args, { timeout: 20000, maxBuffer: 64 * 1024 * 1024, env, windowsHide: true }, (err, stdout) => resolve(err ? null : String(stdout)));
 });
-/** All live processes (same user for the environment), by absolute program and a minimal environment. Null: it could not be read. */
+/** All live processes by absolute program and a minimal environment. Null: it could not be read. */
 export async function listProcs(platform, env = process.env, run = realListRun) {
-    if (platform === "darwin") {
-        const out = await run("/bin/ps", ["-axwwE", "-o", "pid=,ppid=,lstart=,command="], { PATH: "/usr/bin:/bin" });
-        return out === null ? null : parseMacPs(out);
-    }
     if (platform === "win32") {
         const out = await run(windowsPowerShell(env), ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_PROC_SCRIPT], dialogEnv("win32", env));
         return out === null ? null : parseWinProcs(out);
     }
+    const out = await run("/bin/ps", ["-A", "-o", "pid=,ppid=,lstart="], { PATH: "/usr/bin:/bin", LC_ALL: "C" });
+    return out === null ? null : parsePs(out);
+}
+/** The same list, synchronously (for the exit hook). Null: unreadable, or Windows. */
+export function listProcsSync(platform) {
+    if (platform === "win32")
+        return null;
     try {
-        const rows = [];
-        for (const n of fs.readdirSync("/proc")) {
-            if (!/^\d+$/.test(n))
-                continue;
-            try {
-                const stat = fs.readFileSync(`/proc/${n}/stat`, "utf8");
-                const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-                let tag = null;
-                try {
-                    tag = tagOf(fs.readFileSync(`/proc/${n}/environ`, "latin1").replace(/\0/g, "\n"));
-                }
-                catch { /* not ours to read */ }
-                rows.push({ pid: Number(n), ppid: Number(f[1]), start: String(f[19]), tag });
-            }
-            catch { /* gone */ }
-        }
-        return rows;
+        return parsePs(execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid=,lstart="], { timeout: 5000, encoding: "utf8", env: { PATH: "/usr/bin:/bin", LC_ALL: "C" }, maxBuffer: 64 * 1024 * 1024 }));
     }
     catch {
         return null;
@@ -1100,7 +1082,10 @@ const pidAliveNow = (pid) => {
         return e.code === "EPERM";
     }
 };
-/** Stops these processes: SIGTERM, then SIGKILL after the grace, and waits until they are gone (Windows: taskkill /T /F by pid, from the real SystemRoot). Returns the pids still alive. */
+/**
+ * Stops these processes: SIGTERM, then (only for those `stillMine` re-confirms, by a fresh process list and their start times) SIGKILL after the grace,
+ * and waits until they are gone (Windows: taskkill /T /F by pid, from the real SystemRoot). Returns the pids still alive.
+ */
 export async function killPids(pids, o = {}) {
     const list = [...new Set(pids)].filter((p) => p > 1 && p !== process.pid);
     if (list.length === 0)
@@ -1132,19 +1117,21 @@ export async function killPids(pids, o = {}) {
         catch { /* gone */ }
     }
     await wait(o.graceMs ?? KILL_GRACE_MS);
-    for (const p of list) {
-        if (pidAliveNow(p)) {
+    const alive = list.filter(pidAliveNow);
+    if (alive.length > 0) {
+        const still = o.stillMine ? await o.stillMine(alive) : alive; // a pid that no longer matches what was seen is not touched
+        for (const p of still) {
             try {
                 process.kill(p, "SIGKILL");
             }
             catch { /* gone */ }
         }
+        await wait(3000);
     }
-    await wait(3000);
     return list.filter(pidAliveNow);
 }
-/** A code turn's child environment plus its tag. A chat turn's environment is unchanged. */
-const withTurnTag = (code, tag, e) => (code ? { ...e, [TURN_TAG_ENV]: tag } : e);
+/** State-folder lock files held by bridges of this process (a second bridge on the same folder is refused even in the same process). */
+const HELD_LOCKS = new Set();
 export function killChild(child, env = process.env, o = {}) {
     if (!child)
         return Promise.resolve();
@@ -2137,10 +2124,10 @@ export function folderWritable(dir) {
         return false;
     }
 }
-export const freshLimits = () => ({ stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0 });
+export const freshLimits = () => ({ stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0, lastDenialAt: 0 });
 const DAY_MS = 24 * 3_600_000;
 /** What the counters become when the file cannot be trusted (missing after it had existed, a link, wrong owner, garbage): the hour's cap is reached and ON waits 10 minutes. */
-export const failClosedLimits = (now) => ({ stamps: [now, now, now, now, now], denials: 0, cooldownUntil: now + 600_000, lockedUntil: 0 });
+export const failClosedLimits = (now) => ({ stamps: [now, now, now, now, now], denials: 0, cooldownUntil: now + 600_000, lockedUntil: 0, lastDenialAt: 0 });
 /** Reads the counters with the access.json checks; every time stamp is capped at now (stamps) or now + 24 h (waits). Anything wrong: `bad`. */
 export function parseLimits(text, now) {
     if (text === null)
@@ -2150,7 +2137,11 @@ export function parseLimits(text, now) {
         const num = (x) => typeof x === "number" && Number.isFinite(x);
         if (!v || v.version !== 1 || !Array.isArray(v.stamps) || !v.stamps.every(num) || !num(v.denials) || !num(v.cooldownUntil) || !num(v.lockedUntil))
             return null;
-        return { stamps: v.stamps.slice(-100).map((x) => Math.min(x, now)), denials: Math.max(0, Math.min(100, Math.floor(v.denials))), cooldownUntil: Math.min(v.cooldownUntil, now + DAY_MS), lockedUntil: Math.min(v.lockedUntil, now + DAY_MS) };
+        const last = num(v.lastDenialAt) ? Math.min(v.lastDenialAt, now) : 0;
+        let denials = Math.max(0, Math.min(100, Math.floor(v.denials)));
+        if (denials > 0 && last > 0 && now - last >= DAY_MS)
+            denials = 0; // a day without a refusal: the count starts again
+        return { stamps: v.stamps.slice(-100).map((x) => Math.min(x, now)), denials, cooldownUntil: Math.min(v.cooldownUntil, now + DAY_MS), lockedUntil: Math.min(v.lockedUntil, now + DAY_MS), lastDenialAt: last };
     }
     catch {
         return null;
@@ -2234,40 +2225,59 @@ export async function accessReset(opts, deps) {
     if (lbl)
         return lbl;
     const f = serviceFiles(opts, deps.home, deps.platform);
+    const file = path.join(f.stateDir, LIMITS_FILE);
     try {
-        writeLimitsFile(path.join(f.stateDir, LIMITS_FILE), freshLimits());
+        if (!fs.statSync(f.stateDir).isDirectory())
+            throw new Error("not a folder");
+    }
+    catch {
+        return { ok: false, message: `No bridge state folder at ${f.stateDir}, so nothing was reset. If the bridge uses its own state folder, add --state-dir <that folder>.` };
+    }
+    try {
+        writeLimitsFile(file, freshLimits());
     }
     catch (e) {
-        return { ok: false, message: `Could not reset ${path.join(f.stateDir, LIMITS_FILE)}: ${e.message}` };
+        return { ok: false, message: `Could not reset ${file}: ${e.message}` };
     }
-    return { ok: true, message: "Asking to turn on full access is unlocked, and the counters are reset." };
+    return { ok: true, message: `Reset ${file}: asking to turn on full access is unlocked and the counters are cleared.` };
 }
 /**
  * A service installed before 0.3.19 still carries `--full-access` in its launch arguments. When the bridge starts with it: the first value is saved
  * in access.json (once, only when no setting was ever saved here), and the flag is taken out of the service's own entry (macOS: the LaunchAgent
  * plist; Windows: the launcher script), written to a temp file and renamed, the same text otherwise. Idempotent. Returns a line for the log, or "".
  */
-export function migrateServiceFlag(opts, home, platform = process.platform, env = process.env) {
-    if (!opts.fullAccess)
+export function migrateServiceFlag(opts, home, platform = process.platform, env = process.env, where = {}) {
+    if (!opts.fullAccess || !LABEL_RE.test(opts.label))
         return "";
-    const stateDir = platform === "win32" ? serviceFilesWin(opts, home, "win32", env).stateDir : serviceFiles(opts, home, platform).stateDir;
-    if (!fs.existsSync(path.join(stateDir, ACCESS_SEEDED)))
-        seedAccessFile(stateDir, true, platform);
-    const target = platform === "win32" ? serviceFilesWin(opts, home, "win32", env).launcher : serviceFiles(opts, home, platform).plist;
-    let text;
+    if (platform !== "win32" && env.GILB_BRIDGE_SUPERVISED !== "1")
+        return ""; // only the service (launchd) edits its own entry, never a Terminal or dev start
+    const win = platform === "win32";
+    const files = win ? serviceFilesWin(opts, home, "win32", env) : serviceFiles(opts, home, platform);
+    const target = where.target ?? (win ? files.launcher : files.plist); // the exact path the installer writes (`where` is for tests of a pretend Windows)
+    let raw;
     try {
-        text = fs.readFileSync(target, "utf8");
+        if (fs.lstatSync(target).isSymbolicLink())
+            return `left ${target} alone: it is a link (take --full-access out of its target yourself, or run the install line again)`;
+        raw = fs.readFileSync(target);
     }
     catch {
         return "";
-    } // no service entry (a Terminal start): nothing to take it out of
-    const next = platform === "win32" ? text.replace(/ --full-access(?= )/g, "") : text.replace(/[ \t]*<string>--full-access<\/string>\r?\n/g, "");
+    } // no service entry: nothing to take it out of
+    const utf16le = raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe;
+    const text = utf16le ? raw.subarray(2).toString("utf16le") : raw.toString("utf8");
+    // Only an entry this bridge's installer wrote: the plist names this label; the launcher carries our mark.
+    if (win ? !isOurLauncher(text) : !text.includes(`<key>Label</key>`) || !text.includes(`<string>${opts.label}</string>`))
+        return "";
+    const next = win ? text.replace(/ --full-access(?= )/g, "") : text.replace(/[ \t]*<string>--full-access<\/string>\r?\n/g, "");
     if (next === text)
         return "";
+    const stateDir = where.stateDir ?? files.stateDir;
+    if (!fs.existsSync(path.join(stateDir, ACCESS_SEEDED)))
+        seedAccessFile(stateDir, true, platform);
     try {
         const tmp = `${target}.${process.pid}.tmp`;
         fs.rmSync(tmp, { force: true });
-        fs.writeFileSync(tmp, next, { mode: platform === "win32" ? 0o666 : 0o644, flag: "wx" });
+        fs.writeFileSync(tmp, utf16le ? utf16(next) : next, { mode: win ? 0o666 : 0o644, flag: "wx" });
         fs.renameSync(tmp, target);
     }
     catch (e) {
@@ -2533,21 +2543,19 @@ export function createBridge(opts = {}) {
             log(`could not save the access mode: ${e?.message ?? e}`);
         }
     }
-    /** Every code-turn child carries this install's id in GILB_BRIDGE_TURN, so what it started can be found wherever it went. */
-    let installId = crypto.randomBytes(8).toString("hex");
+    /** `install-id` only records that this state folder has been started before (so a missing access-limits.json after that is tampering, not a first run). */
     let installFresh = true;
     if (opts.stateDir) {
         const idFile = path.join(opts.stateDir, "install-id");
         const got = readStrictText(idFile, platform, undefined, opts.winOwnerOk);
         if (got.text !== null && /^[0-9a-f]{16}$/.test(got.text.trim())) {
-            installId = got.text.trim();
             installFresh = false;
         }
         else {
             try {
                 fs.mkdirSync(opts.stateDir, { recursive: true, mode: 0o700 });
                 fs.rmSync(idFile, { force: true });
-                fs.writeFileSync(idFile, installId, { mode: 0o600, flag: "wx" });
+                fs.writeFileSync(idFile, crypto.randomBytes(8).toString("hex"), { mode: 0o600, flag: "wx" });
             }
             catch (e) {
                 log(`could not save the install id: ${e?.message ?? e}`);
@@ -2734,8 +2742,12 @@ export function createBridge(opts = {}) {
      */
     const liveGroups = new Map();
     const tracks = new Map();
+    /** Recorded processes a stop could not end (pid -> start time). ON stays refused while one is alive and still matches. */
+    const residual = new Map();
     const procList = opts.procList ?? (() => listProcs(platform, env));
     const liveFile = opts.stateDir ? path.join(opts.stateDir, "live-groups.json") : null;
+    const LIVE_FILE_DESC_MAX = 40;
+    /** live-groups.json: each running code child (pid + start time) and the descendants seen, so the next start can stop EXACTLY those if this bridge is killed. */
     const persistTracks = () => {
         if (!liveFile)
             return;
@@ -2743,7 +2755,8 @@ export function createBridge(opts = {}) {
             fs.mkdirSync(path.dirname(liveFile), { recursive: true, mode: 0o700 });
             const tmp = `${liveFile}.${process.pid}.tmp`;
             fs.rmSync(tmp, { force: true });
-            fs.writeFileSync(tmp, JSON.stringify({ version: 1, groups: [...tracks.values()].map((t) => ({ pid: t.pid, start: t.start, tag: t.tag })) }), { mode: 0o600, flag: "wx" });
+            const groups = [...tracks.values()].slice(0, 5).map((t) => ({ pid: t.pid, start: t.start, desc: [...t.desc].slice(-LIVE_FILE_DESC_MAX).map(([pid, start]) => [pid, start]) }));
+            fs.writeFileSync(tmp, JSON.stringify({ version: 1, groups }), { mode: 0o600, flag: "wx" });
             fs.renameSync(tmp, liveFile);
         }
         catch (e) {
@@ -2754,44 +2767,69 @@ export function createBridge(opts = {}) {
         const rows = await procList();
         if (!rows)
             return;
+        let changed = false;
         const me = rows.find((r) => r.pid === tr.pid);
         if (me && !tr.start) {
             tr.start = me.start;
-            persistTracks();
+            changed = true;
         }
-        for (const d of descendantsOf(rows, tr.pid))
-            tr.desc.set(d.pid, d.start);
+        for (const d of descendantsOf(rows, tr.pid)) {
+            if (tr.desc.get(d.pid) !== d.start) {
+                tr.desc.set(d.pid, d.start);
+                changed = true;
+            }
+        }
+        if (changed)
+            persistTracks();
     }
-    /** Processes that belong to this install's code turns and are alive: carrying a tag of this install (macOS, Linux), or seen as descendants of a code child (a process that scrubs its environment AND was never seen below claude escapes this). */
+    /** Recorded processes (pid + start time) that are alive now AND still have the recorded start time. */
+    const stillMatching = (entries, rows) => {
+        const byPid = new Map(rows.map((r) => [r.pid, r]));
+        return [...entries].filter(([pid, start]) => start !== "" && byPid.get(pid)?.start === start && pid !== process.pid).map(([pid]) => pid);
+    };
+    /** The recorded descendants (and survivors) of this install's code turns that are alive: what ON must wait for. */
     async function livingTurnProcs(except = new Set()) {
         const rows = await procList();
         if (!rows)
             return { pids: [], known: false };
-        const byPid = new Map(rows.map((r) => [r.pid, r]));
-        const skipTags = new Set([...except].flatMap((p) => (tracks.get(p) ? [tracks.get(p).tag] : [])));
-        const out = new Set();
-        for (const r of rows)
-            if (r.tag !== null && r.tag.startsWith(`${installId}.`) && r.pid !== process.pid && !skipTags.has(r.tag))
-                out.add(r.pid);
+        const entries = [...residual];
         for (const tr of tracks.values()) {
             if (except.has(tr.pid))
                 continue;
-            for (const [pid, start] of tr.desc)
-                if (byPid.get(pid)?.start === start)
-                    out.add(pid);
-            if (platform === "win32" && byPid.has(tr.pid))
-                out.add(tr.pid);
+            entries.push(...tr.desc);
+            if (platform === "win32")
+                entries.push([tr.pid, tr.start]);
         }
-        return { pids: [...out], known: true };
+        const pids = stillMatching(entries, rows);
+        for (const [pid] of [...residual])
+            if (!pids.includes(pid))
+                residual.delete(pid);
+        return { pids, known: true };
     }
-    const killPidsHere = (pids) => killPids(pids, { graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile });
-    /** Everything of this install's code turns, wherever it went: a fresh look at the descendants first, then SIGTERM, SIGKILL, and a wait. Returns how many are still alive. */
+    /** Ends recorded processes: SIGTERM, then SIGKILL, after a fresh look at each one's start time; whatever survives is remembered. Returns how many survive. */
+    async function killEntries(entries) {
+        const rows = await procList();
+        if (!rows)
+            return entries.length;
+        const startOf = new Map(entries);
+        const left = await killPids(stillMatching(entries, rows), {
+            graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile,
+            stillMine: async (alive) => { const now2 = await procList(); return now2 ? stillMatching(alive.map((p) => [p, startOf.get(p) ?? ""]), now2) : []; },
+        });
+        for (const pid of left)
+            residual.set(pid, startOf.get(pid) ?? "");
+        return left.length;
+    }
+    /** Everything recorded below this install's code turns, except the turns in `except`: a fresh look first, then SIGTERM, SIGKILL, a wait. Returns how many are still alive. */
     async function killAllTracked(except = new Set()) {
         for (const tr of [...tracks.values()])
             if (!except.has(tr.pid))
                 await snapshotTrack(tr);
-        const v = await livingTurnProcs(except);
-        return (await killPidsHere(v.pids)).length;
+        const entries = [];
+        for (const tr of tracks.values())
+            if (!except.has(tr.pid))
+                entries.push(...tr.desc);
+        return killEntries(entries);
     }
     let snapTimer = null;
     function ensureSnapTimer() {
@@ -2809,15 +2847,15 @@ export function createBridge(opts = {}) {
             busy = true;
             void (async () => { for (const tr of [...tracks.values()])
                 await snapshotTrack(tr); })().finally(() => { busy = false; });
-        }, opts.snapshotMs ?? 2000);
+        }, opts.snapshotMs ?? 250);
         snapTimer.unref();
     }
-    function trackCodeChild(child, tag) {
+    function trackCodeChild(child) {
         const pid = child.pid;
         if (pid === undefined)
             return;
         liveGroups.set(pid, child);
-        const tr = { tag, pid, start: "", desc: new Map() };
+        const tr = { pid, start: "", desc: new Map() };
         tracks.set(pid, tr);
         persistTracks();
         void snapshotTrack(tr);
@@ -2835,19 +2873,11 @@ export function createBridge(opts = {}) {
                 tracks.delete(pid);
                 persistTracks();
             };
-            // claude is gone: its group, then anything that carries this turn's tag or was seen below it (a child that left the group with setsid), then forget it
+            // claude is gone: its group, then what was seen below it (a child that left the group), then forget it
             void (async () => {
                 if (platform !== "win32")
                     await killGroup(pid, opts.killGraceMs);
-                const rows = await procList();
-                if (rows) {
-                    const byPid = new Map(rows.map((r) => [r.pid, r]));
-                    const left = new Set(rows.filter((r) => r.tag === tag && r.pid !== process.pid).map((r) => r.pid));
-                    for (const [dpid, start] of tr.desc)
-                        if (byPid.get(dpid)?.start === start)
-                            left.add(dpid);
-                    await killPidsHere([...left]);
-                }
+                await killEntries([...tr.desc]);
             })().then(done, done);
         };
         child.on("exit", reap);
@@ -3950,14 +3980,13 @@ export function createBridge(opts = {}) {
             const expectFolder = turn.code && scope ? { path: scope.path, id: scope.id } : null;
             if (turn.code)
                 opts.beforeSpawn?.();
-            const tag = `${installId}.${crypto.randomBytes(8).toString("hex")}`;
             let child;
             try {
                 child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
                     cwd: turn.code && scope ? scope.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
                     // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-                    env: withTurnTag(turn.code, tag, turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env)),
+                    env: (turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env)),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                     // A code turn leads its own process group (off Windows), so a stop reaches everything it started.
@@ -3968,7 +3997,7 @@ export function createBridge(opts = {}) {
                 return resolve({ error: `Could not start Claude Code: ${e?.message ?? e}`, sessionId: mode.sessionId, model: "" });
             }
             if (turn.code)
-                trackCodeChild(child, tag);
+                trackCodeChild(child);
             turn.child = child;
             let buf = "";
             let stderr = "";
@@ -4836,7 +4865,7 @@ export function createBridge(opts = {}) {
         const t0 = now();
         const L = getLimits(t0);
         if (t0 < L.lockedUntil)
-            return json(res, 429, { error: "Full access was refused several times, so asking is locked. Run `node bridge.mjs --access-reset` in a Terminal to unlock it.", code: "AccessLocked", retryAfterSec: Math.ceil((L.lockedUntil - t0) / 1000) });
+            return json(res, 429, { error: "Full access was refused several times, so asking is locked. Run `node bridge.mjs --access-reset` in a Terminal to unlock it (add --state-dir if this bridge has its own).", code: "AccessLocked", retryAfterSec: Math.ceil((L.lockedUntil - t0) / 1000) });
         if (t0 < L.cooldownUntil)
             return json(res, 429, { error: "You just said no. Try again later.", code: "AccessCooldown", retryAfterSec: Math.ceil((L.cooldownUntil - t0) / 1000) });
         L.stamps = L.stamps.filter((x) => t0 - x < DAY_MS);
@@ -4870,8 +4899,15 @@ export function createBridge(opts = {}) {
                 saveLimits(L);
                 return json(res, 501, { error: "The full access window could not open on this computer, so nothing was changed.", code: "AccessDialogUnavailable" });
             }
+            if (result === "timeout") {
+                // No answer is not a refusal: it only waits a little, and does not count toward the lock.
+                L.cooldownUntil = now() + ACCESS_COOLDOWNS_MS[0];
+                saveLimits(L);
+                return json(res, 403, { error: "Nobody answered the window on this computer, so full access stays off.", code: "AccessDenied" });
+            }
             if (result !== "allow") {
                 L.denials += 1;
+                L.lastDenialAt = now();
                 L.cooldownUntil = now() + ACCESS_COOLDOWNS_MS[Math.min(L.denials - 1, ACCESS_COOLDOWNS_MS.length - 1)];
                 if (L.denials >= ACCESS_DENIALS_TO_LOCK) {
                     L.lockedUntil = now() + DAY_MS; // three Nos in a row: asking is locked for a day (or until --access-reset)
@@ -4887,6 +4923,9 @@ export function createBridge(opts = {}) {
             const after = await codeActivity(); // checked again after Allow, before anything is written
             if (after !== "free")
                 return json(res, 409, after === "busy" ? TURN_RUNNING : { error: "The bridge could not check what is running on this computer, so nothing was changed.", code: "AccessScanFailed" });
+            // A Folder request that landed during the scan wins: checked once more, with nothing awaited between here and the write.
+            if (epoch !== accessEpoch)
+                return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
             if (!saveAccess("computer"))
                 return json(res, 500, { error: "Could not save the mode on this computer, so nothing was changed.", code: "AccessNotSaved" });
             rmMarker(loweredMarker);
@@ -5140,41 +5179,97 @@ export function createBridge(opts = {}) {
         }
         return json(res, 404, { error: "not found" });
     }
-    /** At start: processes of an earlier run of this install (a hard kill, a closed Terminal, a crash) that are still alive: the ones in live-groups.json that still match, and anything carrying this install's tag. */
+    /**
+     * At start (after the lock on the state folder is ours): stop EXACTLY what an earlier run recorded in live-groups.json (a hard kill, a closed
+     * Terminal, a crash): each recorded code child and descendant, only while its pid still has the start time that was recorded. Nothing is
+     * found by name, text or environment.
+     */
     async function sweepLeftovers() {
         if (!liveFile)
             return;
         let entries = [];
+        const roots = [];
+        const r = readStrictText(liveFile, platform, undefined, opts.winOwnerOk);
         try {
-            const v = JSON.parse(fs.readFileSync(liveFile, "utf8"));
-            if (Array.isArray(v.groups))
-                entries = v.groups.slice(0, 200).flatMap((g) => (typeof g.pid === "number" && Number.isInteger(g.pid) && typeof g.start === "string" ? [{ pid: g.pid, start: g.start }] : []));
-        }
-        catch { /* none, or unreadable */ }
-        const rows = await procList();
-        if (rows) {
-            const byPid = new Map(rows.map((r) => [r.pid, r]));
-            const victims = new Set(rows.filter((r) => r.tag !== null && r.tag.startsWith(`${installId}.`) && r.pid !== process.pid).map((r) => r.pid));
-            for (const e of entries) {
-                const r = byPid.get(e.pid);
-                if (r && r.start === e.start && e.pid !== process.pid) {
-                    victims.add(e.pid);
-                    for (const d of descendantsOf(rows, e.pid))
-                        victims.add(d.pid);
-                    if (platform !== "win32")
-                        await killGroup(e.pid, opts.killGraceMs);
+            const v = r.text === null ? null : JSON.parse(r.text);
+            if (v && Array.isArray(v.groups)) {
+                for (const g of v.groups.slice(0, 5)) {
+                    if (typeof g?.pid !== "number" || !Number.isInteger(g.pid) || typeof g.start !== "string")
+                        continue;
+                    roots.push([g.pid, g.start]);
+                    entries.push([g.pid, g.start]);
+                    if (Array.isArray(g.desc))
+                        for (const d of g.desc.slice(0, LIVE_FILE_DESC_MAX))
+                            if (Array.isArray(d) && typeof d[0] === "number" && Number.isInteger(d[0]) && typeof d[1] === "string")
+                                entries.push([d[0], d[1]]);
                 }
             }
-            if (victims.size > 0) {
-                log(`stopping ${victims.size} process(es) left by an earlier run`);
-                await killPidsHere([...victims]);
-            }
         }
+        catch { /* none, or unreadable */ }
+        const rows = entries.length > 0 ? await procList() : null;
+        if (rows) {
+            for (const pid of stillMatching(roots, rows))
+                if (platform !== "win32")
+                    await killGroup(pid, opts.killGraceMs); // a recorded claude that is still the same process: its group goes
+            const n = stillMatching(entries, rows).length;
+            if (n > 0)
+                log(`stopping ${n} process(es) left by an earlier run`);
+            await killEntries(entries);
+        }
+        entries = [];
         persistTracks(); // the list is empty now
     }
+    /** The lock on the state folder: one bridge at a time (pid + start time). A second one refuses to start and names --state-dir. */
+    const lockFile = opts.stateDir ? path.join(opts.stateDir, "bridge.lock") : null;
+    let lockHeld = false;
+    async function takeLock() {
+        if (!lockFile)
+            return;
+        if (HELD_LOCKS.has(lockFile))
+            throw new Error(`another bridge in this process is already using the state folder ${opts.stateDir}. Give this one its own --state-dir.`);
+        const rows = await procList();
+        const mine = rows?.find((r) => r.pid === process.pid)?.start ?? "";
+        fs.mkdirSync(path.dirname(lockFile), { recursive: true, mode: 0o700 });
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, start: mine }), { flag: "wx", mode: 0o600 });
+                lockHeld = true;
+                HELD_LOCKS.add(lockFile);
+                return;
+            }
+            catch (e) {
+                if (e.code !== "EEXIST")
+                    throw e;
+            }
+            let owner = {};
+            try {
+                owner = JSON.parse(fs.readFileSync(lockFile, "utf8"));
+            }
+            catch { /* a damaged lock is stale */ }
+            const pidOk = typeof owner.pid === "number" && Number.isInteger(owner.pid) && owner.pid !== process.pid;
+            const ownerAlive = pidOk && pidAliveNow(owner.pid) && (rows === null || typeof owner.start !== "string" || owner.start === "" || rows.find((r) => r.pid === owner.pid)?.start === owner.start);
+            if (ownerAlive)
+                throw new Error(`another bridge (process ${owner.pid}) is already using the state folder ${opts.stateDir}. Give this one its own --state-dir.`);
+            try {
+                fs.rmSync(lockFile, { force: true });
+            }
+            catch { /* the next attempt tells */ }
+        }
+        throw new Error(`could not lock the state folder ${opts.stateDir}`);
+    }
+    const releaseLock = () => {
+        if (lockHeld && lockFile) {
+            HELD_LOCKS.delete(lockFile);
+            try {
+                fs.rmSync(lockFile, { force: true });
+            }
+            catch { /* stale: the next start replaces it */ }
+        }
+        lockHeld = false;
+    };
     const closeBridge = () => {
         const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => undefined);
-        return stopped.then(() => new Promise((resolve) => server.close(() => resolve())));
+        return stopped.then(() => new Promise((resolve) => server.close(() => { releaseLock(); resolve(); })));
     };
     const server = http.createServer((req, res) => {
         handle(req, res).catch((e) => {
@@ -5207,31 +5302,47 @@ export function createBridge(opts = {}) {
         get accessSource() {
             return accessSource;
         },
-        start() {
+        async start() {
             fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
-            return new Promise((resolve, reject) => {
-                server.once("error", reject);
-                server.listen(port, "127.0.0.1", () => {
-                    port = server.address().port;
-                    // Only now (the port is ours, so no other bridge runs on this state folder): stop what an earlier run of this install left behind.
-                    sweepLeftovers().then(() => resolve(port), () => resolve(port));
+            await takeLock(); // one bridge per state folder: a second refuses here
+            try {
+                return await new Promise((resolve, reject) => {
+                    server.once("error", reject);
+                    server.listen(port, "127.0.0.1", () => {
+                        port = server.address().port;
+                        // The folder is ours and so is the port: stop exactly what an earlier run recorded.
+                        sweepLeftovers().then(() => resolve(port), () => resolve(port));
+                    });
                 });
-            });
+            }
+            catch (e) {
+                releaseLock();
+                throw e;
+            }
         },
-        /** Last resort, synchronous (for `process.on("exit")`): SIGKILL every tracked group and descendant. */
+        /** Last resort, synchronous (for `process.on("exit")`): SIGKILL each tracked code child's group and each recorded descendant, only while its start time still matches what was seen. */
         killAllSync() {
+            const rows = (opts.procListSync ?? (() => listProcsSync(platform)))();
+            if (!rows)
+                return;
+            const byPid = new Map(rows.map((r) => [r.pid, r]));
             for (const tr of tracks.values()) {
-                for (const pid of [...tr.desc.keys(), tr.pid]) {
+                if (tr.start !== "" && byPid.get(tr.pid)?.start === tr.start && platform !== "win32") {
                     try {
-                        process.kill(platform === "win32" ? pid : -pid, "SIGKILL");
-                    }
-                    catch { /* gone */ }
-                    try {
-                        process.kill(pid, "SIGKILL");
+                        process.kill(-tr.pid, "SIGKILL");
                     }
                     catch { /* gone */ }
                 }
+                for (const [pid, start] of tr.desc) {
+                    if (pid !== process.pid && byPid.get(pid)?.start === start) {
+                        try {
+                            process.kill(pid, "SIGKILL");
+                        }
+                        catch { /* gone */ }
+                    }
+                }
             }
+            releaseLock();
         },
         close() {
             return closeBridge();

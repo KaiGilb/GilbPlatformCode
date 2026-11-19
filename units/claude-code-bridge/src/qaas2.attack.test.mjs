@@ -82,7 +82,7 @@ async function codeTurn(b, secret, prompt) {
   return t;
 }
 
-describe("QAAS2 G1 (HIGH): a child that leaves the process group is found by its tag, or by the descendants seen", () => {
+describe("QAAS2 G1 (HIGH): a child that leaves the process group is found as a recorded descendant", () => {
   for (const [kind, prompt] of [["setsid (node detached)", "ESC_SETSID"], ["perl POSIX::setsid", "ESC_PERLSETSID"]]) {
     it(`${kind}: POST folder ends the escapee before it answers`, async () => {
       const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
@@ -110,21 +110,57 @@ describe("QAAS2 G1 (HIGH): a child that leaves the process group is found by its
     expect(alive(esc)).toBe(false);
     expect(saw409 || dialog.mock.calls.length === 1).toBe(true);
   });
-  it("ON is 409 while a tagged process is alive even when no turn and no group is tracked (a stray carrying the tag)", async () => {
+  it("a FORGED tag is nothing: a process carrying GILB_BRIDGE_TURN=<anything> in its environment or arguments is never killed, and never blocks ON", async () => {
     const dialog = vi.fn(async () => "cancel");
     prep();
-    const { secret, bridge } = await startBridge({ workspace: ws(), accessDialog: dialog });
-    const id = fs.readFileSync(path.join(stateDir, "install-id"), "utf8").trim();
-    const stray = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", env: { PATH: process.env.PATH, GILB_BRIDGE_TURN: `${id}.0123456789abcdef` } });
-    pids.push(stray.pid);
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    const id = fs.readFileSync(path.join(stateDir, "install-id"), "utf8").trim(); // the install id is not secret: the AI sees it in its own environment
+    const fake = `GILB_BRIDGE_TURN=${id}.0123456789abcdef`;
+    const strays = [
+      spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", env: { PATH: process.env.PATH, GILB_BRIDGE_TURN: `${id}.0123456789abcdef` } }),
+      spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", fake], { stdio: "ignore" }),
+    ];
+    for (const k of strays) pids.push(k.pid);
     await sleep(300);
-    const r = await accessReq(secret, { mode: "computer" });
-    expect(r.status).toBe(409);
-    expect(r.json.code).toBe("TurnRunning");
-    expect(dialog).not.toHaveBeenCalled();
-    expect(bridge).toBeTruthy();
-    process.kill(stray.pid, "SIGKILL");
-    await until(async () => (await accessReq(secret, { mode: "computer" })).status === 403);
+    expect((await accessReq(secret, { mode: "folder" })).status).toBe(200); // a sweep that trusted tags would kill them here
+    expect((await accessReq(secret, { mode: "computer" })).status).toBe(403); // not blocked: the dialog was reached
+    await bridges.pop().close();
+    await startBridge({ workspace: ws() }); // and neither a close nor a start kills them
+    for (const k of strays) expect(alive(k.pid)).toBe(true);
+  });
+  it("no code child carries any bridge tag in its environment any more", async () => {
+    const { secret } = await startBridge({ workspace: ws() });
+    await codeTurn(base, secret, "WAITFOREVER");
+    const run = await until(() => rows("run")[0]);
+    expect(run.envKeys.some((k) => /GILB_BRIDGE/.test(k))).toBe(false);
+    expect(B.tagOf).toBeUndefined();
+    expect(B.TURN_TAG_ENV).toBeUndefined();
+  });
+  it("a recorded descendant whose pid now has ANOTHER start time (a recycled pid) is not killed", async () => {
+    prep();
+    const stray = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    pids.push(stray.pid);
+    let phase = 1;
+    let claudePid = 0;
+    const procList = async () => (claudePid ? [{ pid: claudePid, ppid: 1, start: "C" }, phase === 1 ? { pid: stray.pid, ppid: claudePid, start: "S1" } : { pid: stray.pid, ppid: 1, start: "S2" }] : []); // later: the pid is an unrelated process
+    const { secret } = await startBridge({ workspace: ws(), fullAccess: true, procList });
+    await codeTurn(base, secret, "WAITFOREVER");
+    claudePid = (await until(() => rows("run")[0])).pid;
+    await sleep(700); // snapshots record stray (start "S1") below claude
+    phase = 2; // the pid is now somebody else's process
+    await accessReq(secret, { mode: "folder" });
+    expect(alive(stray.pid)).toBe(true);
+    expect((await accessReq(secret, { mode: "computer" }, {})).status).not.toBe(409); // and it does not hold ON back
+  });
+  it("killPids sends SIGKILL only to what the fresh check still confirms", async () => {
+    const k = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    pids.push(k.pid);
+    await sleep(300);
+    const left = await B.killPids([k.pid], { graceMs: 200, stillMine: async () => [] });
+    expect(left).toEqual([k.pid]);
+    expect(alive(k.pid)).toBe(true);
+    await B.killPids([k.pid], { graceMs: 200, stillMine: async (a) => a });
+    expect(alive(k.pid)).toBe(false);
   });
   it("a helper that scrubbed its environment (env -i) is still caught when it was seen below claude (the ppid walk); a folder turn is not touched by a switch to folder", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
@@ -138,14 +174,6 @@ describe("QAAS2 G1 (HIGH): a child that leaves the process group is found by its
   it("what it cannot see: an environment-scrubbed process that was never seen below claude is not found (documented limit; the dialog, the caps and the lock remain)", async () => {
     const rowsSeen = B.descendantsOf([{ pid: 10, ppid: 1, start: "a", tag: null }, { pid: 11, ppid: 1, start: "b", tag: null }], 5);
     expect(rowsSeen).toEqual([]); // reparented to init and unseen: no link left to walk
-  });
-  it("every code child carries a tag of this install in its environment, and the tag is a fresh token per turn", async () => {
-    const { secret } = await startBridge({ workspace: ws() });
-    await codeTurn(base, secret, "WAITFOREVER");
-    const run = await until(() => rows("run")[0]);
-    expect(run.envKeys).toContain("GILB_BRIDGE_TURN");
-    expect(B.tagOf("A=1 GILB_BRIDGE_TURN=0123456789abcdef.fedcba9876543210 B=2")).toBe("0123456789abcdef.fedcba9876543210");
-    expect(B.tagOf("GILB_BRIDGE_TURN=short")).toBeNull();
   });
 });
 
@@ -164,7 +192,7 @@ describe("QAAS2 G2 (MED): orphans after the bridge dies", () => {
     const kid = (await until(() => rows("grp")[0])).pid;
     const esc = (await until(() => rows("esc")[0])).pid;
     pids.push(claudePid, kid, esc);
-    await until(() => { try { return JSON.parse(fs.readFileSync(path.join(stateDir, "live-groups.json"), "utf8")).groups.some((g) => g.pid === claudePid && g.start); } catch { return false; } });
+    await until(() => { try { const g = JSON.parse(fs.readFileSync(path.join(stateDir, "live-groups.json"), "utf8")).groups.find((x) => x.pid === claudePid && x.start); return g && [kid, esc].every((p) => g.desc.some((d) => d[0] === p)); } catch { return false; } });
     r.p.kill("SIGKILL");
     await sleep(600);
     expect(alive(claudePid) && alive(kid) && alive(esc)).toBe(true); // orphans, as the reviewer showed
@@ -209,14 +237,14 @@ describe("QAAS2 G2 (MED): orphans after the bridge dies", () => {
 });
 
 describe("QAAS2 G3 (MED): Windows", () => {
-  it("the process list comes from the system PowerShell in the real SystemRoot; the environment cannot be read there, so no tag", async () => {
+  it("the process list comes from the system PowerShell in the real SystemRoot", async () => {
     const calls = [];
     const run = async (file, args, env) => { calls.push({ file, args, env }); return JSON.stringify([{ ProcessId: 40, ParentProcessId: 4, CreationDate: "20261119100000.000000+120" }, { ProcessId: 41, ParentProcessId: 40, CreationDate: "20261119100001.000000+120" }]); };
     const procs2 = await B.listProcs("win32", { SystemRoot: "D:\\Win", PATH: "C:\\evil" }, run);
     expect(calls[0].file).toBe("D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
     expect(calls[0].env.PATH).not.toContain("evil");
     expect(calls[0].args.at(-1)).toBe(B.WINDOWS_PROC_SCRIPT);
-    expect(procs2).toEqual([{ pid: 40, ppid: 4, start: "20261119100000.000000+120", tag: null }, { pid: 41, ppid: 40, start: "20261119100001.000000+120", tag: null }]);
+    expect(procs2).toEqual([{ pid: 40, ppid: 4, start: "20261119100000.000000+120" }, { pid: 41, ppid: 40, start: "20261119100001.000000+120" }]);
     expect(B.parseWinProcs("not json")).toBeNull();
     expect(B.descendantsOf(procs2, 40).map((r) => r.pid)).toEqual([41]);
   });
@@ -226,9 +254,16 @@ describe("QAAS2 G3 (MED): Windows", () => {
     expect(calls).toEqual([["D:\\Win\\System32\\taskkill.exe", ["/PID", "40", "/T", "/F"]], ["D:\\Win\\System32\\taskkill.exe", ["/PID", "41", "/T", "/F"]]]);
     expect(Array.isArray(left)).toBe(true);
   });
-  it("macOS ps rows carry the tag after the command (the environment is appended by ps -E)", () => {
-    const text = "  200     1 Thu Nov 19 10:00:00 2026     /bin/sleep 5 PATH=/usr/bin GILB_BRIDGE_TURN=0123456789abcdef.fedcba9876543210 HOME=/h\n  201   200 Thu Nov 19 10:00:01 2026     /bin/ls\n";
-    expect(B.parseMacPs(text)).toEqual([{ pid: 200, ppid: 1, start: "Thu Nov 19 10:00:00 2026", tag: "0123456789abcdef.fedcba9876543210" }, { pid: 201, ppid: 200, start: "Thu Nov 19 10:00:01 2026", tag: null }]);
+  it("macOS and Linux: the list is a plain `ps -A -o pid=,ppid=,lstart=` by absolute path, with no environment and no command line", async () => {
+    const calls = [];
+    const text = "  200     1 Thu Nov 19 10:00:00 2026\n  201   200 Thu Nov 19 10:00:01 2026\nnot a row\n";
+    const rows2 = await B.listProcs("darwin", {}, async (file, args, env) => { calls.push({ file, args, env }); return text; });
+    expect(calls[0].file).toBe("/bin/ps");
+    expect(calls[0].args).toEqual(["-A", "-o", "pid=,ppid=,lstart="]);
+    expect(calls[0].args.join(" ")).not.toMatch(/E/);
+    expect(calls[0].env.PATH).toBe("/usr/bin:/bin");
+    expect(rows2).toEqual([{ pid: 200, ppid: 1, start: "Thu Nov 19 10:00:00 2026" }, { pid: 201, ppid: 200, start: "Thu Nov 19 10:00:01 2026" }]);
+    expect(B.parseMacPs).toBeUndefined();
   });
 });
 
@@ -271,28 +306,75 @@ describe("QAAS2 G4/G5 (MED): a restart never re-raises full access", () => {
   });
 });
 
-describe("QAAS2 MED-5: an old --full-access service entry is rewritten", () => {
-  const plistText = (args) => B.buildPlist({ label: "com.gilb.claude-code-bridge", node: "/opt/node/bin/node", file: "/Users/p/b.mjs", args, pathEnv: "/usr/bin", logFile: "/tmp/l.log", workDir: "/tmp" });
-  it("macOS: the flag leaves the plist (same text otherwise, atomic, idempotent) and the first value is saved once", () => {
+describe("QAAS2 MED-5: an old --full-access service entry is rewritten (carefully)", () => {
+  const LABEL = "com.gilb.claude-code-bridge";
+  const SVC = { GILB_BRIDGE_SUPERVISED: "1" };
+  const plistText = (args, label = LABEL) => B.buildPlist({ label, node: "/opt/node/bin/node", file: "/Users/p/b.mjs", args, pathEnv: "/usr/bin", logFile: "/tmp/l.log", workDir: "/tmp" });
+  const mk = () => {
     prep();
-    const plist = path.join(home, "Library", "LaunchAgents", "com.gilb.claude-code-bridge.plist");
+    const plist = path.join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
     fs.mkdirSync(path.dirname(plist), { recursive: true });
     const args = ["--port", "47821", "--claude", "/x/claude", "--state-dir", stateDir, "--workspace", "/Users/p/Work", "--full-access"];
     fs.writeFileSync(plist, plistText(args));
-    const cli = parseCli(["--port", "47821", "--claude", "/x/claude", "--state-dir", stateDir, "--workspace", "/Users/p/Work", "--full-access"]);
-    const line = B.migrateServiceFlag(cli, home, "darwin");
+    return { plist, args, cli: parseCli(["--port", "47821", "--claude", "/x/claude", "--state-dir", stateDir, "--workspace", "/Users/p/Work", "--full-access"]) };
+  };
+  it("macOS: the flag leaves the plist (same text otherwise, atomic, idempotent) and the first value is saved once", () => {
+    const { plist, args, cli } = mk();
+    const line = B.migrateServiceFlag(cli, home, "darwin", SVC);
     expect(line).toContain("took --full-access out");
     expect(fs.readFileSync(plist, "utf8")).toBe(plistText(args.slice(0, -1)));
     expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("computer");
-    expect(B.migrateServiceFlag(cli, home, "darwin")).toBe(""); // idempotent
+    expect(B.migrateServiceFlag(cli, home, "darwin", SVC)).toBe("");
     expect(fs.readdirSync(path.dirname(plist)).filter((f) => f.endsWith(".tmp"))).toEqual([]);
   });
-  it("a Terminal start (no service entry) changes nothing and says nothing; a saved folder wins over the flag", () => {
+  it("only the service edits its own entry: a Terminal or dev start (not launched by launchd) changes nothing", () => {
+    const { plist, args, cli } = mk();
+    expect(B.migrateServiceFlag(cli, home, "darwin", {})).toBe("");
+    expect(fs.readFileSync(plist, "utf8")).toBe(plistText(args));
+    expect(fs.existsSync(accessFile)).toBe(false);
+  });
+  it("a bad --label (../ or a path) touches nothing outside LaunchAgents", () => {
     prep();
-    expect(B.migrateServiceFlag(parseCli(["--full-access", "--state-dir", stateDir]), home, "darwin")).toBe("");
-    B.writeAccessFile(accessFile, "folder");
-    B.migrateServiceFlag(parseCli(["--full-access", "--state-dir", stateDir]), home, "darwin");
-    expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("folder");
+    const outside = path.join(home, "Work", "other.plist");
+    fs.mkdirSync(path.dirname(outside), { recursive: true });
+    fs.writeFileSync(outside, plistText(["--full-access"], "other"));
+    const cli = parseCli(["--label", "../../Work/other", "--full-access", "--state-dir", stateDir]);
+    expect(B.migrateServiceFlag(cli, home, "darwin", SVC)).toBe("");
+    expect(fs.readFileSync(outside, "utf8")).toBe(plistText(["--full-access"], "other"));
+  });
+  it("a symlinked plist is left alone (the link stays a link, the target is not rewritten)", () => {
+    const { plist, args, cli } = mk();
+    const target = path.join(dir, "dotfiles-plist");
+    fs.renameSync(plist, target);
+    fs.symlinkSync(target, plist);
+    const line = B.migrateServiceFlag(cli, home, "darwin", SVC);
+    expect(line).toContain("it is a link");
+    expect(fs.lstatSync(plist).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(target, "utf8")).toBe(plistText(args));
+  });
+  it("a plist for another label (not the one the installer wrote for this bridge) is not touched", () => {
+    const { plist, cli } = mk();
+    fs.writeFileSync(plist, plistText(["--full-access"], "com.someone.else"));
+    expect(B.migrateServiceFlag(cli, home, "darwin", SVC)).toBe("");
+    expect(fs.readFileSync(plist, "utf8")).toBe(plistText(["--full-access"], "com.someone.else"));
+  });
+  it("Windows: the launcher is read and written as UTF-16LE with its BOM, and only our own launcher is touched", () => {
+    prep();
+    const env = { LOCALAPPDATA: path.join(dir, "Local"), SystemRoot: "C:\\Windows" };
+    const cli = parseCli(["--full-access", "--state-dir", stateDir]);
+    const f = { launcher: path.join(dir, "Local", "start-com.gilb.claude-code-bridge.js") }; // a pretend-Windows path would be a strange relative name here
+    fs.mkdirSync(path.dirname(f.launcher), { recursive: true });
+    const where = { target: f.launcher, stateDir };
+    const mark = "// Written by `node bridge.mjs --install` for the Gilb Claude Code bridge. `--uninstall` removes it.";
+    const body = (flag) => `${mark}\nsh.Run("node b.mjs --supervise --port 1${flag} --label ${LABEL}", 0, false);\n`;
+    const u16 = (t) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(t, "utf16le")]);
+    fs.writeFileSync(f.launcher, u16(body(" --full-access")));
+    expect(B.migrateServiceFlag(cli, home, "win32", env, where)).toContain("took --full-access out");
+    const raw = fs.readFileSync(f.launcher);
+    expect([raw[0], raw[1]]).toEqual([0xff, 0xfe]);
+    expect(raw.subarray(2).toString("utf16le")).toBe(body(""));
+    fs.writeFileSync(f.launcher, u16(body(" --full-access").replace(mark, "// not ours")));
+    expect(B.migrateServiceFlag(cli, home, "win32", env, where)).toBe("");
   });
 });
 
@@ -310,6 +392,126 @@ describe("QAAS2 MED-6: three refusals in a row lock asking for a day, persisted"
     expect((await accessReq(started.secret, { mode: "computer" })).json.code).toBe("AccessLocked");
     await B.accessReset(parseCli(["--access-reset", "--state-dir", stateDir]), { platform: "darwin", home });
     expect((await accessReq(started.secret, { mode: "computer" })).status).toBe(403);
+  });
+});
+
+describe("QAAS3: the limits and the CLI", () => {
+  const limFile = () => path.join(stateDir, "access-limits.json");
+  it("a window nobody answers (timeout) is not a refusal: three of them never lock asking", async () => {
+    const dialog = vi.fn(async () => "timeout");
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    for (let i = 0; i < 3; i++) { expect((await accessReq(secret, { mode: "computer" })).status).toBe(403); clock.t += 31_000; }
+    expect(JSON.parse(fs.readFileSync(limFile(), "utf8")).denials).toBe(0);
+    const r = await accessReq(secret, { mode: "computer" });
+    expect(r.status).toBe(403);
+    expect(r.json.code).toBe("AccessDenied");
+  });
+  it("the refusal count starts again after a day without one", async () => {
+    const dialog = vi.fn(async () => "cancel");
+    prep();
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    fs.writeFileSync(limFile(), JSON.stringify({ version: 1, stamps: [], denials: 2, cooldownUntil: 0, lockedUntil: 0, lastDenialAt: clock.t - 25 * 3_600_000 }), { mode: 0o600 });
+    expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
+    expect(JSON.parse(fs.readFileSync(limFile(), "utf8"))).toMatchObject({ denials: 1, lockedUntil: 0 }); // not the third: no lock
+  });
+  it("--access-reset says which folder it reset, and fails when there is none", async () => {
+    prep();
+    const ok = await B.accessReset(parseCli(["--access-reset", "--state-dir", stateDir]), { platform: "darwin", home });
+    expect(ok.ok).toBe(true);
+    expect(ok.message).toContain(path.join(stateDir, "access-limits.json"));
+    const missing = path.join(dir, "no-such-state");
+    const bad = await B.accessReset(parseCli(["--access-reset", "--state-dir", missing]), { platform: "darwin", home });
+    expect(bad.ok).toBe(false);
+    expect(bad.message).toContain(missing);
+    expect(bad.message).toContain("--state-dir");
+    expect(fs.existsSync(missing)).toBe(false);
+  });
+  it("the lock message names --state-dir", async () => {
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: vi.fn(async () => "cancel") });
+    fs.writeFileSync(limFile(), JSON.stringify({ version: 1, stamps: [], denials: 3, cooldownUntil: clock.t + 3_600_000, lockedUntil: clock.t + 3_600_000, lastDenialAt: clock.t }), { mode: 0o600 });
+    const r = await accessReq(secret, { mode: "computer" });
+    expect(r.json.code).toBe("AccessLocked");
+    expect(r.json.error).toContain("--state-dir");
+  });
+});
+
+describe("QAAS3 MED-4: a Folder request during the post-Allow scan wins", () => {
+  it("ON is answered 409 AccessChanged and nothing is saved: the bridge ends in folder mode", async () => {
+    let slowNext = false;
+    let gate;
+    const wait = new Promise((r) => { gate = r; });
+    const dialog = vi.fn(async () => { slowNext = true; return "allow"; });
+    const procList = async () => {
+      if (slowNext) { slowNext = false; await wait; } // the scan after Allow takes a while
+      return [];
+    };
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog, procList });
+    const on = accessReq(secret, { mode: "computer" });
+    await until(() => dialog.mock.calls.length === 1);
+    await sleep(100);
+    expect((await accessReq(secret, { mode: "folder" })).status).toBe(200);
+    gate();
+    const r = await on;
+    expect(r.status).toBe(409);
+    expect(r.json.code).toBe("AccessChanged");
+    expect((await helloFor(secret)).access).toBe("folder");
+    expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("folder");
+  });
+});
+
+describe("QAAS3 MED-3: one bridge per state folder", () => {
+  it("a second bridge on the same state folder refuses to start (naming --state-dir) and leaves the first one's turn alone; a stale lock is replaced", async () => {
+    const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
+    await codeTurn(base, secret, "WAITFOREVER");
+    const claudePid = (await until(() => rows("run")[0])).pid;
+    const second = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "w2"), home, stateDir, workspace: ws() });
+    await expect(second.start()).rejects.toThrow(/--state-dir/);
+    await sleep(500);
+    expect(alive(claudePid)).toBe(true);
+    await bridges.pop().close();
+    fs.writeFileSync(path.join(stateDir, "bridge.lock"), JSON.stringify({ pid: 2147483000, start: "x" })); // an owner that is gone
+    await startBridge({ workspace: ws() });
+    expect(JSON.parse(fs.readFileSync(path.join(stateDir, "bridge.lock"), "utf8")).pid).toBe(process.pid);
+  });
+});
+
+describe("QAAS3 LOW-6: exit-time kills and the recorded list check start times", () => {
+  it("killAllSync leaves a recorded pid alone when its start time no longer matches", async () => {
+    prep();
+    const stray = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    pids.push(stray.pid);
+    let phase = 1;
+    let claudePid = 0;
+    const list = () => (claudePid ? [{ pid: claudePid, ppid: 1, start: "C" }, phase === 1 ? { pid: stray.pid, ppid: claudePid, start: "S1" } : { pid: stray.pid, ppid: 1, start: "S2" }] : []);
+    const procList = async () => list();
+    const procListSync = () => list();
+    const { secret, bridge } = await startBridge({ workspace: ws(), procList, procListSync });
+    await codeTurn(base, secret, "WAITFOREVER");
+    claudePid = (await until(() => rows("run")[0])).pid;
+    await sleep(700);
+    phase = 2;
+    bridge.killAllSync();
+    await sleep(200);
+    expect(alive(stray.pid)).toBe(true); // not the process that was seen
+  });
+  it("live-groups.json is read with the strict checks: a symlink to a list naming a live process is not followed", async () => {
+    prep();
+    const stray = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    pids.push(stray.pid);
+    await sleep(300);
+    const start = B.listProcsSync("darwin").find((r) => r.pid === stray.pid)?.start ?? process.platform === "linux" ? B.listProcsSync("linux").find((r) => r.pid === stray.pid)?.start : undefined;
+    expect(start).toBeTruthy();
+    const target = path.join(dir, "elsewhere.json");
+    fs.writeFileSync(target, JSON.stringify({ version: 1, groups: [{ pid: stray.pid, start, desc: [] }] }), { mode: 0o600 });
+    fs.symlinkSync(target, path.join(stateDir, "live-groups.json"));
+    await startBridge({ workspace: ws() });
+    expect(alive(stray.pid)).toBe(true);
+    await bridges.pop().close();
+    fs.rmSync(path.join(stateDir, "live-groups.json"));
+    fs.copyFileSync(target, path.join(stateDir, "live-groups.json")); // a regular file with the exact pid and start time: stopped
+    fs.chmodSync(path.join(stateDir, "live-groups.json"), 0o600);
+    await startBridge({ workspace: ws() });
+    await until(() => !alive(stray.pid), 8000);
   });
 });
 
