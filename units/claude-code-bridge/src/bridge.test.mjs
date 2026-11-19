@@ -875,7 +875,7 @@ describe("the page is told when the tool-call budget is spent", () => {
     expect(relayed).toBe(241);
     expect(spent).toBe(0);
     expect(t.events.filter((e) => e[0] === "budget_spent")).toHaveLength(0);
-  }, 120000);
+  }, 300000); // 241 sequential claude starts: about 100 s on a Windows runner, so the old 120 s was too tight
 
   it("a turn whose tool calls exceed a small budget gets one budget_spent event, and its final message carries budgetSpent", async () => {
     await bridge.close();

@@ -2755,8 +2755,8 @@ export function createBridge(opts = {}) {
     /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
     const stopChild = async (c) => {
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
-        if (tr)
-            await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // a last look, but a stop never waits long for it
+        if (tr && platform !== "win32")
+            await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
         return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
     };
     /**
