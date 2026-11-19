@@ -186,6 +186,8 @@ Approval. With `"approval": "session"` the person approves once, when they start
 
 Every code turn also gets one short added system prompt that names the folder and tells Claude Code to stay inside it, to say in one line what is refused, and to list the files it changed.
 
+Open the code folder (0.3.18): `POST /v1/workspace/open` (paired) with `{}` opens the code folder in Finder (macOS `open -R`, which shows the folder selected in its parent and never launches a `.app` or other bundle folder), Explorer (Windows `explorer.exe`) or `xdg-open` (Linux, when it is on PATH); `{ "project": "<name>" }` opens that existing project (a direct subfolder; a plain name, and its real place must stay inside the code folder). It works while a code turn runs and never changes the folder. Answers: 200 `{ opened: true }`; 404 (no folder, no such project); 400 (not a plain name, or outside the code folder); 409 while the bridge updates; 429 after 10 opens a minute for one pairing; 500 `The folder could not be opened.` `GET /v1/hello` has `openFolder: true` only when this computer can open folders.
+
 Discovery: `GET /v1/hello` has `codeTurns: true`, `workspace: true|false` (never the path) and `codeMode`. `POST /v1/workspace` (paired) returns `{ name, path }`, or 404 when there is no folder.
 
 Extra events in a code turn (a chat turn sends none of them):
@@ -344,3 +346,4 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.3.15: one message and its hand-offs may make up to 600 tool calls (was 240).
 - 0.3.16: the bridge can update itself from the app: it downloads the new version, checks our signature, and restarts with the same settings.
 - 0.3.17: security: `~/.base-deploy` (where signing keys live) is a protected place in full access and is unreadable in folder mode too; full access now also refuses to read the same credential list folder mode refuses (one shared list, so they cannot drift). Claude Code's own Read and Edit tools are denied the same places by permission rules in every mode, and on Windows and each-write the bridge refuses a file tool on them outright instead of asking.
+- 0.3.18: `POST /v1/workspace/open` opens the code folder, or one project, in Finder / Explorer on this computer (see "Open the code folder"); `GET /v1/hello` has `openFolder: true` when this computer can do it.
