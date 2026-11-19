@@ -54,4 +54,15 @@ describe("setAccess", () => {
     expect("accessChangeable" in i).toBe(false);
     expect("accessSource" in i).toBe(false);
   });
+  it("bridgeInfo passes accessSaveFailed through only for a literal true", async () => {
+    const hello = (extra: object) => fetchMock.mockImplementation(async () => json(200, { bridge: "gilb-claude-code-bridge", build: "0.3.19", access: "folder", ...extra }));
+    hello({ accessChangeable: true, accessSource: "file", accessSaveFailed: true });
+    expect(await client.bridgeInfo()).toMatchObject({ access: "folder", accessChangeable: true, accessSource: "file", accessSaveFailed: true });
+    for (const v of [false, "true", 1, null]) {
+      hello({ accessSaveFailed: v });
+      expect("accessSaveFailed" in (await client.bridgeInfo()), String(v)).toBe(false);
+    }
+    hello({});
+    expect("accessSaveFailed" in (await client.bridgeInfo())).toBe(false);
+  });
 });

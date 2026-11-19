@@ -185,7 +185,7 @@ describe("computer: only the person's Allow", () => {
 
   it("Cancel and timeout: 403 AccessDenied, nothing changes, no file written", async () => {
     for (const answer of ["cancel", "timeout", "yes", undefined, true]) {
-      if (dir) fs.rmSync(path.join(stateDir, "access-limits.json"), { force: true }); // each answer on its own: no wait from the one before
+      if (dir) B.resetLimits(stateDir); // each answer on its own: no wait from the one before
       const { secret } = await startBridge({ workspace: ws(), accessDialog: dialogReturning(answer) });
       const r = await accessReq(secret, { mode: "computer" });
       expect(r.status, String(answer)).toBe(403);
@@ -291,21 +291,25 @@ describe("computer: only the person's Allow", () => {
 
   it("a file that cannot be written never turns it on", async () => {
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialogReturning("allow") });
-    fs.rmSync(stateDir, { recursive: true, force: true });
-    fs.writeFileSync(stateDir, "not a folder"); // access.json cannot be made under a file
-    const r = await accessReq(secret, { mode: "computer" });
-    expect(r.status).toBe(500);
+    fs.chmodSync(stateDir, 0o500); // access.json cannot be made
+    try {
+      const r = await accessReq(secret, { mode: "computer" });
+      expect(r.status).toBe(500);
+      expect(r.json.code).toBe("AccessNotSaved");
+    } finally { fs.chmodSync(stateDir, 0o700); }
     expect((await hello()).access).toBe("folder");
   });
 });
 
-describe("cooldown and the hourly limit", () => {
-  it("each Cancel lengthens the wait: 30 s, 2 min, 10 min (429 AccessCooldown in between)", async () => {
+describe("cooldown, the hourly and daily caps, the lock", () => {
+  const limitsPath = () => path.join(stateDir, "access-limits.json");
+  const writeLimits = (o) => fs.writeFileSync(limitsPath(), JSON.stringify({ version: 1, stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0, ...o }), { mode: 0o600 });
+  it("each Cancel lengthens the wait (30 s, 2 min); the third in a row locks asking for 24 h (429 AccessLocked)", async () => {
     const dialog = dialogReturning("cancel");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
     const on = () => accessReq(secret, { mode: "computer" });
     expect((await on()).status).toBe(403);
-    expect((await on())).toMatchObject({ status: 429, json: { code: "AccessCooldown" } });
+    expect(await on()).toMatchObject({ status: 429, json: { code: "AccessCooldown" } });
     clock.t += 29_000;
     expect((await on()).status).toBe(429);
     clock.t += 2_000;
@@ -313,32 +317,46 @@ describe("cooldown and the hourly limit", () => {
     clock.t += 119_000;
     expect((await on()).status).toBe(429);
     clock.t += 2_000;
-    expect((await on()).status).toBe(403); // third no: 10 min
-    clock.t += 599_000;
-    expect((await on()).status).toBe(429);
-    clock.t += 2_000;
-    expect((await on()).status).toBe(403); // and it stays at 10 min
+    expect((await on()).status).toBe(403); // third no in a row: locked
+    clock.t += 3_600_000;
+    expect(await on()).toMatchObject({ status: 429, json: { code: "AccessLocked" } });
+    clock.t += 23 * 3_600_000;
+    expect((await on()).status).toBe(403); // a day later it asks again
     expect(dialog).toHaveBeenCalledTimes(4);
   });
 
-  it("at most 5 windows per hour across ALL pairings; the 6th is 429 AccessTooMany; an hour later it works", async () => {
+  it("--access-reset (and a reinstall with --access folder) clears the lock; a running bridge sees it at once", async () => {
+    const dialog = dialogReturning("cancel");
+    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    writeLimits({ denials: 3, lockedUntil: clock.t + 3_600_000, cooldownUntil: clock.t + 3_600_000 });
+    expect((await accessReq(secret, { mode: "computer" })).json.code).toBe("AccessLocked");
+    const out = await B.accessReset(parseCli(["--access-reset", "--state-dir", stateDir]), { platform: "darwin", home });
+    expect(out.ok).toBe(true);
+    expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
+    expect(parseCli(["--access-reset"]).mode).toBe("accessReset");
+    writeLimits({ denials: 3, lockedUntil: clock.t + 3_600_000 });
+    B.applyAccessFlag(stateDir, "folder");
+    expect(JSON.parse(fs.readFileSync(limitsPath(), "utf8")).lockedUntil).toBe(0);
+  });
+
+  it("at most 5 windows per hour across ALL pairings (the 6th is 429 AccessTooMany), 10 per 24 h", async () => {
     const dialog = dialogReturning("cancel");
     const { bridge, secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
     const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: bridge.pairingCode }) });
     const other = (await res.json()).secret;
-    for (let i = 0; i < 5; i++) {
-      expect((await accessReq(i % 2 ? other : secret, { mode: "computer" })).status, `request ${i + 1}`).toBe(403);
-      clock.t += 601_000;
-    }
+    writeLimits({ stamps: [clock.t - 50 * 60_000, clock.t - 40 * 60_000, clock.t - 30 * 60_000, clock.t - 20 * 60_000] });
+    expect((await accessReq(other, { mode: "computer" })).status).toBe(403); // the 5th this hour, from the other page
+    clock.t += 31_000;
     for (const who of [secret, other]) {
       const r = await accessReq(who, { mode: "computer" });
       expect(r.status).toBe(429);
       expect(r.json.code).toBe("AccessTooMany");
     }
-    expect(dialog).toHaveBeenCalledTimes(5);
-    clock.t += 3_600_000;
+    expect(dialog).toHaveBeenCalledTimes(1);
+    writeLimits({ stamps: Array.from({ length: 10 }, (_, i) => clock.t - (3 + i) * 3_600_000) }); // ten in the last 24 h, none in the last hour
+    expect((await accessReq(secret, { mode: "computer" })).json.code).toBe("AccessTooManyToday");
+    clock.t += 25 * 3_600_000;
     expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
-    expect(dialog).toHaveBeenCalledTimes(6);
   });
 
   it("the counters survive a restart", async () => {
@@ -348,14 +366,7 @@ describe("cooldown and the hourly limit", () => {
     await bridges.pop().close();
     started = await startBridge({ workspace: ws(), accessDialog: dialog });
     expect((await accessReq(started.secret, { mode: "computer" })).json.code).toBe("AccessCooldown");
-    clock.t += 700_000;
-    for (let i = 0; i < 4; i++) {
-      expect((await accessReq(started.secret, { mode: "computer" })).status).toBe(403);
-      clock.t += 601_000;
-    }
-    await bridges.pop().close();
-    started = await startBridge({ workspace: ws(), accessDialog: dialog });
-    expect((await accessReq(started.secret, { mode: "computer" })).json.code).toBe("AccessTooMany");
+    expect(dialog).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -379,7 +390,7 @@ describe("the per-turn snapshot", () => {
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialogReturning("allow") });
     const before = await codeTurn(secret, { prompt: "hello" });
     await before.done;
-    await accessReq(secret, { mode: "computer" });
+    await until(async () => (await accessReq(secret, { mode: "computer" })).status === 200); // 409 for a moment while the finished claude's leftovers are swept
     const after = await codeTurn(secret, { prompt: "hello" });
     await after.done;
     const runs = rows("run");
@@ -583,7 +594,7 @@ describe("the dialog commands", () => {
     expect(file).toBe("/usr/bin/osascript");
     expect(args.slice(0, 2)).toEqual(["-e", "on run argv"]);
     const lines = MAC_EXPECT.split("\n");
-    expect(args.at(-2)).toBe([lines[0], `Asked by: ${APP}`, ...lines.slice(1)].join("\n")); // ONE added line, after the title line
+    expect(args.at(-2)).toBe([lines[0], `Asked by: ${APP} (local)`, ...lines.slice(1)].join("\n")); // ONE added line, after the title line; http is "(local)"
     expect(args.at(-1)).toBe("GilbApp: full access for Claude Code");
     const script = args.slice(0, -2).join("\n");
     expect(script).toContain('buttons {"Cancel", "Allow full access"} default button "Cancel" cancel button "Cancel" with icon caution giving up after 120');
@@ -626,7 +637,7 @@ describe("the dialog commands", () => {
     expect(script).toContain("'GilbApp: full access for Claude Code'");
     const b64 = /FromBase64String\('([A-Za-z0-9+/=]+)'\)/.exec(script)[1];
     const wl = WIN_EXPECT.split("\n");
-    expect(Buffer.from(b64, "base64").toString("utf8")).toBe([wl[0], `Asked by: ${APP}`, ...wl.slice(1)].join("\n")); // the text is DATA inside the script
+    expect(Buffer.from(b64, "base64").toString("utf8")).toBe([wl[0], `Asked by: ${APP} (local)`, ...wl.slice(1)].join("\n")); // the text is DATA inside the script
     const out = (stdout, code = 0) => B.systemAccessDialog("win32", {}, runner(code, stdout));
     expect(await out("")).toBe("cancel");
     expect(await out("GILB-ACCESS-ALLOWED\n")).toBe("allow");

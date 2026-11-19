@@ -467,7 +467,7 @@ export interface ClaudeCodeClient {
   /** True when a bridge answers on this computer. Does not need the secret. */
   probe(): Promise<boolean>;
   /** The same check as probe(), plus the build `/v1/hello` reports. An older bridge sends none, so `build` is null. */
-  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true; accessChangeable?: true; accessSource?: "flag" | "file" | "default" }>;
+  bridgeInfo(): Promise<{ reachable: boolean; build: string | null; codeTurns: boolean; workspace: boolean; codeMode: CodeMode | null; access: "folder" | "computer" | null; options?: BridgeOptions; update?: BridgeUpdateInfo; openFolder?: true; accessChangeable?: true; accessSource?: "flag" | "file" | "default"; accessSaveFailed?: true }>;
   /**
    * Updates the bridge from the app (`POST /v1/update`, bridge 0.3.16; needs the pairing; goes through the relay when open).
    * `{ check: true }` only asks: `{ check, current, latest, available }`. Otherwise the bridge downloads, checks our signature and
@@ -1433,7 +1433,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         const conn = client.load();
         const res = await bridgeRequest("/v1/hello", { method: "GET", ...(conn ? { headers: { "x-bridge-secret": conn.secret } } : {}) });
         if (!res.ok) return { reachable: false, build: null, codeTurns: false, workspace: false, codeMode: null, access: null };
-        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown; accessChangeable?: unknown; accessSource?: unknown };
+        const body = (await res.json()) as { bridge?: unknown; build?: unknown; codeTurns?: unknown; workspace?: unknown; codeMode?: unknown; access?: unknown; options?: unknown; update?: unknown; openFolder?: unknown; accessChangeable?: unknown; accessSource?: unknown; accessSaveFailed?: unknown };
         // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
         const up = body.update && typeof body.update === "object" ? (body.update as Record<string, unknown>) : null;
         const update = up && typeof up.supported === "boolean" && typeof up.supervised === "boolean" && typeof up.canWrite === "boolean" && typeof up.busy === "boolean" ? { supported: up.supported, supervised: up.supervised, canWrite: up.canWrite, busy: up.busy } : null;
@@ -1466,6 +1466,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           ...(body.openFolder === true ? { openFolder: true as const } : {}),
           // Bridge 0.3.19: only a literal true, and only the three known sources.
           ...(body.accessChangeable === true ? { accessChangeable: true as const } : {}),
+          // Bridge 0.3.19: only a literal true: "folder" could not be saved on this computer, so code turns are stopped.
+          ...(body.accessSaveFailed === true ? { accessSaveFailed: true as const } : {}),
           ...(body.accessSource === "flag" || body.accessSource === "file" || body.accessSource === "default" ? { accessSource: body.accessSource } : {}),
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
           // `options` is also returned when the hello has only `web` or `approvals`: models and efforts are then empty.

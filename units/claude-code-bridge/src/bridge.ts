@@ -1131,6 +1131,120 @@ export async function killGroup(pid: number, graceMs = KILL_GRACE_MS): Promise<v
   try { process.kill(-pid, "SIGKILL"); } catch { /* gone */ }
   await wait(3000);
 }
+// ---- finding what a code turn started, wherever it went (0.3.19) -------------------------------------------------------
+/** The environment variable every code-turn child carries: `<install id>.<turn token>`, 16 hex + 16 hex. */
+export const TURN_TAG_ENV = "GILB_BRIDGE_TURN";
+const TAG_RE = /GILB_BRIDGE_TURN=([0-9a-f]{16}\.[0-9a-f]{16})(?![0-9a-f])/;
+export const tagOf = (s: string): string | null => TAG_RE.exec(s)?.[1] ?? null;
+/** One live process: its pid, its parent, a start-time text that tells a recycled pid apart, and the turn tag in its environment (macOS, Linux only). */
+export interface ProcRow { pid: number; ppid: number; start: string; tag: string | null }
+/** macOS `ps -axwwE -o pid=,ppid=,lstart=,command=`: the environment follows the command text, so the tag is found in the row. */
+export function parseMacPs(text: string): ProcRow[] {
+  const rows: ProcRow[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]{8}\s+\d{4})\s+(.*)$/.exec(line);
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), start: m[3]!.replace(/\s+/g, " "), tag: tagOf(m[4]!) });
+  }
+  return rows;
+}
+/** Windows: the process list as JSON from `Get-CimInstance Win32_Process`. The environment of a process is not readable there, so no tag. */
+export function parseWinProcs(text: string): ProcRow[] | null {
+  try {
+    const v = JSON.parse(text) as unknown;
+    const arr = Array.isArray(v) ? v : [v];
+    return arr.flatMap((r) => {
+      const o = r as { ProcessId?: unknown; ParentProcessId?: unknown; CreationDate?: unknown };
+      return typeof o?.ProcessId === "number" && typeof o.ParentProcessId === "number" ? [{ pid: o.ProcessId, ppid: o.ParentProcessId, start: String(o.CreationDate ?? ""), tag: null }] : [];
+    });
+  } catch {
+    return null;
+  }
+}
+export const WINDOWS_PROC_SCRIPT = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress";
+type ListRun = (file: string, args: string[], env: NodeJS.ProcessEnv) => Promise<string | null>;
+const realListRun: ListRun = (file, args, env) =>
+  new Promise((resolve) => {
+    execFile(file, args, { timeout: 20000, maxBuffer: 256 * 1024 * 1024, env, windowsHide: true }, (err, stdout) => resolve(err ? null : String(stdout)));
+  });
+/** All live processes (same user for the environment), by absolute program and a minimal environment. Null: it could not be read. */
+export async function listProcs(platform: string, env: NodeJS.ProcessEnv = process.env, run: ListRun = realListRun): Promise<ProcRow[] | null> {
+  if (platform === "darwin") {
+    const out = await run("/bin/ps", ["-axwwE", "-o", "pid=,ppid=,lstart=,command="], { PATH: "/usr/bin:/bin" });
+    return out === null ? null : parseMacPs(out);
+  }
+  if (platform === "win32") {
+    const out = await run(windowsPowerShell(env), ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_PROC_SCRIPT], dialogEnv("win32", env));
+    return out === null ? null : parseWinProcs(out);
+  }
+  try {
+    const rows: ProcRow[] = [];
+    for (const n of fs.readdirSync("/proc")) {
+      if (!/^\d+$/.test(n)) continue;
+      try {
+        const stat = fs.readFileSync(`/proc/${n}/stat`, "utf8");
+        const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+        let tag: string | null = null;
+        try { tag = tagOf(fs.readFileSync(`/proc/${n}/environ`, "latin1").replace(/\0/g, "\n")); } catch { /* not ours to read */ }
+        rows.push({ pid: Number(n), ppid: Number(f[1]), start: String(f[19]), tag });
+      } catch { /* gone */ }
+    }
+    return rows;
+  } catch {
+    return null;
+  }
+}
+/** Every process below `root` by the parent links of this list (not `root` itself). */
+export function descendantsOf(rows: readonly ProcRow[], root: number): ProcRow[] {
+  const kids = new Map<number, ProcRow[]>();
+  for (const r of rows) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r]);
+  const out: ProcRow[] = [];
+  const seen = new Set<number>([root]);
+  const todo = [root];
+  while (todo.length > 0) {
+    for (const k of kids.get(todo.pop()!) ?? []) {
+      if (seen.has(k.pid)) continue;
+      seen.add(k.pid);
+      out.push(k);
+      todo.push(k.pid);
+    }
+  }
+  return out;
+}
+const pidAliveNow = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as ErrLike).code === "EPERM";
+  }
+};
+/** Stops these processes: SIGTERM, then SIGKILL after the grace, and waits until they are gone (Windows: taskkill /T /F by pid, from the real SystemRoot). Returns the pids still alive. */
+export async function killPids(pids: readonly number[], o: { graceMs?: number | undefined; platform?: string | undefined; env?: NodeJS.ProcessEnv | undefined; execFile?: PlatformOpts["execFile"] | undefined } = {}): Promise<number[]> {
+  const list = [...new Set(pids)].filter((p) => p > 1 && p !== process.pid);
+  if (list.length === 0) return [];
+  const platform = o.platform ?? process.platform;
+  if (platform === "win32") {
+    const env = o.env ?? process.env;
+    const root = envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows";
+    const run = o.execFile ?? ((file, args, opts, cb) => execFile(file, args, opts, (e) => cb(e)));
+    await Promise.all(list.map((pid) => new Promise<void>((resolve) => {
+      try { run(path.win32.join(root, "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { windowsHide: true }, () => resolve()); } catch { resolve(); }
+    })));
+    return list.filter(pidAliveNow);
+  }
+  const wait = async (ms: number) => {
+    const until = Date.now() + ms;
+    while (list.some(pidAliveNow) && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
+  };
+  for (const p of list) { try { process.kill(p, "SIGTERM"); } catch { /* gone */ } }
+  await wait(o.graceMs ?? KILL_GRACE_MS);
+  for (const p of list) { if (pidAliveNow(p)) { try { process.kill(p, "SIGKILL"); } catch { /* gone */ } } }
+  await wait(3000);
+  return list.filter(pidAliveNow);
+}
+
+/** A code turn's child environment plus its tag. A chat turn's environment is unchanged. */
+const withTurnTag = (code: boolean, tag: string, e: NodeJS.ProcessEnv): NodeJS.ProcessEnv => (code ? { ...e, [TURN_TAG_ENV]: tag } : e);
 export function killChild(child: ChildProcess | null | undefined, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): Promise<void> {
   if (!child) return Promise.resolve();
   const platform = o.platform ?? process.platform;
@@ -1974,41 +2088,110 @@ export function windowsOwnerIsMe(file: string): boolean {
  * a regular file, one over 4 KB, or (macOS, Linux) one that is not owned by this user, that others can write, or that has a second hard link; (Windows) one whose owner is not the current user: folder.
  */
 export function readAccessFile(file: string, platform: string = process.platform, uid: number | undefined = process.getuid?.(), winOwnerOk: (file: string) => boolean = windowsOwnerIsMe): { exists: boolean; mode: AccessMode } {
+  const r = readStrictText(file, platform, uid, winOwnerOk);
+  if (!r.exists || r.text === null) return { exists: r.exists, mode: "folder" };
+  try {
+    const v = JSON.parse(r.text) as { version?: unknown; mode?: unknown } | null;
+    if (v && typeof v === "object" && !Array.isArray(v) && v.version === 1 && v.mode === "computer") return { exists: true, mode: "computer" };
+  } catch { /* bad text */ }
+  return { exists: true, mode: "folder" };
+}
+/**
+ * The strict file read behind access.json and access-limits.json: O_NOFOLLOW, a regular file, at most 4 KB, and (macOS, Linux) owned by this
+ * user, not writable by group or others, one hard link; (Windows) owned by the current user. `text` is null for anything else.
+ */
+export function readStrictText(file: string, platform: string = process.platform, uid: number | undefined = process.getuid?.(), winOwnerOk: (file: string) => boolean = windowsOwnerIsMe): { exists: boolean; text: string | null } {
   let ls: fs.Stats;
   try {
     ls = fs.lstatSync(file);
   } catch (e) {
-    return { exists: (e as ErrLike).code !== "ENOENT", mode: "folder" };
+    return { exists: (e as ErrLike).code !== "ENOENT", text: null };
   }
-  if (ls.isSymbolicLink() || !ls.isFile() || ls.size > ACCESS_FILE_MAX) return { exists: true, mode: "folder" };
+  if (ls.isSymbolicLink() || !ls.isFile() || ls.size > ACCESS_FILE_MAX) return { exists: true, text: null };
   let fd = -1;
   try {
     fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.size > ACCESS_FILE_MAX || st.ino !== ls.ino || st.dev !== ls.dev) return { exists: true, mode: "folder" };
-    if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0 || st.nlink > 1)) return { exists: true, mode: "folder" };
-    if (platform === "win32" && !winOwnerOk(file)) return { exists: true, mode: "folder" };
+    if (!st.isFile() || st.size > ACCESS_FILE_MAX || st.ino !== ls.ino || st.dev !== ls.dev) return { exists: true, text: null };
+    if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0 || st.nlink > 1)) return { exists: true, text: null };
+    if (platform === "win32" && !winOwnerOk(file)) return { exists: true, text: null };
     const buf = Buffer.alloc(ACCESS_FILE_MAX + 1);
     const n = fs.readSync(fd, buf, 0, ACCESS_FILE_MAX + 1, 0);
-    if (n > ACCESS_FILE_MAX) return { exists: true, mode: "folder" };
-    const v = JSON.parse(buf.subarray(0, n).toString("utf8")) as { version?: unknown; mode?: unknown } | null;
-    if (v && typeof v === "object" && !Array.isArray(v) && v.version === 1 && v.mode === "computer") return { exists: true, mode: "computer" };
-    return { exists: true, mode: "folder" };
+    if (n > ACCESS_FILE_MAX) return { exists: true, text: null };
+    return { exists: true, text: buf.subarray(0, n).toString("utf8") };
   } catch {
-    return { exists: true, mode: "folder" };
+    return { exists: true, text: null };
   } finally {
     if (fd >= 0) {
       try { fs.closeSync(fd); } catch { /* closed anyway */ }
     }
   }
 }
-/** Writes the saved mode: a temp file (mode 0600) renamed over the old one. Throws when it cannot. */
+/** Markers kept next to access.json. `access.seeded`: an access setting has been saved here before (a missing access.json then never lets a --full-access flag seed computer again). `access-lowered`: a lowering to folder was started and may not have reached access.json (the next start is folder). */
+export const ACCESS_SEEDED = "access.seeded";
+export const ACCESS_LOWERED = "access-lowered";
+export const LIMITS_FILE = "access-limits.json";
+/** Writes the saved mode: a temp file (mode 0600) renamed over the old one; records that a setting has been saved here. Throws when it cannot. */
 export function writeAccessFile(file: string, mode: AccessMode, at: string = new Date().toISOString()): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.rmSync(tmp, { force: true });
   fs.writeFileSync(tmp, JSON.stringify({ version: 1, mode, at }), { mode: 0o600, flag: "wx" });
   fs.renameSync(tmp, file);
+  try { fs.writeFileSync(path.join(path.dirname(file), ACCESS_SEEDED), "1", { mode: 0o600 }); } catch { /* the marker is a second line of defence */ }
+}
+/** Rewrites an existing regular access.json in place (no temp file, no directory write, no new block): the fallback when the atomic write fails. Throws when it cannot. */
+export function overwriteAccessFile(file: string, mode: AccessMode, at: string = new Date().toISOString()): void {
+  const fd = fs.openSync(file, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW ?? 0));
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error("not a regular file");
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, JSON.stringify({ version: 1, mode, at }), 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+/** Can a file be made (and removed) in this folder? */
+export function folderWritable(dir: string): boolean {
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const probe = path.join(dir, `.probe-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
+    fs.writeFileSync(probe, "", { flag: "wx", mode: 0o600 });
+    fs.rmSync(probe, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** The ON-window counters, kept in the state folder. */
+export interface AccessLimits { stamps: number[]; denials: number; cooldownUntil: number; lockedUntil: number }
+export const freshLimits = (): AccessLimits => ({ stamps: [], denials: 0, cooldownUntil: 0, lockedUntil: 0 });
+const DAY_MS = 24 * 3_600_000;
+/** What the counters become when the file cannot be trusted (missing after it had existed, a link, wrong owner, garbage): the hour's cap is reached and ON waits 10 minutes. */
+export const failClosedLimits = (now: number): AccessLimits => ({ stamps: [now, now, now, now, now], denials: 0, cooldownUntil: now + 600_000, lockedUntil: 0 });
+/** Reads the counters with the access.json checks; every time stamp is capped at now (stamps) or now + 24 h (waits). Anything wrong: `bad`. */
+export function parseLimits(text: string | null, now: number): AccessLimits | null {
+  if (text === null) return null;
+  try {
+    const v = JSON.parse(text) as Partial<AccessLimits> & { version?: unknown };
+    const num = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+    if (!v || v.version !== 1 || !Array.isArray(v.stamps) || !v.stamps.every(num) || !num(v.denials) || !num(v.cooldownUntil) || !num(v.lockedUntil)) return null;
+    return { stamps: v.stamps.slice(-100).map((x) => Math.min(x, now)), denials: Math.max(0, Math.min(100, Math.floor(v.denials))), cooldownUntil: Math.min(v.cooldownUntil, now + DAY_MS), lockedUntil: Math.min(v.lockedUntil, now + DAY_MS) };
+  } catch {
+    return null;
+  }
+}
+export function writeLimitsFile(file: string, l: AccessLimits): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.rmSync(tmp, { force: true });
+  fs.writeFileSync(tmp, JSON.stringify({ version: 1, ...l }), { mode: 0o600, flag: "wx" });
+  fs.renameSync(tmp, file);
+}
+/** `--access-reset` (and `--uninstall`, `--install --access folder`): fresh counters and no lock. Never throws. */
+export function resetLimits(stateDir: string): void {
+  try { if (!fs.statSync(stateDir).isDirectory()) return; } catch { return; } // no state folder: nothing to reset (and none is made)
+  try { writeLimitsFile(path.join(stateDir, LIMITS_FILE), freshLimits()); } catch { /* the next start reads what is there */ }
 }
 /** `--access`: only `folder` is accepted on the command line (it can lower the mode, never raise it). Returns the refusal text, or "" when fine. */
 export function accessFlagProblem(v: string | undefined): string {
@@ -2023,6 +2206,7 @@ export function applyAccessFlag(stateDir: string, v: string | undefined): { ok: 
   if (v === undefined) return { ok: true, message: "" };
   try {
     writeAccessFile(path.join(stateDir, ACCESS_FILE), "folder");
+    resetLimits(stateDir); // a reinstall with --access folder also clears a 24 h lock
   } catch (e) {
     return { ok: false, message: `Could not save folder mode in ${path.join(stateDir, ACCESS_FILE)}: ${(e as ErrLike).message}` };
   }
@@ -2048,9 +2232,60 @@ export function stateDirProblem(stateDir: string, workspace: string | undefined,
   if (inside(sd, norm(P.join(home, "Developer")))) return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
   return "";
 }
-/** `--uninstall`: forget the saved mode (no file = folder, and a later `--install --full-access` seeds again). Never throws. */
+/** `--access-reset`, run by the person in a Terminal: clears the ON counters and the 24 h lock that three refusals in a row set. A running bridge reads the file at every request. */
+export async function accessReset(opts: CliOptions, deps: ServiceDeps): Promise<ServiceResult> {
+  const lbl = badLabel(opts);
+  if (lbl) return lbl;
+  const f = serviceFiles(opts, deps.home, deps.platform);
+  try {
+    writeLimitsFile(path.join(f.stateDir, LIMITS_FILE), freshLimits());
+  } catch (e) {
+    return { ok: false, message: `Could not reset ${path.join(f.stateDir, LIMITS_FILE)}: ${(e as ErrLike).message}` };
+  }
+  return { ok: true, message: "Asking to turn on full access is unlocked, and the counters are reset." };
+}
+/**
+ * A service installed before 0.3.19 still carries `--full-access` in its launch arguments. When the bridge starts with it: the first value is saved
+ * in access.json (once, only when no setting was ever saved here), and the flag is taken out of the service's own entry (macOS: the LaunchAgent
+ * plist; Windows: the launcher script), written to a temp file and renamed, the same text otherwise. Idempotent. Returns a line for the log, or "".
+ */
+export function migrateServiceFlag(opts: CliOptions, home: string, platform: string = process.platform, env: NodeJS.ProcessEnv = process.env): string {
+  if (!opts.fullAccess) return "";
+  const stateDir = platform === "win32" ? serviceFilesWin(opts, home, "win32", env).stateDir : serviceFiles(opts, home, platform).stateDir;
+  if (!fs.existsSync(path.join(stateDir, ACCESS_SEEDED))) seedAccessFile(stateDir, true, platform);
+  const target = platform === "win32" ? serviceFilesWin(opts, home, "win32", env).launcher : serviceFiles(opts, home, platform).plist;
+  let text: string;
+  try { text = fs.readFileSync(target, "utf8"); } catch { return ""; } // no service entry (a Terminal start): nothing to take it out of
+  const next = platform === "win32" ? text.replace(/ --full-access(?= )/g, "") : text.replace(/[ \t]*<string>--full-access<\/string>\r?\n/g, "");
+  if (next === text) return "";
+  try {
+    const tmp = `${target}.${process.pid}.tmp`;
+    fs.rmSync(tmp, { force: true });
+    fs.writeFileSync(tmp, next, { mode: platform === "win32" ? 0o666 : 0o644, flag: "wx" });
+    fs.renameSync(tmp, target);
+  } catch (e) {
+    return `could not take --full-access out of ${target} (${(e as ErrLike).message}); run the install line again to take it out`;
+  }
+  return `took --full-access out of ${target}: the saved mode in ${path.join(stateDir, ACCESS_FILE)} is what counts now`;
+}
+/**
+ * The stop signals of a bridge started as a program. SIGINT, SIGTERM and (macOS, Linux) SIGHUP close it, which stops every code child and what they
+ * started; `exit` is a last synchronous SIGKILL of what is still tracked. Returns a function that takes them off again (tests).
+ */
+export function installProcessHandlers(bridge: { close(): Promise<void>; killAllSync?(): void }, proc: NodeJS.Process = process, platform: string = process.platform): () => void {
+  const stop = () => void bridge.close().then(() => proc.exit(0), () => proc.exit(1));
+  const onExit = () => bridge.killAllSync?.();
+  const sigs: NodeJS.Signals[] = platform === "win32" ? ["SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"] : ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const sg of sigs) proc.on(sg, stop);
+  proc.on("exit", onExit);
+  return () => { for (const sg of sigs) proc.off(sg, stop); proc.off("exit", onExit); };
+}
+/** `--uninstall`: forget the saved mode and its history markers (no file = folder, and a later `--install --full-access` seeds again) and clear the ON counters. Never throws. */
 export function clearAccessFile(stateDir: string): void {
-  try { fs.rmSync(path.join(stateDir, ACCESS_FILE), { force: true }); } catch { /* the next start reads a bad file as folder */ }
+  try {
+    for (const f of [ACCESS_FILE, ACCESS_SEEDED, ACCESS_LOWERED]) fs.rmSync(path.join(stateDir, f), { force: true });
+  } catch { /* the next start reads a bad file as folder */ }
+  resetLimits(stateDir);
 }
 /** `--unpair-all` with no bridge running: the saved mode becomes folder (written even when there was no file, so --full-access cannot seed it again). Never throws. */
 export function resetAccessFile(stateDir: string): void {
@@ -2087,13 +2322,13 @@ const ACCESS_WINDOWS_LINES = [
   "You can switch back in GilbApp at any time.",
 ];
 export const ACCESS_DIALOG_TEXT = { darwin: ACCESS_MAC_LINES.join("\n"), win32: ACCESS_WINDOWS_LINES.join("\n"), linux: ACCESS_LINUX_LINES.join("\n") };
-/** The dialog text with ONE added line after the first (title) line: `Asked by: <origin>`. The origin is an allowed origin that the caller checked; it is only ever passed as an argument. */
+/** The dialog text with ONE added line after the first (title) line: `Asked by: <origin>`. The origin is an allowed origin that the caller checked, shown plainly; a non-https one gets "(local)". It is only ever passed as an argument. */
 export function accessDialogText(platform: string, origin: string): string {
   const lines = platform === "darwin" ? ACCESS_MAC_LINES : platform === "win32" ? ACCESS_WINDOWS_LINES : ACCESS_LINUX_LINES;
-  return [lines[0]!, `Asked by: ${origin}`, ...lines.slice(1)].join("\n");
+  return [lines[0]!, `Asked by: ${origin}${origin.startsWith("https://") ? "" : " (local)"}`, ...lines.slice(1)].join("\n"); // a page that is not https is on this computer or its network: say so
 }
-/** An origin fit to show: `https://host[:port]` or `http://` for this computer, nothing else. */
-export const originFitForDialog = (o: unknown): o is string => typeof o === "string" && o.length <= 200 && /^https?:\/\/[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(o);
+/** An origin fit to show: `https://host[:port]` or `http://` for this computer (a bracketed IPv6 address too), nothing else. */
+export const originFitForDialog = (o: unknown): o is string => typeof o === "string" && o.length <= 200 && /^https?:\/\/([A-Za-z0-9.\-]+|\[[0-9a-f:]+\])(:\d{1,5})?$/.test(o);
 /**
  * The environment of a consent-dialog child (0.3.19): nothing from the bridge's environment except a short list the window needs, and a fixed PATH.
  * The dialog program itself is always run by absolute path, so a planted program on the person's PATH can never answer for the person.
@@ -2243,6 +2478,10 @@ export interface BridgeOptions {
   zenityPath?: string | null | undefined;
   /** How long a stopped process group gets after SIGTERM before SIGKILL (default 2000 ms). Tests make it short. */
   killGraceMs?: number | undefined;
+  /** TEST-ONLY: replaces the process list (default: ps on macOS, /proc on Linux, PowerShell on Windows). */
+  procList?: (() => Promise<ProcRow[] | null>) | undefined;
+  /** How often the descendants of a running code child are noted (default 2000 ms). */
+  snapshotMs?: number | undefined;
   /** TEST-ONLY: the Windows owner check of access.json (default: the real one through PowerShell). */
   winOwnerOk?: ((file: string) => boolean) | undefined;
   /** TEST-ONLY, undocumented: extra name prefixes a code child's environment keeps (the stand-in claude is configured through FAKE_* variables). */
@@ -2324,10 +2563,38 @@ export function createBridge(opts: BridgeOptions = {}) {
   /** The bridge's own state folder as it is on disk (a custom --state-dir too): barred to every code turn. */
   const stateProtected: string[] = opts.stateDir ? [...new Set([path.resolve(opts.stateDir), resolveThroughLinks(path.resolve(opts.stateDir))])] : [];
   const protectedExtra = [...(opts.extraProtected ?? []), ...stateProtected];
-  let accessMode: AccessMode = savedAccess.exists ? savedAccess.mode : opts.fullAccess === true ? "computer" : "folder";
-  let accessSource: "flag" | "file" | "default" = savedAccess.exists ? "file" : opts.fullAccess === true ? "flag" : "default";
+  const fileThere = (f: string) => { try { return fs.lstatSync(f, { throwIfNoEntry: false }) != null; } catch { return true; } };
+  const seededMarker = opts.stateDir ? path.join(opts.stateDir, ACCESS_SEEDED) : null;
+  const loweredMarker = opts.stateDir ? path.join(opts.stateDir, ACCESS_LOWERED) : null;
+  const hadMarkers = { seeded: !!seededMarker && fileThere(seededMarker), lowered: !!loweredMarker && fileThere(loweredMarker) };
+  // A lowering that did not reach access.json (the marker), or a setting that has existed and is now gone or unreadable, is folder: a --full-access flag never seeds again once a setting has been saved here.
+  let accessMode: AccessMode = hadMarkers.lowered ? "folder" : savedAccess.exists ? savedAccess.mode : opts.fullAccess === true && !hadMarkers.seeded ? "computer" : "folder";
+  let accessSource: "flag" | "file" | "default" = hadMarkers.lowered || savedAccess.exists || hadMarkers.seeded ? "file" : opts.fullAccess === true ? "flag" : "default";
+  if (opts.fullAccess === true && !savedAccess.exists && hadMarkers.seeded) log("ignoring --full-access: an access setting has been saved on this computer before; use the access switch in GilbApp");
+  if (accessMode === "computer" && opts.stateDir && !folderWritable(opts.stateDir)) {
+    accessMode = "folder"; // the state folder cannot be written, so a later lowering could not be saved: start in folder mode
+    accessSource = "file";
+    log("full access is saved, but the state folder cannot be written, so the bridge starts in folder mode");
+  }
   if (!savedAccess.exists && accessMode === "computer" && accessFile) {
     try { writeAccessFile(accessFile, "computer"); } catch (e) { log(`could not save the access mode: ${(e as ErrLike)?.message ?? e}`); }
+  }
+  /** Every code-turn child carries this install's id in GILB_BRIDGE_TURN, so what it started can be found wherever it went. */
+  let installId = crypto.randomBytes(8).toString("hex");
+  let installFresh = true;
+  if (opts.stateDir) {
+    const idFile = path.join(opts.stateDir, "install-id");
+    const got = readStrictText(idFile, platform, undefined, opts.winOwnerOk);
+    if (got.text !== null && /^[0-9a-f]{16}$/.test(got.text.trim())) {
+      installId = got.text.trim();
+      installFresh = false;
+    } else {
+      try {
+        fs.mkdirSync(opts.stateDir, { recursive: true, mode: 0o700 });
+        fs.rmSync(idFile, { force: true });
+        fs.writeFileSync(idFile, installId, { mode: 0o600, flag: "wx" });
+      } catch (e) { log(`could not save the install id: ${(e as ErrLike)?.message ?? e}`); }
+    }
   }
   /** Windows folder mode is files only; computer mode never is. */
   const filesOnlyFor = (m: AccessMode) => codePlatform === "win32" && m !== "computer";
@@ -2467,17 +2734,85 @@ export function createBridge(opts: BridgeOptions = {}) {
   let port = opts.port ?? DEFAULT_PORT;
   // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
   const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
-  const stopChild = (c: ChildProcess | null | undefined) => killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
+  /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
+  const stopChild = async (c: ChildProcess | null | undefined): Promise<void> => {
+    const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
+    if (tr) await snapshotTrack(tr);
+    return killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
+  };
   /**
    * Code-turn children that are still alive, kept apart from the turns table (a turn leaves the table the moment its page hangs up, while its
    * claude, or something it started, may still run). A code child leads its own process group (off Windows); when claude ends, whatever is
    * left in its group is stopped too, and only then is it forgotten. ON is refused while this is not empty.
    */
   const liveGroups = new Map<number, ChildProcess>();
-  function trackCodeChild(child: ChildProcess) {
+  /** What each live code child is known to have started: its tag, its start time and the descendants seen so far (a ppid walk, repeated while it runs). */
+  interface Track { tag: string; pid: number; start: string; desc: Map<number, string> }
+  const tracks = new Map<number, Track>();
+  const procList: () => Promise<ProcRow[] | null> = opts.procList ?? (() => listProcs(platform, env));
+  const liveFile = opts.stateDir ? path.join(opts.stateDir, "live-groups.json") : null;
+  const persistTracks = () => {
+    if (!liveFile) return;
+    try {
+      fs.mkdirSync(path.dirname(liveFile), { recursive: true, mode: 0o700 });
+      const tmp = `${liveFile}.${process.pid}.tmp`;
+      fs.rmSync(tmp, { force: true });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, groups: [...tracks.values()].map((t) => ({ pid: t.pid, start: t.start, tag: t.tag })) }), { mode: 0o600, flag: "wx" });
+      fs.renameSync(tmp, liveFile);
+    } catch (e) {
+      log(`could not save the live process list: ${(e as ErrLike)?.message ?? e}`);
+    }
+  };
+  async function snapshotTrack(tr: Track) {
+    const rows = await procList();
+    if (!rows) return;
+    const me = rows.find((r) => r.pid === tr.pid);
+    if (me && !tr.start) { tr.start = me.start; persistTracks(); }
+    for (const d of descendantsOf(rows, tr.pid)) tr.desc.set(d.pid, d.start);
+  }
+  /** Processes that belong to this install's code turns and are alive: carrying a tag of this install (macOS, Linux), or seen as descendants of a code child (a process that scrubs its environment AND was never seen below claude escapes this). */
+  async function livingTurnProcs(except: ReadonlySet<number> = new Set()): Promise<{ pids: number[]; known: boolean }> {
+    const rows = await procList();
+    if (!rows) return { pids: [], known: false };
+    const byPid = new Map(rows.map((r) => [r.pid, r]));
+    const skipTags = new Set([...except].flatMap((p) => (tracks.get(p) ? [tracks.get(p)!.tag] : [])));
+    const out = new Set<number>();
+    for (const r of rows) if (r.tag !== null && r.tag.startsWith(`${installId}.`) && r.pid !== process.pid && !skipTags.has(r.tag)) out.add(r.pid);
+    for (const tr of tracks.values()) {
+      if (except.has(tr.pid)) continue;
+      for (const [pid, start] of tr.desc) if (byPid.get(pid)?.start === start) out.add(pid);
+      if (platform === "win32" && byPid.has(tr.pid)) out.add(tr.pid);
+    }
+    return { pids: [...out], known: true };
+  }
+  const killPidsHere = (pids: number[]) => killPids(pids, { graceMs: opts.killGraceMs, platform, env, execFile: opts.platformOpts?.execFile });
+  /** Everything of this install's code turns, wherever it went: a fresh look at the descendants first, then SIGTERM, SIGKILL, and a wait. Returns how many are still alive. */
+  async function killAllTracked(except: ReadonlySet<number> = new Set()): Promise<number> {
+    for (const tr of [...tracks.values()]) if (!except.has(tr.pid)) await snapshotTrack(tr);
+    const v = await livingTurnProcs(except);
+    return (await killPidsHere(v.pids)).length;
+  }
+  let snapTimer: NodeJS.Timeout | null = null;
+  function ensureSnapTimer() {
+    if (snapTimer || tracks.size === 0) return;
+    let busy = false;
+    snapTimer = setInterval(() => {
+      if (tracks.size === 0) { clearInterval(snapTimer!); snapTimer = null; return; }
+      if (busy) return;
+      busy = true;
+      void (async () => { for (const tr of [...tracks.values()]) await snapshotTrack(tr); })().finally(() => { busy = false; });
+    }, opts.snapshotMs ?? 2000);
+    snapTimer.unref();
+  }
+  function trackCodeChild(child: ChildProcess, tag: string) {
     const pid = child.pid;
     if (pid === undefined) return;
     liveGroups.set(pid, child);
+    const tr: Track = { tag, pid, start: "", desc: new Map() };
+    tracks.set(pid, tr);
+    persistTracks();
+    void snapshotTrack(tr);
+    ensureSnapTimer();
     if (platform !== "win32") (child as unknown as Record<symbol, number>)[GROUP_LEADER] = pid;
     let reaped = false;
     const reap = () => {
@@ -2486,9 +2821,20 @@ export function createBridge(opts: BridgeOptions = {}) {
       const done = () => {
         delete (child as unknown as Record<symbol, number | undefined>)[GROUP_LEADER];
         liveGroups.delete(pid);
+        tracks.delete(pid);
+        persistTracks();
       };
-      if (platform === "win32") return done();
-      void killGroup(pid, opts.killGraceMs).then(done, done);
+      // claude is gone: its group, then anything that carries this turn's tag or was seen below it (a child that left the group with setsid), then forget it
+      void (async () => {
+        if (platform !== "win32") await killGroup(pid, opts.killGraceMs);
+        const rows = await procList();
+        if (rows) {
+          const byPid = new Map(rows.map((r) => [r.pid, r]));
+          const left = new Set<number>(rows.filter((r) => r.tag === tag && r.pid !== process.pid).map((r) => r.pid));
+          for (const [dpid, start] of tr.desc) if (byPid.get(dpid)?.start === start) left.add(dpid);
+          await killPidsHere([...left]);
+        }
+      })().then(done, done);
     };
     child.on("exit", reap);
     child.on("error", reap);
@@ -3447,13 +3793,14 @@ export function createBridge(opts: BridgeOptions = {}) {
       const scope = turn.proj ?? workspace;
       const expectFolder = turn.code && scope ? { path: scope.path, id: scope.id } : null;
       if (turn.code) opts.beforeSpawn?.();
+      const tag = `${installId}.${crypto.randomBytes(8).toString("hex")}`;
       let child: ChildProcess;
       try {
         child = spawn(launch.command, [...launch.prefix, ...claudeArgs(turn, mode)], {
           cwd: turn.code && scope ? scope.path : workDir,
           // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
           // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-          env: turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
+          env: withTurnTag(turn.code, tag, turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env)),
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
           // A code turn leads its own process group (off Windows), so a stop reaches everything it started.
@@ -3462,7 +3809,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       } catch (e) {
         return resolve({ error: `Could not start Claude Code: ${(e as ErrLike)?.message ?? e}`, sessionId: mode.sessionId, model: "" });
       }
-      if (turn.code) trackCodeChild(child);
+      if (turn.code) trackCodeChild(child, tag);
       turn.child = child;
       let buf = "";
       let stderr = "";
@@ -4056,10 +4403,10 @@ export function createBridge(opts: BridgeOptions = {}) {
   async function restartAfterUpdate() {
     const pollMs = opts.updateRestart?.pollMs ?? 250;
     const capMs = opts.updateRestart?.capMs ?? 10 * 60 * 1000;
-    if (turns.size > 0) {
+    if (turns.size > 0 || liveGroups.size > 0) {
       log("Update installed; restart deferred until the running turn ends");
       const capAt = Date.now() + capMs;
-      while (turns.size > 0 && Date.now() < capAt) await sleepMs(pollMs);
+      while ((turns.size > 0 || liveGroups.size > 0) && Date.now() < capAt) await sleepMs(pollMs);
     }
     // The turns still here are cancelled the way the Stop route cancels one (so none is started again), then close() stops their children.
     for (const t of turns.values()) t.cancelRequested = true;
@@ -4072,42 +4419,40 @@ export function createBridge(opts: BridgeOptions = {}) {
     (opts.exit ?? ((c: number) => process.exit(c)))(UPDATE_EXIT_CODE);
   }
   // ---- the access switch (0.3.19) ---------------------------------------------------------------------------------------
-  /** True while the access window is open on this computer: no new code turn starts, no folder dialog opens, no second access window, no update. */
+  /** True while the access window is open (and while ON checks what is running): no new code turn starts, no folder dialog opens, no second access window, no update. */
   let accessDialogOpen = false;
   /** Counts every lowering, so a window answered after the person switched to folder cannot raise the mode again. */
   let accessEpoch = 0;
-  /** Set when "folder" could be neither written nor the file removed: the file may still say computer, so no code turn starts until a save works. */
+  /** Set when "folder" could not be written down by any means: no code turn starts until it can be. */
   let accessUnsaved = false;
-  const ACCESS_COOLDOWNS_MS = [30_000, 120_000, 600_000];
+  const ACCESS_COOLDOWNS_MS = [30_000, 120_000];
   const ACCESS_ON_PER_HOUR = 5;
-  const limitsFile = opts.stateDir ? path.join(opts.stateDir, "access-limits.json") : null;
-  /** Kept across restarts: when the window was shown (all pages together), how many refusals in a row, and the refusal cooldown. */
-  const limits: { stamps: number[]; denials: number; cooldownUntil: number } = { stamps: [], denials: 0, cooldownUntil: 0 };
-  if (limitsFile) {
-    try {
-      const v = JSON.parse(fs.readFileSync(limitsFile, "utf8")) as Partial<typeof limits> & { version?: unknown };
-      const nums = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
-      if (v && v.version === 1 && Array.isArray(v.stamps) && v.stamps.every(nums) && nums(v.denials) && nums(v.cooldownUntil)) {
-        limits.stamps = v.stamps.slice(-50);
-        limits.denials = Math.max(0, Math.min(100, Math.floor(v.denials)));
-        limits.cooldownUntil = v.cooldownUntil;
-      }
-    } catch { /* none, or damaged: start empty */ }
+  const ACCESS_ON_PER_DAY = 10;
+  const ACCESS_DENIALS_TO_LOCK = 3;
+  const limitsFile = opts.stateDir ? path.join(opts.stateDir, LIMITS_FILE) : null;
+  const memLimits = freshLimits();
+  /** The ON counters. From the state folder with the access.json checks, every time; a file that is missing after the install started, or is not trusted, means the limit is reached for now (and a fresh file is written). */
+  function getLimits(t: number): AccessLimits {
+    if (!limitsFile) return memLimits;
+    const r = readStrictText(limitsFile, platform, undefined, opts.winOwnerOk);
+    const got = parseLimits(r.text, t);
+    if (got) return got;
+    log("the access limits file is missing or not trusted: ON waits 10 minutes");
+    const closed = failClosedLimits(t);
+    try { writeLimitsFile(limitsFile, closed); } catch { /* nothing more to do */ }
+    return closed;
   }
-  const saveLimits = () => {
+  const saveLimits = (l: AccessLimits) => {
     if (!limitsFile) return;
-    try {
-      fs.mkdirSync(path.dirname(limitsFile), { recursive: true, mode: 0o700 });
-      const tmp = `${limitsFile}.${process.pid}.tmp`;
-      fs.rmSync(tmp, { force: true });
-      fs.writeFileSync(tmp, JSON.stringify({ version: 1, ...limits }), { mode: 0o600, flag: "wx" });
-      fs.renameSync(tmp, limitsFile);
-    } catch (e) {
-      log(`could not save the access limits: ${(e as ErrLike)?.message ?? e}`);
-    }
+    try { writeLimitsFile(limitsFile, l); } catch (e) { log(`could not save the access limits: ${(e as ErrLike)?.message ?? e}`); }
   };
+  if (limitsFile && installFresh && !fileThere(limitsFile)) saveLimits(freshLimits()); // the file is made once; after that, missing means tampered
   const canAccessDialog = () => !!opts.accessDialog || platform === "darwin" || platform === "win32" || !!zenity;
-  /** Saves the mode. Lowering that cannot be written tries removing the file (no file means folder); only if both fail is it `false`. */
+  const rmMarker = (f: string | null) => { if (f) { try { fs.rmSync(f, { force: true }); } catch { /* the next start reads the marker as folder */ } } };
+  /**
+   * Saves the mode. Lowering that cannot be written atomically is written in place; only if that fails too, and a setting has been saved here before
+   * (so a --full-access flag cannot seed again), is the file removed. `false`: none of it worked.
+   */
   const saveAccess = (m: AccessMode): boolean => {
     if (!accessFile) return true; // memory only (tests, a bridge made without a state folder)
     try {
@@ -4118,22 +4463,36 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (m === "folder") {
       try {
-        fs.rmSync(accessFile, { force: true });
-        if (!fs.lstatSync(accessFile, { throwIfNoEntry: false })) return true;
-      } catch { /* both failed */ }
+        overwriteAccessFile(accessFile, "folder", new Date(now()).toISOString());
+        return true;
+      } catch { /* try removing it */ }
+      try {
+        if (seededMarker && fileThere(seededMarker)) {
+          fs.rmSync(accessFile, { force: true });
+          if (!fileThere(accessFile)) return true;
+        }
+      } catch { /* all failed */ }
     }
     return false;
   };
-  /** Any code child that is still alive, in the turns table or not. */
-  const codeActivity = () => codeTurnRunning() || liveGroups.size > 0;
-  /** Folder mode now, no questions. Code turns that run in computer mode are cancelled and their whole process groups stopped (SIGTERM, then SIGKILL); this waits until they are gone. */
+  /** Any code child that is still alive, in the turns table or not, or anything tagged or seen below one. */
+  async function codeActivity(): Promise<"busy" | "unknown" | "free"> {
+    if (codeTurnRunning() || liveGroups.size > 0) return "busy";
+    const v = await livingTurnProcs();
+    return !v.known ? "unknown" : v.pids.length > 0 ? "busy" : "free";
+  }
+  /** Folder mode now, no questions. Code turns that run in computer mode are cancelled; their process groups and everything tagged or seen below them are stopped (SIGTERM, then SIGKILL), and this waits until they are gone. */
   async function lowerAccess(): Promise<{ changed: boolean; cancelled: number; saved: boolean }> {
     const changed = accessMode !== "folder";
     accessEpoch += 1;
     accessMode = "folder";
     accessSource = "file";
+    // The lowering is written down first (a marker beside access.json), so a restart after a failed save still starts in folder.
+    if (loweredMarker) { try { fs.mkdirSync(path.dirname(loweredMarker), { recursive: true, mode: 0o700 }); fs.writeFileSync(loweredMarker, "1", { mode: 0o600 }); } catch { /* the folder is not writable: the start-up probe covers it */ } }
     let cancelled = 0;
     const stops: Promise<void>[] = [];
+    // A folder-mode code turn that is running is not touched by a switch to folder.
+    const keep = new Set<number>([...turns.values()].flatMap((t) => (t.code && !t.computer && !t.closed && t.child?.pid !== undefined ? [t.child.pid] : [])));
     for (const t of [...turns.values()]) {
       if (!t.code || !t.computer || t.parent || t.closed) continue;
       t.cancelRequested = true;
@@ -4145,8 +4504,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       cancelled += 1;
     }
     const saved = saveAccess("folder");
+    if (saved) rmMarker(loweredMarker);
     accessUnsaved = !saved;
     await Promise.all(stops);
+    await killAllTracked(keep); // what left the group (setsid) or was started by a tagged helper
     return { changed, cancelled, saved };
   }
   async function handleAccess(req: IncomingMessage, res: ServerResponse) {
@@ -4169,53 +4530,63 @@ export function createBridge(opts: BridgeOptions = {}) {
     // The window names the page that asked: the request's own Origin, and only when it is one of the allowed apps.
     const asking = effectiveOrigin(req)?.origin;
     if (!originFitForDialog(asking) || !allowedOrigins.includes(asking)) return json(res, 403, { error: "Full access can only be asked for by an allowed app, in a browser.", code: "AccessOriginRequired" });
-    const TURN_RUNNING = { error: "Something the AI started is still running. Switch when it has finished.", code: "TurnRunning" };
-    if (codeActivity()) return json(res, 409, TURN_RUNNING);
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
     if (accessDialogOpen) return json(res, 409, { error: "The full access window is already open on this computer.", code: "AccessDialogOpen" });
     if (!canAccessDialog()) return json(res, 501, { error: "This computer cannot show the full access window (zenity is missing), so full access cannot be turned on from the app.", code: "AccessDialogUnavailable" });
     const t0 = now();
-    if (t0 < limits.cooldownUntil) return json(res, 429, { error: "You just said no. Try again later.", code: "AccessCooldown", retryAfterSec: Math.ceil((limits.cooldownUntil - t0) / 1000) });
-    limits.stamps = limits.stamps.filter((x) => t0 - x < 3_600_000);
-    if (limits.stamps.length >= ACCESS_ON_PER_HOUR) {
-      return json(res, 429, { error: "Too many requests to turn on full access. Try again later.", code: "AccessTooMany", retryAfterSec: Math.ceil((limits.stamps[0]! + 3_600_000 - t0) / 1000) });
-    }
-    limits.stamps.push(t0);
-    saveLimits();
-    // From here to the answer no code turn can start (accessDialogOpen), and nothing awaits between the checks above and this line.
+    const L = getLimits(t0);
+    if (t0 < L.lockedUntil) return json(res, 429, { error: "Full access was refused several times, so asking is locked. Run `node bridge.mjs --access-reset` in a Terminal to unlock it.", code: "AccessLocked", retryAfterSec: Math.ceil((L.lockedUntil - t0) / 1000) });
+    if (t0 < L.cooldownUntil) return json(res, 429, { error: "You just said no. Try again later.", code: "AccessCooldown", retryAfterSec: Math.ceil((L.cooldownUntil - t0) / 1000) });
+    L.stamps = L.stamps.filter((x) => t0 - x < DAY_MS);
+    const lastHour = L.stamps.filter((x) => t0 - x < 3_600_000);
+    if (lastHour.length >= ACCESS_ON_PER_HOUR) return json(res, 429, { error: "Too many requests to turn on full access. Try again later.", code: "AccessTooMany", retryAfterSec: Math.ceil((lastHour[0]! + 3_600_000 - t0) / 1000) });
+    if (L.stamps.length >= ACCESS_ON_PER_DAY) return json(res, 429, { error: "Too many requests to turn on full access today. Try again tomorrow.", code: "AccessTooManyToday", retryAfterSec: Math.ceil((L.stamps[0]! + DAY_MS - t0) / 1000) });
+    // From here to the answer no code turn can start (accessDialogOpen is set before anything is awaited), and nothing is awaited between the checks above and this line.
     accessDialogOpen = true;
-    const epoch = accessEpoch;
-    let result: AccessDialogResult | "failed";
     try {
-      result = await (opts.accessDialog ?? ((o: string) => systemAccessDialog(platform, env, opts.accessRun, { origin: o, zenity })))(asking);
-    } catch (e) {
-      log(`access dialog could not open: ${cleanForLog((e as ErrLike)?.message ?? e)}`);
-      result = "failed";
+      const TURN_RUNNING = { error: "Something the AI started is still running. Switch when it has finished.", code: "TurnRunning" };
+      const busy = await codeActivity();
+      if (busy === "busy") return json(res, 409, TURN_RUNNING);
+      if (busy === "unknown") return json(res, 409, { error: "The bridge could not check what is running on this computer, so nothing was changed.", code: "AccessScanFailed" });
+      L.stamps.push(t0);
+      saveLimits(L);
+      const epoch = accessEpoch;
+      let result: AccessDialogResult | "failed";
+      try {
+        result = await (opts.accessDialog ?? ((o: string) => systemAccessDialog(platform, env, opts.accessRun, { origin: o, zenity })))(asking);
+      } catch (e) {
+        log(`access dialog could not open: ${cleanForLog((e as ErrLike)?.message ?? e)}`);
+        result = "failed";
+      }
+      if (result === "failed") {
+        L.stamps.pop(); // a window that could not open is not a refusal and does not count
+        saveLimits(L);
+        return json(res, 501, { error: "The full access window could not open on this computer, so nothing was changed.", code: "AccessDialogUnavailable" });
+      }
+      if (result !== "allow") {
+        L.denials += 1;
+        L.cooldownUntil = now() + ACCESS_COOLDOWNS_MS[Math.min(L.denials - 1, ACCESS_COOLDOWNS_MS.length - 1)]!;
+        if (L.denials >= ACCESS_DENIALS_TO_LOCK) {
+          L.lockedUntil = now() + DAY_MS; // three Nos in a row: asking is locked for a day (or until --access-reset)
+          L.cooldownUntil = L.lockedUntil;
+        }
+        saveLimits(L);
+        return json(res, 403, { error: "Full access was not allowed on this computer.", code: "AccessDenied" });
+      }
+      if (updating()) return json(res, 409, UPDATING);
+      if (epoch !== accessEpoch) return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
+      const after = await codeActivity(); // checked again after Allow, before anything is written
+      if (after !== "free") return json(res, 409, after === "busy" ? TURN_RUNNING : { error: "The bridge could not check what is running on this computer, so nothing was changed.", code: "AccessScanFailed" });
+      if (!saveAccess("computer")) return json(res, 500, { error: "Could not save the mode on this computer, so nothing was changed.", code: "AccessNotSaved" });
+      rmMarker(loweredMarker);
+      saveLimits({ ...L, denials: 0, cooldownUntil: 0, lockedUntil: 0 });
+      accessUnsaved = false;
+      accessMode = "computer";
+      accessSource = "file";
+      return json(res, 200, { access: "computer", changed: true });
     } finally {
       accessDialogOpen = false;
     }
-    if (result === "failed") {
-      limits.stamps.pop(); // a window that could not open is not a refusal and does not count
-      saveLimits();
-      return json(res, 501, { error: "The full access window could not open on this computer, so nothing was changed.", code: "AccessDialogUnavailable" });
-    }
-    if (result !== "allow") {
-      limits.cooldownUntil = now() + ACCESS_COOLDOWNS_MS[Math.min(limits.denials, ACCESS_COOLDOWNS_MS.length - 1)]!;
-      limits.denials += 1;
-      saveLimits();
-      return json(res, 403, { error: "Full access was not allowed on this computer.", code: "AccessDenied" });
-    }
-    if (updating()) return json(res, 409, UPDATING);
-    if (epoch !== accessEpoch) return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
-    if (codeActivity()) return json(res, 409, TURN_RUNNING); // checked again after Allow, before anything is written
-    if (!saveAccess("computer")) return json(res, 500, { error: "Could not save the mode on this computer, so nothing was changed.", code: "AccessNotSaved" });
-    limits.denials = 0;
-    limits.cooldownUntil = 0;
-    saveLimits();
-    accessUnsaved = false;
-    accessMode = "computer";
-    accessSource = "file";
-    return json(res, 200, { access: "computer", changed: true });
   }
 
   async function handleUpdate(req: IncomingMessage, res: ServerResponse) {
@@ -4227,6 +4598,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     if (turns.size > 0) return json(res, 409, { error: "A chat turn is still running. Update when it has finished.", code: "TurnRunning" });
     if (accessDialogOpen) return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
+    if (liveGroups.size > 0) return json(res, 409, { error: "Something the AI started is still running. Update when it has finished.", code: "TurnRunning" });
     const deps = realUpdateDeps();
     if (body.check === true) {
       const c = await checkUpdate(deps);
@@ -4422,8 +4794,35 @@ export function createBridge(opts: BridgeOptions = {}) {
     return json(res, 404, { error: "not found" });
   }
 
+  /** At start: processes of an earlier run of this install (a hard kill, a closed Terminal, a crash) that are still alive: the ones in live-groups.json that still match, and anything carrying this install's tag. */
+  async function sweepLeftovers() {
+    if (!liveFile) return;
+    let entries: { pid: number; start: string }[] = [];
+    try {
+      const v = JSON.parse(fs.readFileSync(liveFile, "utf8")) as { groups?: unknown };
+      if (Array.isArray(v.groups)) entries = (v.groups as { pid?: unknown; start?: unknown }[]).slice(0, 200).flatMap((g) => (typeof g.pid === "number" && Number.isInteger(g.pid) && typeof g.start === "string" ? [{ pid: g.pid, start: g.start }] : []));
+    } catch { /* none, or unreadable */ }
+    const rows = await procList();
+    if (rows) {
+      const byPid = new Map(rows.map((r) => [r.pid, r]));
+      const victims = new Set<number>(rows.filter((r) => r.tag !== null && r.tag.startsWith(`${installId}.`) && r.pid !== process.pid).map((r) => r.pid));
+      for (const e of entries) {
+        const r = byPid.get(e.pid);
+        if (r && r.start === e.start && e.pid !== process.pid) {
+          victims.add(e.pid);
+          for (const d of descendantsOf(rows, e.pid)) victims.add(d.pid);
+          if (platform !== "win32") await killGroup(e.pid, opts.killGraceMs);
+        }
+      }
+      if (victims.size > 0) {
+        log(`stopping ${victims.size} process(es) left by an earlier run`);
+        await killPidsHere([...victims]);
+      }
+    }
+    persistTracks(); // the list is empty now
+  }
   const closeBridge = (): Promise<void> => {
-    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c))));
+    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => undefined);
     return stopped.then(() => new Promise<void>((resolve) => server.close(() => resolve())));
   };
   const server = http.createServer((req, res) => {
@@ -4462,9 +4861,19 @@ export function createBridge(opts: BridgeOptions = {}) {
         server.once("error", reject);
         server.listen(port, "127.0.0.1", () => {
           port = (server.address() as AddressInfo).port;
-          resolve(port);
+          // Only now (the port is ours, so no other bridge runs on this state folder): stop what an earlier run of this install left behind.
+          sweepLeftovers().then(() => resolve(port), () => resolve(port));
         });
       });
+    },
+    /** Last resort, synchronous (for `process.on("exit")`): SIGKILL every tracked group and descendant. */
+    killAllSync() {
+      for (const tr of tracks.values()) {
+        for (const pid of [...tr.desc.keys(), tr.pid]) {
+          try { process.kill(platform === "win32" ? pid : -pid, "SIGKILL"); } catch { /* gone */ }
+          try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+        }
+      }
     },
     close() {
       return closeBridge();
@@ -4495,12 +4904,12 @@ export function parseCli(argv: string[]) {
       if (a !== name) return [];
       return [argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("--") ? argv[i + 1]! : ""];
     });
-  const modes = ["--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--help", "-h"].filter((m) => argv.includes(m));
+  const modes = ["--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--help", "-h"].filter((m) => argv.includes(m));
   // --workspace: a relative folder is taken from where the command was typed. A flag with no value gives "" so main() refuses it out loud.
   const wsRaw = valAll("--workspace")[0];
   const workspace = wsRaw === undefined ? undefined : wsRaw === "" ? "" : path.isAbsolute(wsRaw) || /^[A-Za-z]:[\\/]/.test(wsRaw) ? wsRaw : path.resolve(process.cwd(), wsRaw);
   return {
-    mode: modes.length === 0 ? "run" : modes[0]!.replace(/^-+/, "") === "h" ? "help" : modes[0] === "--unpair-all" ? "unpairAll" : modes[0]!.replace(/^-+/, ""),
+    mode: modes.length === 0 ? "run" : modes[0]!.replace(/^-+/, "") === "h" ? "help" : modes[0] === "--unpair-all" ? "unpairAll" : modes[0] === "--access-reset" ? "accessReset" : modes[0]!.replace(/^-+/, ""),
     modes,
     claude: val("--claude"),
     port: val("--port") === undefined ? undefined : Number(val("--port")),
@@ -5434,7 +5843,7 @@ async function main() {
   const cli = parseCli(argv);
   if (cli.mode === "help") {
     console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
-       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
+       node bridge.mjs --install | --uninstall | --status | --code | --unpair-all | --access-reset   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
        node bridge.mjs --selftest   prints the build number and exits (the app's update uses it to check a new file)
        node bridge.mjs --rollback   puts the previous bridge file (kept as <file>.prev by an update) back; restart the bridge after it
        --full-access only sets the first value: once this computer has a saved mode, the saved mode wins. The access switch in GilbApp changes it (turning it on opens a window here that you must allow). --access folder turns full access off; --access computer is refused.
@@ -5443,10 +5852,10 @@ async function main() {
     return;
   }
   // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-  const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
+  const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
   const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]!));
   if (unknown.length > 0) {
-    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --selftest, --rollback, --help`);
+    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --access-reset, --selftest, --rollback, --help`);
     process.exit(2);
   }
   const accessBad = accessFlagProblem(cli.access);
@@ -5470,12 +5879,16 @@ async function main() {
     env: process.env,
     log: () => {},
   };
+  if ((cli.mode === "supervise" || cli.mode === "run") && cli.fullAccess) {
+    const line = migrateServiceFlag(cli, home, platform, process.env);
+    if (line) console.log(`  ${line}`);
+  }
   if (cli.mode === "supervise") {
     const r = await runSupervisor(cli, { home, env: process.env, platform, signals: true });
     process.exit(r === "port-in-use" ? 1 : 0);
   }
   if (cli.mode !== "run") {
-    const fn = { install: serviceInstall, uninstall: serviceUninstall, status: serviceStatus, code: fetchCode, unpairAll }[cli.mode];
+    const fn = { install: serviceInstall, uninstall: serviceUninstall, status: serviceStatus, code: fetchCode, unpairAll, accessReset }[cli.mode];
     const out = await fn!(cli, deps);
     (out.ok ? console.log : console.error)(out.message);
     process.exit(out.ok ? 0 : 1);
@@ -5586,12 +5999,7 @@ ${bridge.access === "computer" ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_
   // Started by --supervise: when the supervisor is gone (killed, not stopped), do not carry on as an unwatched second bridge.
   const supervisorPid = Number(process.env.GILB_BRIDGE_SUPERVISOR_PID);
   if (supervisorPid > 0) setInterval(() => void (pidAlive(supervisorPid) || stop()), 5000).unref();
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  if (platform === "win32") {
-    process.on("SIGBREAK", stop); // Ctrl+Break
-    process.on("SIGHUP", stop); // the console window was closed (Windows ends node about 10 seconds later)
-  }
+  installProcessHandlers(bridge, process, platform); // SIGINT, SIGTERM, SIGHUP (a closed Terminal), SIGBREAK; exit kills what is left
 }
 
 // Started as a program? Compare real paths: node gives import.meta.url the real path, while argv[1] keeps the symlink a person

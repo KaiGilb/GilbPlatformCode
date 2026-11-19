@@ -231,12 +231,11 @@ describe("QAAS1 H4 (MED): counters are global, escalate and survive a restart", 
       const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: bridge.pairingCode }) });
       secrets.push((await res.json()).secret);
     }
-    for (const i of [0, 1, 2, 0, 1]) {
-      expect((await accessReq(secrets[i], { mode: "computer" })).status).toBe(403);
-      clock.t += 601_000;
-    }
+    fs.writeFileSync(path.join(stateDir, "access-limits.json"), JSON.stringify({ version: 1, stamps: [1, 2, 3, 4].map((m) => clock.t - m * 600_000), denials: 0, cooldownUntil: 0, lockedUntil: 0 }), { mode: 0o600 });
+    expect((await accessReq(secrets[2], { mode: "computer" })).status).toBe(403); // the 5th
+    clock.t += 31_000;
     for (const s of secrets) expect((await accessReq(s, { mode: "computer" })).json.code).toBe("AccessTooMany");
-    expect(dialog).toHaveBeenCalledTimes(5);
+    expect(dialog).toHaveBeenCalledTimes(1);
   });
   it("a failed (501) dialog sets no cooldown and does not count", async () => {
     const dialog = vi.fn(async () => { throw new Error("x"); });
@@ -273,7 +272,7 @@ describe("QAAS1 MED-6: the window names the asking page", () => {
       const withOrigin = B.accessDialogText(platform, APP).split("\n");
       expect(withOrigin).toHaveLength(base.length + 1);
       expect(withOrigin[0]).toBe(base[0]);
-      expect(withOrigin[1]).toBe(`Asked by: ${APP}`);
+      expect(withOrigin[1]).toBe(`Asked by: ${APP} (local)`);
       expect(withOrigin.slice(2)).toEqual(base.slice(1));
     }
     expect(B.originFitForDialog(APP)).toBe(true);
@@ -318,13 +317,14 @@ describe("QAAS1 H6 (MED): lowering that cannot be saved", () => {
   it("both the write and the removal fail: 500, no code turn starts, hello says so; once saving works again it recovers", async () => {
     const { secret } = await startBridge({ workspace: ws(), fullAccess: true });
     expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("computer");
+    fs.chmodSync(accessFile, 0o400); // not even an in-place rewrite
     fs.chmodSync(stateDir, 0o500);
     let r, turn, hello;
     try {
       r = await accessReq(secret, { mode: "folder" });
       turn = await codeTurn(secret, { prompt: "hello" });
       hello = await helloFor(secret);
-    } finally { fs.chmodSync(stateDir, 0o700); }
+    } finally { fs.chmodSync(stateDir, 0o700); fs.chmodSync(accessFile, 0o600); }
     expect(r.status).toBe(500);
     expect(r.json.code).toBe("AccessNotSaved");
     expect(hello).toMatchObject({ access: "folder", accessSaveFailed: true });
@@ -336,12 +336,12 @@ describe("QAAS1 H6 (MED): lowering that cannot be saved", () => {
     expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("folder");
     expect((await helloFor(secret)).accessSaveFailed).toBeUndefined();
   });
-  it("the write fails but the file can be removed: 200, the file is gone, a restart is folder", async () => {
+  it("the atomic write fails but an in-place rewrite works: 200 and the file says folder", async () => {
     const { secret, bridge } = await startBridge({ workspace: ws(), fullAccess: true });
-    fs.mkdirSync(`${accessFile}.${process.pid}.tmp`); // the temp name is taken by a folder: the write cannot happen
+    fs.mkdirSync(`${accessFile}.${process.pid}.tmp`); // the temp name is taken by a folder: the atomic write cannot happen
     const r = await accessReq(secret, { mode: "folder" });
     expect(r).toMatchObject({ status: 200, json: { access: "folder" } });
-    expect(fs.existsSync(accessFile)).toBe(false);
+    expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("folder");
     await bridge.close();
     bridges.pop();
     fs.rmdirSync(`${accessFile}.${process.pid}.tmp`);
@@ -400,7 +400,7 @@ describe("QAAS1 H9 (MED): the service no longer carries --full-access", () => {
     expect(JSON.parse(fs.readFileSync(accessFile, "utf8")).mode).toBe("folder");
     fs.rmSync(accessFile);
     await startBridge({ workspace: ws() }); // no flag (as the service starts it), no file
-    expect((await helloFor(lastSecret))).toMatchObject({ access: "folder", accessSource: "default" });
+    expect((await helloFor(lastSecret))).toMatchObject({ access: "folder", accessSource: "file" }); // a setting was saved here before: a missing file is folder, never a seed
   });
   it("the supervisor and the Windows Run entry do not forward --full-access either (source)", () => {
     const src = fs.readFileSync(path.join(HERE, "../bridge/bridge.mjs"), "utf8");
