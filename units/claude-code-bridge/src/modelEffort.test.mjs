@@ -415,7 +415,7 @@ describe("R19-L1: only the sonnet-coder subagent may be started", () => {
     for (const rule of want) expect(withIt).toContain(rule);
     expect(withIt).not.toContain("WebFetch");
     await turn(secret, { mode: "code", delegateCoding: false });
-    const without = settingsOf(runs()[1]).permissions.deny;
+    const without = settingsOf(runs()[1]).permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r));
     expect(without).toEqual([]);
     for (const rule of want) expect(without).not.toContain(rule);
   });

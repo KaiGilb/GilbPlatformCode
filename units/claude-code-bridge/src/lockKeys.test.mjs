@@ -1,7 +1,7 @@
 // Bridge 0.3.17: ~/.base-deploy is protected, and full access never reads less-protected than folder mode. Fake home only; no real path is read.
 import { describe, it, expect } from "vitest";
 import path from "node:path";
-import { protectedPlaces, codeTurnSettings, computerSandboxSettings, credentialReadDeny } from "../bridge/bridge.mjs";
+import { protectedPlaces, protectedHit, codeTurnSettings, computerSandboxSettings, credentialReadDeny, credentialPlaces, fileToolDenyRules } from "../bridge/bridge.mjs";
 
 const HOME = "/fake/home/kai";
 const abs = (p) => (p.startsWith("~/") ? path.join(HOME, p.slice(2)) : p);
@@ -52,5 +52,43 @@ describe("0.3.17 lock ~/.base-deploy and the shared credential list", () => {
   it("the credential list only reads; full access can still write its work areas (nothing writable sits under a denied read path)", () => {
     const s = computerSandboxSettings(HOME, "/fake/ws", protectedPlaces(HOME, [], () => []), [], [], "", "darwin").sandbox.filesystem;
     for (const w of s.allowWrite) for (const d of credentialReadDeny("darwin").map(abs)) expect(w === d || w.startsWith(d + "/")).toBe(false);
+  });
+});
+
+// 0.3.17 part 2: Claude Code's own file tools (Read, Edit/Write) are denied the same places by permission rules, in both modes.
+describe("0.3.17 permission rules for the file tools", () => {
+  const need = [".base-deploy", ".npmrc", ".config", ".claude", "Library/Application Support/Google/Chrome"];
+  const has = (deny, tool, p) => deny.includes(`${tool}(/${path.join(HOME, p)})`) && deny.includes(`${tool}(/${path.join(HOME, p)}/**)`);
+
+  it("full access: Read and Edit rules cover the credential list", () => {
+    const deny = computerSandboxSettings(HOME, "/fake/ws", protectedPlaces(HOME, [], () => []), [], [], "~/.cfg-x", "darwin").permissions.deny;
+    for (const t of ["Read", "Edit"]) for (const p of [...need, ".cfg-x", "Developer/.base-deploy"]) expect(has(deny, t, p), `${t} ${p}`).toBe(true);
+  });
+
+  it("folder mode: Read and Edit rules cover the same list, and Windows folder mode too", () => {
+    for (const platform of ["darwin", "linux"]) {
+      const deny = codeTurnSettings(HOME, platform, [], "session", "~/.cfg-x").permissions.deny;
+      for (const t of ["Read", "Edit"]) for (const p of [...need, ".cfg-x"]) expect(has(deny, t, p), `${platform} ${t} ${p}`).toBe(true);
+    }
+    const win = codeTurnSettings(HOME, "win32").permissions.deny;
+    expect(win).toContain(`Read(/${path.join(HOME, ".base-deploy")})`);
+    expect(win).toContain("WebFetch");
+  });
+
+  it("both modes take their places from the same helper", () => {
+    const rules = new Set(fileToolDenyRules(credentialPlaces(HOME, "darwin", "")));
+    const full = new Set(computerSandboxSettings(HOME, "/fake/ws", [], [], [], "", "darwin").permissions.deny);
+    const folder = new Set(codeTurnSettings(HOME, "darwin").permissions.deny);
+    for (const r of rules) { expect(full.has(r)).toBe(true); expect(folder.has(r)).toBe(true); }
+  });
+
+  it("the approval check refuses a file read of ~/.base-deploy and ~/.npmrc (Windows spelling of the list included)", () => {
+    for (const platform of ["win32", "darwin"]) {
+      const o = { home: HOME, places: [...protectedPlaces(HOME, [], () => []), ...credentialPlaces(HOME, platform, "")], base: "/fake/ws", ci: platform === "win32" };
+      expect(protectedHit(path.join(HOME, ".base-deploy", "x"), o)).toBeTruthy();
+      expect(protectedHit(path.join(HOME, ".npmrc"), o)).toBeTruthy();
+      expect(protectedHit("~/.config/gcloud/creds.db", o)).toBeTruthy();
+      expect(protectedHit("/fake/ws/ok.txt", o)).toBeNull();
+    }
   });
 });

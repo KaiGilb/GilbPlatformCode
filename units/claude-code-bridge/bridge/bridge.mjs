@@ -1235,13 +1235,27 @@ export function credentialReadDeny(platform) {
     }
     return list;
 }
+/** The credential list as absolute paths for this home (`~` expanded), plus a CLAUDE_CONFIG_DIR the person set. One source for the sandbox, the permission rules and the approval check. */
+export function credentialPlaces(home, platform, claudeConfigDir = "") {
+    const absHome = (p) => (p.startsWith("~/") ? path.join(home, p.slice(2)) : p.startsWith("~") ? path.join(home, p.slice(1)) : p);
+    return [...new Set([...credentialReadDeny(platform), ...configDirDeny(claudeConfigDir)].map(absHome))];
+}
+/** Each place and its real-path spelling. */
+function withRealPaths(list) {
+    return [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+}
+/** Permission rules (0.3.17) that keep Claude Code's own file tools out of these absolute places: Read and Edit (Edit covers Write), the place and everything under it. */
+export function fileToolDenyRules(places) {
+    return withRealPaths(places).flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
+}
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
 export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false) {
-    void home; // sandbox paths are home-relative (`~/`), which Claude Code expands itself
+    // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
+    const fileRules = fileToolDenyRules(credentialPlaces(home, platform, claudeConfigDir));
     const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
     if (platform === "win32") {
         // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-        return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
+        return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny, ...fileRules], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
     }
     const denyRead = credentialReadDeny(platform);
     return {
@@ -1254,7 +1268,7 @@ export function codeTurnSettings(home, platform, extraDenyRead = [], approval = 
             filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
         },
         permissions: {
-            deny: [...agentDeny],
+            deny: [...agentDeny, ...fileRules],
             disableBypassPermissionsMode: "disable",
         },
     };
@@ -1528,12 +1542,11 @@ export function writeBlock(raw, o, areas, writeOnly) {
  */
 export const ASKED_COMMAND_RULES = ["sudo", "security", "launchctl", "osascript"].flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`, `Bash(*${c} *)`]).concat(["Bash(*GilbServerOps*)"]);
 export function computerSandboxSettings(home, folder, places, tmpDirs = [], extraWriteDeny = [], claudeConfigDir = "", platform = process.platform) {
-    const withReal = (list) => [...new Set(list.flatMap((p) => [p, resolveThroughLinks(p)]))];
+    const withReal = withRealPaths;
     const deny = withReal(places);
     // Full access never reads less-protected than folder mode (0.3.17): the folder-mode credential list and the CLAUDE_CONFIG_DIR are denied for reading too.
-    const absHome = (p) => (p.startsWith("~/") ? path.join(home, p.slice(2)) : p.startsWith("~") ? path.join(home, p.slice(1)) : p);
-    const denyReadAll = withReal([...places, ...[...credentialReadDeny(platform), ...configDirDeny(claudeConfigDir)].map(absHome)]);
-    const ruleDeny = deny.flatMap((p) => ["Read", "Edit"].flatMap((t) => [`${t}(/${p})`, `${t}(/${p}/**)`]));
+    const denyReadAll = withReal([...places, ...credentialPlaces(home, platform, claudeConfigDir)]);
+    const ruleDeny = fileToolDenyRules(denyReadAll); // Claude Code's own Read and Edit tools: the same places as the sandbox's denyRead
     return {
         sandbox: {
             enabled: true,
@@ -1833,7 +1846,7 @@ export function createBridge(opts = {}) {
     const sandboxedComputer = computer && codePlatform !== "win32";
     const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
     const sandboxedTurn = (t) => sandboxedComputer && t.code && t.approval === "session";
-    const protectOpts = (t) => ({ home, places: protectedPlaces(home, opts.extraProtected ?? []), base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
+    const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, opts.extraProtected ?? []), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
     const idOf = (p) => {
         try {
@@ -2636,6 +2649,18 @@ export function createBridge(opts = {}) {
             let summary;
             let detail = "";
             let notice = "";
+            // 0.3.17: a protected place or a credential place is refused outright here too (Windows, each-write); the person is not asked.
+            if (tool !== "Bash") {
+                const po = protectOpts(turn);
+                for (const k of ["file_path", "notebook_path", "path"]) {
+                    const v = input[k];
+                    if (typeof v !== "string" || v === "")
+                        continue;
+                    const hit = protectedHit(v, po);
+                    if (hit)
+                        return deny(`This place is protected: ${hit}.`);
+                }
+            }
             // A path is shown exactly: a line break or a hidden character in any path field is a denial; so is a path over the limit.
             for (const k of ["file_path", "notebook_path", "path"]) {
                 const v = input[k];
@@ -2953,7 +2978,7 @@ export function createBridge(opts = {}) {
             "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { disableBypassPermissionsMode: "disable" } }),
+            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
             "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
             "--system-prompt-snapshot", "off",
         ];

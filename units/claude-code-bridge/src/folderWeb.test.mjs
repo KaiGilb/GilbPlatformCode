@@ -195,7 +195,7 @@ describe.each([["session"], ["each-write"]])("folder mode web, approval %s", (ap
     const a = rows("run")[0].argv;
     const val = (f) => a[a.indexOf(f) + 1];
     expect(val("--tools")).toContain(WEB_TOOLS.join(","));
-    expect(JSON.parse(val("--settings")).permissions.deny).toEqual([]);
+    expect(JSON.parse(val("--settings")).permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r))).toEqual([]);
     expect(JSON.parse(val("--settings")).sandbox.network.allowedDomains).toEqual(["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"]);
     expect(val("--permission-prompt-tool")).toBe("mcp__gilb__bridge_approve");
     expect(val("--append-system-prompt")).toContain(WEB_SENTENCE);

@@ -274,7 +274,7 @@ describe("QA hello shapes, Windows files-only turn, README", () => {
     expect(val("--tools")).toBe("Read,Edit,Write,Glob,Grep");
     expect(val("--permission-prompts")).toBe("none");
     expect(a).not.toContain("--permission-prompt-tool");
-    expect(JSON.parse(val("--settings")).permissions.deny).toEqual(["WebFetch", "WebSearch"]);
+    expect(JSON.parse(val("--settings")).permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r))).toEqual(["WebFetch", "WebSearch"]);
     expect(val("--append-system-prompt")).not.toContain("search the web");
     const h = await (await fetch(`${base}/v1/hello`)).json();
     expect(h.codeMode).toBe("files-only");
