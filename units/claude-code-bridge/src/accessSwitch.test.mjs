@@ -25,6 +25,7 @@ let stateDir;
 let accessFile;
 let logFile;
 let base;
+let lastSecret = "";
 const bridges = [];
 const clock = { t: Date.parse("2026-11-19T10:00:00Z") };
 const open = [];
@@ -55,8 +56,9 @@ async function startBridge(opts = {}) {
   bridges.push(b);
   await b.start();
   base = `http://127.0.0.1:${b.port}`;
-  const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: b.pairingCode }) });
-  return { bridge: b, secret: (await res.json()).secret };
+  const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: b.pairingCode }) });
+  lastSecret = (await res.json()).secret;
+  return { bridge: b, secret: lastSecret };
 }
 afterEach(async () => {
   for (const t of open.splice(0)) t.ctl.abort();
@@ -67,10 +69,10 @@ afterEach(async () => {
 });
 
 const accessReq = async (secret, body, headers = {}) => {
-  const res = await fetch(`${base}/v1/access`, { method: "POST", headers: { "content-type": "application/json", ...(secret ? { "x-bridge-secret": secret } : {}), ...headers }, body: JSON.stringify(body) });
+  const res = await fetch(`${base}/v1/access`, { method: "POST", headers: { "content-type": "application/json", origin: APP, ...(secret ? { "x-bridge-secret": secret } : {}), ...headers }, body: JSON.stringify(body) });
   return { status: res.status, json: await res.json().catch(() => null) };
 };
-const hello = async () => (await fetch(`${base}/v1/hello`)).json();
+const hello = async (secret = lastSecret) => (await fetch(`${base}/v1/hello`, { headers: { origin: APP, ...(secret ? { "x-bridge-secret": secret } : {}) } })).json();
 const saved = () => JSON.parse(fs.readFileSync(accessFile, "utf8"));
 const rows = (event) => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === event) : []);
 const until = async (fn, ms = 15000) => {
@@ -86,7 +88,7 @@ async function codeTurn(secret, extra = {}) {
   const ctl = new AbortController();
   const res = await fetch(`${base}/v1/turn`, {
     method: "POST", signal: ctl.signal,
-    headers: { "content-type": "application/json", "x-bridge-secret": secret },
+    headers: { "content-type": "application/json", origin: APP, "x-bridge-secret": secret },
     body: JSON.stringify({ system: "You are the agent.", prompt: "WAITFOREVER", mode: "code", ...extra }),
   });
   const t = { status: res.status, events: [], turnId: "", ctl, json: null, ended: false };
@@ -171,10 +173,10 @@ describe("computer: only the person's Allow", () => {
     const r = await accessReq(secret, { mode: "computer", text: "EVIL TEXT", title: "EVIL", script: "do shell script" });
     expect(r).toEqual({ status: 200, json: { access: "computer", changed: true } });
     expect(dialog).toHaveBeenCalledTimes(1);
-    expect(dialog.mock.calls[0]).toEqual([]); // nothing from the request reaches the dialog
+    expect(dialog.mock.calls[0]).toEqual([APP]); // only the checked Origin reaches the dialog; nothing else from the request
     expect(saved()).toMatchObject({ version: 1, mode: "computer" });
     expect(await hello()).toMatchObject({ access: "computer", accessSource: "file", accessChangeable: true });
-    const res = await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "hello", mode: "code" }) });
+    const res = await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", origin: APP, "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "hello", mode: "code" }) });
     expect(await res.text()).toContain('"access":"computer"');
     // already on: no second dialog
     expect(await accessReq(secret, { mode: "computer" })).toEqual({ status: 200, json: { access: "computer", changed: false } });
@@ -183,6 +185,7 @@ describe("computer: only the person's Allow", () => {
 
   it("Cancel and timeout: 403 AccessDenied, nothing changes, no file written", async () => {
     for (const answer of ["cancel", "timeout", "yes", undefined, true]) {
+      if (dir) fs.rmSync(path.join(stateDir, "access-limits.json"), { force: true }); // each answer on its own: no wait from the one before
       const { secret } = await startBridge({ workspace: ws(), accessDialog: dialogReturning(answer) });
       const r = await accessReq(secret, { mode: "computer" });
       expect(r.status, String(answer)).toBe(403);
@@ -232,7 +235,7 @@ describe("computer: only the person's Allow", () => {
     const turn = await codeTurn(secret);
     expect(turn.status).toBe(409);
     expect(turn.json.code).toBe("AccessDialogOpen");
-    const choose = await fetch(`${base}/v1/workspace/choose`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: "{}" });
+    const choose = await fetch(`${base}/v1/workspace/choose`, { method: "POST", headers: { "content-type": "application/json", origin: APP, "x-bridge-secret": secret }, body: "{}" });
     expect(choose.status).toBe(409);
     expect(chooser).not.toHaveBeenCalled();
     expect(rows("run")).toEqual([]);
@@ -259,8 +262,8 @@ describe("computer: only the person's Allow", () => {
       selfTest: async () => ({ code: 0, stdout: "" }),
     };
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog, updateDeps });
-    const upd = fetch(`${base}/v1/update`, { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: "{}" });
-    await until(async () => (await (await fetch(`${base}/v1/hello`, { headers: { "x-bridge-secret": secret } })).json()).update?.busy === true);
+    const upd = fetch(`${base}/v1/update`, { method: "POST", headers: { "content-type": "application/json", origin: APP, "x-bridge-secret": secret }, body: "{}" });
+    await until(async () => (await (await fetch(`${base}/v1/hello`, { headers: { origin: APP, "x-bridge-secret": secret } })).json()).update?.busy === true);
     for (const mode of ["computer", "folder"]) {
       const r = await accessReq(secret, { mode });
       expect(r.status, mode).toBe(409);
@@ -297,48 +300,62 @@ describe("computer: only the person's Allow", () => {
 });
 
 describe("cooldown and the hourly limit", () => {
-  it("after a Cancel another ON is refused for 30 s (429), then the dialog opens again", async () => {
+  it("each Cancel lengthens the wait: 30 s, 2 min, 10 min (429 AccessCooldown in between)", async () => {
     const dialog = dialogReturning("cancel");
     const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
-    expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
-    const r = await accessReq(secret, { mode: "computer" });
-    expect(r.status).toBe(429);
-    expect(r.json.code).toBe("AccessCooldown");
-    expect(dialog).toHaveBeenCalledTimes(1);
+    const on = () => accessReq(secret, { mode: "computer" });
+    expect((await on()).status).toBe(403);
+    expect((await on())).toMatchObject({ status: 429, json: { code: "AccessCooldown" } });
     clock.t += 29_000;
-    expect((await accessReq(secret, { mode: "computer" })).status).toBe(429);
+    expect((await on()).status).toBe(429);
     clock.t += 2_000;
-    expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
-    expect(dialog).toHaveBeenCalledTimes(2);
+    expect((await on()).status).toBe(403); // second no: 2 min
+    clock.t += 119_000;
+    expect((await on()).status).toBe(429);
+    clock.t += 2_000;
+    expect((await on()).status).toBe(403); // third no: 10 min
+    clock.t += 599_000;
+    expect((await on()).status).toBe(429);
+    clock.t += 2_000;
+    expect((await on()).status).toBe(403); // and it stays at 10 min
+    expect(dialog).toHaveBeenCalledTimes(4);
   });
 
-  it("at most 5 ON requests per hour per pairing; the 6th is 429; an hour later it works", async () => {
+  it("at most 5 windows per hour across ALL pairings; the 6th is 429 AccessTooMany; an hour later it works", async () => {
     const dialog = dialogReturning("cancel");
-    const { secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    const { bridge, secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
+    const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: bridge.pairingCode }) });
+    const other = (await res.json()).secret;
     for (let i = 0; i < 5; i++) {
-      expect((await accessReq(secret, { mode: "computer" })).status, `request ${i + 1}`).toBe(403);
-      clock.t += 31_000;
+      expect((await accessReq(i % 2 ? other : secret, { mode: "computer" })).status, `request ${i + 1}`).toBe(403);
+      clock.t += 601_000;
     }
-    const r = await accessReq(secret, { mode: "computer" });
-    expect(r.status).toBe(429);
-    expect(r.json.code).toBe("AccessTooMany");
+    for (const who of [secret, other]) {
+      const r = await accessReq(who, { mode: "computer" });
+      expect(r.status).toBe(429);
+      expect(r.json.code).toBe("AccessTooMany");
+    }
     expect(dialog).toHaveBeenCalledTimes(5);
     clock.t += 3_600_000;
     expect((await accessReq(secret, { mode: "computer" })).status).toBe(403);
     expect(dialog).toHaveBeenCalledTimes(6);
   });
 
-  it("the hourly count is per pairing: another paired page still reaches the dialog", async () => {
+  it("the counters survive a restart", async () => {
     const dialog = dialogReturning("cancel");
-    const { bridge, secret } = await startBridge({ workspace: ws(), accessDialog: dialog });
-    for (let i = 0; i < 5; i++) {
-      await accessReq(secret, { mode: "computer" });
-      clock.t += 31_000;
+    let started = await startBridge({ workspace: ws(), accessDialog: dialog });
+    expect((await accessReq(started.secret, { mode: "computer" })).status).toBe(403);
+    await bridges.pop().close();
+    started = await startBridge({ workspace: ws(), accessDialog: dialog });
+    expect((await accessReq(started.secret, { mode: "computer" })).json.code).toBe("AccessCooldown");
+    clock.t += 700_000;
+    for (let i = 0; i < 4; i++) {
+      expect((await accessReq(started.secret, { mode: "computer" })).status).toBe(403);
+      clock.t += 601_000;
     }
-    expect((await accessReq(secret, { mode: "computer" })).status).toBe(429);
-    const res = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
-    const other = (await res.json()).secret;
-    expect((await accessReq(other, { mode: "computer" })).status).toBe(403);
+    await bridges.pop().close();
+    started = await startBridge({ workspace: ws(), accessDialog: dialog });
+    expect((await accessReq(started.secret, { mode: "computer" })).json.code).toBe("AccessTooMany");
   });
 });
 
@@ -421,9 +438,10 @@ describe("access.json is read strictly", () => {
     put(good, 0o600);
     expect(B.readAccessFile(accessFile, "darwin", uid + 1)).toEqual({ exists: true, mode: "folder" });
   });
-  it("Windows has no POSIX owner or mode to check: a plain file in a Windows-style state folder reads", () => {
+  it("Windows has no POSIX mode; the owner SID is what is checked", () => {
     put(good, 0o666);
-    expect(B.readAccessFile(accessFile, "win32", 0)).toEqual({ exists: true, mode: "computer" });
+    expect(B.readAccessFile(accessFile, "win32", 0, () => true)).toEqual({ exists: true, mode: "computer" });
+    expect(B.readAccessFile(accessFile, "win32", 0, () => false)).toEqual({ exists: true, mode: "folder" }); // another owner SID
   });
 });
 
@@ -560,11 +578,12 @@ describe("the dialog commands", () => {
   it("macOS: the approved text is passed as an argument, never inside the script; the title and buttons are constants", async () => {
     expect(B.ACCESS_DIALOG_TEXT.darwin).toBe(MAC_EXPECT);
     const run = runner(0, "button returned:Allow full access, gave up:false\n");
-    expect(await B.systemAccessDialog("darwin", {}, run)).toBe("allow");
+    expect(await B.systemAccessDialog("darwin", {}, run, { origin: APP })).toBe("allow");
     const { file, args } = run.calls[0];
-    expect(file).toBe("osascript");
+    expect(file).toBe("/usr/bin/osascript");
     expect(args.slice(0, 2)).toEqual(["-e", "on run argv"]);
-    expect(args.at(-2)).toBe(MAC_EXPECT);
+    const lines = MAC_EXPECT.split("\n");
+    expect(args.at(-2)).toBe([lines[0], `Asked by: ${APP}`, ...lines.slice(1)].join("\n")); // ONE added line, after the title line
     expect(args.at(-1)).toBe("GilbApp: full access for Claude Code");
     const script = args.slice(0, -2).join("\n");
     expect(script).toContain('buttons {"Cancel", "Allow full access"} default button "Cancel" cancel button "Cancel" with icon caution giving up after 120');
@@ -594,9 +613,10 @@ describe("the dialog commands", () => {
   it("Windows: a form with Cancel as the default, a 120 s timer, the approved text; only the exact token allows", async () => {
     expect(B.ACCESS_DIALOG_TEXT.win32).toBe(WIN_EXPECT);
     const run = runner(0, B.ACCESS_WINDOWS_ALLOW_OUT);
-    expect(await B.systemAccessDialog("win32", {}, run)).toBe("allow");
-    const { file, args } = run.calls[0];
-    expect(file).toBe("powershell.exe");
+    expect(await B.systemAccessDialog("win32", { SystemRoot: "D:\\Win", PATH: "C:\\evil" }, run, { origin: APP })).toBe("allow");
+    const { file, args, o } = run.calls[0];
+    expect(file).toBe("D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"); // from SystemRoot, not PATH
+    expect(o.env.PATH).not.toContain("evil");
     expect(args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
     const script = args[3];
     expect(script).toContain("$f.TopMost = $true");
@@ -604,7 +624,9 @@ describe("the dialog commands", () => {
     expect(script).toContain("$t.Interval = 120000");
     expect(script).toContain("'Allow full access'");
     expect(script).toContain("'GilbApp: full access for Claude Code'");
-    for (const line of WIN_EXPECT.split("\n").filter(Boolean)) expect(script).toContain(`'${line}'`);
+    const b64 = /FromBase64String\('([A-Za-z0-9+/=]+)'\)/.exec(script)[1];
+    const wl = WIN_EXPECT.split("\n");
+    expect(Buffer.from(b64, "base64").toString("utf8")).toBe([wl[0], `Asked by: ${APP}`, ...wl.slice(1)].join("\n")); // the text is DATA inside the script
     const out = (stdout, code = 0) => B.systemAccessDialog("win32", {}, runner(code, stdout));
     expect(await out("")).toBe("cancel");
     expect(await out("GILB-ACCESS-ALLOWED\n")).toBe("allow");
@@ -616,14 +638,16 @@ describe("the dialog commands", () => {
 
   it("Linux: zenity --question with the labels, a 120 s timeout and no markup; exit 0 allows, 1 cancels, 5 is a timeout, a missing zenity rejects", async () => {
     const run = runner(0);
-    expect(await B.systemAccessDialog("linux", {}, run)).toBe("allow");
+    const z = { zenity: "/usr/bin/zenity", origin: APP };
+    expect(await B.systemAccessDialog("linux", {}, run, z)).toBe("allow");
     const { file, args } = run.calls[0];
-    expect(file).toBe("zenity");
+    expect(file).toBe("/usr/bin/zenity");
     expect(args).toEqual(expect.arrayContaining(["--question", "--no-markup", "--title=GilbApp: full access for Claude Code", "--ok-label=Allow full access", "--cancel-label=Cancel", "--timeout=120", "--width=520"]));
-    expect(args.find((a) => a.startsWith("--text=")).slice(7)).toBe(B.ACCESS_DIALOG_TEXT.linux);
-    expect(await B.systemAccessDialog("linux", {}, runner(1))).toBe("cancel");
-    expect(await B.systemAccessDialog("linux", {}, runner(5))).toBe("timeout");
-    await expect(B.systemAccessDialog("linux", {}, runner(null, "", { spawnError: true }))).rejects.toThrow();
-    await expect(B.systemAccessDialog("linux", {}, runner(255))).rejects.toThrow();
+    expect(args.find((a) => a.startsWith("--text=")).slice(7)).toBe(B.accessDialogText("linux", APP));
+    expect(await B.systemAccessDialog("linux", {}, runner(1), z)).toBe("cancel");
+    expect(await B.systemAccessDialog("linux", {}, runner(5), z)).toBe("timeout");
+    await expect(B.systemAccessDialog("linux", {}, runner(null, "", { spawnError: true }), z)).rejects.toThrow();
+    await expect(B.systemAccessDialog("linux", {}, runner(255), z)).rejects.toThrow();
+    await expect(B.systemAccessDialog("linux", {}, runner(0), { origin: APP })).rejects.toThrow(); // no zenity found: never a PATH lookup
   });
 });

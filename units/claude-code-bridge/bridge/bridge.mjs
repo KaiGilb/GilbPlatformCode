@@ -37,7 +37,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, execFile } from "node:child_process";
+import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const WEB_SCOPES = ["once", "turn"];
 /** A count the page may be shown: a finite integer from 0 to 1e9. Anything else is left out. */
@@ -972,11 +972,48 @@ export function resolveClaudeLaunch(bin, env = process.env, o = {}) {
  * Stops a child. Off Windows: SIGTERM, as before. On Windows kill() ends only that process and leaves what it started, so the
  * whole tree is ended with taskkill (absolute path under SystemRoot). Resolves when it is done.
  */
+/** Marks a child that leads its own process group (spawned `detached` off Windows): stopping it stops the whole group. */
+const GROUP_LEADER = Symbol("groupLeader");
+const KILL_GRACE_MS = 2000;
+const groupGone = (pid) => {
+    try {
+        process.kill(-pid, 0);
+        return false;
+    }
+    catch (e) {
+        return e.code === "ESRCH";
+    }
+};
+/** SIGTERM to the whole group, SIGKILL after the grace, then waits until no member is left (at most a few seconds more). */
+export async function killGroup(pid, graceMs = KILL_GRACE_MS) {
+    const wait = async (ms) => {
+        const until = Date.now() + ms;
+        while (!groupGone(pid) && Date.now() < until)
+            await new Promise((r) => setTimeout(r, 25));
+        return groupGone(pid);
+    };
+    if (groupGone(pid))
+        return;
+    try {
+        process.kill(-pid, "SIGTERM");
+    }
+    catch { /* gone, or not ours to signal */ }
+    if (await wait(graceMs))
+        return;
+    try {
+        process.kill(-pid, "SIGKILL");
+    }
+    catch { /* gone */ }
+    await wait(3000);
+}
 export function killChild(child, env = process.env, o = {}) {
     if (!child)
         return Promise.resolve();
     const platform = o.platform ?? process.platform;
     if (platform !== "win32") {
+        const leader = child[GROUP_LEADER];
+        if (leader !== undefined)
+            return killGroup(leader, o.graceMs);
         child.kill("SIGTERM");
         return Promise.resolve();
     }
@@ -1253,7 +1290,7 @@ export function fileToolDenyRules(places) {
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
 export function codeTurnSettings(home, platform, extraDenyRead = [], approval = "session", claudeConfigDir = "", delegate = false) {
     // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
-    const fileRules = fileToolDenyRules(credentialPlaces(home, platform, claudeConfigDir));
+    const fileRules = fileToolDenyRules([...credentialPlaces(home, platform, claudeConfigDir), ...extraDenyRead.filter((p) => path.isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p))]);
     const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
     if (platform === "win32") {
         // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
@@ -1817,24 +1854,22 @@ function systemOpenFolder(platform, abs) {
     });
 }
 const WINDOWS_FOLDER_SCRIPT = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = '${FOLDER_PROMPT}'; $d.ShowNewFolderButton = $true; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }`;
+/** The command of the system's own folder dialog: an absolute program and a constant text. Null: no dialog can be shown (no zenity). */
+export function folderDialogCommand(platform, env, zenity = null) {
+    if (platform === "darwin")
+        return { file: "/usr/bin/osascript", args: ["-e", `POSIX path of (choose folder with prompt "${FOLDER_PROMPT}" default location (path to home folder))`] };
+    if (platform === "win32")
+        return { file: windowsPowerShell(env), args: ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_FOLDER_SCRIPT] };
+    return zenity ? { file: zenity, args: ["--file-selection", "--directory", `--title=${FOLDER_PROMPT}`] } : null;
+}
 /** The system's own folder dialog, on this computer. The commands and their text are constants: no page text goes into them. Resolves the path, or null for cancel. */
-function systemFolderDialog(platform, env) {
-    let file;
-    let args;
-    if (platform === "darwin") {
-        file = "osascript";
-        args = ["-e", `POSIX path of (choose folder with prompt "${FOLDER_PROMPT}" default location (path to home folder))`];
-    }
-    else if (platform === "win32") {
-        file = "powershell.exe";
-        args = ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_FOLDER_SCRIPT];
-    }
-    else {
-        file = "zenity";
-        args = ["--file-selection", "--directory", `--title=${FOLDER_PROMPT}`];
-    }
+function systemFolderDialog(platform, env, zenity = null) {
+    const cmd = folderDialogCommand(platform, env, zenity);
+    if (!cmd)
+        return Promise.reject(new Error("no zenity in /usr/bin or /bin"));
+    const { file, args } = cmd;
     return new Promise((resolve, reject) => {
-        execFile(file, args, { timeout: DIALOG_MAX_MS, windowsHide: false, env: childEnv(env) }, (err, stdout, stderr) => {
+        execFile(file, args, { timeout: DIALOG_MAX_MS, windowsHide: false, env: dialogEnv(platform, env) }, (err, stdout, stderr) => {
             const out = String(stdout ?? "").replace(/[\r\n]+$/, "");
             if (!err)
                 return resolve(out === "" ? null : out.replace(/(.)[\\/]+$/, "$1"));
@@ -1849,12 +1884,25 @@ function systemFolderDialog(platform, env) {
 /** Where the mode is kept: `access.json` in the state folder. */
 export const ACCESS_FILE = "access.json";
 const ACCESS_FILE_MAX = 4096;
+/** Windows: is the file's owner the user running the bridge? (Owner SID against the current user's SID, through the system's own PowerShell.) Any failure is "no". */
+export function windowsOwnerIsMe(file) {
+    try {
+        const root = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
+        const ps = path.win32.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        const script = `$f = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${Buffer.from(file, "utf8").toString("base64")}')); $o = (Get-Acl -LiteralPath $f).GetOwner([System.Security.Principal.SecurityIdentifier]).Value; $m = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; if ($o -eq $m) { [Console]::Out.Write('OWNER-OK') }`;
+        const out = execFileSync(ps, ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 15000, windowsHide: true, encoding: "utf8", env: dialogEnv("win32", process.env) });
+        return out === "OWNER-OK";
+    }
+    catch {
+        return false;
+    }
+}
 /**
  * Reads the saved mode. `exists` is whether anything is at the path (a bad file still counts: it says folder and `--full-access` does
  * not override it). Only `{"version":1,"mode":"folder"|"computer"}` gives computer; a bad shape, a read error, a link, a thing that is not
- * a regular file, one over 4 KB, or (macOS, Linux) one that is not owned by this user or that others can write: folder.
+ * a regular file, one over 4 KB, or (macOS, Linux) one that is not owned by this user, that others can write, or that has a second hard link; (Windows) one whose owner is not the current user: folder.
  */
-export function readAccessFile(file, platform = process.platform, uid = process.getuid?.()) {
+export function readAccessFile(file, platform = process.platform, uid = process.getuid?.(), winOwnerOk = windowsOwnerIsMe) {
     let ls;
     try {
         ls = fs.lstatSync(file);
@@ -1870,7 +1918,9 @@ export function readAccessFile(file, platform = process.platform, uid = process.
         const st = fs.fstatSync(fd);
         if (!st.isFile() || st.size > ACCESS_FILE_MAX || st.ino !== ls.ino || st.dev !== ls.dev)
             return { exists: true, mode: "folder" };
-        if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0))
+        if (platform !== "win32" && ((uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0 || st.nlink > 1))
+            return { exists: true, mode: "folder" };
+        if (platform === "win32" && !winOwnerOk(file))
             return { exists: true, mode: "folder" };
         const buf = Buffer.alloc(ACCESS_FILE_MAX + 1);
         const n = fs.readSync(fd, buf, 0, ACCESS_FILE_MAX + 1, 0);
@@ -1924,6 +1974,33 @@ export function applyAccessFlag(stateDir, v) {
     }
     return { ok: true, message: "" };
 }
+/**
+ * `--install --full-access`: the flag is NOT kept in the service's launch arguments (a downgrade, a rollback or a lost access.json would then bring
+ * full access back with no window). It seeds access.json once, only when there is no file yet. Never throws.
+ */
+export function seedAccessFile(stateDir, wantComputer, platform = process.platform) {
+    if (!wantComputer)
+        return;
+    if (readAccessFile(path.join(stateDir, ACCESS_FILE), platform).exists)
+        return;
+    try {
+        writeAccessFile(path.join(stateDir, ACCESS_FILE), "computer");
+    }
+    catch { /* the notice says what the saved mode is */ }
+}
+/** The state folder may not sit inside the code folder or ~/Developer: a code turn can write both. Returns the refusal text, or "". */
+export function stateDirProblem(stateDir, workspace, home, platform = process.platform) {
+    const ci = platform === "darwin" || platform === "win32";
+    const P = platform === "win32" ? path.win32 : path;
+    const norm = (p) => { const r = resolveThroughLinks(P.resolve(p)); return ci ? r.toLowerCase() : r; };
+    const inside = (child, parent) => child === parent || child.startsWith(parent.endsWith(P.sep) ? parent : parent + P.sep);
+    const sd = norm(stateDir);
+    if (workspace && inside(sd, norm(workspace)))
+        return `The state folder ${stateDir} is inside the code folder, where a code turn can change it. Choose a --state-dir outside it.`;
+    if (inside(sd, norm(P.join(home, "Developer"))))
+        return `The state folder ${stateDir} is inside ~/Developer, where a code turn can change it. Choose a --state-dir outside it.`;
+    return "";
+}
 /** `--uninstall`: forget the saved mode (no file = folder, and a later `--install --full-access` seeds again). Never throws. */
 export function clearAccessFile(stateDir) {
     try {
@@ -1968,12 +2045,55 @@ const ACCESS_WINDOWS_LINES = [
     "You can switch back in GilbApp at any time.",
 ];
 export const ACCESS_DIALOG_TEXT = { darwin: ACCESS_MAC_LINES.join("\n"), win32: ACCESS_WINDOWS_LINES.join("\n"), linux: ACCESS_LINUX_LINES.join("\n") };
+/** The dialog text with ONE added line after the first (title) line: `Asked by: <origin>`. The origin is an allowed origin that the caller checked; it is only ever passed as an argument. */
+export function accessDialogText(platform, origin) {
+    const lines = platform === "darwin" ? ACCESS_MAC_LINES : platform === "win32" ? ACCESS_WINDOWS_LINES : ACCESS_LINUX_LINES;
+    return [lines[0], `Asked by: ${origin}`, ...lines.slice(1)].join("\n");
+}
+/** An origin fit to show: `https://host[:port]` or `http://` for this computer, nothing else. */
+export const originFitForDialog = (o) => typeof o === "string" && o.length <= 200 && /^https?:\/\/[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(o);
+/**
+ * The environment of a consent-dialog child (0.3.19): nothing from the bridge's environment except a short list the window needs, and a fixed PATH.
+ * The dialog program itself is always run by absolute path, so a planted program on the person's PATH can never answer for the person.
+ */
+export function dialogEnv(platform, env) {
+    const keep = platform === "win32"
+        ? ["SystemRoot", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "USERNAME", "COMPUTERNAME", "ComSpec", "PATHEXT"]
+        : ["HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY"];
+    const out = {};
+    for (const k of keep) {
+        const v = envGet(env, k);
+        if (v !== undefined)
+            out[k] = v;
+    }
+    if (platform === "win32") {
+        const root = envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows";
+        out.PATH = `${path.win32.join(root, "System32")};${root}`;
+    }
+    else {
+        out.PATH = "/usr/bin:/bin";
+    }
+    return out;
+}
+/** The system's own PowerShell, from the real SystemRoot (never found through PATH). */
+export const windowsPowerShell = (env) => path.win32.join(envGet(env, "SystemRoot") ?? envGet(env, "windir") ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+/** zenity, found once at start in the two system folders only (never through PATH, never /usr/local or a home folder). Null: no dialog can be shown. */
+export function resolveZenity(exists = (p) => { try {
+    return fs.statSync(p).isFile();
+}
+catch {
+    return false;
+} }) {
+    return ["/usr/bin/zenity", "/bin/zenity"].find((p) => exists(p)) ?? null;
+}
 /** What macOS prints when Allow was clicked. Nothing else counts. */
 export const ACCESS_MAC_ALLOW_OUT = "button returned:Allow full access, gave up:false";
 /** What the Windows form prints when Allow was clicked. Nothing else counts. */
 export const ACCESS_WINDOWS_ALLOW_OUT = "GILB-ACCESS-ALLOWED";
 const psQuote = (t) => `'${t.replace(/'/g, "''")}'`;
-const ACCESS_WINDOWS_SCRIPT = [
+const b64 = (t) => Buffer.from(t, "utf8").toString("base64");
+/** The Windows form. The text (with the asking page) is a base64 DATA value inside the script, decoded by PowerShell: `-Command` would glue extra arguments into the command, so an argument is not safe there. */
+const accessWindowsScript = (text) => [
     "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing",
     "$script:ok = $false",
     "$f = New-Object System.Windows.Forms.Form",
@@ -1981,7 +2101,7 @@ const ACCESS_WINDOWS_SCRIPT = [
     "$f.TopMost = $true; $f.StartPosition = 'CenterScreen'; $f.FormBorderStyle = 'FixedDialog'; $f.MaximizeBox = $false; $f.MinimizeBox = $false; $f.ShowInTaskbar = $true",
     "$f.ClientSize = New-Object System.Drawing.Size(540, 290)",
     "$l = New-Object System.Windows.Forms.Label",
-    `$l.Text = (@(${ACCESS_WINDOWS_LINES.map(psQuote).join(",")}) -join [Environment]::NewLine)`,
+    `$l.Text = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64(text)}'))`,
     "$l.Location = New-Object System.Drawing.Point(14, 14); $l.Size = New-Object System.Drawing.Size(512, 220)",
     "$c = New-Object System.Windows.Forms.Button; $c.Text = 'Cancel'; $c.DialogResult = [System.Windows.Forms.DialogResult]::Cancel",
     "$c.Location = New-Object System.Drawing.Point(300, 248); $c.Size = New-Object System.Drawing.Size(110, 30)",
@@ -1996,23 +2116,24 @@ const ACCESS_WINDOWS_SCRIPT = [
     `if ($script:ok) { [Console]::Out.Write(${psQuote(ACCESS_WINDOWS_ALLOW_OUT)}) }`,
 ].join("\n");
 /** The command a platform runs for the access dialog. Constant text only: nothing from a request goes in. */
-export function accessDialogCommand(platform) {
+export function accessDialogCommand(platform, env = process.env, origin = "", zenity = "/usr/bin/zenity") {
+    const text = accessDialogText(platform, origin);
     if (platform === "darwin") {
         // The text and the title go in as arguments of the script's `run` handler, so no character of either can end the script.
         return {
-            file: "osascript",
+            file: "/usr/bin/osascript",
             args: [
                 "-e", "on run argv",
                 "-e", `display dialog (item 1 of argv) with title (item 2 of argv) buttons {"Cancel", "${ACCESS_ALLOW_LABEL}"} default button "Cancel" cancel button "Cancel" with icon caution giving up after ${ACCESS_DIALOG_SECONDS}`,
                 "-e", "end run",
-                ACCESS_DIALOG_TEXT.darwin,
+                text,
                 ACCESS_DIALOG_TITLE,
             ],
         };
     }
     if (platform === "win32")
-        return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", ACCESS_WINDOWS_SCRIPT] };
-    return { file: "zenity", args: ["--question", "--no-markup", `--title=${ACCESS_DIALOG_TITLE}`, `--text=${ACCESS_DIALOG_TEXT.linux}`, `--ok-label=${ACCESS_ALLOW_LABEL}`, "--cancel-label=Cancel", `--timeout=${ACCESS_DIALOG_SECONDS}`, "--width=520"] };
+        return { file: windowsPowerShell(env), args: ["-NoProfile", "-NonInteractive", "-Command", accessWindowsScript(text)] };
+    return { file: zenity, args: ["--question", "--no-markup", `--title=${ACCESS_DIALOG_TITLE}`, `--text=${text}`, `--ok-label=${ACCESS_ALLOW_LABEL}`, "--cancel-label=Cancel", `--timeout=${ACCESS_DIALOG_SECONDS}`, "--width=520"] };
 }
 /** Did this finished dialog command mean Allow? Only the exact success of each platform: macOS's exact line (trailing newline only), Windows' exact token, zenity's exit 0. */
 export function accessDialogAllowed(platform, code, stdout) {
@@ -2031,9 +2152,11 @@ const realAccessRun = (file, args, o) => new Promise((resolve) => {
     });
 });
 /** Opens the access dialog and waits. Resolves allow / cancel / timeout; REJECTS when the dialog could not be shown (the caller never allows then). `run` is replaceable by tests. */
-export async function systemAccessDialog(platform, env, run = realAccessRun) {
-    const c = accessDialogCommand(platform);
-    const r = await run(c.file, c.args, { timeout: (ACCESS_DIALOG_SECONDS + 30) * 1000, env: childEnv(env) });
+export async function systemAccessDialog(platform, env, run = realAccessRun, o = {}) {
+    if (platform !== "darwin" && platform !== "win32" && !o.zenity)
+        throw new Error("no zenity in /usr/bin or /bin");
+    const c = accessDialogCommand(platform, env, o.origin ?? "", o.zenity ?? undefined);
+    const r = await run(c.file, c.args, { timeout: (ACCESS_DIALOG_SECONDS + 30) * 1000, env: dialogEnv(platform, env) });
     if (r.killed)
         return "timeout";
     if (r.spawnError)
@@ -2087,7 +2210,12 @@ export function createBridge(opts = {}) {
     // 0.3.19: the access mode is runtime state. Every turn takes its own copy at creation (turn.computer, turn.filesOnly) and uses only that;
     // the live value is read for /v1/hello and for NEW turns.
     const accessFile = opts.stateDir ? path.join(opts.stateDir, ACCESS_FILE) : null;
-    const savedAccess = accessFile ? readAccessFile(accessFile, platform) : { exists: false, mode: "folder" };
+    const savedAccess = accessFile ? readAccessFile(accessFile, platform, process.getuid?.(), opts.winOwnerOk) : { exists: false, mode: "folder" };
+    /** zenity, found once at start in the two system folders (the test hook `which` stands in for the lookup). */
+    const zenity = opts.zenityPath !== undefined ? opts.zenityPath : opts.which ? (opts.which("zenity") ? "/usr/bin/zenity" : null) : platform === "darwin" || platform === "win32" ? null : resolveZenity();
+    /** The bridge's own state folder as it is on disk (a custom --state-dir too): barred to every code turn. */
+    const stateProtected = opts.stateDir ? [...new Set([path.resolve(opts.stateDir), resolveThroughLinks(path.resolve(opts.stateDir))])] : [];
+    const protectedExtra = [...(opts.extraProtected ?? []), ...stateProtected];
     let accessMode = savedAccess.exists ? savedAccess.mode : opts.fullAccess === true ? "computer" : "folder";
     let accessSource = savedAccess.exists ? "file" : opts.fullAccess === true ? "flag" : "default";
     if (!savedAccess.exists && accessMode === "computer" && accessFile) {
@@ -2103,7 +2231,7 @@ export function createBridge(opts = {}) {
     const sandboxTmpDirs = () => [...new Set([os.tmpdir(), envGet(env, "TMPDIR") ?? ""].filter((x) => x && path.isAbsolute(x)))];
     /** 0.3.13: computer mode on macOS and Linux runs inside Claude Code's OS sandbox (Windows has none, so every call is asked there). Decided by the turn's own copy of the mode. */
     const sandboxedTurn = (t) => t.computer && codePlatform !== "win32" && t.code && t.approval === "session";
-    const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, opts.extraProtected ?? []), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
+    const protectOpts = (t) => ({ home, places: [...new Set([...protectedPlaces(home, protectedExtra), ...credentialPlaces(home, codePlatform, envGet(env, "CLAUDE_CONFIG_DIR") ?? "")])], base: t.proj?.path ?? workspace?.path ?? home, ci: codePlatform === "darwin" || codePlatform === "win32" });
     /** The folder's identity on disk (device and inode of its real path), so a different folder put at the same path is noticed. "" = unknown. */
     const idOf = (p) => {
         try {
@@ -2264,7 +2392,36 @@ export function createBridge(opts = {}) {
     let port = opts.port ?? DEFAULT_PORT;
     // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
     const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
-    const stopChild = (c) => killChild(c, env, opts.platformOpts);
+    const stopChild = (c) => killChild(c, env, { ...opts.platformOpts, graceMs: opts.killGraceMs });
+    /**
+     * Code-turn children that are still alive, kept apart from the turns table (a turn leaves the table the moment its page hangs up, while its
+     * claude, or something it started, may still run). A code child leads its own process group (off Windows); when claude ends, whatever is
+     * left in its group is stopped too, and only then is it forgotten. ON is refused while this is not empty.
+     */
+    const liveGroups = new Map();
+    function trackCodeChild(child) {
+        const pid = child.pid;
+        if (pid === undefined)
+            return;
+        liveGroups.set(pid, child);
+        if (platform !== "win32")
+            child[GROUP_LEADER] = pid;
+        let reaped = false;
+        const reap = () => {
+            if (reaped)
+                return;
+            reaped = true;
+            const done = () => {
+                delete child[GROUP_LEADER];
+                liveGroups.delete(pid);
+            };
+            if (platform === "win32")
+                return done();
+            void killGroup(pid, opts.killGraceMs).then(done, done);
+        };
+        child.on("exit", reap);
+        child.on("error", reap);
+    }
     let pairingCode = newPairingCode();
     let pairFailures = 0;
     const pairingTtlMs = opts.pairingTtlMs ?? PAIRING_TTL_MS;
@@ -3235,7 +3392,7 @@ export function createBridge(opts = {}) {
             "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
             "--permission-prompts", "host",
             "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, opts.extraProtected ?? []), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
+            "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
             "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
             "--system-prompt-snapshot", "off",
         ];
@@ -3274,7 +3431,7 @@ export function createBridge(opts = {}) {
             "--permission-prompts", turn.approval === "each-write" || !filesOnly ? "host" : "none",
             ...(turn.approval === "each-write" || !filesOnly ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
             "--disable-slash-commands",
-            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, opts.extraDenyRead ?? [], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
+            "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
             "--system-prompt", turn.system,
             "--system-prompt-snapshot", "off",
             "--append-system-prompt", turn.proj
@@ -3371,11 +3528,15 @@ export function createBridge(opts = {}) {
                     env: turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
+                    // A code turn leads its own process group (off Windows), so a stop reaches everything it started.
+                    ...(turn.code && platform !== "win32" ? { detached: true } : {}),
                 });
             }
             catch (e) {
                 return resolve({ error: `Could not start Claude Code: ${e?.message ?? e}`, sessionId: mode.sessionId, model: "" });
             }
+            if (turn.code)
+                trackCodeChild(child);
             turn.child = child;
             let buf = "";
             let stderr = "";
@@ -3567,6 +3728,10 @@ export function createBridge(opts = {}) {
                 return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
             if (accessDialogOpen)
                 return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
+            // Folder mode could not be written down: until it can be, no code turn (a restart might bring full access back).
+            if (accessUnsaved && !(accessMode === "folder" && saveAccess("folder")))
+                return json(res, 409, { error: "The folder mode could not be saved on this computer, so code turns are stopped until it can be.", code: "AccessNotSaved" });
+            accessUnsaved = false;
             if (body.project !== undefined) {
                 proj = resolveProject(body.project);
                 if (!proj)
@@ -3809,14 +3974,13 @@ export function createBridge(opts = {}) {
             return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
         if (workspace)
             folderStillGood();
-        const which = opts.which ?? onPath;
-        if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !which("zenity")) {
+        if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !zenity) {
             return json(res, 501, { error: "No folder dialog on this computer. Start the bridge with --workspace <folder>." });
         }
         dialogOpen = true;
         let picked;
         try {
-            picked = await (opts.chooseFolder ?? (() => systemFolderDialog(platform, env)))();
+            picked = await (opts.chooseFolder ?? (() => systemFolderDialog(platform, env, zenity)))();
         }
         catch (e) {
             return json(res, 500, { error: `The folder dialog failed: ${e?.message ?? e}` });
@@ -4082,15 +4246,45 @@ export function createBridge(opts = {}) {
         (opts.exit ?? ((c) => process.exit(c)))(UPDATE_EXIT_CODE);
     }
     // ---- the access switch (0.3.19) ---------------------------------------------------------------------------------------
-    /** True while the access window is open on this computer: no new code turn starts, no folder dialog opens, no second access window. */
+    /** True while the access window is open on this computer: no new code turn starts, no folder dialog opens, no second access window, no update. */
     let accessDialogOpen = false;
     /** Counts every lowering, so a window answered after the person switched to folder cannot raise the mode again. */
     let accessEpoch = 0;
-    let accessCooldownUntil = 0;
-    const ACCESS_COOLDOWN_MS = 30_000;
+    /** Set when "folder" could be neither written nor the file removed: the file may still say computer, so no code turn starts until a save works. */
+    let accessUnsaved = false;
+    const ACCESS_COOLDOWNS_MS = [30_000, 120_000, 600_000];
     const ACCESS_ON_PER_HOUR = 5;
-    const accessOnStamps = new Map();
-    const canAccessDialog = () => !!opts.accessDialog || platform === "darwin" || platform === "win32" || (opts.which ?? onPath)("zenity");
+    const limitsFile = opts.stateDir ? path.join(opts.stateDir, "access-limits.json") : null;
+    /** Kept across restarts: when the window was shown (all pages together), how many refusals in a row, and the refusal cooldown. */
+    const limits = { stamps: [], denials: 0, cooldownUntil: 0 };
+    if (limitsFile) {
+        try {
+            const v = JSON.parse(fs.readFileSync(limitsFile, "utf8"));
+            const nums = (x) => typeof x === "number" && Number.isFinite(x);
+            if (v && v.version === 1 && Array.isArray(v.stamps) && v.stamps.every(nums) && nums(v.denials) && nums(v.cooldownUntil)) {
+                limits.stamps = v.stamps.slice(-50);
+                limits.denials = Math.max(0, Math.min(100, Math.floor(v.denials)));
+                limits.cooldownUntil = v.cooldownUntil;
+            }
+        }
+        catch { /* none, or damaged: start empty */ }
+    }
+    const saveLimits = () => {
+        if (!limitsFile)
+            return;
+        try {
+            fs.mkdirSync(path.dirname(limitsFile), { recursive: true, mode: 0o700 });
+            const tmp = `${limitsFile}.${process.pid}.tmp`;
+            fs.rmSync(tmp, { force: true });
+            fs.writeFileSync(tmp, JSON.stringify({ version: 1, ...limits }), { mode: 0o600, flag: "wx" });
+            fs.renameSync(tmp, limitsFile);
+        }
+        catch (e) {
+            log(`could not save the access limits: ${e?.message ?? e}`);
+        }
+    };
+    const canAccessDialog = () => !!opts.accessDialog || platform === "darwin" || platform === "win32" || !!zenity;
+    /** Saves the mode. Lowering that cannot be written tries removing the file (no file means folder); only if both fail is it `false`. */
     const saveAccess = (m) => {
         if (!accessFile)
             return true; // memory only (tests, a bridge made without a state folder)
@@ -4100,28 +4294,42 @@ export function createBridge(opts = {}) {
         }
         catch (e) {
             log(`could not save the access mode: ${e?.message ?? e}`);
-            return false;
         }
+        if (m === "folder") {
+            try {
+                fs.rmSync(accessFile, { force: true });
+                if (!fs.lstatSync(accessFile, { throwIfNoEntry: false }))
+                    return true;
+            }
+            catch { /* both failed */ }
+        }
+        return false;
     };
-    /** Folder mode now, no questions. Code turns that run in computer mode are cancelled the way the Stop route cancels one: a turn in flight must not keep more power than the person just allowed. */
-    function lowerAccess() {
+    /** Any code child that is still alive, in the turns table or not. */
+    const codeActivity = () => codeTurnRunning() || liveGroups.size > 0;
+    /** Folder mode now, no questions. Code turns that run in computer mode are cancelled and their whole process groups stopped (SIGTERM, then SIGKILL); this waits until they are gone. */
+    async function lowerAccess() {
         const changed = accessMode !== "folder";
         accessEpoch += 1;
         accessMode = "folder";
         accessSource = "file";
         let cancelled = 0;
+        const stops = [];
         for (const t of [...turns.values()]) {
             if (!t.code || !t.computer || t.parent || t.closed)
                 continue;
             t.cancelRequested = true;
             for (const h of t.handoffs) {
                 h.closed = true;
-                void stopChild(h.child);
+                stops.push(stopChild(h.child));
             }
-            void stopChild(t.child);
+            stops.push(stopChild(t.child));
             cancelled += 1;
         }
-        return { changed, cancelled, saved: saveAccess("folder") };
+        const saved = saveAccess("folder");
+        accessUnsaved = !saved;
+        await Promise.all(stops);
+        return { changed, cancelled, saved };
     }
     async function handleAccess(req, res) {
         if (updating())
@@ -4138,16 +4346,21 @@ export function createBridge(opts = {}) {
         if (updating())
             return json(res, 409, UPDATING);
         if (body.mode === "folder") {
-            const r = lowerAccess();
+            const r = await lowerAccess();
             if (!r.saved)
-                return json(res, 500, { error: "Folder mode is on now, but it could not be saved on this computer, so a restart may bring the old mode back.", access: "folder", changed: r.changed, cancelled: r.cancelled, code: "AccessNotSaved" });
+                return json(res, 500, { error: "Folder mode is on now, but it could not be saved on this computer, so no code turn starts until it can be.", access: "folder", changed: r.changed, cancelled: r.cancelled, code: "AccessNotSaved" });
             return json(res, 200, { access: "folder", changed: r.changed, cancelled: r.cancelled });
         }
         // Turning it ON: never without the window, and only when nothing else is going on.
         if (accessMode === "computer")
             return json(res, 200, { access: "computer", changed: false });
-        if (codeTurnRunning())
-            return json(res, 409, { error: "A code turn is running. Switch when it has finished.", code: "TurnRunning" });
+        // The window names the page that asked: the request's own Origin, and only when it is one of the allowed apps.
+        const asking = effectiveOrigin(req)?.origin;
+        if (!originFitForDialog(asking) || !allowedOrigins.includes(asking))
+            return json(res, 403, { error: "Full access can only be asked for by an allowed app, in a browser.", code: "AccessOriginRequired" });
+        const TURN_RUNNING = { error: "Something the AI started is still running. Switch when it has finished.", code: "TurnRunning" };
+        if (codeActivity())
+            return json(res, 409, TURN_RUNNING);
         if (dialogOpen)
             return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
         if (accessDialogOpen)
@@ -4155,22 +4368,20 @@ export function createBridge(opts = {}) {
         if (!canAccessDialog())
             return json(res, 501, { error: "This computer cannot show the full access window (zenity is missing), so full access cannot be turned on from the app.", code: "AccessDialogUnavailable" });
         const t0 = now();
-        if (t0 < accessCooldownUntil)
-            return json(res, 429, { error: "You just said no. Try again in a moment.", code: "AccessCooldown", retryAfterSec: Math.ceil((accessCooldownUntil - t0) / 1000) });
-        const me = callerKey(req);
-        const stamps = (accessOnStamps.get(me) ?? []).filter((x) => t0 - x < 3_600_000);
-        if (stamps.length >= ACCESS_ON_PER_HOUR) {
-            accessOnStamps.set(me, stamps);
-            return json(res, 429, { error: "Too many requests to turn on full access. Try again later.", code: "AccessTooMany", retryAfterSec: Math.ceil((stamps[0] + 3_600_000 - t0) / 1000) });
+        if (t0 < limits.cooldownUntil)
+            return json(res, 429, { error: "You just said no. Try again later.", code: "AccessCooldown", retryAfterSec: Math.ceil((limits.cooldownUntil - t0) / 1000) });
+        limits.stamps = limits.stamps.filter((x) => t0 - x < 3_600_000);
+        if (limits.stamps.length >= ACCESS_ON_PER_HOUR) {
+            return json(res, 429, { error: "Too many requests to turn on full access. Try again later.", code: "AccessTooMany", retryAfterSec: Math.ceil((limits.stamps[0] + 3_600_000 - t0) / 1000) });
         }
-        stamps.push(t0);
-        accessOnStamps.set(me, stamps);
+        limits.stamps.push(t0);
+        saveLimits();
         // From here to the answer no code turn can start (accessDialogOpen), and nothing awaits between the checks above and this line.
         accessDialogOpen = true;
         const epoch = accessEpoch;
         let result;
         try {
-            result = await (opts.accessDialog ?? (() => systemAccessDialog(platform, env)))();
+            result = await (opts.accessDialog ?? ((o) => systemAccessDialog(platform, env, opts.accessRun, { origin: o, zenity })))(asking);
         }
         catch (e) {
             log(`access dialog could not open: ${cleanForLog(e?.message ?? e)}`);
@@ -4179,18 +4390,29 @@ export function createBridge(opts = {}) {
         finally {
             accessDialogOpen = false;
         }
-        if (result === "failed")
+        if (result === "failed") {
+            limits.stamps.pop(); // a window that could not open is not a refusal and does not count
+            saveLimits();
             return json(res, 501, { error: "The full access window could not open on this computer, so nothing was changed.", code: "AccessDialogUnavailable" });
+        }
         if (result !== "allow") {
-            accessCooldownUntil = now() + ACCESS_COOLDOWN_MS;
+            limits.cooldownUntil = now() + ACCESS_COOLDOWNS_MS[Math.min(limits.denials, ACCESS_COOLDOWNS_MS.length - 1)];
+            limits.denials += 1;
+            saveLimits();
             return json(res, 403, { error: "Full access was not allowed on this computer.", code: "AccessDenied" });
         }
         if (updating())
             return json(res, 409, UPDATING);
         if (epoch !== accessEpoch)
             return json(res, 409, { error: "The mode was switched to folder while the window was open, so nothing was changed.", code: "AccessChanged" });
+        if (codeActivity())
+            return json(res, 409, TURN_RUNNING); // checked again after Allow, before anything is written
         if (!saveAccess("computer"))
             return json(res, 500, { error: "Could not save the mode on this computer, so nothing was changed.", code: "AccessNotSaved" });
+        limits.denials = 0;
+        limits.cooldownUntil = 0;
+        saveLimits();
+        accessUnsaved = false;
         accessMode = "computer";
         accessSource = "file";
         return json(res, 200, { access: "computer", changed: true });
@@ -4205,6 +4427,8 @@ export function createBridge(opts = {}) {
         }
         if (turns.size > 0)
             return json(res, 409, { error: "A chat turn is still running. Update when it has finished.", code: "TurnRunning" });
+        if (accessDialogOpen)
+            return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
         const deps = realUpdateDeps();
         if (body.check === true) {
             const c = await checkUpdate(deps);
@@ -4260,7 +4484,7 @@ export function createBridge(opts = {}) {
                 const n = pairings.size;
                 pairings.clear();
                 savePairings();
-                lowerAccess(); // --unpair-all also puts the mode back to folder
+                await lowerAccess(); // --unpair-all also puts the mode back to folder
                 return json(res, 200, { removed: n });
             }
             return json(res, 200, { code: pairingCode });
@@ -4285,7 +4509,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: accessMode, accessChangeable: true, accessSource, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello() } : {}) });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -4432,7 +4656,7 @@ export function createBridge(opts = {}) {
         return json(res, 404, { error: "not found" });
     }
     const closeBridge = () => {
-        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)));
+        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c))));
         return stopped.then(() => new Promise((resolve) => server.close(() => resolve())));
     };
     const server = http.createServer((req, res) => {
@@ -4519,8 +4743,8 @@ export function parseCli(argv) {
         stateDir: val("--state-dir"),
         workspace,
         fullAccess: argv.includes("--full-access"),
-        /** `--access folder`: lowers the saved mode (never raises it). Any other value is refused by main() and --install. */
-        access: valAll("--access")[0],
+        /** `--access folder`: lowers the saved mode (never raises it). Every value given is checked: the first that is not "folder" is kept here so main() and --install refuse it. */
+        access: ((all) => all.find((v) => v !== "folder") ?? all[0])(valAll("--access")),
     };
 }
 const xmlEsc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -4669,8 +4893,9 @@ export async function serviceInstall(opts, deps) {
         args.push("--allow-origin", o);
     if (opts.workspace)
         args.push("--workspace", opts.workspace);
-    if (opts.fullAccess)
-        args.push("--full-access");
+    const stateBad = stateDirProblem(f.stateDir, opts.workspace, home, platform);
+    if (stateBad)
+        return { ok: false, message: `Not installed.\n${stateBad}` };
     const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
     fs.mkdirSync(path.dirname(f.plist), { recursive: true });
     fs.mkdirSync(path.dirname(f.logFile), { recursive: true });
@@ -4679,6 +4904,8 @@ export async function serviceInstall(opts, deps) {
     const accessSet = applyAccessFlag(f.stateDir, opts.access);
     if (!accessSet.ok)
         return { ok: false, message: `Not installed.\n${accessSet.message}` };
+    if (opts.access === undefined)
+        seedAccessFile(f.stateDir, opts.fullAccess, "darwin");
     if (!fs.existsSync(f.logFile))
         fs.writeFileSync(f.logFile, "", { mode: 0o600 }); // the log shows the pairing code: this user only
     fs.chmodSync(f.logFile, 0o600);
@@ -5099,8 +5326,9 @@ async function installWindows(opts, deps, ctx) {
         base.push("--allow-origin", o);
     if (opts.workspace)
         base.push("--workspace", opts.workspace);
-    if (opts.fullAccess)
-        base.push("--full-access");
+    const stateBadW = stateDirProblem(f.stateDir, opts.workspace, home, "win32");
+    if (stateBadW)
+        return { ok: false, message: `Not installed.\n${stateBadW}` };
     const value = runValue(f);
     if (value.length > RUN_VALUE_MAX)
         return { ok: false, message: `Not installed.\nThe start-up command would be ${value.length} characters; Windows allows ${RUN_VALUE_MAX} in a Run entry. Use a shorter --label.` };
@@ -5118,9 +5346,32 @@ async function installWindows(opts, deps, ctx) {
         return { ok: false, message: `Not installed.\nThe bridge started by an earlier install (process ${prev.stillRunning}) did not stop within 20 seconds. End it in Task Manager (Details tab), then run --install again.` };
     sfs.rm(f.stopFile);
     sfs.mkdirp(f.stateDir);
-    const accessSet = applyAccessFlag(f.stateDir, opts.access);
-    if (!accessSet.ok)
-        return { ok: false, message: `Not installed.\n${accessSet.message}` };
+    // The saved access mode goes through the real file helpers; a test's fake service files get a plain write instead (no real folder is made for a pretend Windows path).
+    const winFile = path.win32.join(f.stateDir, ACCESS_FILE);
+    const winSaved = () => {
+        if (!sfs.exists(winFile))
+            return null;
+        try {
+            const v = JSON.parse(sfs.read(winFile));
+            return v.version === 1 && v.mode === "computer" ? "computer" : "folder";
+        }
+        catch {
+            return "folder";
+        }
+    };
+    if (deps.sfs) {
+        if (opts.access === "folder")
+            sfs.write(winFile, JSON.stringify({ version: 1, mode: "folder", at: new Date().toISOString() }));
+        else if (opts.access === undefined && opts.fullAccess && winSaved() === null)
+            sfs.write(winFile, JSON.stringify({ version: 1, mode: "computer", at: new Date().toISOString() }));
+    }
+    else {
+        const accessSet = applyAccessFlag(f.stateDir, opts.access);
+        if (!accessSet.ok)
+            return { ok: false, message: `Not installed.\n${accessSet.message}` };
+        if (opts.access === undefined)
+            seedAccessFile(f.stateDir, opts.fullAccess, "win32");
+    }
     sfs.mkdirp(f.localDir);
     sfs.write(f.ownerFile, JSON.stringify({ label: opts.label }));
     // The log shows the pairing code. It sits under %LOCALAPPDATA%, inside the user's own profile folder, whose default access rights
@@ -5169,7 +5420,7 @@ async function installWindows(opts, deps, ctx) {
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
   Remove it:              node ${cmd} --uninstall${flags}
-  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${installAccessNotice(f.stateDir, opts, "win32")}`,
+  If a bridge is already running in a PowerShell window, close that window: only one can hold port ${port}.${deps.sfs ? (winSaved() === "computer" ? `\n  ${FULL_ACCESS_NOTICE_WINDOWS}` : winSaved() === "folder" && opts.fullAccess && opts.access !== "folder" ? `\n  ${FULL_ACCESS_SAVED_FOLDER_NOTICE}` : "") : installAccessNotice(f.stateDir, opts, "win32")}`,
     };
 }
 async function uninstallWindows(opts, deps) {
@@ -5355,8 +5606,6 @@ export async function runSupervisor(cli, io = {}) {
         childArgs.push("--allow-origin", o);
     if (cli.workspace)
         childArgs.push("--workspace", cli.workspace);
-    if (cli.fullAccess)
-        childArgs.push("--full-access");
     const realSpawn = () => {
         try {
             if (fs.statSync(f.logFile).size > LOG_ROTATE_BYTES)
@@ -5533,6 +5782,11 @@ async function main() {
             process.exit(2);
         }
         workspace = v.path;
+    }
+    const stateBadRun = stateDirProblem(f.stateDir, workspace, home, platform);
+    if (stateBadRun) {
+        console.error(`\n${stateBadRun}\n`);
+        process.exit(2);
     }
     const writeStatus = (o) => {
         try {
