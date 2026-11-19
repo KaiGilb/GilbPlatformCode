@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge } from "../bridge/bridge.mjs";
+import { createBridge, openFolderCommand } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -171,5 +171,15 @@ describe("hello openFolder", () => {
   it("is true on Linux with xdg-open", async () => {
     await start({ openFolder: undefined, platformOpts: { platform: "linux" }, which: (c) => c === "xdg-open" });
     expect((await hello()).openFolder).toBe(true);
+  });
+});
+
+describe("the default opener command", () => {
+  it("macOS reveals with open -R (never open <dir> or -a Finder, which launch a .app folder); the path is one argv element", () => {
+    expect(openFolderCommand("darwin", "/Users/x/Work/Tool.app")).toEqual({ file: "open", args: ["-R", "/Users/x/Work/Tool.app"] });
+  });
+  it("Windows and Linux pass the folder as the only argument", () => {
+    expect(openFolderCommand("win32", "C:\\Users\\x\\Work")).toEqual({ file: "explorer.exe", args: ["C:\\Users\\x\\Work"] });
+    expect(openFolderCommand("linux", "/home/x/Work")).toEqual({ file: "xdg-open", args: ["/home/x/Work"] });
   });
 });

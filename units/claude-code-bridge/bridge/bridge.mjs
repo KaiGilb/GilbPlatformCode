@@ -1788,11 +1788,23 @@ function onPath(cmd) {
         }
     });
 }
-/** Opens `abs` in the system's file manager. execFile, never a shell; the path is one argument. explorer.exe exits 1 even when it worked, so only a failure to start counts. */
+/**
+ * The command that shows `abs` in the system's file manager (pure; tests inspect it). The path is one argv element, never a shell string.
+ * macOS: `open -R` REVEALS the folder in its parent in Finder. Plain `open <dir>` and `open -a Finder <dir>` both LAUNCH a bundle folder
+ * (x.app, .bundle, .prefPane, .workflow, .pkg, or any folder with the bundle bit) instead of showing it, checked on macOS; `-R` never runs anything.
+ */
+export function openFolderCommand(platform, abs) {
+    if (platform === "darwin")
+        return { file: "open", args: ["-R", abs] };
+    if (platform === "win32")
+        return { file: "explorer.exe", args: [abs] };
+    return { file: "xdg-open", args: [abs] };
+}
+/** Opens `abs` in the system's file manager. explorer.exe exits 1 even when it worked, so only a failure to start counts. */
 function systemOpenFolder(platform, abs) {
-    const file = platform === "darwin" ? "open" : platform === "win32" ? "explorer.exe" : "xdg-open";
+    const { file, args } = openFolderCommand(platform, abs);
     return new Promise((resolve, reject) => {
-        execFile(file, [abs], { timeout: 10_000, windowsHide: false }, (err) => {
+        execFile(file, args, { timeout: 10_000, windowsHide: false }, (err) => {
             const e = err;
             if (!e)
                 return resolve();
