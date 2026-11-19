@@ -38,6 +38,7 @@ async function startBridge(opts = {}) {
   const b = createBridge({
     port: 0, claudeBin: FAKE, allowedOrigins: [APP, "http://[::1]:5197", "https://gilb.example.test"], workDir: path.join(dir, "work"), home, stateDir,
     codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", now: () => clock.t, killGraceMs: 300, snapshotMs: 100,
+    accessRun: async () => ({ code: null, stdout: "", stderr: "", killed: false, spawnError: true }), // default: the program runner under the real dialog can run nothing, so no real window can ever open
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...opts,
   });
   bridges.push(b);
@@ -150,7 +151,7 @@ describe("QAAS2 G1 (HIGH): a child that leaves the process group is found as a r
     phase = 2; // the pid is now somebody else's process
     await accessReq(secret, { mode: "folder" });
     expect(alive(stray.pid)).toBe(true);
-    expect((await accessReq(secret, { mode: "computer" }, {})).status).not.toBe(409); // and it does not hold ON back
+    await until(async () => (await accessReq(secret, { mode: "computer" })).status !== 409); // and it does not hold ON back (the default dialog refuses: 501)
   });
   it("killPids sends SIGKILL only to what the fresh check still confirms", async () => {
     const k = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000)"], { stdio: "ignore" });

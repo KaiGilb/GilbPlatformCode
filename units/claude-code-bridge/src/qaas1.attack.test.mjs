@@ -45,6 +45,8 @@ async function startBridge(opts = {}) {
   const b = createBridge({
     port: 0, claudeBin: FAKE, allowedOrigins: [APP, OTHER_APP], workDir: path.join(dir, "work"), home, stateDir,
     codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", now: () => clock.t, killGraceMs: 400,
+    accessRun: async () => ({ code: null, stdout: "", stderr: "", killed: false, spawnError: true }), // default: the program runner under the real dialog can run nothing, so no real window can ever open
+
     env: { ...process.env, FAKE_CLAUDE_LOG: logFile },
     ...opts,
   });
