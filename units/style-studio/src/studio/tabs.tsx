@@ -8,7 +8,8 @@ import { FONT_CATALOGUE, FONT_CATEGORIES, FONT_PAIRINGS, GENERIC_FOR, SYSTEM_FON
 import { ExtractError } from "./extractClient";
 import { dataUrlToBlob, processLogoFile, readFileText } from "./logo";
 import { saveStyle, type SavedIds, type StoreDeps } from "../save/styleStore";
-import { clampRadius, contrastReport, paletteFromBrand, sheetFromCatalogue, sheetFromSeed, type Mode } from "./model";
+import { clampRadius, contrastReport, paletteFromBrand, resolvePalette, sheetFromCatalogue, sheetFromSeed, type Mode } from "./model";
+import type { PaletteInput } from "@kaigilb/gilbplatformcode-style-runtime";
 
 export interface ExtractResult {
   colors: string[];
@@ -232,6 +233,101 @@ export function SeedTab({ ctx }: { ctx: TabCtx }) {
         ))}
       </fieldset>
       <p className="gs-note">Paper, ink, status colours and the on-accent colour are made to pass contrast automatically.</p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Many colours
+type ManyRole = "accent" | "ink" | "lines" | "ok" | "warn" | "bad" | "onAccent";
+const MANY_ROLES: readonly (readonly [ManyRole, string])[] = [
+  ["accent", "Accent"],
+  ["ink", "Text"],
+  ["lines", "Lines"],
+  ["ok", "OK"],
+  ["warn", "Warning"],
+  ["bad", "Error"],
+  ["onAccent", "Text on accent"],
+];
+const MAX_EXTRA = 6;
+
+/** The colours a mode shows now. Nothing is generated or repaired: gaps are filled only for display, with the same values the preview uses. */
+function manyValues(sheet: StyleSheet, mode: Mode): Record<ManyRole, string> & { extra: string[]; paper: string; surface: string } {
+  const given = mode === "dark" ? sheet.dark : sheet.palette;
+  const r = resolvePalette(sheet, mode);
+  return { accent: r.accent, ink: r.ink, lines: given?.lines ?? r.ink, ok: r.ok, warn: r.warn, bad: r.bad, onAccent: r.onAccent, extra: given?.extra ?? [], paper: r.paper, surface: r.surface };
+}
+
+/** One row: a colour picker and a hex field, kept in sync. A hex of the wrong form is not applied; the field is marked and the old colour stays. */
+function ColourRow({ label, value, onValid, onRemove }: { label: string; value: string; onValid: (hex: string) => void; onRemove?: () => void }) {
+  const uid = useId();
+  const [draft, setDraft] = useState(value);
+  const [bad, setBad] = useState(false);
+  // Follow the sheet when it changed for a reason other than this field's own typing.
+  useEffect(() => {
+    setDraft(value);
+    setBad(false);
+  }, [value]);
+  const type = (v: string) => {
+    setDraft(v);
+    if (HEX_RE.test(v)) {
+      setBad(false);
+      onValid(v);
+    } else setBad(true);
+  };
+  return (
+    <div className="gs-colourrow">
+      <label htmlFor={`${uid}-h`}>{label}</label>
+      <input type="color" aria-label={`${label} picker`} value={HEX_RE.test(value) ? value.toLowerCase() : "#000000"} onChange={(e) => type(e.target.value)} />
+      <input id={`${uid}-h`} type="text" value={draft} maxLength={7} size={9} spellCheck={false} onChange={(e) => type(e.target.value)} aria-invalid={bad} />
+      {onRemove ? <button type="button" className={BTN} onClick={onRemove} aria-label={`Remove ${label}`}>Remove</button> : null}
+      {bad ? <span className="gs-error" role="alert">Not a colour like #e11d48. Kept {value}.</span> : null}
+    </div>
+  );
+}
+
+export function ManyTab({ ctx }: { ctx: TabCtx }) {
+  const { sheet, apply } = ctx;
+  /** Write one change into one mode. Opening the tab writes nothing; only an edit here does. The colour is stored exactly as typed. */
+  const edit = (mode: Mode, patch: (p: PaletteInput) => PaletteInput) => {
+    const v = manyValues(sheet, mode);
+    const base: PaletteInput = (mode === "dark" ? sheet.dark : sheet.palette) ?? { accent: v.accent, paper: v.paper, ink: v.ink, surface: v.surface, lines: v.lines, ok: v.ok, warn: v.warn, bad: v.bad, onAccent: v.onAccent };
+    const next = patch(base);
+    apply({ ...sheet, ...(mode === "dark" ? { dark: next } : { palette: next }), paletteSource: { kind: "manual" } });
+  };
+  return (
+    <>
+      <p className="gs-note">Type every colour you want. They are used exactly as typed: nothing is changed to pass contrast. The contrast check on the Save tab shows any pair that fails.</p>
+      {(["light", "dark"] as const).map((mode) => {
+        const v = manyValues(sheet, mode);
+        return (
+          <fieldset key={mode} className="gs-manyset" data-testid={`gs-many-${mode}`}>
+            <legend>{mode === "light" ? "Light" : "Dark"}</legend>
+            <div className="gs-colourrow gs-colourrow--fixed">
+              <span>Background</span>
+              <span className="gs-swatch" style={{ background: v.paper }} role="img" aria-label={`Paper ${v.paper}`} />
+              <span className="gs-swatch" style={{ background: v.surface }} role="img" aria-label={`Surface ${v.surface}`} />
+              <span className="gs-note">paper and surface: set in Background</span>
+            </div>
+            {MANY_ROLES.map(([role, label]) => (
+              <ColourRow key={`${mode}-${role}`} label={`${mode === "light" ? "Light" : "Dark"} ${label.toLowerCase()}`} value={v[role]} onValid={(hex) => edit(mode, (p) => ({ ...p, [role]: hex }))} />
+            ))}
+            {v.extra.map((c, i) => (
+              <ColourRow
+                key={`${mode}-extra-${i}`}
+                label={`${mode === "light" ? "Light" : "Dark"} chart colour ${i + 1}`}
+                value={c}
+                onValid={(hex) => edit(mode, (p) => ({ ...p, extra: (p.extra ?? []).map((x, j) => (j === i ? hex : x)) }))}
+                onRemove={() => edit(mode, (p) => ({ ...p, extra: (p.extra ?? []).filter((_, j) => j !== i) }))}
+              />
+            ))}
+            <div>
+              <button type="button" className={BTN} disabled={v.extra.length >= MAX_EXTRA} onClick={() => edit(mode, (p) => ({ ...p, extra: [...(p.extra ?? []), "#888888"] }))}>
+                Add chart colour ({v.extra.length} of {MAX_EXTRA})
+              </button>
+            </div>
+          </fieldset>
+        );
+      })}
     </>
   );
 }

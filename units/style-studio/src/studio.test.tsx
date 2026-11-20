@@ -20,11 +20,11 @@ async function importSheet(obj: unknown) {
 }
 
 describe("tabs", () => {
-  it("renders all 8 tabs with tablist roles", () => {
+  it("renders all 9 tabs with tablist roles", () => {
     render(<StyleStudio />);
     expect(screen.getByRole("tablist")).toBeTruthy();
     const names = screen.getAllByRole("tab").map((t) => t.textContent);
-    expect(names).toEqual(["Palettes", "One colour", "From website", "Fonts", "Buttons", "Windows", "Logo", "Save & export"]);
+    expect(names).toEqual(["Palettes", "One colour", "Many colours", "From website", "Fonts", "Buttons", "Windows", "Logo", "Save & export"]);
     expect(screen.getByRole("tabpanel")).toBeTruthy();
   });
 

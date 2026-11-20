@@ -7,7 +7,7 @@ import { ModeButton } from "../ThemeToggle";
 import { BACKGROUND_OPTIONS, currentPaper, defaultSheet, withBackground, type Mode } from "./model";
 import { Preview } from "./Preview";
 import type { SavedIds, StoreDeps } from "../save/styleStore";
-import { ButtonsTab, FontsTab, LogoTab, PalettesTab, SaveTab, SeedTab, WebsiteTab, WindowsTab, type ExtractResult, type TabCtx } from "./tabs";
+import { ButtonsTab, FontsTab, LogoTab, PalettesTab, ManyTab, SaveTab, SeedTab, WebsiteTab, WindowsTab, type ExtractResult, type TabCtx } from "./tabs";
 
 export interface StyleStudioProps {
   initial?: StyleSheet;
@@ -31,6 +31,7 @@ const reducer = (_s: StyleSheet, a: Action): StyleSheet => a.sheet;
 const TABS = [
   { id: "palettes", label: "Palettes" },
   { id: "seed", label: "One colour" },
+  { id: "many", label: "Many colours" },
   { id: "website", label: "From website" },
   { id: "fonts", label: "Fonts" },
   { id: "buttons", label: "Buttons" },
@@ -153,6 +154,7 @@ export function StyleStudio({ initial, onSave, extractFromUrl, includeWada = tru
           <div role="tabpanel" id={`${uid}-panel-${id}`} aria-labelledby={`${uid}-tab-${id}`}>
             {id === "palettes" ? <PalettesTab ctx={ctx} /> : null}
             {id === "seed" ? <SeedTab ctx={ctx} /> : null}
+            {id === "many" ? <ManyTab ctx={ctx} /> : null}
             {id === "website" ? <WebsiteTab ctx={ctx} /> : null}
             {id === "fonts" ? <FontsTab ctx={ctx} /> : null}
             {id === "buttons" ? <ButtonsTab ctx={ctx} /> : null}

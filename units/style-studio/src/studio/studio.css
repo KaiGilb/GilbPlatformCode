@@ -110,3 +110,9 @@
 .gs-studio .gs-seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
 .gs-studio .gs-seg button:last-child { border-radius: 0 6px 6px 0; }
 .gs-studio .gs-seg button[aria-pressed="true"] { background: #0969da; color: #fff; border-color: #0969da; }
+
+.gs-studio .gs-manyset { display: grid; gap: 8px; border: 1px solid #d0d5da; border-radius: 6px; padding: 8px 12px 12px; min-width: 0; }
+.gs-studio .gs-colourrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gs-studio .gs-colourrow > label, .gs-studio .gs-colourrow--fixed > span:first-child { flex: 0 0 11em; }
+.gs-studio .gs-colourrow input[type="color"] { width: 36px; height: 32px; padding: 0; }
+.gs-studio .gs-swatch { width: 28px; height: 28px; border-radius: 4px; border: 1px solid #8a9199; display: inline-block; }
