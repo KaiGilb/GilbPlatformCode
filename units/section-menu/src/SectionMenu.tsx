@@ -349,10 +349,13 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
       next.focus();
     };
     document.addEventListener("keydown", onKey);
-    // Focus lands on the section you are in, so arrows and Tab start from "You are here".
+    // Focus lands on the section you are in, so arrows and Tab start from "You are here". The focus does not
+    // scroll (the page must not move), so the sections' own scroll area is then moved just enough to show it:
+    // at a high page zoom the section you are in sat below the panel's edge (Tom, Safari 150-200 %, 2026-11-20).
     const id = requestAnimationFrame(() => {
       const here = panelRef.current?.querySelector<HTMLElement>("[data-current='true']");
       (here ?? focusables()[0])?.focus({ preventScroll: true });
+      if (here) revealInSectionsArea(here);
     });
     return () => {
       document.removeEventListener("keydown", onKey);
@@ -508,6 +511,68 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
   const hasThird = shownPlaces.length > 0 || forYouList.length > 0;
   const ctx: MenuPanelContext<Id> = { choose: (run, target) => choose(run, target), back };
 
+  // "In <section>": the previewed section's options, or the host panel opened from one of them.
+  const hereColumn = (className?: string) => (
+    <div data-testid="section-menu-here" className={className}>
+      {panel && panel.section === shown.id && renderPanel ? (
+        <>
+          <ColumnHeading>
+            <button
+              type="button"
+              data-testid="section-menu-panel-back"
+              aria-label={L.backTo(shown.label)}
+              onClick={back}
+              className="inline-flex items-center gap-1 min-h-[44px] -ml-1 px-1 text-[var(--accent-ink)] hover:underline normal-case tracking-normal"
+            >
+              <span aria-hidden>‹</span>{L.back}
+            </button>
+            <span className="block mt-1">{panel.label}</span>
+          </ColumnHeading>
+          <div data-testid="section-menu-host-panel" data-panel={panel.panelId}>
+            {renderPanel(panel.panelId, ctx)}
+          </div>
+        </>
+      ) : (
+        <>
+          <ColumnHeading>
+            {L.inSection(shown.label)}
+            {previewing && (
+              <span className="block text-[12px] font-medium tracking-normal normal-case text-[var(--accent-ink)] mt-1">
+                {L.previewHint(shown.label)}
+              </span>
+            )}
+          </ColumnHeading>
+          <OptionList
+            options={shownOptions}
+            onChoose={(o) => onPick(o, shown.id)}
+            onKeyDown={onOptionKey}
+            icon={icon}
+            comingLabel={L.coming}
+          />
+        </>
+      )}
+    </div>
+  );
+
+  // "Also useful here" and "For you".
+  const thirdColumn = (className?: string) =>
+    hasThird ? (
+      <div className={className}>
+        {shownPlaces.length > 0 && (
+          <>
+            <ColumnHeading>{L.alsoUseful}</ColumnHeading>
+            <OptionList options={shownPlaces} onChoose={(o) => onPick(o)} testId="section-menu-places" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
+          </>
+        )}
+        {forYouList.length > 0 && (
+          <>
+            <ColumnHeading>{L.forYou}</ColumnHeading>
+            <OptionList options={forYouList} onChoose={(o) => onPick(o)} testId="section-menu-foryou" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
+          </>
+        )}
+      </div>
+    ) : null;
+
   return (
     <>
       <button
@@ -654,22 +719,27 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
           </div>
         </div>
 
+        {/* The columns. On a phone they are one column that scrolls as one. Wider, each column scrolls by
+            itself in one row as high as the panel, so the sections' area can be moved to show the section
+            you are in without moving the options beside it (0.2.7). Medium stacks the options and the third
+            column in one right-hand column. */}
         <div
+          data-sections-scroll={compact ? "" : undefined}
           className={
-            "flex-1 min-h-0 overflow-auto grid " +
+            "flex-1 min-h-0 grid " +
             (compact
-              ? "grid-cols-1 gap-1 px-3.5 pb-3"
-              : sizeClass === "medium"
-                ? "grid-cols-2 gap-8 px-8 pb-4"
-                : hasThird
-                  ? "grid-cols-[minmax(300px,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] gap-9 px-8 pb-4"
-                  : "grid-cols-[minmax(300px,1.15fr)_minmax(0,2fr)] gap-9 px-8 pb-4")
+              ? "overflow-auto grid-cols-1 gap-1 px-3.5 pb-3"
+              : "grid-rows-[minmax(0,1fr)] " +
+                (sizeClass === "medium"
+                  ? "grid-cols-2 gap-8 px-8 pb-4"
+                  : hasThird
+                    ? "grid-cols-[minmax(300px,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] gap-9 px-8 pb-4"
+                    : "grid-cols-[minmax(300px,1.15fr)_minmax(0,2fr)] gap-9 px-8 pb-4"))
           }
         >
           <div
-            className={
-              compact ? "" : "border-r border-[var(--line)] pr-7 " + (sizeClass === "medium" ? "row-span-2" : "")
-            }
+            data-sections-scroll={compact ? undefined : ""}
+            className={compact ? "" : "min-h-0 overflow-y-auto border-r border-[var(--line)] pr-7"}
             onMouseLeave={clearHover}
           >
             <ColumnHeading>{L.sections}</ColumnHeading>
@@ -724,61 +794,21 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
             </div>
           </div>
 
-          <div data-testid="section-menu-here">
-            {panel && panel.section === shown.id && renderPanel ? (
-              <>
-                <ColumnHeading>
-                  <button
-                    type="button"
-                    data-testid="section-menu-panel-back"
-                    aria-label={L.backTo(shown.label)}
-                    onClick={back}
-                    className="inline-flex items-center gap-1 min-h-[44px] -ml-1 px-1 text-[var(--accent-ink)] hover:underline normal-case tracking-normal"
-                  >
-                    <span aria-hidden>‹</span>{L.back}
-                  </button>
-                  <span className="block mt-1">{panel.label}</span>
-                </ColumnHeading>
-                <div data-testid="section-menu-host-panel" data-panel={panel.panelId}>
-                  {renderPanel(panel.panelId, ctx)}
-                </div>
-              </>
-            ) : (
-              <>
-                <ColumnHeading>
-                  {L.inSection(shown.label)}
-                  {previewing && (
-                    <span className="block text-[12px] font-medium tracking-normal normal-case text-[var(--accent-ink)] mt-1">
-                      {L.previewHint(shown.label)}
-                    </span>
-                  )}
-                </ColumnHeading>
-                <OptionList
-                  options={shownOptions}
-                  onChoose={(o) => onPick(o, shown.id)}
-                  onKeyDown={onOptionKey}
-                  icon={icon}
-                  comingLabel={L.coming}
-                />
-              </>
-            )}
-          </div>
-
-          {hasThird && (
-            <div>
-              {shownPlaces.length > 0 && (
-                <>
-                  <ColumnHeading>{L.alsoUseful}</ColumnHeading>
-                  <OptionList options={shownPlaces} onChoose={(o) => onPick(o)} testId="section-menu-places" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
-                </>
-              )}
-              {forYouList.length > 0 && (
-                <>
-                  <ColumnHeading>{L.forYou}</ColumnHeading>
-                  <OptionList options={forYouList} onChoose={(o) => onPick(o)} testId="section-menu-foryou" onKeyDown={onOptionKey} icon={icon} comingLabel={L.coming} />
-                </>
-              )}
+          {compact ? (
+            <>
+              {hereColumn()}
+              {thirdColumn()}
+            </>
+          ) : sizeClass === "medium" ? (
+            <div className={COLUMN_SCROLL}>
+              {hereColumn()}
+              {thirdColumn()}
             </div>
+          ) : (
+            <>
+              {hereColumn(COLUMN_SCROLL)}
+              {thirdColumn(COLUMN_SCROLL)}
+            </>
           )}
         </div>
 
@@ -811,6 +841,25 @@ function SectionMenuBody<Id extends string, Api, Icon extends string, Gate>(prop
 function openFill(p: OpenColors): string {
   const toward = p.mixToward === "ink" ? "var(--ink)" : "var(--on-accent)";
   return `color-mix(in srgb, var(--accent) ${100 - p.mix}%, ${toward} ${p.mix}%)`;
+}
+
+/** A column wider than a phone: it scrolls by itself, inside the panel's one row. */
+const COLUMN_SCROLL = "min-h-0 overflow-y-auto";
+
+/**
+ * Moves the sections' scroll area (`[data-sections-scroll]`) just enough that `row` shows, as
+ * `scrollIntoView({ block: "nearest" })` would, but only that area: nothing else scrolls, not the page.
+ * A row taller than the area shows from its top. The step is rounded outward to whole pixels: WebKit keeps
+ * scrollTop whole and drops the fraction, which left the row's last pixel under the edge (measured 2026-11-20).
+ * @param row the section row to show
+ */
+export function revealInSectionsArea(row: HTMLElement): void {
+  const area = row.closest<HTMLElement>("[data-sections-scroll]");
+  if (!area) return;
+  const a = area.getBoundingClientRect();
+  const r = row.getBoundingClientRect();
+  if (r.top < a.top) area.scrollTop -= Math.ceil(a.top - r.top);
+  else if (r.bottom > a.bottom) area.scrollTop += Math.ceil(Math.min(r.bottom - a.bottom, r.top - a.top));
 }
 
 /** Everything Tab may stop on inside the panel. `firstFocusable` and the trap read the same list. */

@@ -429,7 +429,9 @@ describe("SectionMenu", () => {
 
     test("medium is two columns; wide is three, or two when there is no third column's content", () => {
       renderMenu({ sizeClass: "medium" });
-      expect(screen.getByTestId("section-menu-here").parentElement!.className).toContain("grid-cols-2");
+      // 0.2.7: in medium the options and the third column share one right-hand scroll column, so the grid is
+      // the nearest grid around "here", no longer always its direct parent.
+      expect(screen.getByTestId("section-menu-here").closest("[class*='grid-cols-']")!.className).toContain("grid-cols-2");
       cleanup();
       renderMenu({ places: undefined, forYou: undefined });
       expect(screen.getByTestId("section-menu-here").parentElement!.className).toContain("minmax(0,2fr)");
