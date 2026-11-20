@@ -17,6 +17,10 @@ A client that reads and writes vault records has to sign each request, drop the 
 - `configureLiveApp({ platformOrigin, idOrigin, systemVaultHosts?, localRigHosts?, credentialOptions? })` (since 0.1.3): the start-up a live app does once. It calls `setBaseOrigin(platformOrigin)`, `setSystemVaultHosts(systemVaultHosts ?? [])`, `setLocalRigHosts(localRigHosts)` when given, makes `new SessionCredential(credentialOptions)` and calls `setLwsAuth(lwsAuthFromSession(credential))`. It also starts `credential.restore()` once and answers it as `ready` (since 0.1.4). It answers `{ credential, idOrigin, platformOrigin, ready }`. **`await ready` before reading `session`**: the stored session comes from IndexedDB, so `session` is empty until the restore ends, and a page that reads it once shows "Not connected". `ready` is one shared promise; `restore` is not called twice. The two origins are the app's own constants (this unit holds no host); an empty one throws before anything is set. For the signed fetch alone take `platform-fetch`.
 
   ```ts
+  // Production origins: the platform is https://gilb.com and the identity host is https://id.gilb.com. An app reads them from its
+  // environment (VITE_PLATFORM_ORIGIN, VITE_ID_ORIGIN) so a test rig can point elsewhere.
+  const PLATFORM_ORIGIN = import.meta.env.VITE_PLATFORM_ORIGIN ?? "https://gilb.com";
+  const ID_ORIGIN = import.meta.env.VITE_ID_ORIGIN ?? "https://id.gilb.com";
   const { credential, idOrigin, ready } = configureLiveApp({ platformOrigin: PLATFORM_ORIGIN, idOrigin: ID_ORIGIN });
   await ready; // before reading credential.session
   const auth = makeSignInAuth({ credential, origin: idOrigin, productName: "My app" }); // signin/session
