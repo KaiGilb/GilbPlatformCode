@@ -29,24 +29,23 @@ export async function loadWadaCatalogue(): Promise<Catalogue> {
   return { id: "wada", name: "Wada", palettes: m.wadaPalettes };
 }
 
-/** Turn a catalogue palette into sheet colours (accent, paper, ink, ...). Contrast is always enforced. */
-export function paletteToSheetColors(palette: CataloguePalette, mode: "light" | "dark" = "light"): Palette {
+/** Default page background per mode when the caller picks none. The palette never supplies paper or surface. */
+export const DEFAULT_PAPER = { light: "#ffffff", dark: "#1c1c1e" } as const;
+
+/**
+ * Turn a catalogue palette into sheet colours. The palette gives accent and hues only. Paper comes from the background choice
+ * (`paper`), surface is a small step from it, and ink, accent and status colours are contrast-repaired against both.
+ */
+export function paletteToSheetColors(palette: CataloguePalette, mode: "light" | "dark" = "light", paper: string = DEFAULT_PAPER[mode]): Palette {
   const parsed = palette.colors.map((c) => ({ hex: c, o: parseColor(c) })).filter((x): x is { hex: string; o: NonNullable<ReturnType<typeof parseColor>> } => x.o !== null);
   if (parsed.length === 0) throw new Error(`palette ${palette.id} has no usable colours`);
   const accentEntry = parsed.reduce((best, x) => (x.o.c > best.o.c ? x : best));
   const base = paletteFromSeed(accentEntry.hex, { mode, harmony: "mono" });
-  const light = parsed.find((x) => x.o.l > 0.93);
-  const darkC = parsed.find((x) => x.o.l < 0.3);
-  if (!light || !darkC) return base;
-  // The palette brings its own paper and ink. Use them (dark mode swaps the roles), then rerun the contrast step.
-  const paperHex = mode === "light" ? light.hex : darkC.hex;
-  const inkHex = mode === "light" ? darkC.hex : light.hex;
-  const surfaceO = parseColor(paperHex)!;
-  const surface = toHex({ ...surfaceO, l: mode === "light" ? Math.min(surfaceO.l + 0.015, 0.995) : surfaceO.l + 0.04 });
-  // Re-derive everything that depends on paper/ink by running the engine's rules on the chosen pair.
-  return rebuild(base, paperHex, inkHex, surface);
+  const paperHex = toHex(parseColor(paper) ?? parseColor(DEFAULT_PAPER[mode])!);
+  const po = parseColor(paperHex)!;
+  const surface = toHex({ ...po, l: mode === "light" ? Math.max(po.l - 0.02, 0.01) : Math.min(po.l + 0.04, 0.99) });
+  return rebuild(base, paperHex, base.ink, surface);
 }
-
 
 function rebuild(p: Palette, paper: string, ink: string, surface: string): Palette {
   let i = ensureContrast(ink, surface, 7);

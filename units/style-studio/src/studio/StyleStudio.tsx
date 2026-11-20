@@ -4,7 +4,7 @@ import type { Harmony } from "@kaigilb/gilbplatformcode-style-runtime";
 import "./studio.css";
 import { loadFont } from "./fonts";
 import { ModeButton } from "../ThemeToggle";
-import { defaultSheet, type Mode } from "./model";
+import { BACKGROUND_OPTIONS, currentPaper, defaultSheet, withBackground, type Mode } from "./model";
 import { Preview } from "./Preview";
 import type { SavedIds, StoreDeps } from "../save/styleStore";
 import { ButtonsTab, FontsTab, LogoTab, PalettesTab, SaveTab, SeedTab, WebsiteTab, WindowsTab, type ExtractResult, type TabCtx } from "./tabs";
@@ -43,6 +43,22 @@ function initialSheet(initial?: StyleSheet): { sheet: StyleSheet; errors: string
   if (!initial) return { sheet: defaultSheet(), errors: [] };
   const r = validateStyleSheet(initial);
   return r.ok ? { sheet: r.value, errors: [] } : { sheet: defaultSheet(), errors: ["The starting style was not accepted, so the default is shown:", ...r.errors] };
+}
+
+/** The page background for the mode being previewed. Light options in light mode, dark options in dark mode; an imported paper shows as Custom. */
+function BackgroundPicker({ sheet, mode, onPick }: { sheet: StyleSheet; mode: Mode; onPick: (hex: string) => void }) {
+  const current = currentPaper(sheet, mode).toLowerCase();
+  const options = BACKGROUND_OPTIONS[mode];
+  const known = options.some((o) => o.hex.toLowerCase() === current);
+  return (
+    <label className="gs-bgpick" title="Page background">
+      <span className="gs-bgpick__swatch" style={{ background: current }} aria-hidden="true" />
+      <select aria-label="Background colour" value={known ? current : "custom"} onChange={(e) => e.target.value !== "custom" && onPick(e.target.value)}>
+        {!known ? <option value="custom">Custom {current}</option> : null}
+        {options.map((o) => <option key={o.id} value={o.hex}>{o.name}</option>)}
+      </select>
+    </label>
+  );
 }
 
 export function StyleStudio({ initial, onSave, extractFromUrl, includeWada = true, appName = "Your app", vault, savedIds, onSaved }: StyleStudioProps) {
@@ -155,7 +171,10 @@ export function StyleStudio({ initial, onSave, extractFromUrl, includeWada = tru
         <div className="gs-previewcol">
           <div className="gs-previewbar">
             <strong>Live preview</strong>
-            <ModeButton mode={previewMode} onToggle={() => setPreviewMode((m) => (m === "dark" ? "light" : "dark"))} />
+            <div className="gs-previewbar__tools">
+              <BackgroundPicker sheet={sheet} mode={previewMode} onPick={(hex) => apply(withBackground(sheet, previewMode, hex))} />
+              <ModeButton mode={previewMode} onToggle={() => setPreviewMode((m) => (m === "dark" ? "light" : "dark"))} />
+            </div>
           </div>
           <Preview sheet={peek ?? sheet} mode={previewMode} harmony={harmony} appName={appName} />
         </div>
