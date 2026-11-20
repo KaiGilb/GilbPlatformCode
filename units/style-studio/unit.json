@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-studio",
   "package": "@kaigilb/gilbplatformcode-style-studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "purpose": "`<StyleStudio />` is a React screen for choosing the app's colours, fonts, buttons, windows and logo before building, and `saveStyle` writes the result to the app's resource vault.",
   "source": {
     "repo": "KaiGilb/gilb-style",
@@ -136,6 +136,7 @@
     ]
   },
   "namedChanges": [
+    "0.3.1. the website reader says \"This site does not allow its style to be read. Try another site.\" for a 502 site_status of 401, 403 or 429 and for site_refused, and \"The site could not be reached.\" for site_unreachable (friction 58). Additive.",
     "0.3.0. the page background is its own choice, apart from the palette: a Background selector left of the Light/Dark button (light: white, off-whites and very light tints; dark: five dark options); a palette or seed change keeps accent and hues only and leaves paper alone; `paletteToSheetColors(palette, mode, paper?)` no longer writes a palette colour into paper or surface (new optional third argument; default white / dark grey); a new tab \"Many colours\" after \"One colour\" where every colour is typed by hand (stored exactly as typed, source kind `manual`, saved as handPicked); while the source is `manual` a background pick sets paper and surface only and repairs nothing;",
     "0.2.3. new, additive: the subpath `/vite` (`dev/vite.mjs`, types `dev/vite.d.mts`): `styleStudioSave({ tokensPath, logoPath?, route?, maxLogoBytes?, maxBodyBytes? })`, a Vite plugin that serves `POST /__studio/save` and writes the sheet and the logo (the dev-server half of `makeDevServerSave`, from the PictureRecords run's `vite.config.ts`); dev server only, paths inside the project root, `application/json` only, PNG or SVG by its bytes, size limits. README: the Vite and `@vitejs/plugin-react` versions, verified on 2026-11-15;",
     "0.2.2. `ThemeToggle` and `ModeButton` moved to `style-runtime` (subpath `/react`, since style-runtime 0.2.1) and `src/ThemeToggle.tsx` re-exports them; `ActionRow` keeps its spec-object API but is now an adapter over style-runtime's row (one component, one CSS; its private inline CSS is gone) and the barrel also exports the slot-based row as `ActionRowSlots`; the tests that pinned the inline `<style>` text and an empty `<head>` now test behaviour (DOM order, classes, the CSS present once); the host-agnostic check allows the `/react` subpath;",
