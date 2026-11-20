@@ -175,6 +175,8 @@ node gilb-connector.mjs publish --dir <built folder> --name <name>
 
 That publishes the built folder. The live address is `https://<name>.pages.dev`. `--dry-run` only lists what would be sent.
 
+One retry: when the Worker answers `hosting_failed` with a Cloudflare HTTP 5xx and says nothing was admitted, `publish` waits about four seconds, asks for a new ticket and tries once more. It never retries after something was admitted, on a 4xx, or a second time. If the retry fails, the report is the same as without it. The "5xx" and "nothing admitted" are read from the Worker's message text, because its answer has no field for them.
+
 ## Options
 
 | Flag | Default | Meaning |
