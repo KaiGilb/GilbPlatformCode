@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge, validProjectName } from "../bridge/bridge.mjs";
+import { createBridge, gitPlaces, validProjectName } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -281,5 +281,39 @@ describe("one code turn per project", () => {
     expect((await api("/v1/turn", T())).status).toBe(429);
     for (const x of [a, b, root]) x.ctl.abort();
     await new Promise((r) => setTimeout(r, 300));
+  });
+});
+
+describe("POST /v1/projects/create makes a git repo (friction 47)", () => {
+  // Spec: friction #47 — the folder had no git repo, so the selective-commit step could not run.
+  it("leaves a .git in the new project", async () => {
+    await start();
+    const r = await api("/v1/projects/create", { name: "alpha" });
+    expect(r.status).toBe(200);
+    expect(fs.statSync(path.join(ws, "alpha", ".git")).isDirectory()).toBe(true);
+    expect(fs.existsSync(path.join(ws, "alpha", ".git", "HEAD"))).toBe(true);
+  });
+
+  // Spec: friction #47 — no hooks installed and no template hooks, even when the person's git has a template with hooks.
+  it("installs no hooks, even from a template directory in the environment", async () => {
+    const tpl = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-tpl-"));
+    fs.mkdirSync(path.join(tpl, "hooks"));
+    fs.writeFileSync(path.join(tpl, "hooks", "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    try {
+      await start({ env: { GIT_TEMPLATE_DIR: tpl } });
+      expect((await api("/v1/projects/create", { name: "alpha" })).status).toBe(200);
+      const hooks = path.join(ws, "alpha", ".git", "hooks");
+      expect(fs.existsSync(hooks) ? fs.readdirSync(hooks) : []).toEqual([]);
+    } finally {
+      fs.rmSync(tpl, { recursive: true, force: true });
+    }
+  });
+
+  // Spec: friction #47 — the existing deny on .git hooks, config and info/attributes covers the new repo, because it exists when the turn starts.
+  it("the new repo's hooks, config and info/attributes are in the deny list", async () => {
+    await start();
+    await api("/v1/projects/create", { name: "alpha" });
+    const g = path.join(ws, "alpha", ".git");
+    expect(gitPlaces([ws])).toEqual([path.join(g, "hooks"), path.join(g, "config"), path.join(g, "info", "attributes")]);
   });
 });
