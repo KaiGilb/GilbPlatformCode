@@ -1,3 +1,5 @@
+Needs: person-connections, stakeholder-ui-kit
+
 # contact-header
 
 Draws a stakeholder's header: the holder's vault joined to the person, with circle chips, photo and link badge, in a wide or narrow layout.

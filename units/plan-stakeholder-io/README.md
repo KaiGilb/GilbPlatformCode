@@ -1,3 +1,5 @@
+Needs: entity-ref, entity-ref-value, lws-records, lws-relations, lws-vault-sets, main-tag, plan-record-hooks, plan-stakeholders-model, record-cache-kit, record-picker, relation-role, stakeholder-kinds, term-origin, vault-origin-rule, vocabulary-source
+
 # plan-stakeholder-io
 
 The reads and writes behind the Stakeholder, Authority and Resource Owner lines of a Plan card: finding records to link, writing and ending an Authority, the stakeholder kinds the master serves, the person Authorities of a record, a record's relations, and the name a link shows.

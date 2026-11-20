@@ -1,3 +1,5 @@
+Needs: contact-annotation, contact-header, contact-kind-catalogue, contact-kind-model, lws-vault-sets, one-card, online-card, person-connections, plan-record-hooks, relation-role, remove-control, stakeholder-ui-kit, vault-list
+
 # stakeholder-contact-header
 
 Draws a stakeholder's header with circle chips, kind chips and the vault photo.

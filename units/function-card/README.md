@@ -1,3 +1,5 @@
+Needs: plan-card
+
 # function-card
 
 The whole Function card: one component that draws the Plan card of a record of type Function or Function Constraint, with the lines of that type in order, every read and write supplied by the host.

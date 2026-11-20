@@ -1,3 +1,5 @@
+Needs: holder-reference, record-sync, stakeholder-field-sets, tag-client, tag-grammar, vocabulary-source
+
 # pick-or-create
 
 Finds a holder's existing record of a person or makes one, with the tag and the duplicate guard, and says plainly what it wrote when a later step fails.

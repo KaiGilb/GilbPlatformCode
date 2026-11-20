@@ -1,3 +1,5 @@
+Needs: card-group, card-mode, company-search, employments-state, remove-control, role-when
+
 # employment-card
 
 One person's employments as a framed group: company, role dates, titles; add, edit and remove.

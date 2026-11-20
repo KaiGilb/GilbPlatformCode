@@ -1,3 +1,5 @@
+Needs: geo-catalogue, place-hit-details
+
 # work-place-name
 
 Draws a role's work place by its name, with what it is and where, or says plainly when the name is not known.

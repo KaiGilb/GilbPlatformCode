@@ -1,3 +1,5 @@
+Needs: plan-card-facts, term-origin, type-chooser, type-term-popover, value-card-model, value-line-kit
+
 # value-endpoint-line
 
 Draws and edits the Endpoint line of a Value card: the Subject and the Reference, each a type picked from the ontology (with its picture and definition) and some words, and a button that finds the types for an older "Subject = X, reference = Y" text, giving every change up whole through onChange.

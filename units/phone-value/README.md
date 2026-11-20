@@ -1,3 +1,5 @@
+Needs: home-dial, phone-text
+
 # phone-value
 
 Draws a phone number with its country, and lets the holder type one.

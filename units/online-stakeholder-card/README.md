@@ -1,3 +1,5 @@
+Needs: add-your-own, lws-records, lws-vault-sets, one-card, one-card-merge, online-card, person-connections, person-create, pick-or-create, plan-record-hooks, plan-self-source, stakeholder-card-model, stakeholder-card-vocabulary, stakeholder-contact-header, stakeholder-list-doors, stakeholder-list-state, vocabulary-source
+
 # online-stakeholder-card
 
 Draws the read-only card of a person from the holder's circles who has no record, and offers to make the holder's own card of them.

@@ -1,3 +1,5 @@
+Needs: address-rows, employment-edges, employment-rows, geo-origin, interest-rows, language-section, org-hierarchy, own-card-state, skill-rows, stakeholder-card-hosts-gilbplatform, stakeholder-record-card, work-location-field, work-place-name
+
 # stakeholder-record-card-host-gilbplatform
 
 Gives the held stakeholder card everything it needs from GilbPlatform, inside the stakeholder card provider.

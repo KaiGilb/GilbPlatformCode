@@ -1,3 +1,5 @@
+Needs: contact-kind-model, kind-relation
+
 # stated-by
 
 Tells whether a fact was stated by a given person, comparing addresses as the platform does.

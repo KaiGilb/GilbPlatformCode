@@ -1,3 +1,5 @@
+Needs: lws-relations, platform-fetch, record-sync, tag-client, vault-origin-rule
+
 # main-tag
 
 Gives the main tag of a record, or of a page of records, read from the platform in one call per record and one call per fifty records, kept in one shared cache that a tag change refreshes at once.

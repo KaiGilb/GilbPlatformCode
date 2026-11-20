@@ -1,3 +1,5 @@
+Needs: lws-records
+
 # record-sidecar-save
 
 Saves one record's changes one at a time against its served version.

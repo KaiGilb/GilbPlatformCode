@@ -1,3 +1,5 @@
+Needs: holder-reference, pick-or-create, platform-fetch, record-cache-kit, stakeholder-card-model, stakeholder-card-vocabulary, stakeholder-field-sets, term-origin, type-curie, vault-origin-rule, vocabulary-source
+
 # card-references
 
 Adds or removes a reference from a card field to another record, and finds the records a field may point to.

@@ -1,3 +1,5 @@
+Needs: value-card-model, value-line-kit
+
 # value-scale-line
 
 Draws and edits the Scale line of a Value card or a Development Resource card: its unit, rate and context (each [Qualifier] in the rate and context is a chip that jumps to that qualifier's row), which direction is better, and its source, giving every change up whole through onChange.

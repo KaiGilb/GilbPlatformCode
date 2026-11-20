@@ -1,3 +1,5 @@
+Needs: phone-text
+
 # home-dial
 
 Finds the holder's home country calling code, to prefill a new phone number.

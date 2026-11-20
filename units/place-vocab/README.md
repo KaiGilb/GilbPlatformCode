@@ -1,3 +1,5 @@
+Needs: lws-vault-sets, term-slots
+
 # place-vocab
 
 Asks the ontology master how an address is spelled: the claim types, the attributes and the labels of the free-text lines.

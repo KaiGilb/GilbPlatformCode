@@ -1,3 +1,5 @@
+Needs: vocabulary-source
+
 # stakeholder-kinds
 
 Which stakeholder kinds exist and their words, read from the GilbVeda master in as few requests as it allows, kept across sessions, and shared by every reader in a page.

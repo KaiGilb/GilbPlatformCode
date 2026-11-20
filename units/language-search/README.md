@@ -1,3 +1,5 @@
+Needs: language-entry, term-origin
+
 # language-search
 
 Searches the catalogue's human languages by name, and finds the one entry for a stored language tag.

@@ -1,3 +1,5 @@
+Needs: contact-header, lws-relations, person-connections, relation-role, stakeholder-card-vocabulary
+
 # contact-kind-model
 
 The pure model of a contact's kind: its chips, its start choices and the relations its header shows.

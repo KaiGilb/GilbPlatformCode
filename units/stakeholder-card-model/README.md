@@ -1,3 +1,5 @@
+Needs: addressable-slug, holder-reference, lws-records, plan-stakeholders-model, stakeholder-card-vocabulary, stakeholder-field-sets, stakeholder-kinds, type-curie
+
 # stakeholder-card-model
 
 The pure rules of a Stakeholder card: which fields it shows for a kind, how a party's name is read and saved, and which term a field is.

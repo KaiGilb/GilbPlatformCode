@@ -1,3 +1,5 @@
+Needs: card-group, held-notes, lws-records, lws-vault-sets, open-popups, org-terms, photo-term, plan-stakeholder-io, record-picker, resource-id, stakeholder-card-model, stakeholder-card-vocabulary, term-slots, vault-origin-rule
+
 # org-employees
 
 Lists an organization's employees inline and in a searchable sheet.

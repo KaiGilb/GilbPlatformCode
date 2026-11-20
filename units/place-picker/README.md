@@ -1,3 +1,5 @@
+Needs: geo-catalogue, place-hit-details
+
 # place-picker
 
 The box where a place is searched in the catalogue and chosen, one rung at a time: city, region or country.

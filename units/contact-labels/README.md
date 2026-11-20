@@ -1,3 +1,5 @@
+Needs: adder-card, contact-annotation, contact-kind-catalogue, contact-kind-model, held-notes, kind-relation, lws-relations, lws-session-bridge, lws-vault-sets, stated-by, term-origin, term-slots, vault-resources
+
 # contact-labels
 
 Shows the kinds and circles a person has for the holder, and lets the holder add one with "+ Relation".

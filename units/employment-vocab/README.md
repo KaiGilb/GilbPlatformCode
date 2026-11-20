@@ -1,3 +1,5 @@
+Needs: lws-vault-sets, term-slots
+
 # employment-vocab
 
 The ontology spellings an employment is read and written under, asked by term name.

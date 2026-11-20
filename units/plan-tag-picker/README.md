@@ -1,3 +1,5 @@
+Needs: base-record, entity-ref-value, plan-links-model, record-picker
+
 # plan-tag-picker
 
 Lets a Plan card link to another Plan record by its tag: it searches the plan vault, shows the hits, and offers to create a tagged record when the tag is free, with the host doing the search and the tag check.

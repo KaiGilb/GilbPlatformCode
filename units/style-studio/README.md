@@ -1,3 +1,5 @@
+Needs: style-runtime
+
 # style-studio
 
 App Style Studio: choose the app's colours, fonts, buttons, windows and logo before building, and save them to the app's resource vault.

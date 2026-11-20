@@ -1,3 +1,5 @@
+Needs: plan-card-facts, plan-kinds, qualifier-values, term-origin, type-key
+
 # value-card-model
 
 The Value card's data, read from the Value record and its child records and built back into the facts to store, as plain functions with no React and no network.

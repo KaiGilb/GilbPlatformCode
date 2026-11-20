@@ -1,3 +1,5 @@
+Needs: base-origin, lws-vault-sets, ontology-reads
+
 # vault-type-census
 
 Learning what a vault holds, by type and plane, from its census of held types: which of the held type names go on the records door, found by dereferencing each term, with the one catalogue read that stands in when the platform serves no census.

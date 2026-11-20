@@ -1,3 +1,5 @@
+Needs: record-fact-items
+
 # employment-edges
 
 The ordered employment edges on a person's record, changed as stored now and written one key at a time.

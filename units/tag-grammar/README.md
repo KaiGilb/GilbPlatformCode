@@ -1,3 +1,5 @@
+Needs: record-sync, vocabulary-source
+
 # tag-grammar
 
 Parses, formats and checks record tags against the ontology's grammar and write rule.

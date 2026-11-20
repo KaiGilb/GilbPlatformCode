@@ -1,3 +1,5 @@
+Needs: credential-surface, online-card-link, person-connections
+
 # stakeholder-list-reader
 
 Reads a holder's stakeholders, records and online people together, into one deduplicated list with names and photos, within a request budget.

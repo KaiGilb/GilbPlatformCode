@@ -1,3 +1,5 @@
+Needs: type-key
+
 # plan-kinds
 
 The Plan record types and what each one shows: the type names, the Development Resource and Value-card gates, each type's line order, its default level and the words of its lines.

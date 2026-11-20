@@ -1,3 +1,5 @@
+Needs: base-origin, lws-session-bridge
+
 # grantee-face
 
 Loads the profile photo another person shares with the viewer.

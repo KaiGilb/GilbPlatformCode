@@ -1,3 +1,5 @@
+Needs: entity-ref, plan-card-facts, relation-role, type-curie, type-key
+
 # plan-stakeholders-model
 
 Reads the stakeholders, the Authority and (on a Development Resource) the Resource Owner of a Plan record from its relations and its text, and holds the rules that a Function Constraint or Solution Constraint names a person as its Authority.

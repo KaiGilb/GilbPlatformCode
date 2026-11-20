@@ -1,3 +1,5 @@
+Needs: base-origin
+
 # record-types
 
 The Plan record types, each with its fields and its BaseVeda type address, and the one way to resolve a type from its id or any spelling of its address.

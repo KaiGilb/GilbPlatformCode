@@ -1,3 +1,5 @@
+Needs: lws-session-bridge, vault-origin-rule
+
 # platform-fetch
 
 An authenticated fetch for a platform client: it moves every URL under the platform-host rule first, then signs it for that one request with the session's DPoP proof.

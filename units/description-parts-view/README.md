@@ -1,3 +1,5 @@
+Needs: base-record, card-mode, description-help, description-parts-model, fact-faithful, field-row, open-popups, plan-button-row, plan-card-facts, plan-kinds, plan-links-model, plan-source, sortable-tree
+
 # description-parts-view
 
 Draws and edits the Description of a Plan card as one record per Keyword part in a tree: add a part, edit its text and source, paste many parts at once, move a part up, down, in or out by buttons, keys or drag, and remove a part with its sub-parts, all written in one queue so the order of the writes is kept, with every read and write supplied by the host.

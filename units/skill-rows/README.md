@@ -1,3 +1,5 @@
+Needs: contact-rows, held-notes
+
 # skill-rows
 
 A person card's Skills section with the held note under each picked skill.

@@ -1,3 +1,5 @@
+Needs: plan-button-row, qualifier-values
+
 # qualifier-value-picker
 
 One chooser for the value or values of a qualifier: the defined options with their definitions as hints, ALL ("every value"), a free-text "Other…" and Clear.

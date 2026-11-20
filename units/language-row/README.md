@@ -1,3 +1,5 @@
+Needs: flag-choice, flag-image, language-entry
+
 # language-row
 
 Draws one language by its name with its country flag, never by its address.

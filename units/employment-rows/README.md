@@ -1,3 +1,5 @@
+Needs: card-mode, company-search, employment-card, employment-edges, employments-state
+
 # employment-rows
 
 A person record's Employment section: the employments over the record's edges, in the card's modes.

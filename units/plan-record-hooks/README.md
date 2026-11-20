@@ -1,3 +1,5 @@
+Needs: base-record, lws-records, lws-vault-sets, record-cache-kit, record-sync, record-types, stakeholder-list-state, vault-origin-rule, vault-type-census, working-set-store
+
 # plan-record-hooks
 
 The vault's records as a list a screen can scroll, and the three changes a person makes to one (create, retype, delete), each shown at once and written in the background, with the device's working-set replica kept in step.

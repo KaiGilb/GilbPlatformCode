@@ -1,3 +1,5 @@
+Needs: value-card-model, value-graph, value-line-kit
+
 # value-illustration
 
 Draws the Illustration line of a Value card: the value graph of its levels, read-only while an older stored list of levels is not moved, giving every change of the levels up whole through onChange.

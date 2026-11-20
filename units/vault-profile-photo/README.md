@@ -1,3 +1,5 @@
+Needs: base-origin, file-download-outcome, lws-records, lws-session-bridge, photo-term, record-types, vault-origin-rule
+
 # vault-profile-photo
 
 Finds a vault's profile photo and loads it, and makes the vault's own card when it has none.

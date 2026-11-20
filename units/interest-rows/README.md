@@ -1,3 +1,5 @@
+Needs: added-by, card-group, card-mode, contact-rows, held-notes, remove-control, skill-picker-sheet, term-name-text, term-slots
+
 # interest-rows
 
 A person card's Interests: each with its note, who added it and who sees it.

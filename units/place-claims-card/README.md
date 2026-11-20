@@ -1,3 +1,5 @@
+Needs: add-your-own, address-card-parts, button, card-group, card-mode, geo-catalogue, one-card-context, place-claims, place-clear, place-draft, place-picker
+
 # place-claims-card
 
 The Address group of a card: the list of a person's addresses, the add form, and what is said when the addresses were not all read.

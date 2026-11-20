@@ -1,3 +1,5 @@
+Needs: base-record, lws-records, lws-relations, lws-vault-sets, project-levels, record-cache-kit, record-types
+
 # plan-levels-io
 
 Reads every level of a project's vault page by page, writes the four default levels once when the vault has none, and adds one level, for the level chooser of a Plan card.

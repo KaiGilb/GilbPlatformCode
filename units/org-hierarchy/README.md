@@ -1,3 +1,5 @@
+Needs: card-group, card-mode, lws-records, lws-vault-sets, org-employees, org-mark, org-terms, record-picker, remove-control, resource-id, stakeholder-card-model, term-origin, vault-origin-rule
+
 # org-hierarchy
 
 Shows and edits an organization's parent organization and units.

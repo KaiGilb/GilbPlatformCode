@@ -1,3 +1,5 @@
+Needs: drawer, panes, size-class
+
 # app-shell
 
 The frame of an app: three resizable regions on a wide window; below 840 px the centre alone, a bottom bar, and the side regions as drawers. The host fills the regions.

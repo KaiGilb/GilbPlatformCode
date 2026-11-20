@@ -1,3 +1,5 @@
+Needs: modal-sheet, vault-list
+
 # vault-switcher
 
 A chip that shows the open vault and, on a tap, lists the vaults the person reaches, own first and shared ones labelled, and hands back the one they pick.

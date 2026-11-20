@@ -1,3 +1,5 @@
+Needs: base-origin, lws-session-bridge, term-slots
+
 # veda-labels
 
 Reads the display labels of ontology terms and attributes, once per page, and offers them to a screen.

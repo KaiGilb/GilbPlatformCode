@@ -1,3 +1,5 @@
+Needs: lws-vault-sets, online-card-link, stakeholder-list-reader
+
 # stakeholder-list-state
 
 The session's memory of the Stakeholders list: the kept answers of its reads, the ids of the records deleted or ended in this session, and the links of the records a page and the screen carry, each with its listeners, kept once for the page's life.

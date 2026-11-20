@@ -1,3 +1,5 @@
+Needs: lws-records, photo-ref, picture-upload
+
 # picture-set
 
 Stores a picture and its smaller copies in a vault step by step, so a retry never uploads a finished step twice, and finds the right stored copy of each picture to show.

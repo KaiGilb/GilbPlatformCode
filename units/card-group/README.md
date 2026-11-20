@@ -1,3 +1,5 @@
+Needs: card-mode, one-card-context, one-card-rows
+
 # card-group
 
 One framed group of a record card: a titled frame with an optional icon that holds its items, is left out when empty in presentation, and registers with the card's mode so an add chooser can list it.

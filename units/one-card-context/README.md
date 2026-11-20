@@ -1,3 +1,5 @@
+Needs: card-mode, one-card-merge, one-card-rows, online-card
+
 # one-card-context
 
 Holds the merged person card for the rows below it, so a card group can draw a person's rows beside the holder's.

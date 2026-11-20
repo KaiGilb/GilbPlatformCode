@@ -1,3 +1,5 @@
+Needs: style-runtime
+
 # style-app-files
 
 The Node side of the app's style: the dev save endpoint for the Style Studio, and the chosen fonts copied out of `@fontsource` for the app to serve.

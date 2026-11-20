@@ -1,3 +1,5 @@
+Needs: address-card-parts, card-mode, place-claims-card, place-draft, use-place-claims
+
 # address-rows
 
 A person record's Address section: reads the addresses, shows them as a card group, and saves, changes and removes them in the holder's vault.

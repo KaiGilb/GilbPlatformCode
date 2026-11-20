@@ -1,3 +1,5 @@
+Needs: base-record, description-parts-model, fact-faithful, plan-card-facts, plan-kinds, plan-links-model, value-card-model
+
 # value-card-write
 
 The Value card's write layer: its levels, Scale qualifiers and their option definitions, Meters and Meter lines, and the Scale record kept as lists, where one edit becomes the smallest writes (one changed item is one PATCH of its record, a new item one POST, a removed item one DELETE), with conflict handling, rollback and the migration of older stored lists, and every network call and cache supplied by the host.

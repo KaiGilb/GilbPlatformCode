@@ -1,3 +1,5 @@
+Needs: place-claim-write, place-claims, place-lines, place-vocab
+
 # use-place-claims
 
 The state of a record's addresses on a card: what was read, whether it was all of it, and the acts that save, change and remove one.

@@ -1,3 +1,5 @@
+Needs: org-terms
+
 # employment-link
 
 The two links of an employment to an organization record and to the person, written together or not at all.

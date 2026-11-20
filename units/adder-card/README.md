@@ -1,3 +1,5 @@
+Needs: lws-records, lws-session-bridge, plan-record-hooks, plan-self-source, reachable-vaults, vault-list, vault-profile-photo
+
 # adder-card
 
 Finds or makes the signed-in person's own card, the source of what they add.

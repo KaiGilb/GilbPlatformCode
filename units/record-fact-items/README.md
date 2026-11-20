@@ -1,3 +1,5 @@
+Needs: holder-reference, lws-records
+
 # record-fact-items
 
 Changes the items of one fact of a record, with If-Match and a queue per record.

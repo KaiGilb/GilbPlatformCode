@@ -1,3 +1,5 @@
+Needs: claim-handle, employment-edges, employment-role, employment-store, employment-vocab, org-terms, resource-id
+
 # employments-state
 
 The state of a person's employments: load, add, edit and remove one at a time, each write queued.

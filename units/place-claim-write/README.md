@@ -1,3 +1,5 @@
+Needs: geo-catalogue, geo-origin, place-claims, place-lines, place-vocab, resource-id, vault-namespace, vault-origin-rule, vault-resources
+
 # place-claim-write
 
 Writes a person's addresses to the vault that holds them: create, change and remove, one request per fact, never to the place catalogue.

@@ -1,3 +1,5 @@
+Needs: base-origin, plan-kinds, record-types, term-origin, vault-origin-rule
+
 # ontology-reads
 
 The public reads of the ontology: a term's definition, a type's picture and the live search of terms, none carrying a credential.

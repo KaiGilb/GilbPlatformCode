@@ -1,3 +1,5 @@
+Needs: lws-records, lws-session-bridge, refusal-detail
+
 # picture-upload
 
 Uploads picture bytes to a vault's file door with a request signed for that vault, and answers the stored file's address, or an error that keeps what the vault said.

@@ -1,3 +1,5 @@
+Needs: geo-catalogue
+
 # place-hit-details
 
 Says what a catalogue place is and where it is, for a list of same-named places.

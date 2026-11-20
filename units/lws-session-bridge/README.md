@@ -1,3 +1,5 @@
+Needs: base-origin, signin, vault-origin-rule
+
 # lws-session-bridge
 
 The one seam through which GilbPlatform client code gets its credential headers, so the same client works with any signed-in session and never sends a credential to a host outside the platform.

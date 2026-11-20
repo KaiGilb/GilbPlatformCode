@@ -1,3 +1,5 @@
+Needs: stakeholder-kinds, vocabulary-source
+
 # stakeholder-field-sets
 
 Says which fields each kind of stakeholder offers, read from the ontology master, and which slot holds a party's name.

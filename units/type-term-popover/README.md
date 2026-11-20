@@ -1,3 +1,5 @@
+Needs: open-popups, term-origin, type-picture
+
 # type-term-popover
 
 Shows a GilbVeda type's name or picture as a button that opens a small popover with the type's definition and a link to its page in the ontology.

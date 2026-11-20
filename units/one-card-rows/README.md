@@ -1,3 +1,5 @@
+Needs: one-card-merge, stakeholder-ui-kit
+
 # one-card-rows
 
 Draws the rows of a merged person card: their rows shaded and marked, your rows plain, the legend and the foot.

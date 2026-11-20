@@ -1,3 +1,5 @@
+Needs: base-origin, file-words, lws-records, lws-session-bridge, vault-origin-rule
+
 # file-download-outcome
 
 Downloads a vault file and says what happened, without throwing, or gives just its bytes.

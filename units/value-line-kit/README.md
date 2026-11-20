@@ -1,3 +1,5 @@
+Needs: base-record, plan-card-facts, plan-source, type-chooser, value-card-model
+
 # value-line-kit
 
 The shared pieces of the Value card's lines: the line props, text and select editors that save on Enter or on leaving, the source control slot, the menu of qualifiers a level or meter has not set, the move button for older stored lists, and the host the lines read through.

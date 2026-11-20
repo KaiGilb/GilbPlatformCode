@@ -1,3 +1,5 @@
+Needs: field-row, term-slots
+
 # person-field-row
 
 Draws one field of a person's own card as an editable row, with a picker where one exists.

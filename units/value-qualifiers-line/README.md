@@ -1,3 +1,5 @@
+Needs: plan-card-facts, value-card-model, value-line-kit
+
 # value-qualifiers-line
 
 Draws and edits the Qualifiers line of a Value card: each qualifier of the Scale (such as [Country]) with its options, definitions and default option, renaming, the preset qualifiers, the "Not in the Scale" warning and the conditions that can move into a qualifier, giving every change up whole through onChange.

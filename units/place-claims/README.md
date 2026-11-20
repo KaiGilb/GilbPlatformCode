@@ -1,3 +1,5 @@
+Needs: geo-catalogue, place-lines, place-vocab, resource-id, vault-records-of-type
+
 # place-claims
 
 Reads a person's addresses from the vault that holds them: the address claims, their field claims, and what each says.

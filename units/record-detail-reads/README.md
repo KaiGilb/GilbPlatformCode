@@ -1,3 +1,5 @@
+Needs: lws-records, record-cache-kit, vault-origin-rule
+
 # record-detail-reads
 
 Reads one record for a record card, from the page's cache when the list already has it and from its own vault otherwise, and knows which vault holds it.

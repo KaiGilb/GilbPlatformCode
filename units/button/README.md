@@ -1,3 +1,5 @@
+Needs: class-merge
+
 # button
 
 One button look for every app: primary, secondary, ghost, or danger. Every size is at least 44 px tall. The `icon` size is also 44 px wide.

@@ -1,3 +1,5 @@
+Needs: base-origin
+
 # vault-origin-rule
 
 The one rule for which origin a vault address names and which URL may receive the app's credential, so every address and credential check answers the same way.

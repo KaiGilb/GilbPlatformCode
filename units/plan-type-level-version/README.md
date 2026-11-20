@@ -1,3 +1,5 @@
+Needs: type-picture
+
 # plan-type-level-version
 
 Draws the one line every Plan card shows first, "Type: <type> · Level: <level> · Version: <date>", with the plain/constraint type switch and the level chooser.

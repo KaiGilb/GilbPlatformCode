@@ -1,3 +1,5 @@
+Needs: adder-card, lws-records, lws-vault-sets, resource-id, stated-by, term-slots, vault-origin-rule, vault-resources
+
 # held-notes
 
 Reads and writes the notes a person keeps about someone in their own vault, private or shared with that person, one claim per note.

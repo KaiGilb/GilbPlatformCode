@@ -1,3 +1,5 @@
+Needs: entity-ref, id-tail
+
 # entity-ref-value
 
 Shows a stored reference to another record as that record's name, a button that opens it, with the stored address on a quiet second line.

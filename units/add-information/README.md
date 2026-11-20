@@ -1,3 +1,5 @@
+Needs: card-mode, open-popups, sheet-history
+
 # add-information
 
 Offers '+ Add Information' on a record card and opens the sheet of groups to add.

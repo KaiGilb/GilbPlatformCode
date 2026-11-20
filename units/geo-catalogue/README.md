@@ -1,3 +1,5 @@
+Needs: geo-origin, term-origin
+
 # geo-catalogue
 
 Reads the shared place catalogue: search by kind of place, one place, the walk up to its country, and the ontology's map of which kind of place is a city, a region or a country.

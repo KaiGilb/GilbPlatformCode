@@ -1,3 +1,5 @@
+Needs: add-your-own, card-group, card-mode, contact-actions, contact-rows-model, held-notes, home-dial, one-card-context, one-card-rows, open-popups, remove-control, term-name-text, term-origin
+
 # contact-rows
 
 Edits a person's Email, Phone, Social and Skills rows, any number of each.
