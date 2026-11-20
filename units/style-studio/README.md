@@ -15,6 +15,8 @@ A developer tool. Not loaded by the app at runtime; the app takes style-runtime.
 - `saveStyle`, which writes the sheet into the app's resource vault as three typed records (palette, brand kit, style sheet) and makes them public-read, so the app can load its style at start without signing in.
 - `ThemeToggle` (a light/dark button; it now lives in `style-runtime/react` and is re-exported here), `ActionRow` (a Mac-order button row with spec objects; `ActionRowSlots` is `style-runtime/react`'s slot-based row, which an app should use), the palette catalogues, and, re-exported from `style-runtime` (where they live, so an app that only applies its style never takes the Studio), the vault reader `loadStyleFromVault`, `makeVaultFetchRemote` and `recordsToSheet`.
 
+The Studio has a Background selector (left of the Light/Dark button) and a "Many colours" tab. The background is chosen apart from the palette, so a palette changes accent and hues only. In "Many colours" you type every colour and none is changed; the Save tab's contrast check shows any pair that fails. (0.3.0)
+
 ## What this is not
 
 - Not what the app loads. The app takes `style-runtime` (`loadStyle`), which has no React, no fonts and no catalogue. Importing the Studio into an app puts the 48 font loaders, the catalogues, DOMPurify and a React screen into its bundle.

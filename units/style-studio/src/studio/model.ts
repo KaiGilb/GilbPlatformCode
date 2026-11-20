@@ -6,6 +6,75 @@ import type { PaletteInput, StyleSheet } from "@kaigilb/gilbplatformcode-style-r
 
 export type Mode = "light" | "dark";
 
+export interface BackgroundOption {
+  id: string;
+  name: string;
+  hex: string;
+}
+
+/** The page backgrounds the Studio offers, apart from the palette. Light always starts with white. */
+export const BACKGROUND_OPTIONS: Record<Mode, readonly BackgroundOption[]> = {
+  light: [
+    { id: "white", name: "White", hex: "#ffffff" },
+    { id: "warm-off-white", name: "Warm off-white", hex: "#faf8f5" },
+    { id: "cool-off-white", name: "Cool off-white", hex: "#f6f8fa" },
+    { id: "ivory", name: "Ivory", hex: "#fbf9ee" },
+    { id: "light-grey", name: "Light grey", hex: "#f2f2f2" },
+    { id: "light-blue", name: "Very light blue", hex: "#eef5fc" },
+    { id: "light-green", name: "Very light green", hex: "#eef7f0" },
+    { id: "light-rose", name: "Very light rose", hex: "#fdf0f2" },
+  ],
+  dark: [
+    { id: "near-black", name: "Near black", hex: "#0f0f10" },
+    { id: "dark-grey", name: "Dark grey", hex: "#1c1c1e" },
+    { id: "dark-navy", name: "Dark navy", hex: "#0e1726" },
+    { id: "dark-slate", name: "Dark slate", hex: "#1b2330" },
+    { id: "dark-warm", name: "Dark warm", hex: "#211c17" },
+  ],
+};
+
+/** Surface is a small step from paper: a little darker in light mode, a little lighter in dark mode. */
+export function surfaceFromPaper(paperHex: string, mode: Mode): string {
+  const o = parseColor(paperHex) ?? { l: mode === "dark" ? 0.17 : 0.97, c: 0, h: 0, alpha: 1 };
+  return toHex({ l: mode === "dark" ? Math.min(o.l + 0.04, 0.99) : Math.max(o.l - 0.02, 0.01), c: o.c, h: o.h });
+}
+
+/**
+ * Put a palette on a chosen paper. Paper and surface come from the background choice; ink, accent and the status colours are repaired
+ * against both with ensureContrast, the same way paletteFromBrand does. Accent and the hues are kept.
+ */
+export function onPaper(p: PaletteInput, mode: Mode, paperIn: string): PaletteInput {
+  const paper = toHex(parseColor(paperIn) ?? { l: mode === "dark" ? 0.17 : 0.97, c: 0, h: 0 });
+  const surface = surfaceFromPaper(paper, mode);
+  const gen = paletteFromSeed(p.accent, { mode, harmony: "mono" });
+  const ink = ensureContrast(ensureContrast(p.ink, surface, 7), paper, 7);
+  const accent = ensureContrast(p.accent, paper, 3);
+  const onAccent = ensureContrast(contrastRatio("#ffffff", accent) >= contrastRatio("#111111", accent) ? "#ffffff" : "#111111", accent, 4.5);
+  const fix = (c: string) => ensureContrast(ensureContrast(c, surface, 4.5), paper, 4.5);
+  return { ...p, accent, paper, surface, ink, lines: ink, onAccent, ok: fix(p.ok ?? gen.ok), warn: fix(p.warn ?? gen.warn), bad: fix(p.bad ?? gen.bad) };
+}
+
+/**
+ * Change the background for one mode only. For a hand-typed palette (source "manual") only paper and surface change and every typed
+ * colour is kept byte for byte (Kai, 2026-11-20); the Save tab's contrast report shows any failure. Other palettes are contrast-repaired.
+ */
+export function withBackground(sheet: StyleSheet, mode: Mode, paper: string): StyleSheet {
+  const hand = sheet.paletteSource?.kind === "manual";
+  const put = (p: PaletteInput): PaletteInput => {
+    if (!hand) return onPaper(p, mode, paper);
+    const hex = toHex(parseColor(paper) ?? { l: mode === "dark" ? 0.17 : 0.97, c: 0, h: 0 });
+    return { ...p, paper: hex, surface: surfaceFromPaper(hex, mode) };
+  };
+  if (mode === "light") return { ...sheet, palette: put(sheet.palette) };
+  const base: PaletteInput = sheet.dark ?? pickInput(paletteFromSeed(sheet.palette.accent, { mode: "dark", harmony: "mono" }));
+  return { ...sheet, dark: put(base) };
+}
+
+/** The paper a sheet currently has for a mode (the generated one when the sheet has no dark palette). */
+export function currentPaper(sheet: StyleSheet, mode: Mode): string {
+  return (mode === "dark" ? sheet.dark?.paper : sheet.palette.paper) ?? paletteFromSeed(sheet.palette.accent, { mode, harmony: "mono" }).paper;
+}
+
 export const pickInput = (p: Palette): PaletteInput => ({
   accent: p.accent,
   paper: p.paper,
@@ -27,15 +96,18 @@ export function withColors(sheet: StyleSheet, light: Palette, dark: Palette, sou
 export { defaultSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 
 export function sheetFromSeed(sheet: StyleSheet, seed: string, harmony: Harmony): StyleSheet {
+  // The background is its own choice: a new seed changes accent and hues only, so the sheet's paper stays.
   const light = paletteFromSeed(seed, { mode: "light", harmony });
   const dark = paletteFromSeed(seed, { mode: "dark", harmony });
-  return withColors(sheet, light, dark, { kind: "seed", seed });
+  const out = withColors(sheet, light, dark, { kind: "seed", seed });
+  return { ...out, palette: { ...onPaper(out.palette, "light", currentPaper(sheet, "light")), ...(out.palette.extra ? { extra: out.palette.extra } : {}) }, dark: onPaper(out.dark!, "dark", currentPaper(sheet, "dark")) };
 }
 
 export function sheetFromCatalogue(sheet: StyleSheet, catalogue: string, pal: CataloguePalette): StyleSheet | null {
   try {
-    const light = paletteToSheetColors(pal, "light");
-    const dark = paletteToSheetColors(pal, "dark");
+    // The palette brings accent and hues only; the sheet keeps its own paper for each mode.
+    const light = paletteToSheetColors(pal, "light", currentPaper(sheet, "light"));
+    const dark = paletteToSheetColors(pal, "dark", currentPaper(sheet, "dark"));
     const source: NonNullable<StyleSheet["paletteSource"]> = { kind: "catalogue", catalogue };
     if (catalogue === "wada") {
       const n = Number.parseInt(pal.id.replace(/^wada-/, ""), 10);
