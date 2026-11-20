@@ -54,11 +54,20 @@ export function onPaper(p: PaletteInput, mode: Mode, paperIn: string): PaletteIn
   return { ...p, accent, paper, surface, ink, lines: ink, onAccent, ok: fix(p.ok ?? gen.ok), warn: fix(p.warn ?? gen.warn), bad: fix(p.bad ?? gen.bad) };
 }
 
-/** Change the background for one mode only. Everything else in the sheet stays. */
+/**
+ * Change the background for one mode only. For a hand-typed palette (source "manual") only paper and surface change and every typed
+ * colour is kept byte for byte (Kai, 2026-11-20); the Save tab's contrast report shows any failure. Other palettes are contrast-repaired.
+ */
 export function withBackground(sheet: StyleSheet, mode: Mode, paper: string): StyleSheet {
-  if (mode === "light") return { ...sheet, palette: onPaper(sheet.palette, "light", paper) };
+  const hand = sheet.paletteSource?.kind === "manual";
+  const put = (p: PaletteInput): PaletteInput => {
+    if (!hand) return onPaper(p, mode, paper);
+    const hex = toHex(parseColor(paper) ?? { l: mode === "dark" ? 0.17 : 0.97, c: 0, h: 0 });
+    return { ...p, paper: hex, surface: surfaceFromPaper(hex, mode) };
+  };
+  if (mode === "light") return { ...sheet, palette: put(sheet.palette) };
   const base: PaletteInput = sheet.dark ?? pickInput(paletteFromSeed(sheet.palette.accent, { mode: "dark", harmony: "mono" }));
-  return { ...sheet, dark: onPaper(base, "dark", paper) };
+  return { ...sheet, dark: put(base) };
 }
 
 /** The paper a sheet currently has for a mode (the generated one when the sheet has no dark palette). */

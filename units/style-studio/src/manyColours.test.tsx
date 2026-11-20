@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { StyleSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 import { StyleStudio } from "./studio/index";
+import { checkPalette } from "@kaigilb/gilbplatformcode-style-runtime";
+import { listCatalogues } from "./catalogue/index";
+import { resolvePalette, sheetFromCatalogue, withBackground } from "./studio/model";
 import { sheetToRecords } from "./save/styleStore";
 import { validSheet } from "./fixtures";
 
@@ -127,5 +130,37 @@ describe("Many colours tab", () => {
     const back = JSON.parse(second) as StyleSheet;
     expect(back.paletteSource).toEqual({ kind: "manual" });
     expect(JSON.stringify(sheetToRecords(back).palette)).toContain("handPicked");
+  });
+
+  // Spec: a hand-typed palette is never repaired by a background pick (Kai, 2026-11-20): paper and surface change, typed colours stay byte for byte.
+  it("picking a background keeps hand-typed colours exactly, light and dark", async () => {
+    render(<StyleStudio initial={startSheet()} />);
+    fireEvent.click(tab("Many colours"));
+    type("Light accent", "#fafafa");
+    type("Light text", "#FAFAFA");
+    type("Dark accent", "#050505");
+    type("Dark text", "#0A0A0A");
+    const sel = () => screen.getByLabelText("Background colour") as HTMLSelectElement;
+    fireEvent.change(sel(), { target: { value: "#f2f2f2" } });
+    fireEvent.click(screen.getByTitle(/switch to/i));
+    fireEvent.change(sel(), { target: { value: "#0e1726" } });
+    const out = JSON.parse(await exported()) as StyleSheet;
+    expect(out.palette.accent).toBe("#fafafa");
+    expect(out.palette.ink).toBe("#FAFAFA");
+    expect(out.palette.paper).toBe("#f2f2f2");
+    expect(out.dark!.accent).toBe("#050505");
+    expect(out.dark!.ink).toBe("#0A0A0A");
+    expect(out.dark!.paper).toBe("#0e1726");
+    expect(out.paletteSource).toEqual({ kind: "manual" });
+  });
+
+  // Spec: a catalogue palette is still contrast-repaired when a background is picked.
+  it("a catalogue palette is still repaired against the picked background", () => {
+    const pal = listCatalogues()[0]!.palettes[0]!;
+    const base = sheetFromCatalogue(startSheet(), "pop", pal)!;
+    const next = withBackground({ ...base, palette: { ...base.palette, accent: "#fafafa", ink: "#fafafa" } }, "light", "#f2f2f2");
+    expect(next.palette.paper).toBe("#f2f2f2");
+    expect(next.palette.accent).not.toBe("#fafafa");
+    expect(checkPalette(resolvePalette(next, "light")).filter((r) => !r.pass)).toEqual([]);
   });
 });
