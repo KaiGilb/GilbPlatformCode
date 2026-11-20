@@ -4196,6 +4196,8 @@ function readHopSpec(file: string): { tools: ToolSpec[]; userText: string | unde
 export const PUBLISH_MAX_FILES = 2000;
 export const PUBLISH_MAX_BYTES = 5 * 1024 * 1024;
 const UPLOAD_TIMEOUT_MS = 120_000;
+/** How long `publish` waits before its one retry after a Cloudflare 5xx where nothing was admitted. Tests pass `retryWaitMs: 0`. */
+export const PUBLISH_RETRY_WAIT_MS = 4_000;
 const NO_WORKER_SENTENCE = "This platform did not say where to upload. Pass --worker-url.";
 const NOTHING_ADMITTED = "Nothing was admitted unless the message says so; ask for a new ticket (re-run)";
 const WORKERS_DEV_SUFFIX = ".workers.dev";
@@ -4282,6 +4284,8 @@ export interface PublishIo {
   stderr?: (line: string) => void;
   fetchImpl?: typeof fetch;
   env?: NodeJS.ProcessEnv;
+  /** The wait before the one retry, in milliseconds. Default `PUBLISH_RETRY_WAIT_MS`. */
+  retryWaitMs?: number;
 }
 
 const CSI_SEQUENCE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
@@ -4819,9 +4823,25 @@ function parsePublishArgs(argv: readonly string[], env: NodeJS.ProcessEnv): Publ
   return { help: false, dryRun, dir, name, kind, as: asMode, origin, profile: profileRaw, workerUrl, displayName };
 }
 
+/**
+ * True when the Worker's refusal is a Cloudflare 5xx at a step where nothing was admitted: the one case `publish` retries.
+ * The error code `hosting_failed` is a field. The status and the "nothing admitted" claim are read from the message text.
+ * Gotcha: the Worker's answer has no status field and no admitted flag that we have seen. The only live sample (2026-11-20,
+ * testcreateapp2) is `hosting_failed: Cloudflare Pages refused the step 'create-project' (HTTP 500). Nothing was admitted; ...`.
+ * So this matches that text. If the Worker words it differently, no retry happens (the safe direction). Replace the text
+ * match with a field when the Worker adds one. `message` is the Worker's own text, without the line this tool appends.
+ */
+export function isRetryableHostingRefusal(json: unknown): boolean {
+  const row = asRecord(json);
+  if (row === null || row.error !== "hosting_failed" || typeof row.message !== "string") return false;
+  const http = /\(HTTP (\d{3})\)/.exec(row.message);
+  if (http === null || !http[1]!.startsWith("5")) return false;
+  return /Nothing was admitted/i.test(row.message);
+}
+
 async function runPublish(
   argv: readonly string[],
-  io: { stdout: (line: string) => void; stderr: (line: string) => void; fetchImpl: typeof fetch; env: NodeJS.ProcessEnv },
+  io: { stdout: (line: string) => void; stderr: (line: string) => void; fetchImpl: typeof fetch; env: NodeJS.ProcessEnv; retryWaitMs: number },
 ): Promise<number> {
   const args = parsePublishArgs(argv, io.env);
   if (args.help) {
@@ -4857,22 +4877,32 @@ async function runPublish(
       return undefined;
     },
   });
-  const ticket = await requestPublishTicket(cred, args.origin, { kind: args.kind, siteName: args.name }, io.fetchImpl, secrets);
-  try {
-    checkPublishLimits(collected.files, { maxFiles: ticket.maxFiles, maxBytes: ticket.maxBytes });
-  } catch (err) {
-    if (err instanceof PublishUsageError) throw new PublishUsageError(`${err.message}; a new ticket is needed`);
-    throw err;
+  // Decision: the retry wraps the ticket AND the upload, because a ticket is spent by the attempt that used it.
+  // Spec: one retry at most, never after an admit, never on a 4xx (friction item, publish retry, 2026-11-20).
+  let uploaded: { status: number; json: unknown; headers: Record<string, string> };
+  for (let attempt = 1; ; attempt += 1) {
+    const ticket = await requestPublishTicket(cred, args.origin, { kind: args.kind, siteName: args.name }, io.fetchImpl, secrets);
+    try {
+      checkPublishLimits(collected.files, { maxFiles: ticket.maxFiles, maxBytes: ticket.maxBytes });
+    } catch (err) {
+      if (err instanceof PublishUsageError) throw new PublishUsageError(`${err.message}; a new ticket is needed`);
+      throw err;
+    }
+    const workerRaw = ticket.workerUrl !== undefined ? ticket.workerUrl : args.workerUrl;
+    if (workerRaw === "") throw new PublishUsageError(NO_WORKER_SENTENCE);
+    const body = buildPublishBody(ticket.ticket, collected.files, appPublic);
+    uploaded = await uploadToWorker(workerRaw, body, io.fetchImpl, io.env);
+    if (uploaded.json !== null && typeof uploaded.json === "object" && !Array.isArray(uploaded.json)) {
+      const echoed = (uploaded.json as { ticket?: unknown }).ticket;
+      if (typeof echoed === "string" && echoed !== "") secrets.push(echoed);
+    }
+    warnCors(uploaded.headers, io.stderr, secrets);
+    if (attempt === 1 && uploaded.status !== 200 && isRetryableHostingRefusal(uploaded.json)) {
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, io.retryWaitMs)));
+      continue;
+    }
+    break;
   }
-  const workerRaw = ticket.workerUrl !== undefined ? ticket.workerUrl : args.workerUrl;
-  if (workerRaw === "") throw new PublishUsageError(NO_WORKER_SENTENCE);
-  const body = buildPublishBody(ticket.ticket, collected.files, appPublic);
-  const uploaded = await uploadToWorker(workerRaw, body, io.fetchImpl, io.env);
-  if (uploaded.json !== null && typeof uploaded.json === "object" && !Array.isArray(uploaded.json)) {
-    const echoed = (uploaded.json as { ticket?: unknown }).ticket;
-    if (typeof echoed === "string" && echoed !== "") secrets.push(echoed);
-  }
-  warnCors(uploaded.headers, io.stderr, secrets);
   if (uploaded.status >= 500) {
     const detail = workerText(uploaded.json, secrets);
     throw new PublishWorkerError(detail === "" ? NOTHING_ADMITTED : `${detail} ${NOTHING_ADMITTED}`);
@@ -4900,7 +4930,7 @@ export async function publishCommand(argv: readonly string[], io: PublishIo = {}
   const fetchImpl = io.fetchImpl ?? fetch;
   const env = io.env ?? process.env;
   try {
-    return await runPublish(argv, { stdout, stderr, fetchImpl, env });
+    return await runPublish(argv, { stdout, stderr, fetchImpl, env, retryWaitMs: io.retryWaitMs ?? PUBLISH_RETRY_WAIT_MS });
   } catch (err) {
     if (err instanceof CliError || err instanceof PublishUsageError) {
       stderr(safeLocalText(err.message));

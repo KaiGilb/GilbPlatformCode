@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PUBLISH_MAX_BYTES, PUBLISH_MAX_FILES, publishCommand } from "../connector/gilb-connector.mjs";
+import { PUBLISH_MAX_BYTES, PUBLISH_MAX_FILES, PUBLISH_RETRY_WAIT_MS, publishCommand } from "../connector/gilb-connector.mjs";
 
 const MJS = fileURLToPath(new URL("../connector/gilb-connector.mjs", import.meta.url));
 const NAME = "my-app";
@@ -144,7 +144,7 @@ function captureProcess() {
   };
 }
 
-async function run(argv, env, fetchImpl) {
+async function run(argv, env, fetchImpl, extra = {}) {
   const stdout = [];
   const stderr = [];
   const cap = captureProcess();
@@ -152,6 +152,7 @@ async function run(argv, env, fetchImpl) {
     const code = await publishCommand(argv, {
       env,
       fetchImpl,
+      ...extra,
       stdout: (line) => stdout.push(line),
       stderr: (line) => stderr.push(line),
     });
@@ -530,3 +531,97 @@ function realpathOr(file) {
   // macOS tmp is a symlink; the connector runs main only when argv[1] matches its own URL.
   return realpathSync(file);
 }
+
+// Spec: friction item (publish retry, 2026-11-20). One retry, only on a Cloudflare 5xx where nothing was admitted.
+// fake: shape from the live refusal of 2026-11-20 on testcreateapp2; retry success not measured live.
+// What was measured live: the words of the refusal (error code hosting_failed, the message below). Not measured: the HTTP
+// status the Worker itself answered with (502 is copied from the older test above, a guess), the exact words of a refusal
+// after something was admitted (E4 uses a guess), and any success after a retry.
+const REAL_REFUSAL_MESSAGE = "Cloudflare Pages refused the step 'create-project' (HTTP 500). Nothing was admitted; ask for a new ticket and try again.";
+const REAL_REFUSAL = { error: "hosting_failed", message: REAL_REFUSAL_MESSAGE };
+const TODAYS_REPORT = `hosting_failed: ${REAL_REFUSAL_MESSAGE} Nothing was admitted unless the message says so; ask for a new ticket (re-run)`;
+const NO_WAIT = { retryWaitMs: 0 };
+
+describe("publish retry on a Cloudflare 5xx with nothing admitted", () => {
+  it("the default wait is a few seconds", () => {
+    expect(PUBLISH_RETRY_WAIT_MS).toBeGreaterThanOrEqual(2000);
+    expect(PUBLISH_RETRY_WAIT_MS).toBeLessThanOrEqual(10000);
+  });
+
+  it("E1: retries once with a new ticket and the second attempt succeeds", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    let n = 0;
+    const { calls, fetchImpl } = scriptedFetch({
+      ticket: () => jsonResponse(200, ticketOf()),
+      upload: () => (++n === 1 ? jsonResponse(502, REAL_REFUSAL) : liveUpload()),
+    });
+    const result = await run(args(dir), env, fetchImpl, NO_WAIT);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(`https://${NAME}.pages.dev`);
+    expect(tickets(calls)).toHaveLength(2);
+    expect(uploads(calls)).toHaveLength(2);
+    assertClean(`${result.stdout}\n${result.stderr}\n${result.processText}`, { ticket: TICKET, access: ACCESS });
+  });
+
+  it("E2: a 5xx twice reports the second failure as today, after exactly 2 attempts", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    const { calls, fetchImpl } = scriptedFetch({ ticket: () => jsonResponse(200, ticketOf()), upload: () => jsonResponse(502, REAL_REFUSAL) });
+    const result = await run(args(dir), env, fetchImpl, NO_WAIT);
+    expect(result.code).toBe(4);
+    expect(result.stderr).toBe(TODAYS_REPORT);
+    expect(uploads(calls)).toHaveLength(2);
+    expect(tickets(calls)).toHaveLength(2);
+  });
+
+  it("E3: a hosting refusal with HTTP 4xx is not retried", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    const message = "Cloudflare Pages refused the step 'create-project' (HTTP 403). Nothing was admitted; ask for a new ticket and try again.";
+    const { calls, fetchImpl } = scriptedFetch({ ticket: () => jsonResponse(200, ticketOf()), upload: () => jsonResponse(502, { error: "hosting_failed", message }) });
+    const result = await run(args(dir), env, fetchImpl, NO_WAIT);
+    expect(result.code).toBe(4);
+    expect(result.stderr).toBe(`hosting_failed: ${message} Nothing was admitted unless the message says so; ask for a new ticket (re-run)`);
+    expect(uploads(calls)).toHaveLength(1);
+    expect(tickets(calls)).toHaveLength(1);
+  });
+
+  it("E4: a 5xx at a step after something was admitted is not retried (message shape is a guess, not measured)", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    const message = "Cloudflare Pages refused the step 'upload-files' (HTTP 500). 3 files were admitted; do not retry.";
+    const { calls, fetchImpl } = scriptedFetch({ ticket: () => jsonResponse(200, ticketOf()), upload: () => jsonResponse(502, { error: "hosting_failed", message }) });
+    const result = await run(args(dir), env, fetchImpl, NO_WAIT);
+    expect(result.code).toBe(4);
+    expect(result.stderr).toBe(`hosting_failed: ${message} Nothing was admitted unless the message says so; ask for a new ticket (re-run)`);
+    expect(uploads(calls)).toHaveLength(1);
+    expect(tickets(calls)).toHaveLength(1);
+  });
+
+  it("a 5xx from a different error code is not retried", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    const { calls, fetchImpl } = scriptedFetch({ ticket: () => jsonResponse(200, ticketOf()), upload: () => jsonResponse(500, { error: "internal", message: REAL_REFUSAL_MESSAGE }) });
+    const result = await run(args(dir), env, fetchImpl, NO_WAIT);
+    expect(result.code).toBe(4);
+    expect(uploads(calls)).toHaveLength(1);
+  });
+
+  it("waits retryWaitMs between the attempts", async () => {
+    const { env } = tempEnv();
+    const dir = siteDir();
+    const times = [];
+    let n = 0;
+    const { fetchImpl } = scriptedFetch({
+      ticket: () => jsonResponse(200, ticketOf()),
+      upload: () => {
+        times.push(Date.now());
+        return ++n === 1 ? jsonResponse(502, REAL_REFUSAL) : liveUpload();
+      },
+    });
+    const result = await run(args(dir), env, fetchImpl, { retryWaitMs: 150 });
+    expect(result.code).toBe(0);
+    expect(times[1] - times[0]).toBeGreaterThanOrEqual(140);
+  });
+});
