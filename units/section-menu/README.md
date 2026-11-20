@@ -144,6 +144,18 @@ The button, the dimmed edge and the panel, side by side in the page. Test hooks:
 - Do not fire a window event for an act in the destination; leave an intent (`createIntentChannel`).
 - Do not pick private paint-order numbers in a new app; use `overlay-layers`.
 
+## Changes in 0.2.7
+
+Patch release; the props are unchanged.
+
+- On every opening, the section you are in is shown. At a high page zoom (Safari 150 to 200 % on a laptop) the panel is short, and that section sat below its edge. Now only the sections' own scroll area moves, just enough to show it; the page does not move. Measured in WebKit and Chromium with GilbApp's `scripts/measure-section-menu.mjs` (zoom imitated by viewport size): hidden at 150, 175 and 200 % on 0.2.6, shown on 0.2.7.
+- Wider than a phone, each column scrolls by itself, in one row as high as the panel, so moving the sections does not move the options beside them. In medium, the options and the third column share one right-hand column (it was a `row-span-2` grid). A phone is still one column that scrolls as one.
+- The gaps between section rows were also reported as unequal at high zoom. The same measure found them equal (2 px) at every size, after every hover, in both engines, so nothing was changed for that.
+
+### Two menus on one page
+
+The unit keeps no module-level state: each menu has its own Esc and focus-trap handlers, bound only while it is open, and its ids come from `useId`. But two menus on one page share the fixed `data-testid`s (`section-menu-trigger`, `section-menu-panel`, ...) and the paint order the host passes in `layers`. A host that draws two (for example a second app's menu button beside GilbApp's) must tell them apart by their container, and give each its own `layers`.
+
 ## Changes in 0.2.6
 
 Patch release: the pointer must rest on the header button 400 ms (was 200 ms, `HOVER_OPEN_DELAY_MS`) before the menu opens. Click, tap and keyboard are not delayed. `HOVER_CLICK_GRACE_MS` (600 ms) is counted from the moment the menu opens, so it is unchanged.
