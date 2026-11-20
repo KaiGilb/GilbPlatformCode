@@ -24,7 +24,7 @@ export {
   credentialsForPage,
   credentialsForPageOrigin,
 } from "./http";
-export { normaliseVaultName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
+export { normaliseVaultName, findVaultByName, listVaults, createNamedVault, sameVaultHost, CREATE_NAMED_VAULT_PATH } from "./vaults";
 export {
   vaultsOfType,
   wantedAppVaultName,

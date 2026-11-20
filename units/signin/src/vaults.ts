@@ -38,6 +38,20 @@ export function normaliseVaultName(raw: string): string {
   return slug.length > 0 ? slug : "user";
 }
 
+/**
+ * Finds the vault a person named. `name` on a listed vault is the DISPLAY name ("TestCreateApp2");
+ * the platform's short name is `shortName`. Both sides are put through {@link normaliseVaultName}, so
+ * case and punctuation do not matter. A vault with no `shortName` is matched by its normalised display name.
+ *
+ * @param vaults the result of {@link listVaults}
+ * @param raw the name as typed or configured
+ * @returns the first matching vault, or undefined
+ */
+export function findVaultByName<V extends { name?: string; shortName?: string }>(vaults: readonly V[], raw: string): V | undefined {
+  const wanted = normaliseVaultName(raw);
+  return vaults.find((v) => (v.shortName ?? normaliseVaultName(v.name ?? "")) === wanted);
+}
+
 /** One vault from `GET /lws/vaults`, with what the session list drops. */
 export interface ListedVault {
   /**

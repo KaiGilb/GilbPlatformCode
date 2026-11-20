@@ -193,7 +193,7 @@ Sign in, keep the one `SessionCredential`, then address the vault by the `vaultI
 ```ts
 import { SignInCard } from "@kaigilb/gilbplatformcode-signin";
 import { SessionCredential, makeSignInAuth } from "@kaigilb/gilbplatformcode-signin/session";
-import { listVaults, normaliseVaultName, sameVaultHost } from "@kaigilb/gilbplatformcode-signin/core";
+import { findVaultByName, listVaults, normaliseVaultName, sameVaultHost } from "@kaigilb/gilbplatformcode-signin/core";
 
 const credential = new SessionCredential(); // holds the token after the code is accepted
 const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "MyApp" }); // leave createsVault unset
@@ -201,7 +201,7 @@ const auth = makeSignInAuth({ credential, origin: ID_ORIGIN, productName: "MyApp
 
 async function openProject() {
   const vaults = await listVaults(ID_ORIGIN, { credential });
-  const project = vaults.find((v) => v.name === normaliseVaultName("the-project"));
+  const project = findVaultByName(vaults, "the-project");
   // project.vaultId is the namespace later calls address.
   // sameVaultHost(project.vaultId, knownUrl) matches on the host when the segment is unknown.
 }
@@ -212,8 +212,10 @@ Headless, the same three steps. Omit `name` so verify-code does not ask for a ne
 ```ts
 await credential.signInWithCode(ID_ORIGIN, email, code);
 const vaults = await listVaults(ID_ORIGIN, { credential });
-const project = vaults.find((v) => v.name === normaliseVaultName("the-project"));
+const project = findVaultByName(vaults, "the-project");
 ```
+
+`name` is the display name ("TestCreateApp2"); `shortName` is the platform's short name ("testcreateapp2"). Never compare `v.name` to `normaliseVaultName(x)`. Use `findVaultByName(vaults, raw)` (since 0.2.13), which compares `(v.shortName ?? normaliseVaultName(v.name ?? "")) === normaliseVaultName(raw)`.
 
 `signInWithCode` stores the token on the credential, then reads `GET /lws/vaults` into `session.vaults` as `{ vaultId, modes }` and leaves `session.vault` null. The vault's `name`, and its `shortName` when the platform sent `podName` with `podNameKnown`, are on the `listVaults` result. `makeSignInAuth` without `createsVault: true` makes `completeNamedVault` reject with a sentence that making a vault is not part of the product, so the card does not finish by creating one.
 
@@ -237,7 +239,7 @@ const check = await checkVaultName(origin, "johndeveloper-sailboats");
 const name = check.available ? check.requested! : check.suggestion;  // suggestion only when taken
 if (!name) throw new Error(check.message);
 const made = await createNamedVault(origin, { name, represents: "<GilbVeda type IRI>" }, { credential });
-const again = (await listVaults(origin, { credential })).find((v) => v.name === normaliseVaultName(name));
+const again = (await listVaults(origin, { credential })).find((v) => (v.shortName ?? normaliseVaultName(v.name ?? "")) === normaliseVaultName(name));
 console.log(made.vaultId === again?.vaultId, again?.represents, again?.isLandingVault);
 // a vault's address is https://<name>.gilb.com/vault, e.g. https://johndevelopersailboats.gilb.com/vault
 ```
@@ -325,6 +327,10 @@ The code step also renders `Change email` (`data-testid="sign-in-change-email"`,
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.13
+
+Patch release, additive. New `findVaultByName(vaults, raw)` (also in `./core`): finds a listed vault by `shortName`, else by its normalised display name. The README examples compared `v.name` to a normalised name, which never matches a display name such as "TestCreateApp2".
 
 ## Changes in 0.2.12
 
