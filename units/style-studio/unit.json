@@ -171,6 +171,6 @@
     "admitted": true,
     "tag": "t:AppStyleSheet.studio",
     "title": "App Style Studio (choose the app's style before building)",
-    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault or the dev server. From website works with the app's session through makeExtractFromUrl({ baseUrl, credential }); makeDevServerSave and splitLogo save to a dev server, and the Vite plugin styleStudioSave (studio save) is the server half that writes the files. A developer tool, taken once."
+    "note": "Choose the app's colours (palettes incl. after Sanzo Wada, one seed colour, or read from your website), fonts, buttons, windows and logo before building, and save them to the app's resource vault or the dev server. From website works with the app's session through makeExtractFromUrl({ baseUrl, credential }); makeDevServerSave and splitLogo save to a dev server, and the Vite plugin styleStudioSave (studio save) is the server half that writes the files. A developer tool, taken once. Also found as: style guide; app style guide."
   }
 }
