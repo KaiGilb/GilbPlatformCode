@@ -22,13 +22,16 @@ All of it is exported from the package root (`src/index.mjs`, with `src/index.d.
 | `exportFonts(sheet, { appRoot, publicDir = "public", urlBase = "/fonts", cssFile = "fonts.css", weights = [400, 600] })` | Returns `{ families, warnings }`. For each of `sheet.fonts.sans`, `serif` and `mono` whose `source` is `"bundled"`: copies the woff2 files and writes the css. A font with `source: "system"` writes nothing. |
 | `writeStyleFiles({ sheet, logoPng? }, { appRoot })` | Returns `{ status, message, fontsWarning? }`. 400 (nothing written) when `sheet` is not an object or `logoPng` is not a `data:image/png;base64,` URL whose bytes start with the PNG signature. Otherwise writes the tokens (pretty JSON), the logo if sent, then the fonts. A font problem is `fontsWarning` and the status stays 200. Every file is written to a temp name and renamed. |
 | `createStudioSaveMiddleware({ appRoot, maxBytes = 8 MB })` | `(req, res)`. 405 with `Allow: POST` for other methods; 413 when the body is bigger than `maxBytes` (reading stops); 400 for JSON that does not parse; otherwise the answer of `writeStyleFiles` as JSON. The message never holds a path of the machine. |
-| `MARKER` | `".style-app-files"`, the file this tool leaves in each font folder it makes. |
+| `MANIFEST` | `"style-app-files.manifest.json"`, the record of the folders and files this tool made. It lives at the app root, never under `public/`, so a build never copies it into `dist/`. |
+| `MARKER` | `".style-app-files"`, the OLD in-folder record. The tool no longer writes it. It reads one it finds, moves its list into the manifest, and deletes it. |
 
 `writeStyleFiles` checks that `sheet` is an object and no more. It does not import `style-runtime`'s validator (that would make `style-runtime` a runtime peer); the app's runtime validates the sheet when it loads it.
 
 ### Rules
 
-- **Stale folders.** A folder under `public/fonts` that this tool made (it holds a `.style-app-files` marker listing the files written) and that the export no longer needs has the listed files removed, then the marker, then the folder if it is empty. A folder without a marker is never touched, and neither is a file in a marked folder that the marker does not list.
+- **Stale folders.** A folder under `public/fonts` that this tool made (the manifest at the app root lists it and the files written) and that the export no longer needs has the listed files removed, then the folder if it is empty. A folder the manifest does not list is never touched, and neither is a file in a listed folder that the manifest does not list. A manifest entry that is not a direct child of `public/fonts` is ignored.
+- **Nothing recorded under `public/`.** Vite copies `public/` into `dist/`, and publishing refuses a file with no extension. So the record is `style-app-files.manifest.json` at the app root, and every file this tool puts under `public/` is a `.woff2` or the css.
+- **Migration.** A font folder that still holds an old `.style-app-files` marker has its list moved into the manifest and the marker deleted, on the next run. Running again changes nothing. A marker that does not parse is not ours and is left alone.
 - **Safe names.** The family name must not hold `/`, `\`, `..` or a NUL, and its slug must match `/^[a-z0-9-]+$/`. Anything else is a warning ("is not a usable font package name") and is skipped; no path is built from it.
 - **Missing package.** `@fontsource/<slug>` not installed is a warning; the other families are still exported.
 - **No fonts.** A sheet with no bundled font still writes an empty `fonts.css`, so a `<link>` to it never 404s.
@@ -77,4 +80,4 @@ In the GilbApp chat, a project folder the chat made already has this line: the b
 
 ## Where it came from
 
-New code, written for EESpeed Round 7 (U4) from the hand-written files of the PictureRecords run-7 app (not in a repository): `vite.config.ts` (`studioSave`) and `scripts/exportFonts.mjs`, with its test. Repository `KaiGilb/GilbPlatformCode`, commit `4340ee4838d77dabd5ed3f3eea9e3a2048f97fde`. No source file was copied. Added over the original: the PNG signature check, the body limit answered 413, the method answered 405 with `Allow`, atomic writes, the safe-name rule, and the marker that makes stale-folder removal safe.
+New code, written for EESpeed Round 7 (U4) from the hand-written files of the PictureRecords run-7 app (not in a repository): `vite.config.ts` (`studioSave`) and `scripts/exportFonts.mjs`, with its test. Repository `KaiGilb/GilbPlatformCode`, commit `4340ee4838d77dabd5ed3f3eea9e3a2048f97fde`. No source file was copied. Added over the original: the PNG signature check, the body limit answered 413, the method answered 405 with `Allow`, atomic writes, the safe-name rule, and the manifest that makes stale-folder removal safe.

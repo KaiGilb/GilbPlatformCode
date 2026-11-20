@@ -5,8 +5,17 @@ import path from "node:path";
 import { copyAtomic, writeAtomic } from "./atomic.mjs";
 
 const HEADER = "/* Generated from style.tokens.json by style-app-files: do not edit */\n";
-/** The file this tool leaves in every font folder it makes; it lists the files it wrote there. */
+/**
+ * The OLD in-folder marker. This tool no longer writes it. It is read once, to move a folder's record into the manifest, then deleted.
+ * Decision: it used to sit in `public/fonts/<slug>/`, so Vite copied it into dist/ and publishing refused the whole site
+ * ("has a type that is not accepted (no extension)"). Nothing this tool records may live under `public/`.
+ */
 export const MARKER = ".style-app-files";
+/**
+ * The one file that records what this tool made. It lives at the app root, next to package.json, so a build never copies it.
+ * Shape: `{ "tool": "style-app-files", "folders": { "<folder, relative to the app root>": ["<file>.woff2", ...] } }`.
+ */
+export const MANIFEST = "style-app-files.manifest.json";
 const SLUG = /^[a-z0-9-]+$/;
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.woff2$/;
 const SLOTS = ["sans", "serif", "mono"];
@@ -56,14 +65,45 @@ async function readMarker(dir) {
   }
 }
 
+/** The folder key for the manifest: relative to the app root, with forward slashes so the file reads the same on every machine. */
+function folderKey(appRoot, dir) {
+  return path.relative(appRoot, dir).split(path.sep).join("/");
+}
+
+/** Reads the manifest into a Map of folder key -> file names. A missing or unreadable manifest is an empty one. */
+async function readManifest(appRoot) {
+  try {
+    const m = JSON.parse(await readFile(path.join(appRoot, MANIFEST), "utf8"));
+    const out = new Map();
+    for (const [k, v] of Object.entries(m?.folders ?? {})) {
+      if (Array.isArray(v)) out.set(k, v.filter((f) => typeof f === "string" && FILE.test(f)));
+    }
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Writes the manifest, or removes it when it records nothing, so an app that uses no bundled font is left clean. */
+async function writeManifest(appRoot, folders) {
+  const target = path.join(appRoot, MANIFEST);
+  if (folders.size === 0) {
+    await rm(target, { force: true });
+    return;
+  }
+  const obj = Object.fromEntries([...folders].sort(([a], [b]) => (a < b ? -1 : 1)));
+  await writeAtomic(target, JSON.stringify({ tool: "style-app-files", folders: obj }, null, 2) + "\n");
+}
+
 /**
  * Exports the fonts a sheet uses. For every slot (sans, serif, mono) whose font has `source: "bundled"`:
  * copies the latin woff2 files of `weights` to `<publicDir>/fonts/<slug>/`, and writes `<publicDir>/<cssFile>` with @font-face rules
  * whose `src` names only those woff2 files under `urlBase`. Families that are not bundled get nothing.
  *
- * Stale folders: a folder under `<publicDir>/fonts` that this tool made earlier (it holds a `.style-app-files` marker) and
- * that this export no longer needs has the files the marker lists removed, then the marker, then the folder if it is empty.
- * A folder without a marker is never touched. A missing @fontsource package, a name that is not a safe folder name, or an
+ * What this tool made is recorded in `<appRoot>/style-app-files.manifest.json`, never under `publicDir`, so a build's dist/ holds
+ * no record file. Stale folders: a folder the manifest lists that this export no longer needs has the listed files removed,
+ * then the folder if it is empty. A folder the manifest does not list is never touched.
+ * Migration: a folder that still holds an old `.style-app-files` marker has its list moved into the manifest and the marker deleted. A missing @fontsource package, a name that is not a safe folder name, or an
  * unreadable file is a warning; the other families are still exported.
  */
 export async function exportFonts(sheet, o) {
@@ -77,6 +117,18 @@ export async function exportFonts(sheet, o) {
   const fontsDir = path.join(publicDir, "fonts");
   const require = createRequire(path.join(appRoot, "package.json"));
   const warnings = [];
+
+  // Migration first, so the old marker is gone before anything else runs and the stale pass below sees one record.
+  const manifest = await readManifest(appRoot);
+  for (const e of await readdir(fontsDir, { withFileTypes: true }).catch(() => [])) {
+    if (!e.isDirectory()) continue;
+    const dir = path.join(fontsDir, e.name);
+    const listed = await readMarker(dir);
+    if (listed === null) continue; // no marker, or one that does not parse: not ours, left alone
+    const key = folderKey(appRoot, dir);
+    manifest.set(key, [...new Set([...(manifest.get(key) ?? []), ...listed])]);
+    await rm(path.join(dir, MARKER), { force: true });
+  }
 
   const wanted = new Map(); // slug -> family
   for (const slot of SLOTS) {
@@ -130,9 +182,9 @@ export async function exportFonts(sheet, o) {
       continue;
     }
     // What an earlier run left in this folder and this run no longer writes.
-    const before = (await readMarker(dest)) ?? [];
-    for (const f of before) if (!files.includes(f)) await rm(path.join(dest, f), { force: true });
-    await writeAtomic(path.join(dest, MARKER), JSON.stringify({ tool: "style-app-files", files }) + "\n");
+    const key = folderKey(appRoot, dest);
+    for (const f of manifest.get(key) ?? []) if (!files.includes(f)) await rm(path.join(dest, f), { force: true });
+    manifest.set(key, files);
     wrote.set(slug, files);
     exported.push([slug, family]);
     css += block;
@@ -140,17 +192,16 @@ export async function exportFonts(sheet, o) {
 
   await writeAtomic(path.join(publicDir, cssFile), css);
 
-  // Stale folders: only ones this tool made (a marker), and only the files the marker lists.
-  const entries = await readdir(fontsDir, { withFileTypes: true }).catch(() => []);
-  for (const e of entries) {
-    if (!e.isDirectory() || wrote.has(e.name)) continue;
-    const dir = path.join(fontsDir, e.name);
-    const listed = await readMarker(dir);
-    if (listed === null) continue;
+  // Stale folders: only ones the manifest lists, and only the files it lists.
+  // Gotcha: a key must name a direct child of this fontsDir. A hand-edited manifest cannot make us delete elsewhere.
+  for (const [key, listed] of [...manifest]) {
+    const dir = path.resolve(appRoot, key);
+    if (path.dirname(dir) !== fontsDir || wrote.has(path.basename(dir))) continue;
     for (const f of listed) await rm(path.join(dir, f), { force: true });
-    await rm(path.join(dir, MARKER), { force: true });
     await rmdir(dir).catch(() => undefined); // only when nothing else is in it
+    manifest.delete(key);
   }
+  await writeManifest(appRoot, manifest);
 
   return { families: exported.map(([, family]) => family), warnings };
 }

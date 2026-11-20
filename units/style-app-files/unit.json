@@ -11,7 +11,7 @@
   },
   "namedChanges": [
     "New code, written for EESpeed Round 7 (U4) from the PictureRecords run-7 `vite.config.ts` (studioSave) and `scripts/exportFonts.mjs`; plain ES modules (.mjs) with a hand-written `src/index.d.mts`, because a bin and a Vite config must run it under Node, which does not run TypeScript from node_modules;",
-    "added over the original: the PNG signature check on the logo, 413 for a body over the limit, 405 with Allow, atomic writes, the safe-name rule for a family, and a marker file so only folders this tool made are ever removed;",
+    "added over the original: the PNG signature check on the logo, 413 for a body over the limit, 405 with Allow, atomic writes, the safe-name rule for a family, and a manifest file at the app root so only folders this tool made are ever removed;",
     "style-runtime is a peer for types only (`import type`); the check `scripts/check-host-agnostic.mjs` allows node:fs, node:fs/promises, node:path, node:url, node:module, node:http and `import type` from the style-runtime package."
   ],
   "newFiles": [
