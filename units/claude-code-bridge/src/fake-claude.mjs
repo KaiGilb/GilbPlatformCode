@@ -44,6 +44,7 @@ process.stdin.on("end", async () => {
     envKeys: Object.keys(process.env),
     cwd: process.cwd(),
     npmCache: process.env.npm_config_cache,
+    claudeSessionId: process.env.GILB_CLAUDE_SESSION_ID,
   });
   const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   // IGNORETERM: a child that takes its time to stop (the first SIGTERM is logged, the exit comes 3 s later), so a test can act in between.

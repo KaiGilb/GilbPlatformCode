@@ -453,6 +453,25 @@ export function detectParentKey() {
         return null;
     }
 }
+/** A Claude session id is a UUID. Anything else in the environment is ignored, so a stray value never becomes a key. */
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * The Claude session this connector runs under, from GILB_CLAUDE_SESSION_ID (the bridge sets it on the `claude` it starts in
+ * Computer mode). Each turn there is a new `claude -p --resume` process, so the parent pid changes every turn and a choice keyed
+ * to it never came back; the session id is the same on every turn of the chat. undefined: not known, use the parent key.
+ */
+export function sessionIdFromEnv(env) {
+    const raw = (env.GILB_CLAUDE_SESSION_ID ?? "").trim().toLowerCase();
+    return SESSION_ID.test(raw) ? raw : undefined;
+}
+/** Whether a saved choice belongs to this chat: by session id when one is known, else by parent pid and start time (today's key). */
+function choiceIsOurs(saved, client, session, parent) {
+    if (saved.client !== client)
+        return false;
+    if (session !== undefined)
+        return saved.session === session;
+    return saved.session === undefined && !!parent && saved.ppid === parent.pid && saved.started === parent.started;
+}
 function readVaultChoice(file) {
     try {
         const raw = JSON.parse(readFileSync(file, "utf8"));
@@ -462,7 +481,8 @@ function readVaultChoice(file) {
             return null;
         if (!Array.isArray(raw.vaults) || !raw.vaults.every((v) => typeof v === "string"))
             return null;
-        return { client: raw.client, ppid: raw.ppid, started: raw.started, savedAt: raw.savedAt, vaults: raw.vaults };
+        const session = typeof raw.session === "string" && raw.session !== "" ? raw.session : undefined;
+        return { client: raw.client, ppid: raw.ppid, started: raw.started, ...(session ? { session } : {}), savedAt: raw.savedAt, vaults: raw.vaults };
     }
     catch {
         return null;
@@ -916,6 +936,16 @@ function principalFromSystem(system) {
     const found = match?.[1]?.trim();
     return found ? found : undefined;
 }
+/**
+ * The person the AI acts for, when the platform's prompt says so: "You are the AI <ai vault>, acting for <person vault>."
+ * A Connected AI's prompt that carries only "That person is identified as" names the AI's own vault, not the person, so
+ * nothing is returned for it: the person is never guessed.
+ */
+export function personFromSystem(system) {
+    const match = /You are the AI \S+, acting for (\S+?)\.(?:\s|$)/.exec(system);
+    const found = match?.[1]?.trim();
+    return found ? found : undefined;
+}
 function isMissingComputer(err) {
     if (!err || typeof err !== "object")
         return false;
@@ -1268,12 +1298,14 @@ function hostOfVault(value) {
     }
 }
 /** Same vault when both ids have a host and those hosts match. A non-address falls back to the whole id, lowercased. */
-function sameVault(a, b) {
+export function sameVault(a, b) {
     const left = hostOfVault(a);
     const right = hostOfVault(b);
     if (left !== null && right !== null)
         return left === right;
-    return a.trim().toLowerCase() === b.trim().toLowerCase();
+    // A trailing slash is the same vault: a vault address with and without a final slash.
+    const bare = (id) => id.trim().toLowerCase().replace(/\/+$/, "");
+    return bare(a) === bare(b);
 }
 function firstHostLabel(host) {
     return (host.split(".")[0] ?? "").toLowerCase();
@@ -2484,6 +2516,8 @@ export function startConnector(opts) {
     let saidSignIn = false;
     let aiClientId = "";
     let reportedPrincipal = "";
+    /** The person this AI acts for, when the platform said so. Empty: the platform has not said, and whoami says that. */
+    let actingFor = "";
     /** True once the principal is a vault namespace. Until then, each call drops the cached token, principal, context, and turn. */
     let bound = false;
     /** True after an unbound answer, so the next call does not reuse that token or turn. */
@@ -2499,6 +2533,8 @@ export function startConnector(opts) {
     let restoreAttempted = false;
     const nowMs = opts.nowMs ?? Date.now;
     let parentKey = opts.parent;
+    /** The Claude session this chat runs in (GILB_CLAUDE_SESSION_ID), when the bridge passed one. It keys the remembered vault choice before the parent process does. */
+    const sessionId = opts.sessionId !== undefined ? opts.sessionId ?? undefined : sessionIdFromEnv(env);
     let resolveDone = () => { };
     const done = new Promise((resolve) => {
         resolveDone = resolve;
@@ -2668,8 +2704,11 @@ export function startConnector(opts) {
         const lines = [`connector: ${CONNECTOR_VERSION}`, `mode: ${asMode}`];
         if (asMode === "ai" && aiClientId)
             lines.push(`client id: ${aiClientId}`);
+        // For a Connected AI the principal is the AI's own vault. The person is named on its own line, and only when the platform said so.
         if (reportedPrincipal)
             lines.push(`principal: ${reportedPrincipal}`);
+        if (asMode === "ai" && actingFor)
+            lines.push(`acting for: ${actingFor}`);
         if (asMode !== "ai") {
             lines.push(vaultsLine());
             return lines.join("\n");
@@ -2710,6 +2749,9 @@ export function startConnector(opts) {
         const found = principalFromSystem(body.system);
         if (found)
             reportedPrincipal = found;
+        const person = personFromSystem(body.system);
+        if (person)
+            actingFor = person;
         if (asMode === "ai" && !bound) {
             if (isVaultNamespace(reportedPrincipal)) {
                 const wasUnbound = knownUnbound;
@@ -3338,20 +3380,28 @@ export function startConnector(opts) {
             return null;
         if (parentKey === undefined)
             parentKey = detectParentKey();
-        if (!parentKey)
+        // A known session id is key enough, even where the parent process cannot be read.
+        if (!parentKey && sessionId === undefined)
             return null;
         return join(root, profile, VAULT_CHOICE_FILE);
     }
     /** The person chose this vault (gilbplatform_use_vault, or a create_vault they asked for). Remember it for this chat only. */
     function rememberChoice(namespace) {
         const file = choiceFile();
-        if (!file || !parentKey)
+        if (!file || (!parentKey && sessionId === undefined))
             return;
         try {
             const old = readVaultChoice(file);
-            const same = old && old.client === aiClientId && old.ppid === parentKey.pid && old.started === parentKey.started && nowMs() - old.savedAt < VAULT_CHOICE_MAX_AGE_MS;
+            const same = old && choiceIsOurs(old, aiClientId, sessionId, parentKey) && nowMs() - old.savedAt < VAULT_CHOICE_MAX_AGE_MS;
             const kept = same ? old.vaults.filter((v) => !sameVault(v, namespace)) : [];
-            const record = { client: aiClientId, ppid: parentKey.pid, started: parentKey.started, savedAt: nowMs(), vaults: [...kept, namespace] };
+            const record = {
+                client: aiClientId,
+                ppid: parentKey?.pid ?? 0,
+                started: parentKey?.started ?? "",
+                ...(sessionId !== undefined ? { session: sessionId } : {}),
+                savedAt: nowMs(),
+                vaults: [...kept, namespace],
+            };
             ensurePrivateDir(dirname(file));
             writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
             chmodSync(file, 0o600);
@@ -3379,12 +3429,12 @@ export function startConnector(opts) {
         if (vaults.some((id) => id.trim() !== ""))
             return;
         const file = choiceFile();
-        if (!file || !parentKey)
+        if (!file || (!parentKey && sessionId === undefined))
             return;
         const saved = readVaultChoice(file);
         if (!saved)
             return;
-        if (saved.client !== aiClientId || saved.ppid !== parentKey.pid || saved.started !== parentKey.started)
+        if (!choiceIsOurs(saved, aiClientId, sessionId, parentKey))
             return;
         if (nowMs() - saved.savedAt >= VAULT_CHOICE_MAX_AGE_MS || saved.savedAt > nowMs() + 60_000) {
             clearChoice(file);

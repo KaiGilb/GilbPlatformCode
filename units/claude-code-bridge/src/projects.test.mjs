@@ -175,6 +175,8 @@ describe("a code turn in a project", () => {
     expect(fs.realpathSync.native(run.cwd)).toBe(alpha);
     const sys = run.argv[run.argv.indexOf("--append-system-prompt") + 1];
     expect(sys).toContain(`Start in the project folder "alpha" (${alpha}) inside the code folder "MyCode".`);
+    // Accept 1, project form: the line that names this chat's Gilb connector.
+    expect(sys).toContain("For GilbPlatform, use only the mcp__gilb__* tools; other Gilb connectors are not this chat's.");
     expect(sys).not.toContain("Make each new app");
   });
   it("an unknown, bad-named, file, dot, symlinked or non-string project is 400 No such project., and nothing is spawned", async () => {

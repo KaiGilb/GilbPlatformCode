@@ -1288,10 +1288,26 @@ export const FULL_ACCESS_NOTICE = "Full access: commands run without asking insi
 export const FULL_ACCESS_NOTICE_WINDOWS = "Full computer access is ON: chat code turns can read and change anything your user can, run any command, use the network and your logins, like Claude Code in your terminal. Windows has no sandbox here, so every call is asked in the chat. Turn it off: use the access switch in GilbApp, or run the bridge with --access folder. Running the install line again without --full-access keeps the mode saved on this computer.";
 /** Printed when --full-access is given but the saved mode on this computer says folder: the saved mode wins. */
 export const FULL_ACCESS_SAVED_FOLDER_NOTICE = "The mode saved on this computer is folder mode, and it wins over --full-access. To turn full access on, use the access switch in GilbApp (a window on this computer asks you to allow it).";
-const computerProjectParagraph = (project, p, folder) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
+/**
+ * Computer mode loads the person's own MCP servers too (no --strict-mcp-config), and a person often has several Gilb connectors
+ * (GilbPlatform, gilb-kai, gilb-kaidev, ...). Agents picked the wrong one: the wrong principal, a vault never selected.
+ * This chat's connector is the bridge's `gilb` server, so the prompt names it and says the others are not this chat's.
+ */
+export const GILB_CONNECTOR_SENTENCE = "For GilbPlatform, use only the mcp__gilb__* tools; other Gilb connectors are not this chat's.";
+/** The computer-mode paragraph for a turn started inside a project folder. */
+const computerProjectParagraph = (project, p, folder) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the project folder "${project}" (${p}) inside the code folder "${folder}". Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. ${GILB_CONNECTOR_SENTENCE} When you finish, list the files you changed.`;
 const PROJECT_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure this project folder has its own package.json (run npm init -y first if it has none), so packages are installed here and not in a parent folder.";
-const computerParagraph = (name, p) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. When you finish, list the files you changed.`;
+/** The computer-mode paragraph for a turn started in the code folder. */
+const computerParagraph = (name, p) => `You are working on the person's own computer with the same access as Claude Code in their terminal. Start in the folder "${name}" (${p}). ${APP_FOLDER_SENTENCE} Anything that needs the person's permission is asked of them in the chat; if they decline, say so in one line and do not try another way around it. ${GILB_CONNECTOR_SENTENCE} When you finish, list the files you changed.`;
 const OWN_PACKAGE_JSON_SENTENCE = "Before any npm, pnpm or yarn install, make sure the app's subfolder has its own package.json (run npm init -y there first if it has none), so packages are installed there and not in a parent folder.";
+/**
+ * Computer mode: tell the person's own Claude Code (and so every MCP server it starts, the gilb-connector among them) which
+ * Claude session this turn belongs to. Each turn is a new `claude -p --resume` process, so the parent process changes every
+ * turn; the session id does not. The connector keys the person's remembered vault choice on it.
+ */
+export function withSessionId(env, computer, sessionId) {
+    return computer && sessionId ? { ...env, GILB_CLAUDE_SESSION_ID: sessionId } : env;
+}
 /** The only characters an each-write glob may use. Braces, brackets, backslashes, "~" and ":" can reach elsewhere or hide a "..". */
 const SAFE_GLOB = /^[A-Za-z0-9_\-./*?]+$/;
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
@@ -4015,7 +4031,7 @@ export function createBridge(opts = {}) {
                     cwd: turn.code && scope ? scope.path : workDir,
                     // A code turn's npm may not write ~/.npm, nor the temp folder (the sandbox refuses both), so its cache lives in the folder.
                     // A code turn's child gets only the allow-listed names; a chat turn's environment is unchanged.
-                    env: (turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env)),
+                    env: withSessionId((turn.code ? (computer ? (sandboxedTurn(turn) && workspace && envGet(env, "npm_config_cache") === undefined ? { ...childEnv(env), npm_config_cache: path.join(workspace.path, ".npm-cache") } : childEnv(env)) : workspace && !filesOnly ? { ...envWithout(codeChildEnv(env, platform, opts.codeEnvExtraPrefixes), "npm_config_cache"), npm_config_cache: path.join((scope ?? workspace).path, ".npm-cache") } : codeChildEnv(env, platform, opts.codeEnvExtraPrefixes)) : childEnv(env)), turn.code && computer, mode.sessionId),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                     // A code turn leads its own process group (off Windows), so a stop reaches everything it started.
