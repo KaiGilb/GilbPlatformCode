@@ -152,6 +152,8 @@ Patch release; the props are unchanged.
 - Wider than a phone, each column scrolls by itself, in one row as high as the panel, so moving the sections does not move the options beside them. In medium, the options and the third column share one right-hand column (it was a `row-span-2` grid). A phone is still one column that scrolls as one.
 - The gaps between section rows were also reported as unequal at high zoom. The same measure found them equal (2 px) at every size, after every hover, in both engines, so nothing was changed for that.
 
+Known limit (also in 0.2.6): when the window is so short that the sections' column is lower than the row of the section you are in, that row shows from its top and the rest is cut off. Agent.Tester measured it at 720 x 360 (4 px cut), 1512 x 260 and 900 x 200 (2026-11-20). Nothing is changed for it.
+
 ### Two menus on one page
 
 The unit keeps no module-level state: each menu has its own Esc and focus-trap handlers, bound only while it is open, and its ids come from `useId`. But two menus on one page share the fixed `data-testid`s (`section-menu-trigger`, `section-menu-panel`, ...) and the paint order the host passes in `layers`. A host that draws two (for example a second app's menu button beside GilbApp's) must tell them apart by their container, and give each its own `layers`.
