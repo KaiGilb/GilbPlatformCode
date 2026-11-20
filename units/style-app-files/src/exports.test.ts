@@ -6,7 +6,7 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 
 describe("exports", () => {
   it("exports exactly the documented API", () => {
-    expect(Object.keys(unit).sort()).toEqual(["MARKER", "createStudioSaveMiddleware", "exportFonts", "fontsourceSlug", "rewriteFontCss", "writeStyleFiles"]);
+    expect(Object.keys(unit).sort()).toEqual(["MANIFEST", "MARKER", "createStudioSaveMiddleware", "exportFonts", "fontsourceSlug", "rewriteFontCss", "writeStyleFiles"]);
   });
   it("names the bin and it exists", () => {
     expect(pkg.bin).toEqual({ "style-app-fonts": "./bin/style-app-fonts.mjs" });

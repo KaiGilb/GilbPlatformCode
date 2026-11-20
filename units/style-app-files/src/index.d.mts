@@ -1,8 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { StyleSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 
-/** The file this tool leaves in each font folder it makes; it lists the files it wrote there. */
+/** The OLD in-folder marker ".style-app-files". No longer written; read once and deleted when found (migration). */
 export const MARKER: string;
+/** "style-app-files.manifest.json", at the app root: the record of the folders and files this tool made. Never under public/. */
+export const MANIFEST: string;
 
 /** The @fontsource package name of a family: lower case, spaces to hyphens, other characters dropped. */
 export function fontsourceSlug(family: string): string;
