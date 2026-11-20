@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { aiNoGrant, aiNotBound, startConnector } from "../connector/gilb-connector.mjs";
+import { aiNoGrant, aiNotBound, startConnector, sessionIdFromEnv, personFromSystem, sameVault } from "../connector/gilb-connector.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const FAKE_CLAUDE = join(HERE, "fake-claude.mjs");
@@ -177,7 +177,7 @@ function door(state) {
     if (rec.url.endsWith("/context")) {
       return {
         body: {
-          system: `STANDING-KAI That person is identified as: ${state.principal}. Tools follow.`,
+          system: `STANDING-KAI That person is identified as: ${state.principal}. ${state.person ? `You are the AI ${state.principal}, acting for ${state.person}. ` : ""}Tools follow.`,
           tools: PLATFORM_TOOLS,
         },
       };
@@ -314,5 +314,107 @@ describe("a vault choice survives a reconnect in the same chat", () => {
     const home2 = scratch();
     await chat(state, home2, { vaults: [NS] });
     expect(existsSync(CHOICE(home2))).toBe(false);
+  });
+});
+
+// Spec (GilbAppBuild friction wave 1, Change A, Fix 2): in Computer mode each turn is a new `claude -p --resume` process, so the
+// parent pid changes every turn. The bridge passes the Claude session id (GILB_CLAUDE_SESSION_ID); the choice is keyed to it.
+const SID = "0b7f3c1e-5d2a-4e6b-9c8d-1a2b3c4d5e6f";
+const SID_OTHER = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+const sessionChat = (state, home, sid, parent) => chat(state, home, { env: aiEnv(home, sid ? { GILB_CLAUDE_SESSION_ID: sid } : {}), parent });
+
+describe("a vault choice is keyed to the Claude session when one is known", () => {
+  it("accept 2: a vault chosen in turn 1 comes back in turn 2, a new process (new parent) with the same session id", async () => {
+    const home = scratch();
+    const state = stateFor([AI_VAULT, NS, OTHER]);
+    const turn1 = await sessionChat(state, home, SID, { pid: 5001, started: "Thu Nov 12 09:00:00 2026" });
+    await pick(turn1.box, "testcarwashcouponapp");
+    expect(JSON.parse(readFileSync(CHOICE(home), "utf8"))).toMatchObject({ session: SID, vaults: [NS] });
+    const turn2 = await sessionChat(state, home, SID, { pid: 5002, started: "Thu Nov 12 09:01:00 2026" });
+    expect(await whoami(turn2.box)).toContain(`vaults: ${NS} ${RESTORED(NS)}`);
+    const reads = async () => {
+      await turn2.box.request("tools/call", { name: "read_record", arguments: { id: "1" } });
+      return toolPosts(turn2.platform.requests).filter((rec) => rec.body.name === "read_record");
+    };
+    expect((await reads())[0].body.contentVaultIds).toEqual([NS]);
+  });
+
+  it("the session id is enough where the parent process cannot be read (parent null)", async () => {
+    const home = scratch();
+    const state = stateFor([AI_VAULT, NS, OTHER]);
+    await pick((await sessionChat(state, home, SID, null)).box, "testcarwashcouponapp");
+    const next = await sessionChat(state, home, SID, null);
+    expect(await whoami(next.box)).toContain(`vaults: ${NS} ${RESTORED(NS)}`);
+  });
+
+  it("a different session (a new chat) restores nothing, even from the same parent", async () => {
+    const home = scratch();
+    const state = stateFor([AI_VAULT, NS, OTHER]);
+    await pick((await sessionChat(state, home, SID, PARENT)).box, "testcarwashcouponapp");
+    const next = await sessionChat(state, home, SID_OTHER, PARENT);
+    expect(await whoami(next.box)).toContain("vaults: none");
+  });
+
+  it("accept 3: with no session id, today's key is used (same parent restores, a new parent does not)", async () => {
+    const home = scratch();
+    const state = stateFor([AI_VAULT, NS, OTHER]);
+    await pick((await sessionChat(state, home, undefined, PARENT)).box, "testcarwashcouponapp");
+    const saved = JSON.parse(readFileSync(CHOICE(home), "utf8"));
+    expect(saved.session).toBeUndefined();
+    expect(saved).toMatchObject({ ppid: PARENT.pid, started: PARENT.started });
+    expect(await whoami((await sessionChat(state, home, undefined, PARENT)).box)).toContain(`vaults: ${NS} ${RESTORED(NS)}`);
+    expect(await whoami((await sessionChat(state, home, undefined, { ...PARENT, pid: 4243 })).box)).toContain("vaults: none");
+  });
+
+  it("a choice saved under a parent key is not taken by a session-keyed chat, and the reverse", async () => {
+    const home = scratch();
+    const state = stateFor([AI_VAULT, NS, OTHER]);
+    await pick((await sessionChat(state, home, undefined, PARENT)).box, "testcarwashcouponapp");
+    expect(await whoami((await sessionChat(state, home, SID, PARENT)).box)).toContain("vaults: none");
+  });
+
+  it("only a UUID is taken as a session id", () => {
+    expect(sessionIdFromEnv({ GILB_CLAUDE_SESSION_ID: SID.toUpperCase() })).toBe(SID);
+    expect(sessionIdFromEnv({ GILB_CLAUDE_SESSION_ID: "not-a-uuid" })).toBeUndefined();
+    expect(sessionIdFromEnv({})).toBeUndefined();
+  });
+});
+
+describe("accept 4: a trailing slash does not make another vault", () => {
+  it("https://x.gilb.com/vault and https://x.gilb.com/vault/ are one vault: choosing it twice lists it once", async () => {
+    const home = scratch();
+    const X = "https://x.example.test/vault";
+    const state = stateFor([AI_VAULT, X, OTHER]);
+    const { box } = await chat(state, home);
+    await pick(box, X);
+    await pick(box, `${X}/`);
+    expect((await whoami(box)).match(/vaults: (.*)/)[1].split(", ").length).toBe(1);
+  });
+  it("sameVault: with and without the trailing slash, addresses and plain ids", () => {
+    expect(sameVault("https://x.example.test/vault", "https://x.example.test/vault/")).toBe(true);
+    expect(sameVault("kaidev", "kaidev/")).toBe(true);
+    expect(sameVault("https://x.example.test/vault", "https://y.example.test/vault/")).toBe(false);
+  });
+});
+
+describe("accept 5: whoami names the AI's vault and the person's vault", () => {
+  const PERSON_VAULT = "https://kaidev.example.test/vault";
+  it("names both when the platform's prompt says who the AI acts for", async () => {
+    const home = scratch();
+    const { box } = await chat({ ...stateFor([AI_VAULT, NS]), person: PERSON_VAULT }, home);
+    const who = await whoami(box);
+    expect(who).toContain(`principal: ${AI_VAULT}`);
+    expect(who).toContain(`acting for: ${PERSON_VAULT}`);
+  });
+  it("names no person when the platform has not said (the person is never guessed)", async () => {
+    const home = scratch();
+    const { box } = await chat(stateFor([AI_VAULT, NS]), home);
+    const who = await whoami(box);
+    expect(who).toContain(`principal: ${AI_VAULT}`);
+    expect(who).not.toContain("acting for");
+  });
+  it("reads the person out of the prompt sentence", () => {
+    expect(personFromSystem(`X. You are the AI ${AI_VAULT}, acting for ${PERSON_VAULT}. Y`)).toBe(PERSON_VAULT);
+    expect(personFromSystem("That person is identified as: https://a.test/base. ")).toBeUndefined();
   });
 });
