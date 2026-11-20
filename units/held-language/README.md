@@ -1,3 +1,5 @@
+Needs: held-notes, language-search, lws-vault-sets, resource-id, stated-by, term-slots, vault-resources
+
 # held-language
 
 The held language claims of a person card: compose, read, add, set the flag of, and remove one.

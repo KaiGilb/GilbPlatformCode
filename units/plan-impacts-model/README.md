@@ -1,3 +1,5 @@
+Needs: plan-card-facts, relation-role, type-curie
+
 # plan-impacts-model
 
 Reads, parses and builds the impacts of a Solution on Values and Development Resources as plain functions: one `t:ImpactOn` relation per pair, with the numbers on the relation.

@@ -1,3 +1,5 @@
+Needs: open-popups, qualifier-value-picker, type-picture, type-term-popover, value-card-model, value-graph-geometry
+
 # value-graph
 
 The Value card's graph: the Scale as an arrow and as a timeline, with the levels as markers you can drag, a "+ New" menu, qualifier chips, endpoint pictures and a full-screen view; it never writes, the host saves what onChangeLevels gives.

@@ -1,3 +1,5 @@
+Needs: base-origin, direct-shares, folder-part, lws-records, lws-session-bridge, lws-vault-sets, ontology-reads, record-types, relation-role, share-refusal, term-origin, type-curie, vault-origin-rule
+
 # lws-relations
 
 Writing, reading and ending the relations between two records in a vault over the platform's relation interface, and the share acts and link-plane checks a relation write goes through.

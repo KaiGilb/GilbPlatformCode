@@ -1,3 +1,5 @@
+Needs: contact-kind-catalogue, contact-kind-model, lws-relations, lws-session-bridge, plan-record-hooks, relation-role, term-origin, term-slots
+
 # kind-relation
 
 Writes and ends the tie between a person and a kind of contact, with race guards.

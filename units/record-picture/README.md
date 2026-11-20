@@ -1,3 +1,5 @@
+Needs: lws-records, lws-session-bridge, photo-ref, picture-errors, picture-pick, picture-set, picture-shrink, picture-upload
+
 # record-picture
 
 ## What this is

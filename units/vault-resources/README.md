@@ -1,3 +1,5 @@
+Needs: lws-records, lws-vault-sets, resource-id, vault-namespace
+
 # vault-resources
 
 Creates, reads, patches and deletes a vault entity by its address, over the record doors.

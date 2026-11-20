@@ -1,3 +1,5 @@
+Needs: language-entry
+
 # language-order
 
 The rules of a person's language list: which language the contact-language tag marks, the list with the marked one first, what moving the mark writes.

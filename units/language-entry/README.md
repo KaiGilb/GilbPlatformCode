@@ -1,3 +1,5 @@
+Needs: language-fetch-pool
+
 # language-entry
 
 Reads one language entry from the catalogue: its name, its code and the countries it names.

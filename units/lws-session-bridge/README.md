@@ -1,3 +1,5 @@
+Needs: base-origin, signin, vault-origin-rule
+
 # lws-session-bridge
 
 The one seam through which GilbPlatform client code gets its credential headers, so the same client works with any signed-in session and never sends a credential to a host outside the platform.
@@ -12,10 +14,15 @@ A client that reads and writes vault records has to sign each request, drop the 
 - `bearerHeaderFor(url, method?)`, `dpopReadAuth(method, url)`, `dpopWriteAuth(method, url)`: the headers of one request. Each first asks `credentialAllowedAt(url)` of `vault-origin-rule` and answers `{}` for a URL outside the platform, without asking the host. Otherwise it answers what the host answers.
 - `invalidateDpop()`, `tokenManager.invalidate()`: drop the held token so the next use signs in again.
 - `tokenManager.getSession()`: the live session as `LwsSession` (`principal`, `vault`, `vaults`).
-- `configureLiveApp({ platformOrigin, idOrigin, systemVaultHosts?, localRigHosts?, credentialOptions? })` (since 0.1.3): the start-up a live app does once. It calls `setBaseOrigin(platformOrigin)`, `setSystemVaultHosts(systemVaultHosts ?? [])`, `setLocalRigHosts(localRigHosts)` when given, makes `new SessionCredential(credentialOptions)` and calls `setLwsAuth(lwsAuthFromSession(credential))`. It answers `{ credential, idOrigin, platformOrigin }`. The two origins are the app's own constants (this unit holds no host); an empty one throws before anything is set. For the signed fetch alone take `platform-fetch`.
+- `configureLiveApp({ platformOrigin, idOrigin, systemVaultHosts?, localRigHosts?, credentialOptions? })` (since 0.1.3): the start-up a live app does once. It calls `setBaseOrigin(platformOrigin)`, `setSystemVaultHosts(systemVaultHosts ?? [])`, `setLocalRigHosts(localRigHosts)` when given, makes `new SessionCredential(credentialOptions)` and calls `setLwsAuth(lwsAuthFromSession(credential))`. It also starts `credential.restore()` once and answers it as `ready` (since 0.1.4). It answers `{ credential, idOrigin, platformOrigin, ready }`. **`await ready` before reading `session`**: the stored session comes from IndexedDB, so `session` is empty until the restore ends, and a page that reads it once shows "Not connected". `ready` is one shared promise; `restore` is not called twice. The two origins are the app's own constants (this unit holds no host); an empty one throws before anything is set. For the signed fetch alone take `platform-fetch`.
 
   ```ts
-  const { credential, idOrigin } = configureLiveApp({ platformOrigin: PLATFORM_ORIGIN, idOrigin: ID_ORIGIN });
+  // Production origins: the platform is https://gilb.com and the identity host is https://id.gilb.com. An app reads them from its
+  // environment (VITE_PLATFORM_ORIGIN, VITE_ID_ORIGIN) so a test rig can point elsewhere.
+  const PLATFORM_ORIGIN = import.meta.env.VITE_PLATFORM_ORIGIN ?? "https://gilb.com";
+  const ID_ORIGIN = import.meta.env.VITE_ID_ORIGIN ?? "https://id.gilb.com";
+  const { credential, idOrigin, ready } = configureLiveApp({ platformOrigin: PLATFORM_ORIGIN, idOrigin: ID_ORIGIN });
+  await ready; // before reading credential.session
   const auth = makeSignInAuth({ credential, origin: idOrigin, productName: "My app" }); // signin/session
   ```
 - `dpopBoundMs()`: 10 000, the number of milliseconds a caller waits for the session before a write.
@@ -45,6 +52,10 @@ The session fields read at the call sites: `principal` at `relationWrite.ts:304`
 The unit holds one piece of module state, the host set with `setLwsAuth`. An app must have ONE copy of it: two installed copies are two seams, and a client module that imports one is signed by the host set on the other. It reads the settings of `base-origin` through `vault-origin-rule` when a function is called. Its peers: `vault-origin-rule` (with `base-origin`) and `signin`.
 
 `src/proofHtu.ts` is a named copy of `proofHtu` from `units/request-htu/src/requestHtu.ts` at main d65985d, verbatim (token-equal with comments stripped); it is not exported from the unit.
+
+## Changes in 0.1.4
+
+Patch release, additive. `configureLiveApp` now starts `credential.restore()` and answers `ready`. Before, nothing restored the stored session, so `session` stayed empty.
 
 ## Changes in 0.1.3
 

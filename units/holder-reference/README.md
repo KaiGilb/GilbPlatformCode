@@ -1,3 +1,5 @@
+Needs: record-sync, stakeholder-field-sets, stakeholder-kinds, vocabulary-source
+
 # holder-reference
 
 Adds a reference from a card field to another record with a version-checked write and the ontology's rules for which references are allowed.

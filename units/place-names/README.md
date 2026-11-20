@@ -1,3 +1,5 @@
+Needs: geo-catalogue
+
 # place-names
 
 Reads the names of catalogue places, one answer per place: named, missing, or not read.

@@ -1,3 +1,5 @@
+Needs: plan-card
+
 # solution-card
 
 The whole Solution card: one component that draws the Plan card of a record of type Solution or Solution Constraint, with the lines of that type in order, every read and write supplied by the host.

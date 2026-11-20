@@ -1,3 +1,5 @@
+Needs: type-name
+
 # type-picture
 
 Draws a GilbVeda type's picture at a given size, and draws nothing when the type has no picture or the picture fails to load.

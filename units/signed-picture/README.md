@@ -1,3 +1,5 @@
+Needs: lws-session-bridge, photo-ref
+
 # signed-picture
 
 Shows a vault picture that needs a signed request: fetches its bytes with the person's access, keeps one object URL per file until sign-out (and, if asked, a copy on the device for each person), lets only a few fetches run at once (a number the app can set), and draws a React thumbnail that loads when it nears the screen.

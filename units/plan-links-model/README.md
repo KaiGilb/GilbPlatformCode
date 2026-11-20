@@ -1,3 +1,5 @@
+Needs: entity-ref, id-tail, plan-card-facts, relation-role, type-curie, type-key
+
 # plan-links-model
 
 Reads and builds the links on a Function, Solution, Value or Resource card as plain functions: which record a link points at, the tag drawn for it, the loop checks on the Part of chain, and the Solution of relations read back.

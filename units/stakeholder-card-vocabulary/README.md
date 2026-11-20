@@ -1,3 +1,5 @@
+Needs: holder-reference, stakeholder-field-sets, stakeholder-kinds, term-origin, vocabulary-source
+
 # stakeholder-card-vocabulary
 
 Reads and keeps the vocabulary the Stakeholder card needs from the ontology master: the field sets per kind and the reference rules, as query options a page can share.

@@ -34,7 +34,14 @@ export interface ExtractClientOptions {
 
 const GENERIC = "The site could not be read.";
 
-function messageFor(status: number, code: unknown): string {
+const SITE_REFUSED = "This site does not allow its style to be read. Try another site.";
+
+// `code` and `siteStatus` come from the server's JSON body. A 502 `site_status` carries the status the site itself answered.
+// `site_refused` is the server's newer code for the same case; this client accepts both, so the order of the two releases does not matter.
+function messageFor(status: number, code: unknown, siteStatus?: unknown): string {
+  if (status === 502 && code === "site_status" && (siteStatus === 401 || siteStatus === 403 || siteStatus === 429)) return SITE_REFUSED;
+  if (code === "site_refused") return SITE_REFUSED;
+  if (code === "site_unreachable") return "The site could not be reached.";
   if (status === 400 && code === "address_not_allowed") return "That address cannot be read (private or not allowed).";
   if (status === 401) return "Sign in first.";
   if (status === 415) return "That address is not a web page.";
@@ -65,12 +72,15 @@ export function makeExtractFromUrl(opts: ExtractClientOptions): (url: string) =>
     }
     if (!res.ok) {
       let code: unknown;
+      let siteStatus: unknown;
       try {
-        code = ((await res.json()) as { error?: unknown } | null)?.error;
+        const b = (await res.json()) as { error?: unknown; status?: unknown } | null;
+        code = b?.error;
+        siteStatus = b?.status;
       } catch {
         /* no body */
       }
-      throw new ExtractError(messageFor(res.status, code), res.status);
+      throw new ExtractError(messageFor(res.status, code, siteStatus), res.status);
     }
     let body: Record<string, unknown>;
     try {

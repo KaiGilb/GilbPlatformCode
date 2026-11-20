@@ -1,3 +1,5 @@
+Needs: base-record, card-group, card-mode, description-parts-model, description-parts-view, field-row, open-popups, plan-button-row, plan-card-facts, plan-impacts, plan-impacts-model, plan-kinds, plan-links-model, plan-source, plan-stakeholder-lines, plan-stakeholders-model, plan-tag-links, plan-type-field, plan-type-level-version, project-levels, record-picker, relation-role, type-chooser, type-curie, value-card-model, value-card-write, value-endpoint-line, value-illustration, value-levels-line, value-line-kit, value-meters-line, value-qualifiers-line, value-scale-line
+
 # plan-card
 
 Draws one Plan card for a record of type Function, Function Constraint, Solution, Solution Constraint, Value or Development Resource: the lines that type has, in order, each change saved with a version check, the type changeable live, with every read and write supplied by the host.

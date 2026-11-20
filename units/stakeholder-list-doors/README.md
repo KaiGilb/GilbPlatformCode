@@ -1,3 +1,5 @@
+Needs: base-origin, lws-records, lws-session-bridge, lws-vault-sets, online-card, online-card-link, person-connections, plan-record-hooks, record-sync, stakeholder-list-reader, stakeholder-list-state, term-origin, vault-origin-rule
+
 # stakeholder-list-doors
 
 Wires the stakeholder list reader to the platform: each holder's records, the person's linked records, and deleted and ended records left out.

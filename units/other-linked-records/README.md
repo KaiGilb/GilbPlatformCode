@@ -1,3 +1,5 @@
+Needs: card-group, stakeholder-list-state, vault-list
+
 # other-linked-records
 
 Lists the other records the list on screen links to this record.

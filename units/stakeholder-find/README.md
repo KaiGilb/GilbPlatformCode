@@ -1,3 +1,5 @@
+Needs: contact-kind-model, id-tail, ontology-reads, person-create, pick-or-create, plan-record-hooks, record-types, stakeholder-card-model, stakeholder-card-vocabulary
+
 # stakeholder-find
 
 Looks up the holder's existing records of a name as they type, before a new one is made.

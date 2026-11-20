@@ -1,3 +1,5 @@
+Needs: button, contact-rows, result-total, term-origin
+
 # skill-picker-sheet
 
 Lets the holder pick a skill from the catalogue, with its depth, in a sheet.

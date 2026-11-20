@@ -1,3 +1,5 @@
+Needs: session-cache
+
 # use-cached
 
 ## What this is

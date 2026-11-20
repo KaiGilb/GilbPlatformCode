@@ -1,3 +1,5 @@
+Needs: base-record, entity-ref, entity-ref-value, field-row, plan-card-facts, plan-kinds, plan-stakeholders-model, record-picker, relation-role, remove-control
+
 # plan-stakeholder-lines
 
 Draws the Stakeholder line and the Authority line of a Plan card, and on a Development Resource the Resource Owner line: linked people and organizations as chips with their role marks, names that are not records yet as text, the picker to link a record, creating a new stakeholder, removing, and an Authority's "acts for", with every read and write supplied by the host.

@@ -35,6 +35,6 @@
     "admitted": true,
     "tag": "t:AppStyleSheet.files",
     "title": "App style files (dev save endpoint and font export, Node)",
-    "note": "Node only: the Vite dev middleware that writes style.tokens.json and brand-logo.png from the Studio's save, and the command and function that copy the chosen @fontsource woff2 files into public/fonts and write fonts.css. For the screen that chooses the style take style-studio; to apply it in the page take style-runtime."
+    "note": "Node only: the Vite dev middleware that writes style.tokens.json and brand-logo.png from the Studio's save, and the command and function that copy the chosen @fontsource woff2 files into public/fonts and write fonts.css. For the screen that chooses the style take style-studio; to apply it in the page take style-runtime. Also found as: style guide; app style guide."
   }
 }

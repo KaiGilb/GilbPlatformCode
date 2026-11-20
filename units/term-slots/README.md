@@ -1,3 +1,5 @@
+Needs: term-origin
+
 # term-slots
 
 Finds a card field by its ontology term, and reads its spelling, label and value set from the master.

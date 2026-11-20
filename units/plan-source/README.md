@@ -1,3 +1,5 @@
+Needs: base-record, entity-ref, entity-ref-value, plan-card-facts, record-picker, remove-control, type-curie
+
 # plan-source
 
 One source control for every Plan line: who said it (a person, organization or AI agent record), the document or decision it came from, or words for someone with no record yet.

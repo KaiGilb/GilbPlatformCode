@@ -1,3 +1,5 @@
+Needs: background-jobs, device-store, prefetch-registry, principal-hub, record-sync, session-cache, updated-line, use-cached
+
 # speed-kit
 
 ## What this is

@@ -1,3 +1,5 @@
+Needs: lws-records, lws-session-bridge, picture-shrink, picture-upload, refusal-detail
+
 # picture-errors
 
 Turns any failure in adding, storing or showing a picture into one sentence that names the cause and what the person can do next.

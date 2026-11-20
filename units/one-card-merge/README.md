@@ -1,3 +1,5 @@
+Needs: online-card, stakeholder-field-sets, vocabulary-source
+
 # one-card-merge
 
 Merges a person's published rows with the holder's own rows into one list of groups, each row marked theirs, yours or both.

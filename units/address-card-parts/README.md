@@ -1,3 +1,5 @@
+Needs: button, card-mode, flag-image, geo-catalogue, place-claims, place-clear, place-draft, place-line, place-lines, place-names, place-picker, remove-control, role-label
+
 # address-card-parts
 
 The parts of one address on a card: a stored address as compact lines or an editor, its bound places by name, its text rows.

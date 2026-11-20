@@ -1,3 +1,5 @@
+Needs: plan-card-facts, qualifier-value-picker, value-card-model, value-line-kit
+
 # value-meters-line
 
 Draws and edits the Meters line of a Value card: each Meter with its qualifiers and its Human, AI and Instrument lines, each line with its method and source, giving every change up whole through onChange.

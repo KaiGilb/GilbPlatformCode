@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNamedVault, listVaults, normaliseVaultName, sameVaultHost, type SignedRequestSource } from "./vaults";
+import { createNamedVault, findVaultByName, listVaults, normaliseVaultName, sameVaultHost, type SignedRequestSource } from "./vaults";
 import { VaultRequestRefusedError } from "./types";
 import type { Transport, TransportRequest } from "./transport";
 
@@ -250,5 +250,27 @@ describe("create-named vaultId segment (0.2.5)", () => {
     };
     const out = await createNamedVault(ORIGIN, { name: "kid", represents: REP }, { credential, transport });
     expect(out.vaultId).toBe("https://zz.example.test/vault");
+  });
+});
+
+describe("findVaultByName", () => {
+  const vaults = [
+    { vaultId: "https://a.example.test/vault", modes: [], name: "TestCreateApp2", shortName: "testcreateapp2" },
+    { vaultId: "https://b.example.test/vault", modes: [], name: "Other Vault" },
+  ] as Parameters<typeof findVaultByName>[0];
+
+  // Spec: friction #48 — the live app said "no vault named TestCreateApp2" because name is the display name.
+  it("finds a vault by a mixed-case name through its shortName", () => {
+    expect(findVaultByName(vaults, "TestCreateApp2")?.vaultId).toBe("https://a.example.test/vault");
+  });
+
+  // Spec: friction #48 — a vault the platform sent no podName for is matched by its normalised display name.
+  it("falls back to the normalised display name when there is no shortName", () => {
+    expect(findVaultByName(vaults, "other-vault")?.vaultId).toBe("https://b.example.test/vault");
+  });
+
+  // Spec: friction #48 — no match answers undefined, never a wrong vault.
+  it("answers undefined when no vault matches", () => {
+    expect(findVaultByName(vaults, "nothere")).toBeUndefined();
   });
 });

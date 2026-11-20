@@ -1,3 +1,5 @@
+Needs: adder-card, card-group, card-mode, contact-annotation, contact-labels, held-notes, kind-relation, person-connections, stakeholder-contact-header
+
 # contact-card-slots
 
 Gives a person's record card its holder-only slots: the 'Where / How we met' line in the header and My Note in the body, from one source.

@@ -25,6 +25,8 @@ A unit's library peers must be installed before it; `scripts/peers.mjs` works ou
 node scripts/peers.mjs <unit>
 ```
 
+Every unit README that has library peers starts with a `Needs: <peer>, <peer>` line (the direct peers, from `package.json`). To install a unit, run `node scripts/peers.mjs <unit>`: it prints every peer the unit needs, in install order, with the `npm install` line. `node scripts/needs.mjs check` tests the lines and `node scripts/needs.mjs write` puts them right; the check runs with the scripts' tests.
+
 ## Proof
 
 `scripts/proof.mjs` runs a unit's proofs (`npm ci`, `npm test`, then `typecheck` and `check:host-agnostic` when the unit has them) and says PASS or where it failed.

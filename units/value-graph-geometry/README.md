@@ -1,3 +1,5 @@
+Needs: date-rules, value-card-model
+
 # value-graph-geometry
 
 The math under the Value graph: the value axis, the date axis and its ticks, snapping, the coloured bands, the series paths and the label rows.

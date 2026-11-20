@@ -17,6 +17,8 @@ const found = (unit, phrase) => {
 };
 
 const CASES = [
+  // Spec: friction #49/#50 — a builder looking for "style guide" found none of the three style units.
+  ["style guide", ["style-runtime", "style-studio", "style-app-files"]],
   ["create vault first sign-in", ["signin"]],
   ["take photo camera", ["picture-pick"]],
   ["vault chooser", ["vault-switcher", "vault-list"]],

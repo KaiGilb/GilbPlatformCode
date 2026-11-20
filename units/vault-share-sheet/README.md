@@ -1,3 +1,5 @@
+Needs: base-origin, modal-sheet, principal-row, vault-access, vault-address
+
 # vault-share-sheet
 
 Share a whole vault with another person: the model that reads who has access and turns what was typed into a grantee, and a React sheet to give access, see who has it and take it away.

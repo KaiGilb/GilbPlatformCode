@@ -136,7 +136,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.20";
+export const BRIDGE_BUILD = "0.3.21";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -4561,6 +4561,19 @@ export function createBridge(opts = {}) {
                 return json(res, 409, { error: exists });
             return json(res, 500, { error: `Could not make the project: ${e?.message ?? e}` });
         }
+        // A repo before any turn (friction 47), so the selective-commit step can run and the deny on .git hooks, config and
+        // info/attributes (gitPlaces) covers it: that deny is computed from repos that exist when a turn starts.
+        // `--template=` copies no template, so no hooks arrive from the person's git setup; the config files of the person
+        // are not read, and `core.hooksPath` is pinned off, so nothing in the environment can add a hook either.
+        try {
+            execFileSync("git", ["-c", "core.hooksPath=/dev/null", "init", "--quiet", "--template=", path.join(workspace.path, name)], {
+                stdio: "ignore", timeout: 10_000,
+                env: { ...env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
+            });
+        }
+        catch (e) {
+            log(`project ${name}: git init failed: ${e?.code ?? e?.message ?? e}`);
+        }
         opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
         let npmrc = false;
         try {
@@ -4570,7 +4583,7 @@ export function createBridge(opts = {}) {
         catch (e) {
             log(`project ${name}: .npmrc not written: ${e?.code ?? e?.message ?? e}`);
         }
-        return json(res, 200, { name, npmrc });
+        return json(res, 200, { name, npmrc }); // the answer's shape is unchanged: a failed git init is only logged
     }
     async function handleCreate(req, res) {
         let body;

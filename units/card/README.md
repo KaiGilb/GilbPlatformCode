@@ -1,3 +1,5 @@
+Needs: class-merge
+
 # card
 
 One card look for every app: a raised surface with a header, a title, a description, and content.

@@ -1,3 +1,5 @@
+Needs: style-runtime
+
 # style-studio
 
 App Style Studio: choose the app's colours, fonts, buttons, windows and logo before building, and save them to the app's resource vault.
@@ -16,6 +18,8 @@ A developer tool. Not loaded by the app at runtime; the app takes style-runtime.
 - `ThemeToggle` (a light/dark button; it now lives in `style-runtime/react` and is re-exported here), `ActionRow` (a Mac-order button row with spec objects; `ActionRowSlots` is `style-runtime/react`'s slot-based row, which an app should use), the palette catalogues, and, re-exported from `style-runtime` (where they live, so an app that only applies its style never takes the Studio), the vault reader `loadStyleFromVault`, `makeVaultFetchRemote` and `recordsToSheet`.
 
 The Studio has a Background selector (left of the Light/Dark button) and a "Many colours" tab. The background is chosen apart from the palette, so a palette changes accent and hues only. In "Many colours" you type every colour and none is changed; the Save tab's contrast check shows any pair that fails. (0.3.0)
+
+A site that refuses the read (the server answers 502 `site_status` 401, 403 or 429, or `site_refused`) shows "This site does not allow its style to be read. Try another site."; `site_unreachable` shows "The site could not be reached." (0.3.1)
 
 ## What this is not
 

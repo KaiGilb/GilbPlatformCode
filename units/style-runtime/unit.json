@@ -42,6 +42,6 @@
     "admitted": true,
     "tag": "t:AppStyleSheet.runtime",
     "title": "Apply the app's style at start (style tokens)",
-    "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default. It also brings the button row (Mac order: positive rightmost, Cancel left of it, Delete alone at far left): use ActionRow from the /react entry or the gs-actionrow classes."
+    "note": "loadStyle writes the CSS custom properties from one style.tokens.json, validated, no flash, with an offline fallback. Every new app takes it by default. It also brings the button row (Mac order: positive rightmost, Cancel left of it, Delete alone at far left): use ActionRow from the /react entry or the gs-actionrow classes. Also found as: style guide; app style guide."
   }
 }

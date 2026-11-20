@@ -1,3 +1,5 @@
+Needs: base-record, id-tail, plan-card-facts, plan-links-model
+
 # description-parts-model
 
 Reads and plans the Description of a Solution or Solution Constraint, which is one record per Keyword part: it parses Keyword lines and Assumptions, builds the tree, orders and moves parts, previews a paste, and plans the move or the removal of a whole level, with the host supplying every read.

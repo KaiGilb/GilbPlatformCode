@@ -1,3 +1,5 @@
+Needs: added-by, card-group, card-mode, flag-choice, flag-chooser, flag-image, held-languages-state, language-entry, language-order, language-row, language-search, picker-box, remove-control
+
 # language-section
 
 The Languages group of a held person card: the languages by name and flag, add, flag, remove, mark the contact language, make private.

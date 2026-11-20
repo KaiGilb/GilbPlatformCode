@@ -1,3 +1,5 @@
+Needs: card-group, card-mode, card-references, entity-ref-value, lws-records, remove-control, stakeholder-card-model, stakeholder-card-vocabulary, stakeholder-field-sets
+
 # stakeholder-set-fields
 
 Draws and edits the Relations and Contact-preferences fields of a stakeholder card from the ontology's field set.

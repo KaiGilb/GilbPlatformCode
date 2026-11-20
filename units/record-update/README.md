@@ -1,3 +1,5 @@
+Needs: lws-records, plan-kinds, record-cache-kit, record-types, stakeholder-card-model, tag-carrier, working-set-store
+
 # record-update
 
 Saves a record card's edits as one PATCH against the version it read, and keeps every cache of that record in step.

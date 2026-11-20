@@ -1,3 +1,5 @@
+Needs: contact-kind-model, lws-relations, lws-vault-sets, term-origin, term-slots
+
 # contact-kind-catalogue
 
 Reads the master catalogue of contact kinds and the holder's own additions, with caches.

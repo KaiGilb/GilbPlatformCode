@@ -1,3 +1,5 @@
+Needs: file-words
+
 # org-mark
 
 Draws an organization's logo from a bounded file fetch.

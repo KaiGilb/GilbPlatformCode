@@ -1,3 +1,5 @@
+Needs: server-error
+
 # refusal-detail
 
 Turns a refused request into one readable line, METHOD path -> HTTP status - the server's own sentence, and shows it on an access-denied screen that tells the person to ask the owner.

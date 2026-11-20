@@ -1,3 +1,5 @@
+Needs: adder-card, flag-choice, held-language, held-notes, language-entry, language-order, stated-by
+
 # held-languages-state
 
 The state of a held card's languages: the rows, and add, flag, remove, mark and make private.

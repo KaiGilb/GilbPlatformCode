@@ -1,3 +1,5 @@
+Needs: base-origin, lws-session-bridge, record-types, vault-origin-rule
+
 # lws-records
 
 Reading, creating and changing one record in a vault over the platform's record interface, with the typed errors a refused write throws.

@@ -1,3 +1,5 @@
+Needs: birthday-picker, birthday-text, card-mode, open-popups
+
 # field-row
 
 One click-to-edit text field row on a card: it shows the value (or nothing, in view mode, when empty), turns into an input on a click in edit mode, commits on Enter or on leaving, reverts on Escape, and does not treat a click into an open dialog or popover as leaving.

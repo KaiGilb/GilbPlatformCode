@@ -1,3 +1,5 @@
+Needs: lws-session-bridge, server-error, vault-origin-rule
+
 # vault-access
 
 Grants, revokes and reads who may use a whole vault, and shares that vault so a person can add records there.

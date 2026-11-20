@@ -1,3 +1,5 @@
+Needs: entity-ref, entity-ref-value, lws-records, lws-vault-sets, plan-links-model, plan-record-hooks, record-detail-reads, vault-origin-rule
+
 # related-children
 
 Lists the records that point at this one as a member, read from the parent's own vault.

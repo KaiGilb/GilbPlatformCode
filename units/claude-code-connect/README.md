@@ -1,3 +1,5 @@
+Needs: claude-code-client
+
 # claude-code-connect
 
 The Connect-Claude-Code view for an app: a button that walks the person through starting the local bridge, typing the short code, and pairing, plus a small badge that shows "connected" with Disconnect.

@@ -1,3 +1,5 @@
+Needs: entity-ref, lws-session-bridge, plan-stakeholder-lines, record-detail-reads, vault-origin-rule
+
 # added-by
 
 Shows who added a record and lets the holder switch a note between private and shared.

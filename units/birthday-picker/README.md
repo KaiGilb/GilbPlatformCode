@@ -1,3 +1,5 @@
+Needs: birthday-text
+
 # birthday-picker
 
 Picks a birthday from day, month and an optional year, with no free text.

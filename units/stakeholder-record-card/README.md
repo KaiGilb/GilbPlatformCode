@@ -1,3 +1,5 @@
+Needs: add-information, card-group, card-mode, contact-card-slots, contact-rows, entity-name, entity-ref-value, entity-write-access, header-layout, kind-relation, lws-records, lws-relations, one-card, one-card-context, one-card-merge, online-card-link, other-linked-records, own-card-state, person-field-row, person-name, photo-term, plan-record-hooks, plan-self-source, plan-stakeholder-lines, record-cache-kit, record-detail-reads, record-types, record-update, record-write, related-children, stakeholder-card-model, stakeholder-card-vocabulary, stakeholder-contact-header, stakeholder-set-fields, term-slots, vault-list, vault-origin-rule, veda-labels, vocabulary-source
+
 # stakeholder-record-card
 
 Draws and edits the card of a person the holder keeps a record of, with Edit, +, the groups in their order, autosave, and the link to their online card.

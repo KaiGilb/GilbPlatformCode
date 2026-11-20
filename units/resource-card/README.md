@@ -1,3 +1,5 @@
+Needs: plan-card
+
 # resource-card
 
 The whole Development Resource card: one component that draws the Plan card of a record of type Development Resource, the Value card with a Budget level, a Resource Owner line and no Value of Function, every read and write supplied by the host.

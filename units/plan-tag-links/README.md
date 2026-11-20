@@ -1,3 +1,5 @@
+Needs: base-record, card-mode, entity-ref, entity-ref-value, id-tail, plan-card-facts, plan-links-model, plan-tag-picker, record-picker, remove-control, type-chooser
+
 # plan-tag-links
 
 The link lines of a Plan card (Part of, Sub-functions, Function of Value, Value of Function, Solution of, Solutions and Part of System), each shown by the linked records' live tags, with the host doing every read, cache and write.

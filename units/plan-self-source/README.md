@@ -1,3 +1,5 @@
+Needs: base-origin, lws-records, own-card, plan-record-hooks, vault-origin-rule
+
 # plan-self-source
 
 The signed-in person's own card as the source of what they write: the finding of that card in their landing vault, read once and kept by the page's query cache, and the hook that answers the card's address or nothing.

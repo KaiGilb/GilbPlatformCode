@@ -1,3 +1,5 @@
+Needs: record-write
+
 # entity-write-access
 
 Remembers, for this page, which entities refused a write, and tells a screen whether it may write one.

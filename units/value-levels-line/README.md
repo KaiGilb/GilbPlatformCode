@@ -1,3 +1,5 @@
+Needs: open-popups, plan-card-facts, qualifier-value-picker, value-card-model, value-line-kit
+
 # value-levels-line
 
 Draws and edits the Levels line of a Value card: every level (Fail, Survival, Past, Status, Tolerable, Goal or on a Development Resource Budget, Wish, or a word of your own) as one line with its number, date, qualifiers, conditions, source and note, with the kind menu, paste of many level lines, and the move of older stored lists, giving every change up whole through onChange.

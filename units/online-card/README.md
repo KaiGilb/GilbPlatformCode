@@ -1,3 +1,5 @@
+Needs: online-card-link, person-connections, record-sync
+
 # online-card
 
 Controls the link between a holder's record of a person and that person's own online card: find, link, unlink, refresh.

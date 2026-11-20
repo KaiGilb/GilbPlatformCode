@@ -1,3 +1,5 @@
+Needs: base-origin, lws-records, lws-session-bridge, narrow-total, record-types, result-total, vault-origin-rule
+
 # lws-vault-sets
 
 Asking a vault what it holds over the platform's record interface: a page of its records or files, a find by attribute, a text search, and the cap on requests in flight.

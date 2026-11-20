@@ -1,3 +1,5 @@
+Needs: plan-card
+
 # value-card
 
 The whole Value card: one component that draws the Plan card of a record of type Value, with its picture, Scale, Endpoint, Qualifiers, Levels and Meter lines and the lines of a Plan record, every read and write supplied by the host.

@@ -1,3 +1,5 @@
+Needs: base-record, description-parts-model, lws-records, lws-vault-sets, main-tag, plan-links-model, vault-origin-rule
+
 # record-cache-kit
 
 The Plan card's record cache: one writer for a row in every list and read that holds it, the membership finds of a card's lines with their pins and drops, and the picker search, all over one query client.

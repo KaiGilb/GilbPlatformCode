@@ -1,3 +1,5 @@
+Needs: record-sync, tag-grammar
+
 # tag-client
 
 Reads and writes the tags of a vault's records over the platform's tag routes: the main tag of one record or of a page of records, the tag list, adding, removing and making a tag main, and a plain sentence when the platform has no tag routes.

@@ -1,3 +1,5 @@
+Needs: type-term-popover
+
 # type-chooser
 
 Lets a person search for a GilbVeda type and pick one from a short list with planes, definitions, a detail view and a note when more terms match than are shown.

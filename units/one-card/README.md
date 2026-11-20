@@ -1,3 +1,5 @@
+Needs: birthday-text, card-group, flag-image, language-row, one-card-context, one-card-merge, one-card-rows, online-card, online-card-link, open-popups, person-connections, place-lines, record-cache-kit, stakeholder-list-doors, stakeholder-list-state, term-name-text, term-slots, vocabulary-source
+
 # one-card
 
 Draws a stakeholder card as one merged card per person, with the holder's rows and the person's rows in one frame.

@@ -1,3 +1,5 @@
+Needs: picture-set, picture-viewer, signed-picture
+
 # vault-picture-viewer
 
 Opens a vault's pictures in the full-screen viewer: the small copy shows at once while the largest stored copy is fetched with the person's access, a picture on this device opens with no fetch, and the viewer's stylesheet is loaded for you.

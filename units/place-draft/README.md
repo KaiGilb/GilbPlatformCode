@@ -1,3 +1,5 @@
+Needs: geo-catalogue, place-claims
+
 # place-draft
 
 The address a person is filling in: its parts, the places picked into it, and the rules that move a pick through it.

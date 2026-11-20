@@ -1,3 +1,5 @@
+Needs: lws-records, lws-relations, ontology-reads, pick-or-create, plan-record-hooks, plan-self-source, platform-fetch, record-cache-kit, record-sync, self-card, stakeholder-card-vocabulary, stakeholder-field-sets, tag-client, term-origin, vault-origin-rule, vocabulary-source
+
 # person-create
 
 Makes a person record in a named vault, finds candidate people first, and refreshes the lists afterwards.

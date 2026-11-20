@@ -1,3 +1,5 @@
+Needs: date-rules
+
 # level-date-input
 
 The date field of a level's popover in the value graph: a labelled date input that reports change, Enter, blur and Escape to the host, and shows a year alert when the host asks for it.

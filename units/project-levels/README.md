@@ -1,3 +1,5 @@
+Needs: base-record, plan-card-facts, term-origin, type-key
+
 # project-levels
 
 Builds the tree of a project's levels (Business, Product, Solution and any the project added) for a level chooser, and gives a card the one hook that reads them and adds a level, with the host doing every read and write.

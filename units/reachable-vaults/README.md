@@ -1,3 +1,5 @@
+Needs: base-origin, lws-records, lws-session-bridge, plan-record-hooks, vault-modes
+
 # reachable-vaults
 
 Reads the vaults the signed-in person can reach, with their names, parents and landing flag, and decorates the session's vault set with them.

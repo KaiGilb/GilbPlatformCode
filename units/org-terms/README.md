@@ -1,3 +1,5 @@
+Needs: term-slots
+
 # org-terms
 
 Resolves the ontology spellings an organization card reads: its served terms and the employment link.

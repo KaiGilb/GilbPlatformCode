@@ -1,3 +1,5 @@
+Needs: flag-choice, language-fetch-pool
+
 # flag-source
 
 Reads a country's flag from the geo catalogue once and keeps it on the device.

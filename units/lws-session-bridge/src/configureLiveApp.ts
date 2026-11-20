@@ -6,7 +6,7 @@ import {
   setLocalRigHosts,
   setSystemVaultHosts,
 } from "@kaigilb/gilbplatformcode-base-origin";
-import { SessionCredential, type SessionCredentialOptions } from "@kaigilb/gilbplatformcode-signin/session";
+import { SessionCredential, type GilbSession, type SessionCredentialOptions } from "@kaigilb/gilbplatformcode-signin/session";
 import { lwsAuthFromSession } from "./fromSession";
 import { setLwsAuth } from "./lwsAuth";
 
@@ -30,15 +30,21 @@ export interface LiveApp {
   credential: SessionCredential;
   idOrigin: string;
   platformOrigin: string;
+  /**
+   * The credential's one `restore()`, started by {@link configureLiveApp}. `credential.session` is empty until it
+   * settles (the stored session comes from IndexedDB), so `await ready` before reading `session`. It is the same
+   * promise every time it is read; `restore` is not called again.
+   */
+  ready: Promise<GilbSession | null>;
 }
 
 /**
  * Sets up a live app in one call: `setBaseOrigin(platformOrigin)`, `setSystemVaultHosts(systemVaultHosts ?? [])`,
  * `setLocalRigHosts(localRigHosts)` when given, a new `SessionCredential(credentialOptions)`, then
- * `setLwsAuth(lwsAuthFromSession(credential))`. Call it once, before any request is signed. A second call replaces the first.
+ * `setLwsAuth(lwsAuthFromSession(credential))`, and starts `credential.restore()` once (answered as `ready`). Call it once, before any request is signed. A second call replaces the first.
  *
  * @param c the origins (the app's own constants) and optional hosts and credential options
- * @returns the credential and the two origins
+ * @returns the credential, the two origins and `ready`
  * @throws Error when `platformOrigin` or `idOrigin` is empty
  */
 export function configureLiveApp(c: LiveAppConfig): LiveApp {
@@ -49,5 +55,8 @@ export function configureLiveApp(c: LiveAppConfig): LiveApp {
   if (c.localRigHosts) setLocalRigHosts(c.localRigHosts);
   const credential = new SessionCredential(c.credentialOptions);
   setLwsAuth(lwsAuthFromSession(credential));
-  return { credential, idOrigin: c.idOrigin, platformOrigin: c.platformOrigin };
+  // The stored session is read from IndexedDB, so it is not on `credential.session` yet. One shared promise, started here.
+  const ready = credential.restore();
+  ready.catch(() => {}); // a side branch, so an app that never reads `ready` gets no unhandled rejection; awaiters still see the error
+  return { credential, idOrigin: c.idOrigin, platformOrigin: c.platformOrigin, ready };
 }

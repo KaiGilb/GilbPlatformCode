@@ -1,3 +1,5 @@
+Needs: principal-hub
+
 # prefetch-registry
 
 ## What this is

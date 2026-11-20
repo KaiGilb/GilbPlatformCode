@@ -1,3 +1,5 @@
+Needs: lws-vault-sets, own-card, person-create, plan-record-hooks, plan-self-source, vault-origin-rule
+
 # own-card-state
 
 Tells a record card whether the record is the signed-in person's own card, and draws the band that says so.

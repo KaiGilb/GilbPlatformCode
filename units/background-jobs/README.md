@@ -1,3 +1,5 @@
+Needs: principal-hub
+
 # background-jobs
 
 ## What this is

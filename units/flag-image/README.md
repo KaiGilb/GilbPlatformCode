@@ -1,3 +1,5 @@
+Needs: flag-choice, flag-source
+
 # flag-image
 
 Draws a country's flag, or a neutral globe when there is none.

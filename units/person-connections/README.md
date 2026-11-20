@@ -1,3 +1,5 @@
+Needs: online-card-link, record-sync
+
 # person-connections
 
 Reads which of a holder's circles each person is placed in, and resolves a person's public card.

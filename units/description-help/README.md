@@ -1,3 +1,5 @@
+Needs: description-parts-model, help-doc
+
 # description-help
 
 The help panel for writing a Solution's or Function's Description in Keyword parts: what a Keyword is, the Assumption part, sub-parts, moving parts, pasting many parts at once and naming a source, each with an example that uses the card's own tag.

@@ -1,3 +1,5 @@
+Needs: base-record, card-mode, entity-ref-value, id-tail, plan-card-facts, plan-impacts-model, plan-links-model, plan-source, plan-tag-picker, relation-role, remove-control
+
 # plan-impacts
 
 The Impacts table of a Solution or Solution Constraint: one row per Value or Development Resource it impacts, with the estimated value change or resource draw, its basis and source, kept on the relation, with the host doing every read, cache and write.

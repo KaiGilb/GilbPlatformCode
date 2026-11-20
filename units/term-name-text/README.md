@@ -1,3 +1,5 @@
+Needs: skill-uri-label, term-origin
+
 # term-name-text
 
 Names a skill or an interest from its catalogue address, never by the address itself.

@@ -1,3 +1,5 @@
+Needs: principal-hub
+
 # session-cache
 
 ## What this is

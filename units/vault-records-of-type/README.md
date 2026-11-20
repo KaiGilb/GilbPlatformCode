@@ -1,3 +1,5 @@
+Needs: lws-records, lws-vault-sets, resource-id, vault-resources
+
 # vault-records-of-type
 
 Lists every record of one type in a vault, page by page, and says when the listing stopped before the end.

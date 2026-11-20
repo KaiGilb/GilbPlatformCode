@@ -1,3 +1,5 @@
+Needs: geo-catalogue, place-hit-details
+
 # work-location-field
 
 The box where a role's work place is searched in the catalogue and chosen, showing each place by name.

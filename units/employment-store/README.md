@@ -1,3 +1,5 @@
+Needs: claim-handle, employment-link, employment-role, employment-vocab, org-terms, resource-id, vault-resources
+
 # employment-store
 
 Reads, creates and patches the employment entities of a person's record, one t:Employment per employment.

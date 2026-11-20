@@ -1,3 +1,5 @@
+Needs: class-merge
+
 # drawer
 
 A slide-over panel from the left or the right, for a narrow window. Escape, the backdrop, or Close shuts it, and focus comes back.

@@ -1,3 +1,5 @@
+Needs: flag-choice, flag-image, language-entry
+
 # flag-chooser
 
 The choice of a flag for one language: the countries the language's entry names, or no flag.

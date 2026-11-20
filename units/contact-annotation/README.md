@@ -1,3 +1,5 @@
+Needs: card-group, card-mode, lws-session-bridge, vault-origin-rule
+
 # contact-annotation
 
 Keeps the holder's private My Note and Where / How we met about a person, saved as they type.

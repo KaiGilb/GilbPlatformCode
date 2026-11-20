@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   baseOrigin,
   localRigHosts,
@@ -79,5 +79,62 @@ describe("configureLiveApp", () => {
   it("refuses an empty origin before touching anything", () => {
     expect(() => configureLiveApp({ platformOrigin: "", idOrigin: ID })).toThrow(/platformOrigin/);
     expect(() => configureLiveApp({ platformOrigin: PLATFORM, idOrigin: "" })).toThrow(/idOrigin/);
+  });
+});
+
+describe("configureLiveApp ready", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** MOCK of the credential's IndexedDB restore: it settles when `finish` is called and then holds a session, as the real one does after adopting a stored record. */
+  function slowRestore() {
+    let finish!: () => void;
+    const gate = new Promise<void>((r) => (finish = r));
+    const spy = vi.spyOn(SessionCredential.prototype, "restore").mockImplementation(function (this: SessionCredential) {
+      return gate.then(() => {
+        const session = { token: "t" } as never;
+        Object.defineProperty(this, "session", { value: session, configurable: true });
+        return session;
+      });
+    });
+    return { finish, spy };
+  }
+
+  // Spec: friction #57 — configureLiveApp never restored, so a page that read `session` once saw "Not connected".
+  it("ready resolves only after the restore has finished", async () => {
+    const { finish } = slowRestore();
+    const app = configureLiveApp({ platformOrigin: PLATFORM, idOrigin: ID, credentialOptions: { store: false } });
+    let done = false;
+    void app.ready.then(() => (done = true));
+    await Promise.resolve();
+    expect(done).toBe(false);
+    finish();
+    await app.ready;
+    expect(done).toBe(true);
+  });
+
+  // Spec: friction #57 — after `await ready` the session is readable.
+  it("the session can be read after ready, and is empty before", async () => {
+    const { finish } = slowRestore();
+    const app = configureLiveApp({ platformOrigin: PLATFORM, idOrigin: ID, credentialOptions: { store: false } });
+    expect(app.credential.session).toBeNull();
+    finish();
+    await app.ready;
+    expect(app.credential.session).not.toBeNull();
+  });
+
+  // Spec: friction #57 — one restore per configureLiveApp call, however often `ready` is read.
+  it("ready is one shared promise and restore is called once", async () => {
+    const { finish, spy } = slowRestore();
+    const app = configureLiveApp({ platformOrigin: PLATFORM, idOrigin: ID, credentialOptions: { store: false } });
+    expect(app.ready).toBe(app.ready);
+    finish();
+    await app.ready;
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  // Spec: friction #57 — with no stored session ready still resolves (real credential, no store).
+  it("ready resolves to null for a credential with nothing stored", async () => {
+    const app = configureLiveApp({ platformOrigin: PLATFORM, idOrigin: ID, credentialOptions: { store: false } });
+    await expect(app.ready).resolves.toBeNull();
   });
 });
