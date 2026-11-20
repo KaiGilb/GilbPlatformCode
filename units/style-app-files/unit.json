@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/style-app-files",
   "package": "@kaigilb/gilbplatformcode-style-app-files",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "purpose": "Writes the app's style files on the developer's machine: the dev save endpoint for `style.tokens.json` and the logo, and the chosen fonts and `fonts.css` copied out of `@fontsource`.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
