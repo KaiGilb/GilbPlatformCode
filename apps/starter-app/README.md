@@ -4,9 +4,10 @@ The first code of a new GilbPlatform app. It runs on a computer and on a phone, 
 
 Everything it does is the `starter-app` unit (`units/starter-app` of the GilbPlatformCode library) and the units that one joins. This folder adds only the app's own settings, its default style file, the place for its record screens, a fake-platform mode and its tests.
 
+<!-- take: from here to the next take mark is for the library only; take.mjs replaces it in a new app -->
 ## Take it for a new app
 
-You need Node 22 or later and a clone of the library:
+You need Node 22 or later, Chrome for the browser proof, and a clone of the library (the starter is in the clone once its pull request is on `main`):
 
 ```sh
 git clone https://github.com/KaiGilb/GilbPlatformCode.git
@@ -16,6 +17,8 @@ npm install
 npm test
 npm run dev:fake
 ```
+
+**Choose the port.** Any localhost port that nothing listens on and no other project of yours uses: `lsof -nP -iTCP:<port> -sTCP:LISTEN` prints nothing for a free one. `take.mjs` refuses 5197 and 5251 (Gilb's own) and 5173 and 8787 (tool defaults that collide between projects). Without `--port` the new app keeps the starter's own 5262: change it in `vite.config.ts` before you run it beside the starter or another taken app.
 
 `take.mjs` copies this folder to `my-app` (which must not exist yet and must be outside the library), and renames it:
 
@@ -27,7 +30,12 @@ npm run dev:fake
 | the dev port | `vite.config.ts`, `scripts/browser-proof.mjs` | `--port`; without it the starter's 5262 is kept, and you change it yourself |
 | where the units are installed from | every `file:` line in `package.json` | the library clone the script was run from |
 
-The units are installed as copies from that clone (`install-links=true` in `.npmrc`, which is copied). Keep the clone where it is, or change the `file:` paths. Never use port 5197 or 5251: they are Gilb's own.
+It also gives the new app's README its own title and puts a short "Where this app came from" in place of this section.
+
+The units are installed as copies from that clone (`install-links=true` in `.npmrc`, which is copied). Keep the clone where it is, or change the `file:` paths.
+
+`npm install` reports advisories (6 on 2026-11-21) in the test and build tools: vitest, vite and what they bring. `npm audit --omit=dev` reported 0 that day: nothing of them is in the built app.
+<!-- take: end -->
 
 ## What you still set by hand
 
@@ -39,7 +47,7 @@ The units are installed as copies from that clone (`install-links=true` in `.npm
 
 | Command | What it runs |
 |---|---|
-| `npm run dev:fake` | The app against a fake platform that lives in the page. Nothing leaves the page and nothing is kept between loads. Sign in as `ann@example.test` or `ben@example.test` with the code `000000`. |
+| `npm run dev:fake` | The app against a fake platform that lives in the page. Nothing leaves the page and nothing is kept between loads. Sign in as `ann@example.test`, `ben@example.test` or `cara@example.test` with the code `000000`. |
 | `npm run dev` | The app against GilbPlatform production (`https://gilb.com`, sign-in at `https://id.gilb.com`), from `http://localhost:<your port>`. A local app needs no registration. You sign in with your email and the code sent to it. The first sign-in makes your vault for the app. |
 | `npm run build` | Type check, build into `dist/`, then a check that the build does not hold the fake platform. |
 
@@ -50,20 +58,20 @@ Open the fake mode on a phone-sized window (or your browser's device toolbar) to
 ## Run its tests
 
 ```sh
-npm test            # 3 files: the app on the fake platform, the placeholder screen, the take script (not copied into a new app)
+npm test            # the app on the fake platform, and the placeholder screen (in the library also the take script, which is not copied)
 npm run typecheck
 npm run build
 ```
 
 `npm test` signs two people in on the fake platform, makes each their vault, shares one vault with the other person and opens it, and signs out. No test reaches a real server.
 
-For a real browser, start `npm run dev:fake` in one terminal, then in another:
+For a real browser you need Chrome on the machine (set `CHROME` to its path when it is not found). Start `npm run dev:fake` in one terminal, then in another:
 
 ```sh
 npm run proof:browser -- <folder-for-screenshots>
 ```
 
-It drives headless Chrome at 1280 x 800 and at 390 x 844 through sign-in, a failed start and Try again, the share sheet, a second person opening the shared vault, and sign-out. It writes a screenshot per step and `errors.txt` (the console errors) per size, and exits 1 on any failed step or console error.
+It drives headless Chrome at 1280 x 800 and at 390 x 844 through sign-in, a failed start and Try again, the share sheet with two people in it, a second person opening the shared vault, sign-out, and a new person with a long account name. After each step it runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once in the light look and once in the dark one. It writes a light and a dark screenshot per step and `errors.txt` (the console errors) per size, and exits 1 on any failed step, axe finding or console error.
 
 ## Add your records
 
@@ -81,7 +89,17 @@ Each section gets `ctx`:
 - `ctx.signal`: pass it to every read, and start none once it has aborted (sign-out started).
 - `ctx.vaultRefused()`: call it when the platform answers 403 for the open vault.
 
-Before you write code that saves a record, get its GilbVeda type and field terms from Agent.Concept. Then take the record units from the library: `t:VaultRecord.client` (read, create, change and end one record; pass `{ idempotencyKey }` on a create that may be retried), `t:VaultRecord.sync` (the list and what changed) and `t:VaultSelfCard.find` (the person's own card). The origins and the credential are already set: do not call `setBaseOrigin` or `setLwsAuth` again, and do not make a second credential.
+What a person has typed in your screen stays while they open the menu, Share or the vault chip. It is gone when they open another section or another vault: each starts afresh.
+
+Before you write code that saves a record, get its GilbVeda type and field terms from Agent.Concept. Then take the record units from the library:
+
+| Library card | Folder in the library | What it is for |
+|---|---|---|
+| `t:VaultRecord.client` | `units/lws-records` | read, create, change and end one record; pass `{ idempotencyKey }` on a create that may be retried |
+| `t:VaultRecord.sync` | `units/record-sync` | the list of records of a type, and what changed |
+| `t:VaultSelfCard.find` | `units/own-card` | the person's own card, the source of what they save |
+
+To add a unit to this app, ask the library for the install line and run it here: `node <library>/scripts/peers.mjs <unit>` prints every unit the one you want needs, in order, with the `npm install --install-links …` line (replace `<path-to-the-library>` in it). Each unit's README says what the host must supply. The origins and the credential are already set: do not call `setBaseOrigin` or `setLwsAuth` again, and do not make a second credential.
 
 ## What is in this folder
 
@@ -101,6 +119,6 @@ Proven so far only against the fake platform, on 2026-11-21. Not yet run against
 
 1. Sign-in from a local port with a real emailed code, and staying signed in across a reload.
 2. The first sign-in making the person's vault for the app on production (it needs a real `vaultType`).
-3. Share, the access list and Remove between two real people, and the second person opening the shared vault.
+3. Share, the access list and Remove between two real people, and the second person opening the shared vault. This also shows what name production sends for a person in the list: where it sends none, the row reads what the key is and the end of the key.
 4. A style read from a saved style sheet (`styleSheetUrl`).
 5. A real phone. A phone on your network cannot sign in to a local build (production admits localhost only), so this waits for a deployed build.

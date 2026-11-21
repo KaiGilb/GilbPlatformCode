@@ -1,9 +1,10 @@
 // The signed-in app: the frame, the menu of sections, the vault chip, Share and Sign out.
-import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ShellFrame, useShellCore } from "@kaigilb/gilbplatformcode-app-shell";
 import { listVaults, type ListedVault } from "@kaigilb/gilbplatformcode-signin";
 import { VaultShareSheet } from "@kaigilb/gilbplatformcode-vault-share-sheet";
 import { useVaultChoice, VaultSwitcher } from "@kaigilb/gilbplatformcode-vault-switcher";
+import { loadToldApart } from "./accessList";
 import { clearAddress, readAddress, vaultAddressStore, writeAddress } from "./address";
 import type { StarterRuntime } from "./start";
 import type { StarterContext, StarterSection } from "./StarterApp";
@@ -29,8 +30,14 @@ interface AccountProps {
   onSignOut(): void;
 }
 
-/** The menu is a drawer below the wide layout; the frame owns it, so the menu says when a pick came from the drawer. */
-type FromDrawer = boolean;
+/**
+ * Closes the frame's open drawer. The frame owns the drawer and gives no call to close it, and drawing the frame again would
+ * throw away what the person typed in the open section. The drawer closes on Escape (its own rule for the keyboard), so this
+ * sends it one.
+ */
+function closeDrawer(): void {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+}
 
 /**
  * Share and Sign out. They are a toolbar, not the action row of a form or a dialog, so the row check is told to leave them out;
@@ -70,21 +77,19 @@ function Menu({
   onPick,
   words,
   account,
-  onDrawerAct,
 }: {
   sections: readonly StarterSection[];
   current: string;
   onPick(id: string): void;
   words: StarterWords;
   account: AccountProps;
-  /** Called after an act in the menu, with whether the menu is a drawer now. */
-  onDrawerAct(fromDrawer: FromDrawer): void;
 }) {
   const { sizeClass } = useShellCore();
   const inDrawer = sizeClass !== "expanded";
+  // Below the wide layout the menu is a drawer: after a pick from it, it closes, as a menu does.
   const act = (run: () => void) => () => {
     run();
-    onDrawerAct(inDrawer);
+    if (inDrawer) closeDrawer();
   };
   return (
     <div className="sa-menu">
@@ -119,19 +124,19 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
     const asked = readAddress("section");
     return sections.some((s) => s.id === asked) ? asked! : sections[0]!.id;
   });
-  const pickSection = useCallback((id: string) => {
-    setSectionId(id);
-    writeAddress("section", id);
-  }, []);
+
   const [sharing, setSharing] = useState(false);
-  // On a narrow window the menu is a drawer the frame owns. A new key closes it after the person has picked from it.
-  const [drawerRound, setDrawerRound] = useState(0);
-  const afterMenuAct = useCallback((fromDrawer: boolean) => {
-    if (fromDrawer) setDrawerRound((n) => n + 1);
-  }, []);
+  const shareApi = useMemo(() => ({ load: loadToldApart(words.unnamedRow) }), [words.unnamedRow]);
 
   const section = sections.find((s) => s.id === sectionId) ?? sections[0]!;
   const open = choice.current;
+  // The address says what is open, and only that: the section unless it is the first, the vault unless it is the person's
+  // own. An address that named a section or a vault the person does not have is put right as soon as the frame is drawn.
+  const firstSectionId = sections[0]!.id;
+  useEffect(() => {
+    writeAddress("section", section.id === firstSectionId ? null : section.id);
+    writeAddress("vault", open.yours ? null : open.vaultId);
+  }, [section.id, firstSectionId, open.vaultId, open.yours]);
   const ctx: StarterContext = useMemo(
     () => ({
       vault: { vaultId: open.vaultId, label: open.label, yours: open.yours, canWrite: choice.canWrite },
@@ -164,7 +169,6 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
   return (
     <div className="sa-app" data-stage="ready">
       <ShellFrame
-        key={drawerRound}
         layoutOptions={{ storageKey: `${settings.appId}.shell.layout.v1`, defaults: { leftCollapsed: false, leftW: 240 } }}
         header={<Header appName={settings.appName} chip={chip} viewOnly={choice.canWrite ? null : words.viewOnly} account={account} />}
         left={
@@ -173,13 +177,12 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
             current={section.id}
             words={words}
             account={account}
-            onPick={pickSection}
-            onDrawerAct={afterMenuAct}
+            onPick={setSectionId}
           />
         }
         center={
           <Fragment key={`${open.vaultId}|${section.id}`}>
-            <div className="sa-center">{section.render(ctx)}</div>
+            <main className="sa-center">{section.render(ctx)}</main>
           </Fragment>
         }
         {...(section.detail ? { right: <Fragment key={`${open.vaultId}|${section.id}`}>{section.detail(ctx)}</Fragment> } : {})}
@@ -187,7 +190,15 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
         leftLabel={words.menu}
       />
       {sharing ? (
-        <VaultShareSheet vaultId={open.vaultId} title={words.shareTitle(open.label)} help={words.shareHelp} you={principal} onClose={() => setSharing(false)} />
+        <VaultShareSheet
+          vaultId={open.vaultId}
+          title={words.shareTitle(open.label)}
+          help={words.shareHelp}
+          you={principal}
+          api={shareApi}
+          words={{ yes: words.removeYes, no: words.removeNo }}
+          onClose={() => setSharing(false)}
+        />
       ) : null}
     </div>
   );

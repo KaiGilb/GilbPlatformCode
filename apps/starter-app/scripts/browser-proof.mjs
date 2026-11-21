@@ -3,8 +3,11 @@
 // Needs `npm run dev:fake` running (default http://localhost:5262). It talks to that address only: the platform is the
 // fake inside the page. It starts its own Chrome (a throwaway profile inside <out-dir>, removed at the end), runs the
 // legs, takes a screenshot after each, and writes the console errors of each size to <out-dir>/<size>/errors.txt.
+// After each leg it also runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once as the page is
+// and once with the device set to dark, and takes a dark screenshot. A leg with an axe finding fails.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { collectButtonRows, judgeButtonRows, makeTools, runLegs, startBrowser } from "@kaigilb/gilbplatformcode-browser-proof";
 
@@ -18,6 +21,32 @@ const setting = (key) => {
 const APP_NAME = setting("appName");
 const ANN = `ann${setting("vaultNameSuffix")}`;
 const BEN = `ben${setting("vaultNameSuffix")}`;
+
+const AXE_SOURCE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
+const AXE_RUN = `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } }).then((r) => JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target.join(" ") + ": " + [...n.any, ...n.all, ...n.none].map((c) => c.message).join(" ")) }))))`;
+
+/** axe-core on the page as it is now. Returns one line per finding; an empty list means none. */
+async function axeFindings(page) {
+  if (!(await page.eval("typeof window.axe === 'object'"))) await page.eval(`${AXE_SOURCE}; void 0`);
+  return JSON.parse(await page.eval(AXE_RUN)).flatMap((v) => v.nodes.map((n) => `${v.id} at ${n}`));
+}
+
+/** axe in the light and in the dark look of the same page, and a dark screenshot. Throws one error that lists every finding. */
+async function axeBothLooks(page, darkShot) {
+  const light = await axeFindings(page);
+  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  let dark;
+  try {
+    await page.sleep(150);
+    dark = await axeFindings(page);
+    await page.screenshot(darkShot);
+  } finally {
+    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+    await page.sleep(100);
+  }
+  const all = [...light.map((f) => `light: ${f}`), ...dark.map((f) => `dark: ${f}`)];
+  if (all.length) throw new Error(`axe found ${all.length}:\n      ${all.join("\n      ")}`);
+}
 
 const out = process.argv[2] ? resolve(process.argv[2]) : "";
 const base = process.argv[3] ?? "http://localhost:5262";
@@ -106,8 +135,23 @@ function legsFor(size, t) {
         await t.set(".vss-input", "ben");
         await t.clickText("Can edit", { within: ".vss" });
         await t.click(".vss-primary");
-        await page.waitFor(`!!document.querySelector(".vss .vss-row .vss-danger-text")`); // Ben is in the list, with a Remove button
-        await checkButtonRows(page, 0);
+        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 1`); // Ben is in the list, with a Remove button
+        await t.set(".vss-input", "cara");
+        await t.click(".vss-primary");
+        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 2`);
+        // Two people with the same access: the two rows, and the two Remove buttons, must not read alike.
+        const list = JSON.parse(
+          await page.eval(`JSON.stringify([...document.querySelectorAll(".vss .vss-row .vss-danger-text")].map((b) => ({ row: b.closest("li").textContent, remove: b.getAttribute("aria-label") })))`),
+        );
+        if (new Set(list.map((r) => r.row)).size !== 2 || new Set(list.map((r) => r.remove)).size !== 2) throw new Error(`the two people read alike: ${JSON.stringify(list)}`);
+        // The question before a removal: a verb for the act, and the way out left of it. (Where the share sheet puts the
+        // two answers is its own layout; this does not judge it.)
+        await t.click(".vss .vss-row .vss-danger-text");
+        await page.waitFor(`!!document.querySelector(".vss .vss-inline")`);
+        const answers = await page.eval(`[...document.querySelectorAll(".vss .vss-inline button")].map((b) => b.textContent).join(" | ")`);
+        if (answers !== "Cancel | Remove") throw new Error(`the answers to the Remove question read "${answers}"`);
+        await t.clickText("Cancel", { within: ".vss .vss-inline" });
+        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 2`);
         await t.noHorizontalScroll();
       },
     ],
@@ -141,10 +185,31 @@ function legsFor(size, t) {
           ),
         );
         if (state.violations.length) throw new Error(`the app asked the platform for something it does not have: ${state.violations.join("; ")}`);
-        // The fake started with the two people's accounts (ann, ben). One vault for the app each, and no more, was made.
-        const want = ["ann", "ben", ANN, BEN].sort().join();
+        // The fake started with three people's accounts (ann, ben, cara). One vault for the app each for the two who signed in, and no more, was made.
+        const want = ["ann", "ben", "cara", ANN, BEN].sort().join();
         if (state.vaults.join() !== want) throw new Error(`expected the vaults ${want}, saw ${state.vaults.join()}`);
         if (state.signOuts !== 2) throw new Error(`expected the sign-in server told of 2 sign-outs, saw ${state.signOuts}`);
+      },
+    ],
+    [
+      "new-person-long-name",
+      async (page) => {
+        // A person with no account names it on the card; a 31-letter name must leave the app's name readable in the top bar.
+        const account = "abcdefghijklmnopqrstuvwxyzabcde";
+        await t.set('[data-testid="sign-in-email"]', "new@example.test");
+        await t.click('[data-testid="sign-in-send-code"]');
+        await t.wait('[data-testid="vault-name-input"]');
+        await t.set('[data-testid="vault-name-input"]', account);
+        await page.waitFor(`!!document.querySelector('[data-testid="vault-name-available"]')`);
+        await t.set('[data-testid="sign-in-code"]', "000000");
+        await page.waitFor(READY);
+        await page.waitFor(openVaultIs(`${account}${BEN.slice(3)}`));
+        await t.noHorizontalScroll();
+        const bar = JSON.parse(
+          await page.eval(`JSON.stringify((() => { const t = document.querySelector(".sa-title"), c = document.querySelector(".vsw-chip"); return { title: t.getBoundingClientRect().width, cut: t.scrollWidth > t.clientWidth, chipRight: c.getBoundingClientRect().right, wide: window.innerWidth }; })())`),
+        );
+        if (bar.cut || bar.title < 30) throw new Error(`the app's name is squeezed by the long vault name: ${JSON.stringify(bar)}`);
+        if (bar.chipRight > bar.wide) throw new Error(`the vault chip runs off the window: ${JSON.stringify(bar)}`);
       },
     ],
   ];
@@ -159,8 +224,15 @@ for (const size of SIZES) {
   const { page, close } = await startBrowser({ profileDir, width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile });
   try {
     console.log(`\n${size.name} (${size.width} x ${size.height})`);
-    // Each leg ends with a short wait, so its screenshot is taken after the drawer or the sheet has slid in.
-    const legs = legsFor(size, makeTools(page)).map(([name, leg]) => [name, async (p) => (await leg(p), p.sleep(400))]);
+    // Each leg ends with a short wait, so axe and the screenshot see the page after the drawer or the sheet has slid in.
+    const legs = legsFor(size, makeTools(page)).map(([name, leg], i) => [
+      name,
+      async (p) => {
+        await leg(p);
+        await p.sleep(400);
+        await axeBothLooks(p, join(dir, `${i + 1}-${name}-dark.png`));
+      },
+    ]);
     const run = await runLegs(legs, { page, out: dir, setExitCode: false });
     failed += run.failed.length;
     const errors = page.consoleErrors();

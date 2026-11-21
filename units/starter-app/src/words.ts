@@ -24,6 +24,14 @@ export interface StarterWords {
   viewOnly: string;
   /** Shown above the account buttons in the menu of a narrow window. */
   account: string;
+  /**
+   * The label of a person in the access list whom the platform gave no name: what their key is (the share sheet's own words,
+   * such as "Registered principal") and the end of that key, so two such people never read alike.
+   */
+  unnamedRow(what: string, keyEnding: string): string;
+  /** The two answers to "Remove <who>?" in the access list: a verb for the act, and the way out. */
+  removeYes: string;
+  removeNo: string;
 }
 
 export const defaultWords: StarterWords = {
@@ -44,4 +52,7 @@ export const defaultWords: StarterWords = {
   menu: "Menu",
   viewOnly: "View only",
   account: "Account",
+  unnamedRow: (what, keyEnding) => `${what}, key ending ${keyEnding}`,
+  removeYes: "Remove",
+  removeNo: "Cancel",
 };

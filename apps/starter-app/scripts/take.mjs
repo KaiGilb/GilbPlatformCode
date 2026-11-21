@@ -20,6 +20,10 @@ const LEFT_OUT = new Set(["node_modules", "dist", "proof-out", "package-lock.jso
 /** Ports no app may take: Gilb's own two rigs, and the two tool defaults that collide between projects. */
 const REFUSED_PORTS = new Set([5197, 5251, 5173, 8787]);
 
+/** The two marks in README.md around what is for the library only. */
+const TAKE_START = "<!-- take: from here to the next take mark is for the library only; take.mjs replaces it in a new app -->\n";
+const TAKE_END = "<!-- take: end -->";
+
 export class TakeError extends Error {}
 
 /**
@@ -90,7 +94,19 @@ export function rewriteFile(file, text, o) {
     t = swap(t, 'server: { port: 5262, strictPort: true, host: "localhost" }', `server: { port: ${o.port}, strictPort: true, host: "localhost" }`, file);
     return swap(t, 'preview: { port: 5262, strictPort: true, host: "localhost" }', `preview: { port: ${o.port}, strictPort: true, host: "localhost" }`, file);
   }
-  if (file === "scripts/browser-proof.mjs" && o.port !== null) return swap(text, 'process.argv[3] ?? "http://localhost:5262"', `process.argv[3] ?? "http://localhost:${o.port}"`, file);
+  if (file === "scripts/browser-proof.mjs" && o.port !== null) {
+    // The address is written twice: in the comment that says what the script needs, and as the default it uses.
+    const t = swap(text, "(default http://localhost:5262)", `(default http://localhost:${o.port})`, file);
+    return swap(t, 'process.argv[3] ?? "http://localhost:5262"', `process.argv[3] ?? "http://localhost:${o.port}"`, file);
+  }
+  if (file === "README.md") {
+    // The new app's README is its own: its name as the title, and where it came from in place of how to take the starter.
+    const t = swap(text, "# starter-app\n", `# ${o.name}\n`, file);
+    const from = t.indexOf(TAKE_START);
+    const to = t.indexOf(TAKE_END);
+    if (from < 0 || to < from || t.indexOf(TAKE_START, from + 1) >= 0) throw new TakeError(`take: expected one block between the two take marks in ${file}. The starter changed; this script must change with it.`);
+    return `${t.slice(0, from)}## Where this app came from\n\nIt was taken from the starter app of the GilbPlatformCode library (\`apps/starter-app\`) with \`scripts/take.mjs\`. Its units are installed as copies from that library clone: the \`file:\` lines in \`package.json\` say where it is. Keep the clone there, or change those lines.\n${o.port === null ? `\nIt still has the starter's own dev port, 5262. Give it a free port of its own in \`vite.config.ts\` (never 5197, 5251, 5173 or 8787) before you run it beside another app.\n` : ""}${t.slice(to + TAKE_END.length + 1)}`;
+  }
   return text;
 }
 
@@ -105,7 +121,7 @@ function filesOf(dir, base = dir) {
   return out;
 }
 
-const REWRITTEN = new Set(["package.json", "src/settings.ts", "index.html", "vite.config.ts", "scripts/browser-proof.mjs"]);
+const REWRITTEN = new Set(["package.json", "src/settings.ts", "index.html", "vite.config.ts", "scripts/browser-proof.mjs", "README.md"]);
 
 /**
  * Copies the starter to `target` and renames it.

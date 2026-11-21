@@ -22,11 +22,15 @@
 }
 
 /* Mixed from the anchors above, so they follow the loaded style and its dark mode. The frame, the drawer and the
-   sign-in card read them. */
+   sign-in card read them.
+   --ink-soft and --ink-faint are text colours: each must read at 4.5:1 or better (WCAG 2.1 AA) on every background text
+   is drawn on, the tinted ones included (--paper, --paper-2, --surface, the frame's top bar). contrast.test.ts measures
+   every pair for the default style, light and dark; change a number here and it says which pair fell under.
+   --ink-ghost is for a control that is turned off only. */
 :root {
   --paper-2: color-mix(in srgb, var(--paper) 93%, var(--ink));
-  --ink-soft: color-mix(in srgb, var(--ink) 70%, var(--paper));
-  --ink-faint: color-mix(in srgb, var(--ink) 55%, var(--paper));
+  --ink-soft: color-mix(in srgb, var(--ink) 80%, var(--paper));
+  --ink-faint: color-mix(in srgb, var(--ink) 70%, var(--paper));
   --ink-ghost: color-mix(in srgb, var(--ink) 39%, var(--paper));
   --line: color-mix(in srgb, var(--lines) 16%, transparent);
   --line-2: color-mix(in srgb, var(--lines) 10%, transparent);
@@ -94,7 +98,7 @@
 /* The header's middle. */
 .sa-title {
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: 3ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -194,10 +198,19 @@
   color: var(--ink);
 }
 
+/* The open section: marked by weight, a tint and an accent bar, and written in the ink colour. The accent as text on
+   the tint does not reach 4.5:1 in the default style. */
 .sa-menu-item[aria-current="page"] {
   background: var(--sel);
-  color: var(--accent-ink, var(--accent));
+  color: var(--ink);
   font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The frame writes the label of its open bottom-bar button in the accent colour on a tint, which does not reach 4.5:1
+   in the default style either. Here it is written in the ink colour; the tint and the weight still mark it. */
+.sa-app nav[aria-label="Panels"] button[aria-pressed="true"] {
+  color: var(--ink);
 }
 
 .sa-menu-account {
@@ -225,6 +238,7 @@
 .sa-app .vsw-chip {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 60%;
   min-height: 44px;
 }
 

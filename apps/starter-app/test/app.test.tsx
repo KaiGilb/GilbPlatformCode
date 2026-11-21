@@ -104,7 +104,7 @@ describe("the whole app on the fake platform", () => {
     const user = userEvent.setup();
     start(() => boot(fake.settings, host, fake.note));
 
-    expect((await screen.findByTestId("fake-note")).textContent).toContain(`Sign in as ann@example.test or ben@example.test with the code ${FAKE_CODE}.`);
+    expect((await screen.findByTestId("fake-note")).textContent).toContain(`Sign in as ann@example.test, ben@example.test or cara@example.test with the code ${FAKE_CODE}.`);
     expect(screen.getByRole("heading", { name: SETTINGS.appName })).toBeTruthy(); // the sign-in card carries the app's name
     await signIn(user, "ann@example.test", ANN);
     await waitFor(() => expect(document.getElementById("gilb-style")?.textContent).toContain("--accent:")); // the shipped style is applied

@@ -1,7 +1,7 @@
 // The start: the settings check, the platform settings and credential, and the style as Dev.Guide.AppStyle describes it.
 import { baseOrigin, systemVaultHosts } from "@kaigilb/gilbplatformcode-base-origin";
 import { SessionCredential } from "@kaigilb/gilbplatformcode-signin/session";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { settingsProblems, type StarterSettings } from "./settings";
 import { NO_SAVED_STYLE, startStarter, styleCacheKey } from "./start";
 import { makeWorld, settingsFor, STYLE_FILE, TYPE, type World } from "../test/world";
@@ -12,6 +12,7 @@ afterEach(() => world?.undo());
 const good: StarterSettings = { appId: "things", appName: "Things", platformOrigin: "https://platform.example.test", idOrigin: "https://id.example.test", vaultType: TYPE, vaultNameSuffix: "things" };
 const styleText = () => document.getElementById("gilb-style")?.textContent ?? "";
 
+// Spec: brief item 7 — a new app sets its names, origins and type in one place; a missing or wrong one is named before anything starts.
 describe("settingsProblems", () => {
   it("finds nothing wrong with good settings", () => {
     expect(settingsProblems(good)).toEqual([]);
@@ -45,6 +46,7 @@ describe("settingsProblems", () => {
   });
 });
 
+// Spec: brief item 2 — the style is loaded as Dev.Guide.AppStyle.Load says: the cached style at once, then the saved style, else /style.tokens.json.
 describe("startStarter", () => {
   beforeEach(() => {
     world = makeWorld();
@@ -89,6 +91,34 @@ describe("startStarter", () => {
     localStorage.setItem(styleCacheKey("things"), JSON.stringify(cached));
     startStarter(settingsFor(world.fake));
     expect(styleText()).toContain("--accent: #aa3355"); // no await before this line
+  });
+
+  it("a saved style named in the settings is read from its address with plain GET calls and no sign-in, replaces the app's own file, and is kept for the next visit", async () => {
+    // The three records as a vault answers them (bare keys), the shapes of style-runtime's own vault test.
+    const base = "https://style.example.test";
+    const id = (n: number) => `${base}/lws/vault/v1/e/${n}`;
+    const records: Record<string, unknown> = {
+      [id(1)]: { stylePalette: { "@id": id(2) }, styleBrandKit: { "@id": id(3) } },
+      [id(2)]: { paletteColour: [{ colourHex: "#112233", colourRole: "primary" }, { colourHex: "#ffffff", colourRole: "background" }, { colourHex: "#111111", colourRole: "text" }] },
+      [id(3)]: { brandFont: "Inter" },
+    };
+    world.undo();
+    const asked: { url: string; method: string; signed: boolean; cookies: unknown }[] = [];
+    vi.stubGlobal("fetch", (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      asked.push({ url, method: init?.method ?? "GET", signed: headers.has("authorization") || headers.has("dpop"), cookies: init?.credentials });
+      if (url in records) return new Response(JSON.stringify(records[url]), { status: 200 });
+      return new Response(JSON.stringify(STYLE_FILE), { status: url === "/style.tokens.json" ? 200 : 404 });
+    }) as typeof fetch);
+
+    const result = await startStarter({ ...good, styleSheetUrl: id(1) }).style;
+    expect(result).toEqual({ source: "remote", errors: [] });
+    expect(styleText()).toContain("--accent: #112233"); // the saved style, not the file's #3b6fd4
+    expect(document.querySelectorAll("style#gilb-style")).toHaveLength(1);
+    expect(asked.map((a) => a.url).sort()).toEqual([id(1), id(2), id(3)]); // the app's own file was not needed
+    expect(asked.every((a) => a.method === "GET" && !a.signed && a.cookies === "omit")).toBe(true);
+    expect(JSON.parse(localStorage.getItem(styleCacheKey("things"))!).palette.accent).toBe("#112233");
   });
 
   it("a saved style that cannot be read leaves the app's own file in place", async () => {

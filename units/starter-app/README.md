@@ -17,7 +17,7 @@ It joins the units that do each part and holds no copy of them:
 | Sign in, sign out, the person's vault | `signin` | `useLiveStart` and `SignInCard`: the email code, the vault found or made once, the sign-in server told at sign-out |
 | Computer and phone | `app-shell` | `ShellFrame`: a menu beside the centre on a wide window; below 840 px the centre alone, a bottom bar and the menu as a drawer |
 | Which vault is open | `vault-switcher` | the chip in the header: the person's own vault and the ones shared with them |
-| Share access | `vault-share-sheet` (on `vault-access`) | give view or edit access, see who has it, take it away |
+| Share access | `vault-share-sheet` (on `vault-access`) | give view or edit access, see who has it, take it away; a person the platform gives no name is told apart by the end of their key |
 
 Two calls and one type are the whole surface:
 
@@ -33,7 +33,7 @@ What a person sees, in order: "Checking your sign-in…"; the sign-in card (a pe
 
 - Not the app's records. The starter has none: a section is where the app lists, adds, changes and deletes its own kind of record.
 - Not the App Style Studio. The app loads `style-runtime` only; choosing a style is a developer's tool.
-- Not a router. The open section and the open vault are written into the page's address (`?section=`, `?vault=`) so a reload opens the same place; no history entry is added and no path is read.
+- Not a router. The page's address says what is open so a reload opens the same place: `?section=` unless it is the first section, `?vault=` unless it is the person's own vault. A part that names a section that is not there or a vault the person cannot open is taken out once the frame is drawn. No history entry is added and no path is read.
 - Not a second sign-in, vault client or share screen. Each is the unit named above; a fix belongs there.
 - Not a place for a host name. Every origin, name and type comes in through the settings.
 
@@ -63,6 +63,7 @@ In the GilbApp chat, a project folder the chat made already has the `.npmrc` lin
 - **The frame needs Tailwind v4.** `app-shell`, `panes` and `drawer` draw with Tailwind utility classes. The app runs `@tailwindcss/vite` and adds the installed units to the scan: `@source "../node_modules/@kaigilb/*/src/**/*.{ts,tsx}";` (see `apps/starter-app/styles/app.css`).
 - **Variables the frame reads that `style-runtime` does not write** (`--paper-2`, `--ink-soft`, `--ink-faint`, `--ink-ghost`, `--line`, `--line-2`, `--sel`, `--focus`): `starterApp.css` mixes them from the style's own colours, so they follow the style and its dark mode. Do not also load `editorial-tokens`.
 - **Before the style has loaded** the sheet's `:where(:root)` values show (the default style). Any loaded style replaces them.
+- **Contrast.** Every text colour the sheet decides reads at 4.5:1 or better (WCAG 2.1 AA) on its background, in the default style, light and dark, and before a style has loaded: `src/contrast.test.ts` works each pair out from the sheet's own text. `--ink-soft` is 80% ink and `--ink-faint` 70% ink on paper; the open section in the menu and the frame's open bottom-bar button are written in `--ink` on the `--sel` tint (the accent as text on that tint does not reach 4.5:1). The test covers the default style only: after you choose another style, run the app's browser proof, which measures the drawn page with axe-core in both looks.
 - **Themes:** light and dark, from the style sheet (`mode` `system` follows the device).
 - **Build settings:** Vite compiles the units' TSX with the automatic JSX runtime: `esbuild: { jsx: "automatic" }` and `optimizeDeps: { esbuildOptions: { jsx: "automatic" } }`. TypeScript 5.7 or later with `strict`.
 - The page must give the app its full height (`html, body, #root { height: 100% }`).
@@ -127,7 +128,9 @@ createRoot(document.getElementById("root")!).render(<StarterApp runtime={runtime
 - "The chip shows a vault as soon as it is shared." It lists again each time it is opened, and at each sign-in. It does not poll.
 - "`style: none` is a crash." It means no style file was found; the default values in `starterApp.css` show.
 - "On a phone the header has Share and Sign out." Below 600 px they are in the menu drawer (the Menu button in the bottom bar); the header keeps the name and the chip.
-- "The share list shows the name I typed." It shows what the platform says about the person. A person the platform sends no name for reads "No name was given for this person."; the starter does not keep the typed name on the device.
+- "The share list shows the name I typed." It shows what the platform says about the person. A person the platform sends no name for reads what their key is and the end of the key, for example "Registered principal, key ending tbh8g4", with "No name was given for this person." under it. The key ending is what tells two such people apart, and it reads the same after a reload and on another device; it does not say who the person is. Only the platform can: the access list it answers carries `label` and `webId`, and where both are empty there is no name to show. The starter does not keep the typed name on the device.
+- "The key ending is always 6 characters." It is 6, or as many more as it takes for no two rows of the list to share it.
+- "Typing in a section is lost when the menu or Share opens." It is kept. On a phone the menu drawer closes after a pick without the frame being drawn again (the starter sends the Escape the drawer closes on; `app-shell` has no call to close it). Opening another section or another vault does start afresh.
 - "Reloading signs the person out." On a page with IndexedDB the sign-in is kept for up to 14 days from last use; `signin` owns that.
 
 ## What it keeps in the browser
@@ -146,8 +149,8 @@ Nothing else. The open vault and section are in the address. A test pins the loc
 
 ## Where it came from
 
-New code, written for this repository on 2026-11-21 so that a new project's first version starts from one ready app. Repository `KaiGilb/GilbPlatformCode`, base commit `df1cb9e80eb1bffedf813b1a4459f77135f5e8b0`. No source file was copied: every part is a call into the unit named in the table above. The check script, its test and the test set-up follow the frame of `vault-share-sheet`.
+New code, written for this repository on 2026-11-21 so that a new project's first version starts from one ready app. Repository `KaiGilb/GilbPlatformCode`, base commit `df1cb9e80eb1bffedf813b1a4459f77135f5e8b0`. No product code was copied: every part is a call into the unit named in the table above. Copied from `vault-share-sheet`, as every unit carries its own: `scripts/check-host-agnostic.mjs` (with this unit's list of allowed imports) and `src/hostAgnostic.test.ts`.
 
 ## Tests
 
-`npm test` runs `StarterApp.test.tsx` (jsdom, against `fake-platform`: the real sign-in, create-vault, vault list, grant, revoke and sign-out calls), `start.test.ts` (the settings check, the origins and the style load) and `hostAgnostic.test.ts`. `npm run typecheck` and `npm run check:host-agnostic` are the other two proofs.
+`npm test` runs `StarterApp.test.tsx` (jsdom, against `fake-platform`: the real sign-in, create-vault, vault list, grant, revoke and sign-out calls, with an axe-core check of each screen), `accessList.test.ts` (rows told apart), `contrast.test.ts` (text contrast, from the style sheet's own text), `start.test.ts` (the settings check, the origins and the style load, the saved style included) and `hostAgnostic.test.ts`. `npm run typecheck` and `npm run check:host-agnostic` are the other two proofs. Colour contrast as drawn is measured by the browser proof of `apps/starter-app`.

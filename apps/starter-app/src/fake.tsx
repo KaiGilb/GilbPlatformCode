@@ -1,12 +1,12 @@
 // `npm run dev:fake`: the platform is a fake that lives in this page. Nothing leaves the page, and nothing is kept:
-// every load starts with the same two people and no vault for the app. Never part of a build (see main.tsx).
+// every load starts with the same three people and no vault for the app. Never part of a build (see main.tsx).
 import type { ReactNode } from "react";
 import { createFakePlatform, installFakePlatform, type FakePlatform } from "@kaigilb/gilbplatformcode-fake-platform";
 import type { StarterSettings } from "@kaigilb/gilbplatformcode-starter-app";
 
 export const FAKE_ORIGIN = "https://fake.test";
-/** The people the fake starts with. Each has an account; neither has a vault for the app yet. */
-export const FAKE_PEOPLE = ["ann@example.test", "ben@example.test"] as const;
+/** The people the fake starts with. Each has an account; none has a vault for the app yet. Three, so one can share with two. */
+export const FAKE_PEOPLE = ["ann@example.test", "ben@example.test", "cara@example.test"] as const;
 export const FAKE_CODE = "000000";
 
 export interface FakeStart {
@@ -42,7 +42,7 @@ export function startFake(settings: StarterSettings): FakeStart {
     },
     note: (
       <p className="app-fake-note" data-testid="fake-note">
-        Fake platform: nothing leaves this page and nothing is kept. Sign in as {FAKE_PEOPLE[0]} or {FAKE_PEOPLE[1]} with the code {FAKE_CODE}.
+        Fake platform: nothing leaves this page and nothing is kept. Sign in as {FAKE_PEOPLE[0]}, {FAKE_PEOPLE[1]} or {FAKE_PEOPLE[2]} with the code {FAKE_CODE}.
       </p>
     ),
   };

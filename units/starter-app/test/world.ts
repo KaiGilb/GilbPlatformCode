@@ -1,6 +1,7 @@
 // The test world: a fake platform in place of the live one, the app's own style file, and the steps a person takes.
 import { createFakePlatform, installFakePlatform, type FakePlatform } from "@kaigilb/gilbplatformcode-fake-platform";
 import { screen, waitFor } from "@testing-library/react";
+import axe from "axe-core";
 import type { UserEvent } from "@testing-library/user-event";
 import type { StarterSettings } from "../src/settings";
 
@@ -66,6 +67,14 @@ export async function signIn(user: UserEvent, fake: FakePlatform, email: string)
 export async function ready(): Promise<void> {
   await waitFor(() => expect(document.querySelector('[data-stage="ready"]')).not.toBeNull(), { timeout: 5000 });
 }
+
+/**
+ * axe-core on the page as it is now: one line per finding. Colour contrast is off because jsdom draws nothing
+ * (src/contrast.test.ts works the ratios out, and the app's browser proof measures them in Chrome); `region` is off
+ * because a dialog of a joined unit is drawn beside the page's landmarks.
+ */
+export const axeIds = async (): Promise<string[]> =>
+  (await axe.run(document.body, { rules: { "color-contrast": { enabled: false }, region: { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
 
 export function setWidth(width: number): void {
   Object.defineProperty(window, "innerWidth", { configurable: true, value: width });

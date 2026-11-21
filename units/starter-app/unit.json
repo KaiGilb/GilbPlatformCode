@@ -10,13 +10,17 @@
     "files": []
   },
   "namedChanges": [
-    "New code, written on 2026-11-21. No source file was copied: every part is a call into app-shell, signin, lws-session-bridge, style-runtime, vault-share-sheet or vault-switcher."
+    "New code, written on 2026-11-21. No product code was copied: every part is a call into app-shell, signin, lws-session-bridge, style-runtime, vault-share-sheet or vault-switcher. scripts/check-host-agnostic.mjs and src/hostAgnostic.test.ts are the repo's frame, copied from vault-share-sheet."
   ],
   "newFiles": [
     "src/index.ts",
     "src/settings.ts",
     "src/start.ts",
     "src/address.ts",
+    "src/accessList.ts",
+    "src/accessList.test.ts",
+    "src/contrast.test.ts",
+    "test/colours.ts",
     "src/StarterApp.tsx",
     "src/Workspace.tsx",
     "src/words.ts",

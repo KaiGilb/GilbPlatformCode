@@ -62,6 +62,17 @@ describe("take", () => {
     expect(read(dest, "vite.config.ts")).toContain("server: { port: 5301, strictPort: true");
     expect(read(dest, "vite.config.ts")).not.toContain("5262");
     expect(read(dest, "scripts/browser-proof.mjs")).toContain("http://localhost:5301");
+    expect(read(dest, "scripts/browser-proof.mjs")).not.toContain("5262"); // the comment and the default both name the new port
+
+    // The README is the new app's own: its name, where it came from, and not how to take the starter.
+    const readme = read(dest, "README.md");
+    expect(readme.startsWith("# Plant Diary\n")).toBe(true);
+    expect(readme).toContain("## Where this app came from");
+    expect(readme).not.toContain("Take it for a new app");
+    expect(readme).not.toContain("<!-- take:");
+    expect(readme).not.toContain("git clone");
+    expect(readme).not.toContain("5262");
+    for (const kept of ["## What you still set by hand", "## Run it", "## Run its tests", "## Add your records", "## Not yet proven live"]) expect(readme, kept).toContain(kept);
 
     expect(read(dest, ".npmrc")).toBe(read(app, ".npmrc")); // units are installed as copies
     expect(read(dest, "public/style.tokens.json")).toBe(read(app, "public/style.tokens.json"));
@@ -76,6 +87,8 @@ describe("take", () => {
     const dest = fresh();
     take(dest, { id: "plants", name: "Plants" });
     expect(read(dest, "vite.config.ts")).toBe(read(app, "vite.config.ts"));
+    expect(read(dest, "scripts/browser-proof.mjs")).toBe(read(app, "scripts/browser-proof.mjs"));
+    expect(read(dest, "README.md")).toContain("It still has the starter's own dev port, 5262."); // and says so, with what to do
   });
 
   it("refuses a folder that holds something, and a folder inside the library, and writes nothing", () => {
