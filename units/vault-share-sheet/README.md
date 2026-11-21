@@ -77,6 +77,10 @@ Peers: `vault-access`, `vault-address`, `principal-row`, `base-origin` always. `
 
 `vss-*` class names on the dialog's panel (`className="vss"`). Colours come from the `style-runtime` variables with fallbacks: `--ink`, `--lines`, `--accent`, `--on-accent`, `--bad`, `--r-lg`.
 
+One variable is the sheet's own (since 0.1.3): `--vss-on-danger`, the label of the red button that answers "Remove <who>?". Unset, the label is `--on-accent` (then white), as before.
+
+**Set it when your app has a dark look or a bright accent.** `--on-accent` is the colour that reads on the accent; the red button's background is `--bad`. On `style-runtime`'s default style the white label on the dark look's red reads at 2.33:1, and with a yellow accent the near-black label on the light look's red reads at 2.96:1 (both measured in Chrome on 2026-11-21; WCAG 2.1 AA asks 4.5:1). `style-runtime` writes `--on-bad` for this: `--vss-on-danger: var(--on-bad);` on the page or on a parent of the sheet. The unit does not take `--on-bad` by itself, because that would change the button in every app whose style gives the two tokens different colours.
+
 ## Examples
 
 ```tsx
@@ -122,10 +126,14 @@ None of its own. The hook keeps its state per mount.
 
 Adds `help`, `you`, `rememberNames`, `words.you`, `words.unnamed`, `words.remembered`, `AccessRow.named`, and the `./remember-names` entry (`browserStore`, `labelRows`, `KeyValueStore`; kept off `.` so the runtime exports are unchanged; `KeyValueStore` is also a type export of `.`). Nothing existing changes unless the new props are passed. Absorbs PictureRecords run 9 `namedShareApi.ts` and its portal for the help line.
 
+## Changes in 0.1.3
+
+The style sheet only: new variable `--vss-on-danger` for the label of the red Remove button. Unset, every colour the sheet draws is the same as in 0.1.2. No call, export, prop or word changed. New test `src/stylesheet.test.ts`.
+
 ## Where it came from
 
 Written for this repository in EESpeed round 7 (batch U2c) from PictureRecords run 7 `app/src/share/ShareSheet.tsx` and `shareApi.ts` (the sheet and the model) and run 6 `app/src/sharing.ts` and `app/src/ui/ShareSheet.tsx` (the owner row with `principal-row` labels and the apex read from `baseOrigin()`). Base commit `19fb34ba7195055fbd0ef13e376d789756e2c9f6` of `KaiGilb/GilbPlatformCode`. Changes from run 7: the owner is found by Control, not by kind; the public filter is gone; the apex is not `gilb.com`; a thrown 404 reads as the Control sentence; Close works while busy; the placeholder is run 6's.
 
 ## Tests
 
-`npm test` runs every test file: `model.test.ts` (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` (jsdom, injected api, including stale-read ordering), `boundaries.test.ts`, `exports.test.ts`, `hostAgnostic.test.ts` and `rememberNames.test.tsx`.
+`npm test` runs every test file: `model.test.ts` (against `fake-platform`, signed as a person it knows), `VaultShareSheet.test.tsx` (jsdom, injected api, including stale-read ordering), `boundaries.test.ts`, `exports.test.ts`, `hostAgnostic.test.ts`, `rememberNames.test.tsx` and `stylesheet.test.ts` (the sheet is 0.1.2's but for the one variable; the red button's label with and without it).
