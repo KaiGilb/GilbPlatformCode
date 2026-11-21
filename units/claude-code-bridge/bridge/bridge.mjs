@@ -1948,13 +1948,34 @@ export function readGitIdentity(raw) {
 }
 class GitRefused extends Error {
 }
+/**
+ * What git reads as an empty config or attributes file. POSIX: /dev/null. Windows: Git for Windows cannot open `\\.\nul`
+ * (os.devNull) as a file, so an empty file of the bridge's own, made empty again on each use.
+ */
+export function gitEmptyFile(privateDir, platform = process.platform) {
+    if (platform !== "win32")
+        return "/dev/null";
+    fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+    const f = path.join(privateDir, "empty");
+    let size = -1;
+    try {
+        size = fs.lstatSync(f).isFile() ? fs.statSync(f).size : -1;
+    }
+    catch {
+        /* not there yet */
+    }
+    if (size !== 0) {
+        fs.rmSync(f, { recursive: true, force: true });
+        fs.writeFileSync(f, "", { mode: 0o600 });
+    }
+    return f;
+}
 /** The environment of every bridge git call: the bridge's own minus every GIT_*, plus the hardening and the identity. */
-export function gitHardenedEnv(env, identity, platform = process.platform) {
+export function gitHardenedEnv(env, identity, nul = "/dev/null") {
     const out = {};
     for (const [k, v] of Object.entries(env))
         if (!/^GIT_/i.test(k) && v !== undefined)
             out[k] = v;
-    const nul = platform === "win32" ? "NUL" : "/dev/null";
     return {
         ...out,
         GIT_CONFIG_NOSYSTEM: "1",
@@ -1971,8 +1992,7 @@ export function gitHardenedEnv(env, identity, platform = process.platform) {
     };
 }
 /** The `-c` overrides every bridge git call carries, before the subcommand. */
-export function gitHardenedArgs(hooksPath, excludesFile, platform = process.platform) {
-    const nul = platform === "win32" ? "NUL" : "/dev/null";
+export function gitHardenedArgs(hooksPath, excludesFile, nul = "/dev/null") {
     return [
         `core.hooksPath=${hooksPath}`, "core.fsmonitor=false", "core.untrackedCache=false", "credential.helper=", "core.sshCommand=",
         "protocol.allow=never", `core.attributesFile=${nul}`, `core.excludesFile=${excludesFile}`, "commit.gpgSign=false", "tag.gpgSign=false",
@@ -2038,9 +2058,10 @@ export async function saveTurnToGit(o) {
     const timeout = o.timeoutMs ?? GIT_TIMEOUT_MS;
     const now = o.now ?? Date.now;
     const identity = o.identity ?? { ...GIT_DEFAULT_IDENTITY };
-    const env = gitHardenedEnv(o.env, identity, platform);
     try {
         fs.mkdirSync(o.privateDir, { recursive: true, mode: 0o700 });
+        const nul = gitEmptyFile(o.privateDir, platform);
+        const env = gitHardenedEnv(o.env, identity, nul);
         const excludes = path.join(o.privateDir, "excludes");
         const want = DEFAULT_GITIGNORE.join("\n") + "\n";
         let have = "";
@@ -2060,7 +2081,7 @@ export async function saveTurnToGit(o) {
             if (fs.readdirSync(hooksPath).length > 0)
                 return { ok: false, reason: `The bridge's empty hooks folder is not empty (${hooksPath}), so nothing was saved.` };
         }
-        const hard = gitHardenedArgs(hooksPath, excludes, platform);
+        const hard = gitHardenedArgs(hooksPath, excludes, nul);
         const folder = fs.realpathSync.native(o.folder);
         let gitDir = gitDirOf(folder);
         const run = (args, input) => new Promise((resolve, reject) => {
@@ -5023,7 +5044,7 @@ export function createBridge(opts = {}) {
         try {
             execFileSync("git", ["-c", "core.hooksPath=/dev/null", "init", "--quiet", "--template=", path.join(workspace.path, name)], {
                 stdio: "ignore", timeout: 10_000,
-                env: { ...env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
+                env: { ...env, GIT_CONFIG_GLOBAL: gitEmptyFile(gitPrivateDir), GIT_CONFIG_NOSYSTEM: "1", GIT_TEMPLATE_DIR: "" },
             });
         }
         catch (e) {

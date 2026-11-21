@@ -12,12 +12,17 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const FAKE = path.join(HERE, "fake-claude.mjs");
 export const APP = "http://localhost:5197";
 
+// Git for Windows cannot open os.devNull (\\.\nul) as a config file: an empty file stands in for it there.
+const EMPTY = process.platform === "win32" ? path.join(fs.mkdtempSync(path.join(os.tmpdir(), "git-empty-")), "empty") : "/dev/null";
+if (process.platform === "win32") fs.writeFileSync(EMPTY, "");
+const NO_HOOKS = process.platform === "win32" ? fs.mkdtempSync(path.join(os.tmpdir(), "git-nohooks-")) : "/dev/null";
+
 /** A git that reads no system or global config and runs no hooks: used only to READ what the bridge wrote. */
 export function plainGit(cwd, args, extraEnv = {}) {
-  return execFileSync("git", ["-c", `core.hooksPath=${os.devNull}`, "-c", "core.fsmonitor=false", ...args], {
+  return execFileSync("git", ["-c", `core.hooksPath=${NO_HOOKS}`, "-c", "core.fsmonitor=false", ...args], {
     cwd,
     encoding: "utf8",
-    env: { PATH: process.env.PATH, HOME: os.tmpdir(), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: os.devNull, LC_ALL: "C", ...extraEnv },
+    env: { PATH: process.env.PATH, HOME: os.tmpdir(), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: EMPTY, LC_ALL: "C", ...extraEnv },
   });
 }
 export const commitCount = (repo) => {
