@@ -5,9 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   DEFAULT_GITIGNORE,
   GIT_FIRST_SAVE_TIMEOUT_MS,
+  GIT_FIRST_SAVE_TOTAL_MS,
+  GIT_SAVE_TOTAL_MS,
   GIT_TIMEOUT_MS,
   gitCommitMessage,
   saveTurnToGit,
@@ -92,9 +96,17 @@ describe("a changed code turn leaves one commit (bridge-run)", () => {
   it("an existing repo with no .gitignore still keeps node_modules out (the bridge's own excludes)", async () => {
     b = await startGitBridge();
     plainGit(b.projPath, ["init", "-q", "--template="]);
+    plainGit(b.projPath, ["-c", "user.name=p", "-c", "user.email=p@example.test", "commit", "-q", "--allow-empty", "-m", "start"]);
     const r = await b.turn([writes([{ p: "a.txt", c: "a" }, { p: "node_modules/m/i.js", c: "m" }]), "x"]);
     expect(ev(r, "git_saved")[0].files).toEqual(["a.txt"]);
-    expect(fs.existsSync(path.join(b.projPath, ".gitignore"))).toBe(false);
+    expect(fs.existsSync(path.join(b.projPath, ".gitignore"))).toBe(false); // a repo with history: its files are the person's
+  });
+
+  it("an existing EMPTY repo (no history, as New project makes) gets the default .gitignore on its first save", async () => {
+    b = await startGitBridge();
+    plainGit(b.projPath, ["init", "-q", "--template="]);
+    const r = await b.turn([writes([{ p: "a.txt", c: "a" }, { p: "node_modules/m/i.js", c: "m" }]), "x"]);
+    expect(ev(r, "git_saved")[0].files).toEqual([".gitignore", "a.txt"]);
   });
 
   it("a removed file is committed as removed", async () => {
@@ -363,5 +375,101 @@ describe("the git time limit: 120 s only for a folder's first save, 20 s once it
     fs.writeFileSync(path.join(f, "a.txt"), "a");
     const r = await limits(f, priv);
     expect(r.of("add")).toEqual([120_000]);
+  });
+});
+
+describe("tester findings (Agent.Tester, 2026-11-21)", () => {
+  const temps = [];
+  afterEach(() => {
+    for (const t of temps.splice(0)) fs.rmSync(t, { recursive: true, force: true });
+  });
+  const tmp = () => {
+    const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-git-qa-")));
+    temps.push(d);
+    return d;
+  };
+  const callRecord = (priv, gitDir) => path.join(priv, "calls", `${createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
+  async function primedRepo() {
+    const f = tmp();
+    const priv = tmp();
+    fs.writeFileSync(path.join(f, "a.txt"), "a");
+    const r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t0", env: process.env, privateDir: priv });
+    expect(r.ok && r.commit).toBeTruthy();
+    return { f, priv, gitDir: path.join(f, ".git") };
+  }
+  const deadPid = () => {
+    // A pid that is not running now: a child that has exited.
+    const c = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" });
+    return Number(c.stdout);
+  };
+
+  it("D2: a lock the bridge's own killed git left (a record proves it) is removed, said in the result, and the save goes on", async () => {
+    const { f, priv, gitDir } = await primedRepo();
+    const start = Date.now();
+    fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start, limit: 20_000, gitDir }));
+    fs.writeFileSync(path.join(gitDir, "index.lock"), "");
+    fs.mkdirSync(path.join(gitDir, "refs", "heads"), { recursive: true });
+    fs.writeFileSync(path.join(gitDir, "refs", "heads", "main.lock"), "");
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });
+    expect(r.ok && r.commit).toBeTruthy();
+    expect(r.recovered?.sort()).toEqual(["index.lock", "refs/heads/main.lock"]);
+    expect(fs.existsSync(callRecord(priv, gitDir))).toBe(false);
+  });
+
+  it("D2: any lock the bridge cannot prove is its own is reported and kept", async () => {
+    const { f, priv, gitDir } = await primedRepo();
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const lock = path.join(gitDir, "index.lock");
+    // (a) no record at all
+    fs.writeFileSync(lock, "");
+    let r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
+    fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
+    // (b) the recorded git is still alive (this test's own process stands in for it)
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: process.pid, start: Date.now(), limit: 20_000, gitDir }));
+    r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t2", env: process.env, privateDir: priv });
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
+    // (c) the recorded git is gone, but the lock was made outside that call's window (someone else's git)
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: Date.now() + 120_000, limit: 20_000, gitDir }));
+    r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t3", env: process.env, privateDir: priv });
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
+  });
+
+  it("the whole save has a time cap: 60 s after history, 300 s for a first save", async () => {
+    expect(GIT_SAVE_TOTAL_MS).toBe(60_000);
+    expect(GIT_FIRST_SAVE_TOTAL_MS).toBe(300_000);
+    const { f, priv } = await primedRepo();
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    let clock = Date.now();
+    let calls = 0;
+    const r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv, now: () => clock, onGitRun: () => { if (++calls === 6) clock += 61_000; } });
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/longer than 60 s in all/);
+  });
+
+  it("the subject is cut at a word, with an ellipsis, 72 characters at most", () => {
+    const s = "Added the login page with the email field and the code field and the button";
+    const first = gitCommitMessage(s, [{ status: "A", path: "a" }], "t").split("\n")[0];
+    expect(first.length).toBeLessThanOrEqual(72);
+    expect(first.endsWith("…")).toBe(true);
+    expect(s.startsWith(first.slice(0, -1))).toBe(true);
+    expect(s[first.length - 1]).toBe(" "); // the cut is at a space
+  });
+
+  it("a flagged secret is not left in .git/objects (the bridge removes the loose object it wrote and nothing reaches)", async () => {
+    const { f, priv } = await primedRepo();
+    const secret = `key=${"AK" + "IA" + "QWERTYUIOPASDFGH"}\n`;
+    fs.writeFileSync(path.join(f, "k.txt"), secret);
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const id = execFileSync("git", ["hash-object", path.join(f, "k.txt")], { encoding: "utf8", env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+    const r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });
+    expect(r.ok && r.skipped.map((x) => x.path)).toEqual(["k.txt"]);
+    expect(fs.existsSync(path.join(f, ".git", "objects", id.slice(0, 2), id.slice(2)))).toBe(false);
+    expect(fs.readFileSync(path.join(f, "k.txt"), "utf8")).toBe(secret); // still on disk, only not in git
   });
 });

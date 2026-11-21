@@ -11,7 +11,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { saveTurnToGit } from "../bridge/bridge.mjs";
-import { commitCount, committedFiles, ev, fsckOk, startGitBridge, writes } from "./gitTestKit.mjs";
+import { commitCount, committedFiles, ev, fsckOk, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 let b;
@@ -77,6 +77,62 @@ describe.skipIf(process.platform === "win32")("P.Rel.NoCorruption", () => {
     expect(fs.existsSync(path.join(repo, ".git", "index.lock"))).toBe(false);
     const inGit = new Set(committedFiles(repo));
     expect(written.filter((f) => !inGit.has(f))).toEqual([]);
+  }, 600_000);
+});
+
+// Agent.Tester's D2 (kill-group.mjs): the saver AND its git child killed together (a crash, a power cut, a service stop) can leave a
+// lock. The next save must still commit: the bridge removes a lock only when its own call record proves its own git left it.
+describe.skipIf(process.platform === "win32")("P.Rel.NoCorruption, whole group killed (D2)", () => {
+  it("100 kills of the saver and its git together: 0 repos broken, 0 left stuck (the next save always commits)", async () => {
+    const W = tmp("bridge-git-killgroup-");
+    const runner = path.join(HERE, "gitSaveRunner.mjs");
+    let lockedAfterKill = 0;
+    let broken = 0;
+    let stuck = 0;
+    let recoveredLocks = 0;
+    const reasons = new Map();
+    for (let i = 0; i < 100; i++) {
+      const repo = path.join(W, `r${i}`);
+      const priv = path.join(W, `p${i}`);
+      fs.mkdirSync(repo, { recursive: true });
+      for (let k = 0; k < 300; k++) fs.writeFileSync(path.join(repo, `s${k}.js`), `export const v = ${k};\n`.repeat(30));
+      await saveTurnToGit({ folder: repo, summary: "base", turnId: "b", env: process.env, privateDir: priv });
+      const child = spawn(process.execPath, [runner, repo, priv, "0"], { stdio: "ignore", detached: true });
+      await new Promise((r) => setTimeout(r, 150 + Math.floor(Math.random() * 600)));
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      await new Promise((r) => (child.exitCode !== null || child.signalCode !== null ? r() : child.once("exit", r)));
+      const gd = path.join(repo, ".git");
+      const anyLock = fs.existsSync(path.join(gd, "index.lock")) || fs.existsSync(path.join(gd, "HEAD.lock")) || fs.readdirSync(path.join(gd, "refs", "heads")).some((f) => f.endsWith(".lock"));
+      if (anyLock) lockedAfterKill++;
+      fs.writeFileSync(path.join(repo, "after.txt"), "x");
+      const next = await saveTurnToGit({ folder: repo, summary: "after", turnId: "a", env: process.env, privateDir: priv });
+      if (next.ok && next.commit) recoveredLocks += next.recovered?.length ?? 0;
+      else {
+        stuck++;
+        const k = next.ok ? "no commit" : next.reason.slice(0, 90);
+        reasons.set(k, (reasons.get(k) ?? 0) + 1);
+      }
+      // Broken = the repo after the next save (a lock left by the kill is a lock, counted above, until that save removes it).
+      if (!fsckOk(repo)) {
+        broken++;
+        let why = "";
+        try {
+          plainGit(repo, ["fsck", "--strict", "--no-progress"]);
+        } catch (e) {
+          why = String(e.stderr ?? e.stdout ?? e.message).slice(0, 600);
+        }
+        console.log(`[kill-group] fsck broken after the next save, round ${i}: ${why}`);
+      }
+      fs.rmSync(repo, { recursive: true, force: true });
+      fs.rmSync(priv, { recursive: true, force: true });
+    }
+    console.log(`[kill-group] 100 kills: ${lockedAfterKill} left a lock, ${recoveredLocks} lock(s) removed by proof, ${broken} fsck-broken after the next save, ${stuck} stuck ${JSON.stringify(Object.fromEntries(reasons))}`);
+    expect(broken).toBe(0);
+    expect(stuck).toBe(0);
   }, 600_000);
 });
 

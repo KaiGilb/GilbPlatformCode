@@ -1356,7 +1356,7 @@ export const DELEGATE_SENTENCE = "Hand each coding job to the sonnet-coder agent
 export const CODER_STANDARDS_SENTENCE = "Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
 /** The tail of every code turn's system prompt: the standards sentence, then (when delegating) the delegate sentence. One place, so no branch (project or not, folder or computer) can miss either. */
 function codeTurnTail(delegate: boolean | undefined, sep: string): string {
-  return `${sep}${CODER_STANDARDS_SENTENCE}${delegate ? `${sep}${DELEGATE_SENTENCE}` : ""}`;
+  return `${sep}${GIT_SENTENCE}${sep}${CODER_STANDARDS_SENTENCE}${delegate ? `${sep}${DELEGATE_SENTENCE}` : ""}`;
 }
 const CODER_PROMPT = "You write and change code from a brief. Work only inside the folder you were started in. Follow the brief exactly: do not add or change anything it does not ask for. Run the project's tests and typecheck when it has them. Report the files you changed, the exact commands you ran and their results. Claim nothing you did not run. Follow the standards the brief gives you; when the brief names a library unit to reuse, use it rather than writing your own.";
 /** The one custom subagent of a delegating code turn. Folder mode gives it exactly the code tools of the turn; computer mode leaves tools out (it inherits). */
@@ -1543,13 +1543,15 @@ export function fileToolDenyRules(places: readonly string[]): string[] {
 }
 
 /** The Claude Code settings a code turn runs with (passed inline with --settings, never a file in the folder). */
-export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session", claudeConfigDir = "", delegate = false) {
+export function codeTurnSettings(home: string, platform: string, extraDenyRead: string[] = [], approval: "session" | "each-write" = "session", claudeConfigDir = "", delegate = false, gitRoots: readonly string[] = []) {
+  // 0.3.22: no write anywhere under a .git folder of the turn's folder (the bridge's git save owns it): the file tools and the sandbox.
+  const gitRules = gitGlobs(gitRoots).map((g) => `Edit(/${g})`);
   // sandbox paths are home-relative (`~/`), which Claude Code expands itself; the file-tool rules need absolute paths, so they use `home`
   const fileRules = fileToolDenyRules([...credentialPlaces(home, platform, claudeConfigDir), ...extraDenyRead.filter((p) => path.isAbsolute(p) || /^[A-Za-z]:[\\/]/.test(p))]);
   const agentDeny = delegate ? SUBAGENT_TOOL_NAMES.flatMap((n) => BUILTIN_AGENT_TYPES.map((t) => `${n}(${t})`)) : [];
   if (platform === "win32") {
     // Files-only mode: no command tool, so no sandbox block; the permission rules stay.
-    return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny, ...fileRules], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
+    return { permissions: { deny: ["WebFetch", "WebSearch", ...agentDeny, ...fileRules, ...gitRules], disableBypassPermissionsMode: "disable" } }; // Windows files-only: no web tools
   }
   const denyRead = credentialReadDeny(platform);
   return {
@@ -1559,10 +1561,10 @@ export function codeTurnSettings(home: string, platform: string, extraDenyRead: 
       allowUnsandboxedCommands: false,
       autoAllowBashIfSandboxed: approval !== "each-write", // each-write: every command asks too, because a command can write
       network: { allowedDomains: ["registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "codeload.github.com", "raw.githubusercontent.com"] },
-      filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)] },
+      filesystem: { denyRead: [...denyRead, ...extraDenyRead, ...configDirDeny(claudeConfigDir)], ...(gitRoots.length > 0 ? { denyWrite: gitGlobs(gitRoots) } : {}) },
     },
     permissions: {
-      deny: [...agentDeny, ...fileRules],
+      deny: [...agentDeny, ...fileRules, ...gitRules],
       disableBypassPermissionsMode: "disable",
     },
   };
@@ -1756,7 +1758,12 @@ export function claudeDirs(roots: readonly string[], max = 5000, ms = 1000): str
 export function claudeGlobs(workspaceRoot: string, home: string): string[] {
   return [workspaceRoot, `${home}/Developer`].flatMap((r) => [`${r}/.claude`, `${r}/.claude/**`, `${r}/**/.claude`, `${r}/**/.claude/**`]);
 }
-/** Git runs code from these on the person's next `git`: hooks; config (hooksPath, fsmonitor, sshCommand, pager, `!` aliases, filter and textconv drivers); info/attributes (selects the filters). They are denied for every repo that EXISTS when the turn starts. A deny glob on .git/config would also refuse `git init`, so none is used: a repo created during the turn is the documented gap. The rest of .git (index, objects, refs, COMMIT_EDITMSG) stays writable. */
+/**
+ * The `.git` folder of every repo that EXISTS when the turn starts: a code turn may not write anywhere in it (0.3.22). Before 0.3.22
+ * only hooks, config and info/attributes were denied, so the coder could run `git add`/`git commit` itself; since the bridge saves
+ * the history after each turn (GitHubSync), the coder needs no git writes, and anything a turn plants in .git (a link, a config, a
+ * filter) would act in the bridge's own git. Repos made DURING the turn are covered by gitGlobs.
+ */
 export function gitPlaces(roots: readonly string[], max = 5000, ms = 1000): string[] {
   const found: string[] = [];
   let seen = 0;
@@ -1773,13 +1780,19 @@ export function gitPlaces(roots: readonly string[], max = 5000, ms = 1000): stri
       seen++;
       if (!e.isDirectory()) continue;
       const full = path.join(dir, e.name);
-      if (e.name === ".git") found.push(path.join(full, "hooks"), path.join(full, "config"), path.join(full, "info", "attributes"));
+      if (e.name === ".git") found.push(full);
       else if (!WRITE_PRUNE.has(e.name)) walk(full, depth + 1);
     }
   };
   for (const r of roots) walk(r, 0);
   return found;
 }
+/** Glob forms of the .git deny, so a repo made DURING the turn is covered too (and `git init` is refused: the bridge makes the repo). */
+export function gitGlobs(roots: readonly string[]): string[] {
+  return roots.flatMap((r) => [`${r}/.git`, `${r}/.git/**`, `${r}/**/.git`, `${r}/**/.git/**`]);
+}
+/** The code turn's git sentence: .git is the bridge's, which saves the history after the turn. */
+export const GIT_SENTENCE = "Do not run git commands that change the repository (git init, add, commit, checkout, reset, stash, config, and the like): a code turn cannot write the project's .git folder. The bridge saves your changes to the project's git history after each turn; reading with git status, git log and git diff is fine.";
 /** Why a file tool may not WRITE this path (null = it may): outside the writable areas, a `.claude` settings or hooks place, or a write-only-protected place. Links are followed. */
 export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[], writeOnly: readonly string[]): string | null {
   if (raw.includes("\0")) return "The path is not valid.";
@@ -1791,8 +1804,7 @@ export function writeBlock(raw: string, o: ProtectOpts, areas: readonly string[]
     const segs = lowerIf(o.ci, c).split("/");
     const last = segs[segs.length - 1] ?? "";
     if (segs.includes(".claude") || last === ".claude.json" || last === ".mcp.json") return "Claude Code settings and hooks cannot be written here (a .claude folder, .claude.json or .mcp.json).";
-    const gi = segs.indexOf(".git");
-    if (gi >= 0 && (segs[gi + 1] === "hooks" || segs[gi + 1] === "config" || (segs[gi + 1] === "info" && segs[gi + 2] === "attributes"))) return "Git hooks and config cannot be written here (.git/hooks, .git/config, .git/info/attributes).";
+    if (segs.includes(".git")) return "A code turn cannot write the project's .git folder; the bridge saves the git history after the turn.";
     for (const w of writeOnly) if (underPlace(o.ci, c, w) || underPlace(o.ci, c, resolveThroughLinks(w))) return `This place is protected: ${w}.`;
   }
   const roots = areas.flatMap((a) => [a, resolveThroughLinks(a)]);
@@ -2022,7 +2034,14 @@ function messageText(s: string, keepLine = false): string {
 }
 /** The commit message: the summary's first line (72 at most), a blank line, the files (50 at most), a blank line, the turn. */
 export function gitCommitMessage(summary: string, files: readonly { status: string; path: string }[], turnId: string): string {
-  const first = messageText(summary.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "") ?? "", true).trim().slice(0, 72) || `Code turn ${messageText(turnId)}`;
+  const whole = messageText(summary.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "") ?? "", true).trim();
+  // Longer than 72: cut at the last space that keeps at least 40 characters, and mark the cut with "…" (72 in all).
+  let first = whole;
+  if (whole.length > 72) {
+    const sp = whole.lastIndexOf(" ", 71);
+    first = `${(sp >= 40 ? whole.slice(0, sp) : whole.slice(0, 71)).trimEnd()}…`;
+  }
+  first = first || `Code turn ${messageText(turnId)}`;
   const listed = files.slice(0, GIT_MESSAGE_FILES).map((f) => `${f.status}\t${messageText(f.path)}`);
   if (files.length > GIT_MESSAGE_FILES) listed.push(`… and ${files.length - GIT_MESSAGE_FILES} more`);
   return `${first}\n\n${listed.join("\n")}\n\nGilb-Turn: ${messageText(turnId)}\n`;
@@ -2065,7 +2084,7 @@ export interface GitSaveOptions {
   onGitRun?: ((args: readonly string[], timeoutMs: number) => void) | undefined;
 }
 export type GitSaveResult =
-  | { ok: true; commit: string | null; files: string[]; skipped: { path: string; reason: string }[] }
+  | { ok: true; commit: string | null; files: string[]; skipped: { path: string; reason: string }[]; recovered?: string[] }
   | { ok: false; reason: string };
 
 class GitRefused extends Error {}
@@ -2160,6 +2179,54 @@ function gitDirOf(folder: string): string | null {
   return target;
 }
 
+/** The whole save (every git call together) stops after this: 60 s for a repo with history, 300 s for a first save. */
+export const GIT_SAVE_TOTAL_MS = 60_000;
+export const GIT_FIRST_SAVE_TOTAL_MS = 300_000;
+
+/**
+ * Each git call the bridge runs is written down first (pid, start, limit) in the bridge's own folder, and removed when it ends. A
+ * call that never ended (the bridge and its git were killed: a crash, a power cut, a service stop) leaves that record. A lock file
+ * in the repo is removed ONLY when such a record proves the bridge's own git left it: the recorded git is gone and the lock was
+ * made inside that call's time window. Any other lock is reported and left alone.
+ */
+interface GitCallRecord { pid: number; start: number; limit: number; gitDir: string }
+const gitCallFile = (privateDir: string, gitDir: string) => path.join(privateDir, "calls", `${crypto.createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
+function pidGone(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (e) {
+    return (e as ErrLike).code === "ESRCH";
+  }
+}
+/** The lock files of a repo (index.lock, HEAD.lock, refs/**.lock, packed-refs.lock …), as paths under the git folder. */
+function gitLockFiles(gitDir: string): string[] {
+  const out: string[] = [];
+  const stack = [""];
+  while (stack.length > 0) {
+    const rel = stack.pop()!;
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(rel ? path.join(gitDir, rel) : gitDir);
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      const r = rel ? `${rel}/${n}` : n;
+      if (r === "objects" || r === "hooks" || r === "logs") continue;
+      let st: fs.Stats;
+      try {
+        st = fs.lstatSync(path.join(gitDir, r));
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) stack.push(r);
+      else if (st.isFile() && n.endsWith(".lock")) out.push(r);
+    }
+  }
+  return out;
+}
+
 /** Most entries the bridge looks at in a repo's git folder before it gives up (and saves nothing). */
 export const GIT_DIR_SCAN_MAX = 1_000_000;
 /**
@@ -2226,6 +2293,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
   const now = o.now ?? Date.now;
   const identity = o.identity ?? { ...GIT_DEFAULT_IDENTITY };
   let excludes = "";
+  let callFile = "";
   try {
     fs.mkdirSync(o.privateDir, { recursive: true, mode: 0o700 });
     const nul = gitEmptyFile(o.privateDir, platform);
@@ -2245,21 +2313,47 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     const hard = gitHardenedArgs(hooksPath, excludes, nul);
 
     let gitDir = gitDirOf(folder);
+    // A call record an earlier, killed save left: read BEFORE this save's own first git call replaces it.
+    let rec: GitCallRecord | null = null;
+    if (gitDir) {
+      try {
+        const j = JSON.parse(fs.readFileSync(gitCallFile(o.privateDir, gitDir), "utf8")) as GitCallRecord;
+        if (Number.isInteger(j.pid) && j.pid > 0 && Number.isFinite(j.start) && Number.isFinite(j.limit) && j.gitDir === gitDir) rec = j;
+      } catch {
+        rec = null;
+      }
+    }
     let attrSource: string | null = null;
+    const t0 = now();
+    let total = GIT_SAVE_TOTAL_MS;
     const run = (args: string[], input?: string | Buffer): Promise<Buffer> =>
       new Promise((resolve, reject) => {
+        const left = total - (now() - t0);
+        if (left <= 0) return reject(new GitRefused(`The save took longer than ${Math.round(total / 1000)} s in all and was stopped, so nothing was saved.`));
+        const limit = Math.min(timeout, left);
         const base = gitDir ? ["--git-dir", gitDir, "--work-tree", folder] : [];
         const attr = attrSource ? [`--attr-source=${attrSource}`] : [];
         o.onGitRun?.(args, timeout);
-        const child = execFile(gitBin, [...hard, ...base, ...attr, ...args], { cwd: o.privateDir, env, timeout, killSignal: "SIGTERM", maxBuffer: 256 * 1024 * 1024, encoding: "buffer", windowsHide: true }, (err, stdout, stderr) => {
+        const child = execFile(gitBin, [...hard, ...base, ...attr, ...args], { cwd: o.privateDir, env, timeout: limit, killSignal: "SIGTERM", maxBuffer: 256 * 1024 * 1024, encoding: "buffer", windowsHide: true }, (err, stdout, stderr) => {
+          if (callFile) fs.rmSync(callFile, { force: true });
           if (err) {
             const e = err as ExecFileException;
             if (e.code === "ENOENT") return reject(new GitRefused("git is not installed on this computer (or not on the bridge's PATH), so nothing was saved."));
-            if (e.killed) return reject(new GitRefused(`git took longer than ${Math.round(timeout / 1000)} s and was stopped, so nothing was saved.`));
+            if (e.killed) return reject(new GitRefused(limit < timeout ? `The save took longer than ${Math.round(total / 1000)} s in all and was stopped, so nothing was saved.` : `git took longer than ${Math.round(timeout / 1000)} s and was stopped, so nothing was saved.`));
             return reject(new GitRefused(`git failed: ${String(stderr ?? "").trim().split("\n").slice(-1)[0] || e.message}`.slice(0, 300)));
           }
           resolve(stdout);
         });
+        if (gitDir && child.pid !== undefined) {
+          // Written down before the call can touch the repo, so a kill of the bridge AND git leaves proof of whose lock it is.
+          callFile = gitCallFile(o.privateDir, gitDir);
+          try {
+            fs.mkdirSync(path.dirname(callFile), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(callFile, JSON.stringify({ pid: child.pid, start: now(), limit, gitDir } satisfies GitCallRecord), { mode: 0o600 });
+          } catch {
+            callFile = "";
+          }
+        }
         if (input !== undefined) child.stdin?.end(input);
         else child.stdin?.end();
       });
@@ -2286,26 +2380,36 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     if (bad) return { ok: false, reason: `The repo's config has a setting the bridge does not save with (${bad.slice(0, 80)}), so nothing was saved.` };
     // The long limit is only for a repo with no history at all: no ref, no commit at HEAD, and no object. Anything else keeps the
     // short limit, so a code turn cannot buy a long-running git by deleting refs or pointing HEAD at an empty branch.
-    if (o.timeoutMs === undefined) {
-      let history = made ? false : before.objects > 0 || (await run(["for-each-ref", "--count=1", "--format=%(objectname)"])).toString("utf8").trim() !== "";
-      if (!history && !made) {
-        try {
-          await run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
-          history = true;
-        } catch {
-          /* no commit at HEAD */
+    let history = made ? false : before.objects > 0 || (await run(["for-each-ref", "--count=1", "--format=%(objectname)"])).toString("utf8").trim() !== "";
+    if (!history && !made) {
+      try {
+        await run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+        history = true;
+      } catch {
+        /* no commit at HEAD */
+      }
+    }
+    if (o.timeoutMs === undefined) timeout = history ? GIT_TIMEOUT_MS : GIT_FIRST_SAVE_TIMEOUT_MS;
+    total = history ? GIT_SAVE_TOTAL_MS : GIT_FIRST_SAVE_TOTAL_MS;
+    // Locks: one the bridge's own killed git provably left is removed (and said); any other is reported and left alone.
+    const recovered: string[] = [];
+    const recFile = gitCallFile(o.privateDir, gitDir);
+    const locks = gitLockFiles(gitDir);
+    if (rec && pidGone(rec.pid)) {
+      for (const l of locks) {
+        const st = fs.lstatSync(path.join(gitDir, l));
+        if (st.mtimeMs >= rec.start - 2000 && st.mtimeMs <= rec.start + rec.limit + 5000) {
+          fs.rmSync(path.join(gitDir, l), { force: true });
+          recovered.push(l);
         }
       }
-      timeout = history ? GIT_TIMEOUT_MS : GIT_FIRST_SAVE_TIMEOUT_MS;
+      void recFile;
     }
-    const lock = path.join(gitDir, "index.lock");
-    try {
-      const st = fs.lstatSync(lock);
+    for (const l of locks.filter((x) => !recovered.includes(x))) {
+      const st = fs.lstatSync(path.join(gitDir, l));
       return now() - st.mtimeMs > GIT_LOCK_STALE_MS
-        ? { ok: false, reason: `A stale .git/index.lock (from ${new Date(st.mtimeMs).toISOString()}) stops git; nothing was saved. Remove it once no git is running.` }
-        : { ok: false, reason: "Another git is busy in this project (.git/index.lock), so nothing was saved this time." };
-    } catch {
-      /* no lock: go on */
+        ? { ok: false, reason: `A stale .git/${l} (from ${new Date(st.mtimeMs).toISOString()}) stops git; nothing was saved. Remove it once no git is running.` }
+        : { ok: false, reason: `Another git is busy in this project (.git/${l}), so nothing was saved this time.` };
     }
     // Attributes come from an empty tree (git 2.42 and later), so no .gitattributes in the folder can select a filter or a diff
     // driver. An older git: a .gitattributes that names a filter refuses the save.
@@ -2324,7 +2428,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
         if (/\bfilter\b/.test(text)) return { ok: false, reason: `${f} names a filter, and this git (older than 2.42) cannot be told to ignore it; update git. Nothing was saved.` };
       }
     }
-    if (made) {
+    if (!history) {
       try {
         const fd = fs.openSync(path.join(folder, ".gitignore"), "wx", 0o644);
         fs.writeSync(fd, DEFAULT_GITIGNORE.join("\n") + "\n");
@@ -2360,7 +2464,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
       await unstage(outOfScope);
       files = await staged();
     }
-    if (files.length === 0) return { ok: true, commit: null, files: [], skipped: [] };
+    if (files.length === 0) return { ok: true, commit: null, files: [], skipped: [], ...(recovered.length ? { recovered } : {}) };
 
     // Secret scan of what is staged (the index, not the disk): names first, then each blob up to 1 MB, read in batches.
     const skipped: { path: string; reason: string }[] = [];
@@ -2416,9 +2520,24 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
       // Unstage: back to the last commit's version, or out of the index when there is no commit yet. The file stays on disk.
       await unstage(skipped.map((s) => s.path));
       files = await staged();
+      // The flagged content was written into .git/objects by `git add`. Delete each such loose object that nothing reaches (no ref,
+      // reflog or index entry), so the secret is not left on disk in the repo. Packed or reachable objects are left alone.
+      const flagged = [...new Set(skipped.map((k) => oids.get(k.path)).filter((x): x is string => typeof x === "string"))];
+      if (flagged.length > 0) {
+        try {
+          const reach = new Set((await run(["rev-list", "--objects", "--all", "--reflog", "--indexed-objects"])).toString("utf8").split("\n").map((l) => l.slice(0, l.indexOf(" ") < 0 ? l.length : l.indexOf(" "))));
+          for (const id of flagged) {
+            if (reach.has(id)) continue;
+            const loose = path.join(gitDir, "objects", id.slice(0, 2), id.slice(2));
+            if (fs.lstatSync(loose, { throwIfNoEntry: false })?.isFile()) fs.rmSync(loose, { force: true });
+          }
+        } catch {
+          /* left for git's own gc; it is in no commit */
+        }
+      }
     }
     skipped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-    if (files.length === 0) return { ok: true, commit: null, files: [], skipped: skipped.slice(0, GIT_LIST_CAP) };
+    if (files.length === 0) return { ok: true, commit: null, files: [], skipped: skipped.slice(0, GIT_LIST_CAP), ...(recovered.length ? { recovered } : {}) };
 
     // The commit by plumbing: write-tree, commit-tree, update-ref. Nothing writes COMMIT_EDITMSG, and no hook could run.
     const message = gitCommitMessage(o.summary, files, o.turnId);
@@ -2443,7 +2562,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     } catch (e) {
       return { ok: false, reason: `The repo changed while the bridge saved (${(e as Error).message}); commit ${commit.slice(0, 12)} was made, but something may still be writing in this project.` };
     }
-    return { ok: true, commit, files: files.map((f) => f.path).slice(0, GIT_LIST_CAP), skipped: skipped.slice(0, GIT_LIST_CAP) };
+    return { ok: true, commit, files: files.map((f) => f.path).slice(0, GIT_LIST_CAP), skipped: skipped.slice(0, GIT_LIST_CAP), ...(recovered.length ? { recovered } : {}) };
   } catch (e) {
     if (e instanceof GitRefused) return { ok: false, reason: e.message };
     return { ok: false, reason: `The save failed: ${(e as ErrLike)?.message ?? e}`.slice(0, 300) };
@@ -4338,7 +4457,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-mode", turn.approval === "each-write" ? "manual" : "acceptEdits",
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
-      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
+      "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...gitGlobs([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
       "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
       "--system-prompt-snapshot", "off",
     ];
@@ -4372,7 +4491,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-prompts", turn.approval === "each-write" || !filesOnly ? "host" : "none",
       ...(turn.approval === "each-write" || !filesOnly ? ["--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`] : []),
       "--disable-slash-commands",
-      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate)),
+      "--settings", JSON.stringify(codeTurnSettings(os.homedir(), codePlatform, [...(opts.extraDenyRead ?? []), ...stateProtected], turn.approval, envGet(env, "CLAUDE_CONFIG_DIR") ?? "", turn.delegate, turn.proj ? [turn.proj.path] : workspace ? [workspace.path] : [])),
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
@@ -4812,7 +4931,7 @@ export function createBridge(opts: BridgeOptions = {}) {
         log(`git save in ${folder}: ${r.reason}`);
         send("git_error", { reason: r.reason });
       } else if (r.commit || r.skipped.length > 0) {
-        send("git_saved", { commit: r.commit, files: r.files, skipped: r.skipped, pushed: "no-link" });
+        send("git_saved", { commit: r.commit, files: r.files, skipped: r.skipped, pushed: "no-link", ...(r.recovered ? { recovered: r.recovered } : {}) });
       }
     };
     try {
@@ -4995,6 +5114,12 @@ export function createBridge(opts: BridgeOptions = {}) {
       });
     } catch (e) {
       log(`project ${name}: git init failed: ${(e as ErrLike)?.code ?? (e as ErrLike)?.message ?? e}`);
+    }
+    // 0.3.22: the default .gitignore too, so the person's own git (and a later push) leaves node_modules, .env and keys out.
+    try {
+      fs.writeFileSync(path.join(workspace.path, name, ".gitignore"), DEFAULT_GITIGNORE.join("\n") + "\n", { flag: "wx", mode: 0o644 });
+    } catch (e) {
+      log(`project ${name}: .gitignore not written: ${(e as ErrLike)?.code ?? (e as ErrLike)?.message ?? e}`);
     }
     opts.beforeProjectNpmrc?.(path.join(workspace.path, name));
     let npmrc = false;

@@ -49,6 +49,8 @@ describe("git_saved / git_error (after the answer)", () => {
       ["git_saved", { commit: C, files: [], skipped: [], pushed: "elsewhere" }],
       ["git_error", { reason: "A stale .git/index.lock stops git; nothing was saved." }],
       ["git_error", { reason: 5 }],
+      ["git_saved", { commit: C, files: ["b"], skipped: [], pushed: "no-link", recovered: ["index.lock"] }],
+      ["git_saved", { commit: C, files: ["c"], skipped: [], pushed: "no-link", recovered: [3] }],
     ]);
     const evs: ClaudeCodeStreamEvent[] = [];
     const reply = await client.sendTurn([{ role: "user", content: "hi" }], { thread: "T", mode: "code", onEvent: (e) => evs.push(e) });
@@ -57,6 +59,8 @@ describe("git_saved / git_error (after the answer)", () => {
       { event: "git_saved", data: { commit: C, files: ["a.txt"], skipped: [{ path: ".env", reason: "an environment file (.env)" }], pushed: "no-link" } },
       { event: "git_saved", data: { commit: null, files: [], skipped: [{ path: "k.txt", reason: "an AWS access key" }], pushed: "no-link" } },
       { event: "git_error", data: { reason: "A stale .git/index.lock stops git; nothing was saved." } },
+      { event: "git_saved", data: { commit: C, files: ["b"], skipped: [], pushed: "no-link", recovered: ["index.lock"] } },
+      { event: "git_saved", data: { commit: C, files: ["c"], skipped: [], pushed: "no-link" } },
     ]);
   });
 

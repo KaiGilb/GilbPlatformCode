@@ -309,7 +309,7 @@ describe("files-only mode (Windows)", () => {
     const settings = JSON.parse(val("--settings"));
     expect(settings).not.toHaveProperty("sandbox");
     expect({ ...settings.permissions, deny: settings.permissions.deny.filter((r) => !/^(Read|Edit)\(/.test(r)) }).toEqual({ deny: ["WebFetch", "WebSearch"], disableBypassPermissionsMode: "disable" });
-    expect(settings).toEqual(codeTurnSettings(os.homedir(), "win32", [], "session", process.env.CLAUDE_CONFIG_DIR ?? ""));
+    expect(settings).toEqual(codeTurnSettings(os.homedir(), "win32", [], "session", process.env.CLAUDE_CONFIG_DIR ?? "", false, [fs.realpathSync.native(ws)]));
     const sys = val("--append-system-prompt");
     expect(sys).toContain("You cannot run commands on this computer: you can only read and write files in this folder. If a step needs a command (install, build, run), tell the person the exact command to run themselves.");
     expect(sys).not.toContain("The network reaches only package registries and GitHub's read-only download hosts (codeload.github.com, raw.githubusercontent.com).");
