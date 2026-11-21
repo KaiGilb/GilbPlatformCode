@@ -9,7 +9,7 @@
   --surface: #f7faff;
   --lines: #1c222b;
   --on-accent: #ffffff;
-  --accent-ink: #3b6fd4;
+  --accent-ink: #386bd0;
   --bad: #9c4438;
   --tint-hi: #ffffff;
   --r-sm: 6px;
@@ -39,10 +39,14 @@
 
   /* The sign-in card (signin 0.2.14 and later) draws its Change email link in the brand colour and the sentence that
      refuses a vault name in a fixed dark red, unless the app sets these two. On a dark card those read at 3.7:1 and
-     1.8:1. --accent-ink and --bad are the style's own colours for accent text and for a refusal, and the style sets
-     each per look so that it reads on the paper and the surface. */
+     1.8:1. --accent-ink and --bad are the style's own colours for accent text and for a refusal, set per look. */
   --signin-link: var(--accent-ink);
   --signin-error-text: var(--bad);
+  /* The card stands on the paper, not on the surface. The style runtime brings --accent-ink, and the --bad it works
+     out, to 4.5:1 against the PAPER of each look; against the surface only when the style gives one. A style whose
+     dark part gives no surface gets a surface mixed lighter than its paper, and on that the link read at 4.05:1.
+     On the paper both hold for every style the runtime writes. The fields keep the surface. */
+  --signin-card: var(--paper);
 }
 
 .sa-app {

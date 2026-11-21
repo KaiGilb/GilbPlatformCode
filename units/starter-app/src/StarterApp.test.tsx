@@ -285,8 +285,11 @@ describe("share access to the vault", () => {
     await user.click(within(sheet).getByRole("button", { name: nameFor(cara.principal) }));
     const question = within(sheet).getByRole("group", { name: `${nameFor(cara.principal)}?` });
     await user.click(within(question).getByRole("button", { name: "Remove" }));
+    // While the question shows, Cara's row has no Remove button of its own, so the count of those is 1 at once. Wait for
+    // the removal itself: the platform holds no access for Cara, and the list has been read again (the question is gone).
+    await waitFor(() => expect(modesOf(vaultId, cara.principal)).toEqual([]));
+    await waitFor(() => expect(within(sheet).queryByRole("group", { name: `${nameFor(cara.principal)}?` })).toBeNull());
     await waitFor(() => expect(removeButtons()).toHaveLength(1));
-    expect(modesOf(vaultId, cara.principal)).toEqual([]);
     expect(modesOf(vaultId, ben.principal)).toEqual(["read"]);
     expect(removeButtons()[0]!.getAttribute("aria-label")).toBe(nameFor(ben.principal));
   });

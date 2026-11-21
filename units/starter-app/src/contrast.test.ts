@@ -3,7 +3,7 @@
 // axe cannot measure colour in jsdom, so this works the ratios out from the style sheet's own text (test/colours.ts), for
 // the colours the sheet shows before a style has loaded and for the default style, light and dark. The browser proof of
 // apps/starter-app measures the same pairs with axe-core in Chrome.
-import { defaultSheet, toCssVars } from "@kaigilb/gilbplatformcode-style-runtime";
+import { defaultSheet, paletteFromSeed, toCssVars, validateStyleSheet, type PaletteInput, type StyleSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 import { describe, expect, test } from "vitest";
 import { colourOf, contrastOn, declared, rulesOf, signinRules, starterRules, type Vars } from "../test/colours";
 
@@ -76,10 +76,12 @@ describe("the instrument", () => {
   });
 
   test("gives the three ratios measured in the browser on the dark sign-in card before it was put right (known answers: 3.73, 1.23 and 1.78)", () => {
-    // The dark look of the default style without the two variables this sheet sets, and the address on the fixed white of signin 0.2.13.
+    // The dark look of the default style without the three variables this sheet sets (the card on its surface, as
+    // signin draws it when no host says otherwise), and the address on the fixed white of signin 0.2.13.
     const dark = { ...LOOKS["the default style, dark"]! };
     delete dark["--signin-link"];
     delete dark["--signin-error-text"];
+    delete dark["--signin-card"];
     expect(contrastOn(declared(signin, ".gilb-signin-link", "color"), [SIGNIN_CARD], dark).ratio).toBeCloseTo(3.73, 1);
     expect(contrastOn(declared(signin, ".gilb-signin-error-text", "color"), [SIGNIN_CARD], dark).ratio).toBeCloseTo(1.78, 1);
     expect(contrastOn(SIGNIN_INK, [SIGNIN_CARD, "var(--signin-sheet, #fff)"], dark).ratio).toBeCloseTo(1.23, 1);
@@ -104,5 +106,75 @@ describe("the open section is not marked by colour alone", () => {
   test("it is also heavier and carries a bar in the accent colour", () => {
     expect(declared(rules, CURRENT, "font-weight")).toBe("600");
     expect(declared(rules, CURRENT, "box-shadow")).toContain("var(--accent)");
+  });
+});
+
+// Spec: Rule_Code_accessibility RuleA11yWcagAa — an app taken from the starter may choose another style. The three texts
+// of the sign-in card that a dark look once put under 4.5:1 must hold for every style the style runtime writes, not
+// only for the default one. The runtime brings --accent-ink, and the --bad it works out itself, to 4.5:1 against the
+// paper of each look, and against the surface only when the style gives one; so the starter's sheet stands the card on
+// the paper. This sweeps styles of four shapes, 72 accents each, in both looks.
+describe("the sign-in card's link, refusal and address hold for every style the style runtime writes", () => {
+  /** A colour from hue (degrees), saturation and lightness (0 to 1). */
+  const hsl = (h: number, sat: number, l: number): string => {
+    const a = sat * Math.min(l, 1 - l);
+    const f = (n: number) => {
+      const k = (n + h / 30) % 12;
+      return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+        .toString(16)
+        .padStart(2, "0");
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  };
+  const SEEDS = Array.from({ length: 24 }, (_, i) => i * 15).flatMap((h) => [hsl(h, 0.75, 0.5), hsl(h, 0.5, 0.35), hsl(h, 0.9, 0.65)]);
+  const chosen = (seed: string, mode: "light" | "dark"): Required<Omit<PaletteInput, "extra">> => {
+    const p = paletteFromSeed(seed, { mode, harmony: "analogous" });
+    return { accent: p.accent, paper: p.paper, ink: p.ink, surface: p.surface, lines: p.lines, ok: p.ok, warn: p.warn, bad: p.bad, onAccent: p.onAccent };
+  };
+  const bare = (p: PaletteInput): PaletteInput => ({ accent: p.accent, paper: p.paper, ink: p.ink });
+  const noSurface = (p: PaletteInput): PaletteInput => {
+    const { surface: _surface, ...rest } = p;
+    return rest;
+  };
+  /** The shapes of style a sheet may have: what the Studio saves, and what a hand-written or a read-back sheet may leave out. */
+  const SHAPES: Record<string, (seed: string) => Pick<StyleSheet, "palette" | "dark">> = {
+    "a light and a dark palette, each with its surface": (seed) => ({ palette: chosen(seed, "light"), dark: chosen(seed, "dark") }),
+    "a light and a dark palette with no surface": (seed) => ({ palette: noSurface(chosen(seed, "light")), dark: noSurface(chosen(seed, "dark")) }),
+    "accent, paper and ink only, in both looks": (seed) => ({ palette: bare(chosen(seed, "light")), dark: bare(chosen(seed, "dark")) }),
+    "a light palette only (the runtime makes the dark one)": (seed) => ({ palette: chosen(seed, "light"), dark: undefined }),
+  };
+  const THREE = ["the sign-in card's Change email link", "the sign-in card's sentence that refuses a vault name", "the new vault's address on the sign-in card"];
+  const varsOf = (sheet: StyleSheet, mode: "light" | "dark"): Vars => ({ ...beforeLoad, ...toCssVars(sheet, mode), ...derived });
+
+  test.each(Object.entries(SHAPES))("%s: 72 accents, light and dark", (_shape, make) => {
+    const low: string[] = [];
+    let read = 0;
+    for (const seed of SEEDS) {
+      const { dark, ...rest } = make(seed);
+      const checked = validateStyleSheet({ ...defaultSheet(), ...rest, ...(dark ? { dark } : { dark: undefined }) });
+      if (!checked.ok) throw new Error(`the runtime refuses the style made from ${seed}: ${checked.errors.join("; ")}`);
+      for (const mode of ["light", "dark"] as const) {
+        const vars = varsOf(checked.value, mode);
+        for (const [what, text, backgrounds] of PAIRS.filter(([name]) => THREE.includes(name))) {
+          const got = contrastOn(text, backgrounds, vars);
+          read++;
+          if (got.ratio < AA) low.push(`${seed} ${mode}: ${what} ${got.text} on ${got.background} = ${got.ratio.toFixed(2)}`);
+        }
+      }
+    }
+    expect(read).toBe(72 * 2 * 3);
+    expect(low).toEqual([]);
+  });
+
+  test("the style measured at 4.05:1 in Chrome with the card on its surface (a dark part with no surface) reads at 4.5:1 or better on the paper", () => {
+    const sheet = validateStyleSheet({ ...defaultSheet(), dark: { accent: "#a74ea1", paper: "#0d0f15", ink: "#e1e8f6" } });
+    if (!sheet.ok) throw new Error(sheet.errors.join("; "));
+    const vars = varsOf(sheet.value, "dark");
+    const link = declared(signin, ".gilb-signin-link", "color");
+    // Known answer: the card on the surface the runtime mixes for this style, as signin draws it when no host says otherwise.
+    expect(contrastOn(link, ["var(--surface)"], vars).ratio).toBeCloseTo(4.05, 1);
+    // What the starter draws: the card on the paper.
+    expect(colourOf(SIGNIN_CARD, vars)).toEqual(colourOf("var(--paper)", vars));
+    expect(contrastOn(link, [SIGNIN_CARD], vars).ratio).toBeGreaterThanOrEqual(AA);
   });
 });
