@@ -136,7 +136,7 @@ function turnUsage(modelUsage, reportedModel, lastStep) {
 }
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.21";
+export const BRIDGE_BUILD = "0.3.22";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -1863,6 +1863,356 @@ export function diffSnapshots(a, b) {
         truncated: a.truncated || b.truncated,
     };
 }
+// ---- git save (GitHubSync Step 1) ----------------------------------------------------------------------------------
+// After a code turn that changed files, the BRIDGE commits them in the turn's folder, in its own process, after the turn's
+// Claude Code has exited. The code turn never runs this and its sandbox is unchanged. No network: nothing is fetched or pushed.
+// Every git call is hardened: no system or global config, no GIT_* from the bridge's environment, hooks pointed at a place
+// that holds none, and the repo's own config is read first and refused if it holds any key outside a short list of inert
+// ones (a code turn can write .git/config in a repo it made itself, or in full access).
+/** Written as .gitignore when the bridge makes the repo and none exists; also the bridge's own excludes for every save. */
+export const DEFAULT_GITIGNORE = ["node_modules", ".npm-cache", "dist", "build", ".env", ".env.*", "*.pem", "*.key", "*.p12", ".DS_Store"];
+export const GIT_TIMEOUT_MS = 20_000;
+/** An index.lock older than this is reported as stale; younger, as another git at work. It is never deleted. */
+export const GIT_LOCK_STALE_MS = 10 * 60_000;
+/** Content larger than this is not read by the secret scan (its name still is). */
+export const GIT_SCAN_MAX_BYTES = 1024 * 1024;
+const GIT_LIST_CAP = 200;
+const GIT_MESSAGE_FILES = 50;
+/** Who commits when the page names nobody. The host app passes its own (`gitIdentity` on /v1/turn). */
+export const GIT_DEFAULT_IDENTITY = { authorName: "App user", authorEmail: "noreply@bridge.invalid", committerName: "claude-code-bridge", committerEmail: "noreply@bridge.invalid" };
+/** Keys a repo's own config may hold for the bridge to run git in it. Anything else (hooks, fsmonitor, filters, helpers, includes, worktree…) refuses the save. */
+const GIT_CONFIG_ALLOWED = [
+    /^core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks|autocrlf|safecrlf|eol|quotepath|checkstat|trustctime)$/,
+    /^extensions\.objectformat$/,
+    /^remote\..+\.(url|pushurl|fetch|tagopt|prune)$/,
+    /^branch\..+\.(remote|merge|rebase|pushremote)$/,
+    /^submodule\..+\.(url|active|path|branch)$/,
+    /^user\.(name|email)$/,
+    /^init\.defaultbranch$/,
+    /^pull\.(rebase|ff)$/,
+    /^push\.(default|autosetupremote)$/,
+    /^fetch\.prune$/,
+    /^color\..+$/,
+];
+/** A file name or content that looks like a secret: the reason, or null. `content` null = not read (too large). */
+export function scanForSecret(relPath, content) {
+    const base = relPath.split(/[\\/]/).pop() ?? relPath;
+    if (/^\.env(\..*)?$/i.test(base))
+        return "an environment file (.env)";
+    if (/^id_rsa/i.test(base))
+        return "an SSH key file (id_rsa)";
+    if (/\.(pem|key)$/i.test(base))
+        return "a key file (.pem or .key)";
+    if (content === null)
+        return null;
+    const text = content.toString("latin1");
+    if (/-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/.test(text))
+        return "a private key";
+    if (/AKIA[0-9A-Z]{16}/.test(text))
+        return "an AWS access key";
+    if (/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/.test(text))
+        return "a GitHub token";
+    if (/\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}/.test(text))
+        return "an API key (sk-)";
+    if (/\bxox[bpa]-[A-Za-z0-9-]{10,}/.test(text))
+        return "a Slack token";
+    return null;
+}
+/** The commit message: the summary's first line (72 at most), a blank line, the files (50 at most), a blank line, the turn. */
+export function gitCommitMessage(summary, files, turnId) {
+    // eslint-disable-next-line no-control-regex
+    const clean = (s) => s.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+    const first = clean(summary.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "") ?? "").trim().slice(0, 72) || `Code turn ${turnId}`;
+    const listed = files.slice(0, GIT_MESSAGE_FILES).map((f) => `${f.status}\t${clean(f.path)}`);
+    if (files.length > GIT_MESSAGE_FILES)
+        listed.push(`… and ${files.length - GIT_MESSAGE_FILES} more`);
+    return `${first}\n\n${listed.join("\n")}\n\nGilb-Turn: ${clean(turnId)}\n`;
+}
+/** The page's gitIdentity, checked: undefined (none sent), an identity, or an error sentence. */
+export function readGitIdentity(raw) {
+    if (raw === undefined)
+        return undefined;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        return { error: "gitIdentity must be an object." };
+    const o = raw;
+    const name = (v) => v === undefined || (typeof v === "string" && v.length >= 1 && v.length <= 100 && !/[\u0000-\u001f\u007f<>]/.test(v) && v.trim() === v);
+    const mail = (v) => v === undefined || (typeof v === "string" && /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,190}$/.test(v));
+    if (!name(o.authorName) || !name(o.committerName) || !mail(o.authorEmail) || !mail(o.committerEmail))
+        return { error: "gitIdentity has a name or an email that is not allowed." };
+    return {
+        authorName: o.authorName ?? GIT_DEFAULT_IDENTITY.authorName,
+        authorEmail: o.authorEmail ?? GIT_DEFAULT_IDENTITY.authorEmail,
+        committerName: o.committerName ?? GIT_DEFAULT_IDENTITY.committerName,
+        committerEmail: o.committerEmail ?? GIT_DEFAULT_IDENTITY.committerEmail,
+    };
+}
+class GitRefused extends Error {
+}
+/** The environment of every bridge git call: the bridge's own minus every GIT_*, plus the hardening and the identity. */
+export function gitHardenedEnv(env, identity, platform = process.platform) {
+    const out = {};
+    for (const [k, v] of Object.entries(env))
+        if (!/^GIT_/i.test(k) && v !== undefined)
+            out[k] = v;
+    const nul = platform === "win32" ? "NUL" : "/dev/null";
+    return {
+        ...out,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: nul,
+        GIT_ATTR_NOSYSTEM: "1",
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_LITERAL_PATHSPECS: "1",
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_AUTHOR_NAME: identity.authorName,
+        GIT_AUTHOR_EMAIL: identity.authorEmail,
+        GIT_COMMITTER_NAME: identity.committerName,
+        GIT_COMMITTER_EMAIL: identity.committerEmail,
+        LC_ALL: "C",
+    };
+}
+/** The `-c` overrides every bridge git call carries, before the subcommand. */
+export function gitHardenedArgs(hooksPath, excludesFile, platform = process.platform) {
+    const nul = platform === "win32" ? "NUL" : "/dev/null";
+    return [
+        `core.hooksPath=${hooksPath}`, "core.fsmonitor=false", "core.untrackedCache=false", "credential.helper=", "core.sshCommand=",
+        "protocol.allow=never", `core.attributesFile=${nul}`, `core.excludesFile=${excludesFile}`, "commit.gpgSign=false", "tag.gpgSign=false",
+        "gc.auto=0", "maintenance.auto=false", "core.pager=cat", "user.useConfigOnly=false", "advice.detachedHead=false", "diff.external=",
+        "core.splitIndex=false", "index.threads=1",
+    ].flatMap((c) => ["-c", c]);
+}
+/** Where git's own data for `folder` is: its .git folder, or the folder a `gitdir:` file names INSIDE `folder`. Null: no repo yet. */
+function gitDirOf(folder) {
+    const dotGit = path.join(folder, ".git");
+    let st;
+    try {
+        st = fs.lstatSync(dotGit);
+    }
+    catch {
+        return null;
+    }
+    if (st.isSymbolicLink())
+        throw new GitRefused("The project's .git is a link, so the bridge does not save there.");
+    if (st.isDirectory())
+        return dotGit;
+    if (!st.isFile() || st.size > 4096)
+        throw new GitRefused("The project's .git is not a folder the bridge can use.");
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(dotGit, "utf8"));
+    if (!m)
+        throw new GitRefused("The project's .git file names no repo.");
+    const target = path.resolve(folder, m[1]);
+    let real;
+    try {
+        real = fs.realpathSync.native(target);
+    }
+    catch {
+        throw new GitRefused("The project's .git file names a repo that does not exist.");
+    }
+    const inside = (p) => p === folder || p.startsWith(folder.endsWith(path.sep) ? folder : folder + path.sep);
+    if (!inside(real) || !inside(path.resolve(target)))
+        throw new GitRefused("The project's .git file names a repo outside the project folder, so the bridge does not save there.");
+    return real;
+}
+/** Refuses a repo whose layout points elsewhere or whose parts are links. */
+function checkGitDirLayout(gitDir) {
+    for (const part of ["HEAD", "config", "index", "objects", "refs"]) {
+        try {
+            if (fs.lstatSync(path.join(gitDir, part)).isSymbolicLink())
+                throw new GitRefused(`The repo's ${part} is a link, so the bridge does not save there.`);
+        }
+        catch (e) {
+            if (e instanceof GitRefused)
+                throw e;
+        }
+    }
+    if (fs.existsSync(path.join(gitDir, "commondir")))
+        throw new GitRefused("The repo shares its data with another repo (commondir), so the bridge does not save there.");
+    if (fs.existsSync(path.join(gitDir, "objects", "info", "alternates")))
+        throw new GitRefused("The repo borrows objects from elsewhere (alternates), so the bridge does not save there.");
+    if (fs.existsSync(path.join(gitDir, "config.worktree")))
+        throw new GitRefused("The repo has a config.worktree file, so the bridge does not save there.");
+}
+/** Saves the turn's folder as one commit. Never throws; a failure is { ok: false, reason }. */
+export async function saveTurnToGit(o) {
+    const platform = o.platform ?? process.platform;
+    const gitBin = o.gitBin ?? "git";
+    const timeout = o.timeoutMs ?? GIT_TIMEOUT_MS;
+    const now = o.now ?? Date.now;
+    const identity = o.identity ?? { ...GIT_DEFAULT_IDENTITY };
+    const env = gitHardenedEnv(o.env, identity, platform);
+    try {
+        fs.mkdirSync(o.privateDir, { recursive: true, mode: 0o700 });
+        const excludes = path.join(o.privateDir, "excludes");
+        const want = DEFAULT_GITIGNORE.join("\n") + "\n";
+        let have = "";
+        try {
+            have = fs.readFileSync(excludes, "utf8");
+        }
+        catch {
+            /* not there yet */
+        }
+        if (have !== want)
+            fs.writeFileSync(excludes, want, { mode: 0o600 });
+        // Hooks: a place that cannot hold any. On Windows, an empty folder of the bridge's own, checked empty before each save.
+        let hooksPath = "/dev/null";
+        if (platform === "win32") {
+            hooksPath = path.join(o.privateDir, "no-hooks");
+            fs.mkdirSync(hooksPath, { recursive: true });
+            if (fs.readdirSync(hooksPath).length > 0)
+                return { ok: false, reason: `The bridge's empty hooks folder is not empty (${hooksPath}), so nothing was saved.` };
+        }
+        const hard = gitHardenedArgs(hooksPath, excludes, platform);
+        const folder = fs.realpathSync.native(o.folder);
+        let gitDir = gitDirOf(folder);
+        const run = (args, input) => new Promise((resolve, reject) => {
+            const base = gitDir ? ["--git-dir", gitDir, "--work-tree", folder] : [];
+            const child = execFile(gitBin, [...hard, ...base, ...args], { cwd: o.privateDir, env, timeout, killSignal: "SIGTERM", maxBuffer: 256 * 1024 * 1024, encoding: "buffer", windowsHide: true }, (err, stdout, stderr) => {
+                if (err) {
+                    const e = err;
+                    if (e.code === "ENOENT")
+                        return reject(new GitRefused("git is not installed on this computer (or not on the bridge's PATH), so nothing was saved."));
+                    if (e.killed)
+                        return reject(new GitRefused(`git took longer than ${Math.round(timeout / 1000)} s and was stopped, so nothing was saved.`));
+                    return reject(new GitRefused(`git failed: ${String(stderr ?? "").trim().split("\n").slice(-1)[0] || e.message}`.slice(0, 300)));
+                }
+                resolve(stdout);
+            });
+            if (input !== undefined)
+                child.stdin?.end(input);
+            else
+                child.stdin?.end();
+        });
+        let made = false;
+        if (!gitDir) {
+            await run(["-c", "init.defaultBranch=main", "init", "--quiet", "--template=", folder]);
+            made = true;
+            gitDir = gitDirOf(folder);
+            if (!gitDir)
+                return { ok: false, reason: "git init made no repo." };
+            // Run the init's branch name again, for a git older than init.defaultBranch.
+            await run(["symbolic-ref", "HEAD", "refs/heads/main"]);
+        }
+        checkGitDirLayout(gitDir);
+        // The repo's own config: read by git itself (not parsed here), names only, no includes followed.
+        const cfgFile = path.join(gitDir, "config");
+        if (fs.existsSync(cfgFile)) {
+            const names = (await run(["config", "--file", cfgFile, "--no-includes", "--list", "--name-only", "-z"])).toString("utf8").split("\0").filter(Boolean);
+            const bad = names.find((n) => !GIT_CONFIG_ALLOWED.some((re) => re.test(n.toLowerCase())));
+            if (bad)
+                return { ok: false, reason: `The repo's config has a setting the bridge does not save with (${bad.slice(0, 80)}), so nothing was saved.` };
+        }
+        const lock = path.join(gitDir, "index.lock");
+        try {
+            const st = fs.lstatSync(lock);
+            return now() - st.mtimeMs > GIT_LOCK_STALE_MS
+                ? { ok: false, reason: `A stale .git/index.lock (from ${new Date(st.mtimeMs).toISOString()}) stops git; nothing was saved. Remove it once no git is running.` }
+                : { ok: false, reason: "Another git is busy in this project (.git/index.lock), so nothing was saved this time." };
+        }
+        catch {
+            /* no lock: go on */
+        }
+        if (made) {
+            try {
+                const fd = fs.openSync(path.join(folder, ".gitignore"), "wx", 0o644);
+                fs.writeSync(fd, DEFAULT_GITIGNORE.join("\n") + "\n");
+                fs.closeSync(fd);
+            }
+            catch {
+                /* one is there already: kept as it is */
+            }
+        }
+        await run(["add", "--all", "--", "."]);
+        const staged = async () => {
+            const parts = (await run(["diff", "--cached", "--name-status", "--no-renames", "--no-ext-diff", "--no-textconv", "-z"])).toString("utf8").split("\0");
+            const out = [];
+            for (let i = 0; i + 1 < parts.length; i += 2)
+                if (parts[i])
+                    out.push({ status: parts[i], path: parts[i + 1] });
+            return out;
+        };
+        let files = await staged();
+        if (files.length === 0)
+            return { ok: true, commit: null, files: [], skipped: [] };
+        // Secret scan of what is staged (the index, not the disk): names first, then each blob up to 1 MB.
+        const skipped = [];
+        const scan = files.filter((f) => f.status !== "D");
+        const oids = new Map();
+        const ls = (await run(["ls-files", "--stage", "-z"])).toString("utf8").split("\0");
+        for (const row of ls) {
+            const m = /^(\d+) ([0-9a-f]+) \d\t([\s\S]*)$/.exec(row);
+            if (m)
+                oids.set(m[3], m[2]);
+        }
+        const want2 = scan.filter((f) => oids.has(f.path) && scanForSecret(f.path, null) === null);
+        for (const f of scan) {
+            const why = scanForSecret(f.path, null);
+            if (why)
+                skipped.push({ path: f.path, reason: why });
+        }
+        if (want2.length > 0) {
+            const sizes = (await run(["cat-file", "--batch-check=%(objectname) %(objectsize)"], want2.map((f) => oids.get(f.path)).join("\n") + "\n")).toString("utf8").trim().split("\n");
+            const sizeOf = new Map(sizes.map((l) => l.split(" ")).map(([id, n]) => [id, Number(n)]));
+            const small = want2.filter((f) => (sizeOf.get(oids.get(f.path)) ?? Infinity) <= GIT_SCAN_MAX_BYTES);
+            if (small.length > 0) {
+                const buf = await run(["cat-file", "--batch"], small.map((f) => oids.get(f.path)).join("\n") + "\n");
+                let at = 0;
+                const blob = new Map();
+                while (at < buf.length) {
+                    const nl = buf.indexOf(10, at);
+                    if (nl < 0)
+                        break;
+                    const [id, , size] = buf.subarray(at, nl).toString("latin1").split(" ");
+                    const n = Number(size);
+                    blob.set(id, buf.subarray(nl + 1, nl + 1 + n));
+                    at = nl + 1 + n + 1;
+                }
+                for (const f of small) {
+                    const why = scanForSecret(f.path, blob.get(oids.get(f.path)) ?? Buffer.alloc(0));
+                    if (why)
+                        skipped.push({ path: f.path, reason: why });
+                }
+            }
+        }
+        if (skipped.length > 0) {
+            // Unstage: back to the last commit's version, or out of the index when there is no commit yet. The file stays on disk.
+            let hasHead = true;
+            try {
+                await run(["rev-parse", "--verify", "--quiet", "HEAD"]);
+            }
+            catch {
+                hasHead = false;
+            }
+            const list = skipped.map((s) => s.path).join("\0") + "\0";
+            if (hasHead)
+                await run(["reset", "--quiet", "HEAD", "--pathspec-from-file=-", "--pathspec-file-nul"], list);
+            else
+                await run(["rm", "--cached", "--quiet", "--ignore-unmatch", "--pathspec-from-file=-", "--pathspec-file-nul"], list);
+            files = await staged();
+        }
+        skipped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+        if (files.length === 0)
+            return { ok: true, commit: null, files: [], skipped: skipped.slice(0, GIT_LIST_CAP) };
+        await run(["commit", "--quiet", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "-F", "-"], gitCommitMessage(o.summary, files, o.turnId));
+        const commit = (await run(["rev-parse", "--verify", "HEAD"])).toString("utf8").trim();
+        return { ok: true, commit, files: files.map((f) => f.path).slice(0, GIT_LIST_CAP), skipped: skipped.slice(0, GIT_LIST_CAP) };
+    }
+    catch (e) {
+        if (e instanceof GitRefused)
+            return { ok: false, reason: e.message };
+        return { ok: false, reason: `The save failed: ${e?.message ?? e}`.slice(0, 300) };
+    }
+}
+/** The per-folder switch, kept in the bridge's state folder (never in a code folder): the real paths whose save is off. */
+function readGitSyncOff(file) {
+    if (!file)
+        return new Set();
+    try {
+        const j = JSON.parse(fs.readFileSync(file, "utf8"));
+        return new Set(Array.isArray(j.off) ? j.off.filter((x) => typeof x === "string") : []);
+    }
+    catch {
+        return new Set();
+    }
+}
 const MAX_BODY = 2 * 1024 * 1024;
 /** `/v1/turn` only: room for up to 4 pictures (10 MiB decoded is about 13.4 MiB of base64) plus the text. */
 const MAX_TURN_BODY = 16 * 1024 * 1024;
@@ -2786,6 +3136,37 @@ export function createBridge(opts = {}) {
     const residual = new Map();
     const procList = opts.procList ?? (() => listProcs(platform, env));
     const liveFile = opts.stateDir ? path.join(opts.stateDir, "live-groups.json") : null;
+    // Git save (GitHubSync Step 1): the per-folder switch (default on) and the bridge's own git folder, both outside any code folder.
+    const gitSyncFile = opts.stateDir ? path.join(opts.stateDir, "git-sync.json") : null;
+    const gitOff = readGitSyncOff(gitSyncFile);
+    const gitPrivateDir = opts.stateDir ? path.join(opts.stateDir, "git") : path.join(path.dirname(workDir), "git-private");
+    /** One git save per folder at a time: the tail of each folder's chain. */
+    const gitChains = new Map();
+    function saveGitOff() {
+        if (!gitSyncFile)
+            return true;
+        try {
+            fs.mkdirSync(path.dirname(gitSyncFile), { recursive: true, mode: 0o700 });
+            const tmp = `${gitSyncFile}.${process.pid}.tmp`;
+            fs.writeFileSync(tmp, JSON.stringify({ off: [...gitOff].sort() }), { mode: 0o600 });
+            fs.renameSync(tmp, gitSyncFile);
+            return true;
+        }
+        catch (e) {
+            log(`git-sync.json not saved: ${e?.message ?? e}`);
+            return false;
+        }
+    }
+    function gitSaveQueued(folder, run) {
+        const prev = gitChains.get(folder) ?? Promise.resolve();
+        const next = prev.then(run, run);
+        gitChains.set(folder, next);
+        void next.finally(() => {
+            if (gitChains.get(folder) === next)
+                gitChains.delete(folder);
+        });
+        return next;
+    }
     const LIVE_FILE_DESC_MAX = 40;
     /** live-groups.json: each running code child (pid + start time) and the descendants seen, so the next start can stop EXACTLY those if this bridge is killed. */
     const persistTracks = () => {
@@ -4224,6 +4605,10 @@ export function createBridge(opts = {}) {
             return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
         const me = callerKey(req);
         const isCode = body.mode === "code";
+        // Who the bridge's git save names (code turns only); checked before anything starts.
+        const gitIdentity = readGitIdentity(body.gitIdentity);
+        if (gitIdentity && "error" in gitIdentity)
+            return json(res, 400, { error: gitIdentity.error });
         let proj = null;
         if (isCode) {
             if (typeof body.parentTurnId === "string" && body.parentTurnId)
@@ -4401,9 +4786,30 @@ export function createBridge(opts = {}) {
             }
             finish();
         });
+        let changed = null;
         const sendFilesChanged = () => {
-            if (before && workspace)
-                turn.send("files_changed", diffSnapshots(before, snapshotFolder(proj ? proj.path : workspace.path)));
+            if (before && workspace) {
+                changed = diffSnapshots(before, snapshotFolder(proj ? proj.path : workspace.path));
+                turn.send("files_changed", changed);
+            }
+        };
+        let summary = "";
+        /** After the answer: the bridge (never the code turn) commits what the turn changed. A failure is an event, never the turn's error. */
+        const saveToGit = async () => {
+            const d = changed;
+            if (!isCode || !workspace || !d || d.addedCount + d.changedCount + d.removedCount === 0)
+                return;
+            const folder = proj ? proj.path : workspace.path;
+            if (gitOff.has(folder))
+                return;
+            const r = await gitSaveQueued(folder, () => saveTurnToGit({ folder, summary, turnId: turn.id, identity: gitIdentity, env, privateDir: gitPrivateDir, gitBin: opts.gitBin }));
+            if (!r.ok) {
+                log(`git save in ${folder}: ${r.reason}`);
+                send("git_error", { reason: r.reason });
+            }
+            else if (r.commit || r.skipped.length > 0) {
+                send("git_saved", { commit: r.commit, files: r.files, skipped: r.skipped, pushed: "no-link" });
+            }
         };
         try {
             // A resumed session already holds the thread. A new one is given the earlier turns as text.
@@ -4417,6 +4823,7 @@ export function createBridge(opts = {}) {
                 out = await runClaude(turn, { sessionId, resume: false }, freshPrompt);
             }
             sendFilesChanged();
+            summary = out.result && !out.result.is_error ? String(out.result.result ?? "") : turn.cancelRequested ? "The turn was cancelled" : "The turn ended with an error";
             if (turn.cancelRequested) {
                 send("error", { message: "The turn was cancelled." });
             }
@@ -4449,6 +4856,12 @@ export function createBridge(opts = {}) {
             send("error", { message: `The bridge failed: ${e?.message ?? e}` });
         }
         finally {
+            try {
+                await saveToGit();
+            }
+            catch (e) {
+                send("git_error", { reason: `The save failed: ${e?.message ?? e}` });
+            }
             finish();
             res.end();
         }
@@ -4531,6 +4944,48 @@ export function createBridge(opts = {}) {
         }
         out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         return json(res, 200, { projects: out.slice(0, PROJECT_LIST_CAP) });
+    }
+    /** The per-project git save switch (default on): `{ project?, sync? }` reads it, or sets it when `sync` is a boolean. No project = the code folder itself. */
+    async function handleGitSync(req, res) {
+        let body;
+        try {
+            body = await readBody(req);
+        }
+        catch (e) {
+            return json(res, e.status ?? 400, { error: e.message });
+        }
+        if (body.sync !== undefined && typeof body.sync !== "boolean")
+            return json(res, 400, { error: "sync must be true or false." });
+        if (body.project !== undefined && body.project !== null && typeof body.project !== "string")
+            return json(res, 400, { error: BAD_REQUEST });
+        if (workspace)
+            folderStillGood();
+        if (!workspace)
+            return json(res, 404, { error: NO_WORKSPACE });
+        let folder = workspace.path;
+        let name = null;
+        if (typeof body.project === "string") {
+            const p = resolveProject(body.project);
+            if (!p)
+                return json(res, 400, { error: NO_SUCH_PROJECT });
+            folder = p.path;
+            name = p.name;
+        }
+        if (typeof body.sync === "boolean") {
+            const was = gitOff.has(folder);
+            if (body.sync)
+                gitOff.delete(folder);
+            else
+                gitOff.add(folder);
+            if (!saveGitOff()) {
+                if (was)
+                    gitOff.add(folder);
+                else
+                    gitOff.delete(folder);
+                return json(res, 500, { error: "The switch could not be saved on this computer, so it was not changed." });
+            }
+        }
+        return json(res, 200, { project: name, sync: !gitOff.has(folder) });
     }
     async function handleProjectCreate(req, res) {
         let body;
@@ -5092,7 +5547,7 @@ export function createBridge(opts = {}) {
             return res.end();
         }
         if (req.method === "GET" && url.pathname === "/v1/hello") {
-            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
+            return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] }, git: { save: true, push: false } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
         }
         if (req.method === "POST" && url.pathname === "/v1/pair") {
             let body;
@@ -5132,6 +5587,8 @@ export function createBridge(opts = {}) {
                 return handleProjects(res);
             if (req.method === "POST" && url.pathname === "/v1/projects/create")
                 return handleProjectCreate(req, res);
+            if (req.method === "POST" && url.pathname === "/v1/git/sync")
+                return handleGitSync(req, res);
             if (req.method === "POST" && url.pathname === "/v1/workspace/choose")
                 return handleChoose(req, res);
             if (req.method === "POST" && url.pathname === "/v1/workspace/create")
