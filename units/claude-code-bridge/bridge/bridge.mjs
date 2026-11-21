@@ -2119,7 +2119,7 @@ function writeCallRecord(file, rec) {
 /** The bridge's own temporary ref file at the top of .git (made, linked to the ref lock, removed). */
 const OWN_REF_TMP = /^gilb-bridge-ref-\d+-[0-9a-f]{8}\.tmp$/;
 /** A killed index-locking call whose lock was not yet noted: its lock is still taken as its own if it was BORN this soon after the call began. */
-export const GIT_LOCK_UNNOTED_MS = 250;
+export const GIT_LOCK_UNNOTED_MS = 1000; // was 250: a slow runner (macOS CI) started git more than 250 ms after the call began
 const lockIdentity = (gitDir, rel) => {
     try {
         // bigint: a Windows file id is 64 bits and would lose its low bits as a number.

@@ -454,8 +454,8 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     expect(fs.existsSync(lock)).toBe(true);
   });
 
-  it("D2/RT2: an index lock the killed call had no time to note is removed only if born within 250 ms of that call's start", async () => {
-    expect(GIT_LOCK_UNNOTED_MS).toBe(250);
+  it("D2/RT2: an index lock the killed call had no time to note is removed only if born within GIT_LOCK_UNNOTED_MS (1 s) of that call's start", async () => {
+    expect(GIT_LOCK_UNNOTED_MS).toBe(1000);
     const { f, priv, gitDir } = await primedRepo();
     fs.writeFileSync(path.join(f, "b.txt"), "b");
     fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
