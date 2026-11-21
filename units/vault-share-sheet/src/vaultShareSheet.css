@@ -1,5 +1,8 @@
 /* Theme with the style-runtime variables (each has a neutral fallback): --ink, --lines, --accent, --on-accent, --bad, --r-lg.
-   The dialog itself is styled by modal-sheet. */
+   The dialog itself is styled by modal-sheet.
+   One variable of the sheet's own, --vss-on-danger: the label of the red button that answers "Remove <who>?". Unset, the
+   label is --on-accent, as before. --on-accent is the colour that reads on the accent, not on the red, so a host with a
+   dark look, or with a bright accent, sets --vss-on-danger to a colour that reads on its --bad (README, "Styling"). */
 .vss .vss-field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 .vss .vss-label { font-size: 0.875rem; font-weight: 600; padding: 0; }
 .vss .vss-input {
@@ -15,7 +18,7 @@
 }
 .vss .vss-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .vss .vss-primary { background: var(--accent, #1a56db); color: var(--on-accent, #ffffff); border-color: transparent; }
-.vss .vss-danger { background: var(--bad, #b42318); color: var(--on-accent, #ffffff); border-color: transparent; }
+.vss .vss-danger { background: var(--bad, #b42318); color: var(--vss-on-danger, var(--on-accent, #ffffff)); border-color: transparent; }
 .vss .vss-danger-text { color: var(--bad, #b42318); border-color: transparent; }
 .vss .vss-sub { margin: 1rem 0 0.5rem; font-size: 1rem; }
 .vss .vss-note { margin: 0.5rem 0; font-size: 0.9375rem; }
