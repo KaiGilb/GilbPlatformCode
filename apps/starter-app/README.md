@@ -39,7 +39,10 @@ The units are installed as copies from that clone (`install-links=true` in `.npm
 
 ## What you still set by hand
 
-1. **`vaultType` in `src/settings.ts`.** The full address of the GilbVeda type each person's vault for your app represents. Agent.Concept gives a new app its type. Until it is set, `npm run dev` shows a set-up page and the app makes no vault. Do not invent a type and do not borrow a note type.
+1. **`vaultType` in `src/settings.ts`, before the first live sign-in.** It ships empty, and `take.mjs` leaves it empty. It is the full address of the GilbVeda type that says what one person's vault in your app stands for ("Ann's houseplants", "the bookings Ben takes as a hairdresser"): the whole the vault stands for, not one record in it and not the app. You get it from Agent.Concept. Hand over the app's name, what one person's vault stands for in the requester's own words, and the kinds of record with their fields. The answer is the address for `vaultType`, the record type and the field terms.
+   - Until it is set, run only `npm run dev:fake`. `npm run dev` then shows a set-up page, asks no server anything and makes no vault.
+   - Never invent an address and never keep a test address. Never borrow the type of a person's main vault, of an app's own vault, of a vault or a thing in general, a note type, or another app's type that means something else. The platform accepts any address that resolves, so it will not stop you.
+   - If another app already uses a type with the same meaning, you get that type, and both apps open the same vaults.
 2. **`styleSheetUrl` in `src/settings.ts`**, when you have chosen a style in the App Style Studio: the address it shows after Save. Until then `public/style.tokens.json` (the platform's default style) is the app's style; you may edit that file.
 3. **`public/icon.svg`**, the page icon.
 
@@ -48,7 +51,7 @@ The units are installed as copies from that clone (`install-links=true` in `.npm
 | Command | What it runs |
 |---|---|
 | `npm run dev:fake` | The app against a fake platform that lives in the page. Nothing leaves the page and nothing is kept between loads. Sign in as `ann@example.test`, `ben@example.test` or `cara@example.test` with the code `000000`. |
-| `npm run dev` | The app against GilbPlatform production (`https://gilb.com`, sign-in at `https://id.gilb.com`), from `http://localhost:<your port>`. A local app needs no registration. You sign in with your email and the code sent to it. The first sign-in makes your vault for the app. |
+| `npm run dev` | Only after `vaultType` is set. The app against GilbPlatform production (`https://gilb.com`, sign-in at `https://id.gilb.com`), from `http://localhost:<your port>`. A local app needs no registration. You sign in with your email and the code sent to it. The first sign-in makes your vault for the app. |
 | `npm run build` | Type check, build into `dist/`, then a check that the build does not hold the fake platform. |
 
 A test rig sets `VITE_PLATFORM_ORIGIN` and `VITE_ID_ORIGIN` in its environment instead of the two production origins.
@@ -71,7 +74,7 @@ For a real browser you need Chrome on the machine (set `CHROME` to its path when
 npm run proof:browser -- <folder-for-screenshots>
 ```
 
-It drives headless Chrome at 1280 x 800 and at 390 x 844 through sign-in, a failed start and Try again, the share sheet with two people in it, a second person opening the shared vault, sign-out, and a new person with a long account name. After each step it runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once in the light look and once in the dark one. It writes a light and a dark screenshot per step and `errors.txt` (the console errors) per size, and exits 1 on any failed step, axe finding or console error.
+It drives headless Chrome at 1280 x 800 and at 390 x 844 through the sign-in card's code step, a failed start and Try again, the share sheet with two people in it, a second person opening the shared vault, sign-out, and a new person: the name step with a free name, with a refused name, and a long account name. After each step it runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once in the light look and once in the dark one. On the sign-in card it also works out, from the drawn colours in both looks, the contrast of the Change email link, the new vault's address and the sentence that refuses a name, and writes the readings to `contrast.txt`; each must be 4.5:1 or better. It writes a light and a dark screenshot per step and `errors.txt` (the console errors) per size, and exits 1 on any failed step, axe finding or console error.
 
 ## Add your records
 
@@ -118,7 +121,7 @@ To add a unit to this app, ask the library for the install line and run it here:
 Proven so far only against the fake platform, on 2026-11-21. Not yet run against GilbPlatform production:
 
 1. Sign-in from a local port with a real emailed code, and staying signed in across a reload.
-2. The first sign-in making the person's vault for the app on production (it needs a real `vaultType`).
+2. The first sign-in making the person's vault for the app on production. It needs a real `vaultType`; the starter under its own name has none, so this is run on an app taken from it.
 3. Share, the access list and Remove between two real people, and the second person opening the shared vault. This also shows what name production sends for a person in the list: where it sends none, the row reads what the key is and the end of the key.
 4. A style read from a saved style sheet (`styleSheetUrl`).
 5. A real phone. A phone on your network cannot sign in to a local build (production admits localhost only), so this waits for a deployed build.

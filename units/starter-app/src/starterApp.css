@@ -36,6 +36,13 @@
   --line-2: color-mix(in srgb, var(--lines) 10%, transparent);
   --sel: color-mix(in srgb, var(--accent) 10%, transparent);
   --focus: color-mix(in srgb, var(--accent) 34%, transparent);
+
+  /* The sign-in card (signin 0.2.14 and later) draws its Change email link in the brand colour and the sentence that
+     refuses a vault name in a fixed dark red, unless the app sets these two. On a dark card those read at 3.7:1 and
+     1.8:1. --accent-ink and --bad are the style's own colours for accent text and for a refusal, and the style sets
+     each per look so that it reads on the paper and the surface. */
+  --signin-link: var(--accent-ink);
+  --signin-error-text: var(--bad);
 }
 
 .sa-app {

@@ -29,6 +29,11 @@ export function starterRules(): Map<string, Vars> {
   return rulesOf(readFileSync(resolve(process.cwd(), "src/starterApp.css"), "utf8"));
 }
 
+/** The sign-in card's style sheet, as the signin unit installed beside this one ships it: the starter's sheet sets its variables. */
+export function signinRules(): Map<string, Vars> {
+  return rulesOf(readFileSync(resolve(process.cwd(), "node_modules/@kaigilb/gilbplatformcode-signin/src/signin.css"), "utf8"));
+}
+
 /** One declaration of one rule; throws when the sheet has no such rule or declaration, so a renamed rule cannot pass unseen. */
 export function declared(rules: Map<string, Vars>, selector: string, property: string): string {
   const value = rules.get(selector)?.[property];

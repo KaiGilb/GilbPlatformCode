@@ -5,6 +5,9 @@
 // legs, takes a screenshot after each, and writes the console errors of each size to <out-dir>/<size>/errors.txt.
 // After each leg it also runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once as the page is
 // and once with the device set to dark, and takes a dark screenshot. A leg with an axe finding fails.
+// axe sees only the screen a leg ends on, so legs rest on the sign-in card's code step and name step too, and there
+// the contrast of three texts is also worked out from the drawn colours, in both looks: the Change email link, the new
+// vault's address and the sentence that refuses a name. Each must read at 4.5:1 or better.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -31,22 +34,58 @@ async function axeFindings(page) {
   return JSON.parse(await page.eval(AXE_RUN)).flatMap((v) => v.nodes.map((n) => `${v.id} at ${n}`));
 }
 
-/** axe in the light and in the dark look of the same page, and a dark screenshot. Throws one error that lists every finding. */
-async function axeBothLooks(page, darkShot) {
-  const light = await axeFindings(page);
+/** In the page: the contrast of one element's text on what is drawn under it (every background up the tree, laid over the one below). */
+const CONTRAST_OF = `window.__contrastOf = (selector) => {
+  const e = document.querySelector(selector);
+  if (!e) return JSON.stringify({ missing: true });
+  const cv = document.createElement("canvas"); cv.width = cv.height = 1; const cx = cv.getContext("2d", { willReadFrequently: true });
+  const read = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = "#000"; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+  const over = (t, u) => [0, 1, 2].map((i) => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+  const stack = []; for (let n = e; n; n = n.parentElement) { const c = read(getComputedStyle(n).backgroundColor); if (c[3] > 0) stack.push(c); if (c[3] === 1) break; }
+  let bg = [255, 255, 255, 1]; for (const c of stack.reverse()) bg = over(c, bg);
+  const fg = over(read(getComputedStyle(e).color), bg);
+  const lum = (c) => { const f = (v) => { v = Math.round(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const hex = (c) => "#" + [0, 1, 2].map((i) => Math.round(c[i]).toString(16).padStart(2, "0")).join("");
+  const a = lum(fg), b = lum(bg);
+  return JSON.stringify({ text: hex(fg), background: hex(bg), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) });
+}; true`;
+
+/** The texts of `pairs` ([what, selector]) that read under 4.5:1 right now, one line each; and every reading, for the record. */
+async function lowContrast(page, pairs, look, readings) {
+  await page.eval(CONTRAST_OF);
+  const low = [];
+  for (const [what, selector] of pairs) {
+    const got = JSON.parse(await page.eval(`window.__contrastOf(${JSON.stringify(selector)})`));
+    if (got.missing) low.push(`${what} is not on the page (${selector})`);
+    else {
+      readings.push(`${what}, ${look}: ${got.text} on ${got.background} = ${got.ratio.toFixed(2)}`);
+      if (got.ratio < 4.5) low.push(`${what} reads at ${got.ratio.toFixed(2)}:1 (${got.text} on ${got.background})`);
+    }
+  }
+  return low;
+}
+
+/**
+ * The light and the dark look of the same page: axe in each, the contrast of the leg's own texts in each, and a dark
+ * screenshot. Throws one error that lists every finding.
+ */
+async function bothLooks(page, darkShot, pairs, readings) {
+  const light = [...(await axeFindings(page)), ...(await lowContrast(page, pairs, "light", readings))];
   await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
   let dark;
   try {
     await page.sleep(150);
-    dark = await axeFindings(page);
+    dark = [...(await axeFindings(page)), ...(await lowContrast(page, pairs, "dark", readings))];
     await page.screenshot(darkShot);
   } finally {
     await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
     await page.sleep(100);
   }
   const all = [...light.map((f) => `light: ${f}`), ...dark.map((f) => `dark: ${f}`)];
-  if (all.length) throw new Error(`axe found ${all.length}:\n      ${all.join("\n      ")}`);
+  if (all.length) throw new Error(`axe and contrast found ${all.length}:\n      ${all.join("\n      ")}`);
 }
+
+const LONG_ACCOUNT = "abcdefghijklmnopqrstuvwxyzabcde";
 
 const out = process.argv[2] ? resolve(process.argv[2]) : "";
 const base = process.argv[3] ?? "http://localhost:5262";
@@ -70,6 +109,10 @@ async function checkButtonRows(page, atLeast) {
 
 const text = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.textContent ?? "")`;
 const READY = `!!document.querySelector('[data-stage="ready"]')`;
+// The three texts of the sign-in card that a dark look once put under 4.5:1. A leg names the ones its screen shows.
+const CHANGE_EMAIL = ["the Change email link", '[data-testid="sign-in-change-email"]'];
+const NEW_ADDRESS = ["the new vault's address", '[data-testid="vault-name-address"]'];
+const REFUSED_NAME = ["the sentence that refuses a name", '[data-testid="vault-name-reserved"]'];
 /** The vault chip in the header names the open vault. */
 const openVaultIs = (name) => `${text(".vsw-name")} === ${JSON.stringify(name)}`;
 const dialogNamed = (name) => `[...document.querySelectorAll('[role="dialog"]')].some((d) => (d.getAttribute("aria-label") ?? d.querySelector("h1,h2")?.textContent ?? "").includes(${JSON.stringify(name)}))`;
@@ -93,12 +136,19 @@ function legsFor(size, t) {
       },
     ],
     [
-      "start-fails-and-says-why",
-      async (page) => {
-        await page.eval(`void window.__fake.failNext("POST /base/vault/create-named", { status: 503, message: "The vault service is busy. Try again soon." })`);
+      "code-step",
+      async () => {
         await t.set('[data-testid="sign-in-email"]', "ann@example.test");
         await t.click('[data-testid="sign-in-send-code"]');
         await t.wait('[data-testid="sign-in-code"]');
+        await t.wait(CHANGE_EMAIL[1]);
+      },
+      [CHANGE_EMAIL],
+    ],
+    [
+      "start-fails-and-says-why",
+      async (page) => {
+        await page.eval(`void window.__fake.failNext("POST /base/vault/create-named", { status: 503, message: "The vault service is busy. Try again soon." })`);
         await t.set('[data-testid="sign-in-code"]', "000000");
         await page.waitFor(`${text('[data-stage="error"] [role="alert"]')}.includes("The vault service is busy. Try again soon.")`);
         await checkButtonRows(page, 1); // Sign out | Try again
@@ -192,13 +242,32 @@ function legsFor(size, t) {
       },
     ],
     [
-      "new-person-long-name",
+      "name-step-free",
       async (page) => {
-        // A person with no account names it on the card; a 31-letter name must leave the app's name readable in the top bar.
-        const account = "abcdefghijklmnopqrstuvwxyzabcde";
+        // A person with no account names it on the card. The name is free: the card shows the address the vault will have.
         await t.set('[data-testid="sign-in-email"]', "new@example.test");
         await t.click('[data-testid="sign-in-send-code"]');
         await t.wait('[data-testid="vault-name-input"]');
+        await t.set('[data-testid="vault-name-input"]', LONG_ACCOUNT);
+        await page.waitFor(`${text(NEW_ADDRESS[1])}.includes(${JSON.stringify(LONG_ACCOUNT)})`);
+        await t.noHorizontalScroll();
+      },
+      [NEW_ADDRESS, CHANGE_EMAIL],
+    ],
+    [
+      "name-step-refused",
+      async (page) => {
+        await t.set('[data-testid="vault-name-input"]', "x");
+        await t.wait(REFUSED_NAME[1]);
+        await page.waitFor(`!document.querySelector(${JSON.stringify(NEW_ADDRESS[1])})`);
+      },
+      [REFUSED_NAME, CHANGE_EMAIL],
+    ],
+    [
+      "new-person-long-name",
+      async (page) => {
+        // A 31-letter account name must leave the app's name readable in the top bar.
+        const account = LONG_ACCOUNT;
         await t.set('[data-testid="vault-name-input"]', account);
         await page.waitFor(`!!document.querySelector('[data-testid="vault-name-available"]')`);
         await t.set('[data-testid="sign-in-code"]', "000000");
@@ -225,12 +294,13 @@ for (const size of SIZES) {
   try {
     console.log(`\n${size.name} (${size.width} x ${size.height})`);
     // Each leg ends with a short wait, so axe and the screenshot see the page after the drawer or the sheet has slid in.
-    const legs = legsFor(size, makeTools(page)).map(([name, leg], i) => [
+    const readings = [];
+    const legs = legsFor(size, makeTools(page)).map(([name, leg, pairs = []], i) => [
       name,
       async (p) => {
         await leg(p);
         await p.sleep(400);
-        await axeBothLooks(p, join(dir, `${i + 1}-${name}-dark.png`));
+        await bothLooks(p, join(dir, `${i + 1}-${name}-dark.png`), pairs, readings);
       },
     ]);
     const run = await runLegs(legs, { page, out: dir, setExitCode: false });
@@ -238,6 +308,8 @@ for (const size of SIZES) {
     const errors = page.consoleErrors();
     errorTotal += errors.length;
     writeFileSync(join(dir, "errors.txt"), errors.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join("\n") + (errors.length ? "\n" : ""));
+    writeFileSync(join(dir, "contrast.txt"), readings.join("\n") + "\n");
+    for (const r of readings) console.log(`      ${r}`);
     console.log(`${size.name}: console errors ${errors.length}; screenshots in ${dir}`);
   } finally {
     await close();

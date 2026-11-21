@@ -5,7 +5,7 @@
 // apps/starter-app measures the same pairs with axe-core in Chrome.
 import { defaultSheet, toCssVars } from "@kaigilb/gilbplatformcode-style-runtime";
 import { describe, expect, test } from "vitest";
-import { colourOf, contrastOn, declared, rulesOf, starterRules, type Vars } from "../test/colours";
+import { colourOf, contrastOn, declared, rulesOf, signinRules, starterRules, type Vars } from "../test/colours";
 
 const AA = 4.5;
 const rules = starterRules();
@@ -25,7 +25,11 @@ const OPEN_BAR_BUTTON = '.sa-app nav[aria-label="Panels"] button[aria-pressed="t
 const PAGE = "var(--paper)"; // app-shell: the frame, and the left region of a wide window
 const DRAWER = "var(--paper-2)"; // drawer: the menu below 840 px; app-shell: the bottom bar
 const TOP_BAR = "color-mix(in srgb, var(--surface) 72%, var(--paper-2))"; // app-shell: the header
-const CARD = "var(--surface)"; // signin: the sign-in card; the starter's own panels
+const CARD = "var(--surface)"; // the starter's own panels
+// The sign-in card is the signin unit's: its colours are read from that unit's own sheet, whose variables this sheet sets.
+const signin = signinRules();
+const SIGNIN_CARD = declared(signin, ".gilb-signin-card", "background");
+const SIGNIN_INK = declared(signin, ".gilb-signin-card", "color");
 
 /** Every place the starter's sheet decides the colour of text: what it is, the text colour, and the backgrounds under it. */
 const PAIRS: [what: string, text: string, backgrounds: string[]][] = [
@@ -35,7 +39,15 @@ const PAIRS: [what: string, text: string, backgrounds: string[]][] = [
   ["a section in the menu, drawer", declared(rules, ".sa-menu-item", "color"), [DRAWER]],
   ["a section in the menu under the pointer", declared(rules, ".sa-menu-item:hover", "color"), [DRAWER, declared(rules, ".sa-menu-item:hover", "background")]],
   ["the Account heading in the drawer", declared(rules, ".sa-menu-heading", "color"), [DRAWER]],
-  ["the help lines of the sign-in card (signin reads --ink-faint)", "var(--ink-faint)", [CARD]],
+  ["the sign-in card's own text (title, labels, the name that is free)", SIGNIN_INK, [SIGNIN_CARD]],
+  ["the sign-in card's help lines", declared(signin, ".gilb-signin-desc", "color"), [SIGNIN_CARD]],
+  ["the sign-in card's lines under the fields", declared(signin, ".gilb-signin-muted", "color"), [SIGNIN_CARD]],
+  ["the sign-in card's Change email link", declared(signin, ".gilb-signin-link", "color"), [SIGNIN_CARD]],
+  ["the sign-in card's button label", declared(signin, ".gilb-signin-btn", "color"), [SIGNIN_CARD, declared(signin, ".gilb-signin-btn", "background")]],
+  ["what is typed in a field of the sign-in card", SIGNIN_INK, [SIGNIN_CARD, declared(signin, ".gilb-signin-input", "background")]],
+  ["the sign-in card's error box", declared(signin, ".gilb-signin-alert", "color"), [SIGNIN_CARD, declared(signin, ".gilb-signin-alert", "background")]],
+  ["the sign-in card's sentence that refuses a vault name", declared(signin, ".gilb-signin-error-text", "color"), [SIGNIN_CARD]],
+  ["the new vault's address on the sign-in card", SIGNIN_INK, [SIGNIN_CARD, declared(signin, ".gilb-signin-code", "background")]],
   ["the waiting sentence", declared(rules, ".sa-wait", "color"), [PAGE]],
   ["the View only badge", declared(rules, ".sa-badge", "color"), [TOP_BAR]],
   ["the app's name and Sign out, top bar", declared(rules, ".sa-button", "color"), [TOP_BAR]],
@@ -61,6 +73,16 @@ describe("the instrument", () => {
     expect(contrastOn("var(--accent-ink)", [PAGE, sel], light).ratio).toBeCloseTo(4.08, 1);
     expect(contrastOn("var(--accent-ink)", [PAGE, sel], dark).ratio).toBeCloseTo(4.45, 1);
     expect(contrastOn("color-mix(in srgb, var(--ink) 55%, var(--paper))", [CARD], light).ratio).toBeCloseTo(3.74, 1);
+  });
+
+  test("gives the three ratios measured in the browser on the dark sign-in card before it was put right (known answers: 3.73, 1.23 and 1.78)", () => {
+    // The dark look of the default style without the two variables this sheet sets, and the address on the fixed white of signin 0.2.13.
+    const dark = { ...LOOKS["the default style, dark"]! };
+    delete dark["--signin-link"];
+    delete dark["--signin-error-text"];
+    expect(contrastOn(declared(signin, ".gilb-signin-link", "color"), [SIGNIN_CARD], dark).ratio).toBeCloseTo(3.73, 1);
+    expect(contrastOn(declared(signin, ".gilb-signin-error-text", "color"), [SIGNIN_CARD], dark).ratio).toBeCloseTo(1.78, 1);
+    expect(contrastOn(SIGNIN_INK, [SIGNIN_CARD, "var(--signin-sheet, #fff)"], dark).ratio).toBeCloseTo(1.23, 1);
   });
 
   test("reads a rule that is written in the sheet, and refuses one that is not", () => {
