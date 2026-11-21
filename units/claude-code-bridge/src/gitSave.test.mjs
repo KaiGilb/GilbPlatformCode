@@ -4,9 +4,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import {
   DEFAULT_GITIGNORE,
+  GIT_FIRST_SAVE_TIMEOUT_MS,
+  GIT_TIMEOUT_MS,
   gitCommitMessage,
+  saveTurnToGit,
   scanForSecret,
 } from "../bridge/bridge.mjs";
 import { commitCount, committedFiles, ev, fsckOk, lastMessage, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
@@ -284,5 +288,78 @@ describe("no network, and a commit failure never fails the turn", () => {
     const r = await b.turn([writes([{ p: "a.txt", c: "a" }]), "x"]);
     expect(ev(r, "message")[0].content).toBe("echo: x");
     expect(ev(r, "git_error")[0].reason).toMatch(/git/i);
+  });
+});
+
+describe("the git time limit: 120 s only for a folder's first save, 20 s once it has any commit", () => {
+  const temps = [];
+  afterEach(() => {
+    for (const t of temps.splice(0)) fs.rmSync(t, { recursive: true, force: true });
+  });
+  const tmp = () => {
+    const d = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-git-limit-")));
+    temps.push(d);
+    return d;
+  };
+  /** One save that records the limit of each git call, by subcommand. */
+  async function limits(folder, priv) {
+    const seen = [];
+    const r = await saveTurnToGit({ folder, summary: "s", turnId: "t", env: process.env, privateDir: priv, onGitRun: (args, ms) => seen.push([args.find((a) => /^[a-z][a-z-]*$/.test(a) && !["-c"].includes(a)), ms]) });
+    const of = (cmd) => seen.filter(([c]) => c === cmd).map(([, ms]) => ms);
+    return { r, of, all: seen.map(([, ms]) => ms) };
+  }
+
+  it("pins the two limits", () => {
+    expect(GIT_TIMEOUT_MS).toBe(20_000);
+    expect(GIT_FIRST_SAVE_TIMEOUT_MS).toBe(120_000);
+  });
+
+  it("a folder with no repo: init and checks at 20 s, the first add and commit at 120 s; the next save is 20 s throughout", async () => {
+    const f = tmp();
+    const priv = tmp();
+    fs.writeFileSync(path.join(f, "a.txt"), "a");
+    const one = await limits(f, priv);
+    expect(one.r.ok && one.r.commit).toBeTruthy();
+    expect(one.of("init")).toEqual([20_000]);
+    expect(one.of("add")).toEqual([120_000]);
+    expect(one.of("commit")).toEqual([120_000]);
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const two = await limits(f, priv);
+    expect(two.r.ok && two.r.commit).toBeTruthy();
+    expect(two.all.every((ms) => ms === 20_000)).toBe(true);
+  });
+
+  it("a repo with a commit never gets 120 s, even with HEAD pointed at an empty branch (a planted way to look new)", async () => {
+    const f = tmp();
+    const priv = tmp();
+    fs.writeFileSync(path.join(f, "a.txt"), "a");
+    expect((await saveTurnToGit({ folder: f, summary: "s", turnId: "t", env: process.env, privateDir: priv })).ok).toBe(true);
+    plainGit(f, ["symbolic-ref", "HEAD", "refs/heads/empty"]);
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const r = await limits(f, priv);
+    expect(r.all.length).toBeGreaterThan(3);
+    expect(r.all.every((ms) => ms === 20_000)).toBe(true);
+  });
+
+  it("a repo with only a tag or a detached HEAD at a commit counts as having history", async () => {
+    const f = tmp();
+    const priv = tmp();
+    fs.writeFileSync(path.join(f, "a.txt"), "a");
+    await saveTurnToGit({ folder: f, summary: "s", turnId: "t", env: process.env, privateDir: priv });
+    const sha = plainGit(f, ["rev-parse", "HEAD"]).trim();
+    plainGit(f, ["update-ref", "-d", "refs/heads/main"]);
+    fs.writeFileSync(path.join(f, ".git", "HEAD"), `${sha}\n`); // detached, no branch left
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    const r = await limits(f, priv);
+    expect(r.all.every((ms) => ms === 20_000)).toBe(true);
+  });
+
+  it("an empty repo with no commit (made by the person or planted) gets the first-save limit: it has no history to protect", async () => {
+    const f = tmp();
+    const priv = tmp();
+    plainGit(f, ["init", "-q", "--template="]);
+    fs.writeFileSync(path.join(f, "a.txt"), "a");
+    const r = await limits(f, priv);
+    expect(r.of("add")).toEqual([120_000]);
   });
 });

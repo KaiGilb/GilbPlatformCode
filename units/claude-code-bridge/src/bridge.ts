@@ -1943,6 +1943,8 @@ export function diffSnapshots(a: { files: Map<string, string>; truncated: boolea
 /** Written as .gitignore when the bridge makes the repo and none exists; also the bridge's own excludes for every save. */
 export const DEFAULT_GITIGNORE = ["node_modules", ".npm-cache", "dist", "build", ".env", ".env.*", "*.pem", "*.key", "*.p12", ".DS_Store"] as const;
 export const GIT_TIMEOUT_MS = 20_000;
+/** The limit for each git call of a folder's FIRST save (no commit and no ref at all yet): adding a big existing project takes long on Windows (42-49 s for 5 000 files on CI). A repo with any commit or ref always gets GIT_TIMEOUT_MS. */
+export const GIT_FIRST_SAVE_TIMEOUT_MS = 120_000;
 /** An index.lock older than this is reported as stale; younger, as another git at work. It is never deleted. */
 export const GIT_LOCK_STALE_MS = 10 * 60_000;
 /** Content larger than this is not read by the secret scan (its name still is). */
@@ -2022,8 +2024,11 @@ export interface GitSaveOptions {
   privateDir: string;
   platform?: NodeJS.Platform | undefined;
   gitBin?: string | undefined;
+  /** TEST-ONLY: one limit for every git call, instead of GIT_TIMEOUT_MS / GIT_FIRST_SAVE_TIMEOUT_MS. */
   timeoutMs?: number | undefined;
   now?: (() => number) | undefined;
+  /** TEST-ONLY: told the arguments and the time limit of each git call. */
+  onGitRun?: ((args: readonly string[], timeoutMs: number) => void) | undefined;
 }
 export type GitSaveResult =
   | { ok: true; commit: string | null; files: string[]; skipped: { path: string; reason: string }[] }
@@ -2126,7 +2131,7 @@ function checkGitDirLayout(gitDir: string): void {
 export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
   const platform = o.platform ?? process.platform;
   const gitBin = o.gitBin ?? "git";
-  const timeout = o.timeoutMs ?? GIT_TIMEOUT_MS;
+  let timeout = o.timeoutMs ?? GIT_TIMEOUT_MS;
   const now = o.now ?? Date.now;
   const identity = o.identity ?? { ...GIT_DEFAULT_IDENTITY };
   try {
@@ -2156,6 +2161,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     const run = (args: string[], input?: string | Buffer): Promise<Buffer> =>
       new Promise((resolve, reject) => {
         const base = gitDir ? ["--git-dir", gitDir, "--work-tree", folder] : [];
+        o.onGitRun?.(args, timeout);
         const child = execFile(gitBin, [...hard, ...base, ...args], { cwd: o.privateDir, env, timeout, killSignal: "SIGTERM", maxBuffer: 256 * 1024 * 1024, encoding: "buffer", windowsHide: true }, (err, stdout, stderr) => {
           if (err) {
             const e = err as ExecFileException;
@@ -2185,6 +2191,20 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
       const names = (await run(["config", "--file", cfgFile, "--no-includes", "--list", "--name-only", "-z"])).toString("utf8").split("\0").filter(Boolean);
       const bad = names.find((n) => !GIT_CONFIG_ALLOWED.some((re) => re.test(n.toLowerCase())));
       if (bad) return { ok: false, reason: `The repo's config has a setting the bridge does not save with (${bad.slice(0, 80)}), so nothing was saved.` };
+    }
+    // The first save of a folder (no commit and no ref at all) may take long; any repo with history keeps the short limit,
+    // so a code turn cannot buy a long-running git for a repo that already has commits (e.g. by pointing HEAD at an empty branch).
+    if (o.timeoutMs === undefined) {
+      let hasCommit = (await run(["for-each-ref", "--count=1", "--format=%(objectname)"])).toString("utf8").trim() !== "";
+      if (!hasCommit) {
+        try {
+          await run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+          hasCommit = true;
+        } catch {
+          /* no commit at HEAD */
+        }
+      }
+      timeout = hasCommit ? GIT_TIMEOUT_MS : GIT_FIRST_SAVE_TIMEOUT_MS;
     }
     const lock = path.join(gitDir, "index.lock");
     try {

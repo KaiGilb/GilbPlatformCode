@@ -6,4 +6,4 @@ breaking: false
 action: none
 pr: 301
 ---
-Version 0.3.22 saves a code turn's changed files as one local git commit after the answer (hardened git, secret scan, per-project switch `POST /v1/git/sync`, `git_saved` and `git_error` events, `options.git` in `/v1/hello`); it never pushes.
+Version 0.3.22 saves a code turn's changed files as one local git commit after the answer (hardened git with a 20 s limit per git call and 120 s only for a folder's first save, secret scan, per-project switch `POST /v1/git/sync`, `git_saved` and `git_error` events, `options.git` in `/v1/hello`); it never pushes.

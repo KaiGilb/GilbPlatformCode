@@ -89,8 +89,8 @@ describe("P.Turn.NoDelay", () => {
       for (let f = 0; f < 100; f++) fs.writeFileSync(path.join(repo, `d${d}`, `f${f}.js`), `export const v = ${d * 100 + f};\n`.repeat(20));
     }
     let t = performance.now();
-    // The first, full save of an existing big project is measured with a long limit, so a slow disk (Windows) is told apart from a failure.
-    const first = await saveTurnToGit({ folder: repo, summary: "all", turnId: "t0", env: process.env, privateDir: priv, timeoutMs: 120_000 });
+    // The first, full save of an existing big project runs with the bridge's own first-save limit (GIT_FIRST_SAVE_TIMEOUT_MS).
+    const first = await saveTurnToGit({ folder: repo, summary: "all", turnId: "t0", env: process.env, privateDir: priv });
     const firstMs = performance.now() - t;
     console.log(`[timing] ${process.platform}: first full save of 5000 files ${Math.round(firstMs)} ms: ${first.ok ? "ok" : first.reason}`);
     expect(first.ok && first.commit).toBeTruthy();
