@@ -33,7 +33,9 @@ const SIGNIN_INK = declared(signin, ".gilb-signin-card", "color");
 // The share sheet is the vault-share-sheet unit's; its dialog (modal-sheet) stands on the paper.
 const share = shareSheetRules();
 const SHEET = "var(--paper)";
-const PLACEHOLDER = declared(rules, "::placeholder", "color");
+// A placeholder is drawn in its colour at its own opacity, so both are read: the rule must say `opacity: 1` (a browser
+// or a CSS reset draws a placeholder fainter when it does not), and a fainter one is worked out as it would be drawn.
+const PLACEHOLDER = `color-mix(in srgb, ${declared(rules, "::placeholder", "color")} ${Number(declared(rules, "::placeholder", "opacity")) * 100}%, transparent)`;
 
 /** Every place the starter's sheet decides the colour of text: what it is, the text colour, and the backgrounds under it. */
 const PAIRS: [what: string, text: string, backgrounds: string[]][] = [
@@ -104,6 +106,13 @@ describe("the instrument", () => {
     const light = LOOKS["the default style, light"]!;
     expect(contrastOn("color-mix(in srgb, var(--ink) 50%, transparent)", ["var(--surface)"], light).ratio).toBeCloseTo(3.15, 1);
     expect(contrastOn("color-mix(in srgb, var(--ink) 50%, transparent)", [SHEET], light).ratio).toBeCloseTo(3.13, 1);
+  });
+
+  test("counts a placeholder's own opacity: the sheet's colour at half opacity reads as a tester measured it in the browser (known answers: 2.13 light, 2.81 dark)", () => {
+    expect(declared(rules, "::placeholder", "opacity")).toBe("1");
+    const half = `color-mix(in srgb, ${declared(rules, "::placeholder", "color")} 50%, transparent)`;
+    expect(contrastOn(half, [SHEET], LOOKS["the default style, light"]!).ratio).toBeCloseTo(2.13, 1);
+    expect(contrastOn(half, [SHEET], LOOKS["the default style, dark"]!).ratio).toBeCloseTo(2.81, 1);
   });
 
   test("reads a rule that is written in the sheet, and refuses one that is not", () => {

@@ -23,7 +23,7 @@ Two calls and one type are the whole surface:
 
 - `startStarter(settings, options?)`: once, at module level, before the first render. It checks the settings (and throws a sentence that names every problem), sets the origins, makes the credential, and starts the style load. It returns the `runtime`.
 - `<StarterApp runtime sections words? signInNote? />`: the whole app around your sections.
-- `StarterSection`: `{ id, label, render(ctx), detail?(ctx) }`. `render` fills the centre; `detail`, when given, fills the right region. `ctx` is `{ vault: { vaultId, label, yours, canWrite }, principal, actor, signal, credential, vaultRefused() }`.
+- `StarterSection`: `{ id, label, render(ctx), detail?(ctx) }`. `render` fills the centre; `detail`, when given, fills the right region. Both scroll themselves (see "Scrolling and the keyboard"); your screen needs no scroller of its own for its height. `ctx` is `{ vault: { vaultId, label, yours, canWrite }, principal, actor, signal, credential, vaultRefused() }`.
 
 Also exported: `settingsProblems(settings)` (the same check, as a list of sentences), `defaultWords` and the types.
 
@@ -67,6 +67,7 @@ In the GilbApp chat, a project folder the chat made already has the `.npmrc` lin
 - **Placeholders.** The sheet sets `::placeholder { color: var(--ink-faint); opacity: 1; }` for every field of the app, your record screens included. A placeholder is text, and a CSS reset draws it at half the text colour. Measured in Chrome on 2026-11-21 with the default style: 5.70:1 to 5.95:1 light and 7.36:1 to 7.93:1 dark (without the rule 3.13:1 to 3.15:1 light and 4.48:1 dark). A rule of your own for `::placeholder`, after this sheet, replaces it.
 - **The share sheet.** The sheet sets one variable of the `vault-share-sheet` unit (0.1.3 and later): `--vss-on-danger: var(--on-bad)`, the label of the red button that answers "Remove …?". Without it that label takes the colour made for the accent. Measured in Chrome on 2026-11-21: 6.37:1 light and 8.10:1 dark with the default style (without the variable 2.33:1 dark), and 6.37:1 light with a yellow accent (without it 2.96:1).
 - **The sign-in card.** The sheet sets three variables of the `signin` unit (0.2.14 and later), so that the card reads in a dark look and with any style: `--signin-link: var(--accent-ink)` for the Change email link, `--signin-error-text: var(--bad)` for the sentence that refuses a vault name, and `--signin-card: var(--paper)`, which stands the card on the paper and not on the surface. The style runtime brings `--accent-ink`, and the `--bad` it works out itself, to 4.5:1 against the paper of each look; against the surface only when the style gives one (a dark style with no surface of its own drew the link at 4.05:1 on the card's surface). On the paper both hold for every style the runtime writes: `src/contrast.test.ts` sweeps 288 styles of four shapes in both looks. Measured in Chrome on 2026-11-21 with the default style, light and dark: the link 4.60:1 and 4.85:1, the sentence 5.83:1 and 8.22:1, the new vault's address 15.99:1 and 7.55:1. The one thing a sheet can still break: a style file that itself gives a `bad` or an `ink` that does not read on its own paper, which the runtime passes through as given.
+- **Scrolling and the keyboard.** The centre (`<main class="sa-center">`, named by the open section's label) and the right region (`<section class="sa-detail">`, named by `words.detail`, "Details") scroll themselves at every window size, and each takes the focus with Tab. So a screen taller than the window is read to its end with the arrow keys, Page Down and End. This is for browsers that do not give a scrolling area the focus by themselves (WCAG 2.1.1; axe-core's `scrollable-region-focusable`). It was run in Chrome only; other browsers were not run. While a keyboard has the focus there, a 2 px ring in `--accent` is drawn inside the region's edge. The menu and the sheets hold buttons and fields, which Tab reaches.
 - **Themes:** light and dark, from the style sheet (`mode` `system` follows the device).
 - **Build settings:** Vite compiles the units' TSX with the automatic JSX runtime: `esbuild: { jsx: "automatic" }` and `optimizeDeps: { esbuildOptions: { jsx: "automatic" } }`. TypeScript 5.7 or later with `strict`.
 - The page must give the app its full height (`html, body, #root { height: 100% }`).
@@ -153,6 +154,11 @@ Nothing else. The open vault and section are in the address. A test pins the loc
 ## Where it came from
 
 New code, written for this repository on 2026-11-21 so that a new project's first version starts from one ready app. Repository `KaiGilb/GilbPlatformCode`, base commit `df1cb9e80eb1bffedf813b1a4459f77135f5e8b0`. No product code was copied: every part is a call into the unit named in the table above. Copied from `vault-share-sheet`, as every unit carries its own: `scripts/check-host-agnostic.mjs` (with this unit's list of allowed imports) and `src/hostAgnostic.test.ts`.
+
+## Changes in 0.1.1
+
+- The centre and the right region scroll themselves, take the focus with Tab, have a name and show a focus ring (see "Scrolling and the keyboard"). Before, on `main` in Chrome at 375 x 667 with the opening screen, Tab reached the frame's centre, and the arrow keys, Page Down and End scrolled it. But it had no name, and its focus ring was almost entirely cut off. axe-core flagged it (`scrollable-region-focusable`). At 1280 x 480 the last lines were cut off, and nothing scrolled. New word: `words.detail` ("Details"). No colour and no other word changed.
+- `contrast.test.ts` counts a placeholder's own opacity: `::placeholder` must say `opacity: 1`, and a fainter one is worked out as drawn.
 
 ## Tests
 

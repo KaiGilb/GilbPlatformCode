@@ -253,10 +253,26 @@
   text-transform: uppercase;
 }
 
-.sa-center {
-  min-height: 100%;
+/* The centre, and the right region when a section has one, scroll themselves: a screen taller than the window can be
+   read to its end at every window size (the frame's own centre does not scroll on a wide window). Each takes the
+   focus with Tab, so the arrow keys, Page Down and End scroll it in every browser, not only in those that give a
+   scrolling area the focus by themselves, and each shows that it has the focus. The ring is drawn inside the edge,
+   because the regions fill their place in the frame and a ring outside would be cut off. */
+.sa-center,
+.sa-detail {
+  height: 100%;
   box-sizing: border-box;
+  overflow: auto;
+}
+
+.sa-center {
   padding: 20px 16px;
+}
+
+.sa-center:focus-visible,
+.sa-detail:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* The vault chip is another unit's button; in the header it must not push Share and Sign out off a narrow window. */
