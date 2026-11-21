@@ -491,9 +491,12 @@ function readVaultChoice(file) {
 /** Added to a hand-off's answer when the server says the hand-off was cut by the round ceiling. */
 export const CUT_TEXT = "This hand-off ran out of tool rounds before it finished. Its answer is partial: say so, and hand the rest over again.";
 export const CONCEPT_PAUSED_NEXT = {
-    rounds: "The round budget for this turn was reached on the Agent.Concept hop, so it stopped; the concept needs were not lost. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept, and you can hand the needs over again. Tell the person in your report.",
-    mint: "Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.",
+    daily: "Agent.Concept reached the daily limit of term packages for this person, so it stopped; the concept needs were not lost. Carry on with other work. Tell the person in plain words that the daily limit is reached and that Agent.Concept can go on later. When the person sends their next message, call gilbplatform_task with it: Agent.Concept may then be asked again.",
 };
+/** The mint tools. A connector that is itself Agent.Concept stops sending these after the server's daily-limit answer (Hacker, W4.4 round 2). */
+const MINT_TOOL_NAMES = new Set(["mint_term", "mint_taxa", "change_term"]);
+/** The server's answers that mean the person's daily limit stopped a mint: the package limit, and the term quota (a day, a new account, or all of GilbVeda). */
+const DAILY_LIMIT_ERRORS = new Set(["ConceptDailyLimitReached", "MintQuotaReached"]);
 const TURN_LIMIT_NEXT = "tell the person what you did, and stop";
 const TURN_LIMIT_ROUNDS = "this turn has used all its tool rounds";
 const TURN_LIMIT_HOPS = "this turn has handed over as many times as one turn may";
@@ -2490,12 +2493,12 @@ export function startConnector(opts) {
     /** /tool calls this process sent on the current turn id (hand-off children count their own rounds on the same turn, unseen here). */
     let roundsOnTurn = 0;
     /**
-     * Set when an Agent.Concept call was cut or refused at a turn limit. Renewing the turn resets Concept's per-turn mint limits,
-     * so while this is set no Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn.
+     * Set when an Agent.Concept hand-off closed with the server's word that the person's daily package limit was reached (W4.4). While it is set no
+     * Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn. A turn limit does not set it.
      */
     let conceptBrakedOnTurnChain = false;
-    /** Why the brake is set. The connector sets it only on a round or hand-off cut, so it is "rounds"; "mint" is kept for a real mint cap. */
-    let conceptBrakeReason = "rounds";
+    /** Set when this connector IS Agent.Concept and a mint tool was answered with a daily limit: no mint tool is sent until the person's next message. Reads still work. */
+    let conceptMintPaused = false;
     /** Calls that were sent and got no answer, by callId (newest last). Held in memory only. */
     const unknownCalls = new Map();
     /** Keys this connector made (not the caller). A call_status re-send carries the same key, so it is told apart here. */
@@ -2812,15 +2815,16 @@ export function startConnector(opts) {
             const res = await postPlatform(toolUrl, { ...turnFields(agent, hopTurn), name: "hop_done", arguments: "{}", hop: { id, done: true } });
             const body = res.body && typeof res.body === "object" ? res.body : {};
             if (typeof body.result !== "string")
-                return { cut: false };
+                return { cut: false, dailyLimit: false };
             const parsed = JSON.parse(body.result);
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-                return { cut: false };
-            return { cut: parsed.cut === true };
+                return { cut: false, dailyLimit: false };
+            const row = parsed;
+            return { cut: row.cut === true, dailyLimit: row.dailyLimit === true };
         }
         catch {
             // An id that is never closed still expires on the server.
-            return { cut: false };
+            return { cut: false, dailyLimit: false };
         }
     }
     function failedHop(role, reason, cut = false) {
@@ -3027,10 +3031,6 @@ export function startConnector(opts) {
             logRollSkipped("this process is a hand-off");
             return false;
         }
-        if (agentIsConcept()) {
-            logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
-            return false;
-        }
         if (turnRolls >= MAX_TURN_ROLLS) {
             logRollSkipped(`${MAX_TURN_ROLLS} renewals already used`);
             return false;
@@ -3044,16 +3044,13 @@ export function startConnector(opts) {
     }
     /**
      * A cut hop spent its turn's rounds, so the next call starts on a fresh turn (nothing is re-sent: the hop may have written).
-     * Any role, Agent.Concept too: the renewal re-sends nothing, so it cannot mint twice. Skipped only in a hand-off process,
+     * Any role, Agent.Concept too: the renewal re-sends nothing, so it cannot mint twice, and it opens no brake (W4.4: the person's daily
+     * package limit is counted on the server, so a renewed turn does not get round it). Skipped only in a hand-off process,
      * when another path has already rolled since the hop began, or after MAX_TURN_ROLLS (each skip is logged).
      */
-    function rollAfterCut(hopTurn, conceptCut = false) {
+    function rollAfterCut(hopTurn) {
         if (hopMode)
             return logRollSkipped("this process is a hand-off");
-        if (conceptCut && !agentIsConcept()) {
-            conceptBrakedOnTurnChain = true;
-            conceptBrakeReason = "rounds";
-        }
         if (turnId !== hopTurn)
             return logRollSkipped("the turn was already renewed while the hand-off ran");
         renewTurn("a hand-off ran out of tool rounds");
@@ -3062,8 +3059,8 @@ export function startConnector(opts) {
     function isConceptCall(name, args) {
         return agentIsConcept() || name === "ask_agent_concept" || (name === "run_named_role" && !roleMayRoll(args));
     }
-    function conceptPausedAnswer(reason = conceptBrakeReason) {
-        return toolResult(JSON.stringify({ renewed: true, conceptPaused: true, next: CONCEPT_PAUSED_NEXT[reason] }), true);
+    function conceptPausedAnswer(reason = "daily") {
+        return toolResult(JSON.stringify({ conceptPaused: true, next: CONCEPT_PAUSED_NEXT[reason] }), true);
     }
     /** What the AI is told when a call was refused at a turn limit and was NOT re-sent. The turn is new (or says it could not be). */
     function renewedAnswer(name, renewed, why) {
@@ -3105,21 +3102,27 @@ export function startConnector(opts) {
                 return CANCELLED;
             const closed = await closeHop(shaped.id, hopTurn);
             if (closed.cut)
-                rollAfterCut(hopTurn, conceptHop(shaped.role));
+                rollAfterCut(hopTurn);
+            // The server says the person's daily package limit stopped a mint of this hop: Concept waits for the person's next message, on this reason only.
+            if (closed.dailyLimit)
+                conceptBrakedOnTurnChain = true;
             // The hop returned, including one the server cut. Select here, in this process, never inside the hop.
             for (const namespace of ran.created)
                 selectVault(namespace);
             const content = ran.text;
             // What the server refused inside the hop, word for word: the hand-off's own closing text may leave it out.
             const refused = ran.refused.length > 0 ? { refused: ran.refused } : {};
-            return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, ...refused, cut: CUT_TEXT } : { ...shaped.answer, content, ...refused }), false);
+            const paused = closed.dailyLimit ? { conceptPaused: true, next: CONCEPT_PAUSED_NEXT.daily } : {};
+            return toolResult(JSON.stringify(closed.cut ? { ...shaped.answer, content, ...refused, ...paused, cut: CUT_TEXT } : { ...shaped.answer, content, ...refused, ...paused }), false);
         }
         catch (err) {
             const closed = await closeHop(shaped.id, hopTurn);
             if (signal.aborted)
                 return CANCELLED;
             if (closed.cut)
-                rollAfterCut(hopTurn, conceptHop(shaped.role));
+                rollAfterCut(hopTurn);
+            if (closed.dailyLimit)
+                conceptBrakedOnTurnChain = true;
             const reason = err instanceof Error ? err.message : "the hand-off could not run";
             // A mint is never invited to run again, so Agent.Concept keeps the failed answer.
             const isConcept = conceptHop(shaped.role);
@@ -3129,6 +3132,17 @@ export function startConnector(opts) {
         }
         finally {
             hopsRunning -= 1;
+        }
+    }
+    /** Whether a mint tool's answer is the server's word that a daily limit was reached (see DAILY_LIMIT_ERRORS). */
+    function dailyLimitAnswer(result) {
+        try {
+            const parsed = JSON.parse(result);
+            const error = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed.error : undefined;
+            return typeof error === "string" && DAILY_LIMIT_ERRORS.has(error);
+        }
+        catch {
+            return false;
         }
     }
     /** Which turn limit an answer is: only the server's two exact answers, error and next both. Anything else is none. */
@@ -3151,14 +3165,14 @@ export function startConnector(opts) {
             return "hops";
         return null;
     }
-    /** Agent.Concept, in any spelling that folds to it: its mint limits are per turn and stay a brake. */
+    /** Agent.Concept, in any spelling that folds to it. */
     function agentIsConcept() {
         return agent.toLowerCase().replace(/[^a-z0-9]/g, "") === "agentconcept";
     }
     /**
      * Whether a run_named_role call may be re-sent on a fresh turn. Not when the role is Agent.Concept (whatever agent this
      * connector is on), nor an address-like role (a record address, which a fold does not turn into "agentconcept"),
-     * nor when the role cannot be read: Agent.Concept's mint limits are per turn and must stay a brake.
+     * nor when the role cannot be read: a mint is not safe to repeat, so such a call is never sent again (the turn is still renewed).
      */
     function roleMayRoll(args) {
         let parsed = args;
@@ -3251,6 +3265,10 @@ export function startConnector(opts) {
         return res;
     }
     async function callPlatformTool(name, args, signal, resent = false, givenCallId) {
+        if (!hopMode && conceptMintPaused && MINT_TOOL_NAMES.has(name)) {
+            process.stderr.write(`gilb-connector: ${name} not sent: the daily limit was reached and Agent.Concept waits for the person's next message.\n`);
+            return conceptPausedAnswer();
+        }
         if (!hopMode && conceptBrakedOnTurnChain && isConceptCall(name, args)) {
             process.stderr.write(`gilb-connector: ${name} not sent: Agent.Concept hit a turn limit and waits for the person's next message.\n`);
             return conceptPausedAnswer();
@@ -3315,8 +3333,10 @@ export function startConnector(opts) {
         const result = ownKey ? withoutKeyNotUsedWarning(rawResult) : rawResult;
         // A turn that is out of room refuses BEFORE it runs the tool (src/routes/ai-claude-code.ts, the round count and openHop),
         // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
-        // Not re-sent: Agent.Concept or ask_agent_concept (their mint limits are per turn), an unreadable role, or a second refusal.
+        // Not re-sent: Agent.Concept or ask_agent_concept (a mint is not safe to repeat), an unreadable role, or a second refusal.
         // Those still get a fresh turn, so the NEXT call works, and an answer that says what to do (never just "stop").
+        if (!hopMode && agentIsConcept() && MINT_TOOL_NAMES.has(name) && dailyLimitAnswer(result))
+            conceptMintPaused = true;
         const limit = hopMode ? null : turnLimitOf(result);
         if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
             const resendBarrier = resent
@@ -3330,15 +3350,8 @@ export function startConnector(opts) {
                     return callPlatformTool(name, sendArgs, signal, true, callId);
                 return toolResult(JSON.stringify({ error: `this chat has used ${toolCallsSent} tool rounds; start a new chat to go on` }), true);
             }
-            if (agentIsConcept()) {
-                // This connector is Agent.Concept: no renewal, the server's own answer stands (the reason is logged).
-                logRollSkipped("this connector is Agent.Concept, whose mint limits are per turn and stay a brake");
-                return toolResult(result, toolAnswerIsError(result));
-            }
-            if (isConceptCall(name, args)) {
-                conceptBrakedOnTurnChain = true;
-                conceptBrakeReason = "rounds";
-            }
+            // Agent.Concept too (W4.4): the turn is renewed and the answer says to call again; the call itself is not sent again, because a mint is
+            // not safe to repeat. No brake is set: the person's daily package limit is counted on the server, so a renewed turn does not get round it.
             if (alreadyNew)
                 logRollSkipped("the turn was already renewed");
             const renewed = alreadyNew || renewTurn(`${name} was refused at a turn limit and ${resendBarrier}`);
@@ -3809,8 +3822,9 @@ export function startConnector(opts) {
             return toolResult(JSON.stringify({ error: "That request is too long." }), true);
         userText = text;
         cache = null;
-        // The person's next message: Agent.Concept may run again.
+        // The person's next message: Agent.Concept may be asked again (after the daily package limit, the server decides).
         conceptBrakedOnTurnChain = false;
+        conceptMintPaused = false;
         return toolResult("The person's request is set.", false);
     }
     async function onAgent(args) {
