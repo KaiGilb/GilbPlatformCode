@@ -10,7 +10,7 @@
     "files": []
   },
   "namedChanges": [
-    "0.1.1. the centre and the right region scroll themselves, take the focus with Tab, are named and show a focus ring, so a keyboard scrolls a screen taller than the window in every browser; words.detail is new; contrast.test.ts counts a placeholder's own opacity (src/Workspace.tsx, src/starterApp.css, src/words.ts, src/StarterApp.test.tsx, src/contrast.test.ts)",
+    "0.1.1. the centre and the right region scroll themselves, take the focus with Tab, are named and show a focus ring, so a keyboard scrolls a screen taller than the window (run in Chrome only; other browsers were not run); words.detail is new; contrast.test.ts counts a placeholder's own opacity (src/Workspace.tsx, src/starterApp.css, src/words.ts, src/StarterApp.test.tsx, src/contrast.test.ts)",
     "New code, written on 2026-11-21. No product code was copied: every part is a call into app-shell, signin, lws-session-bridge, style-runtime, vault-share-sheet or vault-switcher. scripts/check-host-agnostic.mjs and src/hostAgnostic.test.ts are the repo's frame, copied from vault-share-sheet."
   ],
   "newFiles": [
