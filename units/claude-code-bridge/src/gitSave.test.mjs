@@ -415,8 +415,8 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     fs.writeFileSync(path.join(gitDir, "refs", "heads", "main.lock"), "");
     // The record names those very files (device, inode, birth time), as the bridge notes them while its git runs.
     const id = (rel) => {
-      const st = fs.lstatSync(path.join(gitDir, rel));
-      return { rel, dev: st.dev, ino: st.ino, birth: st.birthtimeMs > 0 ? Math.round(st.birthtimeMs) : 0 };
+      const st = fs.lstatSync(path.join(gitDir, rel), { bigint: true });
+      return { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0 };
     };
     fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start, limit: 20_000, gitDir, locks: [id("index.lock"), id("refs/heads/main.lock")] }));
     fs.writeFileSync(path.join(f, "b.txt"), "b");
@@ -447,8 +447,8 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     expect(r.ok).toBe(false);
     expect(fs.existsSync(lock)).toBe(true);
     // (d) RT2: the recorded git is gone and the lock is at the recorded path, but it is ANOTHER file (another git made it): kept
-    const st = fs.lstatSync(lock);
-    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: Date.now(), limit: 20_000, gitDir, locks: [{ rel: "index.lock", dev: st.dev, ino: st.ino + 1, birth: 0 }] }));
+    const st = fs.lstatSync(lock, { bigint: true });
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: Date.now(), limit: 20_000, gitDir, locks: [{ rel: "index.lock", dev: String(st.dev), ino: String(st.ino + 1n), birth: 0 }] }));
     r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t3", env: process.env, privateDir: priv });
     expect(r.ok).toBe(false);
     expect(fs.existsSync(lock)).toBe(true);
@@ -461,7 +461,7 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
     const lock = path.join(gitDir, "index.lock");
     fs.writeFileSync(lock, "");
-    const birth = fs.lstatSync(lock).birthtimeMs;
+    const birth = Number(fs.lstatSync(lock, { bigint: true }).birthtimeMs);
     if (!(birth > 0)) return; // no birth time on this system: the fallback never applies there (the lock is reported)
     // Born 3 s after the call began: another git's (RT2) - kept.
     fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: Math.round(birth) - 3000, limit: 20_000, gitDir, takesIndexLock: true }));
@@ -473,6 +473,25 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t2", env: process.env, privateDir: priv });
     expect(r.ok && r.commit).toBeTruthy();
     expect(r.recovered).toEqual(["index.lock"]);
+  });
+
+  it("D2: the bridge's own ref lock, killed before it was noted, is removed only when born right as that write began", async () => {
+    const { f, priv, gitDir } = await primedRepo();
+    fs.writeFileSync(path.join(f, "b.txt"), "b");
+    fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
+    const lock = path.join(gitDir, "refs", "heads", "main.lock");
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, "");
+    const birth = Number(fs.lstatSync(lock, { bigint: true }).birthtimeMs);
+    if (!(birth > 0)) return;
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: birth - 3000, limit: 20_000, gitDir, lockRel: "refs/heads/main.lock" }));
+    let r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });
+    expect(r.ok).toBe(false);
+    expect(fs.existsSync(lock)).toBe(true);
+    fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: birth - 5, limit: 20_000, gitDir, lockRel: "refs/heads/main.lock" }));
+    r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t2", env: process.env, privateDir: priv });
+    expect(r.ok && r.commit).toBeTruthy();
+    expect(r.recovered).toEqual(["refs/heads/main.lock"]);
   });
 
   it("the whole save has a time cap: 60 s after history, 300 s for a first save", async () => {

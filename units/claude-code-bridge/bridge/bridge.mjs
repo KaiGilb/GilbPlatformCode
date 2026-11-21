@@ -2112,8 +2112,9 @@ export const GIT_FIRST_SAVE_TOTAL_MS = 300_000;
 export const GIT_LOCK_UNNOTED_MS = 250;
 const lockIdentity = (gitDir, rel) => {
     try {
-        const st = fs.lstatSync(path.join(gitDir, rel));
-        return st.isFile() ? { rel, dev: st.dev, ino: st.ino, birth: st.birthtimeMs > 0 ? Math.round(st.birthtimeMs) : 0 } : null;
+        // bigint: a Windows file id is 64 bits and would lose its low bits as a number.
+        const st = fs.lstatSync(path.join(gitDir, rel), { bigint: true });
+        return st.isFile() ? { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0 } : null;
     }
     catch {
         return null;
@@ -2397,11 +2398,12 @@ export async function saveTurnToGit(o) {
         // Not noted (killed within a millisecond or so of git taking it): only the index lock of an index-locking call, only with a
         // birth time (macOS, Windows, Linux with statx), and only if born within GIT_LOCK_UNNOTED_MS of that call's start. A lock is
         // made with O_EXCL, so while the killed git held it no other git could make one; another git can only have made it after.
-        if (rec && rec.takesIndexLock === true && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes("index.lock")) {
-            const id = lockIdentity(gitDir, "index.lock");
+        const unnoted = rec ? (typeof rec.lockRel === "string" ? rec.lockRel : rec.takesIndexLock === true ? "index.lock" : null) : null;
+        if (rec && unnoted && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(unnoted)) {
+            const id = lockIdentity(gitDir, unnoted);
             if (id && id.birth > 0 && id.birth >= rec.start - 5 && id.birth <= rec.start + GIT_LOCK_UNNOTED_MS) {
-                fs.rmSync(path.join(gitDir, "index.lock"), { force: true });
-                recovered.push("index.lock");
+                fs.rmSync(path.join(gitDir, unnoted), { force: true });
+                recovered.push(unnoted);
             }
         }
         if (rec && Array.isArray(rec.locks) && (rec.pid === process.pid ? false : pidGone(rec.pid))) {
@@ -2409,7 +2411,7 @@ export async function saveTurnToGit(o) {
                 if (!seen || typeof seen.rel !== "string" || !locks.includes(seen.rel))
                     continue;
                 const now2 = lockIdentity(gitDir, seen.rel);
-                if (now2 && now2.dev === seen.dev && now2.ino === seen.ino && (seen.birth === 0 || now2.birth === 0 || now2.birth === seen.birth)) {
+                if (now2 && now2.dev === String(seen.dev) && now2.ino === String(seen.ino) && (seen.birth === 0 || now2.birth === 0 || now2.birth === seen.birth)) {
                     fs.rmSync(path.join(gitDir, seen.rel), { force: true });
                     recovered.push(seen.rel);
                 }
@@ -2645,20 +2647,23 @@ export async function saveTurnToGit(o) {
         const target = path.join(gitDir, ...parts);
         const lockRel = `${refRel}.lock`;
         const lockPath = `${target}.lock`;
+        // The record comes BEFORE the lock (a kill between the two must still leave proof), naming the lock about to be made.
+        const ownRecord = gitCallFile(o.privateDir, gitDir);
+        const ownStart = now();
+        fs.mkdirSync(path.dirname(ownRecord), { recursive: true, mode: 0o700 });
+        fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel }), { mode: 0o600 });
         let fd;
         try {
             fd = fs.openSync(lockPath, "wx", 0o644);
         }
         catch {
+            fs.rmSync(ownRecord, { force: true });
             throw new GitRefused(`Another git is busy in this project (.git/${lockRel}), so nothing was saved this time.`);
         }
-        const ownRecord = gitCallFile(o.privateDir, gitDir);
         try {
             const id = lockIdentity(gitDir, lockRel);
-            if (id) {
-                fs.mkdirSync(path.dirname(ownRecord), { recursive: true, mode: 0o700 });
-                fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: now(), limit: timeout, gitDir, locks: [id] }), { mode: 0o600 });
-            }
+            if (id)
+                fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel, locks: [id] }), { mode: 0o600 });
             fs.writeSync(fd, `${commit}\n`);
             fs.fsyncSync(fd);
             fs.closeSync(fd);
