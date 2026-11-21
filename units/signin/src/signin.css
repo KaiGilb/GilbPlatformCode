@@ -1,4 +1,7 @@
-/* Shared sign-in card. Hosts set --signin-brand (and optionally --signin-on-brand). */
+/* Shared sign-in card.
+   Every colour is a variable a host may set, and falls back first to the token of the style the app loads and then to
+   a fixed value for an app with no style. The README's "Styling" part lists them. A colour that must differ between a
+   light and a dark look falls back to a token the style sets per look, never straight to a fixed value. */
 
 .gilb-signin-card .sr-only {
   position: absolute;
@@ -112,7 +115,9 @@
   background: none;
   border: 0;
   padding: 0;
-  color: var(--signin-brand, var(--accent, #3698a2));
+  /* --signin-link is the link's own variable: the brand colour is also the button's background, and a colour that
+     carries white text is not always one that reads as text on a dark card. Unset, the link is the brand colour. */
+  color: var(--signin-link, var(--signin-brand, var(--accent, #3698a2)));
   cursor: pointer;
   text-underline-offset: 2px;
 }
@@ -135,14 +140,20 @@
   font-size: 14px;
 }
 
+/* The sentence that refuses a name stands on the card itself, not in the error box, so it has a variable of its own:
+   --signin-error-ink is also the text of the error box, on that box's fixed light background, and a colour that reads
+   on a dark card does not read there. Unset, the sentence is the error box's text colour, as before. */
 .gilb-signin-error-text {
   margin: 0;
-  color: var(--signin-error-ink, #8b0000);
+  color: var(--signin-error-text, var(--signin-error-ink, #8b0000));
 }
 
+/* The new vault's address. Its text is the card's own colour, so its background follows the look: --tint-hi is what a
+   style lifts a raised surface towards (white in a light look, a lighter shade of the paper in a dark one). With no
+   style it is white. A fixed white under the light text of a dark look read at 1.2:1. */
 .gilb-signin-code {
   border-radius: 4px;
-  background: var(--signin-sheet, #fff);
+  background: var(--signin-sheet, var(--tint-hi, #fff));
   padding: 0 4px;
   font-size: 12px;
 }
