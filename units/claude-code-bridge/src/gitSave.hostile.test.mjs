@@ -187,7 +187,8 @@ describe.skipIf(!posix)("the bridge's own environment cannot steer its git", () 
 });
 
 // ---- after Agent.Hacker's review (F1-F10): the class fixes -------------------------------------------------------------
-describe("no save while a process of the turn may still run (F4)", () => {
+// Not on Windows: outside computer mode a Windows code turn is files-only (no command tool), so the bridge skips the look there.
+describe.skipIf(!posix)("no save while a process of the turn may still run (F4)", () => {
   it("a live process whose parent is the turn's claude refuses the save; nothing is committed", async () => {
     const pre = await startGitBridge();
     const logFile = path.join(pre.dir, "claude.log");

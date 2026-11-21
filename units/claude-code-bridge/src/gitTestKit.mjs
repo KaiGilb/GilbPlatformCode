@@ -19,7 +19,8 @@ const NO_HOOKS = process.platform === "win32" ? fs.mkdtempSync(path.join(os.tmpd
 
 /** A git that reads no system or global config and runs no hooks: used only to READ what the bridge wrote. */
 export function plainGit(cwd, args, extraEnv = {}) {
-  return execFileSync("git", ["-c", `core.hooksPath=${NO_HOOKS}`, "-c", "core.fsmonitor=false", ...args], {
+  // No automatic gc or background maintenance: a test's own git must not change a repo after it returns.
+  return execFileSync("git", ["-c", `core.hooksPath=${NO_HOOKS}`, "-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", ...args], {
     cwd,
     encoding: "utf8",
     env: { PATH: process.env.PATH, HOME: os.tmpdir(), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: EMPTY, LC_ALL: "C", ...extraEnv },
