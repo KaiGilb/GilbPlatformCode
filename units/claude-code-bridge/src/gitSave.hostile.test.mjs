@@ -137,7 +137,8 @@ describe.skipIf(!posix)("links and pointers out of the project folder are never 
     plainGit(b.projPath, ["init", "-q", "--template=", `--separate-git-dir=${path.join(b.projPath, "repo-store", "g")}`]);
     fs.writeFileSync(path.join(b.projPath, ".gitignore"), "repo-store\n");
     const r = await b.turn([writes([{ p: "b.txt", c: "b" }]), "x"]);
-    expect(ev(r, "git_saved")[0].files).toEqual([".gitignore", "b.txt"]);
+    // .gitignore was made before the turn: saved first, as a change outside the chat.
+    expect(ev(r, "git_saved")[0].files).toEqual(["b.txt"]);
   });
 
   it.each([["commondir", "objects/../../outside/.git"], ["objects/info/alternates", "/somewhere/else/objects"]])(".git/%s pointing elsewhere is refused", async (file, text) => {

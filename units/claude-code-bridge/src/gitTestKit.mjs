@@ -86,4 +86,7 @@ export async function startGitBridge({ project = "app", stateDir = true, bridgeO
   };
   return { dir, ws, projPath, bridge, base, secret, api, turn, close };
 }
-export const ev = (r, name) => r.events.filter((e) => e[0] === name).map((e) => e[1]);
+/** Events by name. For git_saved / git_error, the turn's own save only; the pre-turn "outside the chat" save is in evAll / outsideEv. */
+export const evAll = (r, name) => r.events.filter((e) => e[0] === name).map((e) => e[1]);
+export const ev = (r, name) => evAll(r, name).filter((d) => !(name.startsWith("git_") && d && d.outside === true));
+export const outsideEv = (r, name) => evAll(r, name).filter((d) => d && d.outside === true);

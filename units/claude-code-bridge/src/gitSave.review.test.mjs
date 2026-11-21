@@ -118,6 +118,7 @@ describe.skipIf(!posix)("R1 links INSIDE .git: git must not write through them t
   it.each([["logs"], ["refs/heads"], ["objects/info"]])(".git/%s as a link to a folder outside", async (rel) => {
     const s = await primed();
     const target = path.join(s.outside, "dir-" + rel.replace(/\//g, "_"));
+    fs.mkdirSync(path.join(s.git, rel), { recursive: true }); // the bridge keeps no reflog, so logs/ may not exist yet
     fs.cpSync(path.join(s.git, rel), target, { recursive: true });
     // Names AND contents of everything under the outside folder.
     const snap = () => fs.readdirSync(target, { recursive: true }).sort().map((f) => {

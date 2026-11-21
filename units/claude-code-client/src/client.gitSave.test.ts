@@ -51,6 +51,9 @@ describe("git_saved / git_error (after the answer)", () => {
       ["git_error", { reason: 5 }],
       ["git_saved", { commit: C, files: ["b"], skipped: [], pushed: "no-link", recovered: ["index.lock"] }],
       ["git_saved", { commit: C, files: ["c"], skipped: [], pushed: "no-link", recovered: [3] }],
+      ["git_saved", { commit: C, files: ["d"], skipped: [], pushed: "no-link", outside: true }],
+      ["git_error", { reason: "busy", outside: true }],
+      ["git_saved", { commit: C, files: ["e"], skipped: [], pushed: "no-link", outside: "yes" }],
     ]);
     const evs: ClaudeCodeStreamEvent[] = [];
     const reply = await client.sendTurn([{ role: "user", content: "hi" }], { thread: "T", mode: "code", onEvent: (e) => evs.push(e) });
@@ -61,6 +64,9 @@ describe("git_saved / git_error (after the answer)", () => {
       { event: "git_error", data: { reason: "A stale .git/index.lock stops git; nothing was saved." } },
       { event: "git_saved", data: { commit: C, files: ["b"], skipped: [], pushed: "no-link", recovered: ["index.lock"] } },
       { event: "git_saved", data: { commit: C, files: ["c"], skipped: [], pushed: "no-link" } },
+      { event: "git_saved", data: { commit: C, files: ["d"], skipped: [], pushed: "no-link", outside: true } },
+      { event: "git_error", data: { reason: "busy", outside: true } },
+      { event: "git_saved", data: { commit: C, files: ["e"], skipped: [], pushed: "no-link" } },
     ]);
   });
 

@@ -1971,6 +1971,7 @@ function messageText(s, keepLine = false) {
     return t.replace(/[\u0000-\u001f\u007f]/g, "");
 }
 /** The commit message: the summary's first line (72 at most), a blank line, the files (50 at most), a blank line, the turn. */
+export const GIT_OUTSIDE_SUBJECT = "Changes made outside the chat";
 export function gitCommitMessage(summary, files, turnId) {
     const whole = messageText(summary.split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "") ?? "", true).trim();
     // Longer than 72: cut at the last space that keeps at least 40 characters, and mark the cut with "…" (72 in all).
@@ -1979,11 +1980,11 @@ export function gitCommitMessage(summary, files, turnId) {
         const sp = whole.lastIndexOf(" ", 71);
         first = `${(sp >= 40 ? whole.slice(0, sp) : whole.slice(0, 71)).trimEnd()}…`;
     }
-    first = first || `Code turn ${messageText(turnId)}`;
+    first = first || (turnId ? `Code turn ${messageText(turnId)}` : GIT_OUTSIDE_SUBJECT);
     const listed = files.slice(0, GIT_MESSAGE_FILES).map((f) => `${f.status}\t${messageText(f.path)}`);
     if (files.length > GIT_MESSAGE_FILES)
         listed.push(`… and ${files.length - GIT_MESSAGE_FILES} more`);
-    return `${first}\n\n${listed.join("\n")}\n\nGilb-Turn: ${messageText(turnId)}\n`;
+    return `${first}\n\n${listed.join("\n")}\n${turnId ? `\nGilb-Turn: ${messageText(turnId)}\n` : ""}`;
 }
 /** The page's gitIdentity, checked: undefined (none sent), an identity, or an error sentence. */
 export function readGitIdentity(raw) {
@@ -2054,7 +2055,7 @@ export function gitHardenedArgs(hooksPath, excludesFile, nul = "/dev/null") {
         `core.hooksPath=${hooksPath}`, "core.fsmonitor=false", "core.untrackedCache=false", "credential.helper=", "core.sshCommand=",
         "protocol.allow=never", `core.attributesFile=${nul}`, `core.excludesFile=${excludesFile}`, "commit.gpgSign=false", "tag.gpgSign=false",
         "gc.auto=0", "maintenance.auto=false", "core.pager=cat", "user.useConfigOnly=false", "advice.detachedHead=false", "diff.external=",
-        "core.splitIndex=false", "index.threads=1",
+        "core.splitIndex=false", "index.threads=1", "core.logAllRefUpdates=false",
     ].flatMap((c) => ["-c", c]);
 }
 const isInside = (folder, p) => p === folder || p.startsWith(folder.endsWith(path.sep) ? folder : folder + path.sep);
@@ -2107,6 +2108,17 @@ function gitDirOf(folder) {
 /** The whole save (every git call together) stops after this: 60 s for a repo with history, 300 s for a first save. */
 export const GIT_SAVE_TOTAL_MS = 60_000;
 export const GIT_FIRST_SAVE_TOTAL_MS = 300_000;
+/** A killed index-locking call whose lock was not yet noted: its lock is still taken as its own if it was BORN this soon after the call began. */
+export const GIT_LOCK_UNNOTED_MS = 250;
+const lockIdentity = (gitDir, rel) => {
+    try {
+        const st = fs.lstatSync(path.join(gitDir, rel));
+        return st.isFile() ? { rel, dev: st.dev, ino: st.ino, birth: st.birthtimeMs > 0 ? Math.round(st.birthtimeMs) : 0 } : null;
+    }
+    catch {
+        return null;
+    }
+};
 const gitCallFile = (privateDir, gitDir) => path.join(privateDir, "calls", `${crypto.createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
 function pidGone(pid) {
     try {
@@ -2208,6 +2220,8 @@ function checkGitDirLayout(gitDir) {
     if (fs.existsSync(path.join(gitDir, "config.worktree")))
         throw new GitRefused("The repo has a config.worktree file, so the bridge does not save there.");
 }
+/** The git calls that take the index lock. */
+const INDEX_LOCKING = new Set(["add", "reset", "rm", "update-index", "read-tree", "write-tree"]);
 /** The git version as [major, minor], or null. */
 function gitVersionOf(text) {
     const m = /git version (\d+)\.(\d+)/.exec(text);
@@ -2267,27 +2281,72 @@ export async function saveTurnToGit(o) {
             const attr = attrSource ? [`--attr-source=${attrSource}`] : [];
             o.onGitRun?.(args, timeout);
             const child = execFile(gitBin, [...hard, ...base, ...attr, ...args], { cwd: o.privateDir, env, timeout: limit, killSignal: "SIGTERM", maxBuffer: 256 * 1024 * 1024, encoding: "buffer", windowsHide: true }, (err, stdout, stderr) => {
+                if (watchLock)
+                    clearInterval(watchLock);
                 if (callFile)
                     fs.rmSync(callFile, { force: true });
                 if (err) {
                     const e = err;
                     if (e.code === "ENOENT")
                         return reject(new GitRefused("git is not installed on this computer (or not on the bridge's PATH), so nothing was saved."));
+                    // Another git holds a lock (two saves at once, or the person's own git): say "busy", never "remove the file manually".
+                    if (/\.lock'?:? File exists|Unable to create .*\.lock|remove the file manually|Another git process seems to be running/i.test(String(stderr ?? "")))
+                        return reject(new GitRefused("Another git is busy in this project, so nothing was saved this time."));
                     if (e.killed)
                         return reject(new GitRefused(limit < timeout ? `The save took longer than ${Math.round(total / 1000)} s in all and was stopped, so nothing was saved.` : `git took longer than ${Math.round(timeout / 1000)} s and was stopped, so nothing was saved.`));
                     return reject(new GitRefused(`git failed: ${String(stderr ?? "").trim().split("\n").slice(-1)[0] || e.message}`.slice(0, 300)));
                 }
                 resolve(stdout);
             });
+            let watchLock = null;
             if (gitDir && child.pid !== undefined) {
                 // Written down before the call can touch the repo, so a kill of the bridge AND git leaves proof of whose lock it is.
                 callFile = gitCallFile(o.privateDir, gitDir);
+                const record = { pid: child.pid, start: now(), limit, gitDir, ...(INDEX_LOCKING.has(args[0] ?? "") ? { takesIndexLock: true } : {}) };
                 try {
                     fs.mkdirSync(path.dirname(callFile), { recursive: true, mode: 0o700 });
-                    fs.writeFileSync(callFile, JSON.stringify({ pid: child.pid, start: now(), limit, gitDir }), { mode: 0o600 });
+                    fs.writeFileSync(callFile, JSON.stringify(record), { mode: 0o600 });
                 }
                 catch {
                     callFile = "";
+                }
+                if (callFile && INDEX_LOCKING.has(args[0] ?? "")) {
+                    // This call takes git's index lock: note that exact file as soon as it appears.
+                    const gd = gitDir;
+                    const cf = callFile;
+                    let watcher = null;
+                    const look = () => {
+                        const id = lockIdentity(gd, "index.lock");
+                        if (!id)
+                            return;
+                        if (watchLock)
+                            clearInterval(watchLock);
+                        watchLock = null;
+                        watcher?.close();
+                        watcher = null;
+                        try {
+                            fs.writeFileSync(cf, JSON.stringify({ ...record, locks: [id] }), { mode: 0o600 });
+                        }
+                        catch {
+                            /* no proof then: the lock, if left, is reported, never removed */
+                        }
+                    };
+                    watchLock = setInterval(look, 1);
+                    try {
+                        // An event as soon as the lock appears, besides the 1 ms look (narrows the time a kill can leave it unnoted).
+                        watcher = fs.watch(gd, { persistent: false }, (_t, name) => {
+                            if (name === "index.lock")
+                                look();
+                        });
+                        child.once("exit", () => {
+                            watcher?.close();
+                            watcher = null;
+                        });
+                    }
+                    catch {
+                        watcher = null;
+                    }
+                    look();
                 }
             }
             if (input !== undefined)
@@ -2335,16 +2394,28 @@ export async function saveTurnToGit(o) {
         const recovered = [];
         const recFile = gitCallFile(o.privateDir, gitDir);
         const locks = gitLockFiles(gitDir);
-        if (rec && pidGone(rec.pid)) {
-            for (const l of locks) {
-                const st = fs.lstatSync(path.join(gitDir, l));
-                if (st.mtimeMs >= rec.start - 2000 && st.mtimeMs <= rec.start + rec.limit + 5000) {
-                    fs.rmSync(path.join(gitDir, l), { force: true });
-                    recovered.push(l);
+        // Not noted (killed within a millisecond or so of git taking it): only the index lock of an index-locking call, only with a
+        // birth time (macOS, Windows, Linux with statx), and only if born within GIT_LOCK_UNNOTED_MS of that call's start. A lock is
+        // made with O_EXCL, so while the killed git held it no other git could make one; another git can only have made it after.
+        if (rec && rec.takesIndexLock === true && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes("index.lock")) {
+            const id = lockIdentity(gitDir, "index.lock");
+            if (id && id.birth > 0 && id.birth >= rec.start - 5 && id.birth <= rec.start + GIT_LOCK_UNNOTED_MS) {
+                fs.rmSync(path.join(gitDir, "index.lock"), { force: true });
+                recovered.push("index.lock");
+            }
+        }
+        if (rec && Array.isArray(rec.locks) && (rec.pid === process.pid ? false : pidGone(rec.pid))) {
+            for (const seen of rec.locks) {
+                if (!seen || typeof seen.rel !== "string" || !locks.includes(seen.rel))
+                    continue;
+                const now2 = lockIdentity(gitDir, seen.rel);
+                if (now2 && now2.dev === seen.dev && now2.ino === seen.ino && (seen.birth === 0 || now2.birth === 0 || now2.birth === seen.birth)) {
+                    fs.rmSync(path.join(gitDir, seen.rel), { force: true });
+                    recovered.push(seen.rel);
                 }
             }
-            void recFile;
         }
+        void recFile;
         for (const l of locks.filter((x) => !recovered.includes(x))) {
             const st = fs.lstatSync(path.join(gitDir, l));
             return now() - st.mtimeMs > GIT_LOCK_STALE_MS
@@ -2480,7 +2551,21 @@ export async function saveTurnToGit(o) {
             const flagged = [...new Set(skipped.map((k) => oids.get(k.path)).filter((x) => typeof x === "string"))];
             if (flagged.length > 0) {
                 try {
-                    const reach = new Set((await run(["rev-list", "--objects", "--all", "--reflog", "--indexed-objects"])).toString("utf8").split("\n").map((l) => l.slice(0, l.indexOf(" ") < 0 ? l.length : l.indexOf(" "))));
+                    // Also everything an in-progress merge, cherry-pick, revert, rebase, bisect or fetch reaches (pseudo-refs). A rebase folder,
+                    // or a pseudo-ref the bridge cannot read, leaves every object alone.
+                    if (["rebase-merge", "rebase-apply", "sequencer"].some((d) => fs.existsSync(path.join(gitDir, d))))
+                        throw new Error("a rebase or sequence is in progress");
+                    const pseudo = [];
+                    for (const name of ["MERGE_HEAD", "ORIG_HEAD", "FETCH_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE", "BISECT_HEAD"]) {
+                        const f2 = path.join(gitDir, name);
+                        if (!fs.existsSync(f2))
+                            continue;
+                        const ids = fs.readFileSync(f2, "latin1").match(/\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b/g);
+                        if (!ids)
+                            throw new Error(`${name} could not be read`);
+                        pseudo.push(...ids);
+                    }
+                    const reach = new Set((await run(["rev-list", "--objects", "--all", "--reflog", "--indexed-objects", ...new Set(pseudo)])).toString("utf8").split("\n").map((l) => l.slice(0, l.indexOf(" ") < 0 ? l.length : l.indexOf(" "))));
                     for (const id of flagged) {
                         if (reach.has(id))
                             continue;
@@ -2495,10 +2580,32 @@ export async function saveTurnToGit(o) {
             }
         }
         skipped.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+        // A file kept out is reported once per content: the same path with the same content was told at an earlier save.
+        const toldFile = path.join(o.privateDir, "told", `${crypto.createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
+        let told = new Set();
+        try {
+            const j = JSON.parse(fs.readFileSync(toldFile, "utf8"));
+            if (Array.isArray(j.told))
+                told = new Set(j.told.filter((x) => typeof x === "string"));
+        }
+        catch {
+            /* none yet */
+        }
+        const keyOf = (k) => `${k.path}\0${oids.get(k.path) ?? ""}`;
+        const newSkipped = skipped.filter((k) => !told.has(keyOf(k)));
+        try {
+            fs.mkdirSync(path.dirname(toldFile), { recursive: true, mode: 0o700 });
+            fs.writeFileSync(toldFile, JSON.stringify({ told: skipped.slice(0, 5000).map(keyOf) }), { mode: 0o600 });
+        }
+        catch {
+            /* told again next time */
+        }
+        skipped.length = 0;
+        skipped.push(...newSkipped);
         if (files.length === 0)
             return { ok: true, commit: null, files: [], skipped: skipped.slice(0, GIT_LIST_CAP), ...(recovered.length ? { recovered } : {}) };
         // The commit by plumbing: write-tree, commit-tree, update-ref. Nothing writes COMMIT_EDITMSG, and no hook could run.
-        const message = gitCommitMessage(o.summary, files, o.turnId);
+        const message = o.outside ? gitCommitMessage(GIT_OUTSIDE_SUBJECT, files, null) : gitCommitMessage(o.summary, files, o.turnId);
         const tree = (await run(["write-tree"])).toString("utf8").trim();
         const commit = (await run(["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-F", "-"], message)).toString("utf8").trim();
         let branch = null;
@@ -2508,12 +2615,65 @@ export async function saveTurnToGit(o) {
         catch {
             branch = null;
         }
-        const old = parent ?? "0".repeat(commit.length);
-        const reflog = `commit: ${message.split("\n")[0]}`;
-        if (branch)
-            await run(["update-ref", "-m", reflog, branch, commit, old]);
-        else
-            await run(["update-ref", "--no-deref", "-m", reflog, "HEAD", commit, old]);
+        // The ref is written by the bridge itself, not `git update-ref`: no reflog line is ever written (an existing log file would be
+        // appended to even with core.logAllRefUpdates=false), and the lock is made with O_EXCL (a planted link or file there refuses).
+        if (branch !== null) {
+            if (!branch.startsWith("refs/heads/") || branch.split("/").some((seg) => seg === "" || seg === "." || seg === ".."))
+                throw new GitRefused(`HEAD points at ${branch.slice(0, 80)}, which is not a branch, so nothing was saved.`);
+            await run(["check-ref-format", branch]);
+        }
+        const refRel = branch ?? "HEAD";
+        let current = null;
+        try {
+            current = (await run(["rev-parse", "--verify", "--quiet", `${refRel}^{commit}`])).toString("utf8").trim() || null;
+        }
+        catch {
+            current = null;
+        }
+        if (current !== parent)
+            throw new GitRefused("The branch moved while the bridge saved (another git?), so nothing was saved this time.");
+        const parts = refRel.split("/");
+        let dir = gitDir;
+        for (const seg of parts.slice(0, -1)) {
+            dir = path.join(dir, seg);
+            const st = fs.lstatSync(dir, { throwIfNoEntry: false });
+            if (!st)
+                fs.mkdirSync(dir);
+            else if (st.isSymbolicLink() || !st.isDirectory())
+                throw new GitRefused(`.git/${path.relative(gitDir, dir)} is not a plain folder, so nothing was saved.`);
+        }
+        const target = path.join(gitDir, ...parts);
+        const lockRel = `${refRel}.lock`;
+        const lockPath = `${target}.lock`;
+        let fd;
+        try {
+            fd = fs.openSync(lockPath, "wx", 0o644);
+        }
+        catch {
+            throw new GitRefused(`Another git is busy in this project (.git/${lockRel}), so nothing was saved this time.`);
+        }
+        const ownRecord = gitCallFile(o.privateDir, gitDir);
+        try {
+            const id = lockIdentity(gitDir, lockRel);
+            if (id) {
+                fs.mkdirSync(path.dirname(ownRecord), { recursive: true, mode: 0o700 });
+                fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: now(), limit: timeout, gitDir, locks: [id] }), { mode: 0o600 });
+            }
+            fs.writeSync(fd, `${commit}\n`);
+            fs.fsyncSync(fd);
+            fs.closeSync(fd);
+            const tst = fs.lstatSync(target, { throwIfNoEntry: false });
+            if (tst && !tst.isFile() && !tst.isSymbolicLink())
+                throw new GitRefused(`.git/${refRel} is not a plain file, so nothing was saved.`);
+            fs.renameSync(lockPath, target); // replaces a link at the target itself; never writes through it
+        }
+        catch (e) {
+            fs.rmSync(lockPath, { force: true });
+            throw e;
+        }
+        finally {
+            fs.rmSync(ownRecord, { force: true });
+        }
         // After: the same checks again. A change here means something still wrote in the repo while git ran.
         try {
             scanGitDir(gitDir);
@@ -3478,6 +3638,9 @@ export function createBridge(opts = {}) {
     const gitPrivateDir = opts.stateDir ? path.join(opts.stateDir, "git") : path.join(path.dirname(workDir), "git-private");
     /** One git save per folder at a time: the tail of each folder's chain. */
     const gitChains = new Map();
+    /** Per folder: how it looked when the last code turn there ended with its changes accounted for (saved, or nothing to save). */
+    const lastAfterSnap = new Map();
+    const sameSnapshot = (a, b) => !a.truncated && !b.truncated && a.files.size === b.files.size && [...a.files].every(([k, v]) => b.files.get(k) === v);
     function saveGitOff() {
         if (!gitSyncFile)
             return true;
@@ -5048,7 +5211,7 @@ export function createBridge(opts = {}) {
         const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
         // Code turn: the snapshot of the folder comes first (it can take a while on a big folder), and the folder is checked again
         // immediately before the spawn, so a swap during the snapshot is seen. The child's cwd is the checked real path.
-        const before = isCode && workspace ? snapshotFolder(proj ? proj.path : workspace.path) : null;
+        let before = isCode && workspace ? snapshotFolder(proj ? proj.path : workspace.path) : null;
         if (isCode) {
             opts.afterSnapshot?.();
             if (!folderStillGood())
@@ -5155,21 +5318,59 @@ export function createBridge(opts = {}) {
             finish();
         });
         let changed = null;
+        let afterSnap = null;
         const sendFilesChanged = () => {
             if (before && workspace) {
-                changed = diffSnapshots(before, snapshotFolder(proj ? proj.path : workspace.path));
+                afterSnap = snapshotFolder(proj ? proj.path : workspace.path);
+                changed = diffSnapshots(before, afterSnap);
                 turn.send("files_changed", changed);
             }
+        };
+        /**
+         * Before the turn: changes made outside the chat (by the person, or while the switch was off) are committed on their own, as
+         * "Changes made outside the chat", so the turn's commit holds only the turn's work. Only in a folder that has a repo and whose
+         * switch is on, and only when the folder is not as the last accounted turn left it. The same hardened save.
+         */
+        const saveOutside = async () => {
+            if (!isCode || !workspace || !before)
+                return;
+            const folder = proj ? proj.path : workspace.path;
+            if (gitOff.has(folder) || !fs.existsSync(path.join(folder, ".git")))
+                return;
+            const last = lastAfterSnap.get(folder);
+            if (last && sameSnapshot(last, before))
+                return;
+            const ws = workspace.path;
+            const exclude = proj ? [] : [...gitOff].filter((p) => path.dirname(p) === ws).map((p) => path.basename(p));
+            const r = await gitSaveQueued(folder, () => saveTurnToGit({ folder, summary: "", turnId: turn.id, outside: true, identity: gitIdentity, env, privateDir: gitPrivateDir, gitBin: opts.gitBin, exclude }));
+            if (!r.ok) {
+                log(`git save (outside changes) in ${folder}: ${r.reason}`);
+                send("git_error", { reason: r.reason, outside: true });
+            }
+            else if (r.commit || r.skipped.length > 0) {
+                send("git_saved", { commit: r.commit, files: r.files, skipped: r.skipped, pushed: "no-link", outside: true, ...(r.recovered ? { recovered: r.recovered } : {}) });
+            }
+            before = snapshotFolder(folder); // the save may have written the default .gitignore: the turn starts from here
         };
         let summary = "";
         /** After the answer: the bridge (never the code turn) commits what the turn changed. A failure is an event, never the turn's error. */
         const saveToGit = async () => {
             const d = changed;
-            if (!isCode || !workspace || !d || d.addedCount + d.changedCount + d.removedCount === 0)
+            if (!isCode || !workspace || !d)
                 return;
             const folder = proj ? proj.path : workspace.path;
-            if (gitOff.has(folder))
+            const after = afterSnap;
+            if (gitOff.has(folder)) {
+                lastAfterSnap.delete(folder); // changes made while off are saved as "outside the chat" once it is on again
                 return;
+            }
+            if (d.addedCount + d.changedCount + d.removedCount === 0) {
+                if (after)
+                    lastAfterSnap.set(folder, after);
+                return;
+            }
+            if (after)
+                lastAfterSnap.set(folder, after);
             // Nothing of the turn may still run while the bridge's git does: it could change .git between the checks and git.
             // Windows outside computer mode is files-only (no command tool), so the turn starts no process of its own; the look (a
             // PowerShell start, seconds) is skipped there.
@@ -5196,6 +5397,12 @@ export function createBridge(opts = {}) {
             const history = !parent && typeof body.history === "string" ? body.history.slice(0, 60000) : "";
             const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
             let sessionId = resumeId || crypto.randomUUID();
+            try {
+                await saveOutside();
+            }
+            catch (e) {
+                send("git_error", { reason: `The save failed: ${e?.message ?? e}`, outside: true });
+            }
             let out = await runClaude(turn, { sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
             if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !turn.closed && !turn.cancelRequested) {
                 // The session is gone (different folder, cleaned up): start a new one with the thread as text.
