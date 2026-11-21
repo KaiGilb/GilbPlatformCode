@@ -2372,6 +2372,30 @@ function looseObjectProblem(file: string, id: string): string | null {
   return crypto.createHash(algo).update(raw).digest("hex") === id ? null : "does not hash back to its id";
 }
 
+/** Names in objects/xx that are not plain files (a symlink; on Windows a junction): never a loose object git wrote. One directory read per objects/xx folder. */
+function plantedObjectNames(gitDir: string): { id: string; file: string }[] {
+  const out: { id: string; file: string }[] = [];
+  const objects = path.join(gitDir, "objects");
+  let dirs: string[] = [];
+  try {
+    dirs = fs.readdirSync(objects).filter((n) => /^[0-9a-f]{2}$/.test(n));
+  } catch {
+    return out;
+  }
+  for (const xx of dirs) {
+    let ents: fs.Dirent[] = [];
+    try {
+      ents = fs.readdirSync(path.join(objects, xx), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of ents) if (!e.isFile() && !/^tmp_obj_/.test(e.name)) out.push({ id: xx + e.name, file: path.join(objects, xx, e.name) });
+  }
+  return out;
+}
+/** When the last save of a repo moved its branch (ms), kept in the bridge's own folder. */
+const lastSaveFile = (privateDir: string, gitDir: string) => path.join(privateDir, "saved", `${crypto.createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
+
 /** The git calls that take the index lock. */
 const INDEX_LOCKING = new Set(["add", "reset", "rm", "update-index", "read-tree", "write-tree"]);
 
@@ -2562,6 +2586,27 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     }
     if (o.timeoutMs === undefined) timeout = history ? GIT_TIMEOUT_MS : GIT_FIRST_SAVE_TIMEOUT_MS;
     total = history ? GIT_SAVE_TOTAL_MS : GIT_FIRST_SAVE_TOTAL_MS;
+    // Objects whose file git wrote are plain files. A name in objects/xx that is a link (or junction) was planted: it is removed (only
+    // the name; never through it), the blobs of unchanged files are written back from the work tree, and nothing is saved (D4b).
+    const restoreBlobs = async (ids: Set<string>) => {
+      if (ids.size === 0) return;
+      try {
+        const paths: string[] = [];
+        for (const row of (await run(["ls-files", "--stage", "-z"])).toString("utf8").split("\0")) {
+          const m = /^\d+ ([0-9a-f]+) \d\t([^\n]*)$/.exec(row);
+          if (m && ids.has(m[1]!)) paths.push(path.join(folder, m[2]!)); // absolute: git runs in the bridge's own folder
+        }
+        if (paths.length > 0) await run(["hash-object", "-w", "--no-filters", "--stdin-paths"], paths.join("\n") + "\n");
+      } catch {
+        /* what cannot be written back is reported by the next save */
+      }
+    };
+    const planted = plantedObjectNames(gitDir);
+    if (planted.length > 0) {
+      for (const p of planted) fs.rmSync(p.file, { force: true });
+      await restoreBlobs(new Set(planted.map((p) => p.id)));
+      return { ok: false, reason: `The repo had ${planted.length === 1 ? "a link" : `${planted.length} links`} in place of a git object (.git/objects/${planted[0]!.id.slice(0, 2)}/${planted[0]!.id.slice(2, 12)}…); ${planted.length === 1 ? "it was" : "they were"} removed and nothing was saved.` };
+    }
     // Locks: one the bridge's own killed git provably left is removed (and said); any other is reported and left alone.
     const recovered: string[] = [];
     const recFile = gitCallFile(o.privateDir, gitDir);
@@ -2779,17 +2824,36 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     // right path and skips writing it, so a link or hard link planted there would otherwise put foreign bytes into the commit (D4).
     // A few objects per turn, hashed in this process (no extra git start for loose ones).
     const added = (await run(["rev-list", "--objects", commit, ...(parent ? ["--not", parent] : [])])).toString("utf8").split("\n").map((l) => l.slice(0, 64).split(" ")[0]!).filter((x) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(x));
+    // And every object the new tree reaches, also the ones the parent already holds (D4b: an unchanged file's blob replaced by a
+    // link or hard link). Cheap for most: a loose one must be a plain file (one lstat); it is hashed in full only when it is new, has
+    // a link count above 1 (a hard link), or changed since the last save. Packed ones are not looked at here (a link at a pack file
+    // is refused by the walk).
+    const addedSet = new Set(added);
+    const reached = new Set<string>([commit, tree, ...added]);
+    for (const row of (await run(["ls-tree", "-r", "-t", "-z", "--full-tree", tree])).toString("utf8").split("\0")) {
+      const m = /^\d+ (?:blob|tree|commit) ([0-9a-f]{40}(?:[0-9a-f]{24})?)\t/.exec(row);
+      if (m && !row.startsWith("160000 ")) reached.add(m[1]!); // a submodule's commit (gitlink) is not an object of this repo
+    }
+    let lastSave = 0;
+    try {
+      lastSave = Number((JSON.parse(fs.readFileSync(lastSaveFile(o.privateDir, gitDir), "utf8")) as { at?: unknown }).at) || 0;
+    } catch {
+      lastSave = 0;
+    }
     const notLoose: string[] = [];
-    for (const id of new Set(added)) {
+    for (const id of reached) {
       const file = path.join(gitDir, "objects", id.slice(0, 2), id.slice(2));
-      if (!fs.lstatSync(file, { throwIfNoEntry: false })) {
-        notLoose.push(id);
+      const st = fs.lstatSync(file, { throwIfNoEntry: false });
+      if (!st) {
+        if (addedSet.has(id)) notLoose.push(id);
         continue;
       }
-      const why = looseObjectProblem(file, id);
+      const full = addedSet.has(id) || st.nlink > 1 || (lastSave > 0 && st.mtimeMs > lastSave);
+      const why = st.isSymbolicLink() || !st.isFile() ? "is not a plain file" : full ? looseObjectProblem(file, id) : null;
       if (why) {
-        // Not a valid object (it does not hash to its own id), so removing that name loses nothing; and the index goes back to the
-        // parent, so the next save writes the real object again instead of trusting the stale entry. The branch is not moved.
+        // Not a valid object (it does not hash to its own id, or it is a link), so removing that name loses nothing (never through a
+        // link); the index goes back to the parent so the next save writes the real object instead of trusting the stale entry, and
+        // a blob of an unchanged file is written back from the work tree. The branch is not moved.
         fs.rmSync(file, { force: true });
         try {
           if (parent) await run(["reset", "--quiet", parent]);
@@ -2797,6 +2861,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
         } catch {
           /* the next save's add will still see the change */
         }
+        await restoreBlobs(new Set([id]));
         throw new GitRefused(`The repo's object .git/objects/${id.slice(0, 2)}/${id.slice(2, 12)}… ${why}; it was removed and nothing was saved (the branch was not moved).`);
       }
     }
@@ -2873,6 +2938,12 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     } finally {
       fs.rmSync(tmpPath, { force: true });
       fs.rmSync(ownRecord, { force: true });
+    }
+    try {
+      fs.mkdirSync(path.join(o.privateDir, "saved"), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(lastSaveFile(o.privateDir, gitDir), JSON.stringify({ at: now() }), { mode: 0o600 });
+    } catch {
+      /* the next save hashes no object by its time */
     }
     // After: the same checks again. A change here means something still wrote in the repo while git ran.
     try {

@@ -322,7 +322,7 @@ describe("a link or hard link at .git/objects/xx/<next blob> never puts foreign 
         plant(t);
         const r = await saveTurnToGit({ folder: t.proj, summary: "second", turnId: "t2", env: process.env, privateDir: t.priv });
         expect(r.ok).toBe(false);
-        expect(r.reason).toMatch(/object .* (is not a plain file|does not hash back|cannot be read|damaged header)/);
+        expect(r.reason).toMatch(/object .* (is not a plain file|does not hash back|cannot be read|damaged header)|a link in place of a git object/);
         expect(plainGit(t.proj, ["rev-parse", "HEAD"]).trim()).toBe(t.tip);
         // The bridge removed the planted name (only the name: an outside target is untouched) and reset the index, so the repo is
         // valid and the next save writes and commits b.txt's own bytes.

@@ -3,7 +3,7 @@
 // (identity + 250 ms fallback), and the pre-turn "Changes made outside the chat" commit.
 // Harmless only: markers and "victim" files live in each case's own throwaway folder; no network.
 // Adopted into the unit (Agent.Coder, after the fixes): FN1 asserts the safe outcome; the RACE injection now fires at the bridge's
-// second clock read after its last git call, rev-list (the start of its ref write), which is between its branch check and its ref lock (the bridge no longer runs rev-parse there).
+// second clock read after its last git call, ls-tree (the start of its ref write), which is between its branch check and its ref lock (the bridge no longer runs rev-parse there).
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -159,7 +159,7 @@ describe.skipIf(!posix)("F1 the bridge's own ref writer", () => {
     let after = 0;
     let userCommit = null;
     const onGitRun = (args) => {
-      if (args[0] === "rev-list") armed = true; // the last git call before the ref write (the object check)
+      if (args[0] === "ls-tree") armed = true; // the last git call before the ref write (the object check)
     };
     const nowFn = () => {
       if (armed && userCommit === null && ++after === 2) {
