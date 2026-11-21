@@ -78,7 +78,7 @@ It drives headless Chrome at 1280 x 800 and at 390 x 844 through every screen an
 
 - the sign-in card: empty, an email typed, the code step, a wrong code, the name step with a free name, with a refused name, a name another person took after it was checked, and what the card says then;
 - the start: a failed start with Try again, the sentence shown while the vault is made, signing out, and the notice of a sign-out the sign-in server was not told of;
-- the frame: the person's own vault, the menu drawer, a vault shared for viewing, a long account name;
+- the frame: the person's own vault with the opening screen's text, the menu drawer opened from the keyboard (no focus ring around the drawer itself), a vault shared for viewing, a long account name;
 - the vault chooser: while it reads, the list, and a list that could not be read;
 - the share sheet: while it reads, the empty list, a refused entry, two people, the Remove question, a removal that failed, and a vault the person does not control.
 
@@ -90,7 +90,7 @@ Run it again after you change the style or add a screen. What it does **not** me
 
 The starter has no records. A new app adds its screens for one kind of record in two places:
 
-1. **`src/records/`**: your screens to list, add, change and delete the record. Replace `RecordsHome.tsx` (and delete `test/recordsHome.test.tsx`).
+1. **`src/records/`**: your screens to list, add, change and delete the record. Replace `RecordsHome.tsx` (and delete `test/recordsHome.test.tsx`). Until you do, `RecordsHome.tsx` is the opening screen: in a person's own vault it says what the starter is ("Your app, your users' data", "This is only the beginning") and shows the vault's address. The browser proof's step `signed-in-own-vault` checks those two headings; change that check with the screen.
 2. **`src/sections.tsx`**: one line per section, for example `{ id: "plants", label: "Plants", render: (ctx) => <PlantList ctx={ctx} /> }`. A section with `detail: (ctx) => ...` also gets the right region, for one record's detail.
 
 The open section and the open vault are kept in the page's address (`?section=`, `?vault=`), so a reload opens the same place. Keep your own navigable state (a selected record, a filter) in the address too, not in memory or in browser storage.

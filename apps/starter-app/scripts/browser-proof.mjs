@@ -242,6 +242,13 @@ function legsFor(size, t) {
         await page.waitFor(READY);
         await page.waitFor(openVaultIs(ANN));
         await t.noHorizontalScroll();
+        // The opening screen: its two headings, its text at a line length a person can read, and the open vault's address.
+        const home = JSON.parse(
+          await page.eval(`JSON.stringify((() => { const h = document.querySelector('[data-testid="records-home"]'); return { h1: h.querySelector("h1")?.textContent, h2: h.querySelector("h2")?.textContent, address: h.querySelector('[data-testid="vault-address"]')?.textContent, widest: Math.max(...[...h.querySelectorAll("p")].map((p) => p.getBoundingClientRect().width)), em: parseFloat(getComputedStyle(h).fontSize), wide: window.innerWidth }; })())`),
+        );
+        if (home.h1 !== "Your app, your users' data" || home.h2 !== "This is only the beginning") throw new Error(`the opening screen's headings read ${JSON.stringify([home.h1, home.h2])}`);
+        if (!home.address?.startsWith("Your vault: http")) throw new Error(`the opening screen's last line reads ${JSON.stringify(home.address)}`);
+        if (home.widest > 36 * home.em || home.widest > home.wide) throw new Error(`the opening screen's lines are too long to read: ${JSON.stringify(home)}`);
       },
     ],
     ...(phone
@@ -249,8 +256,16 @@ function legsFor(size, t) {
           [
             "menu-drawer",
             async (page) => {
-              await t.clickText("Menu", { within: 'nav[aria-label="Panels"]' });
+              // Opened from the keyboard, as a person without a pointer opens it: the drawer then holds the focus itself.
+              await page.eval(`void [...document.querySelectorAll('nav[aria-label="Panels"] button')].find((b) => b.textContent.includes("Menu")).focus()`);
+              await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+              await page.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
               await page.waitFor(`!!document.querySelector('[role="dialog"] nav[aria-label="Sections"]')`);
+              await page.waitFor(`document.activeElement?.getAttribute("role") === "dialog"`);
+              // The drawer is not a control: no focus ring is drawn around it (it showed as a bright line down its edge).
+              const ring = JSON.parse(await page.eval(`JSON.stringify({ keyboard: document.activeElement.matches(":focus-visible"), outline: getComputedStyle(document.activeElement).outlineStyle })`));
+              if (!ring.keyboard) throw new Error("the drawer was not opened as from the keyboard, so this step proves nothing about its focus ring");
+              if (ring.outline !== "none") throw new Error(`the open drawer draws a focus ring around itself (outline ${ring.outline})`);
               await t.noHorizontalScroll();
             },
           ],
