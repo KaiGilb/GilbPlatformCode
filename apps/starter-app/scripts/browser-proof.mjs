@@ -1,4 +1,4 @@
-// Headless Chrome proof of the fake mode, at a wide window and at a phone's size.
+// Headless Chrome proof of the fake mode, at a wide window, at two phone sizes and at a wide window that is short.
 // Usage: node scripts/browser-proof.mjs <out-dir> [url-base]
 // Needs `npm run dev:fake` running (default http://localhost:5262). It talks to that address only: the platform is the
 // fake inside the page. It starts its own Chrome (a throwaway profile inside <out-dir>, removed at the end), runs the
@@ -9,7 +9,10 @@
 //   - runs axe-core in the page (WCAG 2.1 A and AA), and
 //   - measures EVERY text on the page: each element that holds text of its own, what is typed in a field, and each
 //     placeholder (which axe does not measure), with its colour worked out from the drawn colours over every
-//     background under it. A text under 4.5:1 fails the leg.
+//     background under it, and a placeholder's own opacity counted in. A text under 4.5:1 fails the leg.
+// The small phone (375 x 667) and the short wide window (1280 x 480) are shorter than the opening screen: there the
+// centre scrolls, and the leg `centre-by-keyboard` holds that Tab reaches it, that it shows where the focus is, that it
+// has a name, and that the End key brings its last line into view.
 // The legs walk every screen and state the fake mode can reach (the list is at `legsFor`). What this does not measure:
 // colours under the pointer or on focus, things that are not text (borders, icons, focus rings), a control that is
 // turned off, text another layer covers (the page behind an open sheet), text a style sheet draws itself (::before,
@@ -60,8 +63,8 @@ const EVERY_TEXT = `window.__everyText = () => {
   const nameOf = (e) => (e.getAttribute("data-testid") || (typeof e.className === "string" && e.className.split(" ")[0]) || e.tagName.toLowerCase()).slice(0, 40);
   const seen = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility !== "hidden" && s.display !== "none"; };
   const covered = (e) => { const r = e.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false; const hit = document.elementFromPoint(x, y); return !!hit && !e.contains(hit) && !hit.contains(e); };
-  const one = (e, what, text, colour, placeholder) => {
-    const { bg, picture } = backgroundOf(e); const c = read(colour); c[3] *= opacityOf(e); const fg = over(c, bg);
+  const one = (e, what, text, colour, placeholder, own = 1) => {
+    const { bg, picture } = backgroundOf(e); const c = read(colour); c[3] *= opacityOf(e) * own; const fg = over(c, bg);
     const a = lum(fg), b = lum(bg);
     const skip = e.closest(":disabled, [aria-disabled='true']") ? "turned off" : covered(e) ? "covered" : null;
     return { what, text: text.replace(/\\s+/g, " ").trim().slice(0, 48), fg: hex(fg), bg: hex(bg), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), placeholder, picture, skip };
@@ -72,7 +75,7 @@ const EVERY_TEXT = `window.__everyText = () => {
     if (e.tagName === "INPUT" || e.tagName === "TEXTAREA") {
       if (["radio", "checkbox", "range", "color", "file", "hidden", "image"].includes(e.type)) continue; // these show no text of their own
       if (e.value) out.push(one(e, "typed in " + nameOf(e), e.value, getComputedStyle(e).color, false));
-      else if (e.placeholder) out.push(one(e, "placeholder of " + nameOf(e), e.placeholder, getComputedStyle(e, "::placeholder").color, true));
+      else if (e.placeholder) out.push(one(e, "placeholder of " + nameOf(e), e.placeholder, getComputedStyle(e, "::placeholder").color, true, Number(getComputedStyle(e, "::placeholder").opacity)));
       continue;
     }
     const own = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => n.textContent).join(" ");
@@ -128,10 +131,20 @@ const out = process.argv[2] ? resolve(process.argv[2]) : "";
 const base = process.argv[3] ?? "http://localhost:5262";
 if (!out) throw new Error("usage: browser-proof.mjs <out-dir> [url-base]");
 
+// The last two are shorter than the opening screen, so its centre scrolls there. The short wide window runs only as far
+// as that screen: every later screen is the same as at 1280 x 800.
 const SIZES = [
   { name: "wide", width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
   { name: "phone", width: 390, height: 844, deviceScaleFactor: 2, mobile: true },
+  { name: "small-phone", width: 375, height: 667, deviceScaleFactor: 2, mobile: true },
+  { name: "short-wide", width: 1280, height: 480, deviceScaleFactor: 1, mobile: false, upTo: "centre-by-keyboard" },
 ];
+
+/** Presses and releases one key, as a keyboard does. */
+async function press(page, key, code) {
+  await page.send("Input.dispatchKeyEvent", { type: "keyDown", key, code: key, windowsVirtualKeyCode: code });
+  await page.send("Input.dispatchKeyEvent", { type: "keyUp", key, code: key, windowsVirtualKeyCode: code });
+}
 
 /**
  * The button-row rule (RuleUiActionRowMacOrder) on every row of the page but the frame's own top bar: that bar is a toolbar
@@ -167,7 +180,7 @@ const failNext = (page, match, message) => page.eval(`void window.__fake.failNex
  * empty list, a refused entry, two people, the Remove question, a removal that failed, and a vault the person does not control.
  */
 function legsFor(size, t) {
-  const phone = size.name === "phone";
+  const phone = size.mobile;
   /** On a phone Share and Sign out are in the menu drawer; on a wide window they are in the header. */
   const account = async (page, word) => {
     if (phone) {
@@ -249,6 +262,37 @@ function legsFor(size, t) {
         if (home.h1 !== "Your app, your users' data" || home.h2 !== "This is only the beginning") throw new Error(`the opening screen's headings read ${JSON.stringify([home.h1, home.h2])}`);
         if (!home.address?.startsWith("Your vault: http")) throw new Error(`the opening screen's last line reads ${JSON.stringify(home.address)}`);
         if (home.widest > 36 * home.em || home.widest > home.wide) throw new Error(`the opening screen's lines are too long to read: ${JSON.stringify(home)}`);
+      },
+    ],
+    [
+      "centre-by-keyboard",
+      async (page) => {
+        // The centre is the one place that holds a screen taller than the window. A person with a keyboard and no
+        // pointer must reach it with Tab, see that the focus is on it, and scroll it to its last line.
+        await page.eval(`void document.querySelector(".vsw-chip").focus()`);
+        let reached = false;
+        for (let i = 0; i < 10 && !reached; i++) {
+          await press(page, "Tab", 9);
+          reached = await page.eval(`document.activeElement?.tagName === "MAIN"`);
+        }
+        if (!reached) throw new Error(`Tab from the vault chip does not reach the centre; after 10 presses the focus is on ${await page.eval(`(() => { const a = document.activeElement; return a.tagName.toLowerCase() + (a.getAttribute("data-region") ? "[data-region=" + a.getAttribute("data-region") + "]" : "") + " " + (a.getAttribute("aria-label") ?? a.textContent.trim().slice(0, 30)); })()`)}`);
+        const centre = JSON.parse(
+          await page.eval(`JSON.stringify((() => { const m = document.activeElement; const s = getComputedStyle(m); return { name: m.getAttribute("aria-label"), keyboard: m.matches(":focus-visible"), ring: s.outlineStyle + " " + s.outlineWidth, needs: m.scrollHeight, has: m.clientHeight, overflow: s.overflowY }; })())`),
+        );
+        if (!centre.name) throw new Error("the centre has no name for a screen reader to read");
+        if (!centre.keyboard || !/^solid [1-9]/.test(centre.ring)) throw new Error(`the centre does not show that the focus is on it: ${JSON.stringify(centre)}`);
+        const tall = JSON.parse(await page.eval(`JSON.stringify((() => { const h = document.querySelector('[data-testid="records-home"]'); return { screen: h.scrollHeight, window: window.innerHeight }; })())`));
+        if (size.height < 700 && centre.needs <= centre.has + 1) throw new Error(`at this size the opening screen is taller than the centre, yet the centre does not scroll: ${JSON.stringify({ ...centre, ...tall })}`);
+        if (centre.needs > centre.has + 1) {
+          await press(page, "End", 35);
+          await page.sleep(400);
+          const end = JSON.parse(
+            await page.eval(`JSON.stringify((() => { const m = document.querySelector("main"); const r = m.querySelector('[data-testid="vault-address"]').getBoundingClientRect(), b = m.getBoundingClientRect(); return { scrolled: m.scrollTop, lastLineBottom: Math.round(r.bottom), centreBottom: Math.round(b.bottom) }; })())`),
+          );
+          if (!(end.scrolled > 0) || end.lastLineBottom > end.centreBottom) throw new Error(`the End key does not bring the opening screen's last line into view: ${JSON.stringify(end)}`);
+          await press(page, "Home", 36);
+          await page.sleep(300);
+        }
       },
     ],
     ...(phone
@@ -490,7 +534,8 @@ for (const size of SIZES) {
     console.log(`\n${size.name} (${size.width} x ${size.height})`);
     const record = [];
     // Each leg ends with a short wait, so axe, the measuring and the screenshot see the page after the drawer or the sheet has slid in.
-    const legs = legsFor(size, makeTools(page)).map(([name, leg], i) => [
+    const all = legsFor(size, makeTools(page));
+    const legs = (size.upTo ? all.slice(0, all.findIndex(([name]) => name === size.upTo) + 1) : all).map(([name, leg], i) => [
       name,
       async (p) => {
         await leg(p);

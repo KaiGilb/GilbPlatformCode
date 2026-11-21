@@ -182,10 +182,23 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
         }
         center={
           <Fragment key={`${open.vaultId}|${section.id}`}>
-            <main className="sa-center">{section.render(ctx)}</main>
+            {/* The centre scrolls itself and takes the focus, so the keyboard scrolls it in every browser (see the sheet). */}
+            <main className="sa-center" tabIndex={0} aria-label={section.label}>
+              {section.render(ctx)}
+            </main>
           </Fragment>
         }
-        {...(section.detail ? { right: <Fragment key={`${open.vaultId}|${section.id}`}>{section.detail(ctx)}</Fragment> } : {})}
+        {...(section.detail
+          ? {
+              right: (
+                <Fragment key={`${open.vaultId}|${section.id}`}>
+                  <section className="sa-detail" tabIndex={0} aria-label={words.detail}>
+                    {section.detail(ctx)}
+                  </section>
+                </Fragment>
+              ),
+            }
+          : {})}
         leftTitle={settings.appName}
         leftLabel={words.menu}
       />

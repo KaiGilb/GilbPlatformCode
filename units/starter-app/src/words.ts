@@ -24,6 +24,8 @@ export interface StarterWords {
   viewOnly: string;
   /** Shown above the account buttons in the menu of a narrow window. */
   account: string;
+  /** The name a screen reader reads for the right region, which holds a section's detail. The centre is named by its section. */
+  detail: string;
   /**
    * The label of a person in the access list whom the platform gave no name: what their key is (the share sheet's own words,
    * such as "Registered principal") and the end of that key, so two such people never read alike.
@@ -52,6 +54,7 @@ export const defaultWords: StarterWords = {
   menu: "Menu",
   viewOnly: "View only",
   account: "Account",
+  detail: "Details",
   unnamedRow: (what, keyEnding) => `${what}, key ending ${keyEnding}`,
   removeYes: "Remove",
   removeNo: "Cancel",

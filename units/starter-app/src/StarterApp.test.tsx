@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { StarterApp, type StarterContext, type StarterSection } from "./StarterApp";
 import { startStarter } from "./start";
 import { askForCode, axeIds, CREATE, makeWorld, ready, settingsFor, setWidth, signIn, TYPE, type World } from "../test/world";
+import { declared, starterRules } from "../test/colours";
 
 let world: World;
 let seen: StarterContext[];
@@ -361,6 +362,45 @@ describe("computer and phone", () => {
     expect(screen.getByTestId("other-detail")).toBeTruthy();
     expect(screen.queryByTestId("home")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
+  });
+
+  // Spec: Rule_Code_accessibility (WCAG 2.1.1) — a region that scrolls is reached and scrolled from the keyboard.
+  it("the centre and the detail region take the focus with Tab and have a name, so a keyboard scrolls a screen taller than the window", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    const centre = screen.getByRole("main", { name: "Home" }); // named by the open section
+    expect(centre.tabIndex).toBe(0);
+    expect(centre.className).toBe("sa-center");
+    expect(centre.contains(screen.getByTestId("home"))).toBe(true);
+    expect(screen.queryByRole("region", { name: "Details" })).toBeNull(); // Home has no detail
+
+    await user.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Other" }));
+    expect(screen.getByRole("main", { name: "Other" }).tabIndex).toBe(0);
+    const detail = screen.getByRole("region", { name: "Details" });
+    expect(detail.tabIndex).toBe(0);
+    expect(detail.className).toBe("sa-detail");
+    expect(detail.contains(screen.getByTestId("other-detail"))).toBe(true);
+    // Tab, from the menu button just pressed, reaches the centre and after it the detail.
+    const order: (Element | null)[] = [];
+    for (let i = 0; i < 12; i++) {
+      await user.tab();
+      order.push(document.activeElement);
+    }
+    expect(order.indexOf(screen.getByRole("main"))).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf(detail)).toBeGreaterThan(order.indexOf(screen.getByRole("main")));
+  });
+
+  it("the sheet makes both regions scroll themselves at their full height, and draws a focus ring inside their edge", () => {
+    const sheet = starterRules();
+    for (const region of [".sa-center", ".sa-detail"]) {
+      expect(declared(sheet, region, "height")).toBe("100%");
+      expect(declared(sheet, region, "overflow")).toBe("auto");
+      expect(declared(sheet, `${region}:focus-visible`, "outline")).toBe("2px solid var(--accent)");
+      expect(declared(sheet, `${region}:focus-visible`, "outline-offset")).toBe("-2px");
+    }
   });
 
   it("on a phone the centre stands alone; the menu is a drawer with the sections, Share and Sign out, and it closes after a pick", async () => {
