@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { aiNoGrant, aiNotBound, startConnector, sessionIdFromEnv, personFromSystem, sameVault } from "../connector/gilb-connector.mjs";
+import { aiNoGrant, aiNotBound, startConnector, sessionIdFromEnv, personFromSystem, principalFromSystem, sameVault } from "../connector/gilb-connector.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const FAKE_CLAUDE = join(HERE, "fake-claude.mjs");
@@ -177,7 +177,9 @@ function door(state) {
     if (rec.url.endsWith("/context")) {
       return {
         body: {
-          system: `STANDING-KAI That person is identified as: ${state.principal}. ${state.person ? `You are the AI ${state.principal}, acting for ${state.person}. ` : ""}Tools follow.`,
+          // The platform's own sentence (GilbPlatform src/ai/complete-chat.ts systemPrompt, #791): with a person known it
+          // says ONLY "You are the AI <ai vault>, acting for <person>." and no "That person is identified as" sentence.
+          system: `STANDING-KAI ${state.person && state.person !== state.principal ? `You are the AI ${state.principal}, acting for ${state.person}. ` : `That person is identified as: ${state.principal}. `}Tools follow.`,
           tools: PLATFORM_TOOLS,
         },
       };
@@ -406,6 +408,13 @@ describe("accept 5: whoami names the AI's vault and the person's vault", () => {
     expect(who).toContain(`principal: ${AI_VAULT}`);
     expect(who).toContain(`acting for: ${PERSON_VAULT}`);
   });
+  it("is bound when the platform's prompt carries only the acting-for sentence (Client ID bound, said 'not bound')", async () => {
+    const home = scratch();
+    const { box } = await chat({ ...stateFor([AI_VAULT, NS]), person: PERSON_VAULT }, home);
+    const who = await whoami(box);
+    expect(who).toContain("state: bound");
+    expect(who).not.toContain("state: not bound");
+  });
   it("names no person when the platform has not said (the person is never guessed)", async () => {
     const home = scratch();
     const { box } = await chat(stateFor([AI_VAULT, NS]), home);
@@ -416,5 +425,10 @@ describe("accept 5: whoami names the AI's vault and the person's vault", () => {
   it("reads the person out of the prompt sentence", () => {
     expect(personFromSystem(`X. You are the AI ${AI_VAULT}, acting for ${PERSON_VAULT}. Y`)).toBe(PERSON_VAULT);
     expect(personFromSystem("That person is identified as: https://a.test/base. ")).toBeUndefined();
+  });
+  it("takes the AI's own vault as the principal from the acting-for sentence", () => {
+    expect(principalFromSystem(`X. You are the AI ${AI_VAULT}, acting for ${PERSON_VAULT}. Y`)).toBe(AI_VAULT);
+    expect(principalFromSystem(`X. That person is identified as: ${AI_VAULT}. Y`)).toBe(AI_VAULT);
+    expect(principalFromSystem("X. No sentence here. Y")).toBeUndefined();
   });
 });

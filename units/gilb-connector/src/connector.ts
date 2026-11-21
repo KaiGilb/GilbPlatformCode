@@ -1201,8 +1201,14 @@ function registrationMessage(body: unknown): string {
   return detail ? `Registration failed: ${detail}` : "Registration failed.";
 }
 
-function principalFromSystem(system: string): string | undefined {
-  const match = /That person is identified as: (.+?)\. /.exec(system);
+/**
+ * The caller's principal as the platform's prompt names it. The platform writes ONE of two sentences
+ * (GilbPlatform src/ai/complete-chat.ts systemPrompt, #791): "That person is identified as: <principal>." or, for a
+ * Connected AI whose person is known, "You are the AI <ai vault>, acting for <person>." with no "identified as"
+ * sentence. In the second the principal is the AI's own vault. Reading only the first left a bound AI "not bound".
+ */
+export function principalFromSystem(system: string): string | undefined {
+  const match = /That person is identified as: (.+?)\. /.exec(system) ?? /You are the AI (\S+?), acting for \S/.exec(system);
   const found = match?.[1]?.trim();
   return found ? found : undefined;
 }
