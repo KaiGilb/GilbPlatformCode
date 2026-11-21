@@ -107,9 +107,9 @@ describe("a changed code turn leaves one commit (bridge-run)", () => {
     b = await startGitBridge();
     plainGit(b.projPath, ["init", "-q", "--template="]);
     const r = await b.turn([writes([{ p: "a.txt", c: "a" }, { p: "node_modules/m/i.js", c: "m" }]), "x"]);
-    // The default .gitignore is written and saved first, as a change outside the chat; the turn's own commit holds a.txt.
-    expect(outsideEv(r, "git_saved")[0].files).toEqual([".gitignore"]);
-    expect(ev(r, "git_saved")[0].files).toEqual(["a.txt"]);
+    // No object yet: nothing saved to differ from, so no "outside the chat" save; the turn's first commit holds .gitignore too.
+    expect(outsideEv(r, "git_saved")).toEqual([]);
+    expect(ev(r, "git_saved")[0].files).toEqual([".gitignore", "a.txt"]);
   });
 
   it("a removed file is committed as removed", async () => {
@@ -636,5 +636,50 @@ describe("re-test findings (Agent.Hacker RT1, Agent.Tester N1/N2)", () => {
     const r3 = await b.turn([writes([{ p: "k.txt", c: SECRETS.ghp }, { p: "c.txt", c: "c" }]), "three"]);
     expect(ev(r3, "git_saved")[0].skipped.map((x) => x.path)).toEqual(["k.txt"]);
     expect(committedFiles(b.projPath)).not.toContain("k.txt");
+  });
+});
+
+describe("final round (Agent.Hacker FN1-FN4, Agent.Tester N4)", () => {
+  it("N4: a project made with New project: the bridge's own .gitignore and .npmrc are in the turn's first commit, not 'outside the chat'", async () => {
+    b = await startGitBridge({ project: null });
+    await b.api("/v1/projects/create", { name: "fresh" });
+    const r = await b.turn([writes([{ p: "index.html", c: "<p>hi</p>" }]), "made the page"], { project: "fresh" });
+    expect(outsideEv(r, "git_saved")).toEqual([]);
+    const files = ev(r, "git_saved")[0].files;
+    expect(files).toContain("index.html");
+    expect(files).toContain(".gitignore");
+    expect(plainGit(path.join(b.ws, "fresh"), ["log", "--format=%s"]).trim()).toBe("echo: made the page");
+  });
+
+  it("FN2: HEAD naming a ref that is not a writable branch is refused; HEAD and the branch stay as they were", async () => {
+    b = await startGitBridge();
+    await b.turn([writes([{ p: "a.txt", c: "a" }]), "one"]);
+    const headFile = path.join(b.projPath, ".git", "HEAD");
+    const tip = plainGit(b.projPath, ["rev-parse", "refs/heads/main"]).trim();
+    for (const bad of ["refs/heads/a..b", "refs/heads/../config", "refs/heads/x.lock", "refs/heads/.hidden", "refs/tags/v1", "refs/heads/with space"]) {
+      fs.writeFileSync(headFile, `ref: ${bad}\n`);
+      const r = await b.turn([writes([{ p: `${commitCount(b.projPath)}.txt`, c: bad }]), "x"]);
+      expect(ev(r, "git_saved"), bad).toEqual([]);
+      expect(ev(r, "git_error")[0].reason, bad).toMatch(/not a branch/);
+      expect(fs.readFileSync(headFile, "utf8"), bad).toBe(`ref: ${bad}\n`);
+    }
+    fs.writeFileSync(headFile, "ref: refs/heads/main\n");
+    expect(plainGit(b.projPath, ["rev-parse", "refs/heads/main"]).trim()).toBe(tip);
+  });
+
+  it("FN4: a process that survived an earlier turn's stop is still alive: the outside save is refused, the turn still runs", async () => {
+    let alive = true;
+    b = await startGitBridge({ bridgeOpts: { residualSeed: [[4194299, "s"]], procList: async () => (alive ? [{ pid: 4194299, ppid: 1, start: "s" }] : []) } });
+    alive = false;
+    await b.turn([writes([{ p: "a.txt", c: "a" }]), "one"]);
+    fs.writeFileSync(path.join(b.projPath, "mine.txt"), "m");
+    alive = true;
+    const r = await b.turn([writes([{ p: "c.txt", c: "c" }]), "two"]);
+    expect(ev(r, "message")).toHaveLength(1);
+    expect(outsideEv(r, "git_saved")).toEqual([]);
+    expect(outsideEv(r, "git_error")[0].reason).toMatch(/left from an earlier turn/);
+    // The turn's own save is refused for the same reason (nothing of an earlier turn may run while the bridge's git does).
+    expect(ev(r, "git_saved")).toEqual([]);
+    expect(ev(r, "git_error")[0].reason).toMatch(/still running/);
   });
 });

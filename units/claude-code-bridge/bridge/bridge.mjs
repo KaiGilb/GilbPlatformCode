@@ -2167,7 +2167,8 @@ export const GIT_DIR_SCAN_MAX = 1_000_000;
 /**
  * Every entry of the git folder, with lstat, after the turn's processes are gone: git follows a link when it writes a file
  * (COMMIT_EDITMSG, logs, refs, objects), so ANY link, junction, pipe or device, and any hard-linked file outside objects/, refuses
- * the save. hooks/ is not looked into: the bridge's git never reads or writes it (hooks are off). Returns how many object files there are.
+ * the save. hooks/ is not looked into: the bridge's git never reads or writes it (hooks are off), nor the files inside each
+ * objects/xx folder (see below). Returns `objects` > 0 when the repo holds any object.
  */
 export function scanGitDir(gitDir, max = GIT_DIR_SCAN_MAX) {
     let seen = 0;
@@ -2198,6 +2199,21 @@ export function scanGitDir(gitDir, max = GIT_DIR_SCAN_MAX) {
             if (st.isSymbolicLink())
                 throw new GitRefused(`The repo has a link at .git/${r.slice(0, 120)}, so the bridge does not save there.`);
             if (st.isDirectory()) {
+                // A loose-object folder (objects/xx) is checked itself (a link there would send new objects elsewhere), but its files are
+                // not: git never opens an existing object for writing (a new one is a temp file renamed in), and a repo can hold tens of
+                // thousands of them (on Windows each look is slow). Whether it holds any is all that is counted.
+                if (/^objects\/[0-9a-f]{2}$/.test(r)) {
+                    if (objects === 0) {
+                        try {
+                            if (fs.readdirSync(path.join(gitDir, r)).length > 0)
+                                objects++;
+                        }
+                        catch {
+                            /* gone */
+                        }
+                    }
+                    continue;
+                }
                 stack.push(r);
                 continue;
             }
@@ -2206,7 +2222,7 @@ export function scanGitDir(gitDir, max = GIT_DIR_SCAN_MAX) {
             const inObjects = r.startsWith("objects/");
             if (st.nlink > 1 && !inObjects)
                 throw new GitRefused(`The repo has a hard-linked file at .git/${r.slice(0, 120)}, so the bridge does not save there.`);
-            if (inObjects && !r.startsWith("objects/info/"))
+            if (inObjects && !r.startsWith("objects/info/") && !(r.startsWith("objects/pack/") && !r.endsWith(".pack")))
                 objects++;
         }
     }
@@ -2220,6 +2236,43 @@ function checkGitDirLayout(gitDir) {
         throw new GitRefused("The repo borrows objects from elsewhere (alternates), so the bridge does not save there.");
     if (fs.existsSync(path.join(gitDir, "config.worktree")))
         throw new GitRefused("The repo has a config.worktree file, so the bridge does not save there.");
+}
+/** git's version per git binary, asked once per process (each extra git start costs ~50-100 ms on Windows). */
+const gitVersionCache = new Map();
+/** The empty tree's id in a SHA-1 and a SHA-256 repo: if its loose object is there, it need not be written again. */
+const EMPTY_TREES = ["4b825dc642cb6eb9a060e54bf8d69288fbee4904", "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321"];
+/** A branch the bridge will write: refs/heads/ then plain parts (letters, digits, . _ -; not starting with . or -, not ending in . or .lock, no Windows device name). */
+function branchRefOk(ref) {
+    if (!ref.startsWith("refs/heads/") || ref.length > 200)
+        return false;
+    return ref.slice("refs/heads/".length).split("/").every((seg) => /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(seg) && !seg.endsWith(".") && !seg.endsWith(".lock") && !seg.includes("..") && !WIN_RESERVED.test(seg));
+}
+/** The commit a branch (or HEAD itself, when detached) names, read from the files: the loose ref, else packed-refs. Null: none yet. */
+function readRefTip(gitDir, refRel) {
+    const file = path.join(gitDir, ...refRel.split("/"));
+    const st = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (st) {
+        if (!st.isFile())
+            throw new GitRefused(`.git/${refRel} is not a plain file, so nothing was saved.`);
+        const t = fs.readFileSync(file, "latin1").trim();
+        if (refRel !== "HEAD" && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(t))
+            return t;
+        if (refRel === "HEAD") {
+            const m = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.exec(t);
+            if (m)
+                return m[0];
+        }
+        throw new GitRefused(`.git/${refRel} does not hold a commit id (a symbolic or damaged ref), so nothing was saved.`);
+    }
+    const packed = path.join(gitDir, "packed-refs");
+    if (refRel === "HEAD" || !fs.existsSync(packed))
+        return null;
+    for (const line of fs.readFileSync(packed, "latin1").split("\n")) {
+        const m = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) (.+)$/.exec(line.trim());
+        if (m && m[2] === refRel)
+            return m[1];
+    }
+    return null;
 }
 /** The git calls that take the index lock. */
 const INDEX_LOCKING = new Set(["add", "reset", "rm", "update-index", "read-tree", "write-tree"]);
@@ -2320,6 +2373,9 @@ export async function saveTurnToGit(o) {
                         const id = lockIdentity(gd, "index.lock");
                         if (!id)
                             return;
+                        // Only a lock born after this call began is its own (one already there is another git's, FN3).
+                        if (id.birth > 0 && id.birth < record.start - 5)
+                            return;
                         if (watchLock)
                             clearInterval(watchLock);
                         watchLock = null;
@@ -2332,9 +2388,9 @@ export async function saveTurnToGit(o) {
                             /* no proof then: the lock, if left, is reported, never removed */
                         }
                     };
-                    watchLock = setInterval(look, 1);
+                    watchLock = setInterval(look, 10);
                     try {
-                        // An event as soon as the lock appears, besides the 1 ms look (narrows the time a kill can leave it unnoted).
+                        // An event as soon as the lock appears; the 10 ms look is the fallback where events are late or missing.
                         watcher = fs.watch(gd, { persistent: false }, (_t, name) => {
                             if (name === "index.lock")
                                 look();
@@ -2355,7 +2411,11 @@ export async function saveTurnToGit(o) {
             else
                 child.stdin?.end();
         });
-        const version = gitVersionOf((await run(["version"])).toString("utf8"));
+        let version = gitVersionCache.get(gitBin);
+        if (version === undefined) {
+            version = gitVersionOf((await run(["version"])).toString("utf8"));
+            gitVersionCache.set(gitBin, version);
+        }
         let made = false;
         if (!gitDir) {
             await run(["-c", "init.defaultBranch=main", "init", "--quiet", "--template=", folder]);
@@ -2373,9 +2433,32 @@ export async function saveTurnToGit(o) {
         const cfgNames = async () => fs.existsSync(path.join(gitDir, "config"))
             ? (await run(["config", "--file", path.join(gitDir, "config"), "--no-includes", "--list", "--name-only", "-z"])).toString("utf8").split("\0").filter(Boolean)
             : [];
+        const cfgBytes = () => {
+            try {
+                return fs.readFileSync(path.join(gitDir, "config"));
+            }
+            catch {
+                return null;
+            }
+        };
+        const cfgBefore = cfgBytes();
         const bad = (await cfgNames()).find((n) => !GIT_CONFIG_ALLOWED.some((re) => re.test(n.toLowerCase())));
         if (bad)
             return { ok: false, reason: `The repo's config has a setting the bridge does not save with (${bad.slice(0, 80)}), so nothing was saved.` };
+        // HEAD, read by the bridge (no git call): a branch "ref: refs/heads/<name>", or a commit id (detached). Anything else, including
+        // a ref git cannot read, refuses the save: never a parentless commit over a broken HEAD (FN2).
+        const headText = fs.readFileSync(path.join(gitDir, "HEAD"), "latin1").trim();
+        let refRel;
+        if (headText.startsWith("ref:")) {
+            const name = headText.slice(4).trim();
+            if (!branchRefOk(name))
+                return { ok: false, reason: `HEAD names ${JSON.stringify(name.slice(0, 80))}, which is not a branch the bridge can write, so nothing was saved.` };
+            refRel = name;
+        }
+        else if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(headText))
+            refRel = "HEAD";
+        else
+            return { ok: false, reason: "HEAD cannot be read (neither a branch nor a commit id), so nothing was saved." };
         // The long limit is only for a repo with no history at all: no ref, no commit at HEAD, and no object. Anything else keeps the
         // short limit, so a code turn cannot buy a long-running git by deleting refs or pointing HEAD at an empty branch.
         let history = made ? false : before.objects > 0 || (await run(["for-each-ref", "--count=1", "--format=%(objectname)"])).toString("utf8").trim() !== "";
@@ -2427,7 +2510,8 @@ export async function saveTurnToGit(o) {
         // Attributes come from an empty tree (git 2.42 and later), so no .gitattributes in the folder can select a filter or a diff
         // driver. An older git: a .gitattributes that names a filter refuses the save.
         if (version && (version[0] > 2 || (version[0] === 2 && version[1] >= 42))) {
-            attrSource = (await run(["hash-object", "-w", "-t", "tree", "--stdin"], "")).toString("utf8").trim();
+            const known = EMPTY_TREES.find((id) => fs.existsSync(path.join(gitDir, "objects", id.slice(0, 2), id.slice(2))));
+            attrSource = known ?? (await run(["hash-object", "-w", "-t", "tree", "--stdin"], "")).toString("utf8").trim();
         }
         else {
             const all = (await run(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])).toString("utf8").split("\0");
@@ -2465,13 +2549,8 @@ export async function saveTurnToGit(o) {
             return out;
         };
         let files = await staged();
-        let parent = null;
-        try {
-            parent = (await run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])).toString("utf8").trim() || null;
-        }
-        catch {
-            parent = null;
-        }
+        // The parent: the branch's tip as the files say (no git call); commit-tree checks that it is a commit.
+        const parent = readRefTip(gitDir, refRel);
         const unstage = async (paths) => {
             if (paths.length === 0)
                 return;
@@ -2506,8 +2585,16 @@ export async function saveTurnToGit(o) {
                 skipped.push({ path: f.path, reason: why });
         }
         if (want2.length > 0) {
-            const sizes = (await run(["cat-file", "--batch-check=%(objectname) %(objectsize)"], want2.map((f) => oids.get(f.path)).join("\n") + "\n")).toString("utf8").trim().split("\n");
-            const sizeOf = new Map(sizes.map((l) => l.split(" ")).map(([id, n]) => [id, Number(n)]));
+            // Sizes from the work tree (just added, so the same content), not a second git start; a file that cannot be looked at is not read.
+            const sizeOf = new Map();
+            for (const f of want2) {
+                try {
+                    sizeOf.set(oids.get(f.path), fs.lstatSync(path.join(folder, f.path)).size);
+                }
+                catch {
+                    sizeOf.set(oids.get(f.path), Infinity);
+                }
+            }
             const small = want2.filter((f) => (sizeOf.get(oids.get(f.path)) ?? Infinity) <= GIT_SCAN_MAX_BYTES);
             const batches = [];
             let cur = [];
@@ -2538,7 +2625,8 @@ export async function saveTurnToGit(o) {
                     at = nl + 1 + n + 1;
                 }
                 for (const f of batch) {
-                    const why = scanForSecret(f.path, blob.get(oids.get(f.path)) ?? Buffer.alloc(0));
+                    const content = blob.get(oids.get(f.path)) ?? Buffer.alloc(0);
+                    const why = scanForSecret(f.path, content.length <= GIT_SCAN_MAX_BYTES ? content : null);
                     if (why)
                         skipped.push({ path: f.path, reason: why });
                 }
@@ -2610,29 +2698,10 @@ export async function saveTurnToGit(o) {
         const message = o.outside ? gitCommitMessage(GIT_OUTSIDE_SUBJECT, files, null) : gitCommitMessage(o.summary, files, o.turnId);
         const tree = (await run(["write-tree"])).toString("utf8").trim();
         const commit = (await run(["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-F", "-"], message)).toString("utf8").trim();
-        let branch = null;
-        try {
-            branch = (await run(["symbolic-ref", "-q", "HEAD"])).toString("utf8").trim() || null;
-        }
-        catch {
-            branch = null;
-        }
         // The ref is written by the bridge itself, not `git update-ref`: no reflog line is ever written (an existing log file would be
         // appended to even with core.logAllRefUpdates=false), and the lock is made with O_EXCL (a planted link or file there refuses).
-        if (branch !== null) {
-            if (!branch.startsWith("refs/heads/") || branch.split("/").some((seg) => seg === "" || seg === "." || seg === ".."))
-                throw new GitRefused(`HEAD points at ${branch.slice(0, 80)}, which is not a branch, so nothing was saved.`);
-            await run(["check-ref-format", branch]);
-        }
-        const refRel = branch ?? "HEAD";
-        let current = null;
-        try {
-            current = (await run(["rev-parse", "--verify", "--quiet", `${refRel}^{commit}`])).toString("utf8").trim() || null;
-        }
-        catch {
-            current = null;
-        }
-        if (current !== parent)
+        // The branch was named by HEAD above (refRel); it is checked against the parent again once the lock is held (FN1).
+        if (readRefTip(gitDir, refRel) !== parent)
             throw new GitRefused("The branch moved while the bridge saved (another git?), so nothing was saved this time.");
         const parts = refRel.split("/");
         let dir = gitDir;
@@ -2664,6 +2733,10 @@ export async function saveTurnToGit(o) {
             const id = lockIdentity(gitDir, lockRel);
             if (id)
                 fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel, locks: [id] }), { mode: 0o600 });
+            // Compare-after-lock (as `git update-ref <ref> <new> <old>` does): another git that moved the branch between the check above
+            // and this lock is not overwritten; nothing is written and the save is "busy".
+            if (readRefTip(gitDir, refRel) !== parent)
+                throw new GitRefused("Another git moved the branch while the bridge saved, so nothing was saved this time.");
             fs.writeSync(fd, `${commit}\n`);
             fs.fsyncSync(fd);
             fs.closeSync(fd);
@@ -2683,9 +2756,13 @@ export async function saveTurnToGit(o) {
         try {
             scanGitDir(gitDir);
             checkGitDirLayout(gitDir);
-            const bad2 = (await cfgNames()).find((n) => !GIT_CONFIG_ALLOWED.some((re) => re.test(n.toLowerCase())));
-            if (bad2)
-                throw new GitRefused(`its config gained ${bad2.slice(0, 80)}`);
+            const cfgAfter = cfgBytes();
+            const same = cfgBefore === null ? cfgAfter === null : cfgAfter !== null && cfgBefore.equals(cfgAfter);
+            if (!same) {
+                const bad2 = (await cfgNames()).find((n) => !GIT_CONFIG_ALLOWED.some((re) => re.test(n.toLowerCase())));
+                if (bad2)
+                    throw new GitRefused(`its config gained ${bad2.slice(0, 80)}`);
+            }
         }
         catch (e) {
             return { ok: false, reason: `The repo changed while the bridge saved (${e.message}); commit ${commit.slice(0, 12)} was made, but something may still be writing in this project.` };
@@ -3635,6 +3712,8 @@ export function createBridge(opts = {}) {
     const tracks = new Map();
     /** Recorded processes a stop could not end (pid -> start time). ON stays refused while one is alive and still matches. */
     const residual = new Map();
+    for (const [pid, start] of opts.residualSeed ?? [])
+        residual.set(pid, start);
     const procList = opts.procList ?? (() => listProcs(platform, env));
     const liveFile = opts.stateDir ? path.join(opts.stateDir, "live-groups.json") : null;
     // Git save (GitHubSync Step 1): the per-folder switch (default on) and the bridge's own git folder, both outside any code folder.
@@ -3830,7 +3909,8 @@ export function createBridge(opts = {}) {
         const timedOut = await Promise.race([Promise.all(waits).then(() => false), new Promise((r) => setTimeout(() => r(true), 30_000).unref())]);
         if (timedOut)
             return "The turn's processes were still being stopped after 30 s, so nothing was saved.";
-        const entries = pids.flatMap((p) => [...(reapsOf.get(p)?.desc ?? new Map())]);
+        // The turn's recorded descendants, and any process that survived the stop of an EARLIER turn (it could act in .git too).
+        const entries = [...pids.flatMap((p) => [...(reapsOf.get(p)?.desc ?? new Map())]), ...residual];
         const rows = await procList();
         if (!rows)
             return "The bridge could not check that every process of the turn has ended, so nothing was saved.";
@@ -5345,6 +5425,31 @@ export function createBridge(opts = {}) {
             const last = lastAfterSnap.get(folder);
             if (last && sameSnapshot(last, before))
                 return;
+            // A repo with no object yet (a project just made by "New project") has nothing saved to differ from: its first files, the
+            // bridge's own .gitignore and .npmrc among them, go into the turn's own first commit, not under "outside the chat".
+            const objDir = path.join(folder, ".git", "objects");
+            let anyObject = true;
+            try {
+                const names = fs.readdirSync(objDir);
+                anyObject =
+                    names.some((n) => /^[0-9a-f]{2}$/.test(n) && fs.readdirSync(path.join(objDir, n)).length > 0) ||
+                        (names.includes("pack") && fs.readdirSync(path.join(objDir, "pack")).some((n) => n.endsWith(".pack")));
+            }
+            catch {
+                anyObject = true; // not a plain .git folder: the save itself decides (and refuses what it must)
+            }
+            if (!anyObject)
+                return;
+            // A process that survived the stop of an earlier turn and is still alive could change the folder or .git while git runs (FN4).
+            if (residual.size > 0 && !(platform === "win32" && !turn.computer)) {
+                const rows = await procList();
+                if (!rows || stillMatching([...residual], rows).length > 0) {
+                    const reason = "A process left from an earlier turn is still running, so the changes made outside the chat were not saved.";
+                    log(`git save (outside changes) in ${folder}: ${reason}`);
+                    send("git_error", { reason, outside: true });
+                    return;
+                }
+            }
             const ws = workspace.path;
             const exclude = proj ? [] : [...gitOff].filter((p) => path.dirname(p) === ws).map((p) => path.basename(p));
             const r = await gitSaveQueued(folder, () => saveTurnToGit({ folder, summary: "", turnId: turn.id, outside: true, identity: gitIdentity, env, privateDir: gitPrivateDir, gitBin: opts.gitBin, exclude }));

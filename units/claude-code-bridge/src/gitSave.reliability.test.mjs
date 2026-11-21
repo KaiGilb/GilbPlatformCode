@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { saveTurnToGit } from "../bridge/bridge.mjs";
+import { saveTurnToGit, scanGitDir } from "../bridge/bridge.mjs";
 import { commitCount, committedFiles, ev, fsckOk, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -151,14 +151,22 @@ describe("P.Turn.NoDelay", () => {
     console.log(`[timing] ${process.platform}: first full save of 5000 files ${Math.round(firstMs)} ms: ${first.ok ? "ok" : first.reason}`);
     expect(first.ok && first.commit).toBeTruthy();
     const times = [];
+    const starts = [];
     for (let i = 0; i < 20; i++) {
       fs.writeFileSync(path.join(repo, "d7", "f7.js"), `export const v = ${i};\n`);
       t = performance.now();
-      const r = await saveTurnToGit({ folder: repo, summary: `edit ${i}`, turnId: `t${i + 1}`, env: process.env, privateDir: priv });
+      let n = 0;
+      const r = await saveTurnToGit({ folder: repo, summary: `edit ${i}`, turnId: `t${i + 1}`, env: process.env, privateDir: priv, onGitRun: () => n++ });
+      starts.push(n);
       times.push(performance.now() - t);
       if (!(r.ok && r.commit)) console.log(`[timing] one-file save ${i}: ${r.ok ? "no commit" : r.reason}`);
       expect(r.ok && r.commit).toBeTruthy();
     }
+    // Where the time goes: how many git processes a one-file save starts, and what one look over .git costs (it runs twice per save).
+    t = performance.now();
+    scanGitDir(path.join(repo, ".git"));
+    const walkMs = performance.now() - t;
+    console.log(`[timing-profile] ${process.platform}: git starts per one-file save ${Math.min(...starts)}-${Math.max(...starts)}; one .git walk ${walkMs.toFixed(1)} ms`);
     console.log(`[timing] 5000 files: first full save ${Math.round(firstMs)} ms; one-file save p50 ${Math.round(pct(times, 50))} ms, p95 ${Math.round(pct(times, 95))} ms, max ${Math.round(Math.max(...times))} ms`);
     expect(pct(times, 95)).toBeLessThanOrEqual(2000);
   }, 300_000);
