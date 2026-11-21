@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 as win32Path } from "node:path";
 import { isIP } from "node:net";
 import { fileURLToPath, pathToFileURL } from "node:url";
-export const CONNECTOR_VERSION = "0.6.6";
+export const CONNECTOR_VERSION = "0.6.7";
 export const DEFAULT_AGENT = "Kai-Zen";
 /** The identity door. A proof for any other host is refused, so this is the default. */
 export const DEFAULT_ORIGIN = "https://id.gilb.com";
@@ -934,20 +934,43 @@ function registrationMessage(body) {
     const detail = quotedFailure(body);
     return detail ? `Registration failed: ${detail}` : "Registration failed.";
 }
-function principalFromSystem(system) {
-    const match = /That person is identified as: (.+?)\. /.exec(system);
-    const found = match?.[1]?.trim();
-    return found ? found : undefined;
+/** The platform's prompt opens "You are the GilbPlatform agent. You talk with one signed-in person. " and the identity sentence follows at once. */
+const IDENTITY_ANCHOR = "You talk with one signed-in person. ";
+/** The two identity sentences: group 1 is the identified-as principal; groups 2 and 3 are the AI vault and its person. */
+const IDENTITY_SENTENCE = "That person is identified as: (.+?)\\. |You are the AI (\\S+?), acting for (\\S+?)\\.(?:\\s|$)";
+/**
+ * The platform's identity sentence. It writes ONE of two (GilbPlatform src/ai/complete-chat.ts systemPrompt, #791):
+ * "That person is identified as: <principal>." or, for a Connected AI whose person is known, "You are the AI <ai vault>,
+ * acting for <person>." Only the sentence in its fixed place counts: right after the FIRST "You talk with one signed-in
+ * person. ". Standing text and selected vault ids come later in the prompt and may quote either sentence (QA D1,
+ * 2026-11-21), so a later copy never names the principal or the person. A prompt without that opening (an older platform)
+ * gives the earliest sentence of either form. A sentence out of its place names no one.
+ */
+function identityFromSystem(system) {
+    const at = system.indexOf(IDENTITY_ANCHOR);
+    const match = at >= 0
+        ? new RegExp(`^(?:${IDENTITY_SENTENCE})`).exec(system.slice(at + IDENTITY_ANCHOR.length))
+        : new RegExp(IDENTITY_SENTENCE).exec(system);
+    if (!match)
+        return { principal: undefined, person: undefined };
+    const principal = (match[1] ?? match[2])?.trim() || undefined;
+    const person = match[3]?.trim() || undefined;
+    return { principal, person };
 }
 /**
- * The person the AI acts for, when the platform's prompt says so: "You are the AI <ai vault>, acting for <person vault>."
- * A Connected AI's prompt that carries only "That person is identified as" names the AI's own vault, not the person, so
- * nothing is returned for it: the person is never guessed.
+ * The caller's principal as the platform's identity sentence names it. In the acting-for sentence the principal is the
+ * AI's own vault. Reading only the identified-as sentence left a bound AI "not bound".
+ */
+export function principalFromSystem(system) {
+    return identityFromSystem(system).principal;
+}
+/**
+ * The person the AI acts for, when the platform's identity sentence says so: "You are the AI <ai vault>, acting for
+ * <person vault>." An identified-as sentence names the AI's own vault, not the person, so nothing is returned for it:
+ * the person is never guessed.
  */
 export function personFromSystem(system) {
-    const match = /You are the AI \S+, acting for (\S+?)\.(?:\s|$)/.exec(system);
-    const found = match?.[1]?.trim();
-    return found ? found : undefined;
+    return identityFromSystem(system).person;
 }
 function isMissingComputer(err) {
     if (!err || typeof err !== "object")
