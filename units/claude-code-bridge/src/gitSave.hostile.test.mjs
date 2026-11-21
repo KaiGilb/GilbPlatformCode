@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { commitCount, ev, fsckOk, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
+import { execFileSync } from "node:child_process";
+import { commitCount, committedFiles, ev, fsckOk, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
 
 const posix = process.platform !== "win32";
 let b;
@@ -182,5 +183,91 @@ describe.skipIf(!posix)("the bridge's own environment cannot steer its git", () 
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+// ---- after Agent.Hacker's review (F1-F10): the class fixes -------------------------------------------------------------
+describe("no save while a process of the turn may still run (F4)", () => {
+  it("a live process whose parent is the turn's claude refuses the save; nothing is committed", async () => {
+    const pre = await startGitBridge();
+    const logFile = path.join(pre.dir, "claude.log");
+    await pre.close();
+    // The process list the bridge reads: a made-up child of the turn's claude that is still alive.
+    const claudePid = () => {
+      try {
+        return fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid).pop();
+      } catch {
+        return undefined;
+      }
+    };
+    b = await startGitBridge({
+      env: { FAKE_CLAUDE_LOG: logFile },
+      bridgeOpts: { killGraceMs: 50, procList: async () => (claudePid() ? [{ pid: 4194301, ppid: claudePid(), start: "x" }] : []) },
+    });
+    fs.mkdirSync(pre.dir, { recursive: true });
+    const r = await b.turn([writes([{ p: "a.txt", c: "a" }]), "x"]);
+    expect(ev(r, "message")).toHaveLength(1);
+    expect(ev(r, "git_saved")).toEqual([]);
+    expect(ev(r, "git_error")[0].reason).toMatch(/still running/);
+    expect(fs.existsSync(path.join(b.projPath, ".git"))).toBe(false);
+    fs.rmSync(pre.dir, { recursive: true, force: true });
+  });
+
+  it("with every process gone the save goes through (the same check, nothing alive)", async () => {
+    b = await startGitBridge({ bridgeOpts: { procList: async () => [] } });
+    const r = await b.turn([writes([{ p: "a.txt", c: "a" }]), "x"]);
+    expect(ev(r, "git_saved")).toHaveLength(1);
+  });
+});
+
+describe.skipIf(!posix)("the git folder is checked entry by entry (F1-F3)", () => {
+  it("a hard link inside .git to a file outside refuses the save, and the outside file is unchanged", async () => {
+    await primed();
+    const victim = path.join(b.dir, "victim.txt");
+    fs.writeFileSync(victim, "ORIGINAL\n");
+    fs.rmSync(path.join(b.projPath, ".git", "COMMIT_EDITMSG"), { force: true });
+    fs.linkSync(victim, path.join(b.projPath, ".git", "COMMIT_EDITMSG"));
+    const r = await b.turn([writes([{ p: "b.txt", c: "b" }]), "x"]);
+    expect(ev(r, "git_error")[0].reason).toMatch(/hard-linked/);
+    expect(fs.readFileSync(victim, "utf8")).toBe("ORIGINAL\n");
+  });
+
+  it("a pipe inside .git refuses the save at once (no git is started on it)", async () => {
+    await primed();
+    execFileSync("mkfifo", [path.join(b.projPath, ".git", "description")]);
+    const t0 = Date.now();
+    const r = await b.turn([writes([{ p: "b.txt", c: "b" }]), "x"]);
+    expect(ev(r, "git_error")[0].reason).toMatch(/not a plain file/);
+    expect(Date.now() - t0).toBeLessThan(10_000);
+  });
+});
+
+describe.skipIf(!posix)("gitdir: is checked by its text before any file system call (F10)", () => {
+  it.each([["//host/share/repo", /network/], ["\\\\host\\share\\repo", /network/], ["/net/host/repo", /outside/]])("gitdir: %s is refused", async (target, why) => {
+    b = await startGitBridge();
+    const r = await b.turn([writes([{ p: ".git", c: `gitdir: ${target}\n` }, { p: "b.txt", c: "b" }]), "x"]);
+    expect(ev(r, "git_error")[0].reason).toMatch(why);
+  });
+
+  it("gitdir: through a link inside the folder is refused", async () => {
+    b = await startGitBridge();
+    const outside = path.join(b.dir, "outside-repo");
+    fs.mkdirSync(outside);
+    plainGit(outside, ["init", "-q", "--template="]);
+    const r = await b.turn([writes([{ p: "store", link: outside }, { p: ".git", c: "gitdir: store/.git\n" }, { p: "b.txt", c: "b" }]), "x"]);
+    expect(ev(r, "git_error")[0].reason).toMatch(/link/);
+  });
+});
+
+describe("a save of the code folder itself leaves out projects whose switch is off (F6)", () => {
+  it("an already-tracked file in a project that is now off is not updated by a root save", async () => {
+    b = await startGitBridge();
+    const root = await b.api("/v1/turn", { system: "s", prompt: [writes([{ p: "app/kept.txt", c: "v1" }, { p: "root.txt", c: "r" }]), "root one"].join("\n"), mode: "code" });
+    expect(ev(root, "git_saved")[0].files).toContain("app/kept.txt");
+    await b.api("/v1/git/sync", { project: "app", sync: false });
+    const r = await b.api("/v1/turn", { system: "s", prompt: [writes([{ p: "app/kept.txt", c: "v2 private" }, { p: "app/new.txt", c: "n" }, { p: "root2.txt", c: "r" }]), "root two"].join("\n"), mode: "code" });
+    expect(ev(r, "git_saved")[0].files).toEqual(["root2.txt"]);
+    expect(plainGit(b.ws, ["show", "HEAD:app/kept.txt"])).toBe("v1");
+    expect(committedFiles(b.ws)).not.toContain("app/new.txt");
   });
 });

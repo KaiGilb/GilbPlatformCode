@@ -249,7 +249,7 @@ describe("secret scan before the commit", () => {
   it("scanForSecret: names and contents; a file over 1 MB is not read; a clean file passes", () => {
     expect(scanForSecret("a.txt", Buffer.from("hello"))).toBeNull();
     expect(scanForSecret(".env.example", Buffer.from("A=1"))).toMatch(/env/i);
-    expect(scanForSecret("x/y.p12", Buffer.from(""))).toBeNull(); // *.p12 is kept out by the default .gitignore, not the scan
+    expect(scanForSecret("x/y.p12", Buffer.from(""))).not.toBeNull(); // also by name since F7: a tree .gitignore can un-ignore it
     expect(scanForSecret("big.txt", null)).toBeNull();
     for (const t of Object.values(SECRETS)) expect(scanForSecret("f.txt", Buffer.from(t))).not.toBeNull();
     // Windows-style separators in a path are read as folders.
@@ -322,7 +322,9 @@ describe("the git time limit: 120 s only for a folder's first save, 20 s once it
     expect(one.r.ok && one.r.commit).toBeTruthy();
     expect(one.of("init")).toEqual([20_000]);
     expect(one.of("add")).toEqual([120_000]);
-    expect(one.of("commit")).toEqual([120_000]);
+    expect(one.of("commit-tree")).toEqual([120_000]);
+    expect(one.of("update-ref")).toEqual([120_000]);
+    expect(one.of("commit")).toEqual([]); // plumbing only: nothing writes COMMIT_EDITMSG
     fs.writeFileSync(path.join(f, "b.txt"), "b");
     const two = await limits(f, priv);
     expect(two.r.ok && two.r.commit).toBeTruthy();
