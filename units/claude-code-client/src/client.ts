@@ -189,6 +189,8 @@ export interface BridgeOptions {
   web?: { search: boolean; fetch: "ask" | "off" };
   /** How a computer-mode bridge answers the agent's requests (bridge 0.3.13): `{ mode: "sandboxed" }` runs commands without asking inside the OS sandbox. Absent when it is not that (Windows, folder mode, an older bridge). */
   approvals?: { mode: "sandboxed" };
+  /** The bridge saves a code turn's files as a local git commit (bridge 0.3.22); `push` is false until pushing exists. Absent on an older bridge. */
+  git?: { save: true; push: boolean };
 }
 
 /** One picture for a turn: base64 data (no `data:` prefix) and its type. */
@@ -257,7 +259,32 @@ export type ClaudeCodeStreamEvent =
   | { event: "code_tool_error"; data: { tool: string; summary: string; text: string }; hop?: true }
   | { event: "files_changed"; data: FilesChanged }
   | { event: "approval_request"; data: ApprovalRequest }
-  | { event: "approval_done"; data: { id: string; allow: boolean; scope?: ApprovalScope } };
+  | { event: "approval_done"; data: { id: string; allow: boolean; scope?: ApprovalScope } }
+  // Code mode only (bridge 0.3.22): after the answer, the bridge saved the turn's files as a local git commit, or could not.
+  | { event: "git_saved"; data: GitSaved }
+  | { event: "git_error"; data: { reason: string; outside?: true } };
+
+/**
+ * The bridge's local git save after a code turn that changed files (bridge 0.3.22). `commit` is the 40-hex commit, or null when
+ * only flagged files changed. `skipped` are files the secret scan kept out (left on disk). `pushed` is "no-link" (nothing is pushed yet).
+ */
+export interface GitSaved {
+  commit: string | null;
+  files: string[];
+  skipped: { path: string; reason: string }[];
+  pushed: "no-link";
+  /** Lock files the bridge removed before this save because its own record proved its own killed git left them (bridge 0.3.22). */
+  recovered?: string[];
+  /** True for the save of changes made outside the chat, which the bridge makes before the turn runs (bridge 0.3.22). */
+  outside?: true;
+}
+/** Who the bridge's git save names as author and committer (bridge 0.3.22). Each part is optional; the bridge checks them. */
+export interface GitIdentity {
+  authorName?: string;
+  authorEmail?: string;
+  committerName?: string;
+  committerEmail?: string;
+}
 
 /** What a code turn changed in the folder, as the bridge counted it. Each list holds at most 200 relative paths. */
 export interface FilesChanged {
@@ -314,6 +341,10 @@ function codeStreamEvent(name: string, d: Record<string, unknown>): ClaudeCodeSt
     return { event: "files_changed", data: { added: d.added, changed: d.changed, removed: d.removed, addedCount: d.addedCount, changedCount: d.changedCount, removedCount: d.removedCount, truncated: d.truncated } };
   }
   if (name === "approval_request" && isStr(d.id) && d.id !== "" && isStr(d.tool) && TOOL_NAME_OK.test(d.tool) && isStr(d.summary) && d.summary.length <= APPROVAL_SUMMARY_MAX && !(isStr(d.detail) && d.detail.length > APPROVAL_DETAIL_MAX) && !(isStr(d.notice) && d.notice.length > APPROVAL_NOTICE_MAX)) return { event: "approval_request", data: { id: d.id, tool: d.tool, summary: d.summary, ...(isStr(d.detail) && d.detail !== "" ? { detail: d.detail } : {}), ...(isStr(d.notice) && d.notice !== "" ? { notice: d.notice } : {}), ...(approvalScopes(d.scopes) ? { scopes: approvalScopes(d.scopes)! } : {}) } };
+  if (name === "git_saved" && (d.commit === null || (isStr(d.commit) && /^[0-9a-f]{40,64}$/.test(d.commit))) && isStrList(d.files) && Array.isArray(d.skipped) && d.skipped.every((x) => !!x && typeof x === "object" && isStr((x as { path?: unknown }).path) && isStr((x as { reason?: unknown }).reason)) && d.pushed === "no-link") {
+    return { event: "git_saved", data: { commit: d.commit as string | null, files: d.files, skipped: (d.skipped as { path: string; reason: string }[]).map((x) => ({ path: x.path, reason: x.reason })), pushed: "no-link", ...(isStrList(d.recovered) && d.recovered.length > 0 ? { recovered: d.recovered } : {}), ...(d.outside === true ? { outside: true as const } : {}) } };
+  }
+  if (name === "git_error" && isStr(d.reason)) return { event: "git_error", data: { reason: d.reason, ...(d.outside === true ? { outside: true as const } : {}) } };
   if (name === "approval_done" && isStr(d.id) && typeof d.allow === "boolean") return { event: "approval_done", data: { id: d.id, allow: d.allow, ...(isStr(d.scope) && APPROVAL_SCOPES.includes(d.scope) ? { scope: d.scope as ApprovalScope } : {}) } };
   return null;
 }
@@ -418,6 +449,8 @@ export interface SendClaudeCodeOpts {
    * (400, "delegateCoding is only for code turns.") before any request.
    */
   delegateCoding?: boolean;
+  /** Code turns only (bridge 0.3.22): the author and committer the bridge's git save names. Not sent for a chat turn. */
+  gitIdentity?: GitIdentity;
   /**
    * Pictures for the last user turn (bridge 0.3.6): at most 4 of PNG, JPEG, GIF or WebP, each at most 5 MiB and 10 MiB together
    * (decoded), base64 with no `data:` prefix. Checked before any request (ClaudeCodeBridgeError 400 with a plain sentence). They go to
@@ -502,6 +535,11 @@ export interface ClaudeCodeClient {
   createWorkspace(name: string): Promise<{ name: string; path: string }>;
   /** The projects (direct subfolders) of the bridge's code folder: `{ name, modified }`, sorted by name. Needs the pairing; goes through the relay when open. */
   listProjects(): Promise<{ name: string; modified: string }[]>;
+  /**
+   * The bridge's per-project git save switch (bridge 0.3.22; default on). `{ project }` reads it; with `sync` it sets it. No project = the
+   * code folder itself. Throws ClaudeCodeBridgeError: 401 not connected, the bridge's own sentence for 400/404/500, 502 for an unexpected answer.
+   */
+  gitSync(req: { project?: string; sync?: boolean }): Promise<{ project: string | null; sync: boolean }>;
   /** Makes the project `name` (a subfolder) in the code folder. 409 when it exists, 400 for a bad name, with the bridge's sentence. */
   createProject(name: string): Promise<{ name: string }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
@@ -572,7 +610,7 @@ interface BridgeTurnOut {
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
 const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
 /** The bridge events only a code turn sends. */
-const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done"]);
+const CODE_BRIDGE_EVENTS = new Set(["activity", "tool_error", "files_changed", "approval_request", "approval_done", "git_saved", "git_error"]);
 
 /** The name readBridgeSse gives a comment-only block (the bridge's `: keepalive`). */
 const KEEPALIVE = "\0keepalive";
@@ -1385,6 +1423,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
         ...(opts.images && opts.images.length > 0 ? { images: opts.images.map((im) => ({ mediaType: im.mediaType, data: im.data })) } : {}),
         ...(codeMode && opts.delegateCoding !== undefined ? { delegateCoding: opts.delegateCoding } : {}),
+        ...(codeMode && opts.gitIdentity ? { gitIdentity: opts.gitIdentity } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -1437,7 +1476,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         // Self-update (bridge 0.3.16): four booleans, or absent (an older bridge).
         const up = body.update && typeof body.update === "object" ? (body.update as Record<string, unknown>) : null;
         const update = up && typeof up.supported === "boolean" && typeof up.supervised === "boolean" && typeof up.canWrite === "boolean" && typeof up.busy === "boolean" ? { supported: up.supported, supervised: up.supervised, canWrite: up.canWrite, busy: up.busy } : null;
-        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown; approvals?: unknown } | null | undefined;
+        const o = body.options as { models?: unknown; efforts?: unknown; delegateCoding?: unknown; images?: unknown; web?: unknown; approvals?: unknown; git?: unknown } | null | undefined;
         // Pictures (bridge 0.3.6): a count and a size that are whole positive numbers, and only the known types.
         const im = o && typeof o === "object" && o.images && typeof o.images === "object" ? (o.images as { maxCount?: unknown; maxBytes?: unknown; types?: unknown }) : null;
         const num = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
@@ -1449,6 +1488,9 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         // Approvals (bridge 0.3.13): only { mode: "sandboxed" } is kept; anything else leaves it off.
         const ap = o && typeof o === "object" && o.approvals && typeof o.approvals === "object" ? (o.approvals as { mode?: unknown }) : null;
         const approvals = ap && ap.mode === "sandboxed" ? { mode: "sandboxed" as const } : null;
+        // Git save (bridge 0.3.22): only { save: true, push: boolean }; anything else leaves it off.
+        const gt = o && typeof o === "object" && o.git && typeof o.git === "object" ? (o.git as { save?: unknown; push?: unknown }) : null;
+        const git = gt && gt.save === true && typeof gt.push === "boolean" ? { save: true as const, push: gt.push } : null;
         // Keep only the values runTurn would send: a model that is an alias or a full name, an effort that is one of the five.
         const keep = (v: unknown, ok: (x: string) => boolean) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)) : null);
         const models = o && typeof o === "object" ? keep(o.models, (x) => (MODEL_ALIASES as readonly string[]).includes(x) || FULL_MODEL.test(x)) : null;
@@ -1472,7 +1514,7 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
           // Present only when the bridge (0.3.5 and later) says what the page may choose.
           // `options` is also returned when the hello has only `web` or `approvals`: models and efforts are then empty.
           ...((models && efforts) || web || approvals
-            ? { options: { models: models ?? [], efforts: efforts ?? [], delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}), ...(approvals ? { approvals } : {}) } }
+            ? { options: { models: models ?? [], efforts: efforts ?? [], delegateCoding: o!.delegateCoding === true, ...(images ? { images } : {}), ...(web ? { web } : {}), ...(approvals ? { approvals } : {}), ...(git ? { git } : {}) } }
             : {}),
         };
       } catch {
@@ -1600,6 +1642,17 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       return (body.projects as Array<{ name?: unknown; modified?: unknown }>)
         .filter((p) => p && typeof p.name === "string" && p.name !== "")
         .map((p) => ({ name: p.name as string, modified: typeof p.modified === "string" ? p.modified : "" }));
+    },
+
+    async gitSync(req) {
+      const conn = client.load();
+      if (!conn) throw new ClaudeCodeBridgeError(401, "Connect to Claude Code first.");
+      const payload = { ...(req.project !== undefined ? { project: req.project } : {}), ...(req.sync !== undefined ? { sync: req.sync } : {}) };
+      const res = await bridgeFetch("/v1/git/sync", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify(payload) });
+      const body = (await res.json().catch(() => null)) as { project?: unknown; sync?: unknown; error?: unknown } | null;
+      if (!res.ok) throw new ClaudeCodeBridgeError(res.status, typeof body?.error === "string" && body.error ? body.error : "The bridge could not read the save switch.");
+      if (!body || typeof body.sync !== "boolean" || !(body.project === null || typeof body.project === "string")) throw new ClaudeCodeBridgeError(502, "The bridge returned an unexpected answer.");
+      return { project: body.project as string | null, sync: body.sync };
     },
 
     async createProject(name) {

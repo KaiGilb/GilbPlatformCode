@@ -310,10 +310,19 @@ describe("POST /v1/projects/create makes a git repo (friction 47)", () => {
   });
 
   // Spec: friction #47 — the existing deny on .git hooks, config and info/attributes covers the new repo, because it exists when the turn starts.
-  it("the new repo's hooks, config and info/attributes are in the deny list", async () => {
+  it("the new repo's .git is in the deny list (0.3.22: the whole .git)", async () => {
     await start();
     await api("/v1/projects/create", { name: "alpha" });
     const g = path.join(ws, "alpha", ".git");
-    expect(gitPlaces([ws])).toEqual([path.join(g, "hooks"), path.join(g, "config"), path.join(g, "info", "attributes")]);
+    expect(gitPlaces([ws])).toEqual([g]);
+  });
+});
+
+describe("POST /v1/projects/create writes the default .gitignore (0.3.22)", () => {
+  it("a new project gets the default .gitignore; an existing one is never overwritten", async () => {
+    await start();
+    await api("/v1/projects/create", { name: "beta" });
+    const gi = fs.readFileSync(path.join(ws, "beta", ".gitignore"), "utf8").split("\n");
+    for (const l of ["node_modules", ".npm-cache", "dist", "build", ".env", ".env.*", "*.pem", "*.key", "*.p12", ".DS_Store"]) expect(gi).toContain(l);
   });
 });

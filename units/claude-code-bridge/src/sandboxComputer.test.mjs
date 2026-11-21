@@ -115,8 +115,8 @@ S("the settings of a sandboxed computer turn", () => {
     const dw = settings.sandbox.filesystem.denyWrite;
     expect(dw).toContain(path.join(dir, "Developer", "GilbServerOps"));
     expect(settings.sandbox.filesystem.denyRead).not.toContain(path.join(dir, "Developer", "GilbServerOps")); // write-only
-    for (const g of [path.join(ws, "p1", ".git"), path.join(dir, "Developer", "other", ".git")]) expect(dw).toEqual(expect.arrayContaining([path.join(g, "hooks"), path.join(g, "config"), path.join(g, "info", "attributes")]));
-    expect(dw).not.toContain(path.join(ws, "p1", ".git", "index")); // the rest of .git stays writable
+    // 0.3.22: the whole .git of every repo is denied (the bridge saves the history), and globs cover a repo made during the turn.
+    expect(dw).toEqual(expect.arrayContaining([path.join(ws, "p1", ".git"), path.join(dir, "Developer", "other", ".git"), `${ws}/.git/**`, `${ws}/**/.git`, `${ws}/**/.git/**`, `${dir}/Developer/**/.git/**`]));
     expect(dw).toEqual(expect.arrayContaining([path.join(ws, "p1", ".claude"), path.join(dir, "Developer", "other", ".claude"), `${ws}/**/.claude`, `${ws}/**/.claude/**`, `${dir}/Developer/**/.claude`]));
     expect(settings.permissions.deny).toEqual(expect.arrayContaining([`Read(/${dir}/.ssh/**)`, `Edit(/${dir}/.ssh)`, `Read(/${dir}/.netrc)`]));
     expect(settings.permissions.ask).toEqual(ASKED_COMMAND_RULES);
@@ -336,9 +336,6 @@ S("writes are allowed only in the code folder, ~/Developer and temp; .claude set
       F("Write", { file_path: path.join(os.tmpdir(), "b234-x.txt"), content: "x" }),
       F("Write", { file_path: "/tmp/b234-y.txt", content: "x" }),
       F("Edit", { file_path: path.join(ws, ".npm-cache", "z"), old_string: "a", new_string: "b" }),
-      F("Write", { file_path: path.join(ws, "p1", ".git", "COMMIT_EDITMSG"), content: "x" }), // normal git work
-      F("Write", { file_path: path.join(ws, "p1", ".git", "index"), content: "x" }),
-      F("Write", { file_path: path.join(ws, "p1", ".git", "refs", "heads", "main"), content: "x" }),
       F("Write", { file_path: path.join(ws, "p1", ".gitattributes"), content: "x" }),
       F("Read", { file_path: path.join(ws, "p1", ".git", "config") }),
       F("Read", { file_path: path.join(dir, ".zshrc") }),
@@ -374,9 +371,11 @@ S("writes are allowed only in the code folder, ~/Developer and temp; .claude set
       expect(writeBlock("../x", o, areas, writeOnlyPlaces(home))).toMatch(/^Writes are allowed only/);
       expect(writeBlock("a/.claude/settings.json", o, areas, [])).toMatch(/\.claude/);
       fs.mkdirSync(path.join(home, "w", "r", ".git"), { recursive: true });
-      expect(gitPlaces([path.join(home, "w")])).toEqual([path.join(home, "w", "r", ".git", "hooks"), path.join(home, "w", "r", ".git", "config"), path.join(home, "w", "r", ".git", "info", "attributes")]);
-      expect(writeBlock("r/.git/config", o, areas, [])).toMatch(/Git hooks and config/);
-      expect(writeBlock("r/.git/index", o, areas, [])).toBeNull();
+      expect(gitPlaces([path.join(home, "w")])).toEqual([path.join(home, "w", "r", ".git")]);
+      // 0.3.22: nothing under any .git is written by a code turn (the bridge's git save owns it).
+      for (const p of ["r/.git/config", "r/.git/index", "r/.git/COMMIT_EDITMSG", "r/.git/refs/heads/main", "r/.git/logs/HEAD", "new/.git/HEAD", "r/.GIT/index"]) expect(writeBlock(p, o, areas, []), p).toMatch(/cannot write the project's \.git folder/);
+      expect(writeBlock("r/.gitattributes", o, areas, [])).toBeNull();
+      expect(writeBlock("r/.gitignore", o, areas, [])).toBeNull();
       expect(claudeGlobs("/w", "/h")).toEqual(["/w/.claude", "/w/.claude/**", "/w/**/.claude", "/w/**/.claude/**", "/h/Developer/.claude", "/h/Developer/.claude/**", "/h/Developer/**/.claude", "/h/Developer/**/.claude/**"]);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });

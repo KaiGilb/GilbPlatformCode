@@ -232,6 +232,26 @@ process.stdin.on("end", async () => {
     setInterval(() => {}, 1000);
     return;
   }
+  // WRITEFILES:<base64 of a JSON list>: act as a code turn that writes these, relative to its cwd (or absolute):
+  // { p, c } a file; { p, c, x: true } an executable file; { p, link } a symlink to `link`; { p, rm: true } a removal.
+  const wf = /WRITEFILES:([A-Za-z0-9+/=]+)/.exec(prompt);
+  if (wf) {
+    for (const w of JSON.parse(Buffer.from(wf[1], "base64").toString("utf8"))) {
+      const f = path.isAbsolute(w.p) ? w.p : path.join(process.cwd(), w.p);
+      if (w.rm) {
+        fs.rmSync(f, { recursive: true, force: true });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      if (typeof w.link === "string") {
+        fs.rmSync(f, { recursive: true, force: true });
+        fs.symlinkSync(w.link, f);
+        continue;
+      }
+      fs.writeFileSync(f, w.c ?? "");
+      if (w.x) fs.chmodSync(f, 0o755);
+    }
+  }
   if (prompt.includes("CODEWRITE")) {
     await new Promise((r) => setTimeout(r, 200)); // after init: a bridge that refused the init has killed this process by now
     const file = path.join(process.cwd(), "hello.txt");

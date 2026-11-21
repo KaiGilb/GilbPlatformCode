@@ -125,7 +125,7 @@ describe("GET /v1/hello options", () => {
   it("lists the models, the efforts and delegateCoding so the page can feature-detect", async () => {
     await start();
     const body = await (await fetch(`${base}/v1/hello`)).json();
-    expect(body.options).toEqual({ web: { search: true, fetch: "ask" }, models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } });
+    expect(body.options).toEqual({ web: { search: true, fetch: "ask" }, models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] }, git: { save: true, push: false } });
   });
 });
 
@@ -263,7 +263,7 @@ describe("delegateCoding", () => {
     expect(agents["sonnet-coder"].prompt).toMatch(/only inside the folder/);
     expect(agents["sonnet-coder"].prompt).toMatch(/Claim nothing you did not run/);
     expect(after(argv, "--tools")).toBe([...CODE_TOOLS, ...WEB_TOOLS, "Agent"].join(","));
-    expect(after(argv, "--append-system-prompt")).toMatch(/When you finish, list the files you changed\. Before you write or change code, load your platform.s coding standards.* Hand each coding job to the sonnet-coder agent with a detailed brief/);
+    expect(after(argv, "--append-system-prompt")).toMatch(/When you finish, list the files you changed\. Do not run git commands that change the repository.* Before you write or change code, load your platform.s coding standards.* Hand each coding job to the sonnet-coder agent with a detailed brief/);
     expect(after(argv, "--append-system-prompt").endsWith(DELEGATE_SENTENCE)).toBe(true);
     expect(DELEGATE_SENTENCE).toBe("Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself. Put the Agent.Coder rules that apply, and the library units to reuse, into each brief by link and by their text, because the coder cannot read links.");
     expect(agents["sonnet-coder"].prompt).toMatch(/Follow the standards the brief gives you; when the brief names a library unit to reuse, use it rather than writing your own\.$/);
