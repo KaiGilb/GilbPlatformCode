@@ -15,7 +15,7 @@ Four entries:
 | `./session` | `SessionCredential`: the token and DPoP key a signed-in app holds | no |
 | `./machine` | `MachineCredential`: a worker signs in as its own registered client | no |
 
-`./signin.css` styles the card.
+`./signin.css` styles the card; "Styling" (under "Take") lists its variables.
 
 ## Injected (never baked)
 
@@ -184,6 +184,36 @@ npm install --install-links <path-to-the-library>/units/signin
 
 Every later `npm install` and `npm ci`, CI included, then keeps the copy. Without that line a plain install makes a link, the unit brings a second copy of React, and the app fails with "Invalid hook call" and a type error that "two different types with this name exist". A one-off `npm install --install-links <path>` works only until the next plain install, and `npm ci` then refuses the lock file.
 
+### Styling
+
+`./signin.css` styles the card with plain CSS (`gilb-signin-*` class names; no framework). Every colour is a variable you may set on the page or on a parent of the card. Unset, it falls back to a token of the style the app loads (the names `style-runtime` and `editorial-tokens` write), and last to a fixed value for an app with no style.
+
+| Variable | What it colours | Falls back to |
+|---|---|---|
+| `--signin-card` | the card's background | `--surface`, then `#fbfaf8` |
+| `--signin-ink` | the card's text: title, labels, what is typed, the free name and its address | `--ink`, then `#161514` |
+| `--signin-muted` | the help lines | `--ink-faint`, then `#808080` |
+| `--signin-line` | the card's and the fields' border | `--line`, then `#cececd` |
+| `--signin-field` | a field's background | `--surface`, then `#fefdfb` |
+| `--signin-brand` | the button's background and the focus ring | `--accent`, then `#3698a2` |
+| `--signin-on-brand` | the button's label | `#fefdfb` |
+| `--signin-link` (since 0.2.14) | the Change email link | `--signin-brand`, and so on |
+| `--signin-sheet` | the background of the new vault's address | `--tint-hi` (since 0.2.14), then `#fff` |
+| `--signin-error-ink` | the text of the error box | `#8b0000` |
+| `--signin-error-bg` | the error box's background | `#ffdada` |
+| `--signin-error-text` (since 0.2.14) | the sentence that refuses a name, which stands on the card and not in the box | `--signin-error-ink`, then `#8b0000` |
+
+Themes: the card has no light or dark rule of its own. It is as light or as dark as the variables and tokens above.
+
+**Contrast (WCAG 2.1 AA, 4.5:1).** `src/signinContrast.test.ts` works each text's contrast out from the sheet, for an app with no style, for `style-runtime`'s default style and for the editorial tokens, light and dark. As measured on 2026-11-21:
+
+- The card's own text, what is typed, the error box and (since 0.2.14) the new vault's address read at 4.5:1 or better in every one of those looks.
+- **In a dark look, set two variables yourself.** The Change email link is the brand colour, and the sentence that refuses a name is a fixed dark red: on the default style's dark card they read at 3.73:1 and 1.78:1. Set `--signin-link` and `--signin-error-text` to colours your style keeps readable in each look. With `style-runtime` that is `--signin-link: var(--accent-ink); --signin-error-text: var(--bad);` (measured in Chrome on 2026-11-21 on the default style's dark card: 4.50:1 and 7.62:1, and axe-core then found nothing on any step of the card in either look). The unit does not do this by itself, because in a light look those two tokens are other colours than the ones the card draws today, and every app that takes the card would change.
+- Do not set `--signin-error-ink` to a light colour for a dark look unless you also set `--signin-error-bg`: it is the text of the error box, whose background is a fixed light pink (a light red on it read at 1.81:1).
+- The help lines read under 4.5:1 unless the app sets `--ink-faint` or `--signin-muted` to a colour that does (3.78:1 with the default style, which writes neither; 3.52:1 with the editorial tokens' own `--ink-faint`).
+- With no style at all, the link (3.26:1) and the button's label (3.35:1) are under 4.5:1: set `--signin-brand`.
+- The card sets no colour for a field's placeholder: it is the browser's, or your CSS reset's.
+
 ## Use a vault you already have (a project vault)
 
 When the app works in one named vault the person already has (for example the project's vault), sign in with the code sign-in only. Do not call `useLiveStart`, `ensureAppVault` or `createAppVaultService`. `useLiveStart` and `createLiveStart` open through `createAppVaultService`, and `ensureAppVault` finds a vault of the app's type or makes one with `createNamedVault`.
@@ -327,6 +357,16 @@ The code step also renders `Change email` (`data-testid="sign-in-change-email"`,
 - Do not persist the DPoP key or the token to `localStorage`, and do not write a second copy beside the session credential's IndexedDB record. The credential stores the CryptoKey objects itself on a cookieless page. An app does not export the private key.
 - Do not treat a native bridge that sends no `Origin` header as proof that the platform admits your app. Admission is measured from a browser origin.
 - Do not call a platform host through a proxy that rewrites the host. The server compares `htu` with the host it received.
+
+## Changes in 0.2.14
+
+Patch release: the card's style sheet only. No call, export, prop or wire field changed.
+
+- The background of the new vault's address (`--signin-sheet`) falls back to `--tint-hi` before white. It was a fixed white, and in a dark look the card's light text on it read at 1.2:1. In a light look `--tint-hi` is white, so nothing changes there; with no style it is white as before.
+- New variable `--signin-link` for the Change email link. Unset, the link is the brand colour, as before.
+- New variable `--signin-error-text` for the sentence that refuses a name. Unset, it is `--signin-error-ink`, as before.
+- The README has a "Styling" part: every variable, what it falls back to, and what a host must set for a dark look.
+- New test `src/signinContrast.test.ts`. It also pins the colours the light look drew in 0.2.13, for three kinds of app.
 
 ## Changes in 0.2.13
 
