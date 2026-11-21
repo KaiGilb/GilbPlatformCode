@@ -2124,7 +2124,7 @@ const lockIdentity = (gitDir, rel) => {
     try {
         // bigint: a Windows file id is 64 bits and would lose its low bits as a number.
         const st = fs.lstatSync(path.join(gitDir, rel), { bigint: true });
-        return st.isFile() ? { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0 } : null;
+        return st.isFile() ? { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0, mtime: Number(st.mtimeMs) } : null;
     }
     catch {
         return null;
@@ -2599,7 +2599,9 @@ export async function saveTurnToGit(o) {
         const unnoted = rec ? (typeof rec.lockRel === "string" && typeof rec.expect !== "string" ? rec.lockRel : rec.takesIndexLock === true ? "index.lock" : null) : null;
         if (rec && unnoted && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(unnoted)) {
             const id = lockIdentity(gitDir, unnoted);
-            if (id && id.birth > 0 && id.birth >= rec.start - 5 && id.birth <= rec.start + GIT_LOCK_UNNOTED_MS) {
+            // Its birth time, or where the system keeps none (Linux often), its last write: a killed git's lock was written while it ran.
+            const born = id ? (id.birth > 0 ? id.birth : (id.mtime ?? 0)) : 0;
+            if (id && born > 0 && born >= rec.start - 5 && born <= rec.start + GIT_LOCK_UNNOTED_MS) {
                 fs.rmSync(path.join(gitDir, unnoted), { force: true });
                 recovered.push(unnoted);
             }

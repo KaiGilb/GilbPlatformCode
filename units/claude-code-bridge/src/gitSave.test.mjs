@@ -461,8 +461,9 @@ describe("tester findings (Agent.Tester, 2026-11-21)", () => {
     fs.mkdirSync(path.join(priv, "calls"), { recursive: true });
     const lock = path.join(gitDir, "index.lock");
     fs.writeFileSync(lock, "");
-    const birth = Number(fs.lstatSync(lock, { bigint: true }).birthtimeMs);
-    if (!(birth > 0)) return; // no birth time on this system: the fallback never applies there (the lock is reported)
+    // The time the fallback reads: the birth time, or the last write where the system keeps no birth time (Linux often).
+    const bst = fs.lstatSync(lock, { bigint: true });
+    const birth = bst.birthtimeMs > 0n ? Number(bst.birthtimeMs) : Number(bst.mtimeMs);
     // Born 3 s after the call began: another git's (RT2) - kept.
     fs.writeFileSync(callRecord(priv, gitDir), JSON.stringify({ pid: deadPid(), start: Math.round(birth) - 3000, limit: 20_000, gitDir, takesIndexLock: true }));
     let r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });

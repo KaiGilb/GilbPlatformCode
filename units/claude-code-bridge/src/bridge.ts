@@ -2195,7 +2195,7 @@ export const GIT_FIRST_SAVE_TOTAL_MS = 300_000;
  * inode, and birth time where the system has one) and the recorded process is gone. Any other lock is reported and left alone.
  */
 /** A lock the bridge saw its own git (or its own ref write) make: where, and which file exactly (device, inode, birth time). */
-interface GitLockSeen { rel: string; dev: string; ino: string; birth: number }
+interface GitLockSeen { rel: string; dev: string; ino: string; birth: number; mtime?: number }
 interface GitCallRecord { pid: number; start: number; limit: number; gitDir: string; locks?: GitLockSeen[]; takesIndexLock?: boolean; lockRel?: string; expect?: string; tmp?: string }
 /** A call record, written whole or not at all (a kill mid-write must not leave half a record). */
 function writeCallRecord(file: string, rec: GitCallRecord): void {
@@ -2212,7 +2212,7 @@ const lockIdentity = (gitDir: string, rel: string): GitLockSeen | null => {
   try {
     // bigint: a Windows file id is 64 bits and would lose its low bits as a number.
     const st = fs.lstatSync(path.join(gitDir, rel), { bigint: true });
-    return st.isFile() ? { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0 } : null;
+    return st.isFile() ? { rel, dev: String(st.dev), ino: String(st.ino), birth: st.birthtimeMs > 0n ? Number(st.birthtimeMs) : 0, mtime: Number(st.mtimeMs) } : null;
   } catch {
     return null;
   }
@@ -2630,7 +2630,9 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     const unnoted = rec ? (typeof rec.lockRel === "string" && typeof rec.expect !== "string" ? rec.lockRel : rec.takesIndexLock === true ? "index.lock" : null) : null;
     if (rec && unnoted && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(unnoted)) {
       const id = lockIdentity(gitDir, unnoted);
-      if (id && id.birth > 0 && id.birth >= rec.start - 5 && id.birth <= rec.start + GIT_LOCK_UNNOTED_MS) {
+      // Its birth time, or where the system keeps none (Linux often), its last write: a killed git's lock was written while it ran.
+      const born = id ? (id.birth > 0 ? id.birth : (id.mtime ?? 0)) : 0;
+      if (id && born > 0 && born >= rec.start - 5 && born <= rec.start + GIT_LOCK_UNNOTED_MS) {
         fs.rmSync(path.join(gitDir, unnoted), { force: true });
         recovered.push(unnoted);
       }
