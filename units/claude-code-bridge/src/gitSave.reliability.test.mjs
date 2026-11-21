@@ -89,8 +89,10 @@ describe("P.Turn.NoDelay", () => {
       for (let f = 0; f < 100; f++) fs.writeFileSync(path.join(repo, `d${d}`, `f${f}.js`), `export const v = ${d * 100 + f};\n`.repeat(20));
     }
     let t = performance.now();
-    const first = await saveTurnToGit({ folder: repo, summary: "all", turnId: "t0", env: process.env, privateDir: priv });
+    // The first, full save of an existing big project is measured with a long limit, so a slow disk (Windows) is told apart from a failure.
+    const first = await saveTurnToGit({ folder: repo, summary: "all", turnId: "t0", env: process.env, privateDir: priv, timeoutMs: 120_000 });
     const firstMs = performance.now() - t;
+    console.log(`[timing] ${process.platform}: first full save of 5000 files ${Math.round(firstMs)} ms: ${first.ok ? "ok" : first.reason}`);
     expect(first.ok && first.commit).toBeTruthy();
     const times = [];
     for (let i = 0; i < 20; i++) {
@@ -98,9 +100,10 @@ describe("P.Turn.NoDelay", () => {
       t = performance.now();
       const r = await saveTurnToGit({ folder: repo, summary: `edit ${i}`, turnId: `t${i + 1}`, env: process.env, privateDir: priv });
       times.push(performance.now() - t);
+      if (!(r.ok && r.commit)) console.log(`[timing] one-file save ${i}: ${r.ok ? "no commit" : r.reason}`);
       expect(r.ok && r.commit).toBeTruthy();
     }
     console.log(`[timing] 5000 files: first full save ${Math.round(firstMs)} ms; one-file save p50 ${Math.round(pct(times, 50))} ms, p95 ${Math.round(pct(times, 95))} ms, max ${Math.round(Math.max(...times))} ms`);
     expect(pct(times, 95)).toBeLessThanOrEqual(2000);
-  }, 180_000);
+  }, 300_000);
 });
