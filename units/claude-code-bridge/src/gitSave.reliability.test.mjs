@@ -70,6 +70,7 @@ describe.skipIf(process.platform === "win32")("P.Rel.NoCorruption", () => {
     }
     // A last, clean save picks up anything an interrupted save did not commit.
     const last = await saveTurnToGit({ folder: repo, summary: "final", turnId: "final", env: process.env, privateDir: priv });
+    if (!last.ok) console.log(`[reliability] the final save failed: ${last.reason}`);
     expect(last.ok).toBe(true);
     const written = fs.readdirSync(repo).filter((f) => f.startsWith("f"));
     console.log(`[reliability] ${attempts} save attempts, ${kills} SIGKILLs, ${commitCount(repo)} commits, ${written.length} files written`);

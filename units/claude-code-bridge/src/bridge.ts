@@ -2195,7 +2195,16 @@ export const GIT_FIRST_SAVE_TOTAL_MS = 300_000;
  */
 /** A lock the bridge saw its own git (or its own ref write) make: where, and which file exactly (device, inode, birth time). */
 interface GitLockSeen { rel: string; dev: string; ino: string; birth: number }
-interface GitCallRecord { pid: number; start: number; limit: number; gitDir: string; locks?: GitLockSeen[]; takesIndexLock?: boolean; lockRel?: string }
+interface GitCallRecord { pid: number; start: number; limit: number; gitDir: string; locks?: GitLockSeen[]; takesIndexLock?: boolean; lockRel?: string; expect?: string; tmp?: string }
+/** A call record, written whole or not at all (a kill mid-write must not leave half a record). */
+function writeCallRecord(file: string, rec: GitCallRecord): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(rec), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+/** The bridge's own temporary ref file at the top of .git (made, linked to the ref lock, removed). */
+const OWN_REF_TMP = /^gilb-bridge-ref-\d+-[0-9a-f]{8}\.tmp$/;
 /** A killed index-locking call whose lock was not yet noted: its lock is still taken as its own if it was BORN this soon after the call began. */
 export const GIT_LOCK_UNNOTED_MS = 250;
 const lockIdentity = (gitDir: string, rel: string): GitLockSeen | null => {
@@ -2389,6 +2398,18 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
         rec = null;
       }
     }
+    // The bridge's own temporary ref file, left when it was killed mid-write: removed (it is the bridge's by its name and record).
+    if (gitDir) {
+      try {
+        for (const n of fs.readdirSync(gitDir)) {
+          if (!OWN_REF_TMP.test(n)) continue;
+          const pid = Number(n.split("-")[3]);
+          if (pid !== process.pid && pidGone(pid)) fs.rmSync(path.join(gitDir, n), { force: true });
+        }
+      } catch {
+        /* the walk below reports what it must */
+      }
+    }
     let attrSource: string | null = null;
     const t0 = now();
     let total = GIT_SAVE_TOTAL_MS;
@@ -2419,8 +2440,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
           callFile = gitCallFile(o.privateDir, gitDir);
           const record: GitCallRecord = { pid: child.pid, start: now(), limit, gitDir, ...(INDEX_LOCKING.has(args[0] ?? "") ? { takesIndexLock: true } : {}) };
           try {
-            fs.mkdirSync(path.dirname(callFile), { recursive: true, mode: 0o700 });
-            fs.writeFileSync(callFile, JSON.stringify(record), { mode: 0o600 });
+            writeCallRecord(callFile, record);
           } catch {
             callFile = "";
           }
@@ -2439,7 +2459,7 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
               watcher?.close();
               watcher = null;
               try {
-                fs.writeFileSync(cf, JSON.stringify({ ...record, locks: [id] } satisfies GitCallRecord), { mode: 0o600 });
+                writeCallRecord(cf, { ...record, locks: [id] });
               } catch {
                 /* no proof then: the lock, if left, is reported, never removed */
               }
@@ -2526,7 +2546,20 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     // Not noted (killed within a millisecond or so of git taking it): only the index lock of an index-locking call, only with a
     // birth time (macOS, Windows, Linux with statx), and only if born within GIT_LOCK_UNNOTED_MS of that call's start. A lock is
     // made with O_EXCL, so while the killed git held it no other git could make one; another git can only have made it after.
-    const unnoted = rec ? (typeof rec.lockRel === "string" ? rec.lockRel : rec.takesIndexLock === true ? "index.lock" : null) : null;
+    // The bridge's own ref lock is made already holding its commit id, which its record names: it is proved by its content.
+    if (rec && typeof rec.lockRel === "string" && typeof rec.expect === "string" && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(rec.lockRel)) {
+      let content = "";
+      try {
+        content = fs.readFileSync(path.join(gitDir, rec.lockRel), "latin1").trim();
+      } catch {
+        content = "";
+      }
+      if (content === rec.expect) {
+        fs.rmSync(path.join(gitDir, rec.lockRel), { force: true });
+        recovered.push(rec.lockRel);
+      }
+    }
+    const unnoted = rec ? (typeof rec.lockRel === "string" && typeof rec.expect !== "string" ? rec.lockRel : rec.takesIndexLock === true ? "index.lock" : null) : null;
     if (rec && unnoted && (!rec.locks || rec.locks.length === 0) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(unnoted)) {
       const id = lockIdentity(gitDir, unnoted);
       if (id && id.birth > 0 && id.birth >= rec.start - 5 && id.birth <= rec.start + GIT_LOCK_UNNOTED_MS) {
@@ -2733,34 +2766,47 @@ export async function saveTurnToGit(o: GitSaveOptions): Promise<GitSaveResult> {
     const target = path.join(gitDir, ...parts);
     const lockRel = `${refRel}.lock`;
     const lockPath = `${target}.lock`;
-    // The record comes BEFORE the lock (a kill between the two must still leave proof), naming the lock about to be made.
+    // The lock is made already holding its content: a temp file with the commit id is written first, the record names that id,
+    // then the temp file is hard-linked to the lock name (atomic, and it fails if the lock exists) and removed. A kill at any point
+    // leaves either no lock, or a lock whose content the record proves (no birth time needed). Where hard links are not possible,
+    // the lock is made with O_EXCL and written (the record still names the id).
     const ownRecord = gitCallFile(o.privateDir, gitDir);
     const ownStart = now();
-    fs.mkdirSync(path.dirname(ownRecord), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel } satisfies GitCallRecord), { mode: 0o600 });
-    let fd: number;
+    const tmpName = `gilb-bridge-ref-${process.pid}-${crypto.randomBytes(4).toString("hex")}.tmp`;
+    const tmpPath = path.join(gitDir, tmpName);
+    fs.writeFileSync(tmpPath, `${commit}\n`, { flag: "wx", mode: 0o644 });
+    writeCallRecord(ownRecord, { pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel, expect: commit, tmp: tmpName });
     try {
-      fd = fs.openSync(lockPath, "wx", 0o644);
-    } catch {
-      fs.rmSync(ownRecord, { force: true });
-      throw new GitRefused(`Another git is busy in this project (.git/${lockRel}), so nothing was saved this time.`);
-    }
-    try {
-      const id = lockIdentity(gitDir, lockRel);
-      if (id) fs.writeFileSync(ownRecord, JSON.stringify({ pid: process.pid, start: ownStart, limit: timeout, gitDir, lockRel, locks: [id] } satisfies GitCallRecord), { mode: 0o600 });
-      // Compare-after-lock (as `git update-ref <ref> <new> <old>` does): another git that moved the branch between the check above
-      // and this lock is not overwritten; nothing is written and the save is "busy".
-      if (readRefTip(gitDir, refRel) !== parent) throw new GitRefused("Another git moved the branch while the bridge saved, so nothing was saved this time.");
-      fs.writeSync(fd, `${commit}\n`);
-      fs.fsyncSync(fd);
-      fs.closeSync(fd);
-      const tst = fs.lstatSync(target, { throwIfNoEntry: false });
-      if (tst && !tst.isFile() && !tst.isSymbolicLink()) throw new GitRefused(`.git/${refRel} is not a plain file, so nothing was saved.`);
-      fs.renameSync(lockPath, target); // replaces a link at the target itself; never writes through it
-    } catch (e) {
-      fs.rmSync(lockPath, { force: true });
-      throw e;
+      try {
+        fs.linkSync(tmpPath, lockPath);
+      } catch (e) {
+        const code = (e as ErrLike).code;
+        if (code === "EEXIST") throw new GitRefused(`Another git is busy in this project (.git/${lockRel}), so nothing was saved this time.`);
+        // No hard links here (some file systems): the lock is made and then written.
+        let fd: number;
+        try {
+          fd = fs.openSync(lockPath, "wx", 0o644);
+        } catch {
+          throw new GitRefused(`Another git is busy in this project (.git/${lockRel}), so nothing was saved this time.`);
+        }
+        fs.writeSync(fd, `${commit}\n`);
+        fs.fsyncSync(fd);
+        fs.closeSync(fd);
+      }
+      fs.rmSync(tmpPath, { force: true });
+      try {
+        // Compare-after-lock (as `git update-ref <ref> <new> <old>` does): another git that moved the branch between the check above
+        // and this lock is not overwritten; nothing is written and the save is "busy".
+        if (readRefTip(gitDir, refRel) !== parent) throw new GitRefused("Another git moved the branch while the bridge saved, so nothing was saved this time.");
+        const tst = fs.lstatSync(target, { throwIfNoEntry: false });
+        if (tst && !tst.isFile() && !tst.isSymbolicLink()) throw new GitRefused(`.git/${refRel} is not a plain file, so nothing was saved.`);
+        fs.renameSync(lockPath, target); // replaces a link at the target itself; never writes through it
+      } catch (e) {
+        fs.rmSync(lockPath, { force: true });
+        throw e;
+      }
     } finally {
+      fs.rmSync(tmpPath, { force: true });
       fs.rmSync(ownRecord, { force: true });
     }
     // After: the same checks again. A change here means something still wrote in the repo while git ran.

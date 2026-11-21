@@ -667,7 +667,8 @@ describe("final round (Agent.Hacker FN1-FN4, Agent.Tester N4)", () => {
     expect(plainGit(b.projPath, ["rev-parse", "refs/heads/main"]).trim()).toBe(tip);
   });
 
-  it("FN4: a process that survived an earlier turn's stop is still alive: the outside save is refused, the turn still runs", async () => {
+  // POSIX only: on Windows outside computer mode the turn is files-only and the bridge skips the process look by design.
+  it.skipIf(process.platform === "win32")("FN4: a process that survived an earlier turn's stop is still alive: the outside save is refused, the turn still runs", async () => {
     let alive = true;
     b = await startGitBridge({ bridgeOpts: { residualSeed: [[4194299, "s"]], procList: async () => (alive ? [{ pid: 4194299, ppid: 1, start: "s" }] : []) } });
     alive = false;
@@ -681,5 +682,39 @@ describe("final round (Agent.Hacker FN1-FN4, Agent.Tester N4)", () => {
     // The turn's own save is refused for the same reason (nothing of an earlier turn may run while the bridge's git does).
     expect(ev(r, "git_saved")).toEqual([]);
     expect(ev(r, "git_error")[0].reason).toMatch(/still running/);
+  });
+});
+
+describe("the bridge's own ref lock is proved by its content (no birth time needed)", () => {
+  it("a ref lock holding the commit id the killed write's record names is removed; one holding anything else is kept", async () => {
+    const f = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-git-reflock-")));
+    const priv = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-git-reflockp-")));
+    try {
+      fs.writeFileSync(path.join(f, "a.txt"), "a");
+      expect((await saveTurnToGit({ folder: f, summary: "s", turnId: "t0", env: process.env, privateDir: priv })).ok).toBe(true);
+      const gitDir = path.join(f, ".git");
+      const rec = path.join(priv, "calls", `${createHash("sha256").update(gitDir).digest("hex").slice(0, 32)}.json`);
+      const dead = Number(spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout);
+      const lock = path.join(gitDir, "refs", "heads", "main.lock");
+      const id = "a".repeat(40);
+      // Someone else's content: kept.
+      fs.writeFileSync(lock, `${"b".repeat(40)}\n`);
+      fs.writeFileSync(rec, JSON.stringify({ pid: dead, start: Date.now() - 60_000, limit: 20_000, gitDir, lockRel: "refs/heads/main.lock", expect: id }));
+      fs.writeFileSync(path.join(f, "b.txt"), "b");
+      let r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t1", env: process.env, privateDir: priv });
+      expect(r.ok).toBe(false);
+      expect(fs.existsSync(lock)).toBe(true);
+      // The id the record names, long after (birth time not used): removed and said.
+      fs.writeFileSync(lock, `${id}\n`);
+      fs.writeFileSync(rec, JSON.stringify({ pid: dead, start: Date.now() - 60_000, limit: 20_000, gitDir, lockRel: "refs/heads/main.lock", expect: id, tmp: `gilb-bridge-ref-${dead}-0000abcd.tmp` }));
+      fs.writeFileSync(path.join(gitDir, `gilb-bridge-ref-${dead}-0000abcd.tmp`), `${id}\n`);
+      r = await saveTurnToGit({ folder: f, summary: "s", turnId: "t2", env: process.env, privateDir: priv });
+      expect(r.ok && r.commit).toBeTruthy();
+      expect(r.recovered).toEqual(["refs/heads/main.lock"]);
+      expect(fs.existsSync(path.join(gitDir, `gilb-bridge-ref-${dead}-0000abcd.tmp`))).toBe(false);
+    } finally {
+      fs.rmSync(f, { recursive: true, force: true });
+      fs.rmSync(priv, { recursive: true, force: true });
+    }
   });
 });
