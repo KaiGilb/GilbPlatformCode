@@ -4917,7 +4917,9 @@ export function createBridge(opts: BridgeOptions = {}) {
       const folder = proj ? proj.path : workspace.path;
       if (gitOff.has(folder)) return;
       // Nothing of the turn may still run while the bridge's git does: it could change .git between the checks and git.
-      const alive = await turnProcsStillAlive(turn.codePids);
+      // Windows outside computer mode is files-only (no command tool), so the turn starts no process of its own; the look (a
+      // PowerShell start, seconds) is skipped there.
+      const alive = platform === "win32" && !turn.computer ? null : await turnProcsStillAlive(turn.codePids);
       if (alive) {
         log(`git save in ${folder}: ${alive}`);
         send("git_error", { reason: alive });

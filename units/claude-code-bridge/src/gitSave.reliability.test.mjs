@@ -40,7 +40,7 @@ describe("P.Commit.Coverage", () => {
     expect(saved).toBe(100);
     expect(commitCount(b.projPath)).toBe(100);
     expect(fsckOk(b.projPath)).toBe(true);
-  }, 120_000);
+  }, 300_000); // Windows runners start each git far slower
 });
 
 // POSIX only: on Windows each process start costs ~10x more, so 1000 saves with restarts would take many minutes of CI.
