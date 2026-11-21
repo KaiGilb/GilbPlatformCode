@@ -1,0 +1,325 @@
+// The starter against the fake platform: the real sign-in, vault, share and sign-out calls of the units it joins.
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { StarterApp, type StarterContext, type StarterSection } from "./StarterApp";
+import { startStarter } from "./start";
+import { askForCode, CREATE, makeWorld, ready, settingsFor, setWidth, signIn, TYPE, type World } from "../test/world";
+
+let world: World;
+let seen: StarterContext[];
+
+const sections: StarterSection[] = [
+  {
+    id: "home",
+    label: "Home",
+    render: (ctx) => {
+      seen.push(ctx);
+      return <p data-testid="home">Home of {ctx.vault.label}</p>;
+    },
+  },
+  { id: "other", label: "Other", render: () => <p data-testid="other">Other screen</p>, detail: () => <p data-testid="other-detail">Detail</p> },
+];
+
+function mount(over: Parameters<typeof settingsFor>[1] = {}) {
+  const runtime = startStarter(settingsFor(world.fake, over));
+  return { runtime, ...render(<StarterApp runtime={runtime} sections={sections} />) };
+}
+
+const vaultsOfType = () => [...world.fake.state.vaults.values()].filter((v) => v.represents === TYPE);
+const modesOf = (vaultId: string, principal: string) => [...(world.fake.state.grants.get(vaultId)?.get(principal) ?? [])].sort();
+
+beforeEach(() => {
+  setWidth(1280);
+  world = makeWorld();
+  seen = [];
+});
+afterEach(() => {
+  world.undo();
+});
+
+describe("sign in and the person's own vault", () => {
+  it("a person with an account signs in; the first sign-in makes their vault for the app, once, and the frame shows", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    expect(await screen.findByRole("heading", { name: "Things" })).toBeTruthy(); // the sign-in card carries the app's name
+    expect(vaultsOfType()).toHaveLength(0);
+    await signIn(user, world.fake, ann.email);
+    await ready();
+
+    const made = vaultsOfType();
+    expect(made).toHaveLength(1);
+    expect(made[0]!.name).toBe("annthings");
+    expect(world.fake.calls.count(CREATE)).toBe(1);
+    expect(screen.getByTestId("home").textContent).toBe("Home of annthings");
+    const ctx = seen.at(-1)!;
+    expect(ctx.vault).toEqual({ vaultId: made[0]!.id, label: "annthings", yours: true, canWrite: true });
+    expect(ctx.principal).toBe(ann.principal);
+    expect(ctx.actor).toBe(ann.landingVaultId);
+    expect(ctx.signal.aborted).toBe(false);
+    world.fake.assertClean();
+  });
+
+  it("a person with no account names their account on the card, and their vault for the app is made after it", async () => {
+    const user = userEvent.setup();
+    mount();
+    await askForCode(user, "new@example.test");
+    await screen.findByTestId("vault-name-step"); // the card offers a name for the new account
+    await waitFor(() => expect((screen.getByTestId("vault-name-input") as HTMLInputElement).value).not.toBe(""));
+    const name = (screen.getByTestId("vault-name-input") as HTMLInputElement).value;
+    await user.type(screen.getByTestId("sign-in-code"), world.fake.pendingCode("new@example.test")!);
+    await ready();
+
+    const names = [...world.fake.state.vaults.values()].map((v) => v.name).sort();
+    expect(names).toEqual([name, `${name}things`].sort());
+    expect(vaultsOfType().map((v) => v.name)).toEqual([`${name}things`]);
+    world.fake.assertClean();
+  });
+
+  it("signing out tells the sign-in server and shows the card; signing in again opens the same vault and makes no second one", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    const first = seen.at(-1)!;
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByLabelText("Email");
+    expect(world.fake.calls.count("POST /base/auth/sign-out")).toBe(1);
+    expect(first.signal.aborted).toBe(true); // a read a section started is told to stop
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull(); // the server was told, so there is no notice
+
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(seen.at(-1)!.vault.vaultId).toBe(first.vault.vaultId);
+    expect(world.fake.calls.count(CREATE)).toBe(1);
+    expect(vaultsOfType()).toHaveLength(1);
+    world.fake.assertClean();
+  });
+
+  it("a sign-in kept by the browser opens the vault again on a reload, with no card", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    const first = mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    first.unmount();
+
+    mount(); // a new page: a new credential reads the kept sign-in
+    await ready();
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    expect(world.fake.calls.count(CREATE)).toBe(1);
+    world.fake.assertClean();
+  });
+});
+
+describe("every wait and every stop says what it is", () => {
+  it("says it is checking the sign-in, then that it is making the vault, while each is under way", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    expect(screen.getByRole("status").textContent).toBe("Checking your sign-in…");
+    const release = world.fake.hold(CREATE);
+    await signIn(user, world.fake, ann.email);
+    expect((await screen.findByText("Opening your vault: making your vault for this app…")).getAttribute("role")).toBe("status");
+    release();
+    await ready();
+  });
+
+  it("says the platform is finishing a vault it only partly made, and then opens it", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    world.fake.partialNextCreateNamed();
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await screen.findByText("Opening your vault: the platform is finishing your new vault…");
+    await ready();
+    expect(vaultsOfType()).toHaveLength(1);
+  }, 15000);
+
+  it("a start that fails shows the platform's sentence; Try again opens the vault and makes one vault only", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    world.fake.failNext(CREATE, { status: 503, message: "The vault service is busy. Try again soon." });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Your vault could not be opened.");
+    expect(alert.textContent).toContain("The vault service is busy. Try again soon.");
+    const buttons = within(alert).getAllByRole("button").map((b) => b.textContent);
+    expect(buttons).toEqual(["Sign out", "Try again"]); // the main act is rightmost
+
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await ready();
+    expect(vaultsOfType()).toHaveLength(1);
+  });
+
+  it("from a failed start the person can sign out, and the card shows", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    world.fake.failNext(CREATE, { status: 503, message: "Busy." });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await user.click(within(await screen.findByRole("alert")).getByRole("button", { name: "Sign out" }));
+    await screen.findByLabelText("Email");
+  });
+
+  it("a sign-out the server could not be told about still signs out here, and says so above the card", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    world.fake.failNext("POST /base/auth/sign-out", { status: 503, message: "Busy." });
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByLabelText("Email");
+    expect(screen.getByRole("status").textContent).toContain("You are signed out on this device");
+  });
+});
+
+describe("share access to the vault", () => {
+  it("the owner gives another person edit access, sees them in the list, and takes the access away", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const ben = world.fake.seedPerson({ email: "ben@example.test", vaultName: "ben" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    const vaultId = vaultsOfType()[0]!.id;
+
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    const sheet = await screen.findByRole("dialog", { name: "Share annthings" });
+    expect(sheet.textContent).toContain("People you add can see the records in this vault");
+    await within(sheet).findByText("Nobody else has access yet.");
+    await user.type(within(sheet).getByLabelText("Their vault name"), "ben");
+    await user.click(within(sheet).getByRole("radio", { name: "Can edit" }));
+    await user.click(within(sheet).getByRole("button", { name: "Share" }));
+    await within(sheet).findByRole("button", { name: /^Remove / });
+    expect(modesOf(vaultId, ben.principal)).toEqual(["read", "write"]);
+    expect(within(sheet).getByText("ben").closest("li")!.textContent).toContain("Can edit");
+
+    await user.click(within(sheet).getByRole("button", { name: /^Remove / }));
+    await user.click(within(sheet).getByRole("button", { name: "Yes" }));
+    await within(sheet).findByText("Nobody else has access yet.");
+    expect(modesOf(vaultId, ben.principal)).toEqual([]);
+
+    await user.click(within(sheet).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    world.fake.assertClean();
+  });
+
+  it("a vault another person shared shows in the vault chip; opening it draws the section for that vault, view only when it is", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const ben = world.fake.seedPerson({ email: "ben@example.test", vaultName: "ben" });
+    const bens = world.fake.seedVault({ name: "benthings", owner: ben, represents: TYPE });
+    world.fake.grant(bens, ann, "read");
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(screen.queryByText("View only")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Vault annthings. Change vault" }));
+    const chooser = await screen.findByRole("dialog", { name: "Choose a vault" });
+    const rows = await within(chooser).findAllByRole("button", { name: /things/ });
+    expect(rows.map((r) => r.textContent)).toEqual(["annthingsYours", "benthingsShared with you · View only"]);
+    await user.click(rows[1]!);
+
+    await waitFor(() => expect(screen.getByTestId("home").textContent).toBe("Home of benthings"));
+    expect(seen.at(-1)!.vault).toEqual({ vaultId: bens.id, label: "benthings", yours: false, canWrite: false });
+    expect(screen.getByText("View only")).toBeTruthy();
+
+    // The person does not hold Control on the shared vault: the sheet says so and offers no form.
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    const sheet = await screen.findByRole("dialog", { name: "Share benthings" });
+    await within(sheet).findByText(/You don't hold Control on this vault/);
+    expect(within(sheet).queryByLabelText("Their vault name")).toBeNull();
+    await user.click(within(sheet).getByRole("button", { name: "Close" }));
+
+    // A section that is refused the vault drops it; the person's own vault opens.
+    act(() => seen.at(-1)!.vaultRefused());
+    await waitFor(() => expect(screen.getByTestId("home").textContent).toBe("Home of annthings"));
+  });
+
+  it("the person's own vault for the app is not taken for one that was shared with them", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const ben = world.fake.seedPerson({ email: "ben@example.test", vaultName: "ben" });
+    const bens = world.fake.seedVault({ name: "benthings", owner: ben, represents: TYPE });
+    world.fake.grant(bens, ann, "write");
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(vaultsOfType().map((v) => v.name).sort()).toEqual(["annthings", "benthings"]);
+    expect(screen.getByTestId("home").textContent).toBe("Home of annthings");
+  });
+});
+
+describe("computer and phone", () => {
+  it("on a wide window the sections are a menu beside the centre, and a section's detail has its own region", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    const menu = screen.getByRole("navigation", { name: "Sections" });
+    expect(within(menu).getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("navigation", { name: "Panels" })).toBeNull(); // no bottom bar
+    expect(screen.queryByTestId("other-detail")).toBeNull();
+
+    await user.click(within(menu).getByRole("button", { name: "Other" }));
+    expect(screen.getByTestId("other")).toBeTruthy();
+    expect(screen.getByTestId("other-detail")).toBeTruthy();
+    expect(screen.queryByTestId("home")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Sign out" })).toHaveLength(1);
+  });
+
+  it("on a phone the centre stands alone; the menu is a drawer with the sections, Share and Sign out, and it closes after a pick", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const user = userEvent.setup();
+    setWidth(390);
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(screen.getByTestId("home")).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull(); // not in the narrow header
+
+    const bar = screen.getByRole("navigation", { name: "Panels" });
+    await user.click(within(bar).getByRole("button", { name: "Menu" }));
+    const drawer = await screen.findByRole("dialog", { name: "Things" });
+    expect(within(drawer).getByRole("button", { name: "Share" })).toBeTruthy();
+    expect(within(drawer).getByRole("button", { name: "Sign out" })).toBeTruthy();
+    await user.click(within(drawer).getByRole("button", { name: "Other" }));
+    expect(screen.queryByRole("dialog", { name: "Things" })).toBeNull();
+    expect(screen.getByTestId("other")).toBeTruthy();
+
+    await user.click(within(screen.getByRole("navigation", { name: "Panels" })).getByRole("button", { name: "Menu" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Things" })).getByRole("button", { name: "Share" }));
+    expect(await screen.findByRole("dialog", { name: "Share annthings" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Things" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await user.click(within(screen.getByRole("navigation", { name: "Panels" })).getByRole("button", { name: "Menu" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Things" })).getByRole("button", { name: "Sign out" }));
+    await screen.findByLabelText("Email");
+  });
+});
+
+describe("what a host may change", () => {
+  it("its own words replace the starter's, and a note can stand above the sign-in card", async () => {
+    const runtime = startStarter(settingsFor(world.fake));
+    render(<StarterApp runtime={runtime} sections={sections} words={{ checkingSignIn: "One moment." }} signInNote={<p>Test platform</p>} />);
+    expect(screen.getByRole("status").textContent).toBe("One moment.");
+    await screen.findByLabelText("Email");
+    expect(screen.getByText("Test platform")).toBeTruthy();
+  });
+
+  it("no section at all is refused with a sentence", () => {
+    const runtime = startStarter(settingsFor(world.fake));
+    expect(() => render(<StarterApp runtime={runtime} sections={[]} />)).toThrow("starter-app: pass at least one section");
+  });
+});

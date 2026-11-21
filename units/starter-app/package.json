@@ -1,0 +1,57 @@
+{
+  "name": "@kaigilb/gilbplatformcode-starter-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The one code base a new GilbPlatform app starts from: it loads the app's style, signs a person in and out, opens their own vault for the app (making it at the first sign-in), draws the frame for a wide window and a phone, and lets them share that vault.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./starterApp.css": "./src/starterApp.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-app-shell": "^0.1.0",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.4",
+    "@kaigilb/gilbplatformcode-signin": "^0.2.13",
+    "@kaigilb/gilbplatformcode-style-runtime": "^0.2.1",
+    "@kaigilb/gilbplatformcode-vault-share-sheet": "^0.1.2",
+    "@kaigilb/gilbplatformcode-vault-switcher": "^0.1.2",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-app-shell": "file:../app-shell",
+    "@kaigilb/gilbplatformcode-base-origin": "file:../base-origin",
+    "@kaigilb/gilbplatformcode-fake-platform": "file:../fake-platform",
+    "@kaigilb/gilbplatformcode-lws-session-bridge": "file:../lws-session-bridge",
+    "@kaigilb/gilbplatformcode-modal-sheet": "file:../modal-sheet",
+    "@kaigilb/gilbplatformcode-principal-row": "file:../principal-row",
+    "@kaigilb/gilbplatformcode-server-error": "file:../server-error",
+    "@kaigilb/gilbplatformcode-signin": "file:../signin",
+    "@kaigilb/gilbplatformcode-style-runtime": "file:../style-runtime",
+    "@kaigilb/gilbplatformcode-vault-access": "file:../vault-access",
+    "@kaigilb/gilbplatformcode-vault-address": "file:../vault-address",
+    "@kaigilb/gilbplatformcode-vault-list": "file:../vault-list",
+    "@kaigilb/gilbplatformcode-vault-origin-rule": "file:../vault-origin-rule",
+    "@kaigilb/gilbplatformcode-vault-share-sheet": "file:../vault-share-sheet",
+    "@kaigilb/gilbplatformcode-vault-switcher": "file:../vault-switcher",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "fake-indexeddb": "6.2.6",
+    "jsdom": "^25.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "unit": "units/starter-app",
+  "package": "@kaigilb/gilbplatformcode-starter-app",
+  "version": "0.1.0",
+  "purpose": "The one code base a new GilbPlatform app starts from: it loads the app's style, signs a person in and out, opens their own vault for the app (making it at the first sign-in), draws the frame for a wide window and a phone, and lets them share that vault.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "df1cb9e80eb1bffedf813b1a4459f77135f5e8b0",
+    "files": []
+  },
+  "namedChanges": [
+    "New code, written on 2026-11-21. No source file was copied: every part is a call into app-shell, signin, lws-session-bridge, style-runtime, vault-share-sheet or vault-switcher."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/settings.ts",
+    "src/start.ts",
+    "src/StarterApp.tsx",
+    "src/Workspace.tsx",
+    "src/words.ts",
+    "src/starterApp.css",
+    "src/StarterApp.test.tsx",
+    "src/start.test.ts",
+    "src/hostAgnostic.test.ts",
+    "test/setup.ts",
+    "test/world.ts",
+    "scripts/check-host-agnostic.mjs"
+  ],
+  "host": [],
+  "library": { "admitted": false }
+}
