@@ -1,0 +1,85 @@
+/* The app's style sheet: Tailwind v4, for the frame. The frame's units (app-shell, panes, drawer) draw with Tailwind utility
+   classes over CSS variables and ship no sheet of their own, so the app runs Tailwind with the installed units in its scan.
+   The colours, fonts and radii are not set here: style-runtime writes them from the app's style when the app starts, and
+   the starter-app unit's own sheet adds the few the frame also reads.
+   This file sits outside src/ and is linked from index.html. */
+@import "tailwindcss";
+
+/* The installed units' sources. With install-links=true they are real copies in node_modules, which Tailwind does not scan on its own. */
+@source "../node_modules/@kaigilb/*/src/**/*.{ts,tsx}";
+@source not "../node_modules/@kaigilb/*/src/**/*.test.{ts,tsx}";
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--gs-font-size, 16px);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The menu drawer takes the focus itself when it opens, to keep the keyboard inside it. It is not a control, and its
+   unit says it draws no ring (`outline-none`); the rule above is stronger than that and drew a bright line down the
+   open drawer's edge when it was opened from the keyboard. This gives the drawer its unit's own choice back. */
+[role="dialog"].outline-none:focus-visible {
+  outline: none;
+}
+
+/* The app's own screens. */
+.app-setup {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+/* The opening screen is text to read: a line of about 65 letters on a wide window, the window's own width on a phone. */
+.app-home {
+  max-width: 34em;
+}
+.app-home h1,
+.app-setup h1 {
+  margin: 0 0 12px;
+  font-size: 1.4em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.app-home h2 {
+  margin: 28px 0 12px;
+  font-size: 1.15em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.app-home p,
+.app-setup p {
+  margin: 0 0 12px;
+}
+.app-home .app-home-close {
+  margin-top: 28px;
+}
+.app-home-address {
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: 0.9em;
+}
+.app-fake-note {
+  margin: 0;
+  max-width: 420px;
+  padding: 10px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-size: 0.9em;
+}
