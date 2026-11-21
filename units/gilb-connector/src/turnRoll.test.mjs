@@ -263,8 +263,11 @@ describe("a turn out of room", () => {
       const platform = await scripted([ROUNDS]);
       const box = connect({ origin: platform.origin, agent });
       const res = await callTool(box);
-      // 0.6.2: a connector that is Agent.Concept does not renew at all; the server's answer stands.
-      expect(text(res), agent).toBe(ROUNDS);
+      // W4.4 (Q17, Kai 2026-11-21): a connector that is Agent.Concept renews the turn like any other and the call is still not sent again
+      // (a mint is not safe to repeat); the answer says to call again, and sets no pause.
+      const answer = JSON.parse(text(res));
+      expect(answer.renewed, agent).toBe(true);
+      expect(answer.conceptPaused, agent).toBeUndefined();
       expect(posts(platform), agent).toHaveLength(1);
     }
   });

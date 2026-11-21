@@ -1,6 +1,9 @@
 // @vitest-environment node
 // Round 9 (0.6.2): a cut on tool rounds or hand-offs never leaves the person blocked. Agent.Concept calls are not sent again,
 // but the turn is renewed and the answer says what to do next; a run_named_role near the ceiling starts on a new turn.
+// W4.4 (Q17/Q18, Kai 2026-11-21): a turn limit no longer makes Agent.Concept wait for the person's next message (it goes on by itself on the renewed turn).
+// Only the server's word that the person's DAILY package limit was reached (`dailyLimit` on the hand-off's close) pauses it. Both reasons are tested below.
+// MOCK: the platform is a local fake door that answers what each test scripts (the real limit is counted on the server: GilbPlatform test/w44-*).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import http from "node:http";
 import { PassThrough } from "node:stream";
@@ -193,16 +196,19 @@ describe("round cut never blocks the person (stuck case i: run_named_role Agent.
     }
   });
 
-  it("r2 r11 a connector that is Agent.Concept does not renew; ask_agent_concept renews", async () => {
+  it("r2 r11 a connector that is Agent.Concept renews too (W4.4, Q17: it no longer stops for the person); ask_agent_concept renews", async () => {
     const platform = await scripted([ROUNDS, "tool-ok"]);
     const lines = stderrLines();
     const box = connect({ origin: platform.origin, agent: "Agent.Concept" });
-    // r11: a connector that is Agent.Concept does not renew: the server's answer stands, the reason is logged.
-    expect(text(await callTool(box))).toBe(ROUNDS);
+    // W4.4: a connector that is Agent.Concept renews the turn and says to call again; it does not tell the model to stop.
+    const refused = JSON.parse(text(await callTool(box)));
+    expect(refused.renewed).toBe(true);
+    expect(refused.next).not.toBe(NEXT);
+    expect(refused.conceptPaused).toBeUndefined();
     await callTool(box);
     expect(posts(platform)).toHaveLength(2);
-    expect(posts(platform)[1].body.turnId).toBe(TURN);
-    expect(skipLines(lines).some((l) => l.includes("this connector is Agent.Concept"))).toBe(true);
+    expect(posts(platform)[1].body.turnId).not.toBe(TURN);
+    expect(skipLines(lines).some((l) => l.includes("this connector is Agent.Concept"))).toBe(false);
     const p2 = await scripted([ROUNDS, "tool-ok"]);
     const b2 = connect({ origin: p2.origin });
     expect(JSON.parse(text(await callTool(b2, "ask_agent_concept", { need: "x" }))).renewed).toBe(true);
@@ -235,56 +241,93 @@ describe("round cut never blocks the person (stuck case i: run_named_role Agent.
   }, 60000);
 });
 
-describe("the Agent.Concept brake survives renewal", () => {
+describe("W4.4 (Q17/Q18): Agent.Concept waits for the person on the daily limit only, never on a turn limit", () => {
   const concept = (box) => callTool(box, "run_named_role", { role: "Agent.Concept", task: "x" });
   const outcome = (box) => callTool(box, "run_named_role", { role: "Agent.Outcome", task: "x" });
+  const DAILY = JSON.stringify({ closed: true, dailyLimit: true });
 
-  it("r9 a cut Concept call renews the turn, Agent.Outcome is sent on the new turn, Agent.Concept is not sent and says conceptPaused", async () => {
+  // ---- reason 1: a per-turn limit. Agent.Concept goes on by itself. ----
+  it("r9 per-turn reason: a cut Concept call renews the turn and Agent.Concept is sent again at once, with no wait for the person (W4.4, Q17)", async () => {
     const platform = await scripted([ROUNDS, "role-ok"]);
     const box = connect({ origin: platform.origin });
-    expect(JSON.parse(text(await concept(box))).renewed).toBe(true);
+    const first = JSON.parse(text(await concept(box)));
+    expect(first.renewed).toBe(true);
+    expect(first.conceptPaused).toBeUndefined();
     expect(posts(platform)).toHaveLength(1);
-    expect(text(await outcome(box))).toBe("role-ok");
+    // The next Concept call is SENT (not answered locally as paused), on the new turn.
+    expect(text(await concept(box))).toBe("role-ok");
     expect(posts(platform)).toHaveLength(2);
     expect(posts(platform)[1].body.turnId).not.toBe(TURN);
-    const paused = JSON.parse(text(await concept(box)));
-    expect(paused.conceptPaused).toBe(true);
-    expect(paused.renewed).toBe(true);
-    expect(paused.next).toBe(CONCEPT_PAUSED_NEXT.rounds);
-    expect(posts(platform)).toHaveLength(2);
-    expect(JSON.parse(text(await callTool(box, "ask_agent_concept", { need: "x" }))).conceptPaused).toBe(true);
-    expect(posts(platform)).toHaveLength(2);
+    expect(posts(platform)[1].body.arguments).toContain("Agent.Concept");
+    // ask_agent_concept is not held back either.
+    const ask = await callTool(box, "ask_agent_concept", { need: "x" });
+    expect(text(ask)).toBe("role-ok");
+    expect(posts(platform)).toHaveLength(3);
   });
 
-  it("r9 a cut Concept hand-off sets the brake too", async () => {
+  it("r9 per-turn reason: a cut Concept hand-off sets no brake; the next Concept hand-off is sent (W4.4, Q17)", async () => {
     const platform = await hopDoor(CUT);
     const box = connect({ origin: platform.origin, env: meEnv() });
-    expect(answerOf(await concept(box)).cut).toBe(CUT_TEXT);
-    const before = posts(platform).length;
-    expect(JSON.parse(text(await concept(box))).conceptPaused).toBe(true);
-    expect(posts(platform)).toHaveLength(before);
-    await outcome(box);
-    const roles = posts(platform).filter((rec) => rec.body.name === "run_named_role");
-    expect(roles.at(-1).body.arguments).toContain("Agent.Outcome");
-    expect(roles.at(-1).body.turnId).not.toBe(TURN);
+    const first = answerOf(await concept(box));
+    expect(first.cut).toBe(CUT_TEXT);
+    expect(first.conceptPaused).toBeUndefined();
+    const before = posts(platform).filter((rec) => rec.body.name === "run_named_role").length;
+    const second = answerOf(await concept(box));
+    expect(second.conceptPaused).toBeUndefined();
+    expect(posts(platform).filter((rec) => rec.body.name === "run_named_role")).toHaveLength(before + 1);
+    expect(posts(platform).filter((rec) => rec.body.name === "run_named_role").at(-1).body.turnId).not.toBe(TURN);
   }, 30000);
 
-  it("r11 (0.6.3) the pause says the round budget was reached, not a mint limit; the real mint-cap sentence is kept for a real mint cap", () => {
-    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("round budget");
-    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("the concept needs were not lost");
-    expect(CONCEPT_PAUSED_NEXT.rounds).toContain("gilbplatform_task");
-    expect(CONCEPT_PAUSED_NEXT.rounds).not.toContain("mint limit");
-    expect(CONCEPT_PAUSED_NEXT.mint).toBe("Agent.Concept used its mint limit for this turn. Carry on with other work. When the person sends their next message, call gilbplatform_task with it: that resumes Agent.Concept. Tell the person in your report.");
-  });
+  // ---- reason 2: the person's daily package limit. Agent.Concept waits for the person's next message. ----
+  it("r12 daily reason: a Concept hand-off that closes with dailyLimit answers conceptPaused, and no further Concept call is sent (W4.4, Q18)", async () => {
+    const platform = await hopDoor(DAILY);
+    const box = connect({ origin: platform.origin, env: meEnv() });
+    const first = answerOf(await concept(box));
+    expect(first.conceptPaused).toBe(true);
+    expect(first.next).toBe(CONCEPT_PAUSED_NEXT.daily);
+    const before = posts(platform).length;
+    const second = answerOf(await concept(box));
+    expect(second.conceptPaused).toBe(true);
+    expect(second.next).toBe(CONCEPT_PAUSED_NEXT.daily);
+    expect(posts(platform)).toHaveLength(before);
+    expect(answerOf(await callTool(box, "ask_agent_concept", { need: "x" })).conceptPaused).toBe(true);
+    expect(posts(platform)).toHaveLength(before);
+    // Other agents are not held back.
+    await outcome(box);
+    expect(posts(platform).filter((rec) => rec.body.name === "run_named_role").at(-1).body.arguments).toContain("Agent.Outcome");
+  }, 30000);
 
-  it("r10 the person's next message (gilbplatform_task) clears the brake, and Concept is sent again", async () => {
-    const platform = await scripted([ROUNDS, "role-ok"]);
-    const box = connect({ origin: platform.origin });
+  it("r12 daily reason: the person's next message (gilbplatform_task) clears the pause and Concept is sent again (W4.4, Q18)", async () => {
+    const platform = await hopDoor(DAILY);
+    const box = connect({ origin: platform.origin, env: meEnv() });
     await concept(box);
-    expect(JSON.parse(text(await concept(box))).conceptPaused).toBe(true);
+    expect(answerOf(await concept(box)).conceptPaused).toBe(true);
     await callTool(box, "gilbplatform_task", { text: "a new request" });
-    expect(text(await concept(box))).toBe("role-ok");
-    expect(posts(platform).at(-1).body.arguments).toContain("Agent.Concept");
+    const before = posts(platform).filter((rec) => rec.body.name === "run_named_role").length;
+    await concept(box);
+    const roles = posts(platform).filter((rec) => rec.body.name === "run_named_role");
+    expect(roles).toHaveLength(before + 1);
+    expect(roles.at(-1).body.arguments).toContain("Agent.Concept");
+  }, 30000);
+
+  it("r12 the two reasons together: a cut then a daily limit: the cut does not pause, the daily limit does (W4.4, Q17/Q18)", async () => {
+    const closes = [CUT, DAILY, DAILY];
+    let n = 0;
+    const platform = await hopDoor(() => closes[Math.min(n++, closes.length - 1)]);
+    const box = connect({ origin: platform.origin, env: meEnv() });
+    expect(answerOf(await concept(box)).conceptPaused).toBeUndefined(); // the cut
+    expect(answerOf(await concept(box)).conceptPaused).toBe(true); // sent, and the server says the daily limit
+    const sent = posts(platform).filter((rec) => rec.body.name === "run_named_role").length;
+    expect(answerOf(await concept(box)).conceptPaused).toBe(true); // now answered here
+    expect(posts(platform).filter((rec) => rec.body.name === "run_named_role")).toHaveLength(sent);
+  }, 30000);
+
+  it("r11 the pause's words: only the daily reason exists, in plain words, and tells the model to tell the person (W4.4, Q18)", () => {
+    expect(Object.keys(CONCEPT_PAUSED_NEXT)).toEqual(["daily"]);
+    expect(CONCEPT_PAUSED_NEXT.daily).toContain("daily limit");
+    expect(CONCEPT_PAUSED_NEXT.daily).toContain("Tell the person in plain words");
+    expect(CONCEPT_PAUSED_NEXT.daily).toContain("gilbplatform_task");
+    expect(CONCEPT_PAUSED_NEXT.daily).not.toContain("round budget");
   });
 });
 
