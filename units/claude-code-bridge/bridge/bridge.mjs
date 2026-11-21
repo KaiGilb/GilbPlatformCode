@@ -37,6 +37,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 export const WEB_SCOPES = ["once", "turn"];
@@ -2283,6 +2284,30 @@ function readRefTip(gitDir, refRel) {
     }
     return null;
 }
+/** Does this git object (type and content) hash back to `id`? SHA-1 for a 40-hex id, SHA-256 for a 64-hex one. */
+function objectHashOk(id, type, content) {
+    const algo = id.length === 64 ? "sha256" : "sha1";
+    return crypto.createHash(algo).update(`${type} ${content.length}\0`).update(content).digest("hex") === id;
+}
+/** A loose object file: inflated, its header read, its whole content hashed back to `id`. Null when it is fine, else why not. */
+function looseObjectProblem(file, id) {
+    const st = fs.lstatSync(file);
+    if (st.isSymbolicLink() || !st.isFile())
+        return "is not a plain file";
+    let raw;
+    try {
+        raw = zlib.inflateSync(fs.readFileSync(file));
+    }
+    catch {
+        return "cannot be read as a git object";
+    }
+    const nul = raw.indexOf(0);
+    const m = nul > 0 ? /^(blob|tree|commit|tag) (\d+)$/.exec(raw.subarray(0, nul).toString("latin1")) : null;
+    if (!m || Number(m[2]) !== raw.length - nul - 1)
+        return "has a damaged header";
+    const algo = id.length === 64 ? "sha256" : "sha1";
+    return crypto.createHash(algo).update(raw).digest("hex") === id ? null : "does not hash back to its id";
+}
 /** The git calls that take the index lock. */
 const INDEX_LOCKING = new Set(["add", "reset", "rm", "update-index", "read-tree", "write-tree"]);
 /** The git version as [major, minor], or null. */
@@ -2505,7 +2530,7 @@ export async function saveTurnToGit(o) {
         // birth time (macOS, Windows, Linux with statx), and only if born within GIT_LOCK_UNNOTED_MS of that call's start. A lock is
         // made with O_EXCL, so while the killed git held it no other git could make one; another git can only have made it after.
         // The bridge's own ref lock is made already holding its commit id, which its record names: it is proved by its content.
-        if (rec && typeof rec.lockRel === "string" && typeof rec.expect === "string" && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(rec.lockRel)) {
+        if (rec && typeof rec.lockRel === "string" && typeof rec.expect === "string" && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(rec.expect) && rec.pid !== process.pid && pidGone(rec.pid) && locks.includes(rec.lockRel)) {
             let content = "";
             try {
                 content = fs.readFileSync(path.join(gitDir, rec.lockRel), "latin1").trim();
@@ -2735,6 +2760,54 @@ export async function saveTurnToGit(o) {
         const message = o.outside ? gitCommitMessage(GIT_OUTSIDE_SUBJECT, files, null) : gitCommitMessage(o.summary, files, o.turnId);
         const tree = (await run(["write-tree"])).toString("utf8").trim();
         const commit = (await run(["commit-tree", tree, ...(parent ? ["-p", parent] : []), "-F", "-"], message)).toString("utf8").trim();
+        // Every object this commit adds against its parent (the commit, its new trees and blobs) is checked before the ref moves: a loose
+        // one must be a plain file (not a link) whose content hashes back to its id. git trusts an object file that is already at the
+        // right path and skips writing it, so a link or hard link planted there would otherwise put foreign bytes into the commit (D4).
+        // A few objects per turn, hashed in this process (no extra git start for loose ones).
+        const added = (await run(["rev-list", "--objects", commit, ...(parent ? ["--not", parent] : [])])).toString("utf8").split("\n").map((l) => l.slice(0, 64).split(" ")[0]).filter((x) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(x));
+        const notLoose = [];
+        for (const id of new Set(added)) {
+            const file = path.join(gitDir, "objects", id.slice(0, 2), id.slice(2));
+            if (!fs.lstatSync(file, { throwIfNoEntry: false })) {
+                notLoose.push(id);
+                continue;
+            }
+            const why = looseObjectProblem(file, id);
+            if (why) {
+                // Not a valid object (it does not hash to its own id), so removing that name loses nothing; and the index goes back to the
+                // parent, so the next save writes the real object again instead of trusting the stale entry. The branch is not moved.
+                fs.rmSync(file, { force: true });
+                try {
+                    if (parent)
+                        await run(["reset", "--quiet", parent]);
+                    else
+                        await run(["rm", "--cached", "-r", "--quiet", "--ignore-unmatch", "--", "."]);
+                }
+                catch {
+                    /* the next save's add will still see the change */
+                }
+                throw new GitRefused(`The repo's object .git/objects/${id.slice(0, 2)}/${id.slice(2, 12)}… ${why}; it was removed and nothing was saved (the branch was not moved).`);
+            }
+        }
+        if (notLoose.length > 0) {
+            // Already in a pack: read through git once and hashed here.
+            const buf = await run(["cat-file", "--batch"], notLoose.join("\n") + "\n");
+            let at = 0;
+            const seen = new Set();
+            while (at < buf.length) {
+                const nl = buf.indexOf(10, at);
+                if (nl < 0)
+                    break;
+                const [id, type, size] = buf.subarray(at, nl).toString("latin1").split(" ");
+                const n = Number(size);
+                if (!id || !type || !Number.isFinite(n) || !objectHashOk(id, type, buf.subarray(nl + 1, nl + 1 + n)))
+                    throw new GitRefused(`The repo's object ${String(id).slice(0, 12)}… does not hash back to its id, so nothing was saved (the branch was not moved).`);
+                seen.add(id);
+                at = nl + 1 + n + 1;
+            }
+            if (notLoose.some((id) => !seen.has(id)))
+                throw new GitRefused("An object of this save could not be read back, so nothing was saved (the branch was not moved).");
+        }
         // The ref is written by the bridge itself, not `git update-ref`: no reflog line is ever written (an existing log file would be
         // appended to even with core.logAllRefUpdates=false), and the lock is made with O_EXCL (a planted link or file there refuses).
         // The branch was named by HEAD above (refRel); it is checked against the parent again once the lock is held (FN1).

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { saveTurnToGit } from "../bridge/bridge.mjs";
 import { commitCount, committedFiles, ev, fsckOk, plainGit, startGitBridge, writes } from "./gitTestKit.mjs";
 
 const posix = process.platform !== "win32";
@@ -272,4 +273,68 @@ describe("a save of the code folder itself leaves out projects whose switch is o
     expect(plainGit(b.ws, ["show", "HEAD:app/kept.txt"])).toBe("v1");
     expect(committedFiles(b.ws)).not.toContain("app/new.txt");
   });
+});
+
+// ---- D4 (Agent.Tester, last check): git trusts an object file already at the right path and skips writing it -------------
+describe("a link or hard link at .git/objects/xx/<next blob> never puts foreign bytes into a commit (D4)", () => {
+  /** A repo with one saved commit; returns the id and path of the blob the NEXT save will add (b.txt = "bee\n"). */
+  async function nextBlob() {
+    const f = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-git-d4-")));
+    const proj = path.join(f, "proj");
+    const out = path.join(f, "outside");
+    fs.mkdirSync(proj);
+    fs.mkdirSync(out);
+    const priv = path.join(f, "priv");
+    fs.writeFileSync(path.join(proj, "a.txt"), "a\n");
+    const r1 = await saveTurnToGit({ folder: proj, summary: "first", turnId: "t1", env: process.env, privateDir: priv });
+    expect(r1.ok && r1.commit).toBeTruthy();
+    fs.writeFileSync(path.join(proj, "b.txt"), "bee\n");
+    const id = plainGit(proj, ["hash-object", "b.txt"]).trim();
+    const objPath = path.join(proj, ".git", "objects", id.slice(0, 2), id.slice(2));
+    fs.mkdirSync(path.dirname(objPath), { recursive: true });
+    return { f, proj, out, priv, id, objPath, tip: plainGit(proj, ["rev-parse", "HEAD"]).trim() };
+  }
+  /** A valid loose object of ANOTHER repo (other content): its file, copied outside. */
+  function foreignObject(t) {
+    const other = path.join(t.f, "otherrepo");
+    fs.mkdirSync(other);
+    plainGit(other, ["init", "-q", "--template="]);
+    const fid = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: other, input: "FOREIGN SECRET CONTENT\n", encoding: "utf8", env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+    const copy = path.join(t.out, "foreign-obj");
+    fs.copyFileSync(path.join(other, ".git", "objects", fid.slice(0, 2), fid.slice(2)), copy);
+    return copy;
+  }
+  function plainOutside(t) {
+    const p = path.join(t.out, "victim");
+    fs.writeFileSync(p, "VICTIM\n");
+    return p;
+  }
+  const cases = [
+    ["a symlink", "another repo's object", (t) => fs.symlinkSync(foreignObject(t), t.objPath), posix],
+    ["a symlink", "a plain outside file", (t) => fs.symlinkSync(plainOutside(t), t.objPath), posix],
+    ["a hard link", "another repo's object", (t) => fs.linkSync(foreignObject(t), t.objPath), true],
+    ["a hard link", "a plain outside file", (t) => fs.linkSync(plainOutside(t), t.objPath), true],
+  ];
+  for (const [kind, target, plant, runs] of cases) {
+    it.skipIf(!runs)(`${kind} to ${target}: the save is refused, the branch does not move, fsck stays clean`, async () => {
+      const t = await nextBlob();
+      try {
+        plant(t);
+        const r = await saveTurnToGit({ folder: t.proj, summary: "second", turnId: "t2", env: process.env, privateDir: t.priv });
+        expect(r.ok).toBe(false);
+        expect(r.reason).toMatch(/object .* (is not a plain file|does not hash back|cannot be read|damaged header)/);
+        expect(plainGit(t.proj, ["rev-parse", "HEAD"]).trim()).toBe(t.tip);
+        // The bridge removed the planted name (only the name: an outside target is untouched) and reset the index, so the repo is
+        // valid and the next save writes and commits b.txt's own bytes.
+        expect(fs.lstatSync(t.objPath, { throwIfNoEntry: false })).toBeUndefined();
+        for (const n of fs.readdirSync(t.out)) if (n === "victim") expect(fs.readFileSync(path.join(t.out, n), "utf8")).toBe("VICTIM\n");
+        expect(fsckOk(t.proj)).toBe(true);
+        const r3 = await saveTurnToGit({ folder: t.proj, summary: "third", turnId: "t3", env: process.env, privateDir: t.priv });
+        expect(r3.ok && r3.commit).toBeTruthy();
+        expect(plainGit(t.proj, ["show", "HEAD:b.txt"])).toBe("bee\n");
+      } finally {
+        fs.rmSync(t.f, { recursive: true, force: true });
+      }
+    });
+  }
 });
