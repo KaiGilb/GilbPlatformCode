@@ -27,7 +27,6 @@ const ALLOWED_IMPORT = [
   /^@kaigilb\/gilbplatformcode-(app-shell|lws-session-bridge|signin|style-runtime|vault-share-sheet|vault-switcher)$/,
   /^@kaigilb\/gilbplatformcode-signin\/(session|signin\.css)$/,
   /^@kaigilb\/gilbplatformcode-style-runtime\/react$/,
-  /^@kaigilb\/gilbplatformcode-vault-share-sheet\/remember-names$/,
 ];
 
 if (!existsSync(srcRoot)) {

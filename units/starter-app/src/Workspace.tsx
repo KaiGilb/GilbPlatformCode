@@ -3,8 +3,8 @@ import { Fragment, useCallback, useMemo, useState, type ReactNode } from "react"
 import { ShellFrame, useShellCore } from "@kaigilb/gilbplatformcode-app-shell";
 import { listVaults, type ListedVault } from "@kaigilb/gilbplatformcode-signin";
 import { VaultShareSheet } from "@kaigilb/gilbplatformcode-vault-share-sheet";
-import { browserStore } from "@kaigilb/gilbplatformcode-vault-share-sheet/remember-names";
 import { useVaultChoice, VaultSwitcher } from "@kaigilb/gilbplatformcode-vault-switcher";
+import { clearAddress, readAddress, vaultAddressStore, writeAddress } from "./address";
 import type { StarterRuntime } from "./start";
 import type { StarterContext, StarterSection } from "./StarterApp";
 import type { StarterWords } from "./words";
@@ -113,15 +113,22 @@ function Menu({
 export function Workspace({ runtime, sections, words, ownVault, listed, principal, actor, signal, onSignOut }: WorkspaceProps) {
   const { settings, credential } = runtime;
   const load = useCallback(() => listVaults(settings.idOrigin, { credential }), [settings.idOrigin, credential]);
-  const choice = useVaultChoice({ listed, ownVaultId: ownVault.vaultId, principal, appKey: settings.appId, represents: settings.vaultType, load });
-  const [sectionId, setSectionId] = useState(sections[0]!.id);
+  // The open vault and the open section are kept in the page's address, not on the device.
+  const choice = useVaultChoice({ listed, ownVaultId: ownVault.vaultId, principal, appKey: settings.appId, represents: settings.vaultType, load, store: vaultAddressStore });
+  const [sectionId, setSectionId] = useState(() => {
+    const asked = readAddress("section");
+    return sections.some((s) => s.id === asked) ? asked! : sections[0]!.id;
+  });
+  const pickSection = useCallback((id: string) => {
+    setSectionId(id);
+    writeAddress("section", id);
+  }, []);
   const [sharing, setSharing] = useState(false);
   // On a narrow window the menu is a drawer the frame owns. A new key closes it after the person has picked from it.
   const [drawerRound, setDrawerRound] = useState(0);
   const afterMenuAct = useCallback((fromDrawer: boolean) => {
     if (fromDrawer) setDrawerRound((n) => n + 1);
   }, []);
-  const names = useMemo(() => browserStore(`${settings.appId}:`), [settings.appId]);
 
   const section = sections.find((s) => s.id === sectionId) ?? sections[0]!;
   const open = choice.current;
@@ -140,7 +147,10 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
   const account: AccountProps = {
     words,
     onShare: () => setSharing(true),
-    onSignOut,
+    onSignOut: () => {
+      clearAddress();
+      onSignOut();
+    },
   };
   const chip = (
     <VaultSwitcher
@@ -163,7 +173,7 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
             current={section.id}
             words={words}
             account={account}
-            onPick={setSectionId}
+            onPick={pickSection}
             onDrawerAct={afterMenuAct}
           />
         }
@@ -177,7 +187,7 @@ export function Workspace({ runtime, sections, words, ownVault, listed, principa
         leftLabel={words.menu}
       />
       {sharing ? (
-        <VaultShareSheet vaultId={open.vaultId} title={words.shareTitle(open.label)} help={words.shareHelp} you={principal} rememberNames={names} onClose={() => setSharing(false)} />
+        <VaultShareSheet vaultId={open.vaultId} title={words.shareTitle(open.label)} help={words.shareHelp} you={principal} onClose={() => setSharing(false)} />
       ) : null}
     </div>
   );

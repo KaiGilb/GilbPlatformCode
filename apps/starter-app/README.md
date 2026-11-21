@@ -72,6 +72,8 @@ The starter has no records. A new app adds its screens for one kind of record in
 1. **`src/records/`**: your screens to list, add, change and delete the record. Replace `RecordsHome.tsx` (and delete `test/recordsHome.test.tsx`).
 2. **`src/sections.tsx`**: one line per section, for example `{ id: "plants", label: "Plants", render: (ctx) => <PlantList ctx={ctx} /> }`. A section with `detail: (ctx) => ...` also gets the right region, for one record's detail.
 
+The open section and the open vault are kept in the page's address (`?section=`, `?vault=`), so a reload opens the same place. Keep your own navigable state (a selected record, a filter) in the address too, not in memory or in browser storage.
+
 Each section gets `ctx`:
 
 - `ctx.vault.vaultId`: the open vault. Name it as the vault of every record call. `ctx.vault.canWrite` false means view only: offer no add, change or delete.

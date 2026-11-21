@@ -33,7 +33,7 @@ What a person sees, in order: "Checking your sign-in…"; the sign-in card (a pe
 
 - Not the app's records. The starter has none: a section is where the app lists, adds, changes and deletes its own kind of record.
 - Not the App Style Studio. The app loads `style-runtime` only; choosing a style is a developer's tool.
-- Not a router. Picking a section does not change the address.
+- Not a router. The open section and the open vault are written into the page's address (`?section=`, `?vault=`) so a reload opens the same place; no history entry is added and no path is read.
 - Not a second sign-in, vault client or share screen. Each is the unit named above; a fix belongs there.
 - Not a place for a host name. Every origin, name and type comes in through the settings.
 
@@ -115,7 +115,8 @@ createRoot(document.getElementById("root")!).render(<StarterApp runtime={runtime
 - Do not wait for `runtime.style` before the first render. The cached style is already applied when `startStarter` returns.
 - Do not make a second `SessionCredential`, call `setBaseOrigin` or `setLwsAuth` yourself, or add a second `<style id="gilb-style">`.
 - Do not put the fake platform in a build. `apps/starter-app` loads it only in its fake mode and its build check refuses it.
-- Do not keep a record in the browser as the copy of record. Everything the app saves goes to the open vault.
+- Do not keep a record, a label or a choice in the browser as its only copy. Everything the app saves goes to the open vault. The starter itself keeps nothing of a person's on the device but what the list under "What it keeps in the browser" names.
+- Do not pass `rememberNames` to the share sheet from a section of your own: it keeps the name a person typed on that device only.
 - Do not give two apps on one origin the same `appId`: the frame's layout, the style cache and the remembered vault are kept under it.
 
 ## Wrong readings
@@ -126,7 +127,22 @@ createRoot(document.getElementById("root")!).render(<StarterApp runtime={runtime
 - "The chip shows a vault as soon as it is shared." It lists again each time it is opened, and at each sign-in. It does not poll.
 - "`style: none` is a crash." It means no style file was found; the default values in `starterApp.css` show.
 - "On a phone the header has Share and Sign out." Below 600 px they are in the menu drawer (the Menu button in the bottom bar); the header keeps the name and the chip.
+- "The share list shows the name I typed." It shows what the platform says about the person. A person the platform sends no name for reads "No name was given for this person."; the starter does not keep the typed name on the device.
 - "Reloading signs the person out." On a page with IndexedDB the sign-in is kept for up to 14 days from last use; `signin` owns that.
+
+## What it keeps in the browser
+
+For the test that drops each one and reloads:
+
+| Where | Key | Whose | After it is dropped |
+|---|---|---|---|
+| IndexedDB | `gilb-signin-session` | `signin` | the person signs in again |
+| localStorage | `<appId>:own:<principal>`, `<appId>:last:<principal>`, `<appId>:pending:<principal>` | `signin` | the person's vault is found again by its name; a half-made vault's name is asked of the platform again |
+| localStorage or sessionStorage | `<appId>.pendingSignInEmail` (15 minutes) | `signin` | the email is typed again |
+| localStorage | `style:<appId>` | `style-runtime` | the style is read again from the saved sheet or the app's own file |
+| localStorage | `<appId>.shell.layout.v1` | `app-shell` | the frame's default widths: a per-browser layout, not a record |
+
+Nothing else. The open vault and section are in the address. A test pins the localStorage and sessionStorage keys after a sign-in, a section pick and a share.
 
 ## Where it came from
 

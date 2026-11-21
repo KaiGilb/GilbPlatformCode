@@ -115,7 +115,7 @@ describe("the whole app on the fake platform", () => {
     await user.type(within(sheet).getByLabelText("Their vault name"), "ben");
     await user.click(within(sheet).getByRole("radio", { name: "Can edit" }));
     await user.click(within(sheet).getByRole("button", { name: "Share" }));
-    await within(sheet).findByRole("button", { name: "Remove ben" });
+    await within(sheet).findByRole("button", { name: /^Remove / }); // Ben is in the list of who has access
     await user.click(within(sheet).getByRole("button", { name: "Close" }));
 
     await user.click(screen.getByRole("button", { name: "Sign out" }));

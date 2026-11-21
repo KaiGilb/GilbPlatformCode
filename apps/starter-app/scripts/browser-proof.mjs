@@ -106,7 +106,7 @@ function legsFor(size, t) {
         await t.set(".vss-input", "ben");
         await t.clickText("Can edit", { within: ".vss" });
         await t.click(".vss-primary");
-        await page.waitFor(`!!document.querySelector('.vss [aria-label="Remove ben"]')`);
+        await page.waitFor(`!!document.querySelector(".vss .vss-row .vss-danger-text")`); // Ben is in the list, with a Remove button
         await checkButtonRows(page, 0);
         await t.noHorizontalScroll();
       },

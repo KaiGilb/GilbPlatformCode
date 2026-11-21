@@ -26,6 +26,7 @@ function mount(over: Parameters<typeof settingsFor>[1] = {}) {
   return { runtime, ...render(<StarterApp runtime={runtime} sections={sections} />) };
 }
 
+const storageKeys = () => Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).sort();
 const vaultsOfType = () => [...world.fake.state.vaults.values()].filter((v) => v.represents === TYPE);
 const modesOf = (vaultId: string, principal: string) => [...(world.fake.state.grants.get(vaultId)?.get(principal) ?? [])].sort();
 
@@ -197,9 +198,12 @@ describe("share access to the vault", () => {
     await user.type(within(sheet).getByLabelText("Their vault name"), "ben");
     await user.click(within(sheet).getByRole("radio", { name: "Can edit" }));
     await user.click(within(sheet).getByRole("button", { name: "Share" }));
-    await within(sheet).findByRole("button", { name: /^Remove / });
+    const row = (await within(sheet).findByRole("button", { name: /^Remove / })).closest("li")!;
     expect(modesOf(vaultId, ben.principal)).toEqual(["read", "write"]);
-    expect(within(sheet).getByText("ben").closest("li")!.textContent).toContain("Can edit");
+    expect(row.textContent).toContain("Can edit");
+    // The name typed is not kept on this device: the list shows only what the platform itself says about the person.
+    expect(row.textContent).toContain("No name was given for this person.");
+    expect(storageKeys().filter((k) => k.includes("vss-names"))).toEqual([]);
 
     await user.click(within(sheet).getByRole("button", { name: /^Remove / }));
     await user.click(within(sheet).getByRole("button", { name: "Yes" }));
@@ -224,7 +228,9 @@ describe("share access to the vault", () => {
 
     await user.click(screen.getByRole("button", { name: "Vault annthings. Change vault" }));
     const chooser = await screen.findByRole("dialog", { name: "Choose a vault" });
-    const rows = await within(chooser).findAllByRole("button", { name: /things/ });
+    await within(chooser).findByRole("button", { name: /benthings/ });
+    // Every row of the chooser: the vaults of this app's type only. Ann's account vault (ann) is not one of them.
+    const rows = [...chooser.querySelectorAll<HTMLButtonElement>(".vsw-row")];
     expect(rows.map((r) => r.textContent)).toEqual(["annthingsYours", "benthingsShared with you · View only"]);
     await user.click(rows[1]!);
 
@@ -306,6 +312,70 @@ describe("computer and phone", () => {
     await user.click(within(screen.getByRole("navigation", { name: "Panels" })).getByRole("button", { name: "Menu" }));
     await user.click(within(await screen.findByRole("dialog", { name: "Things" })).getByRole("button", { name: "Sign out" }));
     await screen.findByLabelText("Email");
+  });
+});
+
+describe("where the open section and vault are kept", () => {
+  it("in the page's address: a reload opens the same vault and section, and sign-out takes them out again", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    const ben = world.fake.seedPerson({ email: "ben@example.test", vaultName: "ben" });
+    const bens = world.fake.seedVault({ name: "benthings", owner: ben, represents: TYPE });
+    world.fake.grant(bens, ann, "write");
+    const user = userEvent.setup();
+    const first = mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(window.location.search).toBe("");
+
+    await user.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Other" }));
+    await user.click(screen.getByRole("button", { name: "Vault annthings. Change vault" }));
+    await user.click(await within(await screen.findByRole("dialog", { name: "Choose a vault" })).findByRole("button", { name: /benthings/ }));
+    await screen.findByRole("button", { name: "Vault benthings. Change vault" });
+    const address = new URLSearchParams(window.location.search);
+    expect(address.get("section")).toBe("other");
+    expect(address.get("vault")).toBe(bens.id);
+
+    first.unmount();
+    mount(); // a reload: the same address, the kept sign-in
+    await ready();
+    expect(screen.getByTestId("other")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Vault benthings. Change vault" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByLabelText("Email");
+    expect(window.location.search).toBe("");
+  });
+
+  it("an address that names a section or a vault the person does not have opens their own vault and the first section", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    history.replaceState(null, "", "/?section=nowhere&vault=https%3A%2F%2Fsomeone.fake.test%2Fvault");
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    expect(screen.getByTestId("home").textContent).toBe("Home of annthings");
+  });
+
+  it("on the device it keeps only the frame's layout and the sign-in unit's own keys, under the app's id", async () => {
+    const ann = world.fake.seedPerson({ email: "ann@example.test", vaultName: "ann" });
+    world.fake.seedPerson({ email: "ben@example.test", vaultName: "ben" });
+    const user = userEvent.setup();
+    mount();
+    await signIn(user, world.fake, ann.email);
+    await ready();
+    await user.click(within(screen.getByRole("navigation", { name: "Sections" })).getByRole("button", { name: "Other" }));
+    await user.click(screen.getByRole("button", { name: "Hide selection panel" })); // the frame keeps its layout
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    const sheet = await screen.findByRole("dialog", { name: "Share annthings" });
+    await user.type(within(sheet).getByLabelText("Their vault name"), "ben");
+    await user.click(within(sheet).getByRole("button", { name: "Share" }));
+    await within(sheet).findByRole("button", { name: /^Remove / });
+
+    const allowed = [/^things\.shell\.layout\.v1$/, /^things:(own|last|pending):/, /^things\.pendingSignInEmail$/];
+    const keys = storageKeys();
+    expect(keys.filter((k) => !allowed.some((re) => re.test(k)))).toEqual([]);
+    expect(keys).toContain("things.shell.layout.v1");
+    expect(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).filter((k) => !allowed.some((re) => re.test(k)))).toEqual([]);
   });
 });
 

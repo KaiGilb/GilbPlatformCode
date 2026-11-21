@@ -16,6 +16,7 @@
     "src/index.ts",
     "src/settings.ts",
     "src/start.ts",
+    "src/address.ts",
     "src/StarterApp.tsx",
     "src/Workspace.tsx",
     "src/words.ts",

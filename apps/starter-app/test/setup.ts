@@ -22,6 +22,7 @@ beforeEach(() => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("localStorage", memoryStorage());
   vi.stubGlobal("sessionStorage", memoryStorage());
+  if (typeof history !== "undefined") history.replaceState(null, "", "/"); // the open vault and section are kept in the address
 });
 
 afterEach(async () => {
