@@ -493,6 +493,10 @@ export const CUT_TEXT = "This hand-off ran out of tool rounds before it finished
 export const CONCEPT_PAUSED_NEXT = {
     daily: "Agent.Concept reached the daily limit of term packages for this person, so it stopped; the concept needs were not lost. Carry on with other work. Tell the person in plain words that the daily limit is reached and that Agent.Concept can go on later. When the person sends their next message, call gilbplatform_task with it: Agent.Concept may then be asked again.",
 };
+/** The mint tools. A connector that is itself Agent.Concept stops sending these after the server's daily-limit answer (Hacker, W4.4 round 2). */
+const MINT_TOOL_NAMES = new Set(["mint_term", "mint_taxa", "change_term"]);
+/** The server's answers that mean the person's daily limit stopped a mint: the package limit, and the term quota (a day, a new account, or all of GilbVeda). */
+const DAILY_LIMIT_ERRORS = new Set(["ConceptDailyLimitReached", "MintQuotaReached"]);
 const TURN_LIMIT_NEXT = "tell the person what you did, and stop";
 const TURN_LIMIT_ROUNDS = "this turn has used all its tool rounds";
 const TURN_LIMIT_HOPS = "this turn has handed over as many times as one turn may";
@@ -2493,6 +2497,8 @@ export function startConnector(opts) {
      * Concept call is sent. Cleared only by the person's next message (gilbplatform_task), never by renewTurn. A turn limit does not set it.
      */
     let conceptBrakedOnTurnChain = false;
+    /** Set when this connector IS Agent.Concept and a mint tool was answered with a daily limit: no mint tool is sent until the person's next message. Reads still work. */
+    let conceptMintPaused = false;
     /** Calls that were sent and got no answer, by callId (newest last). Held in memory only. */
     const unknownCalls = new Map();
     /** Keys this connector made (not the caller). A call_status re-send carries the same key, so it is told apart here. */
@@ -3128,6 +3134,17 @@ export function startConnector(opts) {
             hopsRunning -= 1;
         }
     }
+    /** Whether a mint tool's answer is the server's word that a daily limit was reached (see DAILY_LIMIT_ERRORS). */
+    function dailyLimitAnswer(result) {
+        try {
+            const parsed = JSON.parse(result);
+            const error = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed.error : undefined;
+            return typeof error === "string" && DAILY_LIMIT_ERRORS.has(error);
+        }
+        catch {
+            return false;
+        }
+    }
     /** Which turn limit an answer is: only the server's two exact answers, error and next both. Anything else is none. */
     function turnLimitOf(result) {
         let parsed;
@@ -3248,6 +3265,10 @@ export function startConnector(opts) {
         return res;
     }
     async function callPlatformTool(name, args, signal, resent = false, givenCallId) {
+        if (!hopMode && conceptMintPaused && MINT_TOOL_NAMES.has(name)) {
+            process.stderr.write(`gilb-connector: ${name} not sent: the daily limit was reached and Agent.Concept waits for the person's next message.\n`);
+            return conceptPausedAnswer();
+        }
         if (!hopMode && conceptBrakedOnTurnChain && isConceptCall(name, args)) {
             process.stderr.write(`gilb-connector: ${name} not sent: Agent.Concept hit a turn limit and waits for the person's next message.\n`);
             return conceptPausedAnswer();
@@ -3314,6 +3335,8 @@ export function startConnector(opts) {
         // so the same call is safe to send once more on a fresh turn. Nothing else is ever re-sent.
         // Not re-sent: Agent.Concept or ask_agent_concept (a mint is not safe to repeat), an unreadable role, or a second refusal.
         // Those still get a fresh turn, so the NEXT call works, and an answer that says what to do (never just "stop").
+        if (!hopMode && agentIsConcept() && MINT_TOOL_NAMES.has(name) && dailyLimitAnswer(result))
+            conceptMintPaused = true;
         const limit = hopMode ? null : turnLimitOf(result);
         if (limit === "rounds" || (limit === "hops" && name === "run_named_role")) {
             const resendBarrier = resent
@@ -3801,6 +3824,7 @@ export function startConnector(opts) {
         cache = null;
         // The person's next message: Agent.Concept may be asked again (after the daily package limit, the server decides).
         conceptBrakedOnTurnChain = false;
+        conceptMintPaused = false;
         return toolResult("The person's request is set.", false);
     }
     async function onAgent(args) {

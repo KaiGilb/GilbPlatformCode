@@ -322,6 +322,50 @@ describe("W4.4 (Q17/Q18): Agent.Concept waits for the person on the daily limit 
     expect(posts(platform).filter((rec) => rec.body.name === "run_named_role")).toHaveLength(sent);
   }, 30000);
 
+  // ---- the main-pick case: this connector IS Agent.Concept (Hacker, W4.4 round 2) ----
+  for (const error of ["ConceptDailyLimitReached", "MintQuotaReached"]) {
+    it(`r13 a connector that is Agent.Concept: a mint answered ${error} stops the mint tools until the person's next message; reads still work (W4.4, Q18)`, async () => {
+      const limit = JSON.stringify({ error, message: "the limit" });
+      const platform = await scripted([limit, "read-ok", "mint-ok"]);
+      const box = connect({ origin: platform.origin, agent: "Agent.Concept" });
+      expect(text(await callTool(box, "mint_term", { terms: [] }))).toBe(limit);
+      expect(posts(platform)).toHaveLength(1);
+      // Every mint tool is now answered here, not sent.
+      for (const tool of ["mint_term", "mint_taxa", "change_term"]) {
+        const paused = JSON.parse(text(await callTool(box, tool, { terms: [] })));
+        expect(paused.conceptPaused, tool).toBe(true);
+        expect(paused.next, tool).toBe(CONCEPT_PAUSED_NEXT.daily);
+      }
+      expect(posts(platform)).toHaveLength(1);
+      // A read is sent.
+      expect(text(await callTool(box))).toBe("read-ok");
+      expect(posts(platform)).toHaveLength(2);
+      // The person's next message clears it.
+      await callTool(box, "gilbplatform_task", { text: "a new request" });
+      expect(text(await callTool(box, "mint_term", { terms: [] }))).toBe("mint-ok");
+      expect(posts(platform)).toHaveLength(3);
+    });
+  }
+
+  it("r13 a connector that is Agent.Concept: another refusal (not a daily limit) pauses nothing, and the per-turn ProposalLimitReached is not a pause (W4.4, Q17)", async () => {
+    const gaps = JSON.stringify({ error: "MintPackageGaps", gaps: [] });
+    const turnLimit = JSON.stringify({ error: "ProposalLimitReached", message: "x" });
+    const platform = await scripted([gaps, turnLimit, "mint-ok"]);
+    const box = connect({ origin: platform.origin, agent: "Agent.Concept" });
+    await callTool(box, "mint_term", { terms: [] });
+    await callTool(box, "mint_taxa", { taxa: [] });
+    expect(text(await callTool(box, "mint_term", { terms: [] }))).toBe("mint-ok");
+    expect(posts(platform)).toHaveLength(3);
+  });
+
+  it("r13 an agent that is not Agent.Concept is not paused locally by a mint answer it sees (the hop close carries the pause for it)", async () => {
+    const limit = JSON.stringify({ error: "MintQuotaReached", message: "q" });
+    const platform = await scripted([limit, "mint-ok"]);
+    const box = connect({ origin: platform.origin });
+    await callTool(box, "mint_term", { terms: [] });
+    expect(text(await callTool(box, "mint_term", { terms: [] }))).toBe("mint-ok");
+  });
+
   it("r11 the pause's words: only the daily reason exists, in plain words, and tells the model to tell the person (W4.4, Q18)", () => {
     expect(Object.keys(CONCEPT_PAUSED_NEXT)).toEqual(["daily"]);
     expect(CONCEPT_PAUSED_NEXT.daily).toContain("daily limit");
