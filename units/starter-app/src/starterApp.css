@@ -11,6 +11,7 @@
   --on-accent: #ffffff;
   --accent-ink: #386bd0;
   --bad: #9c4438;
+  --on-bad: #ffffff;
   --tint-hi: #ffffff;
   --r-sm: 6px;
   --r-md: 10px;
@@ -47,6 +48,19 @@
      dark part gives no surface gets a surface mixed lighter than its paper, and on that the link read at 4.05:1.
      On the paper both hold for every style the runtime writes. The fields keep the surface. */
   --signin-card: var(--paper);
+
+  /* The share sheet (vault-share-sheet 0.1.3 and later) writes the label of its red Remove button in the colour made
+     for the accent, unless the app sets this. --on-bad is the colour the style makes for text on its red. On the
+     default style's dark look the label read at 2.33:1 without it. */
+  --vss-on-danger: var(--on-bad);
+}
+
+/* A placeholder is text: in the sign-in card it is the only words in the email and the code fields. A CSS reset draws
+   it at half the text colour (3.1:1 on the default style's light look); the browser's own grey is no better. Here it
+   is the same colour as the help lines, in every field of the app, the app's own record screens included. */
+::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
 }
 
 .sa-app {

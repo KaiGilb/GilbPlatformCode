@@ -5,7 +5,7 @@
 // apps/starter-app measures the same pairs with axe-core in Chrome.
 import { defaultSheet, paletteFromSeed, toCssVars, validateStyleSheet, type PaletteInput, type StyleSheet } from "@kaigilb/gilbplatformcode-style-runtime";
 import { describe, expect, test } from "vitest";
-import { colourOf, contrastOn, declared, rulesOf, signinRules, starterRules, type Vars } from "../test/colours";
+import { colourOf, contrastOn, declared, rulesOf, shareSheetRules, signinRules, starterRules, type Vars } from "../test/colours";
 
 const AA = 4.5;
 const rules = starterRules();
@@ -30,6 +30,10 @@ const CARD = "var(--surface)"; // the starter's own panels
 const signin = signinRules();
 const SIGNIN_CARD = declared(signin, ".gilb-signin-card", "background");
 const SIGNIN_INK = declared(signin, ".gilb-signin-card", "color");
+// The share sheet is the vault-share-sheet unit's; its dialog (modal-sheet) stands on the paper.
+const share = shareSheetRules();
+const SHEET = "var(--paper)";
+const PLACEHOLDER = declared(rules, "::placeholder", "color");
 
 /** Every place the starter's sheet decides the colour of text: what it is, the text colour, and the backgrounds under it. */
 const PAIRS: [what: string, text: string, backgrounds: string[]][] = [
@@ -48,6 +52,11 @@ const PAIRS: [what: string, text: string, backgrounds: string[]][] = [
   ["the sign-in card's error box", declared(signin, ".gilb-signin-alert", "color"), [SIGNIN_CARD, declared(signin, ".gilb-signin-alert", "background")]],
   ["the sign-in card's sentence that refuses a vault name", declared(signin, ".gilb-signin-error-text", "color"), [SIGNIN_CARD]],
   ["the new vault's address on the sign-in card", SIGNIN_INK, [SIGNIN_CARD, declared(signin, ".gilb-signin-code", "background")]],
+  ["a placeholder in a field of the sign-in card", PLACEHOLDER, [SIGNIN_CARD, declared(signin, ".gilb-signin-input", "background")]],
+  ["a placeholder in the share sheet's field", PLACEHOLDER, [SHEET]],
+  ["the share sheet's red Remove button", declared(share, ".vss .vss-danger", "color"), [SHEET, declared(share, ".vss .vss-danger", "background")]],
+  ["the share sheet's Share button", declared(share, ".vss .vss-primary", "color"), [SHEET, declared(share, ".vss .vss-primary", "background")]],
+  ["the share sheet's Remove word and its refusals", declared(share, ".vss .vss-danger-text", "color"), [SHEET]],
   ["the waiting sentence", declared(rules, ".sa-wait", "color"), [PAGE]],
   ["the View only badge", declared(rules, ".sa-badge", "color"), [TOP_BAR]],
   ["the app's name and Sign out, top bar", declared(rules, ".sa-button", "color"), [TOP_BAR]],
@@ -87,6 +96,16 @@ describe("the instrument", () => {
     expect(contrastOn(SIGNIN_INK, [SIGNIN_CARD, "var(--signin-sheet, #fff)"], dark).ratio).toBeCloseTo(1.23, 1);
   });
 
+  test("gives the ratios measured in the browser for the red Remove button and the placeholders before they were put right (known answers: 2.33; 3.15 and 3.13)", () => {
+    const dark = { ...LOOKS["the default style, dark"]! };
+    delete dark["--vss-on-danger"]; // the label as the share sheet draws it when no host says otherwise
+    expect(contrastOn(declared(share, ".vss .vss-danger", "color"), [SHEET, declared(share, ".vss .vss-danger", "background")], dark).ratio).toBeCloseTo(2.33, 1);
+    // A placeholder as a CSS reset draws it: the field's text colour at half strength. The card stood on its surface then.
+    const light = LOOKS["the default style, light"]!;
+    expect(contrastOn("color-mix(in srgb, var(--ink) 50%, transparent)", ["var(--surface)"], light).ratio).toBeCloseTo(3.15, 1);
+    expect(contrastOn("color-mix(in srgb, var(--ink) 50%, transparent)", [SHEET], light).ratio).toBeCloseTo(3.13, 1);
+  });
+
   test("reads a rule that is written in the sheet, and refuses one that is not", () => {
     expect(rulesOf(".a, .b { color: #111; } .a { background: #fff }").get(".a")).toEqual({ color: "#111", background: "#fff" });
     expect(() => declared(rules, ".sa-no-such-rule", "color")).toThrow('the style sheet has no "color" under ".sa-no-such-rule"');
@@ -109,12 +128,16 @@ describe("the open section is not marked by colour alone", () => {
   });
 });
 
-// Spec: Rule_Code_accessibility RuleA11yWcagAa — an app taken from the starter may choose another style. The three texts
-// of the sign-in card that a dark look once put under 4.5:1 must hold for every style the style runtime writes, not
-// only for the default one. The runtime brings --accent-ink, and the --bad it works out itself, to 4.5:1 against the
-// paper of each look, and against the surface only when the style gives one; so the starter's sheet stands the card on
-// the paper. This sweeps styles of four shapes, 72 accents each, in both looks.
-describe("the sign-in card's link, refusal and address hold for every style the style runtime writes", () => {
+// Spec: Rule_Code_accessibility RuleA11yWcagAa — an app taken from the starter may choose another style. Every text whose
+// colour this sheet decides must hold for the styles the style runtime writes, not only for the default one. The
+// runtime brings --accent-ink, and the --bad it works out itself, to 4.5:1 against the paper of each look, and against
+// the surface only when the style gives one; so the sheet stands the sign-in card on the paper. This sweeps styles of
+// four shapes, 72 accents each, in both looks, over every pair above.
+// Two things it does not prove. The muted colours (--ink-soft, --ink-faint, the placeholders) are mixes of the ink and
+// the paper: they hold here because every swept style has a strong ink (the runtime's own palettes do); a style whose
+// ink is only just readable needs its own --ink-soft and --ink-faint. And the label on the accent is the style's own
+// pair, held apart below.
+describe("every text the sheet decides holds for the styles the style runtime writes", () => {
   /** A colour from hue (degrees), saturation and lightness (0 to 1). */
   const hsl = (h: number, sat: number, l: number): string => {
     const a = sat * Math.min(l, 1 - l);
@@ -143,7 +166,9 @@ describe("the sign-in card's link, refusal and address hold for every style the 
     "accent, paper and ink only, in both looks": (seed) => ({ palette: bare(chosen(seed, "light")), dark: bare(chosen(seed, "dark")) }),
     "a light palette only (the runtime makes the dark one)": (seed) => ({ palette: chosen(seed, "light"), dark: undefined }),
   };
-  const THREE = ["the sign-in card's Change email link", "the sign-in card's sentence that refuses a vault name", "the new vault's address on the sign-in card"];
+  // A label on the accent: the runtime picks white or near-black for it, whichever reads better, and for an accent of
+  // middling brightness neither reaches 4.5:1 (lowest here 4.3). That pair is the style's own and no sheet can mend it.
+  const ON_THE_ACCENT = ["the sign-in card's button label", "the share sheet's Share button", "Share (the main button)"];
   const varsOf = (sheet: StyleSheet, mode: "light" | "dark"): Vars => ({ ...beforeLoad, ...toCssVars(sheet, mode), ...derived });
 
   test.each(Object.entries(SHAPES))("%s: 72 accents, light and dark", (_shape, make) => {
@@ -155,14 +180,14 @@ describe("the sign-in card's link, refusal and address hold for every style the 
       if (!checked.ok) throw new Error(`the runtime refuses the style made from ${seed}: ${checked.errors.join("; ")}`);
       for (const mode of ["light", "dark"] as const) {
         const vars = varsOf(checked.value, mode);
-        for (const [what, text, backgrounds] of PAIRS.filter(([name]) => THREE.includes(name))) {
+        for (const [what, text, backgrounds] of PAIRS) {
           const got = contrastOn(text, backgrounds, vars);
           read++;
-          if (got.ratio < AA) low.push(`${seed} ${mode}: ${what} ${got.text} on ${got.background} = ${got.ratio.toFixed(2)}`);
+          if (got.ratio < AA && !(ON_THE_ACCENT.includes(what) && got.ratio >= 4.3)) low.push(`${seed} ${mode}: ${what} ${got.text} on ${got.background} = ${got.ratio.toFixed(2)}`);
         }
       }
     }
-    expect(read).toBe(72 * 2 * 3);
+    expect(read).toBe(72 * 2 * PAIRS.length);
     expect(low).toEqual([]);
   });
 

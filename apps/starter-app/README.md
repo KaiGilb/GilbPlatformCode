@@ -74,7 +74,17 @@ For a real browser you need Chrome on the machine (set `CHROME` to its path when
 npm run proof:browser -- <folder-for-screenshots>
 ```
 
-It drives headless Chrome at 1280 x 800 and at 390 x 844 through the sign-in card's code step, a failed start and Try again, the share sheet with two people in it, a second person opening the shared vault, sign-out, and a new person: the name step with a free name, with a refused name, and a long account name. After each step it runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once in the light look and once in the dark one. On the sign-in card it also works out, from the drawn colours in both looks, the contrast of the Change email link, the new vault's address and the sentence that refuses a name, and writes the readings to `contrast.txt`; each must be 4.5:1 or better. It writes a light and a dark screenshot per step and `errors.txt` (the console errors) per size, and exits 1 on any failed step, axe finding or console error.
+It drives headless Chrome at 1280 x 800 and at 390 x 844 through every screen and state the fake mode can reach, 25 steps on the wide window and 26 on the phone (the menu drawer):
+
+- the sign-in card: empty, an email typed, the code step, a wrong code, the name step with a free name, with a refused name, a name another person took after it was checked, and what the card says then;
+- the start: a failed start with Try again, the sentence shown while the vault is made, signing out, and the notice of a sign-out the sign-in server was not told of;
+- the frame: the person's own vault, the menu drawer, a vault shared for viewing, a long account name;
+- the vault chooser: while it reads, the list, and a list that could not be read;
+- the share sheet: while it reads, the empty list, a refused entry, two people, the Remove question, a removal that failed, and a vault the person does not control.
+
+After each step, once in the light look and once in the dark one, it runs axe-core in the page (WCAG 2.1 A and AA) and measures **every text on the page**: each element that holds text, what is typed in a field, and each placeholder (which axe-core does not measure). The colour of each is worked out from the drawn colours over every background under it. A text under 4.5:1 fails the step, and so does a text on a picture or a gradient, which it cannot measure. Per size it writes a light and a dark screenshot of each step, `contrast.txt` (per step and look: how many texts, the lowest, everything under 4.5:1, and what was not judged), `readings.json` (every reading) and `errors.txt` (the console errors). It exits 1 on any failed step, axe-core finding, low text or console error.
+
+Run it again after you change the style or add a screen. What it does **not** measure: the colours under the pointer and on focus; things that are not text (borders, icons, focus rings); a control that is turned off; text another layer covers (the page behind an open sheet, which is measured in the steps where it is open to view); text a style sheet draws itself (`::before`, `::after`); other browsers than Chrome; the set-up page shown before a vault type is set; anything on the live platform; and your own record screens until you add steps for them.
 
 ## Add your records
 

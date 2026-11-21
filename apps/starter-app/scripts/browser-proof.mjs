@@ -3,11 +3,18 @@
 // Needs `npm run dev:fake` running (default http://localhost:5262). It talks to that address only: the platform is the
 // fake inside the page. It starts its own Chrome (a throwaway profile inside <out-dir>, removed at the end), runs the
 // legs, takes a screenshot after each, and writes the console errors of each size to <out-dir>/<size>/errors.txt.
-// After each leg it also runs axe-core in the page (WCAG 2.1 A and AA, colour contrast included), once as the page is
-// and once with the device set to dark, and takes a dark screenshot. A leg with an axe finding fails.
-// axe sees only the screen a leg ends on, so legs rest on the sign-in card's code step and name step too, and there
-// the contrast of three texts is also worked out from the drawn colours, in both looks: the Change email link, the new
-// vault's address and the sentence that refuses a name. Each must read at 4.5:1 or better.
+//
+// Each leg ends on one screen or state of the app. After each leg, once as the page is and once with the device set
+// to dark, it
+//   - runs axe-core in the page (WCAG 2.1 A and AA), and
+//   - measures EVERY text on the page: each element that holds text of its own, what is typed in a field, and each
+//     placeholder (which axe does not measure), with its colour worked out from the drawn colours over every
+//     background under it. A text under 4.5:1 fails the leg.
+// The legs walk every screen and state the fake mode can reach (the list is at `legsFor`). What this does not measure:
+// colours under the pointer or on focus, things that are not text (borders, icons, focus rings), a control that is
+// turned off, text another layer covers (the page behind an open sheet), text a style sheet draws itself (::before,
+// ::after), other browsers than Chrome, and the screens the fake mode cannot reach (the set-up page shown before a
+// vault type is set; anything live). A text on a picture or a gradient cannot be measured this way: it fails the leg.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -22,8 +29,11 @@ const setting = (key) => {
   return m[1];
 };
 const APP_NAME = setting("appName");
-const ANN = `ann${setting("vaultNameSuffix")}`;
-const BEN = `ben${setting("vaultNameSuffix")}`;
+const SUFFIX = setting("vaultNameSuffix");
+const ANN = `ann${SUFFIX}`;
+const BEN = `ben${SUFFIX}`;
+const LONG_ACCOUNT = "abcdefghijklmnopqrstuvwxyzabcde";
+const AA = 4.5;
 
 const AXE_SOURCE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 const AXE_RUN = `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } }).then((r) => JSON.stringify(r.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target.join(" ") + ": " + [...n.any, ...n.all, ...n.none].map((c) => c.message).join(" ")) }))))`;
@@ -31,61 +41,88 @@ const AXE_RUN = `axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", 
 /** axe-core on the page as it is now. Returns one line per finding; an empty list means none. */
 async function axeFindings(page) {
   if (!(await page.eval("typeof window.axe === 'object'"))) await page.eval(`${AXE_SOURCE}; void 0`);
-  return JSON.parse(await page.eval(AXE_RUN)).flatMap((v) => v.nodes.map((n) => `${v.id} at ${n}`));
-}
-
-/** In the page: the contrast of one element's text on what is drawn under it (every background up the tree, laid over the one below). */
-const CONTRAST_OF = `window.__contrastOf = (selector) => {
-  const e = document.querySelector(selector);
-  if (!e) return JSON.stringify({ missing: true });
-  const cv = document.createElement("canvas"); cv.width = cv.height = 1; const cx = cv.getContext("2d", { willReadFrequently: true });
-  const read = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = "#000"; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
-  const over = (t, u) => [0, 1, 2].map((i) => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
-  const stack = []; for (let n = e; n; n = n.parentElement) { const c = read(getComputedStyle(n).backgroundColor); if (c[3] > 0) stack.push(c); if (c[3] === 1) break; }
-  let bg = [255, 255, 255, 1]; for (const c of stack.reverse()) bg = over(c, bg);
-  const fg = over(read(getComputedStyle(e).color), bg);
-  const lum = (c) => { const f = (v) => { v = Math.round(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
-  const hex = (c) => "#" + [0, 1, 2].map((i) => Math.round(c[i]).toString(16).padStart(2, "0")).join("");
-  const a = lum(fg), b = lum(bg);
-  return JSON.stringify({ text: hex(fg), background: hex(bg), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) });
-}; true`;
-
-/** The texts of `pairs` ([what, selector]) that read under 4.5:1 right now, one line each; and every reading, for the record. */
-async function lowContrast(page, pairs, look, readings) {
-  await page.eval(CONTRAST_OF);
-  const low = [];
-  for (const [what, selector] of pairs) {
-    const got = JSON.parse(await page.eval(`window.__contrastOf(${JSON.stringify(selector)})`));
-    if (got.missing) low.push(`${what} is not on the page (${selector})`);
-    else {
-      readings.push(`${what}, ${look}: ${got.text} on ${got.background} = ${got.ratio.toFixed(2)}`);
-      if (got.ratio < 4.5) low.push(`${what} reads at ${got.ratio.toFixed(2)}:1 (${got.text} on ${got.background})`);
-    }
-  }
-  return low;
+  return JSON.parse(await page.eval(AXE_RUN)).flatMap((v) => v.nodes.map((n) => `axe ${v.id} at ${n}`));
 }
 
 /**
- * The light and the dark look of the same page: axe in each, the contrast of the leg's own texts in each, and a dark
- * screenshot. Throws one error that lists every finding.
+ * In the page: every text as it is drawn. For each element that holds text of its own, each field with something typed
+ * in it and each placeholder: the text colour (with every opacity up the tree) laid over every background under it, and
+ * the contrast of the two. `skip` says why a text is not judged: the control is turned off, or another layer covers it.
  */
-async function bothLooks(page, darkShot, pairs, readings) {
-  const light = [...(await axeFindings(page)), ...(await lowContrast(page, pairs, "light", readings))];
-  await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
-  let dark;
-  try {
-    await page.sleep(150);
-    dark = [...(await axeFindings(page)), ...(await lowContrast(page, pairs, "dark", readings))];
-    await page.screenshot(darkShot);
-  } finally {
-    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
-    await page.sleep(100);
+const EVERY_TEXT = `window.__everyText = () => {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 1; const cx = cv.getContext("2d", { willReadFrequently: true });
+  const read = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = "#000"; cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
+  const over = (t, u) => [0, 1, 2].map((i) => t[i] * t[3] + u[i] * (1 - t[3])).concat(1);
+  const backgroundOf = (e) => { const stack = []; let picture = false; for (let n = e; n; n = n.parentElement) { const s = getComputedStyle(n); if (s.backgroundImage !== "none") picture = true; const c = read(s.backgroundColor); if (c[3] > 0) stack.push(c); if (c[3] === 1) break; } let bg = [255, 255, 255, 1]; for (const c of stack.reverse()) bg = over(c, bg); return { bg, picture }; };
+  const opacityOf = (e) => { let o = 1; for (let n = e; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity); return o; };
+  const lum = (c) => { const f = (v) => { v = Math.round(v) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+  const hex = (c) => "#" + [0, 1, 2].map((i) => Math.round(c[i]).toString(16).padStart(2, "0")).join("");
+  const nameOf = (e) => (e.getAttribute("data-testid") || (typeof e.className === "string" && e.className.split(" ")[0]) || e.tagName.toLowerCase()).slice(0, 40);
+  const seen = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility !== "hidden" && s.display !== "none"; };
+  const covered = (e) => { const r = e.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return false; const hit = document.elementFromPoint(x, y); return !!hit && !e.contains(hit) && !hit.contains(e); };
+  const one = (e, what, text, colour, placeholder) => {
+    const { bg, picture } = backgroundOf(e); const c = read(colour); c[3] *= opacityOf(e); const fg = over(c, bg);
+    const a = lum(fg), b = lum(bg);
+    const skip = e.closest(":disabled, [aria-disabled='true']") ? "turned off" : covered(e) ? "covered" : null;
+    return { what, text: text.replace(/\\s+/g, " ").trim().slice(0, 48), fg: hex(fg), bg: hex(bg), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), placeholder, picture, skip };
+  };
+  const out = [];
+  for (const e of document.body.querySelectorAll("*")) {
+    if (["SCRIPT", "STYLE", "NOSCRIPT"].includes(e.tagName) || !seen(e)) continue;
+    if (e.tagName === "INPUT" || e.tagName === "TEXTAREA") {
+      if (["radio", "checkbox", "range", "color", "file", "hidden", "image"].includes(e.type)) continue; // these show no text of their own
+      if (e.value) out.push(one(e, "typed in " + nameOf(e), e.value, getComputedStyle(e).color, false));
+      else if (e.placeholder) out.push(one(e, "placeholder of " + nameOf(e), e.placeholder, getComputedStyle(e, "::placeholder").color, true));
+      continue;
+    }
+    const own = [...e.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim()).map((n) => n.textContent).join(" ");
+    if (own) out.push(one(e, nameOf(e), own, getComputedStyle(e).color, false));
   }
-  const all = [...light.map((f) => `light: ${f}`), ...dark.map((f) => `dark: ${f}`)];
-  if (all.length) throw new Error(`axe and contrast found ${all.length}:\n      ${all.join("\n      ")}`);
+  return JSON.stringify(out);
+}; true`;
+
+/** Every text on the page as it is now: all the readings, and one line for each judged text under 4.5:1 or on a picture. */
+async function everyText(page) {
+  await page.eval(EVERY_TEXT);
+  const readings = JSON.parse(await page.eval("window.__everyText()"));
+  const judged = readings.filter((r) => !r.skip);
+  const low = [
+    ...judged.filter((r) => r.ratio < AA).map((r) => `${r.placeholder ? "placeholder" : "text"} under 4.5:1: ${r.what} "${r.text}" ${r.fg} on ${r.bg} = ${r.ratio.toFixed(2)}`),
+    // A picture or a gradient under a text has no one colour: this measure cannot judge it, so it says so and fails.
+    ...judged.filter((r) => r.picture).map((r) => `text on a picture or a gradient, which this cannot measure: ${r.what} "${r.text}"`),
+  ];
+  return { readings, low };
 }
 
-const LONG_ACCOUNT = "abcdefghijklmnopqrstuvwxyzabcde";
+/**
+ * The light and the dark look of the same screen: axe and every text in each, and a dark screenshot. The readings go
+ * into `record` under the screen's name. Throws one error that lists every finding.
+ */
+async function bothLooks(page, darkShot, screen, record) {
+  const found = [];
+  const look = async (name) => {
+    const axe = await axeFindings(page);
+    const texts = await everyText(page);
+    record.push({ screen, look: name, readings: texts.readings });
+    found.push(...[...axe, ...texts.low].map((f) => `${name}: ${f}`));
+  };
+  const set = async (value) => {
+    await page.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value }] });
+    await page.sleep(150);
+    const dark = await page.eval(`matchMedia("(prefers-color-scheme: dark)").matches`);
+    if (dark !== (value === "dark")) throw new Error(`the page did not take the ${value} look`);
+  };
+  await set("light"); // set, not assumed: Chrome starts in the look of the computer it runs on
+  await look("light");
+  try {
+    await set("dark");
+    await look("dark");
+    await page.screenshot(darkShot);
+  } finally {
+    await set("light");
+  }
+  if (found.length) throw new Error(`found ${found.length}:\n      ${found.join("\n      ")}`);
+}
 
 const out = process.argv[2] ? resolve(process.argv[2]) : "";
 const base = process.argv[3] ?? "http://localhost:5262";
@@ -108,22 +145,46 @@ async function checkButtonRows(page, atLeast) {
 }
 
 const text = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.textContent ?? "")`;
+const pageSays = (words) => `document.body.textContent.includes(${JSON.stringify(words)})`;
 const READY = `!!document.querySelector('[data-stage="ready"]')`;
-// The three texts of the sign-in card that a dark look once put under 4.5:1. A leg names the ones its screen shows.
-const CHANGE_EMAIL = ["the Change email link", '[data-testid="sign-in-change-email"]'];
-const NEW_ADDRESS = ["the new vault's address", '[data-testid="vault-name-address"]'];
-const REFUSED_NAME = ["the sentence that refuses a name", '[data-testid="vault-name-reserved"]'];
 /** The vault chip in the header names the open vault. */
 const openVaultIs = (name) => `${text(".vsw-name")} === ${JSON.stringify(name)}`;
 const dialogNamed = (name) => `[...document.querySelectorAll('[role="dialog"]')].some((d) => (d.getAttribute("aria-label") ?? d.querySelector("h1,h2")?.textContent ?? "").includes(${JSON.stringify(name)}))`;
+const noDialog = `!document.querySelector('[role="dialog"]')`;
+const CREATE = "POST /base/vault/create-named";
+const SIGN_OUT = "POST /base/auth/sign-out";
+/** The fake holds every request of this kind until `release` is called in the page. */
+const hold = (page, match) => page.eval(`void (window.__release = window.__fake.hold(${JSON.stringify(match)}))`);
+const release = (page) => page.eval("void window.__release()");
+const failNext = (page, match, message) => page.eval(`void window.__fake.failNext(${JSON.stringify(match)}, { status: 503, message: ${JSON.stringify(message)} })`);
 
+/**
+ * The legs: every screen and state the fake mode can reach, in the order a person meets them.
+ * Sign-in card: empty, email typed, code step, wrong code, name step with a free name, with a refused name, the name taken
+ * after it was checked, and what the card says then. Start: a failed start, the waiting sentence, signing out, the notice
+ * of a sign-out the server was not told of. Frame: the person's own vault, the menu drawer (phone), a vault shared for
+ * viewing, a long account name. Vault chooser: reading, the list, a list that could not be read. Share sheet: reading, the
+ * empty list, a refused entry, two people, the Remove question, a removal that failed, and a vault the person does not control.
+ */
 function legsFor(size, t) {
   const phone = size.name === "phone";
   /** On a phone Share and Sign out are in the menu drawer; on a wide window they are in the header. */
-  const openMenuIfPhone = async (page) => {
-    if (!phone) return;
-    await t.clickText("Menu", { within: 'nav[aria-label="Panels"]' });
-    await page.waitFor(dialogNamed(APP_NAME));
+  const account = async (page, word) => {
+    if (phone) {
+      await t.clickText("Menu", { within: 'nav[aria-label="Panels"]' });
+      await page.waitFor(dialogNamed(APP_NAME));
+    }
+    await t.clickText(word, { within: phone ? '[role="dialog"]' : "header" });
+  };
+  const signIn = async (page, email) => {
+    await t.set('[data-testid="sign-in-email"]', email);
+    await t.click('[data-testid="sign-in-send-code"]');
+    await t.wait('[data-testid="sign-in-code"]');
+    await t.set('[data-testid="sign-in-code"]', "000000");
+  };
+  const closeSheet = async (page) => {
+    await t.click(".ms-close");
+    await page.waitFor(noDialog);
   };
   return [
     [
@@ -136,19 +197,30 @@ function legsFor(size, t) {
       },
     ],
     [
-      "code-step",
+      "sign-in-email-typed",
       async () => {
         await t.set('[data-testid="sign-in-email"]', "ann@example.test");
+      },
+    ],
+    [
+      "sign-in-code-step",
+      async () => {
         await t.click('[data-testid="sign-in-send-code"]');
         await t.wait('[data-testid="sign-in-code"]');
-        await t.wait(CHANGE_EMAIL[1]);
+        await t.wait('[data-testid="sign-in-change-email"]');
       },
-      [CHANGE_EMAIL],
+    ],
+    [
+      "sign-in-wrong-code",
+      async () => {
+        await t.set('[data-testid="sign-in-code"]', "111111");
+        await t.wait('[data-testid="sign-in-error"]');
+      },
     ],
     [
       "start-fails-and-says-why",
       async (page) => {
-        await page.eval(`void window.__fake.failNext("POST /base/vault/create-named", { status: 503, message: "The vault service is busy. Try again soon." })`);
+        await failNext(page, CREATE, "The vault service is busy. Try again soon.");
         await t.set('[data-testid="sign-in-code"]', "000000");
         await page.waitFor(`${text('[data-stage="error"] [role="alert"]')}.includes("The vault service is busy. Try again soon.")`);
         await checkButtonRows(page, 1); // Sign out | Try again
@@ -156,9 +228,17 @@ function legsFor(size, t) {
       },
     ],
     [
+      "start-says-what-it-waits-for",
+      async (page) => {
+        await hold(page, CREATE);
+        await t.clickText("Try again", { within: '[data-stage="error"]' });
+        await page.waitFor(pageSays("making your vault for this app"));
+      },
+    ],
+    [
       "signed-in-own-vault",
       async (page) => {
-        await t.clickText("Try again", { within: '[data-stage="error"]' });
+        await release(page);
         await page.waitFor(READY);
         await page.waitFor(openVaultIs(ANN));
         await t.noHorizontalScroll();
@@ -169,7 +249,7 @@ function legsFor(size, t) {
           [
             "menu-drawer",
             async (page) => {
-              await openMenuIfPhone(page);
+              await t.clickText("Menu", { within: 'nav[aria-label="Panels"]' });
               await page.waitFor(`!!document.querySelector('[role="dialog"] nav[aria-label="Sections"]')`);
               await t.noHorizontalScroll();
             },
@@ -177,68 +257,146 @@ function legsFor(size, t) {
         ]
       : []),
     [
-      "share-sheet",
+      "vault-chooser-reading",
       async (page) => {
-        await t.clickText("Share", { within: phone ? '[role="dialog"]' : "header" });
+        if (phone) {
+          await page.key("Escape"); // the drawer
+          await page.waitFor(noDialog);
+        }
+        await hold(page, "GET /lws/vaults");
+        await t.click(".vsw-chip");
+        await page.waitFor(dialogNamed("Choose a vault"));
+        await page.waitFor(pageSays("Looking for your vaults"));
+      },
+    ],
+    [
+      "vault-chooser-list",
+      async (page) => {
+        await release(page);
+        await t.wait(".vsw-row");
+        await t.noHorizontalScroll();
+      },
+    ],
+    [
+      "vault-chooser-could-not-list",
+      async (page) => {
+        await closeSheet(page);
+        await failNext(page, "GET /lws/vaults", "The list is not there just now.");
+        await t.click(".vsw-chip");
+        await t.wait(".vsw-error");
+      },
+    ],
+    [
+      "share-sheet-reading",
+      async (page) => {
+        await closeSheet(page);
+        await hold(page, "GET /base/consent/vault-acl");
+        await account(page, "Share");
         await page.waitFor(dialogNamed(`Share ${ANN}`));
-        await page.waitFor(`document.body.textContent.includes("Nobody else has access yet.")`);
-        await t.set(".vss-input", "ben");
+        await page.waitFor(pageSays("Reading who has access"));
+      },
+    ],
+    [
+      "share-sheet-empty",
+      async (page) => {
+        await release(page);
+        await page.waitFor(pageSays("Nobody else has access yet."));
+        await t.noHorizontalScroll();
+      },
+    ],
+    [
+      "share-sheet-refused-entry",
+      async () => {
+        await t.set(".vss-input", "someone@example.test"); // an email is not a vault name
+        await t.click(".vss-primary");
+        await t.wait(".vss .vss-error");
+      },
+    ],
+    [
+      "share-sheet-two-people",
+      async (page) => {
+        await t.set(".vss-input", "ben"); // Can view, as the sheet starts
+        await t.click(".vss-primary");
+        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 1`);
+        await t.set(".vss-input", "cara");
         await t.clickText("Can edit", { within: ".vss" });
         await t.click(".vss-primary");
-        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 1`); // Ben is in the list, with a Remove button
-        await t.set(".vss-input", "cara");
-        await t.click(".vss-primary");
         await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 2`);
-        // Two people with the same access: the two rows, and the two Remove buttons, must not read alike.
+        // Two people in the list: the two rows, and the two Remove buttons, must not read alike.
         const list = JSON.parse(
           await page.eval(`JSON.stringify([...document.querySelectorAll(".vss .vss-row .vss-danger-text")].map((b) => ({ row: b.closest("li").textContent, remove: b.getAttribute("aria-label") })))`),
         );
         if (new Set(list.map((r) => r.row)).size !== 2 || new Set(list.map((r) => r.remove)).size !== 2) throw new Error(`the two people read alike: ${JSON.stringify(list)}`);
-        // The question before a removal: a verb for the act, and the way out left of it. (Where the share sheet puts the
-        // two answers is its own layout; this does not judge it.)
-        await t.click(".vss .vss-row .vss-danger-text");
-        await page.waitFor(`!!document.querySelector(".vss .vss-inline")`);
-        const answers = await page.eval(`[...document.querySelectorAll(".vss .vss-inline button")].map((b) => b.textContent).join(" | ")`);
-        if (answers !== "Cancel | Remove") throw new Error(`the answers to the Remove question read "${answers}"`);
-        await t.clickText("Cancel", { within: ".vss .vss-inline" });
-        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length === 2`);
         await t.noHorizontalScroll();
       },
     ],
     [
-      "shared-person-opens-the-vault",
+      "share-sheet-remove-question",
       async (page) => {
-        await t.click(".ms-close");
-        await openMenuIfPhone(page);
-        await t.clickText("Sign out", { within: phone ? '[role="dialog"]' : "header" });
+        // The question before a removal: a verb for the act, and the way out left of it. (Where the share sheet puts the
+        // two answers is its own layout; this does not judge it.)
+        await t.click(".vss .vss-row .vss-danger-text"); // the first row: Ben
+        await t.wait(".vss .vss-inline .vss-danger");
+        const answers = await page.eval(`[...document.querySelectorAll(".vss .vss-inline button")].map((b) => b.textContent).join(" | ")`);
+        if (answers !== "Cancel | Remove") throw new Error(`the answers to the Remove question read "${answers}"`);
+      },
+    ],
+    [
+      "share-sheet-removal-failed",
+      async (page) => {
+        await failNext(page, "POST /base/authz/revoke-vault", "The access could not be changed just now.");
+        await t.click(".vss .vss-inline .vss-danger");
+        await t.wait(".vss .vss-row .vss-error");
+        await page.waitFor(`document.querySelectorAll(".vss .vss-row .vss-danger-text").length >= 1`);
+      },
+    ],
+    [
+      "signing-out-says-so",
+      async (page) => {
+        await closeSheet(page);
+        await hold(page, SIGN_OUT);
+        await account(page, "Sign out");
+        await page.waitFor(pageSays("Signing out"));
+      },
+    ],
+    [
+      "shared-vault-view-only",
+      async (page) => {
+        await release(page);
         await t.wait('[data-testid="sign-in-email"]');
-        await t.set('[data-testid="sign-in-email"]', "ben@example.test");
-        await t.click('[data-testid="sign-in-send-code"]');
-        await t.wait('[data-testid="sign-in-code"]');
-        await t.set('[data-testid="sign-in-code"]', "000000");
+        await signIn(page, "ben@example.test");
         await page.waitFor(openVaultIs(BEN));
         await t.click(".vsw-chip");
         await t.clickText(ANN, { within: '[role="dialog"]' });
         await page.waitFor(openVaultIs(ANN));
+        await t.wait(".sa-badge"); // Ben may view Ann's vault, not change it
         await t.noHorizontalScroll();
       },
     ],
     [
-      "signed-out",
+      "share-sheet-not-controlled",
       async (page) => {
-        await openMenuIfPhone(page);
-        await t.clickText("Sign out", { within: phone ? '[role="dialog"]' : "header" });
+        await account(page, "Share");
+        await page.waitFor(dialogNamed(`Share ${ANN}`));
+        await page.waitFor(pageSays("You don't hold Control on this vault"));
+      },
+    ],
+    [
+      "signed-out-server-not-told",
+      async (page) => {
+        await closeSheet(page);
+        await failNext(page, SIGN_OUT, "Busy.");
+        await account(page, "Sign out");
         await t.wait('[data-testid="sign-in-email"]');
+        await t.wait(".sa-note"); // signed out here; the sign-in server could not be told
         const state = JSON.parse(
-          await page.eval(
-            `JSON.stringify({ violations: window.__fake.violations, vaults: [...window.__fake.state.vaults.values()].map((v) => v.name).sort(), signOuts: window.__fake.calls.count("POST /base/auth/sign-out") })`,
-          ),
+          await page.eval(`JSON.stringify({ violations: window.__fake.violations, vaults: [...window.__fake.state.vaults.values()].map((v) => v.name).sort(), signOuts: window.__fake.calls.count(${JSON.stringify(SIGN_OUT)}) })`),
         );
         if (state.violations.length) throw new Error(`the app asked the platform for something it does not have: ${state.violations.join("; ")}`);
         // The fake started with three people's accounts (ann, ben, cara). One vault for the app each for the two who signed in, and no more, was made.
         const want = ["ann", "ben", "cara", ANN, BEN].sort().join();
         if (state.vaults.join() !== want) throw new Error(`expected the vaults ${want}, saw ${state.vaults.join()}`);
-        if (state.signOuts !== 2) throw new Error(`expected the sign-in server told of 2 sign-outs, saw ${state.signOuts}`);
+        if (state.signOuts !== 2) throw new Error(`expected the sign-in server asked to sign out twice, saw ${state.signOuts}`);
       },
     ],
     [
@@ -249,30 +407,27 @@ function legsFor(size, t) {
         await t.click('[data-testid="sign-in-send-code"]');
         await t.wait('[data-testid="vault-name-input"]');
         await t.set('[data-testid="vault-name-input"]', LONG_ACCOUNT);
-        await page.waitFor(`${text(NEW_ADDRESS[1])}.includes(${JSON.stringify(LONG_ACCOUNT)})`);
+        await page.waitFor(`${text('[data-testid="vault-name-address"]')}.includes(${JSON.stringify(LONG_ACCOUNT)})`);
         await t.noHorizontalScroll();
       },
-      [NEW_ADDRESS, CHANGE_EMAIL],
     ],
     [
       "name-step-refused",
       async (page) => {
         await t.set('[data-testid="vault-name-input"]', "x");
-        await t.wait(REFUSED_NAME[1]);
-        await page.waitFor(`!document.querySelector(${JSON.stringify(NEW_ADDRESS[1])})`);
+        await t.wait('[data-testid="vault-name-reserved"]');
+        await page.waitFor(`!document.querySelector('[data-testid="vault-name-address"]')`);
       },
-      [REFUSED_NAME, CHANGE_EMAIL],
     ],
     [
       "new-person-long-name",
       async (page) => {
         // A 31-letter account name must leave the app's name readable in the top bar.
-        const account = LONG_ACCOUNT;
-        await t.set('[data-testid="vault-name-input"]', account);
+        await t.set('[data-testid="vault-name-input"]', LONG_ACCOUNT);
         await page.waitFor(`!!document.querySelector('[data-testid="vault-name-available"]')`);
         await t.set('[data-testid="sign-in-code"]', "000000");
         await page.waitFor(READY);
-        await page.waitFor(openVaultIs(`${account}${BEN.slice(3)}`));
+        await page.waitFor(openVaultIs(`${LONG_ACCOUNT}${SUFFIX}`));
         await t.noHorizontalScroll();
         const bar = JSON.parse(
           await page.eval(`JSON.stringify((() => { const t = document.querySelector(".sa-title"), c = document.querySelector(".vsw-chip"); return { title: t.getBoundingClientRect().width, cut: t.scrollWidth > t.clientWidth, chipRight: c.getBoundingClientRect().right, wide: window.innerWidth }; })())`),
@@ -281,11 +436,36 @@ function legsFor(size, t) {
         if (bar.chipRight > bar.wide) throw new Error(`the vault chip runs off the window: ${JSON.stringify(bar)}`);
       },
     ],
+    [
+      "name-taken-after-the-check",
+      async (page) => {
+        // Another person takes the name between the check and the code. The card then asks for a name once more.
+        await account(page, "Sign out");
+        await t.wait('[data-testid="sign-in-email"]');
+        await t.set('[data-testid="sign-in-email"]', "late@example.test");
+        await t.click('[data-testid="sign-in-send-code"]');
+        await t.wait('[data-testid="vault-name-input"]');
+        await page.waitFor(`!!document.querySelector('[data-testid="vault-name-available"]')`);
+        await page.eval(`void window.__fake.takeName(document.querySelector('[data-testid="vault-name-input"]').value)`);
+        await t.set('[data-testid="sign-in-code"]', "000000");
+        await t.wait('[data-testid="create-vault-button"]');
+        await page.waitFor(`!!document.querySelector('[data-testid="vault-name-available"]')`);
+      },
+    ],
+    [
+      "name-step-says-why-it-cannot-go-on",
+      async () => {
+        await t.click('[data-testid="create-vault-button"]');
+        await t.wait('[data-testid="vault-name-race"]');
+      },
+    ],
   ];
 }
 
 let failed = 0;
 let errorTotal = 0;
+let readingTotal = 0;
+const lowest = [];
 for (const size of SIZES) {
   const dir = join(out, size.name);
   mkdirSync(dir, { recursive: true });
@@ -293,14 +473,14 @@ for (const size of SIZES) {
   const { page, close } = await startBrowser({ profileDir, width: size.width, height: size.height, deviceScaleFactor: size.deviceScaleFactor, mobile: size.mobile });
   try {
     console.log(`\n${size.name} (${size.width} x ${size.height})`);
-    // Each leg ends with a short wait, so axe and the screenshot see the page after the drawer or the sheet has slid in.
-    const readings = [];
-    const legs = legsFor(size, makeTools(page)).map(([name, leg, pairs = []], i) => [
+    const record = [];
+    // Each leg ends with a short wait, so axe, the measuring and the screenshot see the page after the drawer or the sheet has slid in.
+    const legs = legsFor(size, makeTools(page)).map(([name, leg], i) => [
       name,
       async (p) => {
         await leg(p);
         await p.sleep(400);
-        await bothLooks(p, join(dir, `${i + 1}-${name}-dark.png`), pairs, readings);
+        await bothLooks(p, join(dir, `${i + 1}-${name}-dark.png`), name, record);
       },
     ]);
     const run = await runLegs(legs, { page, out: dir, setExitCode: false });
@@ -308,13 +488,32 @@ for (const size of SIZES) {
     const errors = page.consoleErrors();
     errorTotal += errors.length;
     writeFileSync(join(dir, "errors.txt"), errors.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join("\n") + (errors.length ? "\n" : ""));
-    writeFileSync(join(dir, "contrast.txt"), readings.join("\n") + "\n");
-    for (const r of readings) console.log(`      ${r}`);
-    console.log(`${size.name}: console errors ${errors.length}; screenshots in ${dir}`);
+    writeFileSync(join(dir, "readings.json"), JSON.stringify(record, null, 1));
+    // contrast.txt: for each screen and look, how many texts were judged and the lowest of them; then everything under 4.5:1.
+    const lines = [];
+    const under = [];
+    const notJudged = new Map();
+    for (const { screen, look, readings } of record) {
+      const judged = readings.filter((r) => !r.skip);
+      readingTotal += judged.length;
+      const low = judged.reduce((a, b) => (a && a.ratio <= b.ratio ? a : b), null);
+      if (low) {
+        lines.push(`${screen}, ${look}: ${judged.length} texts (${readings.length - judged.length} not judged), lowest ${low.ratio.toFixed(2)} ${low.what} "${low.text}" ${low.fg} on ${low.bg}`);
+        lowest.push({ size: size.name, screen, look, ...low });
+      }
+      for (const r of readings.filter((x) => x.skip)) notJudged.set(`${r.skip}: ${r.what} "${r.text}"`, (notJudged.get(`${r.skip}: ${r.what} "${r.text}"`) ?? 0) + 1);
+      for (const r of judged.filter((x) => x.ratio < AA)) under.push(`${screen}, ${look}: ${r.what} "${r.text}" ${r.fg} on ${r.bg} = ${r.ratio.toFixed(2)}`);
+    }
+    const skipped = [...notJudged].map(([what, times]) => `${times} x ${what}`);
+    writeFileSync(join(dir, "contrast.txt"), `${lines.join("\n")}\n\nUnder 4.5:1: ${under.length}\n${under.join("\n")}${under.length ? "\n" : ""}\nNot judged (a control that is turned off, or text another layer covers), by how often it was met:\n${skipped.join("\n")}\n`);
+    console.log(`${size.name}: ${record.length} screens and looks measured; under 4.5:1: ${under.length}; console errors ${errors.length}; screenshots, readings.json and contrast.txt in ${dir}`);
   } finally {
     await close();
     rmSync(profileDir, { recursive: true, force: true });
   }
 }
-console.log(`\nconsole errors in all: ${errorTotal}; failed legs: ${failed}`);
+lowest.sort((a, b) => a.ratio - b.ratio);
+console.log(`\ntexts judged in all: ${readingTotal}; the five lowest:`);
+for (const l of lowest.slice(0, 5)) console.log(`  ${l.ratio.toFixed(2)}  ${l.size} ${l.screen}, ${l.look}: ${l.what} "${l.text}" ${l.fg} on ${l.bg}`);
+console.log(`console errors in all: ${errorTotal}; failed legs: ${failed}`);
 process.exitCode = failed > 0 || errorTotal > 0 ? 1 : 0;

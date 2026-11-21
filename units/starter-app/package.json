@@ -21,7 +21,7 @@
     "@kaigilb/gilbplatformcode-lws-session-bridge": "^0.1.4",
     "@kaigilb/gilbplatformcode-signin": "^0.2.14",
     "@kaigilb/gilbplatformcode-style-runtime": "^0.2.1",
-    "@kaigilb/gilbplatformcode-vault-share-sheet": "^0.1.2",
+    "@kaigilb/gilbplatformcode-vault-share-sheet": "^0.1.3",
     "@kaigilb/gilbplatformcode-vault-switcher": "^0.1.2",
     "react": "^19.0.0"
   },

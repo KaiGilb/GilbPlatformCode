@@ -34,6 +34,11 @@ export function signinRules(): Map<string, Vars> {
   return rulesOf(readFileSync(resolve(process.cwd(), "node_modules/@kaigilb/gilbplatformcode-signin/src/signin.css"), "utf8"));
 }
 
+/** The share sheet's style sheet, as the vault-share-sheet unit installed beside this one ships it. */
+export function shareSheetRules(): Map<string, Vars> {
+  return rulesOf(readFileSync(resolve(process.cwd(), "node_modules/@kaigilb/gilbplatformcode-vault-share-sheet/src/vaultShareSheet.css"), "utf8"));
+}
+
 /** One declaration of one rule; throws when the sheet has no such rule or declaration, so a renamed rule cannot pass unseen. */
 export function declared(rules: Map<string, Vars>, selector: string, property: string): string {
   const value = rules.get(selector)?.[property];
