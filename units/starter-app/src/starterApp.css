@@ -1,0 +1,249 @@
+/* starter-app: the starter's own parts (sa-*), and the variables the frame reads that the style runtime does not write.
+   Colours, radii, fonts and shadows are the style-runtime variables. The values in :where(:root) only show until the
+   app's style has loaded; they are the default style, and any loaded style replaces them. */
+
+:where(:root) {
+  --accent: #3b6fd4;
+  --paper: #f1f5fe;
+  --ink: #1c222b;
+  --surface: #f7faff;
+  --lines: #1c222b;
+  --on-accent: #ffffff;
+  --accent-ink: #3b6fd4;
+  --bad: #9c4438;
+  --tint-hi: #ffffff;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 15px;
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+  --gs-font-size: 16px;
+}
+
+/* Mixed from the anchors above, so they follow the loaded style and its dark mode. The frame, the drawer and the
+   sign-in card read them.
+   --ink-soft and --ink-faint are text colours: each must read at 4.5:1 or better (WCAG 2.1 AA) on every background text
+   is drawn on, the tinted ones included (--paper, --paper-2, --surface, the frame's top bar). contrast.test.ts measures
+   every pair for the default style, light and dark; change a number here and it says which pair fell under.
+   --ink-ghost is for a control that is turned off only. */
+:root {
+  --paper-2: color-mix(in srgb, var(--paper) 93%, var(--ink));
+  --ink-soft: color-mix(in srgb, var(--ink) 80%, var(--paper));
+  --ink-faint: color-mix(in srgb, var(--ink) 70%, var(--paper));
+  --ink-ghost: color-mix(in srgb, var(--ink) 39%, var(--paper));
+  --line: color-mix(in srgb, var(--lines) 16%, transparent);
+  --line-2: color-mix(in srgb, var(--lines) 10%, transparent);
+  --sel: color-mix(in srgb, var(--accent) 10%, transparent);
+  --focus: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.sa-app {
+  height: 100%;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--gs-font-size);
+}
+
+/* The screens before the frame: sign-in, opening, error, signing out. */
+.sa-stage {
+  min-height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--gs-font-size);
+}
+
+.sa-wait {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.sa-note {
+  margin: 0;
+  max-width: 420px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.sa-panel {
+  width: 100%;
+  max-width: 460px;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.sa-panel-title {
+  margin: 0 0 8px;
+  font-size: 1.15em;
+}
+
+.sa-panel p {
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+
+/* The header's middle. */
+.sa-title {
+  flex: 0 1 auto;
+  min-width: 3ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 1.05em;
+}
+
+.sa-spacer {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sa-badge {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+
+.sa-account-buttons {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sa-button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--gs-button-radius, var(--r-md));
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sa-button:hover {
+  background: var(--sel);
+}
+
+.sa-button--main {
+  border: var(--gs-button-border, 1px solid transparent);
+  background: var(--gs-button-bg, var(--accent));
+  color: var(--gs-button-fg, var(--on-accent));
+}
+
+.sa-button--main:hover {
+  background: var(--gs-button-hover-bg, var(--accent));
+}
+
+.sa-button:focus-visible,
+.sa-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The left region: the sections, and on a phone the account buttons. */
+.sa-menu {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+
+.sa-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sa-menu-item {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sa-menu-item:hover {
+  background: var(--sel);
+  color: var(--ink);
+}
+
+/* The open section: marked by weight, a tint and an accent bar, and written in the ink colour. The accent as text on
+   the tint does not reach 4.5:1 in the default style. */
+.sa-menu-item[aria-current="page"] {
+  background: var(--sel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* The frame writes the label of its open bottom-bar button in the accent colour on a tint, which does not reach 4.5:1
+   in the default style either. Here it is written in the ink colour; the tint and the weight still mark it. */
+.sa-app nav[aria-label="Panels"] button[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+.sa-menu-account {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.sa-menu-heading {
+  margin: 0 0 8px;
+  color: var(--ink-faint);
+  font-size: 0.8em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sa-center {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 20px 16px;
+}
+
+/* The vault chip is another unit's button; in the header it must not push Share and Sign out off a narrow window. */
+.sa-app .vsw-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  min-height: 44px;
+}
+
+.sa-app .vsw-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
