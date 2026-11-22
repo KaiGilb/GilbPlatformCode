@@ -1,0 +1,16 @@
+/* The save line under a record's fields. Colours come from the page's own variables; each has a fallback. */
+.autosave-line {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}
+.autosave-line--saved {
+  color: var(--ink-faint, #555b66);
+}
+.autosave-line--pending,
+.autosave-line--saving {
+  color: var(--ink, #1c222b);
+}
+.autosave-line--invalid,
+.autosave-line--error {
+  color: var(--bad, #9c4438);
+}

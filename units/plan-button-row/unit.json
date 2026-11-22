@@ -2,8 +2,8 @@
   "schema": 1,
   "unit": "units/plan-button-row",
   "package": "@kaigilb/gilbplatformcode-plan-button-row",
-  "version": "0.1.2",
-  "purpose": "The action row: every row of buttons in an app (dialog buttons, form Save/Cancel, a record's Edit and Delete, a Delete confirm).",
+  "version": "0.1.3",
+  "purpose": "The action row: every row of buttons in an app (dialog buttons, a confirmation's Cancel and Delete, a record's Delete, a Delete confirm).",
   "source": {
     "repo": "KaiGilb/GilbApp",
     "commit": "8a21f04ede18ee6cb1caeb91ce3adfdc0aea21dd",
@@ -12,11 +12,12 @@
     ]
   },
   "namedChanges": [
+    "0.1.3: the purpose, the library title and the library note no longer give form Save/Cancel or a record's Edit as examples: a record's fields save as the person types (RuleUiSaveAsYouType). The README's record-view example is now a Delete-only row (`destructive` alone), and its wrong readings no longer show Edit or Save beside Delete. Words only; no code changed.",
     "The header comment is reworded; no code change.",
     "Added after the copy (0.1.1): the optional primary, cancel and destructive slots, the narrow-width rule and the dev warning; the children API is unchanged.",
     "0.1.2: the structured row carries the class `gs-actionrow` and marks the destructive slot `gs-actionrow__far`, writes the shared action-row CSS once (`src/actionRowCss.ts`, a copy of style-runtime's, kept identical by a test) so the equal-share narrow rule works without Tailwind, and takes `confirm` (no far slot, Cancel then a red primary, Cancel the default). The children API row also gains `gs-actionrow` and the CSS (its pinned class-string test now expects it first); every Tailwind class is kept, so Tailwind hosts see no change."
   ],
   "newFiles": ["src/actionRowCss.ts", "src/actionRowCss.test.ts"],
   "host": [],
-  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row: Save/Cancel, Edit/Delete, confirm delete (Mac order, action row)", "note": "Use for every row of buttons: dialog, form, a record's Edit + Delete, 'Delete X?' confirm. Positive rightmost, Cancel left of it, Delete alone at far left. Comes with the app style (style-runtime). For one button look take button; for the remove control take remove-control." }
+  "library": { "admitted": true, "tag": "t:ScreenButton.row", "title": "Button row (Mac order): dialog buttons, confirmations, form actions", "note": "Use for every row of buttons: dialog, form actions, a record's Delete, 'Delete X?' confirm. Positive rightmost, Cancel left of it, Delete alone at far left. Comes with the app style (style-runtime). For one button look take button; for the remove control take remove-control." }
 }

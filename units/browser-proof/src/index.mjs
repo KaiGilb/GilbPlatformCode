@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, resolve } from "node:path";
 
 export { assertButtonRows, classifyButton, collectButtonRows, judgeButtonRows } from "./buttonRows.mjs";
+export { assertNoSaveButtons, collectFieldButtons, judgeSaveButtons } from "./saveButtons.mjs";
 export { byTestId, makeTools } from "./pageTools.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

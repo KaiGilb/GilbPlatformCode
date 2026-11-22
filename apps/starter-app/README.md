@@ -104,12 +104,13 @@ Each section gets `ctx`:
 
 What a person has typed in your screen stays while they open the menu, Share or the vault chip. It is gone when they open another section or another vault: each starts afresh.
 
-Before you write code that saves a record, get its GilbVeda type and field terms from Agent.Concept. Then take the record units from the library:
+Before you write code that saves a record, get its GilbVeda type and field terms from Agent.Concept. Then take the record units from the library. A record screen has no Save, Cancel or Edit button: its fields save as the person types (RuleUiSaveAsYouType). Take record-autosave for that; adding a record makes it at once and opens it.
 
 | Library card | Folder in the library | What it is for |
 |---|---|---|
 | `t:VaultRecord.client` | `units/lws-records` | read, create, change and end one record; pass `{ idempotencyKey }` on a create that may be retried |
 | `t:VaultRecord.sync` | `units/record-sync` | the list of records of a type, and what changed |
+| `t:VaultRecord.autosave` | `units/record-autosave` | the fields of a record screen save as the person types: no Save, no Cancel, no Edit |
 | `t:VaultSelfCard.find` | `units/own-card` | the person's own card, the source of what they save |
 
 To add a unit to this app, ask the library for the install line and run it here: `node <library>/scripts/peers.mjs <unit>` prints every unit the one you want needs, in order, with the `npm install --install-links …` line (replace `<path-to-the-library>` in it). Each unit's README says what the host must supply. The origins and the credential are already set: do not call `setBaseOrigin` or `setLwsAuth` again, and do not make a second credential.

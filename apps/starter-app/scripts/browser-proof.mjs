@@ -22,7 +22,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { collectButtonRows, judgeButtonRows, makeTools, runLegs, startBrowser } from "@kaigilb/gilbplatformcode-browser-proof";
+import { assertNoSaveButtons, collectButtonRows, judgeButtonRows, makeTools, runLegs, startBrowser } from "@kaigilb/gilbplatformcode-browser-proof";
 
 // The app's own names, read from its settings, so the proof still holds after the app is renamed.
 const settingsText = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "settings.ts"), "utf8");
@@ -147,7 +147,7 @@ async function press(page, key, code) {
 }
 
 /**
- * The button-row rule (RuleUiActionRowMacOrder) on every row of the page but the frame's own top bar: that bar is a toolbar
+ * The button-row rule (RuleUiActionRowMacOrder), and the save-as-you-type rule, on every row of the page but the frame's own top bar: that bar is a toolbar
  * whose two pane buttons sit at its two ends by design, not the action row of a form or a dialog.
  */
 async function checkButtonRows(page, atLeast) {
@@ -155,6 +155,8 @@ async function checkButtonRows(page, atLeast) {
   const bad = judgeButtonRows(rows, { viewportWidth: await page.eval("window.innerWidth") });
   if (bad.length) throw new Error(`button rows: ${bad.map((v) => `[${v.rule}] ${v.message} (${v.path})`).join("; ")}`);
   if (rows.length < atLeast) throw new Error(`expected at least ${atLeast} button row(s) to judge, found ${rows.length}`);
+  // The same screen has no Save, Done, Edit or Cancel that cancels nothing (RuleUiSaveAsYouType): a throw fails the leg.
+  await assertNoSaveButtons(page);
 }
 
 const text = (sel) => `(document.querySelector(${JSON.stringify(sel)})?.textContent ?? "")`;

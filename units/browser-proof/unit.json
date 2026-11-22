@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/browser-proof",
   "package": "@kaigilb/gilbplatformcode-browser-proof",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "purpose": "Runs an app in headless Chrome for an end-to-end proof: starts Chrome with a throwaway profile, drives the page over the DevTools Protocol, takes screenshots, collects console errors, and runs named legs that print PASS or FAIL.",
   "source": {
     "repo": "KaiGilb/GilbPlatformCode",
@@ -12,7 +12,8 @@
   "namedChanges": [
     "Added assertButtonRows, collectButtonRows, judgeButtonRows and classifyButton: the button-row check (RuleUiActionRowMacOrder) on a live page, at a size you choose.",
     "startBrowser takes headed and keepProfile (a profile that survives between runs); page.waitForHuman prints a message and waits for a person; buildChromeArgs is exported.",
-    "Added makeTools(page) and byTestId: exists, wait, gone, click, clickText, set, waitImage, setFiles, noHorizontalScroll, taken from the run-9 e2e-lib.mjs."
+    "Added makeTools(page) and byTestId: exists, wait, gone, click, clickText, set, waitImage, setFiles, noHorizontalScroll, taken from the run-9 e2e-lib.mjs.",
+    "Added assertNoSaveButtons, collectFieldButtons and judgeSaveButtons: the save-as-you-type check (RuleUiSaveAsYouType). A record screen has no Save, Done, Edit or Apply button and no Cancel that cancels nothing; buttons inside a dialog are left out, and a Cancel beside Delete or Remove is a confirmation and is allowed; an icon button is read by its aria-label or title, and links count as buttons; a list of labels, not a proof; labels that start with the word Save, Done, Edit, Apply, Update or Submit are flagged."
   ],
   "newFiles": [
     "src/index.mjs",
@@ -21,7 +22,9 @@
     "scripts/check-host-agnostic.mjs",
     "src/buttonRows.mjs",
     "src/buttonRows.test.ts",
-    "src/pageTools.mjs"
+    "src/pageTools.mjs",
+    "src/saveButtons.mjs",
+    "src/saveButtons.test.ts"
   ],
   "host": [
     {
@@ -43,12 +46,16 @@
     {
       "member": "makeTools",
       "replaces": "run-9 PictureRecords app/scripts/e2e-lib.mjs: tools() (exists, wait, gone, click, clickText, set, noHorizontalScroll and the picture and file steps); e2e-live.mjs: the same"
+    },
+    {
+      "member": "assertNoSaveButtons",
+      "replaces": "hand-written checks in app end-to-end scripts that a record screen has no Save or Cancel"
     }
   ],
   "library": {
     "admitted": true,
     "tag": "t:File.proof",
     "title": "Browser proof (headless Chrome end-to-end harness)",
-    "note": "Node test helper, no packages, no React: startBrowser launches headless Chrome with a throwaway profile in a folder you name and gives a page (goto, eval, waitFor, screenshot, consoleErrors, key, setViewport); runLegs runs named legs, prints PASS or FAIL for each, fails a leg that logged a page error, and exits non-zero on any FAIL. Chrome and its helpers are stopped and the profile removed, even on failure. Also found as: browser test; end-to-end test; headless Chrome; e2e harness; take screenshots in a test. Button row check (assertButtonRows: right-aligned, positive rightmost, Cancel left of it, Delete alone at the far left) at desktop and phone width; headed runs with a kept profile and waitForHuman for a sign-in code; makeTools page helpers (click, set, clickText, setFiles, waitImage). Also found as: button row check; end to end; e2e; headless; headed; browser test; sign-in code."
+    "note": "Node test helper, no packages, no React: startBrowser launches headless Chrome with a throwaway profile in a folder you name and gives a page (goto, eval, waitFor, screenshot, consoleErrors, key, setViewport); runLegs runs named legs, prints PASS or FAIL for each, fails a leg that logged a page error, and exits non-zero on any FAIL. Chrome and its helpers are stopped and the profile removed, even on failure. Also found as: browser test; end-to-end test; headless Chrome; e2e harness; take screenshots in a test. Button row check (assertButtonRows: right-aligned, positive rightmost, Cancel left of it, Delete alone at the far left) at desktop and phone width; headed runs with a kept profile and waitForHuman for a sign-in code; makeTools page helpers (click, set, clickText, setFiles, waitImage). Also found as: button row check; end to end; e2e; headless; headed; browser test; sign-in code. Save-button check (assertNoSaveButtons: a record screen has no Save, Done, Edit or Apply and no Cancel that cancels nothing; dialogs left out; Cancel beside Delete or Remove allowed). Also found as: no save button check; save as you type test."
   }
 }

@@ -22,7 +22,7 @@ const { page, close } = await startBrowser({ profileDir: "e2e-out/.profile", wid
 - `page.goto(url, { ready?, timeoutMs? })`: opens the address and waits for a complete document, then for the `ready` expression to be truthy. `page.eval(expression)`: runs it in the page (a promise is awaited) and throws the page's error text. `page.waitFor(fnText, timeoutMs = 15000)`: polls every 80 ms; an error in the page counts as "not yet"; the timeout error holds the expression. `page.screenshot(file)`: a PNG, the folder is made. `page.consoleErrors()`: uncaught exceptions, `console.error` calls and error log entries so far. `page.setViewport({ width, height, deviceScaleFactor?, mobile? })`, `page.key("Escape")`, `page.sleep(ms)`, and `page.send(method, params)` for any other protocol command.
 - `runLegs(legs, { page, out?, log?, setExitCode?, describeFailure? })`: each leg is `[name, async (page) => {...}]`. It prints `PASS  leg 1  name` or `FAIL  leg 1  name` and the reason. A leg fails when it throws or when the page logged an error while it ran. With `out` it takes `<out>/<n>-<name>.png` after each leg. A failed leg does not stop the next. It ends with `p/t legs PASS`, sets `process.exitCode = 1` on any FAIL, and returns `{ results, failed }`.
 - `startBrowser({ headed: true })` opens a visible window (no `--headless=new`, no `--hide-scrollbars`); `keepProfile: true` uses `profileDir` itself (default `.browser-proof/profile`) as the profile and leaves it when closed. `page.waitForHuman(message, readyExpr, timeoutMs = 300000)` prints the message and waits for the expression. See "Headed run" below.
-- Also exported: `CdpClient` (the connection; takes a `WebSocketImpl` for a test), `makePage`, `findChrome`, `buildChromeArgs`, `makeTools`, `byTestId`, `collectButtonRows`, `judgeButtonRows`, `classifyButton`, `assertButtonRows`.
+- Also exported: `CdpClient` (the connection; takes a `WebSocketImpl` for a test), `makePage`, `findChrome`, `buildChromeArgs`, `makeTools`, `byTestId`, `collectButtonRows`, `judgeButtonRows`, `classifyButton`, `assertButtonRows`, `collectFieldButtons`, `judgeSaveButtons`, `assertNoSaveButtons`.
 
 ## Check button rows
 
@@ -40,6 +40,24 @@ The rule (RuleUiActionRowMacOrder), for every row of two or more buttons: the ro
 A row is any `[data-plan-button-row]` or `.gs-actionrow`, or any element with two or more visible buttons (`button`, `[role=button]`, `a.btn`, `input[type=submit]`) as children or grandchildren on one line. A button is negative when its label is Cancel, Close, No, Back, Not now or Dismiss; destructive when it starts with Delete, Remove, Discard, Erase or Clear, or is red (a red computed colour or background, a class with `danger` or `bad` in it, or `data-danger`); otherwise positive. The violations are `not-right-aligned`, `negative-right-of-positive`, `positive-not-rightmost`, `danger-not-far-left`, `confirm-order` and `stretched`. `assertButtonRows` returns the number of rows it checked, and 0 when it found none, so assert on the count where the page must have rows. It judges at the page's current size, so run it once per size. `collectButtonRows(page)` and `judgeButtonRows(rows, { viewportWidth })` are the two halves, for a test of your own.
 
 Put `data-button-row-ignore` on an element to leave it and everything inside it out of the check (for example a toolbar of tabs that are not actions).
+
+## Check that a record screen has no Save, Cancel or Edit
+
+```js
+import { assertNoSaveButtons } from "@kaigilb/gilbplatformcode-browser-proof";
+console.log(`${await assertNoSaveButtons(page)} buttons checked`); // throws one Error that lists every problem
+```
+
+The rule (RuleUiSaveAsYouType): a record screen saves as the person types, so it has no save button and no Cancel that cancels nothing.
+
+- `save-button`: a button whose label starts with the word Save, Done, Edit, Apply, Update or Submit (so "Save as", "Save & close", "Edit profile", "Done editing", "Update profile"), or is exactly OK, Confirm or Finish. A word that only starts with those letters ("Saved", "Editor", "Updates") passes.
+- `cancel-without-act`: a button labelled exactly Cancel, Discard, Discard changes or Revert, unless a button that starts with Delete or Remove stands in the same row: that Cancel belongs to a confirmation.
+- The label of a button whose text has no letter or digit (an icon) is its `aria-label`, then its `title`. Links (`a[href]`) are read as buttons.
+- Buttons inside `dialog`, `[role=dialog]`, `[role=alertdialog]`, `[data-button-row-ignore]` or `[data-autosave-ignore]` are left out.
+- It is a list of labels, not a proof: a Save button with another label passes.
+- A button that is not a record's (an app-update banner "Update available", a filter's "Apply filter", a status chip "Done") goes inside `data-autosave-ignore`.
+
+`collectFieldButtons(page)` returns `{ label, path, rowLabels }` for each visible button; `judgeSaveButtons(buttons)` is pure; `assertNoSaveButtons(page)` returns how many buttons it checked.
 
 ## Headed run (type a sign-in code)
 
@@ -95,4 +113,4 @@ New code, written for EESpeed Round 8 (batch CB4) from the Chrome and DevTools c
 
 ## Tests
 
-`npm test` (vitest): the row judge from a table of fixtures (record view Edit | Delete, Delete ...... Edit, Save | Cancel, Cancel | Save left and right, both confirm orders, phone equal share, desktop two-up, Delete | Cancel | Save) and one real-Chrome page with a clean and a bad row at 1280 and 390; the headed and headless launch arguments; `waitForHuman`; `makeTools` against a fake page and on a real one; a kept profile; the DevTools client against a fake socket (answers, errors, a close with commands waiting, page errors kept and the rest ignored, event listeners, a refused connection, no WebSocket); the page calls; the leg runner (PASS, FAIL, a page error charged to its own leg only, screenshots, `describeFailure`, exit code); `findChrome`; and one test with a real Chrome on a `data:` page that skips with a message when Chrome is absent. The real test also checks that no Chrome process still uses the profile afterwards.
+`npm test` (vitest): the row judge from a table of fixtures (record view Edit | Delete, Delete ...... Edit, Save | Cancel, Cancel | Save left and right, both confirm orders, phone equal share, desktop two-up, Delete | Cancel | Save) and one real-Chrome page with a clean and a bad row at 1280 and 390; the headed and headless launch arguments; `waitForHuman`; `makeTools` against a fake page and on a real one; a kept profile; the DevTools client against a fake socket (answers, errors, a close with commands waiting, page errors kept and the rest ignored, event listeners, a refused connection, no WebSocket); the page calls; the leg runner (PASS, FAIL, a page error charged to its own leg only, screenshots, `describeFailure`, exit code); `findChrome`; the save-button judge from fixtures (Save alone, Edit, Cancel | Save, a Cancel beside Delete or Remove allowed, a Cancel beside Discard flagged) and one real-Chrome page that leaves out a dialog and hidden buttons, fails a Cancel | Save form, and fails an icon button with an aria-label, a link and an "Edit profile"; and one test with a real Chrome on a `data:` page that skips with a message when Chrome is absent. The real test also checks that no Chrome process still uses the profile afterwards.

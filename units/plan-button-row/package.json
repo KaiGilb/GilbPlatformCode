@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-plan-button-row",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "The action row: every row of buttons (dialog, form, a record's Edit and Delete, a Delete confirm), right-aligned in Mac order, the positive action rightmost. It only lays the buttons out.",
