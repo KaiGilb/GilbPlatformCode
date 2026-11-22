@@ -109,6 +109,23 @@ export function classifyButton(button: Pick<RowButton, "label" | "isRed">): "neg
 export function judgeButtonRows(rows: readonly ButtonRow[], options: { viewportWidth: number }): ButtonRowViolation[];
 export function assertButtonRows(page: EvalPage, options?: { selectors?: string[]; viewportWidth?: number }): Promise<number>;
 
+export interface FieldButton {
+  label: string;
+  /** A short CSS path to the button. */
+  path: string;
+  /** Labels of the other visible buttons that share its parent or grandparent on one line. */
+  rowLabels: string[];
+}
+export type SaveButtonRule = "save-button" | "cancel-without-act";
+export interface SaveButtonViolation {
+  path: string;
+  rule: SaveButtonRule;
+  message: string;
+}
+export function collectFieldButtons(page: EvalPage): Promise<FieldButton[]>;
+export function judgeSaveButtons(buttons: ReadonlyArray<Pick<FieldButton, "label" | "path"> & { rowLabels?: readonly string[] }>): SaveButtonViolation[];
+export function assertNoSaveButtons(page: EvalPage): Promise<number>;
+
 export interface ToolsPage {
   eval(expression: string): Promise<any>;
   waitFor(fnText: string, timeoutMs?: number): Promise<any>;

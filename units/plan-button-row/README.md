@@ -1,16 +1,16 @@
 # plan-button-row
 
-The action row: every row of buttons in an app (dialog buttons, form Save/Cancel, a record's Edit and Delete, a Delete confirm).
+The action row: every row of buttons in an app (dialog buttons, a confirmation's Cancel and Delete, a record's Delete, a Delete confirm).
 
 ## What this is
 
-The action row: every row of buttons in an app (dialog buttons, form Save/Cancel, a record's Edit and Delete, a Delete confirm). It is a right-aligned row in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.
+The action row: every row of buttons in an app (dialog buttons, a confirmation's Cancel and Delete, a record's Delete, a Delete confirm). It is a right-aligned row in Mac order, with the positive action (Done, Save, Add, Make…) as the rightmost child and Cancel, Clear, Remove or Discard to its left.
 
 `<PlanButtonRow className?>children</PlanButtonRow>` draws one `div` with `data-plan-button-row=""` and the classes `gs-actionrow flex w-full flex-wrap items-center justify-end gap-3`. A `className` is added after them. With the children API the caller passes the children in the order they should appear; the row only lays them out and does not restyle the buttons. The structured API (`primary`, `cancel`, `destructive`) orders them for you; see "The Mac order (required)".
 
 ## The Mac order (required)
 
-Every app built on GilbPlatform uses the Mac order in every row of two or more buttons: a dialog, sheet, form, confirmation, or a record's own actions (Edit, Delete, Share). The row is right-aligned. The positive action is rightmost and is the default: Return triggers it. Its label is a verb that names the act (Save, Add bicycle, Give access), never OK or Yes. Cancel (or Close) sits immediately to its left: Esc triggers it. A destructive or third action (Delete, Don't save) sits alone at the far left. When the destructive act is the row's whole purpose (a 'Delete this bicycle?' confirmation), it is the rightmost, red button and Cancel stays the default. On a phone the order stays the same: if the row is too narrow, the buttons share the width in equal parts. Never put the positive action first. Build the row with the code bank's PlanButtonRow (t:ScreenButton.row).
+Every app built on GilbPlatform uses the Mac order in every row of two or more buttons: a dialog, sheet, form, confirmation, or a record's own actions (Delete, Share). The row is right-aligned. The positive action is rightmost and is the default: Return triggers it. Its label is a verb that names the act (Add bicycle, Give access, Send), never OK or Yes. Cancel (or Close) sits immediately to its left: Esc triggers it. A destructive or third action (Delete) sits alone at the far left. When the destructive act is the row's whole purpose (a 'Delete this bicycle?' confirmation), it is the rightmost, red button and Cancel stays the default. On a phone the order stays the same: if the row is too narrow, the buttons share the width in equal parts. Never put the positive action first. Build the row with the code bank's PlanButtonRow (t:ScreenButton.row).
 
 (RuleUiActionRowMacOrder, Kai 2026-11-11; widened to every row of two or more buttons, 2026-11-14.)
 
@@ -36,16 +36,13 @@ Every app built on GilbPlatform uses the Mac order in every row of two or more b
 
 A host without Tailwind can pass `style` (applied to the row itself, e.g. `display:flex; justifyContent:flex-end; gap:12`); the order is then still right, but the narrow-width sharing needs Tailwind v4 container queries.
 
-### A record's Edit and Delete
+### A record's Delete
 
-A record view is a row of two buttons too: Delete alone at the far left, Edit (the primary) rightmost.
+A record view has no Edit, Save or Cancel: its fields save as the person types (record-autosave, RuleUiSaveAsYouType). Its Delete sits alone at the far left.
 
 ```tsx
-<PlanButtonRow
-  destructive={<button className="gs-btn gs-btn--danger" onClick={onDelete}>Delete</button>}
-  primary={<button className="gs-btn" onClick={onEdit}>Edit</button>}
-/>
-// [Delete] .................. [Edit]
+<PlanButtonRow destructive={<button className="gs-btn gs-btn--danger" onClick={onDelete}>Delete</button>} />
+// [Delete] ..................
 
 // "Delete this camera?": the destructive act is the whole purpose.
 <PlanButtonRow
@@ -64,8 +61,8 @@ The unit is host-agnostic and does not know the dialog around it, nor the handle
 
 - Positive action first (`Save  Cancel`). The positive action is rightmost.
 - Left-aligned, or spread across the width on a wide screen. The row is right-aligned; never two full-width buttons on a wide screen.
-- A record view with Edit and Delete in any other order, or Delete beside Edit. Delete is alone at the far left.
-- `Delete` rightmost next to `Save`. A destructive third action goes alone at the far left; it is rightmost only when it is the row's whole purpose, and then there is no Save.
+- A record view with an Edit, Save or Cancel button for its fields, or with Delete anywhere but alone at the far left.
+- `Delete` rightmost next to `Give access`. A destructive third action goes alone at the far left; it is rightmost only when it is the row's whole purpose.
 - A label of OK or Yes. Use the verb that names the act.
 - In dev, a children row whose last child reads Cancel, Close, No or Back logs a `console.warn` ("positive action must be rightmost").
 
@@ -74,6 +71,7 @@ The unit is host-agnostic and does not know the dialog around it, nor the handle
 - Not a button. The buttons are the host's own.
 - Not a reorder of children. With the children API the row does not sort, so the caller puts the positive action last; the structured API places the three slots itself.
 - Not a form. It has no submit or cancel behaviour, and no keyboard keys.
+- Not a Save/Cancel row for a record's fields: those save as the person types (record-autosave).
 
 ## How to take it
 

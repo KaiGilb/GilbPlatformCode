@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "unit": "units/record-autosave",
+  "package": "@kaigilb/gilbplatformcode-record-autosave",
+  "version": "0.1.0",
+  "purpose": "Saves a record's fields as the person types: no Save, no Cancel, no Edit mode.",
+  "source": {
+    "repo": "KaiGilb/GilbPlatformCode",
+    "commit": "c138d503d1ac6a24c3187ec207ec8fdd7675d49a",
+    "files": []
+  },
+  "namedChanges": [
+    "New code, written on 2026-11-22. Its machine is taken from `useAnnotationDraft` in units/contact-annotation and generalised from one annotation field to every field of one record, with the transport passed in as a function. scripts/check-host-agnostic.mjs and src/hostAgnostic.test.ts are the repo's frame, copied from units/contact-annotation."
+  ],
+  "newFiles": [
+    "src/index.ts",
+    "src/useAutosaveRecord.ts",
+    "src/sameValue.ts",
+    "src/SaveStateLine.tsx",
+    "src/recordAutosave.css",
+    "src/useAutosaveRecord.test.tsx",
+    "src/SaveStateLine.test.tsx",
+    "src/sameValue.test.ts",
+    "test/example.typecheck.tsx",
+    "src/hostAgnostic.test.ts",
+    "scripts/check-host-agnostic.mjs",
+    "test/setup.ts",
+    "vitest.config.ts",
+    "tsconfig.json",
+    ".npmrc",
+    "package.json",
+    "README.md"
+  ],
+  "host": [],
+  "library": {
+    "admitted": true,
+    "tag": "t:VaultRecord.autosave",
+    "title": "Record autosave (fields save as the person types: no Save, no Cancel, no Edit)",
+    "note": "Saves a record's fields as the person types: no Save, no Cancel, no Edit mode. useAutosaveRecord({ stored, write, check?, readOnly?, onSaved? }) holds what the vault holds and what the person typed on top, and writes only the changed fields in one request after 400 ms of quiet typing, at blur, and with keepalive when the page is hidden or closed or the screen is left; one write at a time, the same fields never sent twice, a refused write keeps the edits and can be tried again. text(name) gives the props of a text box. SaveStateLine shows \"Not saved yet…\", \"Saving…\", \"Saved\" or the failure's own words with \"Try again\". While the record is not read (stored is null) the fields are read-only and nothing is written. The caller's write calls lws-records patchRecord; this unit knows no route and no host. Not a Save button, not a local draft (the vault is the data of record), not for Delete, Share or Give access, which keep their own confirmation and button row. Also found as: autosave; auto-save; save as you type; no save button; edit form; record form; form fields; save and cancel."
+  }
+}
