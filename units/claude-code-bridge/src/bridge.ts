@@ -40,6 +40,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import net from "node:net";
 import type { AddressInfo } from "node:net";
 import type { ChildProcess, ExecFileException } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -68,6 +69,8 @@ interface Turn {
   effort: string;
   /** Code turn only: Opus (or whichever model the turn has) hands coding jobs to the `sonnet-coder` subagent. */
   delegate: boolean;
+  /** Code turn only: the page shows an Open button for the built app, so the prompt tells the agent to build (client.preview). */
+  preview: boolean;
   pending: Map<string, PendingCall>;
   closed: boolean;
   child: ChildProcess | null;
@@ -1352,9 +1355,11 @@ const ONLY_CODER_MSG = "Only the sonnet-coder agent may be started in a code tur
 /** Appended to a delegating code turn's system prompt. */
 export const DELEGATE_SENTENCE = "Hand each coding job to the sonnet-coder agent with a detailed brief (files, exact change, checks to run). Then check its work yourself: read the diff and run the checks. Do the planning, reviewing and talking to the person yourself. Put the Agent.Coder rules that apply, and the library units to reuse, into each brief by link and by their text, because the coder cannot read links.";
 export const CODER_STANDARDS_SENTENCE = "Before you write or change code, load your platform's coding standards: hand the job to its coding agent (Agent.Coder) with run_named_role when your standing offers it, otherwise open that agent's standards with the platform tools (find_standard or read_record). Before writing new code, search the platform's shared code library for a unit that already does the job, and name each standard you follow by its link.";
+/** Added to a code turn's prompt only when the page says it shows an Open button (client.preview === true): the agent builds, the bridge serves the build. */
+export const PREVIEW_SENTENCE = "When you change the app, finish by running `npm run build` in the project folder. Do not tell the person to run a terminal command or to start a server. The chat shows an Open button for the built app; after a rebuild, tell them to press Open or refresh that page.";
 /** The tail of every code turn's system prompt: the standards sentence, then (when delegating) the delegate sentence. One place, so no branch (project or not, folder or computer) can miss either. */
-function codeTurnTail(delegate: boolean | undefined, sep: string): string {
-  return `${sep}${CODER_STANDARDS_SENTENCE}${delegate ? `${sep}${DELEGATE_SENTENCE}` : ""}`;
+function codeTurnTail(delegate: boolean | undefined, sep: string, preview = false): string {
+  return `${sep}${CODER_STANDARDS_SENTENCE}${delegate ? `${sep}${DELEGATE_SENTENCE}` : ""}${preview ? `${sep}${PREVIEW_SENTENCE}` : ""}`;
 }
 const CODER_PROMPT = "You write and change code from a brief. Work only inside the folder you were started in. Follow the brief exactly: do not add or change anything it does not ask for. Run the project's tests and typecheck when it has them. Report the files you changed, the exact commands you ran and their results. Claim nothing you did not run. Follow the standards the brief gives you; when the brief names a library unit to reuse, use it rather than writing your own.";
 /** The one custom subagent of a delegating code turn. Folder mode gives it exactly the code tools of the turn; computer mode leaves tools out (it inherits). */
@@ -2577,6 +2582,217 @@ export interface BridgeOptions {
   logApproveArgs?: boolean | undefined;
 }
 
+// ---- preview: serve a project's BUILT app to the person's browser (read-only, loopback only) --------------------------------------
+// The agent builds inside its sandbox (`npm run build`); the bridge never runs a project script outside it. These helpers find the build
+// folder and the pinned port from fixed names, and serve the folder with a small static server in this process. No child process, no CORS.
+
+/** The build folders, in the order they are tried. The agent never names one. */
+const PREVIEW_FOLDERS = ["dist", "build"] as const;
+/** The config files a project's port is read from, as TEXT (never imported or run), in the order they are tried. */
+const PREVIEW_CONFIGS = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs", "nuxt.config.ts", "nuxt.config.js"];
+const PREVIEW_CONFIG_MAX = 64 * 1024;
+/** Ports that are never a preview port: Gilb's own rigs and the identity/user servers. */
+const PREVIEW_BAD_PORTS = new Set([5173, 8787, 5197, 5251]);
+/** At most this many previews run at once; the next one closes the one started first. */
+const PREVIEW_MAX = 4;
+/** The fixed content-type map; anything else is application/octet-stream. */
+const PREVIEW_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+  ".json": "application/json", ".map": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+  ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2",
+  ".ttf": "font/ttf", ".txt": "text/plain; charset=utf-8", ".wasm": "application/wasm", ".webmanifest": "application/manifest+json", ".xml": "application/xml",
+};
+/** Why a preview could not start: the HTTP status and the JSON body to answer with. */
+export class PreviewRefusal extends Error {
+  constructor(readonly status: number, readonly body: Record<string, unknown>) {
+    super(String(body.error));
+  }
+}
+
+/** The first of `dist`, `build` that is a real directory (not a link) inside the project, holding a regular `index.html`; or null. WHY fixed names: the agent and package.json never choose what is served. */
+export function findBuildFolder(projectReal: string): { folder: "dist" | "build"; root: string } | null {
+  for (const folder of PREVIEW_FOLDERS) {
+    try {
+      const cand = path.join(projectReal, folder);
+      const st = fs.lstatSync(cand);
+      if (!st.isDirectory() || st.isSymbolicLink()) continue;
+      const root = fs.realpathSync.native(cand);
+      if (!root.startsWith(projectReal + path.sep)) continue;
+      const idx = fs.lstatSync(path.join(root, "index.html"));
+      if (idx.isFile()) return { folder, root };
+    } catch {
+      /* not there: try the next name */
+    }
+  }
+  return null;
+}
+
+/** The port a project pins in its vite/nuxt config (preview, else server, else devServer), as a literal integer; null when none is pinned. The file is read as text only. */
+export function pinnedPort(projectReal: string): number | null {
+  let text = "";
+  for (const name of PREVIEW_CONFIGS) {
+    const f = path.join(projectReal, name);
+    let fd = -1;
+    try {
+      if (!fs.lstatSync(f).isFile()) continue; // a link or a folder is not read
+      fd = fs.openSync(f, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      const buf = Buffer.alloc(PREVIEW_CONFIG_MAX);
+      text = buf.subarray(0, fs.readSync(fd, buf, 0, PREVIEW_CONFIG_MAX, 0)).toString("utf8");
+      break;
+    } catch {
+      continue;
+    } finally {
+      if (fd >= 0) fs.closeSync(fd);
+    }
+  }
+  // Comments go first so a commented-out port is not taken. `[^{}]*?` stays inside the one block (no nested braces).
+  text = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  for (const key of ["preview", "server", "devServer"]) {
+    const m = new RegExp(`\\b${key}\\s*:\\s*\\{[^{}]*?\\bport\\s*:\\s*(\\d+)\\s*(?:,|\\}|$)`, "m").exec(text);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/** Is something listening on this port at this address? A TCP connect with a 300 ms limit; any failure counts as "no". */
+function tcpAnswers(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = net.connect({ host, port });
+    const done = (v: boolean) => { s.destroy(); resolve(v); };
+    s.setTimeout(300, () => done(false));
+    s.once("connect", () => done(true));
+    s.once("error", () => done(false));
+  });
+}
+
+/**
+ * The request handler of one preview server: GET and HEAD of files under `root` only.
+ * WHY so strict: the page it serves is the person's own build, but the port is reachable by every page in every tab (DNS rebinding,
+ * a link planted in the build), so it must serve nothing but the build folder, set no CORS and no cookies, and follow no link out.
+ */
+function previewHandler(root: string, port: number) {
+  const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
+  const O_RO = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+  const base = { "x-content-type-options": "nosniff", "cache-control": "no-store", "referrer-policy": "no-referrer" };
+  const plain = (res: ServerResponse, status: number, text: string, extra: Record<string, string> = {}) => {
+    res.writeHead(status, { ...base, "content-type": "text/plain; charset=utf-8", ...extra });
+    res.end(text);
+  };
+  const inside = (real: string) => real === root || real.startsWith(root + path.sep);
+  /** Serve one file: its real path must be inside the root, and it is opened without following a link and checked as a regular file on the handle itself. */
+  async function sendFile(cand: string, req: IncomingMessage, res: ServerResponse): Promise<"sent" | "dir" | "missing" | "blocked"> {
+    let real: string;
+    try {
+      real = await fs.promises.realpath(cand);
+    } catch {
+      return "missing";
+    }
+    if (!inside(real)) return "blocked"; // a link out: a hard 404, never the app route
+    let fh: fs.promises.FileHandle;
+    try {
+      fh = await fs.promises.open(real, O_RO);
+    } catch {
+      return "missing"; // includes ELOOP (a link swapped in) and EISDIR-like refusals
+    }
+    try {
+      const st = await fh.stat();
+      if (st.isDirectory()) { await fh.close(); return "dir"; }
+      if (!st.isFile()) { await fh.close(); return "missing"; }
+      res.writeHead(200, { ...base, "content-type": PREVIEW_TYPES[path.extname(real).toLowerCase()] ?? "application/octet-stream", "content-length": String(st.size) });
+      if (req.method === "HEAD") { await fh.close(); res.end(); return "sent"; }
+      const stream = fh.createReadStream({ autoClose: true });
+      stream.on("error", () => res.destroy());
+      res.on("close", () => stream.destroy()); // a dropped connection must not leave the handle open
+      stream.pipe(res);
+      return "sent";
+    } catch {
+      await fh.close().catch(() => {});
+      return "missing";
+    }
+  }
+  return async (req: IncomingMessage, res: ServerResponse) => {
+    if (!hosts.has(String(req.headers.host ?? ""))) return plain(res, 421, "Misdirected request");
+    if (req.method !== "GET" && req.method !== "HEAD") return plain(res, 405, "Method not allowed", { allow: "GET, HEAD" });
+    const raw = (req.url ?? "").split("?")[0]!.split("#")[0]!;
+    if (!raw.startsWith("/") || /%2f|%5c|%00/i.test(raw) || raw.includes("\\")) return plain(res, 400, "Bad request");
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {
+      return plain(res, 400, "Bad request");
+    }
+    if (decoded.includes("\0") || decoded.includes("\\")) return plain(res, 400, "Bad request");
+    const segs = decoded.split("/").slice(1);
+    const trailing = segs.length > 0 && segs[segs.length - 1] === "";
+    if (trailing) segs.pop();
+    if (segs.some((s) => s === "" || s.startsWith("."))) return plain(res, 404, "Not found");
+    const last = segs[segs.length - 1] ?? "";
+    // A path that is a file or a directory with an index.html is served as is.
+    if (segs.length === 0) {
+      if ((await sendFile(path.join(root, "index.html"), req, res)) === "sent") return;
+      return plain(res, 404, "Not found");
+    }
+    const cand = path.join(root, ...segs);
+    const first = await sendFile(trailing ? path.join(cand, "index.html") : cand, req, res);
+    if (first === "sent") return;
+    if (first === "blocked") return plain(res, 404, "Not found");
+    if (first === "dir") {
+      const idx = await sendFile(path.join(cand, "index.html"), req, res);
+      if (idx === "sent") return;
+      return plain(res, 404, "Not found"); // no directory listing, and a real folder is not an app route
+    }
+    // Not found: an app route (no extension) gets the app's own index.html, so a refresh on a deep link works.
+    if (path.extname(last) === "" && !(trailing && (await realIsDir(cand)))) {
+      if ((await sendFile(path.join(root, "index.html"), req, res)) === "sent") return;
+    }
+    return plain(res, 404, "Not found");
+  };
+  async function realIsDir(p: string): Promise<boolean> {
+    try {
+      const r = await fs.promises.realpath(p);
+      return inside(r) && (await fs.promises.stat(r)).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+}
+
+/** One running preview: the build folder it serves, its port, and the listening servers (127.0.0.1, and ::1 when the machine has IPv6). */
+interface Preview { root: string; port: number; servers: http.Server[]; folder: "dist" | "build" }
+
+/** Close every server of a preview and drop its open connections; resolves when they are all closed. */
+function closePreviewServers(p: Preview): Promise<void> {
+  return Promise.all(p.servers.map((s) => new Promise<void>((resolve) => { s.close(() => resolve()); s.closeAllConnections(); }))).then(() => undefined);
+}
+
+/** Start the static server for `root` on `port`. Throws PreviewRefusal 409 port-in-use when anything already answers there or a listen fails. */
+async function startPreviewServers(root: string, port: number): Promise<http.Server[]> {
+  const inUse = new PreviewRefusal(409, { error: "port-in-use", port });
+  if ((await tcpAnswers("127.0.0.1", port)) || (await tcpAnswers("::1", port))) throw inUse;
+  const handler = previewHandler(root, port);
+  const servers: http.Server[] = [];
+  const listenOn = (host: string) => new Promise<http.Server>((resolve, reject) => {
+    const s = http.createServer((req, res) => { handler(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end(); }); });
+    s.once("error", reject);
+    s.listen({ host, port, exclusive: true }, () => resolve(s));
+  });
+  try {
+    servers.push(await listenOn("127.0.0.1"));
+  } catch {
+    throw inUse;
+  }
+  try {
+    servers.push(await listenOn("::1"));
+  } catch (e) {
+    // No IPv6 on this machine: carry on with 127.0.0.1 only. Any other failure stops both.
+    if ((e as NodeJS.ErrnoException).code !== "EADDRNOTAVAIL") {
+      await closePreviewServers({ root, port, servers, folder: "dist" });
+      throw inUse;
+    }
+  }
+  return servers;
+}
+
 /**
  * @param {object} [opts]
  * @param {number} [opts.port]
@@ -3755,7 +3971,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--permission-prompts", "host",
       "--permission-prompt-tool", `mcp__gilb__${APPROVE_TOOL}`,
       "--settings", JSON.stringify(sandboxedTurn(turn) ? computerSandboxSettings(home, workspace?.path ?? home, protectedPlaces(home, protectedExtra), sandboxTmpDirs(), [...claudeDirs([workspace?.path ?? home, path.join(home, "Developer")]), ...gitPlaces([workspace?.path ?? home, path.join(home, "Developer")]), ...claudeGlobs(workspace?.path ?? home, home)], envGet(env, "CLAUDE_CONFIG_DIR") ?? "") : { permissions: { deny: fileToolDenyRules(protectOpts(turn).places), disableBypassPermissionsMode: "disable" } }),
-      "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n")}`,
+      "--append-system-prompt", `${turn.system}\n\n${turn.proj ? computerProjectParagraph(turn.proj.name, turn.proj.path, workspace?.name ?? "") : computerParagraph(workspace?.name ?? "", workspace?.path ?? "")}${codeTurnTail(turn.delegate, "\n\n", turn.preview)}`,
       "--system-prompt-snapshot", "off",
     ];
     if (mode.resume) args.push("--resume", mode.sessionId);
@@ -3792,8 +4008,8 @@ export function createBridge(opts: BridgeOptions = {}) {
       "--system-prompt", turn.system,
       "--system-prompt-snapshot", "off",
       "--append-system-prompt", turn.proj
-        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`
-        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ")}`,
+        ? `You are working in the project folder "${turn.proj.name}" inside the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this project folder." : "Read, write and run commands only inside this project folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${PROJECT_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ", turn.preview)}`
+        : `You are working in the code folder "${workspace?.name ?? ""}" on the person's own computer. ${filesOnly ? "Read and write files only inside this folder." : "Read, write and run commands only inside this folder."} ${filesOnly ? FILES_ONLY_SENTENCE : `${NETWORK_SENTENCE} ${OWN_PACKAGE_JSON_SENTENCE} ${vendorSentences(turn.approval)}`} ${APP_FOLDER_SENTENCE} ${filesOnly ? "" : `${WEB_SENTENCE} `}When something is refused, say so in one line and do not try another way around it. When you finish, list the files you changed.${codeTurnTail(turn.delegate, " ", turn.preview)}`,
     ] : [
       "-p",
       "--output-format", "stream-json",
@@ -4091,6 +4307,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     const model = typeof body.model === "string" ? body.model : parent ? parent.model : "";
     const effort = typeof body.effort === "string" ? body.effort : parent ? parent.effort : "";
     const delegate = isCode && body.delegateCoding === true;
+    const client = body.client;
+    const preview = isCode && typeof client === "object" && client !== null && (client as { preview?: unknown }).preview === true;
     const resumeId = !parent && typeof body.sessionId === "string" && UUID.test(body.sessionId) ? body.sessionId : "";
 
     // Code turn: the snapshot of the folder comes first (it can take a while on a big folder), and the folder is checked again
@@ -4111,6 +4329,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       model,
       effort,
       delegate,
+      preview,
       pending: new Map(),
       closed: false,
       child: null,
@@ -4246,6 +4465,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     workspace = { path: v.path, name: v.name, id: idOf(v.path) };
     workspaceGiven = v.path;
     saveWorkspace(v.path);
+    void closeAllPreviews(); // a preview belongs to the code folder it was started in
   };
 
   async function handleChoose(req: IncomingMessage, res: ServerResponse) {
@@ -4302,6 +4522,84 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     return json(res, 200, { projects: out.slice(0, PROJECT_LIST_CAP) });
+  }
+
+  /** The names /v1/projects lists now: direct subfolders of the code folder that are real directories, not links, with an allowed name. */
+  function projectNames(): string[] {
+    if (!workspace) return [];
+    const ws = workspace.path;
+    try {
+      return fs.readdirSync(ws).filter((e) => {
+        if (e.startsWith(".") || !projectNameOk(e)) return false;
+        try {
+          const st = fs.lstatSync(path.join(ws, e));
+          return st.isDirectory() && !st.isSymbolicLink();
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  // ---- preview of the built app (POST /v1/preview) -------------------------------------------------------------------
+  const previews = new Map<string, Preview>();
+  /** Starts are one at a time, so two presses of Open cannot both pass the port probe and race for the port. */
+  let previewChain: Promise<unknown> = Promise.resolve();
+  const closeAllPreviews = (): Promise<void> => {
+    const all = [...previews.values()];
+    previews.clear();
+    return Promise.all(all.map(closePreviewServers)).then(() => undefined);
+  };
+  /** The origins a preview must never share: every origin that is paired, and every origin that may pair (an allowed app could pair later). */
+  const pairedOriginList = () => [...new Set([...allowedOrigins, ...[...pairings.values()].map((p) => p.origin).filter((o): o is string => typeof o === "string")])];
+  async function startPreview(name: string): Promise<{ url: string; project: string; folder: "dist" | "build" }> {
+    const proj = resolveProject(name);
+    if (!proj || !workspace || !within(proj.path) || !proj.path.startsWith(fs.realpathSync.native(workspace.path) + path.sep)) throw new PreviewRefusal(400, { error: "bad-project" });
+    const build = findBuildFolder(proj.path);
+    if (!build) throw new PreviewRefusal(404, { error: "no-build", message: `No build yet for ${name}. Run npm run build in the project folder, then press Open again.` });
+    const pinned = pinnedPort(proj.path);
+    if (pinned === null) throw new PreviewRefusal(409, { error: "no-port", message: "Pin this project's port from your dev-ports map in vite.config (server.port and preview.port, strictPort: true), rebuild, then press Open again." });
+    if (pinned < 1024 || pinned > 65535 || PREVIEW_BAD_PORTS.has(pinned) || pinned === port) throw new PreviewRefusal(409, { error: "bad-port", port: pinned });
+    const urlOf = `http://localhost:${pinned}/`;
+    const mine = new Set([`http://localhost:${pinned}`, `http://127.0.0.1:${pinned}`, `http://[::1]:${pinned}`]);
+    if (pairedOriginList().some((o) => mine.has(o))) throw new PreviewRefusal(409, { error: "origin-paired", port: pinned });
+    const have = previews.get(name);
+    if (have && have.root === build.root && have.port === pinned) return { url: urlOf, project: name, folder: build.folder };
+    if (have) { previews.delete(name); await closePreviewServers(have); }
+    while (previews.size >= PREVIEW_MAX) {
+      const oldest = previews.keys().next().value as string;
+      const p = previews.get(oldest)!;
+      previews.delete(oldest);
+      await closePreviewServers(p);
+    }
+    const servers = await startPreviewServers(build.root, pinned);
+    previews.set(name, { root: build.root, port: pinned, servers, folder: build.folder });
+    return { url: urlOf, project: name, folder: build.folder };
+  }
+  async function handlePreview(req: IncomingMessage, res: ServerResponse) {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
+    }
+    if (workspace) folderStillGood();
+    if (!workspace) return json(res, 404, { error: NO_WORKSPACE });
+    const name = body.project;
+    // The name is one plain folder name AND one the project list shows; startPreview then checks the real path again.
+    const plainName = typeof name === "string" && name !== "" && name.length <= 128 && !/[\\/\0]/.test(name) && name !== "." && name !== ".." && !name.startsWith(".");
+    if (!plainName || !projectNames().includes(name)) return json(res, 400, { error: "bad-project" });
+    const run = previewChain.then(() => startPreview(name));
+    previewChain = run.catch(() => {});
+    try {
+      return json(res, 200, await run);
+    } catch (e) {
+      if (e instanceof PreviewRefusal) return json(res, e.status, e.body);
+      log(`preview: ${(e as ErrLike)?.message ?? e}`);
+      return json(res, 500, { error: "bridge error" });
+    }
   }
 
   async function handleProjectCreate(req: IncomingMessage, res: ServerResponse) {
@@ -4797,13 +5095,18 @@ export function createBridge(opts: BridgeOptions = {}) {
         return workspace ? json(res, 200, { name: workspace.name, path: workspace.path }) : json(res, 404, { error: NO_WORKSPACE });
       }
       if (req.method === "POST" && url.pathname === "/v1/projects") return handleProjects(res);
+      if (url.pathname === "/v1/preview") {
+        if (req.method !== "POST") { res.setHeader("allow", "POST"); return json(res, 405, { error: "Use POST." }); }
+        return handlePreview(req, res);
+      }
       if (req.method === "POST" && url.pathname === "/v1/projects/create") return handleProjectCreate(req, res);
       if (req.method === "POST" && url.pathname === "/v1/workspace/choose") return handleChoose(req, res);
       if (req.method === "POST" && url.pathname === "/v1/workspace/create") return handleCreate(req, res);
-      if (req.method === "POST" && url.pathname === "/v1/workspace/open") return handleOpenFolder(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/workspace/open") { await closeAllPreviews(); return handleOpenFolder(req, res); }
       if (req.method === "POST" && url.pathname === "/v1/unpair") {
         pairings.delete(sha(String(req.headers["x-bridge-secret"])).toString("hex"));
         savePairings();
+        await closeAllPreviews();
         return json(res, 200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/v1/turn") return handleTurn(req, res);
@@ -4962,7 +5265,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     lockHeld = false;
   };
   const closeBridge = (): Promise<void> => {
-    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => undefined);
+    const previewsClosed = closeAllPreviews();
+    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
     return stopped.then(() => new Promise<void>((resolve) => server.close(() => { releaseLock(); resolve(); })));
   };
   const server = http.createServer((req, res) => {
