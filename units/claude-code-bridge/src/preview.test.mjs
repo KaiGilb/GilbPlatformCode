@@ -424,6 +424,32 @@ describe("snapshot: the symlink swap race", () => {
   });
 });
 
+describe("snapshot: the event loop", () => {
+  it("keeps answering /v1/check during an Open of 20,000 small files (no stall over 150 ms)", async () => {
+    // Spec: H1a.N1 — the copy yields to the event loop (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const p = mkApp("app", await freePort());
+    fs.mkdirSync(path.join(p, "dist", "many"));
+    for (let i = 0; i < 19_990; i++) fs.writeFileSync(path.join(p, "dist", "many", `f${i}`), "x");
+    let max = 0;
+    let polling = true;
+    const poll = (async () => {
+      while (polling) {
+        const t = Date.now();
+        await fetch(`${base}/v1/check`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP } }).then((r) => r.text());
+        max = Math.max(max, Date.now() - t);
+        await sleep(20);
+      }
+    })();
+    const r = await open("app");
+    polling = false;
+    await poll;
+    console.log(`max /v1/check stall during Open of ~20,000 files: ${max} ms`);
+    expect(r.status).toBe(200);
+    expect(max).toBeLessThanOrEqual(150);
+  }, 60_000);
+});
+
 describe("snapshot: where it lives and when it goes", () => {
   it("is replaced by the next Open, removed on close, and any leftover is swept at start", async () => {
     // Spec: H1a.F1d — one snapshot per project, replaced atomically; none survives a close or a restart (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)

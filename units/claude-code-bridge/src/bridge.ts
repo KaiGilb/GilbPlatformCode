@@ -2698,6 +2698,9 @@ async function snapshotBuildInner(srcRoot: string, dest: string): Promise<number
   let files = 0;
   let seen = 0;
   let bytes = 0;
+  let sinceYield = 0;
+  /** The copy is synchronous file work; without this it would hold the event loop (every other request waits) for the whole copy. */
+  const yieldLoop = () => { sinceYield = 0; return new Promise<void>((r) => setImmediate(r)); };
   const changed = () => new PreviewRefusal(409, BUILD_CHANGED);
   const tooLarge = () => new PreviewRefusal(413, { error: "build-too-large" });
   async function copyFile(src: string, to: string, ls: fs.Stats) {
@@ -2721,7 +2724,8 @@ async function snapshotBuildInner(srcRoot: string, dest: string): Promise<number
         bytes += n;
         if (bytes > PREVIEW_MAX_BYTES) throw tooLarge();
         fs.writeSync(out, buf, 0, n);
-        await Promise.resolve(); // let other requests run during a big copy
+        sinceYield += n;
+        if (sinceYield >= 16 * 1024 * 1024) await yieldLoop(); // a big file: let other requests run every 16 MB
       }
       files += 1;
     } finally {
@@ -2750,6 +2754,7 @@ async function snapshotBuildInner(srcRoot: string, dest: string): Promise<number
           await walk(s, t, depth + 1);
         } else if (ls.isFile()) {
           await copyFile(s, t, ls);
+          if (files % 200 === 0) await yieldLoop(); // and every 200 files
         }
       } catch (e) {
         if (e instanceof PreviewRefusal) throw e;
