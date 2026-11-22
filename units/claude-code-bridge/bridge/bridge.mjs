@@ -2618,6 +2618,8 @@ const BUILD_CHANGED = { error: "build-changed", message: "The build changed whil
 const PREVIEW_MAX_FILES = 20_000;
 const PREVIEW_MAX_BYTES = 512 * 1024 * 1024;
 const PREVIEW_MAX_DEPTH = 64;
+/** The copy gives the event loop back at least this often. */
+const PREVIEW_YIELD_MS = 16;
 /** macOS: refuse a link in ANY part of the path, not only the last (used INSTEAD of O_NOFOLLOW: the two together give EINVAL). 0 elsewhere. */
 const O_NOFOLLOW_ANY = process.platform === "darwin" ? 0x20000000 : 0;
 /**
@@ -2628,9 +2630,9 @@ const O_NOFOLLOW_ANY = process.platform === "darwin" ? 0x20000000 : 0;
  * (device and inode) and a regular file; its real location is checked to be inside the source (/proc/self/fd on Linux, realpath elsewhere).
  * Any mismatch aborts the whole snapshot. Symlinks, special files, dot-entries and hard-linked files (nlink > 1) are skipped, never followed.
  */
-export async function snapshotBuild(srcRoot, dest) {
+export async function snapshotBuild(srcRoot, dest, limits = {}) {
     try {
-        return await snapshotBuildInner(srcRoot, dest);
+        return await snapshotBuildInner(srcRoot, dest, limits);
     }
     catch (e) {
         if (e instanceof PreviewRefusal)
@@ -2638,7 +2640,9 @@ export async function snapshotBuild(srcRoot, dest) {
         throw new PreviewRefusal(409, BUILD_CHANGED); // the folder moved or vanished under the copy
     }
 }
-async function snapshotBuildInner(srcRoot, dest) {
+async function snapshotBuildInner(srcRoot, dest, limits) {
+    const maxFiles = limits.maxFiles ?? PREVIEW_MAX_FILES;
+    const maxBytes = limits.maxBytes ?? PREVIEW_MAX_BYTES;
     const rootStat = fs.lstatSync(srcRoot);
     const inRoot = (p) => p === srcRoot || p.startsWith(srcRoot + path.sep);
     let files = 0;
@@ -2646,7 +2650,10 @@ async function snapshotBuildInner(srcRoot, dest) {
     let bytes = 0;
     let sinceYield = 0;
     /** The copy is synchronous file work; without this it would hold the event loop (every other request waits) for the whole copy. */
-    const yieldLoop = () => { sinceYield = 0; return new Promise((r) => setImmediate(r)); };
+    let lastYield = performance.now();
+    const yieldLoop = () => { sinceYield = 0; lastYield = performance.now(); return new Promise((r) => setImmediate(r)); };
+    /** Yield when 16 ms have passed since the last yield (a slow disk makes 200 files far too many), whatever the count. */
+    const maybeYield = () => (performance.now() - lastYield >= PREVIEW_YIELD_MS ? yieldLoop() : undefined);
     const changed = () => new PreviewRefusal(409, BUILD_CHANGED);
     const tooLarge = () => new PreviewRefusal(413, { error: "build-too-large" });
     async function copyFile(src, to, ls) {
@@ -2666,7 +2673,7 @@ async function snapshotBuildInner(srcRoot, dest) {
                 where = fs.realpathSync.native(src);
             if (!inRoot(where))
                 throw changed();
-            if (st.size + bytes > PREVIEW_MAX_BYTES)
+            if (st.size + bytes > maxBytes)
                 throw tooLarge();
             out = fs.openSync(to, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
             const buf = Buffer.allocUnsafe(64 * 1024);
@@ -2675,12 +2682,12 @@ async function snapshotBuildInner(srcRoot, dest) {
                 if (n === 0)
                     break;
                 bytes += n;
-                if (bytes > PREVIEW_MAX_BYTES)
+                if (bytes > maxBytes)
                     throw tooLarge();
                 fs.writeSync(out, buf, 0, n);
                 sinceYield += n;
-                if (sinceYield >= 16 * 1024 * 1024)
-                    await yieldLoop(); // a big file: let other requests run every 16 MB
+                if (sinceYield >= 16 * 1024 * 1024 || performance.now() - lastYield >= PREVIEW_YIELD_MS)
+                    await yieldLoop(); // a big file: every 16 MB or 16 ms
             }
             files += 1;
         }
@@ -2697,7 +2704,7 @@ async function snapshotBuildInner(srcRoot, dest) {
         for (const name of names) {
             if (name.startsWith("."))
                 continue;
-            if (++seen > PREVIEW_MAX_FILES)
+            if (++seen > maxFiles)
                 throw tooLarge(); // every entry counts, so a huge folder stops early
             const s = path.join(src, name);
             const t = path.join(to, name);
@@ -2717,8 +2724,7 @@ async function snapshotBuildInner(srcRoot, dest) {
                 }
                 else if (ls.isFile()) {
                     await copyFile(s, t, ls);
-                    if (files % 200 === 0)
-                        await yieldLoop(); // and every 200 files
+                    await maybeYield();
                 }
             }
             catch (e) {
@@ -4988,7 +4994,7 @@ export function createBridge(opts = {}) {
         try {
             fs.mkdirSync(previewsDir, { recursive: true, mode: 0o700 });
             made = true;
-            await snapshotBuild(build.root, snap);
+            await snapshotBuild(build.root, snap, opts.previewLimits ?? {});
             const snapReal = fs.realpathSync.native(snap); // what a request's realpath will be compared with (the state folder may be reached through a link)
             const idx = fs.lstatSync(path.join(snap, "index.html"), { throwIfNoEntry: false });
             if (!idx?.isFile())
