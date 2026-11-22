@@ -419,6 +419,11 @@ export interface SendClaudeCodeOpts {
    */
   delegateCoding?: boolean;
   /**
+   * Tells the bridge this page shows an Open button for the built app (bridge 0.3.22). Only `preview: true` is sent, as `client: { preview: true }`
+   * in the person's turn; false, missing or any other field sends no `client` key at all. A hand-off's nested turn never carries it.
+   */
+  client?: { preview?: boolean };
+  /**
    * Pictures for the last user turn (bridge 0.3.6): at most 4 of PNG, JPEG, GIF or WebP, each at most 5 MiB and 10 MiB together
    * (decoded), base64 with no `data:` prefix. Checked before any request (ClaudeCodeBridgeError 400 with a plain sentence). They go to
    * the bridge only; the platform context request carries the text alone. With pictures, the message text may be empty.
@@ -502,6 +507,12 @@ export interface ClaudeCodeClient {
   createWorkspace(name: string): Promise<{ name: string; path: string }>;
   /** The projects (direct subfolders) of the bridge's code folder: `{ name, modified }`, sorted by name. Needs the pairing; goes through the relay when open. */
   listProjects(): Promise<{ name: string; modified: string }[]>;
+  /**
+   * Asks the bridge (0.3.22, `POST /v1/preview`) to copy the project's built app and serve it read-only on its pinned port. Needs the pairing; goes
+   * through the relay when open. Never throws: `{ ok: true, url, project, folder }` or `{ ok: false, code, message?, port? }`. Call it on every press:
+   * the bridge serves a COPY made at each call. A bridge older than 0.3.22 gives `unsupported`.
+   */
+  preview(project: string): Promise<PreviewResult>;
   /** Makes the project `name` (a subfolder) in the code folder. 409 when it exists, 400 for a bad name, with the bridge's sentence. */
   createProject(name: string): Promise<{ name: string }>;
   /** Trades the code printed in the bridge's terminal for a secret and keeps it for this tab. Wrong code -> 401 with the bridge's own sentence. */
@@ -568,6 +579,20 @@ interface BridgeTurnOut {
   delegateCoding?: boolean;
   usage?: TurnUsage;
 }
+
+/** Why `preview()` did not give an address. `unsupported`, `unpaired`, `unreachable` and `failed` are this client's own words; the rest are the bridge's `error` codes. */
+export type PreviewCode =
+  | "bad-project" | "no-build" | "build-too-large" | "closing"
+  | "no-port" | "bad-port" | "port-in-use" | "origin-paired" | "build-changed" | "no-preview-place"
+  | "unsupported" | "unpaired" | "unreachable" | "failed";
+
+/** The answer of `preview()`. It is always a value, never a throw, for any answer or failure of the bridge. */
+export type PreviewResult =
+  | { ok: true; url: string; project: string; folder: string }
+  | { ok: false; code: PreviewCode; message?: string; port?: number };
+
+/** The 409 codes the bridge sends for a preview (bridge.ts, PreviewRefusal). */
+const PREVIEW_409 = new Set(["no-port", "bad-port", "port-in-use", "origin-paired", "build-changed", "no-preview-place"]);
 
 /** A tool name is plain: letters, digits, underscore, hyphen (defence in depth; the bridge checks the same). */
 const TOOL_NAME_OK = /^[A-Za-z0-9_-]{1,128}$/;
@@ -1385,6 +1410,8 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
         ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
         ...(opts.images && opts.images.length > 0 ? { images: opts.images.map((im) => ({ mediaType: im.mediaType, data: im.data })) } : {}),
         ...(codeMode && opts.delegateCoding !== undefined ? { delegateCoding: opts.delegateCoding } : {}),
+        // Built field by field, never spread from opts.client: a page cannot add keys the bridge did not ask for.
+        ...(opts.client?.preview === true ? { client: { preview: true } } : {}),
       },
       (name, args, bridgeTurnId, toolSig, callId) => callTool(name, args, undefined, bridgeTurnId, toolSig, callId),
       true,
@@ -1600,6 +1627,36 @@ export function createClaudeCodeClient(config: ClaudeCodeClientConfig): ClaudeCo
       return (body.projects as Array<{ name?: unknown; modified?: unknown }>)
         .filter((p) => p && typeof p.name === "string" && p.name !== "")
         .map((p) => ({ name: p.name as string, modified: typeof p.modified === "string" ? p.modified : "" }));
+    },
+
+    async preview(project) {
+      const conn = client.load();
+      if (!conn) return { ok: false, code: "unpaired" };
+      let res: Response;
+      try {
+        res = await bridgeFetch("/v1/preview", { method: "POST", headers: { "content-type": "application/json", "x-bridge-secret": conn.secret }, body: JSON.stringify({ project }) });
+      } catch {
+        return { ok: false, code: "unreachable" }; // no answer: the bridge is off, or the relay window went away
+      }
+      const body = (await res.json().catch(() => null)) as { url?: unknown; project?: unknown; folder?: unknown; error?: unknown; message?: unknown; port?: unknown } | null;
+      if (res.status === 200 && typeof body?.url === "string" && body.url !== "") {
+        return { ok: true, url: body.url, project: typeof body.project === "string" ? body.project : project, folder: typeof body.folder === "string" ? body.folder : "" };
+      }
+      const detail = { ...(typeof body?.message === "string" && body.message !== "" ? { message: body.message } : {}), ...(typeof body?.port === "number" ? { port: body.port } : {}) };
+      if (res.status === 401 || res.status === 403) return { ok: false, code: "unpaired" };
+      if (res.status === 503) return { ok: false, code: "closing" };
+      if (res.status === 413) return { ok: false, code: "build-too-large", ...detail };
+      if (res.status === 400) return { ok: false, code: "bad-project", ...detail };
+      const code = typeof body?.error === "string" ? body.error : "";
+      // The bridge's real 404 refusal is `no-build`; its other plain 404 ("not found") is the route missing in an older bridge.
+      if (res.status === 404 && code === "no-build") return { ok: false, code: "no-build", ...detail };
+      // A bridge started with no code folder answers 404 with a sentence (bridge.ts NO_WORKSPACE); that is a refusal, not a missing route.
+      if (res.status === 404 && typeof body?.error === "string" && body.error.startsWith("This bridge has no code folder")) return { ok: false, code: "failed", message: body.error };
+      if (res.status === 404) return { ok: false, code: "unsupported" };
+      // DECISION: a 409 whose code this client does not know (e.g. `preview-cancelled`, or a newer bridge) is `failed`, not `unsupported`: the bridge understood
+      // the request and refused it, so "update the bridge" would mislead. The bridge's own `message` is kept so the page can still say why. Same for any other status.
+      if (res.status === 409 && PREVIEW_409.has(code)) return { ok: false, code: code as PreviewCode, ...detail };
+      return { ok: false, code: "failed", ...detail };
     },
 
     async createProject(name) {
