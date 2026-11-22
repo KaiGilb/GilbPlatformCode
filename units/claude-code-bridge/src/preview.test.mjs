@@ -11,7 +11,8 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBridge } from "../bridge/bridge.mjs";
+import { spawn } from "node:child_process";
+import { createBridge, snapshotBuild, computerSandboxSettings, protectedPlaces } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -32,13 +33,13 @@ async function freePort() {
 }
 const listenOn = (host, port) => new Promise((resolve, reject) => { const s = net.createServer(); s.once("error", reject); s.listen({ host, port, exclusive: true }, () => resolve(s)); });
 
-async function start({ allowed = [APP] } = {}) {
+async function start({ allowed = [APP], bridgeOpts = {}, stateDir = true } = {}) {
   dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-prev-")));
   logFile = path.join(dir, "claude.log");
   ws = path.join(dir, "MyCode");
   fs.mkdirSync(ws);
   ws = fs.realpathSync.native(ws);
-  bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: allowed, workDir: path.join(dir, "work"), home: dir, workspace: ws, codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile } });
+  bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: allowed, workDir: path.join(dir, "work"), home: dir, workspace: ws, codeEnvExtraPrefixes: ["FAKE_"], codePlatform: "darwin", env: { ...process.env, FAKE_CLAUDE_LOG: logFile }, ...(stateDir ? { stateDir: path.join(dir, "state") } : {}), ...bridgeOpts });
   await bridge.start();
   base = `http://127.0.0.1:${bridge.port}`;
   const r = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: allowed[0] }, body: JSON.stringify({ code: bridge.pairingCode }) });
@@ -67,7 +68,13 @@ const get = (port, p, { method = "GET", host = `localhost:${port}` } = {}) => ne
   rq.on("error", reject);
   rq.end();
 });
-const refused = (port) => new Promise((resolve) => { const s = net.connect({ host: "127.0.0.1", port }); s.once("connect", () => { s.destroy(); resolve(false); }); s.once("error", () => resolve(true)); });
+const refusedAt = (host, port) => new Promise((resolve) => { const s = net.connect({ host, port }); s.once("connect", () => { s.destroy(); resolve(false); }); s.once("error", () => resolve(true)); });
+const refused = (port) => refusedAt("127.0.0.1", port);
+/** Nothing listens on either family (an IPv6-less machine counts as refused). */
+const nothingAt = async (port) => (await refusedAt("127.0.0.1", port)) && (await refusedAt("::1", port));
+const snaps = () => { try { return fs.readdirSync(path.join(dir, "state", "previews")); } catch { return []; } };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pair = async () => { const r = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json", origin: APP }, body: JSON.stringify({ code: bridge.pairingCode }) }); secret = (await r.json()).secret; };
 
 afterEach(async () => {
   for (const s of extra) await new Promise((r) => s.close(() => r()));
@@ -211,8 +218,11 @@ describe("preview static server", () => {
     await up();
     for (const p of ["/../package.json", "/%2e%2e/package.json", "/.env", "/out/passwd", "/out", "/assets/", "/%2F..", "/%5c..", "/a%00b", "/a\\b", "/%zz", "/assets//a.js", "//assets/a.js", "/.git/config", "/assets/.x"]) {
       const r = await get(port, p);
-      expect([400, 404], `${p} -> ${r.status}`).toContain(r.status);
-      expect(r.body).not.toMatch(/PKG-LEAK|SECRET=1|root:|APP-INDEX|a\.js/);
+      // A link is not copied into the snapshot, so /out is simply a path that does not exist: an app route (no extension) gets index.html, never the file behind the link.
+      const spa = p.startsWith("/out") && r.status === 200;
+      if (spa) expect(r.body).toContain("APP-INDEX");
+      else expect([400, 404], `${p} -> ${r.status}`).toContain(r.status);
+      expect(r.body).not.toMatch(spa ? /PKG-LEAK|SECRET=1|root:|a\.js/ : /PKG-LEAK|SECRET=1|root:|APP-INDEX|a\.js/);
     }
   });
 
@@ -288,4 +298,298 @@ describe("preview sentence in the code-turn prompt", () => {
     }
     bridge = undefined;
   });
+});
+
+// ---- the snapshot (F1), file handles (F2), ports (F3), starts in flight (F4) ---------------------------------------------------------
+
+const MARKER = "MARKER-OUTSIDE-SECRET";
+/** A child process that swaps `<d>/<name>` and `<d>/<name>_link` over and over until `<d>/stop` exists: the symlink swap the sandboxed agent can do. */
+const swapper = (d, name, stop) => spawn(process.execPath, ["-e", `
+const fs=require("fs");const d=process.argv[1],n=process.argv[2],stop=process.argv[3];
+while(!fs.existsSync(stop)){try{fs.renameSync(d+"/"+n,d+"/"+n+"_real");fs.renameSync(d+"/"+n+"_link",d+"/"+n);fs.renameSync(d+"/"+n,d+"/"+n+"_link");fs.renameSync(d+"/"+n+"_real",d+"/"+n);}catch(e){}}
+`, d, name, stop], { stdio: "ignore" });
+const stopSwap = async (stop, kids) => { fs.writeFileSync(stop, ""); await Promise.all(kids.map((k) => new Promise((r) => (k.exitCode !== null ? r() : k.once("exit", r))))); fs.rmSync(stop); };
+const allFiles = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? allFiles(path.join(d, e.name)) : [path.join(d, e.name)]));
+const snapHasMarker = () => snaps().some((n) => allFiles(path.join(dir, "state", "previews", n)).some((f) => fs.readFileSync(f, "utf8").includes(MARKER)));
+
+describe("snapshot: the symlink swap race", () => {
+  /** dist/sub/id is real; dist/sub_link (and project/dist_link) lead outside to the marker. */
+  function raceFixture(port) {
+    const p = mkApp("app", port);
+    const out = path.join(dir, "outside");
+    fs.mkdirSync(path.join(out, "sub"), { recursive: true });
+    // Many files, so a copy takes long enough for a swap to land in the middle of it.
+    fs.mkdirSync(path.join(p, "dist", "sub"));
+    for (let i = 0; i < 400; i++) { fs.writeFileSync(path.join(out, "sub", `f${i}`), MARKER); fs.writeFileSync(path.join(p, "dist", "sub", `f${i}`), `REAL-${i}`); }
+    fs.writeFileSync(path.join(out, "index.html"), MARKER);
+    fs.writeFileSync(path.join(out, "id"), MARKER);
+    fs.writeFileSync(path.join(out, "sub", "id"), MARKER);
+    fs.writeFileSync(path.join(p, "dist", "sub", "id"), "REAL-SUB-ID");
+    fs.symlinkSync(out, path.join(p, "dist", "sub_link"));
+    fs.symlinkSync(path.join(out), path.join(p, "dist_link"));
+    return p;
+  }
+
+  it("serves 0 marker bytes over 2000+ requests while dist/sub and dist itself are being swapped, during Open and during serving", async () => {
+    // Spec: H1a.F1 — swap race: what is served is a copy the agent cannot change (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const port = await freePort();
+    const p = raceFixture(port);
+    expect((await open("app")).status).toBe(200);
+    const stop = path.join(dir, "stop-swap");
+    const kids = [swapper(path.join(p, "dist"), "sub", stop), swapper(p, "dist", stop)];
+    const seen = { open: {}, hits: 0, requests: 0 };
+    // During Open: every answer is a refusal or a clean snapshot; no snapshot ever holds marker bytes.
+    for (let i = 0; i < 150; i++) {
+      const r = await open("app");
+      seen.open[r.status] = (seen.open[r.status] ?? 0) + 1;
+      expect([200, 404, 409]).toContain(r.status);
+      if (r.status === 409 && r.json.error === "build-changed") expect(r.json.message).toBe("The build changed while it was being opened. Press Open again.");
+      expect(snapHasMarker()).toBe(false);
+    }
+    // During serving, with Open pressed now and then.
+    const worker = async () => {
+      for (let i = 0; i < 300; i++) {
+        for (const u of ["/sub/id", "/id", "/"]) {
+          const r = await get(port, u);
+          seen.requests += 1;
+          if (r.body.includes(MARKER)) seen.hits += 1;
+        }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker(), (async () => { for (let i = 0; i < 20; i++) { await open("app"); await sleep(20); } })()]);
+    await stopSwap(stop, kids);
+    expect(seen.requests).toBeGreaterThanOrEqual(2000);
+    expect(seen.hits).toBe(0);
+    expect(snapHasMarker()).toBe(false);
+  }, 120_000);
+
+  it("snapshotBuild alone: 300 copies while dist/sub is swapped never hold a marker byte", async () => {
+    // Spec: H1a.F1h — the copy checks (no link followed, same file, still inside) hold under the swap (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const p = raceFixture(await freePort());
+    const dist = path.join(p, "dist");
+    const stop = path.join(dir, "stop-swap");
+    const kid = swapper(dist, "sub", stop);
+    const out = { ok: 0, changed: 0, marker: 0 };
+    for (let i = 0; i < 300; i++) {
+      const dest = path.join(dir, `direct-${i}`);
+      try { await snapshotBuild(dist, dest); out.ok += 1; } catch (e) { if (e.body?.error === "build-changed") out.changed += 1; else throw e; }
+      if (fs.existsSync(dest) && allFiles(dest).some((f) => fs.readFileSync(f, "utf8").includes(MARKER))) out.marker += 1;
+    }
+    await stopSwap(stop, [kid]);
+    expect(out.marker).toBe(0);
+    expect(out.ok + out.changed).toBe(300);
+  }, 120_000);
+
+  it("copies no symlink and no hard-linked file, and skips dot-entries", async () => {
+    // Spec: H1a.F1b — links and hard links present at Open are not served (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const port = await freePort();
+    const p = mkApp("app", port);
+    const outFile = path.join(dir, "outside.txt");
+    fs.writeFileSync(outFile, MARKER);
+    fs.linkSync(outFile, path.join(p, "dist", "hard.txt"));
+    fs.symlinkSync(outFile, path.join(p, "dist", "soft.txt"));
+    fs.writeFileSync(path.join(p, "dist", "fifo-like.dat"), "ok");
+    expect((await open("app")).status).toBe(200);
+    for (const u of ["/hard.txt", "/soft.txt", "/.env"]) {
+      const r = await get(port, u);
+      expect(r.status, u).toBe(404);
+      expect(r.body).not.toContain(MARKER);
+    }
+    expect((await get(port, "/fifo-like.dat")).body).toBe("ok");
+    expect(snapHasMarker()).toBe(false);
+  });
+
+  it("refuses to open when the build is too large, with 413 build-too-large", async () => {
+    // Spec: H1a.F1c — caps: 20,000 files and 512 MB (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const port = await freePort();
+    const p = mkApp("app", port);
+    const fd = fs.openSync(path.join(p, "dist", "assets", "huge.bin"), "w");
+    fs.ftruncateSync(fd, 600 * 1024 * 1024); // sparse: costs no disk, and the size alone is over the cap
+    fs.closeSync(fd);
+    let r = await open("app");
+    expect(r.status).toBe(413);
+    expect(r.json).toEqual({ error: "build-too-large" });
+    expect(snaps()).toEqual([]);
+    fs.rmSync(path.join(p, "dist", "assets", "huge.bin"));
+    fs.mkdirSync(path.join(p, "dist", "many"));
+    for (let i = 0; i < 20_001; i++) fs.writeFileSync(path.join(p, "dist", "many", `f${i}`), "");
+    r = await open("app");
+    expect(r.status).toBe(413);
+    expect(r.json).toEqual({ error: "build-too-large" });
+    expect(snaps()).toEqual([]);
+  });
+});
+
+describe("snapshot: where it lives and when it goes", () => {
+  it("is replaced by the next Open, removed on close, and any leftover is swept at start", async () => {
+    // Spec: H1a.F1d — one snapshot per project, replaced atomically; none survives a close or a restart (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const port = await freePort();
+    const p = mkApp("app", port);
+    expect((await open("app")).status).toBe(200);
+    const first = snaps();
+    expect(first.length).toBe(1);
+    expect(first[0]).toMatch(/^app-\d+$/);
+    // A rebuild, then Open again: the served page is the new one and the old copy is gone.
+    fs.writeFileSync(path.join(p, "dist", "index.html"), "<title>NEW-BUILD</title>");
+    expect((await get(port, "/")).body).toContain("APP-INDEX"); // a refresh alone does not change a copy
+    expect((await open("app")).status).toBe(200);
+    const second = snaps();
+    expect(second.length).toBe(1);
+    expect(second[0]).not.toBe(first[0]);
+    expect((await get(port, "/")).body).toContain("NEW-BUILD");
+    // The copy sits in the state folder, not in the project or the build folder.
+    expect(path.join(dir, "state", "previews", second[0]).startsWith(path.join(dir, "state") + path.sep)).toBe(true);
+    await bridge.close();
+    expect(snaps()).toEqual([]);
+    // Leftovers from a crash are removed when a bridge starts on that state folder.
+    fs.mkdirSync(path.join(dir, "state", "previews", "app-99"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "state", "previews", "app-99", "index.html"), "LEFTOVER");
+    const keep = dir;
+    bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(keep, "work"), home: keep, workspace: ws, stateDir: path.join(keep, "state"), env: { ...process.env } });
+    await bridge.start();
+    expect(snaps()).toEqual([]);
+  });
+
+  it("serves when the state folder is reached through a symlink", async () => {
+    // Spec: H1a.F1i — the served root is the real path of the copy (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start({ stateDir: false });
+    await bridge.close();
+    const real = path.join(dir, "realstate");
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, path.join(dir, "linkstate"));
+    bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir, workspace: ws, stateDir: path.join(dir, "linkstate"), env: { ...process.env } });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    await pair();
+    const port = await freePort();
+    mkApp("app", port);
+    expect((await open("app")).status).toBe(200);
+    expect((await get(port, "/assets/a.js")).body).toBe("console.log(1)");
+  });
+
+  it("is removed on unpair", async () => {
+    // Spec: H1a.F1e — unpair removes the snapshots (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    mkApp("app", await freePort());
+    expect((await open("app")).status).toBe(200);
+    expect(snaps().length).toBe(1);
+    await fetch(`${base}/v1/unpair`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP } });
+    expect(snaps()).toEqual([]);
+  });
+
+  it("refuses to open (no-preview-place) when the bridge has no state folder, and when the state folder is in the code folder", async () => {
+    // Spec: H1a.F1f — a copy is only ever made where a code turn cannot write; no other place is chosen (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start({ stateDir: false });
+    mkApp("app", await freePort());
+    expect((await open("app")).json.error).toBe("no-preview-place");
+    await bridge.close();
+    await removeTestDir(dir);
+    await start();
+    await bridge.close();
+    bridge = createBridge({ port: 0, claudeBin: FAKE, allowedOrigins: [APP], workDir: path.join(dir, "work"), home: dir, workspace: ws, stateDir: path.join(ws, ".state"), env: { ...process.env } });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    await pair();
+    mkApp("app", await freePort());
+    expect((await open("app")).json.error).toBe("no-preview-place");
+  });
+
+  it("is in a place the sandbox can neither read nor write, in folder mode and in computer mode", async () => {
+    // Spec: H1a.F1g — the settings of both access modes deny the state folder (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    mkApp("app", await freePort());
+    const state = fs.realpathSync.native(path.join(dir, "state"));
+    // Folder mode: the settings a real code turn is started with (argv of the fake claude).
+    await fetch(`${base}/v1/turn`, { method: "POST", headers: { "content-type": "application/json", origin: APP, "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "p", mode: "code", project: "app" }) }).then((r) => r.text());
+    const row = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((r) => r.event === "run");
+    const folder = JSON.parse(row.argv[row.argv.indexOf("--settings") + 1]);
+    expect(folder.sandbox.enabled).toBe(true);
+    expect(folder.sandbox.filesystem.denyRead).toContain(state);
+    expect(folder.sandbox.filesystem.allowWrite).toBeUndefined(); // writes only in the project folder
+    expect(path.join(state, "previews").startsWith(ws + path.sep)).toBe(false);
+    // Computer mode: the sandbox settings built from the same protected places.
+    const comp = computerSandboxSettings(dir, ws, protectedPlaces(dir, [state]), [os.tmpdir()]);
+    expect(comp.sandbox.filesystem.denyWrite).toContain(state);
+    expect(comp.sandbox.filesystem.denyRead).toContain(state);
+  });
+});
+
+describe("preview: file handles on aborted requests (F2)", () => {
+  it("survives 500 requests reset at once, answers /v1/check, and gives its file descriptors back", async () => {
+    // Spec: H1a.F2 — no handle is left to the garbage collector when a client resets (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const port = await freePort();
+    const p = mkApp("app", port);
+    fs.writeFileSync(path.join(p, "dist", "assets", "big.bin"), Buffer.alloc(8 * 1024 * 1024, 1)); // a body too big for one write, so a reset lands mid-stream
+    expect((await open("app")).status).toBe(200);
+    for (let i = 0; i < 20; i++) await get(port, "/"); // warm up
+    const baseline = fs.readdirSync("/dev/fd").length;
+    // The resets come at once, with and without a short wait, and are not waited for: the same load that crashed the first build on Node 25.
+    for (let i = 0; i < 500; i++) {
+      await new Promise((resolve) => {
+        const s = net.connect({ host: "127.0.0.1", port }, () => {
+          s.write(`GET / HTTP/1.1\r\nHost: localhost:${port}\r\n\r\n`);
+          const m = i % 4;
+          if (m === 0) s.resetAndDestroy(); else setTimeout(() => s.resetAndDestroy(), m - 1);
+          resolve();
+        });
+        s.on("error", () => resolve());
+      });
+    }
+    let after = Infinity;
+    for (let i = 0; i < 60 && after > baseline + 3; i++) { await sleep(100); after = fs.readdirSync("/dev/fd").length; }
+    expect(after).toBeLessThanOrEqual(baseline + 3);
+    const chk = await fetch(`${base}/v1/check`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP } });
+    expect(chk.status).toBe(200);
+    expect((await get(port, "/")).status).toBe(200);
+  }, 60_000);
+});
+
+describe("preview: ports from other services (F3)", () => {
+  it("refuses the databases, the rigs, the worker block 8780-8799, the pages-dev block 8800-8819 and ports under 1024", async () => {
+    // Spec: H1a.F3 — a preview never takes a port another service needs (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    await start();
+    const ports = [5432, 3306, 6379, 27017, 8787, 8789, 5173, 5197, 5251, 8780, 8790, 8799, 8800, 8810, 8819, 1023, 80, 0, bridge.port];
+    for (const n of ports) {
+      mkApp(`p${n}`, n);
+      const r = await open(`p${n}`);
+      expect(r.status, String(n)).toBe(409);
+      expect(r.json, String(n)).toEqual({ error: "bad-port", port: n });
+    }
+    expect(snaps()).toEqual([]);
+  });
+});
+
+describe("preview: a start in flight when a close comes (F4)", () => {
+  const settle = async (port, what) => { await sleep(150); expect(await nothingAt(port), what).toBe(true); };
+  it("leaves no listener after closeBridge, unpair or a workspace switch, 30 times each", async () => {
+    // Spec: H1a.F4 — a start that ends after a close never listens (Plan-2026-11-22-Friction-PlanReadQuestionBoxLocalServer-GilbAppBuild)
+    for (const kind of ["close", "unpair", "switch"]) {
+      for (let i = 0; i < 30; i++) {
+        await start({ bridgeOpts: kind === "switch" ? { chooseFolder: async () => path.join(dir, "Other") } : {} });
+        fs.mkdirSync(path.join(dir, "Other"));
+        const port = await freePort();
+        mkApp("app", port);
+        const act = async () => {
+          await sleep(i % 6);
+          if (kind === "close") await bridge.close();
+          else if (kind === "unpair") await fetch(`${base}/v1/unpair`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP } });
+          else await fetch(`${base}/v1/workspace/choose`, { method: "POST", headers: { "x-bridge-secret": secret, origin: APP, "content-type": "application/json" }, body: "{}" }).then((r) => r.text());
+        };
+        await Promise.all([open("app").catch(() => null), act()]);
+        await settle(port, `${kind} ${i}`);
+        expect(snaps(), `${kind} ${i}`).toEqual([]);
+        if (kind === "close") bridge = undefined;
+        else await bridge.close();
+        bridge = undefined;
+        await removeTestDir(dir);
+        dir = undefined;
+      }
+    }
+  }, 180_000);
 });

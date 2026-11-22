@@ -38,6 +38,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pipeline } from "node:stream";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -2592,7 +2593,9 @@ const PREVIEW_FOLDERS = ["dist", "build"] as const;
 const PREVIEW_CONFIGS = ["vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs", "nuxt.config.ts", "nuxt.config.js"];
 const PREVIEW_CONFIG_MAX = 64 * 1024;
 /** Ports that are never a preview port: Gilb's own rigs and the identity/user servers. */
-const PREVIEW_BAD_PORTS = new Set([5173, 8787, 5197, 5251]);
+const PREVIEW_BAD_PORTS = new Set([5432, 3306, 6379, 27017, 8787, 8789, 5173, 5197, 5251]);
+/** Rule_Code_dev-ports blocks that belong to other services: the workers (8780-8799) and pages-dev (8800-8819). */
+const previewPortRefused = (n: number) => n < 1024 || n > 65535 || PREVIEW_BAD_PORTS.has(n) || (n >= 8780 && n <= 8819);
 /** At most this many previews run at once; the next one closes the one started first. */
 const PREVIEW_MAX = 4;
 /** The fixed content-type map; anything else is application/octet-stream. */
@@ -2665,12 +2668,108 @@ function tcpAnswers(host: string, port: number): Promise<boolean> {
   });
 }
 
+/** Why a snapshot could not be made: the HTTP status and body to answer with. */
+const BUILD_CHANGED = { error: "build-changed", message: "The build changed while it was being opened. Press Open again." };
+const PREVIEW_MAX_FILES = 20_000;
+const PREVIEW_MAX_BYTES = 512 * 1024 * 1024;
+const PREVIEW_MAX_DEPTH = 64;
+/** macOS: refuse a link in ANY part of the path, not only the last (used INSTEAD of O_NOFOLLOW: the two together give EINVAL). 0 elsewhere. */
+const O_NOFOLLOW_ANY = process.platform === "darwin" ? 0x20000000 : 0;
+
+/**
+ * Copy a build folder into `dest` (a folder the bridge owns, outside every place a sandboxed turn can write) and return how many files were copied.
+ * WHY a copy: the agent can swap a folder for a symlink while a request is being served, and the bridge (outside the sandbox) would follow it.
+ * What is served is this copy, which the agent cannot reach. WHY the copy itself is careful: it also runs while the agent may be swapping links.
+ * Each source file is lstat-ed in the walk, opened without following links (O_NOFOLLOW, plus O_NOFOLLOW_ANY on macOS), and must then be the SAME file
+ * (device and inode) and a regular file; its real location is checked to be inside the source (/proc/self/fd on Linux, realpath elsewhere).
+ * Any mismatch aborts the whole snapshot. Symlinks, special files, dot-entries and hard-linked files (nlink > 1) are skipped, never followed.
+ */
+export async function snapshotBuild(srcRoot: string, dest: string): Promise<number> {
+  try {
+    return await snapshotBuildInner(srcRoot, dest);
+  } catch (e) {
+    if (e instanceof PreviewRefusal) throw e;
+    throw new PreviewRefusal(409, BUILD_CHANGED); // the folder moved or vanished under the copy
+  }
+}
+async function snapshotBuildInner(srcRoot: string, dest: string): Promise<number> {
+  const rootStat = fs.lstatSync(srcRoot);
+  const inRoot = (p: string) => p === srcRoot || p.startsWith(srcRoot + path.sep);
+  let files = 0;
+  let seen = 0;
+  let bytes = 0;
+  const changed = () => new PreviewRefusal(409, BUILD_CHANGED);
+  const tooLarge = () => new PreviewRefusal(413, { error: "build-too-large" });
+  async function copyFile(src: string, to: string, ls: fs.Stats) {
+    const fd = fs.openSync(src, fs.constants.O_RDONLY | (O_NOFOLLOW_ANY || (fs.constants.O_NOFOLLOW ?? 0)));
+    let out = -1;
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || st.dev !== ls.dev || st.ino !== ls.ino) throw changed();
+      if (st.nlink > 1) return; // a hard link may be a second name for a file outside the build: never copied
+      // Where the open file really is. /proc/self/fd names the file the fd holds; elsewhere realpath is the best there is (macOS has O_NOFOLLOW_ANY too).
+      let where: string;
+      if (process.platform === "linux") where = fs.readlinkSync(`/proc/self/fd/${fd}`);
+      else where = fs.realpathSync.native(src);
+      if (!inRoot(where)) throw changed();
+      if (st.size + bytes > PREVIEW_MAX_BYTES) throw tooLarge();
+      out = fs.openSync(to, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+      const buf = Buffer.allocUnsafe(64 * 1024);
+      for (;;) {
+        const n = fs.readSync(fd, buf, 0, buf.length, null);
+        if (n === 0) break;
+        bytes += n;
+        if (bytes > PREVIEW_MAX_BYTES) throw tooLarge();
+        fs.writeSync(out, buf, 0, n);
+        await Promise.resolve(); // let other requests run during a big copy
+      }
+      files += 1;
+    } finally {
+      fs.closeSync(fd);
+      if (out >= 0) fs.closeSync(out);
+    }
+  }
+  async function walk(src: string, to: string, depth: number) {
+    if (depth > PREVIEW_MAX_DEPTH) throw tooLarge();
+    const names = fs.readdirSync(src);
+    for (const name of names) {
+      if (name.startsWith(".")) continue;
+      if (++seen > PREVIEW_MAX_FILES) throw tooLarge(); // every entry counts, so a huge folder stops early
+      const s = path.join(src, name);
+      const t = path.join(to, name);
+      let ls: fs.Stats;
+      try {
+        ls = fs.lstatSync(s);
+      } catch {
+        throw changed();
+      }
+      if (ls.isSymbolicLink()) continue;
+      try {
+        if (ls.isDirectory()) {
+          fs.mkdirSync(t, { mode: 0o700 });
+          await walk(s, t, depth + 1);
+        } else if (ls.isFile()) {
+          await copyFile(s, t, ls);
+        }
+      } catch (e) {
+        if (e instanceof PreviewRefusal) throw e;
+        throw changed(); // ELOOP, ENOENT, EACCES...: the folder is not what the walk saw
+      }
+    }
+  }
+  fs.mkdirSync(dest, { recursive: true, mode: 0o700 });
+  await walk(srcRoot, dest, 0);
+  const again = fs.lstatSync(srcRoot);
+  if (again.isSymbolicLink() || again.ino !== rootStat.ino || again.dev !== rootStat.dev || fs.realpathSync.native(srcRoot) !== srcRoot) throw changed();
+  return files;
+}
+
 /**
  * The request handler of one preview server: GET and HEAD of files under `root` only.
  * WHY so strict: the page it serves is the person's own build, but the port is reachable by every page in every tab (DNS rebinding,
  * a link planted in the build), so it must serve nothing but the build folder, set no CORS and no cookies, and follow no link out.
  */
-function previewHandler(root: string, port: number) {
+function previewHandler(ref: { root: string }, port: number) {
   const hosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
   const O_RO = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
   const base = { "x-content-type-options": "nosniff", "cache-control": "no-store", "referrer-policy": "no-referrer" };
@@ -2678,9 +2777,9 @@ function previewHandler(root: string, port: number) {
     res.writeHead(status, { ...base, "content-type": "text/plain; charset=utf-8", ...extra });
     res.end(text);
   };
-  const inside = (real: string) => real === root || real.startsWith(root + path.sep);
   /** Serve one file: its real path must be inside the root, and it is opened without following a link and checked as a regular file on the handle itself. */
-  async function sendFile(cand: string, req: IncomingMessage, res: ServerResponse): Promise<"sent" | "dir" | "missing" | "blocked"> {
+  async function sendFile(root: string, cand: string, req: IncomingMessage, res: ServerResponse): Promise<"sent" | "dir" | "missing" | "blocked"> {
+    const inside = (real: string) => real === root || real.startsWith(root + path.sep);
     let real: string;
     try {
       real = await fs.promises.realpath(cand);
@@ -2698,12 +2797,12 @@ function previewHandler(root: string, port: number) {
       const st = await fh.stat();
       if (st.isDirectory()) { await fh.close(); return "dir"; }
       if (!st.isFile()) { await fh.close(); return "missing"; }
+      // The client may be gone already (a reset): then no stream is made, and the handle is closed here, never left to the garbage collector.
+      if (res.destroyed || req.destroyed || req.socket.destroyed) { await fh.close(); return "sent"; }
       res.writeHead(200, { ...base, "content-type": PREVIEW_TYPES[path.extname(real).toLowerCase()] ?? "application/octet-stream", "content-length": String(st.size) });
       if (req.method === "HEAD") { await fh.close(); res.end(); return "sent"; }
-      const stream = fh.createReadStream({ autoClose: true });
-      stream.on("error", () => res.destroy());
-      res.on("close", () => stream.destroy()); // a dropped connection must not leave the handle open
-      stream.pipe(res);
+      // pipeline closes the stream (and with it the handle) on success, on a read error and on a client abort.
+      pipeline(fh.createReadStream({ autoClose: true }), res, () => {});
       return "sent";
     } catch {
       await fh.close().catch(() => {});
@@ -2712,6 +2811,7 @@ function previewHandler(root: string, port: number) {
   }
   return async (req: IncomingMessage, res: ServerResponse) => {
     if (!hosts.has(String(req.headers.host ?? ""))) return plain(res, 421, "Misdirected request");
+    const root = ref.root; // one root for the whole request: a new snapshot may take over between requests, never inside one
     if (req.method !== "GET" && req.method !== "HEAD") return plain(res, 405, "Method not allowed", { allow: "GET, HEAD" });
     const raw = (req.url ?? "").split("?")[0]!.split("#")[0]!;
     if (!raw.startsWith("/") || /%2f|%5c|%00/i.test(raw) || raw.includes("\\")) return plain(res, 400, "Bad request");
@@ -2729,28 +2829,28 @@ function previewHandler(root: string, port: number) {
     const last = segs[segs.length - 1] ?? "";
     // A path that is a file or a directory with an index.html is served as is.
     if (segs.length === 0) {
-      if ((await sendFile(path.join(root, "index.html"), req, res)) === "sent") return;
+      if ((await sendFile(root, path.join(root, "index.html"), req, res)) === "sent") return;
       return plain(res, 404, "Not found");
     }
     const cand = path.join(root, ...segs);
-    const first = await sendFile(trailing ? path.join(cand, "index.html") : cand, req, res);
+    const first = await sendFile(root, trailing ? path.join(cand, "index.html") : cand, req, res);
     if (first === "sent") return;
     if (first === "blocked") return plain(res, 404, "Not found");
     if (first === "dir") {
-      const idx = await sendFile(path.join(cand, "index.html"), req, res);
+      const idx = await sendFile(root, path.join(cand, "index.html"), req, res);
       if (idx === "sent") return;
       return plain(res, 404, "Not found"); // no directory listing, and a real folder is not an app route
     }
     // Not found: an app route (no extension) gets the app's own index.html, so a refresh on a deep link works.
-    if (path.extname(last) === "" && !(trailing && (await realIsDir(cand)))) {
-      if ((await sendFile(path.join(root, "index.html"), req, res)) === "sent") return;
+    if (path.extname(last) === "" && !(trailing && (await realIsDir(root, cand)))) {
+      if ((await sendFile(root, path.join(root, "index.html"), req, res)) === "sent") return;
     }
     return plain(res, 404, "Not found");
   };
-  async function realIsDir(p: string): Promise<boolean> {
+  async function realIsDir(root: string, p: string): Promise<boolean> {
     try {
       const r = await fs.promises.realpath(p);
-      return inside(r) && (await fs.promises.stat(r)).isDirectory();
+      return (r === root || r.startsWith(root + path.sep)) && (await fs.promises.stat(r)).isDirectory();
     } catch {
       return false;
     }
@@ -2758,7 +2858,13 @@ function previewHandler(root: string, port: number) {
 }
 
 /** One running preview: the build folder it serves, its port, and the listening servers (127.0.0.1, and ::1 when the machine has IPv6). */
-interface Preview { root: string; port: number; servers: http.Server[]; folder: "dist" | "build" }
+interface Preview {
+  /** What the servers serve: the current snapshot folder (swapped in place when the person presses Open again on the same port). */
+  ref: { root: string };
+  port: number;
+  servers: http.Server[];
+  folder: "dist" | "build";
+}
 
 /** Close every server of a preview and drop its open connections; resolves when they are all closed. */
 function closePreviewServers(p: Preview): Promise<void> {
@@ -2766,10 +2872,10 @@ function closePreviewServers(p: Preview): Promise<void> {
 }
 
 /** Start the static server for `root` on `port`. Throws PreviewRefusal 409 port-in-use when anything already answers there or a listen fails. */
-async function startPreviewServers(root: string, port: number): Promise<http.Server[]> {
+async function startPreviewServers(ref: { root: string }, port: number): Promise<http.Server[]> {
   const inUse = new PreviewRefusal(409, { error: "port-in-use", port });
   if ((await tcpAnswers("127.0.0.1", port)) || (await tcpAnswers("::1", port))) throw inUse;
-  const handler = previewHandler(root, port);
+  const handler = previewHandler(ref, port);
   const servers: http.Server[] = [];
   const listenOn = (host: string) => new Promise<http.Server>((resolve, reject) => {
     const s = http.createServer((req, res) => { handler(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end(); }); });
@@ -2786,7 +2892,7 @@ async function startPreviewServers(root: string, port: number): Promise<http.Ser
   } catch (e) {
     // No IPv6 on this machine: carry on with 127.0.0.1 only. Any other failure stops both.
     if ((e as NodeJS.ErrnoException).code !== "EADDRNOTAVAIL") {
-      await closePreviewServers({ root, port, servers, folder: "dist" });
+      await closePreviewServers({ ref, port, servers, folder: "dist" });
       throw inUse;
     }
   }
@@ -4544,41 +4650,86 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
 
   // ---- preview of the built app (POST /v1/preview) -------------------------------------------------------------------
-  const previews = new Map<string, Preview>();
+  /** One running preview and the snapshot folder it serves. */
+  interface Running extends Preview { snap: string }
+  const previews = new Map<string, Running>();
   /** Starts are one at a time, so two presses of Open cannot both pass the port probe and race for the port. */
   let previewChain: Promise<unknown> = Promise.resolve();
-  const closeAllPreviews = (): Promise<void> => {
+  /** Raised by every close (bridge close, unpair, workspace change): a start that began before it must end by cleaning up, never by listening. */
+  let previewGen = 0;
+  let snapSeq = 0;
+  let bridgeClosing = false;
+  /** Where snapshots live: inside the bridge's state folder, which a sandboxed turn can neither read nor write (stateProtected, in every access mode). Null when the bridge has no state folder. */
+  const previewsDir = opts.stateDir ? path.join(opts.stateDir, "previews") : null;
+  const rmSnap = (dir: string) => fs.promises.rm(dir, { recursive: true, force: true }).catch(() => {});
+  /** A leftover snapshot (a crash, a kill) is never served: they are all removed when the bridge starts. */
+  const sweepSnapshots = () => { if (previewsDir) try { fs.rmSync(previewsDir, { recursive: true, force: true }); } catch { /* the next start tries again */ } };
+  const closeRunning = async (p: Running) => { await closePreviewServers(p); await rmSnap(p.snap); };
+  const closeAllPreviews = async (): Promise<void> => {
+    previewGen += 1;
     const all = [...previews.values()];
     previews.clear();
-    return Promise.all(all.map(closePreviewServers)).then(() => undefined);
+    await Promise.all(all.map(closeRunning));
+    await previewChain; // a start in flight sees the new generation and removes what it made
   };
   /** The origins a preview must never share: every origin that is paired, and every origin that may pair (an allowed app could pair later). */
   const pairedOriginList = () => [...new Set([...allowedOrigins, ...[...pairings.values()].map((p) => p.origin).filter((o): o is string => typeof o === "string")])];
-  async function startPreview(name: string): Promise<{ url: string; project: string; folder: "dist" | "build" }> {
+  async function startPreview(name: string, gen: number): Promise<{ url: string; project: string; folder: "dist" | "build" }> {
+    const cancelled = () => new PreviewRefusal(409, { error: "preview-cancelled", message: "The preview was stopped while it was starting." });
+    if (gen !== previewGen) throw cancelled(); // a close came after the request arrived
     const proj = resolveProject(name);
     if (!proj || !workspace || !within(proj.path) || !proj.path.startsWith(fs.realpathSync.native(workspace.path) + path.sep)) throw new PreviewRefusal(400, { error: "bad-project" });
     const build = findBuildFolder(proj.path);
     if (!build) throw new PreviewRefusal(404, { error: "no-build", message: `No build yet for ${name}. Run npm run build in the project folder, then press Open again.` });
     const pinned = pinnedPort(proj.path);
     if (pinned === null) throw new PreviewRefusal(409, { error: "no-port", message: "Pin this project's port from your dev-ports map in vite.config (server.port and preview.port, strictPort: true), rebuild, then press Open again." });
-    if (pinned < 1024 || pinned > 65535 || PREVIEW_BAD_PORTS.has(pinned) || pinned === port) throw new PreviewRefusal(409, { error: "bad-port", port: pinned });
+    if (previewPortRefused(pinned) || pinned === port) throw new PreviewRefusal(409, { error: "bad-port", port: pinned });
     const urlOf = `http://localhost:${pinned}/`;
     const mine = new Set([`http://localhost:${pinned}`, `http://127.0.0.1:${pinned}`, `http://[::1]:${pinned}`]);
     if (pairedOriginList().some((o) => mine.has(o))) throw new PreviewRefusal(409, { error: "origin-paired", port: pinned });
-    const have = previews.get(name);
-    if (have && have.root === build.root && have.port === pinned) return { url: urlOf, project: name, folder: build.folder };
-    if (have) { previews.delete(name); await closePreviewServers(have); }
-    while (previews.size >= PREVIEW_MAX) {
-      const oldest = previews.keys().next().value as string;
-      const p = previews.get(oldest)!;
-      previews.delete(oldest);
-      await closePreviewServers(p);
+    // No state folder, or one a sandboxed turn could write: no place that is safe for the copy, so no preview (never another place).
+    if (!previewsDir || stateDirProblem(opts.stateDir!, workspace.path, home, platform) !== "") throw new PreviewRefusal(409, { error: "no-preview-place", message: "This bridge has no state folder that a code turn cannot change, so it cannot open a preview." });
+    // The snapshot: what is served is a copy the agent cannot touch. A new one at every Open replaces the one before it.
+    const snap = path.join(previewsDir, `${name}-${++snapSeq}`);
+    let made = false;
+    try {
+      fs.mkdirSync(previewsDir, { recursive: true, mode: 0o700 });
+      made = true;
+      await snapshotBuild(build.root, snap);
+      const snapReal = fs.realpathSync.native(snap); // what a request's realpath will be compared with (the state folder may be reached through a link)
+      const idx = fs.lstatSync(path.join(snap, "index.html"), { throwIfNoEntry: false });
+      if (!idx?.isFile()) throw new PreviewRefusal(404, { error: "no-build", message: `No build yet for ${name}. Run npm run build in the project folder, then press Open again.` });
+      if (gen !== previewGen) throw cancelled();
+      const have = previews.get(name);
+      if (have && have.port === pinned) {
+        // Same port: the servers stay, they serve the new copy from the next request on; the old copy goes.
+        const old = have.snap;
+        have.ref.root = snapReal;
+        have.snap = snap;
+        have.folder = build.folder;
+        await rmSnap(old);
+        return { url: urlOf, project: name, folder: build.folder };
+      }
+      if (have) { previews.delete(name); await closeRunning(have); }
+      while (previews.size >= PREVIEW_MAX) {
+        const oldest = previews.keys().next().value as string;
+        const p = previews.get(oldest)!;
+        previews.delete(oldest);
+        await closeRunning(p);
+      }
+      const ref = { root: snapReal };
+      const servers = await startPreviewServers(ref, pinned);
+      if (gen !== previewGen) { await closePreviewServers({ ref, port: pinned, servers, folder: build.folder }); throw cancelled(); }
+      previews.set(name, { ref, snap, port: pinned, servers, folder: build.folder });
+      return { url: urlOf, project: name, folder: build.folder };
+    } catch (e) {
+      if (made && previews.get(name)?.snap !== snap) await rmSnap(snap);
+      throw e;
     }
-    const servers = await startPreviewServers(build.root, pinned);
-    previews.set(name, { root: build.root, port: pinned, servers, folder: build.folder });
-    return { url: urlOf, project: name, folder: build.folder };
   }
   async function handlePreview(req: IncomingMessage, res: ServerResponse) {
+    if (bridgeClosing) return json(res, 503, { error: "The bridge is stopping." });
+    const gen = previewGen; // taken when the request arrives: a close, unpair or switch while it is read or started cancels it
     let body;
     try {
       body = await readBody(req);
@@ -4591,7 +4742,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     // The name is one plain folder name AND one the project list shows; startPreview then checks the real path again.
     const plainName = typeof name === "string" && name !== "" && name.length <= 128 && !/[\\/\0]/.test(name) && name !== "." && name !== ".." && !name.startsWith(".");
     if (!plainName || !projectNames().includes(name)) return json(res, 400, { error: "bad-project" });
-    const run = previewChain.then(() => startPreview(name));
+    const run = previewChain.then(() => startPreview(name, gen));
     previewChain = run.catch(() => {});
     try {
       return json(res, 200, await run);
@@ -5265,6 +5416,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     lockHeld = false;
   };
   const closeBridge = (): Promise<void> => {
+    bridgeClosing = true; // from here no preview starts, even on a connection that is still open
     const previewsClosed = closeAllPreviews();
     const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
     return stopped.then(() => new Promise<void>((resolve) => server.close(() => { releaseLock(); resolve(); })));
@@ -5302,6 +5454,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     async start() {
       fs.mkdirSync(workDir, { recursive: true, mode: 0o700 });
       await takeLock(); // one bridge per state folder: a second refuses here
+      sweepSnapshots(); // the lock is ours, so no other bridge's snapshots are here
       try {
         return await new Promise<number>((resolve, reject) => {
           server.once("error", reject);
