@@ -19,7 +19,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const APP = "http://localhost:5197";
 const MSG_NOBUILD = (n) => `No build yet for ${n}. Run npm run build in the project folder, then press Open again.`;
-const SENTENCE = "When you change the app, finish by running `npm run build` in the project folder. Do not tell the person to run a terminal command or to start a server. The chat shows an Open button for the built app; after a rebuild, tell them to press Open or refresh that page.";
+const SENTENCE = "When you change the app, finish by running `npm run build` in the project folder. Do not tell the person to run a terminal command or to start a server. The chat shows an Open button for the built app; after a rebuild, tell them to press Open again to see the new build.";
 
 let dir, bridge, base, ws, secret, logFile, extra = [];
 
