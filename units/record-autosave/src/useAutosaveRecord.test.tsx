@@ -700,6 +700,6 @@ describe("useAutosaveRecord: the state after a re-read, and several writes of on
     await act(async () => gates[1]!.resolve());
     await act(async () => gates[0]!.resolve());
     expect(result.current.values.name).toBe("Plum pie");
-    expect(saved).toEqual([{ name: "Plum pie" }, { name: "Plum" }]); // onSaved still hears both
+    expect(saved).toEqual([{ name: "Plum pie" }]); // the older write was overtaken on every field: it reports nothing
   });
 });

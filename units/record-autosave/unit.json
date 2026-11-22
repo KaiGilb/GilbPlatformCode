@@ -21,6 +21,7 @@
     "src/useAutosaveRecord.test.tsx",
     "src/useAutosaveRecord.tester.test.tsx",
     "src/useAutosaveRecord.tester2.test.tsx",
+    "src/useAutosaveRecord.tester3.test.tsx",
     "src/SaveStateLine.test.tsx",
     "src/sameValue.test.ts",
     "test/example.typecheck.tsx",

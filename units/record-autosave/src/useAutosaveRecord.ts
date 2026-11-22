@@ -28,6 +28,9 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { sameValue } from "./sameValue";
 
+/** How many written values are kept per field to tell a stale read from another writer's. */
+const LANDED_KEEP = 20;
+
 /** Quiet-typing delay before the changed fields are written, in ms. */
 export const AUTOSAVE_DELAY_MS = 400;
 
@@ -45,7 +48,7 @@ export interface UseAutosaveRecordOptions<F extends FieldValues> {
   delayMs?: number;
   /** View-only vault: set() does nothing and nothing is written. */
   readOnly?: boolean;
-  /** Called with the fields each time a write LANDS. Never on a failed or scheduled write. */
+  /** Called with the fields each time a write LANDS: the fields it was still the latest write for (none left: no call). Never on a failed or scheduled write. */
   onSaved?: (written: Partial<F>) => void;
 }
 
@@ -276,10 +279,16 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
     const mine: Bag = {};
     for (const f of Object.keys(changed)) if (latestSeq.current[f] === mySeq) mine[f] = changed[f];
     if (known.current !== null) known.current = { ...known.current, ...mine };
-    for (const f of Object.keys(mine)) (landed.current[f] ??= []).push(mine[f]);
+    for (const f of Object.keys(mine)) {
+      const list = (landed.current[f] ??= []);
+      list.push(mine[f]);
+      // A long session with no re-read would grow this without end: only the last 20 written values are kept (a read older than that counts as another writer's).
+      if (list.length > LANDED_KEEP) list.shift();
+    }
     dropSettled();
-    // Fires even when the screen is gone: the page-hide flush is when the parent most needs the landed fields.
-    optionsRef.current.onSaved?.(changed as Partial<F>);
+    // Fires even when the screen is gone: the page-hide flush is when the parent most needs the landed fields. It hears only the fields this write
+    // was still the latest for (an older write answering late reports nothing it was overtaken on), and nothing when that is no field.
+    if (Object.keys(mine).length > 0) optionsRef.current.onSaved?.(mine as Partial<F>);
     if (mounted.current) refreshState(true);
     if (!leaving && again.current) {
       again.current = false;

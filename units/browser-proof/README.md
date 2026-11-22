@@ -55,6 +55,7 @@ The rule (RuleUiSaveAsYouType): a record screen saves as the person types, so it
 - The label of a button whose text has no letter or digit (an icon) is its `aria-label`, then its `title`. Links (`a[href]`) are read as buttons.
 - Buttons inside `dialog`, `[role=dialog]`, `[role=alertdialog]`, `[data-button-row-ignore]` or `[data-autosave-ignore]` are left out.
 - It is a list of labels, not a proof: a Save button with another label passes.
+- A button that is not a record's (an app-update banner "Update available", a filter's "Apply filter", a status chip "Done") goes inside `data-autosave-ignore`.
 
 `collectFieldButtons(page)` returns `{ label, path, rowLabels }` for each visible button; `judgeSaveButtons(buttons)` is pure; `assertNoSaveButtons(page)` returns how many buttons it checked.
 
