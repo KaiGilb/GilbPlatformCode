@@ -366,3 +366,10 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.3.19: the access switch: `POST /v1/access` turns full access off at once, or on only after the person clicks Allow in a window on this computer (see "The access switch"). The mode is saved in `access.json` (survives a restart and an update); `--full-access` only seeds the first value; `--access folder` always lowers it; `GET /v1/hello` has `access` always, `accessChangeable` and `accessSource`.
 - 0.3.20: computer mode tells the AI to use only this chat's `gilb` connector (`mcp__gilb__*`) for GilbPlatform, and passes the Claude session id (`GILB_CLAUDE_SESSION_ID`) to the Claude it starts, so the connector remembers the chosen vault per session.
 - 0.3.21: `POST /v1/projects/create` runs `git init` in the new project (no template, so no hooks) before any turn, so the selective-commit step can run and the deny on `.git` hooks, config and info/attributes covers it.
+
+## Preview (Open button)
+
+`POST /v1/preview {project}` (paired only) serves a project's built app so the chat can show an Open link; the bridge never runs a project script outside the sandbox.
+- **What is served:** the project's `dist/` (else `build/`) folder, read-only, on the port the project pins in `vite.config` / `nuxt.config` (`preview.port`, else `server.port`, else `devServer.port`), on `localhost` only (127.0.0.1 and ::1). GET and HEAD only, no CORS, Host checked.
+- **The snapshot:** each Open copies the build into `<state folder>/previews/<project>-<n>/`, a place a code turn can neither read nor write, and serves only that copy. Pressing Open again replaces the copy; a refresh alone does not show a rebuild. Copies are removed on close, unpair, workspace change and bridge start. Links, special files and dot-entries are not copied, and hard-linked files (more than one name) are skipped. Limits: 20,000 entries and 512 MB.
+- **Refused ports:** under 1024, 5432, 3306, 6379, 27017, 8787, 8789, 5173, 5197, 5251, 8780-8819, the bridge's own port, and any port that is in use or is an allowed app's origin. At most 4 previews run at once.
