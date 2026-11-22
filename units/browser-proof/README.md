@@ -48,7 +48,15 @@ import { assertNoSaveButtons } from "@kaigilb/gilbplatformcode-browser-proof";
 console.log(`${await assertNoSaveButtons(page)} buttons checked`); // throws one Error that lists every problem
 ```
 
-The rule (RuleUiSaveAsYouType): a record screen saves as the person types, so it has no button named Save, Save changes, Done, Edit, Apply or OK (`save-button`), and no Cancel, Discard, Discard changes or Revert (`cancel-without-act`), unless a button that starts with Delete or Remove stands in the same row: that Cancel belongs to a confirmation. The save labels are Save, Save changes, Save and close, Save… , Done, Edit, Edit <something>, Apply, OK, Update and Submit. A button whose text has no letter or digit (an icon) is read by its `aria-label`, then its `title`; links (`a[href]`) are read as buttons. It is a list of labels, not a proof: a Save button with another label passes. Buttons inside `dialog`, `[role=dialog]`, `[role=alertdialog]`, `[data-button-row-ignore]` or `[data-autosave-ignore]` are left out. `collectFieldButtons(page)` returns `{ label, path, rowLabels }` for each visible button; `judgeSaveButtons(buttons)` is pure; `assertNoSaveButtons(page)` returns how many buttons it checked.
+The rule (RuleUiSaveAsYouType): a record screen saves as the person types, so it has no save button and no Cancel that cancels nothing.
+
+- `save-button`: a button whose label starts with the word Save, Done, Edit, Apply, Update or Submit (so "Save as", "Save & close", "Edit profile", "Done editing", "Update profile"), or is exactly OK, Confirm or Finish. A word that only starts with those letters ("Saved", "Editor", "Updates") passes.
+- `cancel-without-act`: a button labelled exactly Cancel, Discard, Discard changes or Revert, unless a button that starts with Delete or Remove stands in the same row: that Cancel belongs to a confirmation.
+- The label of a button whose text has no letter or digit (an icon) is its `aria-label`, then its `title`. Links (`a[href]`) are read as buttons.
+- Buttons inside `dialog`, `[role=dialog]`, `[role=alertdialog]`, `[data-button-row-ignore]` or `[data-autosave-ignore]` are left out.
+- It is a list of labels, not a proof: a Save button with another label passes.
+
+`collectFieldButtons(page)` returns `{ label, path, rowLabels }` for each visible button; `judgeSaveButtons(buttons)` is pure; `assertNoSaveButtons(page)` returns how many buttons it checked.
 
 ## Headed run (type a sign-in code)
 

@@ -617,3 +617,89 @@ describe("useAutosaveRecord: read-only turning on, failures, cross-field checks"
     expect(result.current.problems.place).toBeUndefined();
   });
 });
+
+describe("useAutosaveRecord: the state after a re-read, and several writes of one field", () => {
+  type P = { s: F };
+  test("a write fails, the re-read shows the old value (not committed): the state stays error, and retry writes", async () => {
+    let n = 0;
+    const calls: Partial<F>[] = [];
+    const write = async (c: Partial<F>) => {
+      calls.push(c);
+      if (n++ === 0) throw new Error("timeout");
+    };
+    const { result, rerender } = renderHook((p: P) => useAutosaveRecord<F>({ stored: p.s, write }), { initialProps: { s: STORED } });
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    expect(result.current.state).toBe("error");
+    rerender({ s: { ...STORED, place: "Paris" } });
+    expect(result.current.state).toBe("error");
+    expect(result.current.error).toBe("timeout");
+    await tick(AUTOSAVE_DELAY_MS * 3);
+    expect(calls).toHaveLength(1); // nothing hidden
+    await act(async () => void (await result.current.retry()));
+    expect(calls[1]).toEqual({ name: "Plum" });
+    expect(result.current.state).toBe("saved");
+  });
+
+  test("an error, then a re-read that holds the edit: the error ends (idle) and the error text is cleared", async () => {
+    let n = 0;
+    const write = async () => {
+      if (n++ === 0) throw new Error("timeout");
+    };
+    const { result, rerender } = renderHook((p: P) => useAutosaveRecord<F>({ stored: p.s, write }), { initialProps: { s: STORED } });
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, name: "Plum" } });
+    expect(result.current.state).toBe("idle");
+    expect(result.current.error).toBeNull();
+  });
+
+  test("retry with nothing unsaved clears an error to idle", async () => {
+    const write = vi.fn(async () => {});
+    const { result, rerender } = renderHook((p: P) => useAutosaveRecord<F>({ stored: p.s, write }), { initialProps: { s: STORED } });
+    // an error whose edit the vault then took in another way
+    write.mockRejectedValueOnce(new Error("no"));
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    expect(result.current.state).toBe("error");
+    rerender({ s: { ...STORED, name: "Plum", place: "X" } });
+    act(() => result.current.set("name", "Plum2"));
+    act(() => result.current.set("name", "Plum"));
+    await act(async () => void (await result.current.retry()));
+    expect(result.current.state).toBe("idle");
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  test("a field written twice: a stale read of the first value keeps the second; the second clears it; a third value from another writer shows", async () => {
+    const { result, rerender } = renderHook((p: P) => useAutosaveRecord<F>({ stored: p.s, write: async () => {} }), { initialProps: { s: STORED } });
+    act(() => result.current.set("name", "A"));
+    await tick(AUTOSAVE_DELAY_MS);
+    act(() => result.current.set("name", "B"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, name: "A" } });
+    expect(result.current.values.name).toBe("B");
+    rerender({ s: { ...STORED, name: "B" } });
+    expect(result.current.values.name).toBe("B");
+    rerender({ s: { ...STORED, name: "C" } });
+    expect(result.current.values.name).toBe("C");
+  });
+
+  test("an older write that answers after a newer one never puts its value on screen", async () => {
+    const gates: ReturnType<typeof deferred>[] = [];
+    const saved: Partial<F>[] = [];
+    const write = (c: Partial<F>) => {
+      const g = deferred();
+      gates.push(g);
+      return g.promise;
+    };
+    const { result } = renderHook(() => useAutosaveRecord<F>({ stored: STORED, write, onSaved: (w) => void saved.push(w) }));
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    act(() => result.current.set("name", "Plum pie"));
+    act(() => void window.dispatchEvent(new Event("pagehide")));
+    await act(async () => gates[1]!.resolve());
+    await act(async () => gates[0]!.resolve());
+    expect(result.current.values.name).toBe("Plum pie");
+    expect(saved).toEqual([{ name: "Plum pie" }, { name: "Plum" }]); // onSaved still hears both
+  });
+});

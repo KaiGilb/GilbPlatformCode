@@ -13,7 +13,7 @@ describe("judgeSaveButtons", () => {
       { path: "div.actions", rule: "save-button", message: '"Save": a record screen saves as the person types; remove this button (RuleUiSaveAsYouType).' },
     ]);
   });
-  it.each(["Save", "save changes", "Done", "Edit", "Apply", "OK", "Save and close", "Save…", "Save...", "Edit profile", "Update", "Submit"])("%s is a save-button", (label) => {
+  it.each(["Save", "save changes", "Done", "Edit", "Apply", "OK", "Save and close", "Save…", "Save...", "Edit profile", "Update", "Submit", "Save as", "Save draft", "Save & close", "Save and continue", "Save changes…", "Done editing", "Apply changes", "Update profile", "Submit form", "Confirm", "Finish"])("%s is a save-button", (label) => {
     expect(judgeSaveButtons([b(label)]).map((v) => v.rule)).toEqual(["save-button"]);
   });
   it("a link or an icon button is judged by the label the page gives it", () => {
@@ -36,6 +36,9 @@ describe("judgeSaveButtons", () => {
   });
   it("a Cancel beside Discard is still flagged", () => {
     expect(rules(b("Cancel", ["Discard"]))).toEqual(["cancel-without-act:div.actions"]);
+  });
+  it.each(["Saved", "Updates", "Editor", "Add fruit", "Delete", "Share", "Sign out", "Take picture", "Choose from phone", "Remove", "Doner kebab", "Okay then", "Finished items", "Applesauce"])("%s is not flagged", (label) => {
+    expect(judgeSaveButtons([b(label)])).toEqual([]);
   });
   it("other buttons pass", () => {
     expect(rules(b("Delete"), b("Share"), b("Add a fruit"), b("Saved items"))).toEqual([]);

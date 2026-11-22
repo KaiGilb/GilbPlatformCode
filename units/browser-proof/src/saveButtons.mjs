@@ -59,7 +59,7 @@ export async function collectFieldButtons(page) {
   return page.eval(`(${collectInPage.toString()})()`);
 }
 
-const SAVE = /^(save|save changes|save and close|save\s*(…|\.\.\.)|done|edit|edit\s.+|apply|ok|update|submit)$/i;
+const SAVE = /^(save\b.*|done\b.*|edit\b.*|apply\b.*|update\b.*|submit\b.*|ok|confirm|finish)$/i;
 const CANCEL = /^(cancel|discard|discard changes|revert)$/i;
 const CONFIRMS = /^(delete|remove)\b/i;
 

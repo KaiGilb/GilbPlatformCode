@@ -13,7 +13,7 @@
     "Added assertButtonRows, collectButtonRows, judgeButtonRows and classifyButton: the button-row check (RuleUiActionRowMacOrder) on a live page, at a size you choose.",
     "startBrowser takes headed and keepProfile (a profile that survives between runs); page.waitForHuman prints a message and waits for a person; buildChromeArgs is exported.",
     "Added makeTools(page) and byTestId: exists, wait, gone, click, clickText, set, waitImage, setFiles, noHorizontalScroll, taken from the run-9 e2e-lib.mjs.",
-    "Added assertNoSaveButtons, collectFieldButtons and judgeSaveButtons: the save-as-you-type check (RuleUiSaveAsYouType). A record screen has no Save, Done, Edit or Apply button and no Cancel that cancels nothing; buttons inside a dialog are left out, and a Cancel beside Delete or Remove is a confirmation and is allowed; an icon button is read by its aria-label or title, and links count as buttons; a list of labels, not a proof."
+    "Added assertNoSaveButtons, collectFieldButtons and judgeSaveButtons: the save-as-you-type check (RuleUiSaveAsYouType). A record screen has no Save, Done, Edit or Apply button and no Cancel that cancels nothing; buttons inside a dialog are left out, and a Cancel beside Delete or Remove is a confirmation and is allowed; an icon button is read by its aria-label or title, and links count as buttons; a list of labels, not a proof; labels that start with the word Save, Done, Edit, Apply, Update or Submit are flagged."
   ],
   "newFiles": [
     "src/index.mjs",
