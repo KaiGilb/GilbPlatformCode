@@ -88,6 +88,12 @@ const CASES = [
   ["invite", ["vault-share-sheet"]],
   ["who has access", ["vault-share-sheet"]],
   ["owner", ["vault-share-sheet"]],
+  // Starter app (Kai, 2026-11-22): a coder in a new app project must find it
+  ["starter", ["starter-app"]],
+  ["starter app", ["starter-app"]],
+  ["new app", ["starter-app"]],
+  ["first version", ["starter-app"]],
+  ["app shell with sign-in", ["starter-app"]],
 ];
 
 for (const [phrase, units] of CASES) {
@@ -99,7 +105,7 @@ for (const [phrase, units] of CASES) {
 }
 
 test("a unit's own unit.json library note is identical to its library.json note", () => {
-  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export", "since-last-visit", "optimistic-records", "refusal-detail"]) {
+  for (const unit of ["picture-pick", "vault-switcher", "record-picture", "signed-picture", "zip", "csp-headers", "browser-proof", "vault-export", "since-last-visit", "optimistic-records", "refusal-detail", "starter-app"]) {
     const file = join(ROOT, "units", unit, "unit.json");
     assert.ok(existsSync(file), `${unit} has a unit.json`);
     const lib = JSON.parse(readFileSync(file, "utf8")).library;
