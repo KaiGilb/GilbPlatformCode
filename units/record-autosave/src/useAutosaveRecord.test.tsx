@@ -197,7 +197,7 @@ describe("useAutosaveRecord: one write in flight", () => {
     err.mockRestore();
   });
 
-  test("a change made while a write is in flight, then unmount: the follow-up write uses keepalive true", async () => {
+  test("with a write in flight, unmount with a newer value: a keepalive write of it is sent before the first resolves", async () => {
     const gates: ReturnType<typeof deferred>[] = [];
     const calls: Call[] = [];
     const write = async (changed: Partial<F>, how: { keepalive: boolean }) => {
@@ -210,15 +210,35 @@ describe("useAutosaveRecord: one write in flight", () => {
     act(() => result.current.set("name", "A"));
     await tick(AUTOSAVE_DELAY_MS);
     act(() => result.current.set("place", "Oslo"));
-    unmount(); // its flush finds a write in flight and asks for another
-    expect(calls).toHaveLength(1);
-    await act(async () => gates[0].resolve());
-    await tick(0);
+    unmount();
     expect(calls).toEqual([
       { changed: { name: "A" }, keepalive: false },
-      { changed: { place: "Oslo" }, keepalive: true },
+      { changed: { name: "A", place: "Oslo" }, keepalive: true }, // everything unsaved: the first write may not have landed
     ]);
+    window.dispatchEvent(new Event("pagehide")); // already gone: no third write
+    await act(async () => gates[0].resolve());
     await act(async () => gates[1].resolve());
+    expect(calls).toHaveLength(2);
+  });
+
+  test("a second pagehide with a write in flight and a newer edit sends it once", async () => {
+    const calls: Call[] = [];
+    const g = deferred();
+    const write = async (changed: Partial<F>, how: { keepalive: boolean }) => {
+      calls.push({ changed, keepalive: how.keepalive });
+      await g.promise;
+    };
+    const { result } = renderHook(() => useAutosaveRecord<F>({ stored: STORED, write }));
+    act(() => result.current.set("name", "A"));
+    await tick(AUTOSAVE_DELAY_MS);
+    act(() => result.current.set("name", "AB"));
+    act(() => void window.dispatchEvent(new Event("pagehide")));
+    act(() => void window.dispatchEvent(new Event("pagehide")));
+    expect(calls).toEqual([
+      { changed: { name: "A" }, keepalive: false },
+      { changed: { name: "AB" }, keepalive: true },
+    ]);
+    await act(async () => g.resolve());
   });
 
   test("a write that fails after unmount sets no state either", async () => {
@@ -346,9 +366,10 @@ describe("useAutosaveRecord: check", () => {
     const { result, calls } = setup({ check });
     act(() => result.current.set("score", 11));
     act(() => result.current.set("name", "Plum"));
-    expect(result.current.state).toBe("pending");
+    expect(result.current.state).toBe("invalid");
     await tick(AUTOSAVE_DELAY_MS);
     expect(calls).toEqual([{ changed: { name: "Plum" }, keepalive: false }]);
+    expect(result.current.state).toBe("invalid"); // never "Saved" while a field is unsaved and invalid
     expect(result.current.problems.score).toBe("Score must be 0 to 10");
     expect(result.current.values.score).toBe(11);
   });
@@ -468,5 +489,131 @@ describe("useAutosaveRecord: read-only, re-read, onSaved, text()", () => {
     const { result } = renderHook(() => useAutosaveRecord<{ a?: string }>({ stored: {}, write: async () => {}, readOnly: true }));
     expect(result.current.text("a").value).toBe("");
     expect(result.current.text("a").readOnly).toBe(true);
+  });
+});
+
+describe("useAutosaveRecord: a stored value that is rebuilt or re-read", () => {
+  type P = { s: F };
+  const hook = (s: F, write: (c: Partial<F>) => Promise<void> = async () => {}) =>
+    renderHook((p: P) => useAutosaveRecord<F>({ stored: p.s, write }), { initialProps: { s } });
+
+  test("a new object with the same values is not a re-read: a landed write stays", async () => {
+    const { result, rerender } = hook({ ...STORED });
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED } });
+    rerender({ s: { ...STORED } });
+    expect(result.current.values.name).toBe("Plum");
+  });
+
+  test("a stale re-read (the old values, a new object) after a landed write keeps the new value", async () => {
+    const { result, rerender } = hook(STORED);
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, score: 5 } });
+    expect(result.current.values.name).toBe("Plum");
+    expect(result.current.state).toBe("saved");
+  });
+
+  test("a stale re-read that differs in ANOTHER field: that field shows, the written field keeps its new value", async () => {
+    const { result, rerender } = hook(STORED);
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, place: "Paris" } });
+    expect(result.current.values).toEqual({ name: "Plum", place: "Paris", score: 5 });
+  });
+
+  test("a re-read that shows the written value clears the memory of it: a later change by someone else shows", async () => {
+    const { result, rerender } = hook(STORED);
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, name: "Plum" } });
+    expect(result.current.values.name).toBe("Plum");
+    rerender({ s: { ...STORED, name: "Pear" } });
+    expect(result.current.values.name).toBe("Pear");
+  });
+
+  test("another writer changed the field to a third value: the third value shows", async () => {
+    const { result, rerender } = hook(STORED);
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: { ...STORED, name: "Pear" } });
+    expect(result.current.values.name).toBe("Pear");
+    expect(result.current.state).toBe("saved");
+  });
+
+  test("another writer changed a field the person is editing: the person's unsaved edit stays on screen", async () => {
+    const calls: Partial<F>[] = [];
+    const { result, rerender } = hook(STORED, async (c) => void calls.push(c));
+    act(() => result.current.set("name", "Plum"));
+    rerender({ s: { ...STORED, name: "Pear" } });
+    expect(result.current.values.name).toBe("Plum");
+    await tick(AUTOSAVE_DELAY_MS);
+    expect(calls).toEqual([{ name: "Plum" }]);
+  });
+
+  test("stored goes null (a failed re-read) and back with the same values: a landed write stays", async () => {
+    const { result, rerender } = renderHook((p: { s: F | null }) => useAutosaveRecord<F>({ stored: p.s, write: async () => {} }), {
+      initialProps: { s: STORED as F | null },
+    });
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    rerender({ s: null });
+    expect(result.current.text("name").readOnly).toBe(true);
+    rerender({ s: { ...STORED } });
+    expect(result.current.values.name).toBe("Plum");
+  });
+});
+
+describe("useAutosaveRecord: read-only turning on, failures, cross-field checks", () => {
+  test("readOnly turning true: the timer is cleared, nothing is written, unsaved edits and problems are dropped, state idle", async () => {
+    const write = vi.fn(async () => {});
+    const { result, rerender } = renderHook((p: { ro: boolean }) => useAutosaveRecord<F>({ stored: STORED, write, readOnly: p.ro, check: (n, v) => (n === "score" && (v as number) > 10 ? "too big" : null) }), {
+      initialProps: { ro: false },
+    });
+    act(() => result.current.set("name", "Plum"));
+    act(() => result.current.set("score", 11));
+    rerender({ ro: true });
+    expect(result.current.values).toEqual(STORED);
+    expect(result.current.problems).toEqual({});
+    expect(result.current.state).toBe("idle");
+    await tick(AUTOSAVE_DELAY_MS * 2);
+    await act(async () => void (await result.current.flush()));
+    act(() => void window.dispatchEvent(new Event("pagehide")));
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  test("a failure while a follow-up edit waits: error, no hidden write; retry sends both fields", async () => {
+    const first = deferred();
+    const calls: Partial<F>[] = [];
+    let n = 0;
+    const write = vi.fn((c: Partial<F>) => {
+      calls.push(c);
+      return n++ === 0 ? first.promise : Promise.resolve();
+    });
+    const { result } = renderHook(() => useAutosaveRecord<F>({ stored: STORED, write }));
+    act(() => result.current.set("name", "Plum"));
+    await tick(AUTOSAVE_DELAY_MS);
+    act(() => result.current.set("place", "Oslo"));
+    await tick(AUTOSAVE_DELAY_MS); // the timer fired during the flight: write again is waiting
+    await act(async () => first.reject(new Error("offline")));
+    await tick(AUTOSAVE_DELAY_MS * 3);
+    expect(result.current.state).toBe("error");
+    expect(calls).toHaveLength(1);
+    await act(async () => void (await result.current.retry()));
+    expect(calls[1]).toEqual({ name: "Plum", place: "Oslo" });
+    expect(result.current.state).toBe("saved");
+  });
+
+  test("check is run again for every unsaved field with the new values (a rule across fields)", () => {
+    const rule = (n: string, _v: unknown, all: F) => (n === "place" && all.name === "" && all.place !== "" ? "Place needs a name" : null);
+    const { result } = setup({ check: rule as never });
+    act(() => result.current.set("place", "Oslo"));
+    expect(result.current.problems.place).toBeUndefined();
+    act(() => result.current.set("name", ""));
+    expect(result.current.problems.place).toBe("Place needs a name");
+    expect(result.current.state).toBe("invalid");
+    act(() => result.current.set("name", "Fig2"));
+    expect(result.current.problems.place).toBeUndefined();
   });
 });

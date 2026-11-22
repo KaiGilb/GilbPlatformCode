@@ -14,7 +14,11 @@
 // - Nothing is ever written while `stored` is null (the vault has not been read, or the read failed). Writing into what was not read can only destroy.
 //   While the record is not read, the fields cannot be typed in: `set()` does nothing and `text(name).readOnly` is true.
 // - A write for the same fields is not sent twice at once. A reload fires both `pagehide` and `visibilitychange`; that is one request, not two.
-// - At most one write is in flight for the record. A change made meanwhile is written when the first has answered.
+// - At most one write is in flight for the record. A change made meanwhile is written when the first has answered. The one exception is a page
+//   that is going away: then the newer fields are sent at once with `keepalive`, because there will be no later.
+// - `stored` may be a new object on every render. Only a change of its VALUES is a new read. A write that landed is remembered until the vault's
+//   own value has caught up, so a read that is older than the write never puts the old text back.
+// - What the person typed always shows on screen until it is written. When the vault turns read-only, unsaved edits are dropped.
 // - A refused write releases its in-flight marker, so it stays retryable (by `retry()` or by the next keystroke); the edits are kept.
 // - The page listeners are registered once and read the latest values through refs. A listener removed and added again during the render in which
 //   the person reloads is a listener that was not there.
@@ -77,7 +81,10 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
 
   /** What the vault is known to hold. Only ever assigned from `stored` or from a write that landed. */
   const known = useRef<Bag | null>(stored);
+  /** The last `stored` VALUE seen (never null once there was one): a new object with the same values is not a re-read. */
   const lastStored = useRef<F | null>(stored);
+  /** Fields whose write landed since the vault's own value was last seen. A read older than the write must not undo them. */
+  const landed = useRef<Bag>({});
   /** What the person typed that is not yet known to be in the vault. */
   const edits = useRef<Bag>({});
   const problemsRef = useRef<Bag>({});
@@ -89,12 +96,22 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
   const mounted = useRef(true);
   /** The fields a write is carrying now, or null. */
   const inFlight = useRef<Bag | null>(null);
+  /** The fields of the extra write sent while the page leaves, or null. */
+  const leavingInFlight = useRef<Bag | null>(null);
   /** A change came in while a write was in flight: write again when it answers. */
   const again = useRef(false);
+  const wasReadOnly = useRef(readOnly);
 
   // The caller may pass inline arrows: they are read through refs so the page listeners are registered once.
   const optionsRef = useRef(options);
   optionsRef.current = options;
+
+  const clearTimer = () => {
+    if (timer.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
 
   const dropSettled = () => {
     const k = known.current ?? {};
@@ -106,11 +123,31 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
     }
   };
 
-  // A re-read: what the vault holds is now the new object. Edits equal to it are settled; the others stay.
-  if (stored !== lastStored.current) {
+  // The vault turned read-only: the person may no longer change anything, so what they had typed and not saved is dropped.
+  if (readOnly && !wasReadOnly.current) {
+    clearTimer();
+    edits.current = {};
+    problemsRef.current = {};
+    again.current = false;
+    stateRef.current = "idle";
+    errorRef.current = null;
+  }
+  wasReadOnly.current = readOnly;
+
+  // A re-read. `stored` null means the vault is not read. A new object with the same values is NOT a re-read (a caller may build `stored`
+  // inline on every render). On a real change: a field whose write landed is kept until the vault shows it (it caught up), or shows something
+  // else than before (someone else changed it after us: theirs wins), so a stale read never puts the old text back.
+  if (stored === null) {
+    known.current = null;
+  } else if (known.current === null || !sameValue(stored, lastStored.current)) {
+    const before = lastStored.current as Bag | null;
+    for (const f of Object.keys(landed.current)) {
+      if (sameValue((stored as Bag)[f], landed.current[f])) delete landed.current[f];
+      else if (!sameValue((stored as Bag)[f], before?.[f])) delete landed.current[f];
+    }
+    known.current = { ...stored, ...landed.current };
     lastStored.current = stored;
-    known.current = stored;
-    if (stored !== null) dropSettled();
+    dropSettled();
   }
 
   const setState = (s: AutosaveState, err: string | null = null) => {
@@ -123,15 +160,28 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
     const k = known.current ?? {};
     return Object.keys(edits.current).filter((name) => !sameValue(edits.current[name], k[name]));
   };
-  const clearTimer = () => {
-    if (timer.current !== null) {
-      clearTimeout(timer.current);
+
+  const schedule = () => {
+    clearTimer();
+    timer.current = setTimeout(() => {
       timer.current = null;
-    }
+      void writeNowRef.current(false);
+    }, optionsRef.current.delayMs ?? AUTOSAVE_DELAY_MS);
+  };
+
+  /** The state from what is unsaved: a field with a problem is `invalid`, else unsaved fields are `pending`, else `saved` (after a landing) or `idle`. */
+  const refreshState = (afterLanding: boolean) => {
+    const d = dirty();
+    const hasProblem = d.some((n) => n in problemsRef.current);
+    const hasValid = d.some((n) => !(n in problemsRef.current));
+    if (hasValid) schedule();
+    else clearTimer();
+    setState(hasProblem ? "invalid" : hasValid ? "pending" : afterLanding ? "saved" : "idle");
   };
 
   const writeNow = useCallback(async (keepalive: boolean): Promise<void> => {
     clearTimer();
+    if (optionsRef.current.readOnly) return;
     // Never write into what was not read.
     if (known.current === null) return;
     const changed: Bag = {};
@@ -141,41 +191,45 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
       if (mounted.current && stateRef.current === "pending" && dirty().length === 0 && inFlight.current === null) setState("idle");
       return;
     }
+    // The page is going away and sent these fields already: one request, not two.
+    if (leavingInFlight.current !== null && sameValue(changed, leavingInFlight.current)) return;
+    let leaving = false;
     if (inFlight.current !== null) {
       // Same fields already on the way (pagehide and visibilitychange both fire on a reload): one request, not two.
       if (sameValue(changed, inFlight.current)) return;
-      again.current = true;
-      return;
+      if (!keepalive) {
+        again.current = true;
+        return;
+      }
+      // The page is going away with newer fields than the write in flight carries. There will be no later turn, so this is the one case where
+      // two writes overlap: the newer fields go out now, with keepalive. `leavingInFlight` keeps a second pagehide from sending them twice.
+      leaving = true;
+      leavingInFlight.current = changed;
+    } else {
+      inFlight.current = changed;
     }
-    inFlight.current = changed;
     if (mounted.current) setState("saving");
     try {
       await optionsRef.current.write(changed as Partial<F>, { keepalive });
     } catch (e) {
-      // Released on failure: a refused write must stay retryable.
-      inFlight.current = null;
+      // Released on failure: a refused write must stay retryable. The retry sends everything unsaved, so no write is left waiting.
+      if (leaving) leavingInFlight.current = null;
+      else {
+        inFlight.current = null;
+        again.current = false;
+      }
       if (mounted.current) setState("error", e instanceof Error ? e.message : String(e));
       return;
     }
-    inFlight.current = null;
+    if (leaving) leavingInFlight.current = null;
+    else inFlight.current = null;
     known.current = { ...(known.current ?? {}), ...changed };
+    Object.assign(landed.current, changed);
     dropSettled();
     // Fires even when the screen is gone: the page-hide flush is when the parent most needs the landed fields.
     optionsRef.current.onSaved?.(changed as Partial<F>);
-    if (mounted.current) {
-      const left = dirty().filter((name) => !(name in problemsRef.current));
-      if (left.length > 0) {
-        setState("pending");
-        clearTimer();
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          void writeNow(false);
-        }, optionsRef.current.delayMs ?? AUTOSAVE_DELAY_MS);
-      } else {
-        setState("saved");
-      }
-    }
-    if (again.current) {
+    if (mounted.current) refreshState(true);
+    if (!leaving && again.current) {
       again.current = false;
       // After unmount this is the last chance to write, so it asks for keepalive.
       void writeNow(!mounted.current);
@@ -207,28 +261,21 @@ export function useAutosaveRecord<F extends FieldValues>(options: UseAutosaveRec
     if (o.readOnly) return;
     // While the record is not read, the fields cannot be typed in.
     if (known.current === null) return;
-    const key = name as string;
-    edits.current[key] = value;
-    const all = { ...(known.current ?? {}), ...edits.current } as F;
-    const why = o.check ? o.check(key, value, all) : null;
-    if (why === null) delete problemsRef.current[key];
-    else problemsRef.current[key] = why;
-
+    edits.current[name as string] = value;
+    // Every unsaved field is checked again with the new values, so a rule that looks at other fields stays right.
+    const all = { ...known.current, ...edits.current } as F;
     const d = dirty();
-    const valid = d.filter((n) => !(n in problemsRef.current));
-    if (valid.length > 0) {
-      clearTimer();
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        void writeNowRef.current(false);
-      }, o.delayMs ?? AUTOSAVE_DELAY_MS);
-      setState("pending");
-    } else {
-      clearTimer();
-      if (d.length > 0) setState("invalid");
-      else if (inFlight.current === null) setState("idle");
-      else rerender();
+    for (const n of Object.keys(edits.current)) {
+      const why = d.includes(n) && o.check ? o.check(n as keyof F & string, edits.current[n] as F[keyof F], all) : null;
+      if (why === null) delete problemsRef.current[n];
+      else problemsRef.current[n] = why;
     }
+    if (d.length === 0 && (inFlight.current !== null || leavingInFlight.current !== null)) {
+      clearTimer();
+      rerender();
+      return;
+    }
+    refreshState(false);
   }, []);
 
   const flush = useCallback(() => writeNowRef.current(false), []);

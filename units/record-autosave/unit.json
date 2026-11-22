@@ -19,6 +19,7 @@
     "src/SaveStateLine.tsx",
     "src/recordAutosave.css",
     "src/useAutosaveRecord.test.tsx",
+    "src/useAutosaveRecord.tester.test.tsx",
     "src/SaveStateLine.test.tsx",
     "src/sameValue.test.ts",
     "test/example.typecheck.tsx",

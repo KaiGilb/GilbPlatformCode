@@ -13,8 +13,11 @@ describe("judgeSaveButtons", () => {
       { path: "div.actions", rule: "save-button", message: '"Save": a record screen saves as the person types; remove this button (RuleUiSaveAsYouType).' },
     ]);
   });
-  it.each(["Save", "save changes", "Done", "Edit", "Apply", "OK"])("%s is a save-button", (label) => {
+  it.each(["Save", "save changes", "Done", "Edit", "Apply", "OK", "Save and close", "Save…", "Save...", "Edit profile", "Update", "Submit"])("%s is a save-button", (label) => {
     expect(judgeSaveButtons([b(label)]).map((v) => v.rule)).toEqual(["save-button"]);
+  });
+  it("a link or an icon button is judged by the label the page gives it", () => {
+    expect(judgeSaveButtons([b("Save"), b("Edit")]).map((v) => v.rule)).toEqual(["save-button", "save-button"]);
   });
   it("Cancel | Save flags both", () => {
     expect(judgeSaveButtons([b("Cancel", ["Save"]), b("Save", ["Cancel"])]).map((v) => v.rule)).toEqual(["cancel-without-act", "save-button"]);
@@ -40,7 +43,7 @@ describe("judgeSaveButtons", () => {
 });
 
 const chromePath = findChrome();
-const html = (body: string) => `data:text/html,${encodeURIComponent(`<!doctype html><style>button{padding:8px 12px}</style>${body}`)}`;
+const html = (body: string) => `data:text/html,${encodeURIComponent(`<!doctype html><meta charset=utf-8><style>button{padding:8px 12px}</style>${body}`)}`;
 
 describe("save buttons in real Chrome", () => {
   const clean = `<main><div id=a><button>Delete</button><button>Share</button></div></main>
@@ -49,6 +52,7 @@ describe("save buttons in real Chrome", () => {
     <div data-autosave-ignore><button>Save</button></div>
     <div style="display:none"><button>Save</button></div>`;
   const bad = `<form id=f><button>Cancel</button><button>Save</button></form>`;
+  const sneaky = `<div><button aria-label="Save">💾</button><a href="/edit">Edit</a><button title="Update">⟳</button><button>Edit profile</button></div>`;
   it.skipIf(!chromePath)("leaves out dialogs and hidden buttons, and fails on a Cancel | Save form", async () => {
     const work = mkdtempSync(join(tmpdir(), "bp-save-"));
     const { page, close } = await startBrowser({ profileDir: join(work, "profiles"), width: 1280, height: 800 });
@@ -63,6 +67,10 @@ describe("save buttons in real Chrome", () => {
       expect(err).not.toBeNull();
       expect(err!.message).toContain("[cancel-without-act]");
       expect(err!.message).toContain("[save-button]");
+      await page.goto(html(sneaky));
+      expect((await collectFieldButtons(page)).map((x) => x.label)).toEqual(["Save", "Edit", "Update", "Edit profile"]);
+      const err2 = await assertNoSaveButtons(page).then(() => null, (e: Error) => e);
+      expect(err2!.message).toContain("4 save-button problems");
     } finally {
       await close();
       rmSync(work, { recursive: true, force: true });

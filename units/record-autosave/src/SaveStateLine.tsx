@@ -1,5 +1,5 @@
 // The line that says whether what was typed has reached the vault: "Not saved yet…" / "Saving…" / "Saved" / the failure's own words.
-// Silent at `idle`. It reports; it is not a Save button and asks for no tap (except "Try again" after a failure).
+// At `idle` it is an empty polite live region (so a later text is announced). It reports; it is not a Save button and asks for no tap (except "Try again" after a failure).
 
 import type { ReactElement } from "react";
 import type { AutosaveState } from "./useAutosaveRecord";
@@ -28,12 +28,13 @@ export function SaveStateLine(props: {
   onRetry?: () => void;
   words?: Partial<SaveStateWords>;
   testId?: string;
-}): ReactElement | null {
+}): ReactElement {
   const { state, error, onRetry, testId } = props;
-  if (state === "idle") return null;
   const words = { ...SAVE_STATE_WORDS, ...props.words };
   const id = testId ? `${testId}-save-state` : undefined;
   const cls = `autosave-line autosave-line--${state}`;
+  // Always drawn: a live region that is already on the page announces the text that is put into it later. At `idle` it is empty.
+  if (state === "idle") return <p className={cls} aria-live="polite" data-save-state="idle" data-testid={id} />;
 
   if (state === "error") {
     return (

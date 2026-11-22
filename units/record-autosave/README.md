@@ -7,8 +7,8 @@ Saves a record's fields as the person types: no Save, no Cancel, no Edit mode.
 A record screen is a set of boxes. While the record is not read, the fields cannot be typed in. The person types in one and it reaches the vault by itself; nothing asks them to confirm. This unit is the record-wide form of `useAnnotationDraft` in `contact-annotation` (one field there, every field of the record here), with the same three nets and the same care:
 
 - `useAutosaveRecord({ stored, write, check?, delayMs?, readOnly?, onSaved? })`: holds what the vault holds (`stored`) and what the person typed on top of it, and writes ONLY the changed fields, in one request, 400 ms (`AUTOSAVE_DELAY_MS`) after the last keystroke, at blur (`flush`), and with `keepalive` when the page is hidden or the screen is left. It returns `values`, `set(name, value)`, `text(name)` (the props of a text box), `flush`, `retry`, `state` (`idle | pending | saving | saved | invalid | error`), `error` and `problems`.
-- Nothing is written while `stored` is `null` (not read yet, or the read failed): `set()` does nothing and `text(name).readOnly` is true. A value set back to what the vault holds is not written. A field `check` refuses is never written; the other fields still are. At most one write is in flight; a change made meanwhile is written when it answers; the same fields are not sent twice (a reload fires both `pagehide` and `visibilitychange`). A refused write stays retryable and keeps the person's edits. A write that lands is reported with `onSaved(written)`.
-- `SaveStateLine({ state, error, onRetry?, words?, testId? })`: the line "Not saved yet…" / "Saving…" / "Saved" / "Not saved: <the failure's own words>" with "Try again". Silent at `idle`. `SAVE_STATE_WORDS` are its words; `words` replaces any of them.
+- Nothing is written while `stored` is `null` (not read yet, or the read failed): `set()` does nothing and `text(name).readOnly` is true. A value set back to what the vault holds is not written. A field `check` refuses is never written; the other fields still are. At most one write is in flight; a change made meanwhile is written when it answers; the same fields are not sent twice (a reload fires both `pagehide` and `visibilitychange`). A refused write stays retryable and keeps the person's edits. A write that lands is reported with `onSaved(written)`, and is remembered until the vault's own value has caught up, so a read older than the write never puts the old text back. If the page is going away while a write is in flight, the newer fields are sent at once with `keepalive`. When `readOnly` turns true, unsaved edits are dropped. A field with a problem makes the state `invalid`, never `saved`.
+- `SaveStateLine({ state, error, onRetry?, words?, testId? })`: the line "Not saved yet…" / "Saving…" / "Saved" / "Not saved: <the failure's own words>" with "Try again". At `idle` it is an empty polite live region, so a later text is announced. `SAVE_STATE_WORDS` are its words; `words` replaces any of them.
 - `sameValue(a, b)`: equality by value (objects in any key order, arrays by position).
 
 ## What this is not
@@ -61,16 +61,19 @@ const r = useAutosaveRecord({
 <SaveStateLine state={r.state} error={r.error} onRetry={r.retry} />
 ```
 
+`stored` may be a new object on each render: only a change of its values counts as a new read.
+
 `patchRecord(id, patch, at, source?, precondition?)` takes the patch as `Record<string, MergePatchValue>`; `changed` (a `Partial` of the two string fields) goes in as it is. `test/example.typecheck.tsx` is this example, typechecked by `npm run typecheck` against that signature.
 
 A new record is made at once when the person adds one (`createRecord` with an `idempotencyKey`), and its screen opens with the fields ready to type in; there is no "Save" to make it.
 
 ## Tests
 
-61 tests in 4 files (`npx vitest run`, fake timers, no wall-clock waits):
+83 tests in 5 files (`npx vitest run`, fake timers, no wall-clock waits):
 
-- `useAutosaveRecord.test.tsx` 33: one write for three keystrokes; `flush`; two fields in one write; a value set back is not written; objects compared by value; stored `null` cannot be typed in and writes nothing (set, flush, `pagehide`, unmount); an edit then a failed re-read writes nothing; read-only while not read; the follow-up write after unmount has `keepalive`; one write in flight and the next after it answers; `pagehide` + `visibilitychange` give one write with `keepalive`; unmount flush without a state warning; listeners registered once; a refused write (error text verbatim, edits kept, `retry`, next `set`); `check` (invalid state, other fields still written); read-only; a re-read keeps unsaved edits and drops settled ones; `onSaved`; `text()`.
-- `SaveStateLine.test.tsx` 10: silent at idle, each word, roles, Try again, `words`, `testId`, an axe check of the error state.
+- `useAutosaveRecord.tester.test.tsx` 10: the tester's cases (a `stored` rebuilt inline on every render, a keepalive write when the page leaves with a write in flight, `invalid` never shown as `saved`, read-only turning on, StrictMode, a failure with a follow-up waiting, a stale re-read, `check` valid to invalid to valid).
+- `useAutosaveRecord.test.tsx` 44 (also: a new object with the same values is not a re-read; a stale re-read keeps a landed write; the vault catching up; another writer winning; the person's edit staying on screen; read-only turning on drops edits; a failure clears the waiting write; `check` across fields): one write for three keystrokes; `flush`; two fields in one write; a value set back is not written; objects compared by value; stored `null` cannot be typed in and writes nothing (set, flush, `pagehide`, unmount); an edit then a failed re-read writes nothing; read-only while not read; the follow-up write after unmount has `keepalive`; one write in flight and the next after it answers; `pagehide` + `visibilitychange` give one write with `keepalive`; unmount flush without a state warning; listeners registered once; a refused write (error text verbatim, edits kept, `retry`, next `set`); `check` (invalid state, other fields still written); read-only; a re-read keeps unsaved edits and drops settled ones; `onSaved`; `text()`.
+- `SaveStateLine.test.tsx` 11: an empty live region at idle, each word, roles, Try again, `words`, `testId`, an axe check of the error state.
 - `sameValue.test.ts` 5, `hostAgnostic.test.ts` 13 (the same host-agnostic check test as the other units).
 
 ## Where it came from

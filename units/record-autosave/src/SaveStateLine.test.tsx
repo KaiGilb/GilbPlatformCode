@@ -4,9 +4,21 @@ import axe from "axe-core";
 import { SaveStateLine, SAVE_STATE_WORDS } from "./SaveStateLine";
 
 describe("SaveStateLine", () => {
-  test("nothing at idle", () => {
+  test("at idle: an empty polite live region, no text", () => {
     const { container } = render(<SaveStateLine state="idle" error={null} />);
-    expect(container.innerHTML).toBe("");
+    const p = container.querySelector("p")!;
+    expect(p.textContent).toBe("");
+    expect(p.getAttribute("aria-live")).toBe("polite");
+    expect(p.getAttribute("data-save-state")).toBe("idle");
+    expect(p.className).toBe("autosave-line autosave-line--idle");
+    expect(p.getAttribute("role")).toBeNull();
+  });
+  test("the same live region element carries the text when the state changes", () => {
+    const { container, rerender } = render(<SaveStateLine state="idle" error={null} />);
+    const p = container.querySelector("p")!;
+    rerender(<SaveStateLine state="saved" error={null} />);
+    expect(container.querySelector("p")).toBe(p);
+    expect(p.textContent).toBe("Saved");
   });
   test.each([
     ["pending", "Not saved yet…"],
