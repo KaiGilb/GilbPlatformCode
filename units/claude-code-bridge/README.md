@@ -158,7 +158,7 @@ Two paired routes:
 
 `GET /v1/hello` shows the switched folder (`workspace: true|false`) and `codeMode`: `"full"`, `"files-only"` or `null` (no folder).
 
-The folder is checked again at the start of every code turn: its real path must still be the stored one and pass the checks. If not (a symlink swapped in, the folder deleted), the turn is refused with 409 `The code folder changed on disk. Choose it again.`, code mode is off (`hello` says `workspace: false`) and `workspace.json` is left as it is. The child's working folder is that fresh real path.
+The folder is checked again at the start of every code turn: its real path must still be the stored one and pass the checks. If not (a symlink swapped in, the folder deleted), the turn is refused with 409 `The code folder changed on disk. Choose it again.`, code mode is off (`hello` says `workspace: false`) and `workspace.json` is left as it is. The child's working folder is that fresh real path. When the child did not start in that folder, the log line names the init number, the reported cwd and the expected folder. Once code mode is off, a code turn is answered "Code mode is off because <reason>. Choose the code folder again." A turn the bridge refused for the folder is not retried, even when it resumed a session.
 
 ### Windows: files only
 
