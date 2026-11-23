@@ -221,7 +221,7 @@ describe("pictures in a turn", () => {
   it("/v1/turns lists the picture count of a running turn, and /v1/hello gives the picture options", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.21");
+    expect(hello.build).toBe("0.3.22");
     expect(hello.options.images).toEqual({ maxCount: 4, maxBytes: 5 * MiB, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] });
     const ctl = new AbortController();
     const res = await fetch(`${base}/v1/turn`, { method: "POST", signal: ctl.signal, headers: { "content-type": "application/json", "x-bridge-secret": secret }, body: JSON.stringify({ system: "s", prompt: "WAITFOREVER", images: [img(), img()] }) });

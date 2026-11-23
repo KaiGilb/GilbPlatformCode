@@ -366,6 +366,7 @@ Changed on the way in, and only this: the source is TypeScript (type annotations
 - 0.3.19: the access switch: `POST /v1/access` turns full access off at once, or on only after the person clicks Allow in a window on this computer (see "The access switch"). The mode is saved in `access.json` (survives a restart and an update); `--full-access` only seeds the first value; `--access folder` always lowers it; `GET /v1/hello` has `access` always, `accessChangeable` and `accessSource`.
 - 0.3.20: computer mode tells the AI to use only this chat's `gilb` connector (`mcp__gilb__*`) for GilbPlatform, and passes the Claude session id (`GILB_CLAUDE_SESSION_ID`) to the Claude it starts, so the connector remembers the chosen vault per session.
 - 0.3.21: `POST /v1/projects/create` runs `git init` in the new project (no template, so no hooks) before any turn, so the selective-commit step can run and the deny on `.git` hooks, config and info/attributes covers it.
+- 0.3.22: the Open button: `POST /v1/preview` serves a read-only copy of a project's built app (see "Preview (Open button)"); a code turn the bridge refused because Claude Code did not start in the code folder is no longer retried, its log line names the init, the reported folder and the expected one, and later code turns say why code mode is off.
 
 ## Preview (Open button)
 
