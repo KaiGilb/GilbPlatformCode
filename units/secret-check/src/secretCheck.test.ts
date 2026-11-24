@@ -37,9 +37,18 @@ describe("textHasSecret", () => {
   test.each(Object.entries(ALLOWED))("allows %s", (_name, text) => {
     expect(textHasSecret(text)).toBe(false);
   });
-  // Pins today's behaviour, odd case included (RuleGpcunitSameBehaviour). A fix is its own change.
-  test("TODAY'S GAP: an http(s) URL with user:pass@ is not refused", () => {
-    expect(textHasSecret("https://admin:hunter2@example.test/")).toBe(false);
+  // 1.0.1: an http(s) URL that carries user:password@ is a credential. Spec: Sec.SecretInResume.
+  test("an http(s) URL with user:pass@ is refused", () => {
+    expect(textHasSecret("https://admin:hunter2@example.test/")).toBe(true);
+    expect(textHasSecret("http://u:p@example.test")).toBe(true);
+    expect(textHasSecret("clone https://deploy:s3cretPass@git.example.test/repo.git now")).toBe(true);
+  });
+  test("a URL with only a user name, or an empty password, is not a secret", () => {
+    expect(textHasSecret("https://user@example.test/")).toBe(false);
+    expect(textHasSecret("https://user:@example.test/")).toBe(false);
+  });
+  test("the password is what is masked, the rest of the URL stays", () => {
+    expect(maskSecrets("https://admin:hunter2@example.test/x")).toBe("https://admin:[masked]@example.test/x");
   });
 });
 

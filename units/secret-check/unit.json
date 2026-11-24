@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/secret-check",
   "package": "@kaigilb/gilbplatformcode-secret-check",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "purpose": "One check for whether a piece of text holds a secret, and one function that masks it.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -14,7 +14,8 @@
   },
   "namedChanges": [
     "`export` is added to `maskSecrets`, `textHasSecret` and `normalise`; no pattern, number or branch is changed.",
-    "one `!` after `words[0]` in `shouldMaskAssignment`, because this unit's tsconfig has `noUncheckedIndexedAccess` and the app's does not; the value is never undefined there (`words.length === 1`)."
+    "one `!` after `words[0]` in `shouldMaskAssignment`, because this unit's tsconfig has `noUncheckedIndexedAccess` and the app's does not; the value is never undefined there (`words.length === 1`).",
+    "1.0.1 (a change after the move, not part of it): `urlCredentialSpans` is new and `tokenSpans` calls it, so an http(s) URL with `user:pass@` is refused."
   ],
   "newFiles": ["src/index.ts"],
   "host": [],

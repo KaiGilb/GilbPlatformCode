@@ -243,6 +243,17 @@ function shouldMaskToken(run: string): boolean {
   return run.length >= 20 || /\d/.test(run);
 }
 
+/**
+ * The password of an http(s) URL that carries `user:password@` in front of its host. A user name with no
+ * password (`https://user@host/`) and an empty password (`https://user:@host/`) are not secrets.
+ */
+function urlCredentialSpans(url: string, base: number): Array<[number, number]> {
+  const match = /^https?:\/\/[^/?#@:\s]*:([^/?#@\s]+)@/i.exec(url);
+  if (!match) return [];
+  const from = base + match[0].length - 1 - match[1]!.length;
+  return [[from, from + match[1]!.length]];
+}
+
 /** Token runs inside one URL path or query segment. */
 function urlSecretSpans(url: string, base: number): Array<[number, number]> {
   const spans: Array<[number, number]> = [];
@@ -313,7 +324,10 @@ function tokenSpans(text: string): Array<[number, number]> {
     if (urls.some(([start, end]) => from < end && to > start)) continue;
     if (shouldMaskToken(run)) spans.push([from, to]);
   }
-  for (const [start, end] of urls) spans.push(...urlSecretSpans(text.slice(start, end), start));
+  for (const [start, end] of urls) {
+    spans.push(...urlSecretSpans(text.slice(start, end), start));
+    spans.push(...urlCredentialSpans(text.slice(start, end), start));
+  }
   return spans;
 }
 
