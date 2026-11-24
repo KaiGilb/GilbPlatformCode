@@ -129,7 +129,7 @@ describe("a missing cwd in the refusal log", () => {
 });
 
 describe("a new code turn after a cwd refusal", () => {
-  it("says code mode is off because the child did not start in the folder when another code turn is sent", async () => {
+  it("says code mode is off because the code folder changed on disk when another code turn is sent after a refusal and the folder was replaced", async () => {
     const ws = mk("CodeLater");
     const b = await start({ workspace: ws });
     const first = await turn(b, { mode: "code", prompt: "INITTWICECWD" });

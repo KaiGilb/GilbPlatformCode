@@ -1411,14 +1411,14 @@ export function initFolderDecision(c) {
     return { ok: true };
 }
 /**
- * One reason per cause: the words after "Code mode is off because", one per reason code, with no path in them.
+ * One reason per cause: the words after "Code mode is off because", one per reason code (no two codes share a sentence), with no path in them.
  * The paired hello and the answer to a code turn both build their sentence from this, so the two never disagree.
  */
 const CODE_OFF_WHY = {
-    "init-first-not-root": "an earlier code turn was stopped: Claude Code did not start in the code folder",
+    "init-first-not-root": "an earlier code turn was stopped: Claude Code started in another folder than the code folder",
     "init-outside-folder": "an earlier code turn was stopped: Claude Code did not start in the code folder",
-    "init-no-cwd": "an earlier code turn was stopped: Claude Code did not start in the code folder",
-    "init-folder-missing": "an earlier code turn was stopped: Claude Code did not start in the code folder",
+    "init-no-cwd": "an earlier code turn was stopped: Claude Code did not say which folder it works in",
+    "init-folder-missing": "an earlier code turn was stopped: Claude Code reported a folder that cannot be found",
     "folder-check-failed": "the code folder changed on disk",
     "folder-missing": "the code folder cannot be found",
 };
@@ -3097,12 +3097,9 @@ export function createBridge(opts = {}) {
     };
     let workspace = null;
     /**
-     * Why code mode is off, or null while a folder is chosen.
-     * A later code turn says this. It is cleared wherever a folder is chosen, so an old refusal cannot outlive that choice.
-     */
-    /**
      * Code mode is off while a folder IS saved: why (a fixed code), a path-free sentence, and since when.
-     * Null while code mode is on, and for a bridge that never had a folder.
+     * Null while code mode is on, and for a bridge that never had a folder. It is cleared wherever a folder is chosen,
+     * so an old refusal cannot outlive that choice.
      */
     let codeOff = null;
     /**
@@ -3215,7 +3212,7 @@ export function createBridge(opts = {}) {
      */
     function recheckSavedFolder() {
         // A refused child that has not exited yet counts like a running turn: its turn may have left the table when its page hung up.
-        if (workspace || !codeOff || !savedFolder || codeTurnRunning() || liveGroups.size > 0 || dialogOpen)
+        if (workspace || !codeOff || !savedFolder || codeChildAlive() || dialogOpen)
             return;
         const saved = savedFolder;
         const offBefore = codeOff;
@@ -3300,6 +3297,20 @@ export function createBridge(opts = {}) {
     const approvalWaitMs = opts.approvalWaitMs ?? APPROVAL_WAIT_MS;
     /** The sentence a code turn is told while code mode is off: built from the reason code, so it is the one the paired hello gives. */
     const offAnswer = () => (codeOff ? codeModeOff(CODE_OFF_WHY[codeOff.reasonCode]) : codeModeOff("no code folder is chosen"));
+    /**
+     * The answer of a paired route while code mode is off with a saved folder: the sentence and the reason code, the same pair the hello gives
+     * (`message`, `reason`), plus `error` so a page that reads `error` shows the sentence.
+     * @returns The body.
+     */
+    const offBody = () => ({ error: offAnswer(), reason: codeOff ? codeOff.reasonCode : undefined, message: offAnswer() });
+    /**
+     * No code folder for a paired route: the off reason when a folder is saved and off, else the "no code folder" sentence.
+     * Status: 404 as before (the page treats a 404 from /v1/workspace as "no folder"), and 409 for a preview, because the client reads a 404 preview
+     * that does not start with "This bridge has no code folder" as "update the bridge".
+     * @param res The response.
+     * @param offStatus The status used while code mode is off.
+     */
+    const noFolder = (res, offStatus = 404) => (codeOff && savedFolder ? json(res, offStatus, offBody()) : json(res, 404, { error: NO_WORKSPACE }));
     const NO_WORKSPACE = "This bridge has no code folder. Start it with --workspace <folder>.";
     const maxPairFailures = opts.maxPairFailures ?? 5;
     const maxToolCalls = opts.maxToolCalls ?? TURN_MAX_TOOL_CALLS;
@@ -3321,6 +3332,8 @@ export function createBridge(opts = {}) {
      * left in its group is stopped too, and only then is it forgotten. ON is refused while this is not empty.
      */
     const liveGroups = new Map();
+    /** The folder (real path) each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table. */
+    const liveFolder = new Map();
     const tracks = new Map();
     /** Recorded processes a stop could not end (pid -> start time). ON stays refused while one is alive and still matches. */
     const residual = new Map();
@@ -3455,6 +3468,7 @@ export function createBridge(opts = {}) {
             const done = () => {
                 delete child[GROUP_LEADER];
                 liveGroups.delete(pid);
+                liveFolder.delete(pid);
                 tracks.delete(pid);
                 persistTracks();
             };
@@ -4587,8 +4601,11 @@ export function createBridge(opts = {}) {
             catch (e) {
                 return resolve({ error: `Could not start Claude Code: ${e?.message ?? e}`, sessionId: mode.sessionId, model: "" });
             }
-            if (turn.code)
+            if (turn.code) {
                 trackCodeChild(child);
+                if (child.pid !== undefined && scope)
+                    liveFolder.set(child.pid, scope.path);
+            }
             turn.child = child;
             let buf = "";
             let stderr = "";
@@ -4788,7 +4805,7 @@ export function createBridge(opts = {}) {
             // Code mode was switched off earlier: the saved folder is checked again first. If it still fails, say why. A bridge that never had a folder still says it has none.
             recheckSavedFolder();
             if (!workspace)
-                return json(res, 409, { error: codeOff ? offAnswer() : NO_WORKSPACE });
+                return json(res, 409, codeOff ? offBody() : { error: NO_WORKSPACE });
             if (dialogOpen)
                 return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
             if (accessDialogOpen)
@@ -4813,6 +4830,16 @@ export function createBridge(opts = {}) {
                 };
                 // The turn's id and start time go only to the pairing that owns the turn; anyone else learns that one is running, no more.
                 return json(res, 429, running.owner === me ? { ...refusal, ownTurn: true, turnId: running.id, startedAt: new Date(running.startedAt).toISOString() } : { ...refusal, ownTurn: false });
+            }
+            // The same folder, no turn in the table, but a code child there has not exited (its page hung up, or it was refused and is being stopped):
+            // the same answer, without a turn id. Another folder is not held up by it.
+            if ([...liveFolder.values()].includes(key)) {
+                return json(res, 429, {
+                    error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
+                    code: "CodeTurnRunning",
+                    project: proj ? proj.name : null,
+                    ownTurn: false,
+                });
             }
         }
         // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -4865,7 +4892,7 @@ export function createBridge(opts = {}) {
                 await held;
             // The folder may have been given up while this turn waited. That is not a new change on disk.
             if (!workspace)
-                return json(res, 409, { error: offAnswer() });
+                return json(res, 409, offBody());
             if (!folderStillGood())
                 return json(res, 409, { error: CODE_FOLDER_CHANGED });
             if (proj && !projectStillGood(proj))
@@ -5026,13 +5053,20 @@ export function createBridge(opts = {}) {
     let dialogOpen = false;
     const codeTurnRunning = () => [...turns.values()].some((t) => t.code);
     /**
+     * THE one answer to "is a code child alive": the turns table holds a code turn, OR a code child's process group has not exited
+     * (a turn leaves the table when its page hangs up, while its child may still be alive; a refused child is being stopped, so the wait is bounded).
+     * Every guard that says "A code turn is running" uses this: Change, New, the re-check, and the start of a code turn in the same folder.
+     */
+    const codeChildAlive = () => codeTurnRunning() || liveGroups.size > 0;
+    /**
      * The 409 answer for "a code turn is running" on Change (both places) and New. Open never refuses while a code turn runs. Only a paired caller reaches these routes, so it also names the
      * folder the running turn works in: the last part of the path, never the whole path.
      * @returns The answer body.
      */
     const runningAnswer = () => {
         const t = [...turns.values()].find((x) => x.code);
-        const folder = t ? (t.proj ? t.proj.name : workspace ? workspace.name : savedFolder ? savedFolder.name : "") : "";
+        const live = [...liveFolder.values()][0];
+        const folder = t ? (t.proj ? t.proj.name : workspace ? workspace.name : savedFolder ? savedFolder.name : "") : live ? path.basename(live) : "";
         return { error: "A code turn is running. Wait for it to finish.", ...(folder ? { runningProjectFolder: folder } : {}) };
     };
     const switchTo = (v) => {
@@ -5054,7 +5088,7 @@ export function createBridge(opts = {}) {
         // The suggestion is checked even though only "Create it" uses it; it never goes into a script.
         if (body.suggest !== undefined && !folderNameOk(body.suggest))
             return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
-        if (codeTurnRunning())
+        if (codeChildAlive())
             return json(res, 409, runningAnswer());
         if (dialogOpen)
             return json(res, 409, { error: "A folder dialog is already open on this computer." });
@@ -5079,7 +5113,7 @@ export function createBridge(opts = {}) {
         }
         if (picked === null || picked === "")
             return json(res, 200, { chosen: false });
-        if (codeTurnRunning())
+        if (codeChildAlive())
             return json(res, 409, runningAnswer());
         const v = checkFolder(picked);
         if (!v.ok)
@@ -5094,7 +5128,7 @@ export function createBridge(opts = {}) {
         if (workspace)
             folderStillGood();
         if (!workspace)
-            return json(res, 404, { error: NO_WORKSPACE });
+            return noFolder(res);
         const out = [];
         try {
             for (const e of fs.readdirSync(workspace.path)) {
@@ -5249,7 +5283,7 @@ export function createBridge(opts = {}) {
         if (workspace)
             folderStillGood();
         if (!workspace)
-            return json(res, 404, { error: NO_WORKSPACE });
+            return noFolder(res, 409);
         const name = body.project;
         // The name is one plain folder name AND one the project list shows; startPreview then checks the real path again.
         const plainName = typeof name === "string" && name !== "" && name.length <= 128 && !/[\\/\0]/.test(name) && name !== "." && name !== ".." && !name.startsWith(".");
@@ -5279,7 +5313,7 @@ export function createBridge(opts = {}) {
         if (workspace)
             folderStillGood();
         if (!workspace)
-            return json(res, 404, { error: NO_WORKSPACE });
+            return noFolder(res);
         if (dialogOpen)
             return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
         const name = body.name;
@@ -5332,7 +5366,7 @@ export function createBridge(opts = {}) {
         const name = body.name;
         if (!folderNameOk(name))
             return json(res, 400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
-        if (codeTurnRunning())
+        if (codeChildAlive())
             return json(res, 409, runningAnswer());
         if (dialogOpen)
             return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
@@ -5393,7 +5427,7 @@ export function createBridge(opts = {}) {
         if (workspace)
             folderStillGood();
         if (!workspace)
-            return json(res, 404, { error: NO_WORKSPACE });
+            return noFolder(res);
         if (!canOpenFolder())
             return json(res, 501, { error: "This computer cannot open folders from the bridge." });
         let target = workspace.path;
@@ -5583,7 +5617,7 @@ export function createBridge(opts = {}) {
     };
     /** Any code child that is still alive, in the turns table or not, or anything tagged or seen below one. */
     async function codeActivity() {
-        if (codeTurnRunning() || liveGroups.size > 0)
+        if (codeChildAlive())
             return "busy";
         const v = await livingTurnProcs();
         return !v.known ? "unknown" : v.pids.length > 0 ? "busy" : "free";
@@ -5869,7 +5903,7 @@ export function createBridge(opts = {}) {
                 return json(res, 200, { ok: true });
             if (req.method === "POST" && url.pathname === "/v1/workspace") {
                 recheckSavedFolder();
-                return workspace ? json(res, 200, { name: workspace.name, path: workspace.path }) : json(res, 404, { error: NO_WORKSPACE });
+                return workspace ? json(res, 200, { name: workspace.name, path: workspace.path }) : noFolder(res);
             }
             if (req.method === "POST" && url.pathname === "/v1/projects")
                 return handleProjects(res);

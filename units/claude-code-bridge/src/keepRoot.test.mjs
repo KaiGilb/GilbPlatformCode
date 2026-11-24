@@ -536,3 +536,157 @@ describe("fix round 1 (D3, D4, D5, D6, D8)", () => {
     expect(JSON.stringify(after)).not.toContain("outside the folder");
   });
 });
+
+describe("fix round 2 (R1 to R4)", () => {
+  const until = async (f, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await f()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const pids = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid) : []);
+  const noWin = it.skipIf(process.platform === "win32"); // Windows stops a child's whole tree at once and cannot ignore a stop: not testable there
+  /** A refused code turn whose child outlives the refusal, its page gone. Returns the bridge and the child's pid. */
+  async function refusedAlive(name, extra = {}, prompt = "INITTWICECWD HOLDOPEN IGNORETERM") {
+    const ws = mk(name);
+    const opened = [];
+    let chosen = 0;
+    const b = await start({ workspace: ws, killGraceMs: 1500, openFolder: async (p) => { opened.push(p); }, chooseFolder: async () => { chosen++; return ws; }, ...extra });
+    const ctl = new AbortController();
+    const first = turn(b, code(prompt), ctl.signal).catch(() => {});
+    expect(await until(() => lines.some((l) => l.includes("init 2:")))).toBe(true);
+    ctl.abort();
+    await first;
+    await new Promise((r) => setTimeout(r, 100));
+    const pid = pids()[0];
+    expect(alive(pid)).toBe(true);
+    return { b, ws, pid, opened, chosenCount: () => chosen };
+  }
+
+  noWin("R1: while a refused child is alive, Choose and New do not bring code mode on, Open and chat still work, and every guard clears once it has exited", async () => {
+    // Spec: R1 and R2, one predicate: the turns table holds a code turn OR a code child has not exited.
+    const { b, pid, opened, chosenCount } = await refusedAlive("Live1");
+    const ch = await call(b, "/v1/workspace/choose");
+    expect(ch.status).toBe(409);
+    expect(ch.json.error).toBe("A code turn is running. Wait for it to finish.");
+    expect(ch.json.runningProjectFolder).toBe("Live1");
+    expect(chosenCount()).toBe(0); // the dialog was never opened
+    const nw = await call(b, "/v1/workspace/create", { name: "NewWhileAlive" });
+    expect(nw.status).toBe(409);
+    expect(fs.existsSync(path.join(home, "NewWhileAlive"))).toBe(false);
+    expect((await helloPaired(b)).workspace).toBe(false);
+    expect((await turn(b, code("hello"))).status).toBe(409);
+    expect(pids()).toHaveLength(1); // no second child
+    expect((await call(b, "/v1/workspace/open")).status).toBe(404); // off, with the reason (R4); Open itself is not held by the live child
+    const chat = await turn(b, { prompt: "hello" });
+    expect(chat.status).toBe(200); // a chat turn is not blocked by a live code child
+    // each guard clears once the child has exited
+    expect(await until(() => !alive(pid))).toBe(true);
+    expect(await until(async () => (await helloPaired(b)).workspace === true)).toBe(true);
+    const ch2 = await call(b, "/v1/workspace/choose");
+    expect(ch2.status).toBe(200);
+    expect(chosenCount()).toBe(1);
+    expect((await call(b, "/v1/workspace/create", { name: "NewAfter" })).status).toBe(200);
+    expect(opened).toEqual([]);
+  }, 40000);
+
+  noWin("R2: a running child whose page hung up still holds the one-turn guard in its folder, and Change and New", async () => {
+    // Spec: R2, the start of a code turn in the same folder counts a child that has not exited.
+    const ws = mk("Live2");
+    const b = await start({ workspace: ws, killGraceMs: 1500 });
+    const ctl = new AbortController();
+    const first = turn(b, code("WAITFOREVER IGNORETERM"), ctl.signal).catch(() => {});
+    expect(await until(() => pids().length === 1)).toBe(true);
+    const pid = pids()[0];
+    ctl.abort();
+    await first;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(alive(pid)).toBe(true);
+    const second = await turn(b, code("hello"));
+    expect(second.status).toBe(429);
+    expect(second.json.code).toBe("CodeTurnRunning");
+    expect((await call(b, "/v1/workspace/choose")).status).toBe(409);
+    expect(pids()).toHaveLength(1);
+    expect(await until(() => !alive(pid))).toBe(true);
+    expect(await until(async () => (await turn(b, code("hello"))).status === 200)).toBe(true);
+  }, 40000);
+
+  noWin("R2: a child that ignores the first stop signal is still stopped by the bridge's own kill (no new mechanism)", async () => {
+    // Spec: R1, the wait is bounded: the existing stop path escalates after its grace.
+    const { b, pid } = await refusedAlive("Live3", { killGraceMs: 1200 }, "INITTWICECWD HOLDOPEN IGNORETERMFOREVER");
+    expect(await until(() => !alive(pid), 12000)).toBe(true);
+    expect(await until(async () => (await helloPaired(b)).workspace === true)).toBe(true);
+  }, 40000);
+
+  it("R3: no two reason codes share a sentence, and the code turn's 409 carries the reason like hello does", async () => {
+    // Spec: R3. Four init codes (each shown by a turn that waited at its entry guard while another was refused), two from the re-check.
+    const seen = new Map();
+    const viaHeldTurn = async (key, opts, prompt) => {
+      ensureDir();
+      let release = () => {};
+      const gate = new Promise((r) => { release = r; });
+      let atHook = () => {};
+      const reached = new Promise((r) => { atHook = r; });
+      let n = 0;
+      const ws = mk(`R3${key}`);
+      fs.mkdirSync(path.join(ws, "sub"), { recursive: true });
+      const b = await start({ workspace: ws, afterSnapshot: () => { if (++n === 1) { atHook(); return gate; } }, ...opts });
+      const pendingB = turn(b, code("hello"));
+      await reached;
+      await turn(b, code(prompt));
+      release();
+      const bRes = await pendingB;
+      await b.bridge.close();
+      return bRes;
+    };
+    const cases = [
+      ["outside", { laterCwd: "/" }, "INITTWICEAT"],
+      ["first", { firstCwd: "sub" }, "hello"],
+      ["nocwd", { env: { ...process.env, FAKE_CLAUDE_LOG: undefined, FAKE_INIT_CWD: "omit" } }, "hello"],
+      ["missing", { laterCwd: "nope" }, "INITTWICEAT"],
+    ];
+    for (const [key, opts, prompt] of cases) {
+      if (key === "nocwd") opts.env = { ...process.env, FAKE_CLAUDE_LOG: path.join(dir ?? (ensureDir(), dir), "claude.log"), FAKE_INIT_CWD: "omit" };
+      const r = await viaHeldTurn(key, opts, prompt);
+      expect(r.status).toBe(409);
+      expect(typeof r.json.reason).toBe("string");
+      seen.set(r.json.reason, r.json.error);
+    }
+    expect([...seen.keys()].sort()).toEqual(["init-first-not-root", "init-folder-missing", "init-no-cwd", "init-outside-folder"]);
+    // the two re-check codes, from hello and the turn answer
+    for (const how of ["replaced", "gone"]) {
+      const { b, ws } = await (async () => {
+        const w = mk(`R3b${how}`);
+        const bb = await start({ workspace: w });
+        await turn(bb, code("INITTWICECWD"));
+        return { b: bb, ws: w };
+      })();
+      if (how === "replaced") { fs.renameSync(ws, `${ws}.old`); fs.mkdirSync(ws); } else fs.rmSync(ws, { recursive: true });
+      const h = await helloPaired(b);
+      const t = await turn(b, code("hello"));
+      expect(t.json.reason).toBe(h.codeModeOff.reason);
+      expect(t.json.error).toBe(h.codeModeOff.message);
+      seen.set(h.codeModeOff.reason, h.codeModeOff.message);
+      await b.bridge.close();
+    }
+    expect(seen.size).toBe(6);
+    expect(new Set(seen.values()).size).toBe(6); // six codes, six sentences
+  }, 60000);
+
+  it("R4: while code mode is off with a saved folder, the five folder routes give the off reason; only a bridge with no saved folder says there is no folder", async () => {
+    // Spec: R4. Status kept where the page handles it: 404 (the client reads a 404 from /v1/workspace as "no folder"), 409 for a preview.
+    const ws = mk("R4");
+    fs.mkdirSync(path.join(ws, "p1"));
+    const b = await start({ workspace: ws, openFolder: async () => {} });
+    await turn(b, code("INITTWICECWD"));
+    fs.renameSync(ws, `${ws}.old`);
+    fs.mkdirSync(ws);
+    for (const [route, body, status] of [["/v1/workspace", {}, 404], ["/v1/projects", {}, 404], ["/v1/projects/create", { name: "x" }, 404], ["/v1/preview", { project: "p1" }, 409], ["/v1/workspace/open", {}, 404]]) {
+      const r = await call(b, route, body);
+      expect([route, r.status]).toEqual([route, status]);
+      expect(r.json.reason).toBe("folder-check-failed");
+      expect(r.json.error).toBe(OFF_DISK);
+      expect(r.json.message).toBe(OFF_DISK);
+    }
+    const none = await start({ workspaceFile: path.join(dir, "nostate", "workspace.json") });
+    const r = await call(none, "/v1/workspace");
+    expect(r.status).toBe(404);
+    expect(r.json).toEqual({ error: "This bridge has no code folder. Start it with --workspace <folder>." });
+  });
+});
