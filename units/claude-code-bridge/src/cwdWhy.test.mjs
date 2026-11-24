@@ -132,6 +132,10 @@ describe("a new code turn after a cwd refusal", () => {
     const b = await start({ workspace: ws });
     const first = await turn(b, { mode: "code", prompt: "INITTWICECWD" });
     expect(ev(first, "error")[0].message).toBe(CODE_CWD_ERROR);
+    // 0.3.23: with the folder unchanged the next use checks it again and code mode comes back (see keepRoot.test.mjs). So that code mode is
+    // still off here, the folder is really replaced first; the assertions below are the ones this test always had.
+    fs.renameSync(ws, `${ws}.old`);
+    fs.mkdirSync(ws);
     const next = await turn(b, { mode: "code" });
     expect(next.status).toBe(409);
     expect(next.json.error).toBe(OFF_CWD);

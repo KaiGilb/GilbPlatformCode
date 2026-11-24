@@ -280,7 +280,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.22";
+export const BRIDGE_BUILD = "0.3.23";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1452,6 +1452,75 @@ type Dirent = { name: string; isDirectory(): boolean; isSymbolicLink(): boolean 
 export function realPath(p: string): string {
   return fs.realpathSync.native(p);
 }
+/** Why a child's init was refused or code mode went off. A closed list: the page may switch on these codes, never on a sentence. */
+export type CodeOffCode = "init-first-not-root" | "init-outside-folder" | "init-no-cwd" | "init-folder-missing" | "folder-check-failed" | "folder-missing";
+/** What a code turn's init event is checked against and how the folder is read. `realpath` and `idOf` are only for tests. */
+export interface InitFolderCheck {
+  /** 1 for the first init of this child, 2 and up for a later one. */
+  initNumber: number;
+  /** The `cwd` the init event reported (anything: it is the child's word). */
+  reported: unknown;
+  /** The checked folder: its real path and its device:inode recorded at the check. */
+  root: { path: string; id: string };
+  realpath?: ((p: string) => string) | undefined;
+  idOf?: ((p: string) => string) | undefined;
+}
+/**
+ * Is the working folder a code turn's child reports at one init acceptable? Pure: no child, no bridge state.
+ *
+ * Init 1: the reported folder must be exactly the checked folder (same real path, and the same device and inode as recorded at the check).
+ * Init 2 and later: the real path of the reported folder (links resolved, the real letter case) must be the root's real path or lie under
+ * it (the root's real path plus the separator, so "/a-evil" is not inside "/a"), and the root itself must still be the same folder
+ * (same real path, same device and inode). A path that cannot be resolved is a mismatch.
+ *
+ * Decision: a later init may name a subfolder because a real agent moves into a subfolder to work (cd src, a build step) and
+ * Claude Code then reports that folder in a later init; that is still inside the folder the person chose. Init 1 may not, because the
+ * bridge started the child itself: at that moment anything but the root means the child did not start where the bridge put it.
+ * @param c The init number, what it reported and the checked root.
+ * @returns ok, or the reason code of the refusal.
+ */
+export function initFolderDecision(c: InitFolderCheck): { ok: true } | { ok: false; reasonCode: CodeOffCode } {
+  const real = c.realpath ?? realPath;
+  const id = c.idOf ?? ((p: string) => {
+    try {
+      const st = fs.lstatSync(p, { bigint: true });
+      return st.isDirectory() ? `${st.dev}:${st.ino}` : "";
+    } catch {
+      return "";
+    }
+  });
+  if (typeof c.reported !== "string" || c.reported === "") return { ok: false, reasonCode: "init-no-cwd" };
+  if (c.root.id === "") return { ok: false, reasonCode: "folder-check-failed" };
+  if (c.initNumber <= 1) {
+    try {
+      return real(c.reported) === c.root.path && id(c.reported) === c.root.id ? { ok: true } : { ok: false, reasonCode: "init-first-not-root" };
+    } catch {
+      return { ok: false, reasonCode: "init-folder-missing" };
+    }
+  }
+  let now: string;
+  try {
+    now = real(c.reported);
+  } catch {
+    return { ok: false, reasonCode: "init-folder-missing" };
+  }
+  if (now !== c.root.path && !now.startsWith(c.root.path.endsWith(path.sep) ? c.root.path : c.root.path + path.sep)) return { ok: false, reasonCode: "init-outside-folder" };
+  try {
+    if (real(c.root.path) !== c.root.path || id(c.root.path) !== c.root.id) return { ok: false, reasonCode: "folder-check-failed" };
+  } catch {
+    return { ok: false, reasonCode: "folder-missing" };
+  }
+  return { ok: true };
+}
+/** One fixed sentence per reason code, with no path in it: it is what a paired page is told while code mode is off. */
+const CODE_OFF_SENTENCE: Record<CodeOffCode, string> = {
+  "init-first-not-root": "Claude Code did not start in the code folder, so code mode is off until the folder is checked again.",
+  "init-outside-folder": "Claude Code moved outside the code folder, so code mode is off until the folder is checked again.",
+  "init-no-cwd": "Claude Code did not say where it works, so code mode is off until the folder is checked again.",
+  "init-folder-missing": "Claude Code reported a folder that cannot be found, so code mode is off until the folder is checked again.",
+  "folder-check-failed": "The code folder changed on disk, so code mode is off until the folder is checked again.",
+  "folder-missing": "The code folder cannot be found, so code mode is off until it is back.",
+};
 export interface WorkspaceCheckOpts {
   home: string;
   platform: string;
@@ -3010,6 +3079,17 @@ export function createBridge(opts: BridgeOptions = {}) {
    * A later code turn says this. It is cleared wherever a folder is chosen, so an old refusal cannot outlive that choice.
    */
   let codeOffReason: string | null = null;
+  /**
+   * Code mode is off while a folder IS saved: why (a fixed code), a path-free sentence, and since when.
+   * Null while code mode is on, and for a bridge that never had a folder.
+   */
+  let codeOff: { reasonCode: CodeOffCode; sentence: string; since: string } | null = null;
+  /**
+   * The folder code mode was switched off for, kept so the next use can check it again (it is also in workspace.json).
+   * Gotcha: a mismatch must NEVER forget this folder. One init that reports a subfolder, or one failed check, used to set the folder to
+   * null for every chat until the person chose it again, although nothing was wrong with the folder. A mismatch stops that turn only.
+   */
+  let savedFolder: { path: string; name: string; id: string } | null = null;
   /** The folder as it was given (a symlink may differ from its real path): tool summaries accept both. */
   let workspaceGiven: string | null = null;
   const turnRoots = (t: Turn) => (t.proj ? [t.proj.path] : workspace ? workspaceRoots() : []);
@@ -3039,8 +3119,21 @@ export function createBridge(opts: BridgeOptions = {}) {
     return validateWorkspace(input, { home, platform, stateDirs });
   }
   /**
+   * Switches code mode off WITHOUT forgetting the folder: the saved folder (and workspace.json) stay, and the next use checks it again.
+   * @param reasonCode Why, from the closed list.
+   * @param why The few words a refused code turn is told ("Code mode is off because ...").
+   */
+  function switchOff(reasonCode: CodeOffCode, why: string) {
+    if (workspace) savedFolder = { path: workspace.path, name: workspace.name, id: workspace.id };
+    codeOffReason = why;
+    codeOff = { reasonCode, sentence: CODE_OFF_SENTENCE[reasonCode], since: new Date(now()).toISOString() };
+    workspace = null;
+    workspaceGiven = null;
+  }
+  /**
    * Is the code folder still the folder that was checked? Its real path now must equal the stored real path and pass the checks again.
-   * If not, code mode is switched off (workspace.json is left as it is) and false is returned.
+   * If not, code mode is switched off for this use (the folder stays saved, workspace.json is left as it is) and false is returned.
+   * @returns True when the folder is still the one that was checked.
    */
   function folderStillGood(): boolean {
     // Nothing is chosen, so there is nothing to compare. That is not a change on disk; the caller says why code mode is off.
@@ -3048,11 +3141,11 @@ export function createBridge(opts: BridgeOptions = {}) {
     let ok = false;
     let why = "";
     try {
-      const now = realPath(workspace.path);
-      if (now !== workspace.path) why = `its real path is now ${now}`;
-      else if (workspace.id === "" || idOf(now) !== workspace.id) why = "it is no longer the same folder (device and inode differ)";
+      const nowPath = realPath(workspace.path);
+      if (nowPath !== workspace.path) why = `its real path is now ${nowPath}`;
+      else if (workspace.id === "" || idOf(nowPath) !== workspace.id) why = "it is no longer the same folder (device and inode differ)";
       else {
-        const v = checkFolder(now);
+        const v = checkFolder(nowPath);
         if (v.ok) ok = true;
         else why = v.reason;
       }
@@ -3060,13 +3153,56 @@ export function createBridge(opts: BridgeOptions = {}) {
       why = (e as ErrLike)?.message ?? String(e);
     }
     if (!ok) {
-      log(`the code folder changed on disk (${why}); code mode is off until a folder is chosen again`);
+      log(`the code folder changed on disk (${why}); code mode is off until the folder is checked again`);
       // The folder really changed. Remember that, so a later turn is not told the folder changed again when nothing is left to compare.
-      codeOffReason = "the code folder changed on disk";
-      workspace = null;
-      workspaceGiven = null;
+      switchOff("folder-check-failed", "the code folder changed on disk");
     }
     return ok;
+  }
+  /**
+   * The one folder check a stored folder goes through, at start-up and again at the next use after code mode was switched off.
+   * It passes only when checkFolder passes; then the folder becomes the code folder.
+   * @param input The folder as saved.
+   * @returns The checked folder, or the reason it was not used.
+   */
+  function adoptSavedFolder(input: string): { ok: true; path: string; name: string } | { ok: false; reason: string } {
+    const v = checkFolder(input);
+    if (v.ok) {
+      workspace = { path: v.path, name: v.name, id: idOf(v.path) };
+      workspaceGiven = v.path;
+      codeOffReason = null; // a stored folder that still passes is a fresh choice; no earlier refusal applies
+      codeOff = null;
+    }
+    return v;
+  }
+  /**
+   * The next use after code mode was switched off: the saved folder goes through the same check the start-up read applies (adoptSavedFolder).
+   * Pass: code mode is on again. Fail: it stays off and says why. A folder that is no longer the same folder (path or device and inode)
+   * stays off too: only choosing it again accepts a different folder.
+   * It never runs while a code turn or a folder dialog is open, so it cannot race the turn guard that Choose uses.
+   */
+  function recheckSavedFolder() {
+    if (workspace || !codeOff || !savedFolder || codeTurnRunning() || dialogOpen) return;
+    const saved = savedFolder;
+    const offBefore = codeOff;
+    const whyBefore = codeOffReason;
+    const v = adoptSavedFolder(saved.path);
+    if (v.ok && (v.path !== saved.path || idOf(v.path) !== saved.id)) {
+      // Passed the checks, but it is another folder than the one that was chosen: take the adoption back.
+      workspace = null;
+      workspaceGiven = null;
+      codeOffReason = whyBefore;
+      codeOff = { reasonCode: "folder-check-failed", sentence: CODE_OFF_SENTENCE["folder-check-failed"], since: offBefore.since };
+      return;
+    }
+    if (v.ok) {
+      log("the saved code folder passed the check again; code mode is on");
+      return;
+    }
+    const gone = !fs.existsSync(saved.path);
+    const code: CodeOffCode = gone ? "folder-missing" : "folder-check-failed";
+    codeOff = { reasonCode: code, sentence: CODE_OFF_SENTENCE[code], since: offBefore.since };
+    log(`the saved code folder is still not used: ${v.reason}`);
   }
   /** Is the project still the folder that was checked: a real directory (not a link), the same real path, device and inode? */
   function projectStillGood(pr: { path: string; id: string }): boolean {
@@ -3093,15 +3229,6 @@ export function createBridge(opts: BridgeOptions = {}) {
       return null;
     }
   }
-  /** Is this init `cwd` (the child's own getcwd()) the checked folder: a string, the same real path, and the same device and inode? */
-  function childRunsIn(cwd: unknown, want: { path: string; id: string }): boolean {
-    if (typeof cwd !== "string" || cwd === "" || want.id === "") return false;
-    try {
-      return realPath(cwd) === want.path && idOf(cwd) === want.id;
-    } catch {
-      return false;
-    }
-  }
   if (opts.workspace) {
     let real = opts.workspace;
     try {
@@ -3112,17 +3239,14 @@ export function createBridge(opts: BridgeOptions = {}) {
     workspace = { path: real, name: path.basename(real), id: idOf(real) };
     workspaceGiven = opts.workspace;
     codeOffReason = null; // a folder given at start is a fresh choice; no earlier refusal applies
+    codeOff = null;
     saveWorkspace(real); // --workspace wins and is kept
   } else if (opts.workspaceFile && fs.existsSync(opts.workspaceFile)) {
     try {
       const stored = JSON.parse(fs.readFileSync(opts.workspaceFile, "utf8"));
       if (stored && stored.version === 1 && typeof stored.path === "string") {
-        const v = checkFolder(stored.path);
-        if (v.ok) {
-          workspace = { path: v.path, name: v.name, id: idOf(v.path) };
-          workspaceGiven = v.path;
-          codeOffReason = null; // a stored folder that still passes is a fresh choice; no earlier refusal applies
-        } else log(`the stored code folder is not used: ${v.reason}`);
+        const v = adoptSavedFolder(stored.path);
+        if (!v.ok) log(`the stored code folder is not used: ${v.reason}`);
       } else log("the stored code folder file is not in a known shape; it is ignored");
     } catch (e) {
       log(`the stored code folder could not be read: ${(e as ErrLike)?.message ?? e}`);
@@ -4307,18 +4431,20 @@ export function createBridge(opts: BridgeOptions = {}) {
             if (turn.code && !codeInitOk(ev, turn.approval, filesOnly, computer, turn.delegate)) {
               limitsRefused = true;
               void stopChild(child);
-            } else if (turn.code && !(expectFolder && childRunsIn(ev.cwd, expectFolder))) {
-              // Verify the CHILD, not the path: its own working folder must be the checked one. Tools only run after init.
-              cwdRefused = true;
-              // The log has to show what this init reported. 300 characters is enough to recognise a path and short enough for one line.
-              const reportedCwd = typeof ev.cwd === "string" && ev.cwd !== "" ? ev.cwd.slice(0, 300) : "no cwd";
-              const expectedPath = expectFolder ? expectFolder.path : "no folder";
-              log(`the code turn's child did not start in the code folder (init ${initCount}: it reported ${reportedCwd}, expected ${expectedPath}); code mode is off until a folder is chosen again`);
-              // The next code turn must say the child did not start in the folder. "Changed on disk" would be a lie: the folder was not compared again.
-              codeOffReason = "an earlier code turn was stopped: Claude Code did not start in the code folder";
-              workspace = null;
-              workspaceGiven = null;
-              void stopChild(child);
+            } else if (turn.code) {
+              // Verify the CHILD, not the path: its own working folder must be inside the checked one (exactly it at init 1). Tools only run after init.
+              const verdict: { ok: true } | { ok: false; reasonCode: CodeOffCode } = expectFolder ? initFolderDecision({ initNumber: initCount, reported: ev.cwd, root: expectFolder }) : { ok: false, reasonCode: "init-first-not-root" };
+              if (!verdict.ok) {
+                cwdRefused = true;
+                // The log has to show what this init reported. 300 characters is enough to recognise a path and short enough for one line.
+                const reportedCwd = typeof ev.cwd === "string" && ev.cwd !== "" ? ev.cwd.slice(0, 300) : "no cwd";
+                const expectedPath = expectFolder ? expectFolder.path : "no folder";
+                log(`the code turn's child did not start in the code folder (init ${initCount}: it reported ${reportedCwd}, expected ${expectedPath}, reason ${verdict.reasonCode}); this turn is stopped and code mode is off until the folder is checked again`);
+                // The next code turn must say the child did not start in the folder. "Changed on disk" would be a lie: the folder was not compared again.
+                // The folder stays saved: this one turn is stopped, and the next use checks the folder again.
+                switchOff(verdict.reasonCode, verdict.reasonCode === "folder-check-failed" || verdict.reasonCode === "folder-missing" ? "the code folder changed on disk" : "an earlier code turn was stopped: Claude Code did not start in the code folder");
+                void stopChild(child);
+              }
             }
           } else if (ev.type === "result") {
             result = ev;
@@ -4400,7 +4526,8 @@ export function createBridge(opts: BridgeOptions = {}) {
     let proj: { path: string; name: string; id: string } | null = null;
     if (isCode) {
       if (typeof body.parentTurnId === "string" && body.parentTurnId) return json(res, 400, { error: "A hand-off cannot be a code turn." });
-      // Code mode was switched off earlier: say why. A bridge that never had a folder still says it has none.
+      // Code mode was switched off earlier: the saved folder is checked again first. If it still fails, say why. A bridge that never had a folder still says it has none.
+      recheckSavedFolder();
       if (!workspace) return json(res, 409, { error: codeOffReason ? codeModeOff(codeOffReason) : NO_WORKSPACE });
       if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
       if (accessDialogOpen) return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
@@ -4616,10 +4743,22 @@ export function createBridge(opts: BridgeOptions = {}) {
   // ---- choosing the code folder from chat ------------------------------------------------------------------------
   let dialogOpen = false;
   const codeTurnRunning = () => [...turns.values()].some((t) => t.code);
+  /**
+   * The 409 answer for "a code turn is running" on Change, New and Open. Only a paired caller reaches these routes, so it also names the
+   * folder the running turn works in: the last part of the path, never the whole path.
+   * @returns The answer body.
+   */
+  const runningAnswer = () => {
+    const t = [...turns.values()].find((x) => x.code);
+    const folder = t ? (t.proj ? t.proj.name : workspace ? workspace.name : savedFolder ? savedFolder.name : "") : "";
+    return { error: "A code turn is running. Wait for it to finish.", ...(folder ? { runningProjectFolder: folder } : {}) };
+  };
   const switchTo = (v: { path: string; name: string }) => {
     workspace = { path: v.path, name: v.name, id: idOf(v.path) };
     workspaceGiven = v.path;
     codeOffReason = null; // choosing or creating a folder starts code mode again; the old reason must not answer the next turn
+    codeOff = null;
+    savedFolder = null;
     saveWorkspace(v.path);
     void closeAllPreviews(); // a preview belongs to the code folder it was started in
   };
@@ -4633,9 +4772,10 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     // The suggestion is checked even though only "Create it" uses it; it never goes into a script.
     if (body.suggest !== undefined && !folderNameOk(body.suggest)) return json(res, 400, { error: "suggest must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
-    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    if (codeTurnRunning()) return json(res, 409, runningAnswer());
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is already open on this computer." });
     if (accessDialogOpen) return json(res, 409, { error: "The full access window is open on this computer. Answer it first.", code: "AccessDialogOpen" });
+    recheckSavedFolder();
     if (workspace) folderStillGood();
     if (!opts.chooseFolder && platform !== "darwin" && platform !== "win32" && !zenity) {
       return json(res, 501, { error: "No folder dialog on this computer. Start the bridge with --workspace <folder>." });
@@ -4650,7 +4790,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       dialogOpen = false;
     }
     if (picked === null || picked === "") return json(res, 200, { chosen: false });
-    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    if (codeTurnRunning()) return json(res, 409, runningAnswer());
     const v = checkFolder(picked);
     if (!v.ok) return json(res, 422, { error: v.reason });
     switchTo(v);
@@ -4660,6 +4800,7 @@ export function createBridge(opts: BridgeOptions = {}) {
   // ---- projects: the direct subfolders of the code folder ----------------------------------------------------------
   const PROJECT_LIST_CAP = 500;
   function handleProjects(res: ServerResponse) {
+    recheckSavedFolder();
     if (workspace) folderStillGood();
     if (!workspace) return json(res, 404, { error: NO_WORKSPACE });
     const out: { name: string; modified: string }[] = [];
@@ -4856,8 +4997,9 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
     const name = body.name;
     if (!folderNameOk(name)) return json(res, 400, { error: "name must be 1 to 64 letters, digits, spaces, dots, dashes or underscores." });
-    if (codeTurnRunning()) return json(res, 409, { error: "A code turn is running. Wait for it to finish." });
+    if (codeTurnRunning()) return json(res, 409, runningAnswer());
     if (dialogOpen) return json(res, 409, { error: "A folder dialog is open on this computer. Finish it first." });
+    recheckSavedFolder();
     if (workspace) folderStillGood();
     const target = path.join(home, name);
     const exists = `The folder ~/${name} already has files. Choose it with the folder dialog instead.`;
@@ -4902,6 +5044,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       return json(res, (e as ErrLike).status ?? 400, { error: (e as ErrLike).message });
     }
     if (updating()) return json(res, 409, UPDATING);
+    recheckSavedFolder();
     if (workspace) folderStillGood();
     if (!workspace) return json(res, 404, { error: NO_WORKSPACE });
     if (!canOpenFolder()) return json(res, 501, { error: "This computer cannot open folders from the bridge." });
@@ -5265,7 +5408,10 @@ export function createBridge(opts: BridgeOptions = {}) {
       return res.end();
     }
     if (req.method === "GET" && url.pathname === "/v1/hello") {
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
+      const paired = hasSecret(req, origin);
+      // The next use after code mode was switched off: check the saved folder again (a paired caller only, so an unpaired hello does no work on disk).
+      if (paired) recheckSavedFolder();
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, ...(paired && !workspace && codeOff && savedFolder ? { codeModeOff: { reason: codeOff.reasonCode, message: codeOff.sentence, folderName: savedFolder.name } } : {}), codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
