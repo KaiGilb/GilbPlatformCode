@@ -15,9 +15,10 @@
   "namedChanges": [
     "`export` is added to `maskSecrets`, `textHasSecret` and `normalise`; no pattern, number or branch is changed.",
     "one `!` after `words[0]` in `shouldMaskAssignment`, because this unit's tsconfig has `noUncheckedIndexedAccess` and the app's does not; the value is never undefined there (`words.length === 1`).",
+    "the package ships compiled `dist/` (a `prepack` build, `exports` points at it) instead of TypeScript source, because a Node back end cannot load `.ts` from node_modules; `src/index.ts` imports `./secretCheck.js` for the same reason;",
     "1.0.1 (a change after the move, not part of it): `urlCredentialSpans` is new and `tokenSpans` calls it, so an http(s) URL with `user:pass@` is refused."
   ],
-  "newFiles": ["src/index.ts"],
+  "newFiles": ["src/index.ts", "tsconfig.build.json"],
   "host": [],
   "library": { "admitted": false }
 }
