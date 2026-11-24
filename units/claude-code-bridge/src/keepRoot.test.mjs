@@ -412,6 +412,7 @@ describe("what a caller is told (S7, S8)", () => {
       expect(r.text).toBe(JSON.stringify({ error: "Pair first." }));
     }
     b.bridge.server.closeAllConnections?.();
+    await b.bridge.close(); // stops the waiting child here, so the teardown is not left to do it (slow on Windows)
     await running;
   });
   it("S8: a paired hello and a 409 carry the folder name only, never a path", async () => {
@@ -427,6 +428,7 @@ describe("what a caller is told (S7, S8)", () => {
       expect(r.text).not.toContain(home);
     }
     b.bridge.server.closeAllConnections?.();
+    await b.bridge.close(); // stops the waiting child here, so the teardown is not left to do it (slow on Windows)
     await running;
   });
   it("S8: a paired hello while code mode is off has exactly reason, message, folderName", async () => {
@@ -451,7 +453,8 @@ describe("fix round 1 (D3, D4, D5, D6, D8)", () => {
   const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
   const runPids = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid) : []);
 
-  it("D3: a refused child that has not exited keeps code mode off, even after its page hangs up", async () => {
+  // Windows stops a child's whole tree at once and has no "ignore the first stop signal", so a child that outlives its refusal cannot be made there.
+  it.skipIf(process.platform === "win32")("D3: a refused child that has not exited keeps code mode off, even after its page hangs up", async () => {
     // Spec: D3, the re-check and the one-turn guard count a child that has not exited, not only the turns table.
     const ws = mk("Alive");
     const b = await start({ workspace: ws, killGraceMs: 6000 });
