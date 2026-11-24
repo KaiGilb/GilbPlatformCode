@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-secret-check",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Tells whether a piece of text holds a secret (a key, a token, a password, a private key block), and masks it. One check for the app and the back end.",
