@@ -3314,9 +3314,23 @@ export function createBridge(opts: BridgeOptions = {}) {
   const liveGroups = new Map<number, ChildProcess>();
   /**
    * The folder each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table.
-   * `id` (device:inode) is what the guard compares: the path goes stale when the folder is renamed while the child lives. `path` only names it.
+   * Both keys are taken when the child starts and never updated (not on a rename, not when the folder is deleted); they go only when the child
+   * exits. The guard (codeChildAlive) holds a folder that matches either key.
    */
   const liveFolder = new Map<number, { path: string; id: string }>();
+  /**
+   * A folder's real path as the one-turn guard compares it: `realpath.native`, which also gives the on-disk spelling of a case-insensitive disk.
+   * A folder that cannot be read (deleted, or renamed away) keeps its spelling through `path.resolve`, so it can still match a stored path.
+   * @param p The folder.
+   * @returns The real path, or the resolved path when it cannot be read.
+   */
+  const guardPath = (p: string): string => {
+    try {
+      return realPath(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
   /** What each live code child is known to have started: its start time and the descendants seen so far (a parent walk of a plain process list, every 250 ms while it runs and just before any stop). */
   interface Track { pid: number; start: string; desc: Map<number, string> }
   const tracks = new Map<number, Track>();
@@ -4407,7 +4421,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       }
       if (turn.code) {
         trackCodeChild(child);
-        if (child.pid !== undefined && scope) liveFolder.set(child.pid, { path: scope.path, id: scope.id });
+        if (child.pid !== undefined && scope) liveFolder.set(child.pid, { path: guardPath(scope.path), id: scope.id });
       }
       turn.child = child;
       let buf = "";
@@ -4589,9 +4603,9 @@ export function createBridge(opts: BridgeOptions = {}) {
         proj = resolveProject(body.project);
         if (!proj) return json(res, 400, { error: NO_SUCH_PROJECT });
       }
-      // One code turn at a time per project (or per code folder itself, when no project is named), asked of the one predicate by the
-      // folder's device:inode: a folder renamed while its child lives is the same folder, and another folder is not held up.
-      const running = codeChildAlive((proj ?? workspace).id);
+      // One code turn at a time per project (or per code folder itself, when no project is named), asked of the one predicate, which
+      // holds the folder by its device:inode or its real path; another folder is not held up.
+      const running = codeChildAlive(proj ?? workspace);
       if (running) {
         const refusal = {
           error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
@@ -4800,18 +4814,28 @@ export function createBridge(opts: BridgeOptions = {}) {
    * (a turn leaves the table when its page hangs up, while its child may still be alive; a refused child is being stopped, so the wait is bounded).
    * Every guard that says "A code turn is running" uses this: Change, New, the re-check (any folder), and the start of a code turn (one folder).
    *
-   * Decision: one folder is known by its device:inode, never by its path. A path goes stale when the folder is renamed while its child lives,
-   * and a code turn under the new name would start a second child in the same files. An empty id (the folder could not be read) never gets
-   * a child: the last check before the start refuses it.
-   * @param folderId The device:inode of one folder (a project, or the code folder itself), or nothing for any folder.
+   * One folder is held when EITHER its device:inode OR its real path matches the folder of a running code turn or a live code child.
+   * @param folder One folder (a project, or the code folder itself): its path and its device:inode, or nothing for any folder.
    * @returns The code turn in the table that runs there, `true` for a live child whose turn has left the table, or null when there is none.
    */
-  const codeChildAlive = (folderId?: string): Turn | true | null => {
-    const turnFolderId = (t: Turn) => (t.proj ? t.proj.id : workspace ? workspace.id : "");
-    const inTable = [...turns.values()].find((t) => t.code && (folderId === undefined || turnFolderId(t) === folderId));
+  const codeChildAlive = (folder?: { path: string; id: string }): Turn | true | null => {
+    if (folder === undefined) return [...turns.values()].find((t) => t.code) ?? (liveGroups.size > 0 ? true : null);
+    // Decision: both keys, because each one alone lets a second child into the files the first child works in.
+    // - device:inode: a folder renamed while its child lives keeps its inode, and a code turn under the new name is the same folder (H1).
+    // - real path: a folder deleted or moved away and made again at the same path has a new inode, but the child was given that path,
+    //   so a child that writes by absolute path works in the new folder too (T4-1). The stored path is never updated on a rename.
+    // Gotcha: a deleted folder's inode can be given to a new, unrelated folder, which is then held until the child exits. That errs on the
+    // safe side (a 429), so it is left as it is. An empty id (a folder that cannot be read) matches nothing by id.
+    const real = guardPath(folder.path);
+    const id = idOf(real);
+    const held = (k: { path: string; id: string }) => k.path === real || (id !== "" && k.id === id);
+    // A turn's project (and the code folder) keep the real path and id taken at their check; they are compared as stored.
+    const inTable = [...turns.values()].find((t) => {
+      const scope = t.proj ?? workspace;
+      return t.code && scope !== null && held(scope);
+    });
     if (inTable) return inTable;
-    if (folderId === undefined) return liveGroups.size > 0 ? true : null;
-    return [...liveFolder.values()].some((f) => f.id === folderId) ? true : null;
+    return [...liveFolder.values()].some(held) ? true : null;
   };
   /**
    * The 409 answer for "a code turn is running" on Change (both places) and New. Open never refuses while a code turn runs. Only a paired caller reaches these routes, so it also names the

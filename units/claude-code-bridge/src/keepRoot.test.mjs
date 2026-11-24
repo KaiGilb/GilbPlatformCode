@@ -8,6 +8,7 @@
  *  - A paired hello says why code mode is off (codeModeOff); an unpaired hello and the 401 answers are the 0.3.22 ones.
  *  - The "a code turn is running" 409 names the running folder (last part only) for a paired caller.
  *  - Fix round 3: the off sentence for a child that moved out says so (R3); the one-turn guard knows a folder by device and inode (H1).
+ *  - Fix round 4: the guard holds a folder by device and inode OR by real path, so a folder replaced at the same path is held too (T4-1).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -770,4 +771,109 @@ describe("fix round 3 (R3, H1)", () => {
     expect(alive(pid)).toBe(true); // the 200 came while the orphan was still alive
     expect(await until(() => !alive(pid))).toBe(true);
   }, 40000);
+});
+
+describe("fix round 4 (T4-1): the one-turn guard holds a folder by device:inode OR by real path", () => {
+  const until = async (f, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await f()) return true; await new Promise((r) => setTimeout(r, 25)); } return false; };
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const pids = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid) : []);
+  const aliveCount = () => pids().filter(alive).length;
+  const turnsListed = async (b) => (await call(b, "/v1/turns")).json.turns.length;
+  // Windows cannot delete or rename a folder a live process works in, and cannot make a child that outlives its stop signal; d is the H1 case,
+  // also skipped there, kept beside its siblings.
+  const noWin = it.skipIf(process.platform === "win32");
+
+  /**
+   * A code workspace with project folders, and one code child alive in `p1` (the stand-in waits until it is stopped).
+   * @param name The workspace folder's name.
+   * @param projects The project folders to make.
+   * @param prompt The stand-in's prompt: IGNORETERM keeps it alive about 3 s after its page hangs up.
+   * @returns The bridge, the workspace path, the child's pid and the turn's abort handle.
+   */
+  async function liveInP1(name, projects, prompt = "WAITFOREVER") {
+    const ws = mk(name);
+    for (const p of projects) fs.mkdirSync(path.join(ws, p));
+    const chosen = { n: 0 };
+    const b = await start({ workspace: ws, killGraceMs: 4000, chooseFolder: async () => { chosen.n++; return ws; } });
+    const ctl = new AbortController();
+    const first = turn(b, { ...code(prompt), project: "p1" }, ctl.signal).catch(() => {});
+    expect(await until(() => pids().length === 1)).toBe(true);
+    return { b, ws, pid: pids()[0], ctl, first, chosen };
+  }
+  /** Deletes the folder and makes an empty one at the same path: a new device:inode at the old real path. */
+  const replace = (p) => { fs.rmSync(p, { recursive: true }); fs.mkdirSync(p); };
+
+  noWin("a: a project replaced at the same path while its turn runs is still held: 429 and exactly one child alive", async () => {
+    // Spec: T4-1 (tester round 4, E1). 0.3.22 held the path; H1 holds device:inode; both must hold, so a second child never starts in p1.
+    const { b, ws, pid, ctl, first } = await liveInP1("T4a", ["p1"]);
+    replace(path.join(ws, "p1"));
+    const second = await turn(b, { ...code("hello"), project: "p1" });
+    expect(second.status).toBe(429);
+    expect(second.json.code).toBe("CodeTurnRunning");
+    expect(second.json.ownTurn).toBe(true);
+    expect(aliveCount()).toBe(1);
+    expect(alive(pid)).toBe(true);
+    ctl.abort();
+    await first;
+  }, 5000);
+
+  noWin("b: a project deleted while its orphaned child lives, then made again, is still held: 429 for the new p1", async () => {
+    // Spec: T4-1 (tester round 4, E2). An orphan keeps both of its keys until it exits, so the path it was started in stays held.
+    const { b, ws, pid, ctl, first } = await liveInP1("T4b", ["p1"], "WAITFOREVER IGNORETERM");
+    ctl.abort();
+    await first;
+    expect(await until(async () => (await turnsListed(b)) === 0)).toBe(true); // the turn has left the table: only the live child holds p1
+    expect(alive(pid)).toBe(true);
+    fs.rmSync(path.join(ws, "p1"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "p1"));
+    const again = await turn(b, { ...code("hello"), project: "p1" });
+    expect(again.status).toBe(429);
+    expect(again.json).toEqual({ error: "A code turn is already running in p1.", code: "CodeTurnRunning", project: "p1", ownTurn: false });
+    expect(pids()).toHaveLength(1);
+    expect(alive(pid)).toBe(true); // the 429 came while the orphan was still alive
+  }, 5000);
+
+  noWin("c: renamed p1 -> p2, then a new p1 at the old name: a code turn in p2 and one in p1 both answer 429", async () => {
+    // Spec: T4-1 (tester round 4, E3). The renamed folder is held by its device:inode, the new folder at the old path by the path.
+    const { b, ws, ctl, first } = await liveInP1("T4c", ["p1"]);
+    fs.renameSync(path.join(ws, "p1"), path.join(ws, "p2"));
+    fs.mkdirSync(path.join(ws, "p1"));
+    const inP2 = await turn(b, { ...code("hello"), project: "p2" });
+    expect(inP2.status).toBe(429);
+    expect(inP2.json.code).toBe("CodeTurnRunning");
+    const inP1 = await turn(b, { ...code("hello"), project: "p1" });
+    expect(inP1.status).toBe(429);
+    expect(inP1.json.code).toBe("CodeTurnRunning");
+    expect(aliveCount()).toBe(1);
+    ctl.abort();
+    await first;
+  }, 5000);
+
+  noWin("d: a genuinely different folder p3 is not held up: 200 while the p1 child lives", async () => {
+    // Spec: H1 kept (fix round 3): another folder, by neither device:inode nor path, gets its own code turn.
+    const { b, pid, ctl, first } = await liveInP1("T4d", ["p1", "p3"]);
+    const other = await turn(b, { ...code("hello"), project: "p3" });
+    expect(other.status).toBe(200);
+    expect(ev(other, "error")).toEqual([]);
+    expect(alive(pid)).toBe(true);
+    ctl.abort();
+    await first;
+  }, 5000);
+
+  noWin("e: Change and New are refused while the replaced p1's child lives (the one predicate guards every caller)", async () => {
+    // Spec: T4-1 with settled point 2: one predicate, codeChildAlive, guards Change, New, the re-check and a new code turn.
+    const { b, ws, ctl, first, chosen } = await liveInP1("T4e", ["p1"]);
+    replace(path.join(ws, "p1"));
+    const ch = await call(b, "/v1/workspace/choose");
+    expect(ch.status).toBe(409);
+    expect(ch.json).toEqual({ error: "A code turn is running. Wait for it to finish.", runningProjectFolder: "p1" });
+    expect(chosen.n).toBe(0); // the dialog was never opened
+    const nw = await call(b, "/v1/workspace/create", { name: "T4eNew" });
+    expect(nw.status).toBe(409);
+    expect(fs.existsSync(path.join(home, "T4eNew"))).toBe(false);
+    expect((await turn(b, { ...code("hello"), project: "p1" })).status).toBe(429);
+    expect(aliveCount()).toBe(1);
+    ctl.abort();
+    await first;
+  }, 5000);
 });
