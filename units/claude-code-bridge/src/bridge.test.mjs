@@ -319,7 +319,7 @@ describe("billing guard fails closed on the init event", () => {
     const { body } = await pair();
     const t = await turn(body.secret, { mode: "code", prompt: "INITTWICECWD" });
     expect(t.events.find((e) => e[0] === "message")).toBeUndefined();
-    expect(t.events.find((e) => e[0] === "error")[1].message).toBe("The bridge stopped this code turn: Claude Code did not start in the code folder.");
+    expect(t.events.find((e) => e[0] === "error")[1].message).toBe("The bridge stopped this code turn: Claude Code moved outside the code folder.");
     expect(fs.realpathSync.native(runs().find((r) => r.event === "run").cwd)).toBe(fs.realpathSync.native(ws));
   });
   it("a hand-off whose init event has no apiKeySource, or no init, is refused", async () => {
@@ -1419,7 +1419,7 @@ describe("hello reports the build", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     delete body.openFolder; // 0.3.18: true or absent depending on this computer; covered in openFolder.test.mjs
-    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.22", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
+    expect(body).toEqual({ bridge: "gilb-claude-code-bridge", version: "1", build: "0.3.23", billing: "claude-subscription", relay: true, codeTurns: true, workspace: false, codeMode: null, access: null, options: { models: ["opus", "sonnet", "haiku", "fable"], efforts: ["low", "medium", "high", "xhigh", "max"], delegateCoding: true, images: { maxCount: 4, maxBytes: 5242880, types: ["image/png", "image/jpeg", "image/gif", "image/webp"] } } });
     expect(body.build).toBe(pkg.version);
     expect(body.build).toBe(BRIDGE_BUILD);
   });

@@ -48,7 +48,11 @@ process.stdin.on("end", async () => {
   });
   const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
   // IGNORETERM: a child that takes its time to stop (the first SIGTERM is logged, the exit comes 3 s later), so a test can act in between.
-  if (prompt.includes("IGNORETERM")) {
+  // IGNORETERMFOREVER: ignores SIGTERM for good, so only the bridge's own escalation (SIGKILL after its grace) can end it.
+  if (prompt.includes("IGNORETERMFOREVER")) {
+    process.removeAllListeners("SIGTERM");
+    process.on("SIGTERM", () => log({ event: "sigterm-ignored" }));
+  } else if (prompt.includes("IGNORETERM")) {
     process.removeAllListeners("SIGTERM");
     process.on("SIGTERM", () => {
       log({ event: "sigterm-slow" });
@@ -79,7 +83,7 @@ process.stdin.on("end", async () => {
   }
   // A second init in the same process: INITTWICE (both "none"), INITTWICEKEY (second is an API key),
   // INITTWICEKEYTOOL (second is an API key, then a Bash tool_use), INITTWICENOFIELD (second has no apiKeySource),
-  // INITTWICECWD (second cwd is "/"), INITTWICEBEFORE (second init before any result).
+  // INITTWICECWD (second cwd is "/"), INITTWICEAT (second cwd is $FAKE_LATER_CWD, relative to the start folder), INITTWICEBEFORE (second init before any result).
   // INITGLUED: one line, an API-key init immediately followed by a "none" init. INITNONEWLINE: an API-key init with no trailing newline.
   // NOISELINE: one unreadable line that is not an init, then a normal result.
   const makeInit = () => {
@@ -94,7 +98,7 @@ process.stdin.on("end", async () => {
     };
     const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
     if (pm !== "omit") init.permissionMode = pm;
-    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd();
+    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.env.FAKE_FIRST_CWD ? path.resolve(process.cwd(), process.env.FAKE_FIRST_CWD) : process.cwd();
     return init;
   };
   const answer = (text) => out({ type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: sessionId, result: text });
@@ -126,6 +130,7 @@ process.stdin.on("end", async () => {
     : prompt.includes("INITTWICEKEY") ? "key"
     : prompt.includes("INITTWICENOFIELD") ? "nofield"
     : prompt.includes("INITTWICECWD") ? "cwd"
+    : prompt.includes("INITTWICEAT") ? "at"
     : prompt.includes("INITTWICE") ? "twice"
     : "";
   if (laterInit) {
@@ -141,6 +146,8 @@ process.stdin.on("end", async () => {
     if (laterInit === "key" || laterInit === "keytool") second.apiKeySource = "ANTHROPIC_API_KEY";
     if (laterInit === "nofield") delete second.apiKeySource;
     if (laterInit === "cwd") second.cwd = "/";
+    // INITTWICEAT: the second init reports $FAKE_LATER_CWD (a path, or a name under the folder this child started in), like an agent that moved into a subfolder.
+    if (laterInit === "at") second.cwd = path.resolve(process.cwd(), process.env.FAKE_LATER_CWD ?? "sub");
     if (laterInit === "keytool") {
       const tool = { type: "assistant", message: { content: [{ type: "tool_use", id: "tuLeak", name: "Bash", input: { command: "echo LEAKED_TOOL", description: "leaked tool" } }] } };
       const toolErr = { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tuLeak", is_error: true, content: "leaked error" }] } };
@@ -149,6 +156,8 @@ process.stdin.on("end", async () => {
       out(second);
     }
     answer("final answer");
+    // HOLDOPEN: stay alive after the last line (a child that has not exited yet), so a test can look at the bridge in between.
+    if (prompt.includes("HOLDOPEN")) await new Promise((r) => setTimeout(r, 8000));
     return;
   }
   const initMode = prompt.includes("INITOMIT") ? "omit" : prompt.includes("INITNOFIELD") ? "nofield" : (process.env.FAKE_INIT ?? "");
@@ -164,7 +173,7 @@ process.stdin.on("end", async () => {
     };
     const pm = process.env.FAKE_INIT_PERMISSION_MODE ?? (arg("--permission-mode") === "manual" ? "default" : arg("--permission-mode")) ?? "acceptEdits";
     if (pm !== "omit") init.permissionMode = pm;
-    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.cwd(); // the real CLI's init carries its own getcwd()
+    if (process.env.FAKE_INIT_CWD !== "omit") init.cwd = process.env.FAKE_FIRST_CWD ? path.resolve(process.cwd(), process.env.FAKE_FIRST_CWD) : process.cwd(); // the real CLI's init carries its own getcwd()
     if (initMode === "nofield") delete init.apiKeySource;
     if (initMode === "null") init.apiKeySource = null;
     out(init);
@@ -234,8 +243,9 @@ process.stdin.on("end", async () => {
   }
   if (prompt.includes("CODEWRITE")) {
     await new Promise((r) => setTimeout(r, 200)); // after init: a bridge that refused the init has killed this process by now
-    const file = path.join(process.cwd(), "hello.txt");
-    fs.writeFileSync(file, "hi");
+    // FAKE_WRITE_PATH: name this path in the tool call instead (and write nothing), e.g. a file reached through a link.
+    const file = process.env.FAKE_WRITE_PATH ?? path.join(process.cwd(), "hello.txt");
+    if (!process.env.FAKE_WRITE_PATH) fs.writeFileSync(file, "hi");
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Write", input: { file_path: file } }] } });
     out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }] } });
   }
