@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/secret-check",
   "package": "@kaigilb/gilbplatformcode-secret-check",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "purpose": "One check for whether a piece of text holds a secret, and one function that masks it.",
   "source": {
     "repo": "KaiGilb/GilbApp",
@@ -16,9 +16,10 @@
     "`export` is added to `maskSecrets`, `textHasSecret` and `normalise`; no pattern, number or branch is changed.",
     "one `!` after `words[0]` in `shouldMaskAssignment`, because this unit's tsconfig has `noUncheckedIndexedAccess` and the app's does not; the value is never undefined there (`words.length === 1`).",
     "the package ships compiled `dist/` (a `prepack` build, `exports` points at it) instead of TypeScript source, because a Node back end cannot load `.ts` from node_modules; `src/index.ts` imports `./secretCheck.js` for the same reason;",
-    "1.0.1 (a change after the move, not part of it): `urlCredentialSpans` is new and `tokenSpans` calls it, so an http(s) URL with `user:pass@` is refused."
+    "1.0.1 (a change after the move, not part of it): `urlCredentialSpans` is new and `tokenSpans` calls it, so an http(s) URL with `user:pass@` is refused.",
+    "1.1.0 (a change, not part of the move): `src/secretProse.ts` is new: the named prose level (`secretKindOfProse`, `textHasSecretProse`). The strict level is unchanged."
   ],
-  "newFiles": ["src/index.ts", "tsconfig.build.json"],
+  "newFiles": ["src/index.ts", "tsconfig.build.json", "src/secretProse.ts"],
   "host": [],
   "library": { "admitted": false }
 }

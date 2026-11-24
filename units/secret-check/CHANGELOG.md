@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+
+- New prose level for hand-off text: `secretKindOfProse(text)` names the kind of secret (key prefix, private key block, JWT or DPoP proof, bearer token, `password=`-style assignment, URL credentials, secret in a URL query, one-time code, long random run) and `textHasSecretProse(text)` answers yes or no. It lets ordinary prose through: possessives, commit and record ids, `t:` and `a:` names, e-mail addresses, paths, host:port, time stamps, amounts, file names. The strict level (`textHasSecret`, `maskSecrets`) is unchanged.
+
 ## 1.0.1
 
 - The package ships compiled JavaScript and type declarations (`dist/`), so a Node back end can load it.

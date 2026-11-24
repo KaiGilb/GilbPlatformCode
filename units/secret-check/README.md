@@ -10,10 +10,13 @@ One check for whether a piece of text holds a secret, and one function that mask
 
 `maskSecrets(text)` returns the text with each secret replaced by `[masked]`. `textHasSecret` is `maskSecrets` compared with the text, so the two cannot disagree.
 
+`secretKindOfProse(text)` and `textHasSecretProse(text)` are the second, prose level (1.1.0), for text a person writes as notes, not for a short typed answer. They refuse the shapes of known secrets and name the kind they saw (never the text): a key prefix, a private key block, a JWT or DPoP proof, a bearer token, a `password=`-style assignment, URL credentials, a secret in a URL query, a one-time code, a long random run. They let ordinary words through. The strict level above is unchanged.
+
 `normalise(text)` is the step both start with: format characters are dropped and every horizontal space becomes a plain space. It is exported because the app's own text rules start with the same step.
 
 ## What this is not
 
+- Not one level for every text. The strict level reads a possessive of eight letters or a commit id as a key; use the prose level for notes.
 - Not a proof that text is safe. `false` means this check found nothing, not that nothing is there. Known limits, kept on purpose: a password made only of ordinary words, and a plain number, are not found.
 - Not a store, a query or a record writer. It reads a string and answers. It touches nothing.
 - Not a rule about what to do next. Refuse, cut or mask is the host's choice. On a write path, refuse: a quiet cut stores something the writer did not mean.
