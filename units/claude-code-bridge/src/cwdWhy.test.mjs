@@ -21,6 +21,8 @@ const APP2 = "http://localhost:5198";
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
 const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const NO_WORKSPACE = "This bridge has no code folder. Start it with --workspace <folder>.";
+// 0.3.23: a LATER init outside the folder says so; the first init (or no cwd) keeps the older sentence above.
+const CODE_OUTSIDE_ERROR = "The bridge stopped this code turn: Claude Code moved outside the code folder.";
 const OFF_CWD = "Code mode is off because an earlier code turn was stopped: Claude Code did not start in the code folder. Choose the code folder again.";
 const OFF_DISK = "Code mode is off because the code folder changed on disk. Choose the code folder again.";
 
@@ -112,7 +114,7 @@ describe("the cwd refusal log", () => {
     const ws = mk("CodeTwice");
     const b = await start({ workspace: ws });
     const r = await turn(b, { mode: "code", prompt: "INITTWICECWD" });
-    expect(ev(r, "error")[0].message).toBe(CODE_CWD_ERROR);
+    expect(ev(r, "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
     expect(lines.join("\n")).toContain(`init 2: it reported /, expected ${ws}`);
   });
 });
@@ -131,15 +133,15 @@ describe("a new code turn after a cwd refusal", () => {
     const ws = mk("CodeLater");
     const b = await start({ workspace: ws });
     const first = await turn(b, { mode: "code", prompt: "INITTWICECWD" });
-    expect(ev(first, "error")[0].message).toBe(CODE_CWD_ERROR);
+    expect(ev(first, "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
     // 0.3.23: with the folder unchanged the next use checks it again and code mode comes back (see keepRoot.test.mjs). So that code mode is
-    // still off here, the folder is really replaced first; the assertions below are the ones this test always had.
+    // still off here, the folder is really replaced first. That is now a change on disk, and one cause has one reason: the answer says so
+    // (OFF_DISK), the same words the paired hello gives. The folder-unchanged sentence (OFF_CWD) is still asserted by the next test.
     fs.renameSync(ws, `${ws}.old`);
     fs.mkdirSync(ws);
     const next = await turn(b, { mode: "code" });
     expect(next.status).toBe(409);
-    expect(next.json.error).toBe(OFF_CWD);
-    expect(next.json.error).not.toContain("changed on disk");
+    expect(next.json.error).toBe(OFF_DISK);
     expect(next.json.error).not.toBe(NO_WORKSPACE);
   });
 });
@@ -167,7 +169,7 @@ describe("a code turn that passed the entry guard before a refusal", () => {
     try {
       await bAtCheck;
       const resultA = await turn(b, { mode: "code", prompt: "INITTWICECWD" });
-      expect(ev(resultA, "error")[0].message).toBe(CODE_CWD_ERROR);
+      expect(ev(resultA, "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
       releaseB();
       const resultB = await pendingB;
       expect(resultB.status).toBe(409);
@@ -202,7 +204,7 @@ describe("choosing the code folder again", () => {
     const ws = mk("CodeAgain");
     const b = await start({ workspace: ws, chooseFolder: async () => ws });
     const refused = await turn(b, { mode: "code", prompt: "INITTWICECWD" });
-    expect(ev(refused, "error")[0].message).toBe(CODE_CWD_ERROR);
+    expect(ev(refused, "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
     const chosen = await call(b, "/v1/workspace/choose");
     expect(chosen.json).toMatchObject({ chosen: true });
     expect(await hello(b)).toMatchObject({ workspace: true });

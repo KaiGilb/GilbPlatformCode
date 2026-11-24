@@ -21,6 +21,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FAKE = path.join(HERE, "fake-claude.mjs");
 const APP = "http://localhost:5197";
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
+const CODE_OUTSIDE_ERROR = "The bridge stopped this code turn: Claude Code moved outside the code folder.";
+const OFF_DISK = "Code mode is off because the code folder changed on disk. Choose the code folder again.";
 const OFF_CWD = "Code mode is off because an earlier code turn was stopped: Claude Code did not start in the code folder. Choose the code folder again.";
 
 let dir, home, stateDir, wsFile, logFile;
@@ -44,7 +46,7 @@ const mk = (name) => {
 async function start(opts = {}) {
   ensureDir();
   lines.length = 0;
-  const { laterCwd, firstCwd, ...rest } = opts;
+  const { laterCwd, firstCwd, writePath, ...rest } = opts;
   const bridge = createBridge({
     port: 0,
     claudeBin: FAKE,
@@ -54,7 +56,7 @@ async function start(opts = {}) {
     workspaceFile: wsFile,
     codePlatform: "darwin",
     codeEnvExtraPrefixes: ["FAKE_"],
-    env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...(laterCwd ? { FAKE_LATER_CWD: laterCwd } : {}), ...(firstCwd ? { FAKE_FIRST_CWD: firstCwd } : {}) },
+    env: { ...process.env, FAKE_CLAUDE_LOG: logFile, ...(laterCwd ? { FAKE_LATER_CWD: laterCwd } : {}), ...(firstCwd ? { FAKE_FIRST_CWD: firstCwd } : {}), ...(writePath ? { FAKE_WRITE_PATH: writePath } : {}) },
     ...rest,
     log: (l) => lines.push(l),
   });
@@ -79,8 +81,8 @@ const call = async (b, route, body = {}, secret = b.secret) => {
 };
 const helloUnpaired = async (b) => (await fetch(`${b.base}/v1/hello`, { headers: { origin: APP } })).text();
 const helloPaired = async (b) => (await fetch(`${b.base}/v1/hello`, { headers: hdr(b.secret) })).json();
-async function turn(b, extra = {}) {
-  const res = await fetch(`${b.base}/v1/turn`, { method: "POST", headers: hdr(b.secret), body: JSON.stringify({ system: "You are the agent.", prompt: "hello", ...extra }) });
+async function turn(b, extra = {}, signal = undefined) {
+  const res = await fetch(`${b.base}/v1/turn`, { method: "POST", headers: hdr(b.secret), body: JSON.stringify({ system: "You are the agent.", prompt: "hello", ...extra }), signal });
   if (res.status !== 200) return { status: res.status, json: await res.json(), events: [] };
   const events = [];
   const reader = res.body.getReader();
@@ -205,13 +207,42 @@ describe("initFolderDecision (item 1, pure)", () => {
     fs.rmSync(p, { recursive: true });
     expect(initFolderDecision({ initNumber: 2, reported: sub, root })).toEqual({ ok: false, reasonCode: "init-folder-missing" });
   });
-  it("uses the injected lookups, so it needs no child process", () => {
-    // Spec: item 1, one pure exported function that can be tested without a child process.
-    const root = { path: "/r", id: "1:2" };
-    const realpath = (p) => (p === "/r/x" ? "/r/x" : p === "/r" ? "/r" : (() => { throw new Error("nope"); })());
-    const idOf = (p) => (p === "/r" ? "1:2" : "");
-    expect(initFolderDecision({ initNumber: 2, reported: "/r/x", root, realpath, idOf })).toEqual({ ok: true });
-    expect(initFolderDecision({ initNumber: 2, reported: "/q", root, realpath, idOf })).toEqual({ ok: false, reasonCode: "init-folder-missing" });
+  it("uses the injected lookups, so it needs no child process (the platform's own separator)", () => {
+    // Spec: item 1, one pure exported function that can be tested without a child process. D1: no separator is written into the test,
+    // so it holds on Windows (where a path is "C:\\r\\x") as on macOS and Linux.
+    const R = path.resolve(path.sep, "r");
+    const X = path.join(R, "x");
+    const Q = path.resolve(path.sep, "q");
+    const RX = path.resolve(path.sep, "rx");
+    const root = { path: R, id: "1:2" };
+    const known = new Set([R, X, Q, RX]);
+    const realpath = (p) => { if (known.has(p)) return p; throw new Error("nope"); };
+    const idOf = (p) => (p === R ? "1:2" : "");
+    const isDirectory = (p) => known.has(p);
+    expect(initFolderDecision({ initNumber: 2, reported: X, root, realpath, idOf, isDirectory })).toEqual({ ok: true });
+    expect(initFolderDecision({ initNumber: 2, reported: Q, root, realpath, idOf, isDirectory })).toEqual({ ok: false, reasonCode: "init-outside-folder" });
+    expect(initFolderDecision({ initNumber: 2, reported: RX, root, realpath, idOf, isDirectory })).toEqual({ ok: false, reasonCode: "init-outside-folder" });
+    expect(initFolderDecision({ initNumber: 2, reported: path.join(R, "gone"), root, realpath, idOf, isDirectory })).toEqual({ ok: false, reasonCode: "init-folder-missing" });
+  });
+  it("D7: a cwd that is not an absolute path is refused at every init", () => {
+    // Spec: D7, the decision refuses a relative cwd, at init 1 and later (it would be read against the bridge's own folder).
+    const root = rootFor(mk("a"));
+    fs.mkdirSync(path.join(root.path, "sub"));
+    for (const reported of ["sub", ".", "./sub", ".."]) for (const initNumber of [1, 2, 3]) expect(initFolderDecision({ initNumber, reported, root })).toEqual({ ok: false, reasonCode: "init-no-cwd" });
+  });
+  it("D7: a later init that reports a file, not a directory, is refused", () => {
+    // Spec: D7, a path that is not a directory is a mismatch.
+    const root = rootFor(mk("a"));
+    const file = path.join(root.path, "f.txt");
+    fs.writeFileSync(file, "x");
+    expect(initFolderDecision({ initNumber: 2, reported: file, root })).toEqual({ ok: false, reasonCode: "init-folder-missing" });
+    expect(initFolderDecision({ initNumber: 1, reported: file, root })).toEqual({ ok: false, reasonCode: "init-first-not-root" });
+  });
+  it("D7: an init number that is not a positive whole number is refused", () => {
+    // Spec: D7, NaN, 0, a negative, a fraction, undefined and a string never take the lenient later-init branch.
+    const root = rootFor(mk("a"));
+    fs.mkdirSync(path.join(root.path, "sub"));
+    for (const initNumber of [NaN, 0, -1, 1.5, undefined, "2", Infinity, null]) expect(initFolderDecision({ initNumber, reported: path.join(root.path, "sub"), root })).toEqual({ ok: false, reasonCode: "folder-check-failed" });
   });
 });
 
@@ -244,7 +275,7 @@ describe("a mismatch stops that turn only (item 2) and the log names the reason 
     if (kind === "link") fs.symlinkSync(mk("Outside"), path.join(ws, "link"));
     const b = await start({ workspace: ws, laterCwd: later });
     const r = await turn(b, code("INITTWICEAT"));
-    expect(ev(r, "error")[0].message).toBe(CODE_CWD_ERROR);
+    expect(ev(r, "error")[0].message).toBe(reason === "init-outside-folder" ? CODE_OUTSIDE_ERROR : "The bridge stopped this code turn: Claude Code reported a folder that cannot be found.");
     expect(lines.join("\n")).toContain(`reason ${reason}`);
     expect(lines.join("\n")).toContain("init 2:");
     expect(savedPath()).toBe(ws);
@@ -280,7 +311,7 @@ describe("the next use checks the saved folder again (S6)", () => {
     const ws = mk(name);
     fs.mkdirSync(path.join(ws, "p1"));
     const b = await start({ workspace: ws, openFolder: async () => {}, chooseFolder: async () => null });
-    expect(ev(await turn(b, code("INITTWICECWD")), "error")[0].message).toBe(CODE_CWD_ERROR);
+    expect(ev(await turn(b, code("INITTWICECWD")), "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
     return { b, ws };
   }
   it.each([
@@ -298,12 +329,16 @@ describe("the next use checks the saved folder again (S6)", () => {
     expect(h.codeModeOff).toBeUndefined();
   });
   it("Create also checks the saved folder first", async () => {
-    // Spec: item 2, Create is one of the uses.
+    // Spec: item 2, Create is one of the uses. D9: the saved folder is back even when Create itself is refused (the name is taken),
+    // which 0.3.22 cannot do: it had forgotten the folder, and a refused Create switched nothing.
     const { b, ws } = await refused("BackCreate");
-    const c = await call(b, "/v1/workspace/create", { name: "NewOne" });
-    expect(c.status).toBe(200);
-    expect(c.json.name).toBe("NewOne");
-    expect(ws).not.toBe(c.json.path);
+    mk("Taken");
+    fs.writeFileSync(path.join(home, "Taken", "f.txt"), "x");
+    const c = await call(b, "/v1/workspace/create", { name: "Taken" });
+    expect(c.status).toBe(409);
+    const h = await helloPaired(b);
+    expect(h.workspace).toBe(true);
+    expect((await call(b, "/v1/workspace")).json.path).toBe(ws);
   });
   it("a replaced folder stays off, gives its reason, and the saved folder is kept", async () => {
     // Spec: S6, a folder that still fails stays off and gives its reason; nothing runs.
@@ -312,10 +347,11 @@ describe("the next use checks the saved folder again (S6)", () => {
     fs.mkdirSync(ws);
     const t = await turn(b, code("hello"));
     expect(t.status).toBe(409);
-    expect(t.json.error).toBe(OFF_CWD);
+    expect(t.json.error).toBe(OFF_DISK);
     const h = await helloPaired(b);
     expect(h.workspace).toBe(false);
     expect(h.codeModeOff.reason).toBe("folder-check-failed");
+    expect(h.codeModeOff.message).toBe(t.json.error); // D4: one reason, one sentence, in both places
     expect(h.codeModeOff.folderName).toBe("Stays");
     expect(savedPath()).toBe(ws);
     // the original folder put back passes again
@@ -407,5 +443,93 @@ describe("what a caller is told (S7, S8)", () => {
     expect(JSON.stringify(h)).not.toContain(home);
     expect(JSON.stringify(h)).not.toContain(dir);
     expect(h.codeModeOff.message).not.toMatch(/[\\/]/);
+  });
+});
+
+describe("fix round 1 (D3, D4, D5, D6, D8)", () => {
+  const until = async (f, ms = 12000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await f()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const runPids = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid) : []);
+
+  it("D3: a refused child that has not exited keeps code mode off, even after its page hangs up", async () => {
+    // Spec: D3, the re-check and the one-turn guard count a child that has not exited, not only the turns table.
+    const ws = mk("Alive");
+    const b = await start({ workspace: ws, killGraceMs: 6000 });
+    const ctl = new AbortController();
+    const first = turn(b, code("INITTWICECWD HOLDOPEN IGNORETERM"), ctl.signal).catch(() => {});
+    expect(await until(() => lines.some((l) => l.includes("init 2:")))).toBe(true);
+    const pid = runPids()[0];
+    ctl.abort(); // the page goes away: the turn leaves the table, the child is still alive
+    await first;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(alive(pid)).toBe(true);
+    const h = await helloPaired(b);
+    expect(h.workspace).toBe(false);
+    expect(h.codeModeOff.reason).toBe("init-outside-folder");
+    const next = await turn(b, code("hello"));
+    expect(next.status).toBe(409);
+    expect(runPids()).toHaveLength(1); // no new child was started
+    // once the child has exited, the unchanged folder is back
+    expect(await until(() => !alive(pid))).toBe(true);
+    expect(await until(async () => (await helloPaired(b)).workspace === true)).toBe(true);
+  }, 30000);
+
+  it("D4: a folder recreated at the same path gives one reason and one sentence, naming the remedy, and the log has the reason code", async () => {
+    // Spec: D4.
+    const ws = mk("Recreated");
+    const b = await start({ workspace: ws });
+    await turn(b, code("INITTWICECWD"));
+    fs.renameSync(ws, `${ws}.old`);
+    fs.mkdirSync(ws);
+    const h = await helloPaired(b);
+    const t = await turn(b, code("hello"));
+    expect(h.codeModeOff.reason).toBe("folder-check-failed");
+    expect(t.json.error).toBe(h.codeModeOff.message);
+    expect(h.codeModeOff.message).toContain("Choose the code folder again");
+    expect(lines.join("\n")).toContain("reason folder-check-failed");
+  });
+
+  it.each([
+    ["POST /v1/workspace", "/v1/workspace", {}],
+    ["POST /v1/projects/create", "/v1/projects/create", { name: "newproj" }],
+    ["POST /v1/preview", "/v1/preview", { project: "p1" }],
+  ])("D5: %s as the first use after a refusal checks the folder again", async (_n, route, body) => {
+    // Spec: D5, the first call must not say "no code folder" for a folder that is saved and fine.
+    const ws = mk("FirstUse");
+    fs.mkdirSync(path.join(ws, "p1"));
+    const b = await start({ workspace: ws });
+    await turn(b, code("INITTWICECWD"));
+    const r = await call(b, route, body);
+    expect(r.text).not.toContain("This bridge has no code folder");
+  });
+
+  it("D6: the stopped turn is told the real reason", async () => {
+    // Spec: D6. A first init outside the folder, a later init outside it, and a folder that cannot be found each say their own thing.
+    const ws = mk("Reasons");
+    fs.mkdirSync(path.join(ws, "sub"));
+    const first = await start({ workspace: ws, firstCwd: "sub" });
+    expect(ev(await turn(first, code("hello")), "error")[0].message).toBe(CODE_CWD_ERROR);
+    await first.bridge.close();
+    const later = await start({ workspace: ws });
+    expect(ev(await turn(later, code("INITTWICECWD")), "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
+    await later.bridge.close();
+    const gone = await start({ workspace: ws, laterCwd: "nope" });
+    expect(ev(await turn(gone, code("INITTWICEAT")), "error")[0].message).toBe("The bridge stopped this code turn: Claude Code reported a folder that cannot be found.");
+  });
+
+  it("D8: a bridge started with a link as its folder keeps the link's spelling after an off and on cycle", async () => {
+    // Spec: D8, a path under the link is still inside the folder (a.txt), not "(outside the folder)", after the cycle.
+    const real = mk("RealRoot");
+    const link = path.join(home, "LinkRoot");
+    fs.symlinkSync(real, link);
+    const b = await start({ workspace: link, writePath: path.join(link, "a.txt") });
+    const summaries = async () => ev(await turn(b, code("CODEWRITE")), "activity").map((a) => a.summary);
+    const before = await summaries();
+    expect(before.length).toBeGreaterThan(0);
+    await turn(b, code("INITTWICECWD"));
+    expect((await helloPaired(b)).workspace).toBe(true);
+    const after = await summaries();
+    expect(after).toEqual(before);
+    expect(JSON.stringify(after)).not.toContain("outside the folder");
   });
 });

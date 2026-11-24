@@ -319,7 +319,7 @@ describe("billing guard fails closed on the init event", () => {
     const { body } = await pair();
     const t = await turn(body.secret, { mode: "code", prompt: "INITTWICECWD" });
     expect(t.events.find((e) => e[0] === "message")).toBeUndefined();
-    expect(t.events.find((e) => e[0] === "error")[1].message).toBe("The bridge stopped this code turn: Claude Code did not start in the code folder.");
+    expect(t.events.find((e) => e[0] === "error")[1].message).toBe("The bridge stopped this code turn: Claude Code moved outside the code folder.");
     expect(fs.realpathSync.native(runs().find((r) => r.event === "run").cwd)).toBe(fs.realpathSync.native(ws));
   });
   it("a hand-off whose init event has no apiKeySource, or no init, is refused", async () => {

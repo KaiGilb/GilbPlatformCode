@@ -152,6 +152,8 @@ process.stdin.on("end", async () => {
       out(second);
     }
     answer("final answer");
+    // HOLDOPEN: stay alive after the last line (a child that has not exited yet), so a test can look at the bridge in between.
+    if (prompt.includes("HOLDOPEN")) await new Promise((r) => setTimeout(r, 8000));
     return;
   }
   const initMode = prompt.includes("INITOMIT") ? "omit" : prompt.includes("INITNOFIELD") ? "nofield" : (process.env.FAKE_INIT ?? "");
@@ -237,8 +239,9 @@ process.stdin.on("end", async () => {
   }
   if (prompt.includes("CODEWRITE")) {
     await new Promise((r) => setTimeout(r, 200)); // after init: a bridge that refused the init has killed this process by now
-    const file = path.join(process.cwd(), "hello.txt");
-    fs.writeFileSync(file, "hi");
+    // FAKE_WRITE_PATH: name this path in the tool call instead (and write nothing), e.g. a file reached through a link.
+    const file = process.env.FAKE_WRITE_PATH ?? path.join(process.cwd(), "hello.txt");
+    if (!process.env.FAKE_WRITE_PATH) fs.writeFileSync(file, "hi");
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Write", input: { file_path: file } }] } });
     out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu1", content: "ok" }] } });
   }
