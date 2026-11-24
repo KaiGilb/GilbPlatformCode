@@ -31,6 +31,8 @@ if (textHasSecret(answer)) refuse();
 
 Path: `units/secret-check/`. Pack it from a clone at a commit (`npm pack`) and keep the packed file in the host's repository.
 
+The packed file carries compiled JavaScript and type declarations (`dist/`, built by `prepack`), so a Node back end that compiles with `tsc` and runs plain `node` can load it, and so can an app bundler. The `src/` folder is in the pack for reading.
+
 ## Examples
 
 ```ts

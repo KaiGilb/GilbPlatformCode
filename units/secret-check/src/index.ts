@@ -1,1 +1,1 @@
-export { maskSecrets, normalise, textHasSecret } from "./secretCheck";
+export { maskSecrets, normalise, textHasSecret } from "./secretCheck.js";
