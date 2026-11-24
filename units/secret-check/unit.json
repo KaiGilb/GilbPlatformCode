@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "unit": "units/secret-check",
+  "package": "@kaigilb/gilbplatformcode-secret-check",
+  "version": "1.0.0",
+  "purpose": "One check for whether a piece of text holds a secret, and one function that masks it.",
+  "source": {
+    "repo": "KaiGilb/GilbApp",
+    "commit": "602ebf2eeb4f0d1a377911b1425c8283d9596e94",
+    "files": [
+      { "path": "src/lib/base/projectDecisions.ts", "lines": [13, 26], "to": "src/secretCheck.ts" },
+      { "path": "src/lib/base/projectDecisions.ts", "lines": [100, 414], "to": "src/secretCheck.ts" }
+    ]
+  },
+  "namedChanges": [
+    "`export` is added to `maskSecrets`, `textHasSecret` and `normalise`; no pattern, number or branch is changed.",
+    "one `!` after `words[0]` in `shouldMaskAssignment`, because this unit's tsconfig has `noUncheckedIndexedAccess` and the app's does not; the value is never undefined there (`words.length === 1`)."
+  ],
+  "newFiles": ["src/index.ts"],
+  "host": [],
+  "library": { "admitted": false }
+}

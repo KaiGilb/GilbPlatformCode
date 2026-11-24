@@ -1,0 +1,22 @@
+{
+  "name": "@kaigilb/gilbplatformcode-secret-check",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tells whether a piece of text holds a secret (a key, a token, a password, a private key block), and masks it. One check for the app and the back end.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
