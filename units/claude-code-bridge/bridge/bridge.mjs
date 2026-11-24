@@ -1411,12 +1411,17 @@ export function initFolderDecision(c) {
     return { ok: true };
 }
 /**
+ * The cause of "init-outside-folder", in the one wording both the stopped turn and the later off sentence use. The code is only ever set at
+ * init 2 or later (init 1 gives "init-first-not-root"), so the child did start in the folder: saying "did not start" would name the wrong cause.
+ */
+const MOVED_OUTSIDE = "Claude Code moved outside the code folder";
+/**
  * One reason per cause: the words after "Code mode is off because", one per reason code (no two codes share a sentence), with no path in them.
  * The paired hello and the answer to a code turn both build their sentence from this, so the two never disagree.
  */
 const CODE_OFF_WHY = {
     "init-first-not-root": "an earlier code turn was stopped: Claude Code started in another folder than the code folder",
-    "init-outside-folder": "an earlier code turn was stopped: Claude Code did not start in the code folder",
+    "init-outside-folder": `an earlier code turn was stopped: ${MOVED_OUTSIDE}`,
     "init-no-cwd": "an earlier code turn was stopped: Claude Code did not say which folder it works in",
     "init-folder-missing": "an earlier code turn was stopped: Claude Code reported a folder that cannot be found",
     "folder-check-failed": "the code folder changed on disk",
@@ -1426,7 +1431,7 @@ const CODE_OFF_WHY = {
 const CODE_STOP_ERROR = {
     "init-first-not-root": CODE_CWD_ERROR,
     "init-no-cwd": CODE_CWD_ERROR,
-    "init-outside-folder": "The bridge stopped this code turn: Claude Code moved outside the code folder.",
+    "init-outside-folder": `The bridge stopped this code turn: ${MOVED_OUTSIDE}.`,
     "init-folder-missing": "The bridge stopped this code turn: Claude Code reported a folder that cannot be found.",
     "folder-check-failed": CODE_FOLDER_CHANGED,
     "folder-missing": CODE_FOLDER_CHANGED,
@@ -3332,7 +3337,10 @@ export function createBridge(opts = {}) {
      * left in its group is stopped too, and only then is it forgotten. ON is refused while this is not empty.
      */
     const liveGroups = new Map();
-    /** The folder (real path) each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table. */
+    /**
+     * The folder each live code child was started in, by pid: so a new code turn in that folder waits for the child, not only for the turns table.
+     * `id` (device:inode) is what the guard compares: the path goes stale when the folder is renamed while the child lives. `path` only names it.
+     */
     const liveFolder = new Map();
     const tracks = new Map();
     /** Recorded processes a stop could not end (pid -> start time). ON stays refused while one is alive and still matches. */
@@ -4604,7 +4612,7 @@ export function createBridge(opts = {}) {
             if (turn.code) {
                 trackCodeChild(child);
                 if (child.pid !== undefined && scope)
-                    liveFolder.set(child.pid, scope.path);
+                    liveFolder.set(child.pid, { path: scope.path, id: scope.id });
             }
             turn.child = child;
             let buf = "";
@@ -4696,7 +4704,8 @@ export function createBridge(opts = {}) {
                                 const reportedCwd = typeof ev.cwd === "string" && ev.cwd !== "" ? ev.cwd.slice(0, 300) : "no cwd";
                                 const expectedPath = expectFolder ? expectFolder.path : "no folder";
                                 log(`the code turn's child did not start in the code folder (init ${initCount}: it reported ${reportedCwd}, expected ${expectedPath}, reason ${verdict.reasonCode}); this turn is stopped and code mode is off until the folder is checked again`);
-                                // The next code turn must say the child did not start in the folder. "Changed on disk" would be a lie: the folder was not compared again.
+                                // The next code turn must give this init's own reason (it did not start in the folder, or it moved out of it). "Changed on disk"
+                                // would be a lie: the folder was not compared again.
                                 // The folder stays saved: this one turn is stopped, and the next use checks the folder again.
                                 cwdCode = verdict.reasonCode;
                                 switchOff(verdict.reasonCode);
@@ -4819,27 +4828,18 @@ export function createBridge(opts = {}) {
                 if (!proj)
                     return json(res, 400, { error: NO_SUCH_PROJECT });
             }
-            // One code turn at a time per project (or per code folder itself, when no project is named).
-            const key = proj ? proj.path : workspace.path;
-            if ([...turns.values()].some((t) => t.code && (t.proj ? t.proj.path : workspace.path) === key)) {
-                const running = [...turns.values()].find((t) => t.code && (t.proj ? t.proj.path : workspace.path) === key);
+            // One code turn at a time per project (or per code folder itself, when no project is named), asked of the one predicate by the
+            // folder's device:inode: a folder renamed while its child lives is the same folder, and another folder is not held up.
+            const running = codeChildAlive((proj ?? workspace).id);
+            if (running) {
                 const refusal = {
                     error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
                     code: "CodeTurnRunning",
                     project: proj ? proj.name : null,
                 };
-                // The turn's id and start time go only to the pairing that owns the turn; anyone else learns that one is running, no more.
-                return json(res, 429, running.owner === me ? { ...refusal, ownTurn: true, turnId: running.id, startedAt: new Date(running.startedAt).toISOString() } : { ...refusal, ownTurn: false });
-            }
-            // The same folder, no turn in the table, but a code child there has not exited (its page hung up, or it was refused and is being stopped):
-            // the same answer, without a turn id. Another folder is not held up by it.
-            if ([...liveFolder.values()].includes(key)) {
-                return json(res, 429, {
-                    error: proj ? `A code turn is already running in ${proj.name}.` : `A code turn is already running in ${workspace.name}. Wait for it to finish.`,
-                    code: "CodeTurnRunning",
-                    project: proj ? proj.name : null,
-                    ownTurn: false,
-                });
+                // A turn in the table: its id and start time go only to the pairing that owns it; anyone else learns that one is running, no more.
+                // A child whose turn has left the table (its page hung up, or it was refused and is being stopped) has no turn to name.
+                return json(res, 429, running !== true && running.owner === me ? { ...refusal, ownTurn: true, turnId: running.id, startedAt: new Date(running.startedAt).toISOString() } : { ...refusal, ownTurn: false });
             }
         }
         // A hand-off (run_named_role / ask_agent_concept) is a NESTED turn: the page opens it on this bridge, naming the turn
@@ -5055,9 +5055,23 @@ export function createBridge(opts = {}) {
     /**
      * THE one answer to "is a code child alive": the turns table holds a code turn, OR a code child's process group has not exited
      * (a turn leaves the table when its page hangs up, while its child may still be alive; a refused child is being stopped, so the wait is bounded).
-     * Every guard that says "A code turn is running" uses this: Change, New, the re-check, and the start of a code turn in the same folder.
+     * Every guard that says "A code turn is running" uses this: Change, New, the re-check (any folder), and the start of a code turn (one folder).
+     *
+     * Decision: one folder is known by its device:inode, never by its path. A path goes stale when the folder is renamed while its child lives,
+     * and a code turn under the new name would start a second child in the same files. An empty id (the folder could not be read) never gets
+     * a child: the last check before the start refuses it.
+     * @param folderId The device:inode of one folder (a project, or the code folder itself), or nothing for any folder.
+     * @returns The code turn in the table that runs there, `true` for a live child whose turn has left the table, or null when there is none.
      */
-    const codeChildAlive = () => codeTurnRunning() || liveGroups.size > 0;
+    const codeChildAlive = (folderId) => {
+        const turnFolderId = (t) => (t.proj ? t.proj.id : workspace ? workspace.id : "");
+        const inTable = [...turns.values()].find((t) => t.code && (folderId === undefined || turnFolderId(t) === folderId));
+        if (inTable)
+            return inTable;
+        if (folderId === undefined)
+            return liveGroups.size > 0 ? true : null;
+        return [...liveFolder.values()].some((f) => f.id === folderId) ? true : null;
+    };
     /**
      * The 409 answer for "a code turn is running" on Change (both places) and New. Open never refuses while a code turn runs. Only a paired caller reaches these routes, so it also names the
      * folder the running turn works in: the last part of the path, never the whole path.
@@ -5066,7 +5080,7 @@ export function createBridge(opts = {}) {
     const runningAnswer = () => {
         const t = [...turns.values()].find((x) => x.code);
         const live = [...liveFolder.values()][0];
-        const folder = t ? (t.proj ? t.proj.name : workspace ? workspace.name : savedFolder ? savedFolder.name : "") : live ? path.basename(live) : "";
+        const folder = t ? (t.proj ? t.proj.name : workspace ? workspace.name : savedFolder ? savedFolder.name : "") : live ? path.basename(live.path) : "";
         return { error: "A code turn is running. Wait for it to finish.", ...(folder ? { runningProjectFolder: folder } : {}) };
     };
     const switchTo = (v) => {

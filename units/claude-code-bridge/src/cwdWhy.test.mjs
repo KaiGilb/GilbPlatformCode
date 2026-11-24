@@ -23,7 +23,8 @@ const CODE_FOLDER_CHANGED = "The code folder changed on disk. Choose it again.";
 const NO_WORKSPACE = "This bridge has no code folder. Start it with --workspace <folder>.";
 // 0.3.23: a LATER init outside the folder says so; the first init (or no cwd) keeps the older sentence above.
 const CODE_OUTSIDE_ERROR = "The bridge stopped this code turn: Claude Code moved outside the code folder.";
-const OFF_CWD = "Code mode is off because an earlier code turn was stopped: Claude Code did not start in the code folder. Choose the code folder again.";
+// Fix round 3 (R3): INITTWICECWD moves out at init 2, so the off sentence says "moved outside", as the stopped turn does.
+const OFF_OUTSIDE = "Code mode is off because an earlier code turn was stopped: Claude Code moved outside the code folder. Choose the code folder again.";
 const OFF_DISK = "Code mode is off because the code folder changed on disk. Choose the code folder again.";
 
 let dir, home, stateDir, wsFile, logFile;
@@ -136,7 +137,7 @@ describe("a new code turn after a cwd refusal", () => {
     expect(ev(first, "error")[0].message).toBe(CODE_OUTSIDE_ERROR);
     // 0.3.23: with the folder unchanged the next use checks it again and code mode comes back (see keepRoot.test.mjs). So that code mode is
     // still off here, the folder is really replaced first. That is now a change on disk, and one cause has one reason: the answer says so
-    // (OFF_DISK), the same words the paired hello gives. The folder-unchanged sentence (OFF_CWD) is still asserted by the next test.
+    // (OFF_DISK), the same words the paired hello gives. The folder-unchanged sentence (OFF_OUTSIDE) is still asserted by the next test.
     fs.renameSync(ws, `${ws}.old`);
     fs.mkdirSync(ws);
     const next = await turn(b, { mode: "code" });
@@ -173,7 +174,7 @@ describe("a code turn that passed the entry guard before a refusal", () => {
       releaseB();
       const resultB = await pendingB;
       expect(resultB.status).toBe(409);
-      expect(resultB.json.error).toBe(OFF_CWD);
+      expect(resultB.json.error).toBe(OFF_OUTSIDE); // Spec: R3 (tester round 3), the reason the stopped turn was given
     } finally {
       releaseB();
       await pendingB.catch(() => {});

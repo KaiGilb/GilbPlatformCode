@@ -7,6 +7,7 @@
  *  - A mismatch stops that turn only; the folder stays saved; the next use runs the start-up check again.
  *  - A paired hello says why code mode is off (codeModeOff); an unpaired hello and the 401 answers are the 0.3.22 ones.
  *  - The "a code turn is running" 409 names the running folder (last part only) for a paired caller.
+ *  - Fix round 3: the off sentence for a child that moved out says so (R3); the one-turn guard knows a folder by device and inode (H1).
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -23,7 +24,8 @@ const APP = "http://localhost:5197";
 const CODE_CWD_ERROR = "The bridge stopped this code turn: Claude Code did not start in the code folder.";
 const CODE_OUTSIDE_ERROR = "The bridge stopped this code turn: Claude Code moved outside the code folder.";
 const OFF_DISK = "Code mode is off because the code folder changed on disk. Choose the code folder again.";
-const OFF_CWD = "Code mode is off because an earlier code turn was stopped: Claude Code did not start in the code folder. Choose the code folder again.";
+// Fix round 3 (R3): a child that started in the folder and later moved out is "moved outside", in hello and the 409 as in the stopped turn.
+const OFF_OUTSIDE = "Code mode is off because an earlier code turn was stopped: Claude Code moved outside the code folder. Choose the code folder again.";
 
 let dir, home, stateDir, wsFile, logFile;
 const lines = [];
@@ -689,4 +691,83 @@ describe("fix round 2 (R1 to R4)", () => {
     expect(r.status).toBe(404);
     expect(r.json).toEqual({ error: "This bridge has no code folder. Start it with --workspace <folder>." });
   });
+});
+
+describe("fix round 3 (R3, H1)", () => {
+  const until = async (f, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await f()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const pids = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((r) => r.event === "run").map((r) => r.pid) : []);
+  // Both tests need a child that outlives its stop signal, which Windows cannot make (it stops a whole tree at once).
+  const noWin = it.skipIf(process.platform === "win32");
+
+  /**
+   * Code mode off while the refused child is still alive, so the re-check cannot turn it back on before hello and the 409 are read.
+   * @returns What the paired hello and the next code turn say.
+   */
+  async function offWhileAlive(name, extra, prompt, initLine) {
+    const ws = mk(name);
+    fs.mkdirSync(path.join(ws, "sub"));
+    const b = await start({ workspace: ws, killGraceMs: 6000, ...extra });
+    const ctl = new AbortController();
+    const first = turn(b, code(prompt), ctl.signal).catch(() => {});
+    expect(await until(() => lines.some((l) => l.includes(initLine)))).toBe(true);
+    ctl.abort();
+    await first;
+    const pid = pids().at(-1); // the log is shared by every bridge in this test: this call's child is the newest
+    expect(alive(pid)).toBe(true);
+    const h = await helloPaired(b);
+    const t = await turn(b, code("hello"));
+    expect(await until(() => !alive(pid))).toBe(true);
+    return { h, t };
+  }
+
+  noWin("R3: a child that started in the folder and then moved out is 'moved outside' in hello and the 409, and the not-started case keeps its own sentence", async () => {
+    // Spec: R3 (tester round 3). The reason and its sentence come from the one source the stopped turn uses; one sentence per reason code.
+    const moved = await offWhileAlive("R3Moved", {}, "INITTWICECWD HOLDOPEN IGNORETERM", "init 2:");
+    expect(moved.h.codeModeOff.reason).toBe("init-outside-folder");
+    expect(moved.h.codeModeOff.message).toBe(OFF_OUTSIDE);
+    expect(moved.t.status).toBe(409);
+    expect(moved.t.json).toEqual({ error: OFF_OUTSIDE, reason: "init-outside-folder", message: OFF_OUTSIDE });
+    // the stopped turn and the off sentence name the same cause, in the same words
+    expect(OFF_OUTSIDE).toContain(CODE_OUTSIDE_ERROR.replace("The bridge stopped this code turn: ", "").replace(/\.$/, ""));
+    // the child that did not start in the folder keeps its own code and sentence
+    // (INITTWICE only so the stand-in can stay alive with HOLDOPEN; init 1 already reports "sub" and is refused there)
+    const first = await offWhileAlive("R3First", { firstCwd: "sub" }, "INITTWICE HOLDOPEN IGNORETERM", "init 1:");
+    expect(first.h.codeModeOff.reason).toBe("init-first-not-root");
+    expect(first.h.codeModeOff.message).toBe("Code mode is off because an earlier code turn was stopped: Claude Code started in another folder than the code folder. Choose the code folder again.");
+    expect(first.t.json.reason).toBe("init-first-not-root");
+    expect(first.t.json.error).toBe(first.h.codeModeOff.message);
+  }, 40000);
+
+  noWin("H1: the one-turn guard knows a folder by device and inode: a project renamed while its child lives is still held, another folder is not", async () => {
+    // Spec: H1 (hacker round 1). The running-turn check and the live-child check both go through the one predicate, which compares device:inode.
+    const ws = mk("H1");
+    for (const p of ["p1", "other"]) fs.mkdirSync(path.join(ws, p));
+    const b = await start({ workspace: ws, killGraceMs: 6000 });
+    const ctl = new AbortController();
+    const first = turn(b, { ...code("WAITFOREVER IGNORETERM"), project: "p1" }, ctl.signal).catch(() => {});
+    expect(await until(() => pids().length === 1)).toBe(true);
+    const pid = pids()[0];
+    // 1. the turn is in the table (its page is still there) and its folder is renamed: the same folder, so the same refusal
+    fs.renameSync(path.join(ws, "p1"), path.join(ws, "p2"));
+    const inTable = await turn(b, { ...code("hello"), project: "p2" });
+    expect(inTable.status).toBe(429);
+    expect(inTable.json.code).toBe("CodeTurnRunning");
+    expect(inTable.json.ownTurn).toBe(true);
+    // 2. its page hangs up (the child lives on, an orphan) and the folder is renamed again: still held, with no turn id
+    ctl.abort();
+    await first;
+    await new Promise((r) => setTimeout(r, 100)); // the bridge sees the hang-up a moment later; only then has the turn left the table
+    expect(alive(pid)).toBe(true);
+    fs.renameSync(path.join(ws, "p2"), path.join(ws, "p3"));
+    const orphan = await turn(b, { ...code("hello"), project: "p3" });
+    expect(orphan.status).toBe(429);
+    expect(orphan.json).toEqual({ error: "A code turn is already running in p3.", code: "CodeTurnRunning", project: "p3", ownTurn: false });
+    expect(pids()).toHaveLength(1); // no second child in that folder
+    // 3. a different folder is not held up by it
+    const other = await turn(b, { ...code("hello"), project: "other" });
+    expect(other.status).toBe(200);
+    expect(alive(pid)).toBe(true); // the 200 came while the orphan was still alive
+    expect(await until(() => !alive(pid))).toBe(true);
+  }, 40000);
 });
