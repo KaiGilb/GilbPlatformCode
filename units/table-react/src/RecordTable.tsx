@@ -826,7 +826,6 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       draftWhy={selKey ? (drafts.get(selKey)?.why ?? null) : null}
       said={said && said.key === selKey ? said.text : null}
       readOnlyReason={selEd && !selEd.editable ? selEd.reason : null}
-      onRetry={() => selKey && saves.retry(selKey)}
       onKeepMine={() => selKey && saves.keepMine(selKey)}
       onUseTheirs={() => selKey && saves.useTheirs(selKey)}
       saving={[...saves.views.values()].some((v) => v.phase === "saving")}
@@ -1097,7 +1096,7 @@ function wordsOf(value: CellValue | null, locale: string): string {
 
 /**
  * The line under a table that can be edited. At its left it speaks for the selected cell: why it cannot be edited, that its change was
- * not saved (with Retry), that someone else changed it (both values, with "Use theirs" and "Keep mine"), or why its text cannot be
+ * not saved, that someone else changed it (both values, with "Use theirs" and "Keep mine"), or why its text cannot be
  * stored. At its right it says what is true of all the saves: saving, saved, or how many cells are not saved.
  *
  * @param props the selected cell's label and state, the state of all saves, and the acts
@@ -1110,7 +1109,6 @@ function CellBar(props: {
   draftWhy: string | null;
   said: string | null;
   readOnlyReason: string | null;
-  onRetry: () => void;
   onKeepMine: () => void;
   onUseTheirs: () => void;
   saving: boolean;
@@ -1134,22 +1132,19 @@ function CellBar(props: {
         <span data-testid="record-table-mine">Yours: {wordsOf(view.value, locale)}</span>
       </>
     );
-    // The row keeps the platform's order: the act that writes is at the right; the one that changes nothing is at its left.
+    // The row of two buttons is a line of its own, as wide as the table, with the buttons at its right, each its own width: the act
+    // that writes is rightmost, the one that changes nothing at its left (the platform's order for a row of buttons).
     acts = (
-      <span className="ml-auto flex flex-none items-center justify-end gap-2" data-testid="record-table-conflict-acts">
+      <div className="flex w-full flex-none items-center justify-end gap-2" data-testid="record-table-conflict-acts">
         <button type="button" className={button} onClick={props.onUseTheirs}>Use theirs</button>
         <button type="button" className={button + " border-[var(--accent)]"} onClick={props.onKeepMine}>Keep mine</button>
-      </span>
+      </div>
     );
   } else if (view?.phase === "failed") {
     tone = "text-[var(--bad,#9c4438)]";
     // The sentence ends with the act's name ("... Retry"); here the act is the button beside it.
-    text = view.retry ? view.message.replace(/\s*Retry$/, "") : view.message;
-    acts = view.retry ? (
-      <span className="ml-auto flex flex-none items-center">
-        <button type="button" className={button} onClick={props.onRetry} data-testid="record-table-bar-retry">Retry</button>
-      </span>
-    ) : null;
+    // The sentence names the act ("... Retry"): the Retry button is in the cell itself, and "Try again" at the right of this line.
+    text = view.message;
   } else if (props.draftWhy !== null) {
     tone = "text-[var(--bad,#9c4438)]";
     text = `Not saved: ${props.draftWhy}`;
@@ -1174,13 +1169,16 @@ function CellBar(props: {
         {text !== null && props.label ? <span className="font-semibold">{props.label}: </span> : null}
         {text}
       </p>
-      {acts}
+      {/* What is true of all the saves. "Try again" (every cell that can be tried again) is the code library's own; when the selected
+          cell is not one of the unsaved ones, "Show" goes to the first of them. Only one of the two is offered at a time, so this
+          is never a row of buttons: "Show" first (the person sees what is wrong), and "Try again" on the cell itself and its line. */}
       <span className={"flex flex-none items-center gap-2 [&_button]:ml-1 [&_button]:underline [&_p]:m-0 " + (all.state === "error" ? "text-[var(--bad,#9c4438)]" : "text-[var(--ink-soft)]")} data-testid="record-table-save-state">
-        <SaveStateLine state={all.state} error={all.error} onRetry={props.canRetryAll ? props.onRetryAll : undefined} testId={`table-${props.uid}`} />
+        <SaveStateLine state={all.state} error={all.error} onRetry={props.canRetryAll && !props.onShowFirst ? props.onRetryAll : undefined} testId={`table-${props.uid}`} />
         {props.onShowFirst ? (
           <button type="button" className="underline" onClick={props.onShowFirst} data-testid="record-table-show-unsaved">Show</button>
         ) : null}
       </span>
+      {acts}
     </div>
   );
 }

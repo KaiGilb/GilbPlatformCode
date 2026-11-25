@@ -494,7 +494,9 @@ describe("table-react: editing a cell", () => {
       // The line under the table says how many cells are not saved, whichever cell is selected.
       expect(screen.getByTestId("record-table-save-state").textContent).toContain("Not saved: 1 cell");
       go("r1", "stockNote");
-      expect(status()).toBe("stock note: Not saved: no connection.");
+      expect(status()).toBe("stock note: Not saved: no connection. Retry");
+      // With the unsaved cell selected, the line offers "Try again" for every cell that can be tried again.
+      expect(screen.getByTestId("record-table-save-state").textContent).toBe("Not saved: 1 cell Try again");
       fail = false;
       fireEvent.click(screen.getByTestId("record-table-retry"));
       await waitFor(() => expect(asked.length).toBe(2));
