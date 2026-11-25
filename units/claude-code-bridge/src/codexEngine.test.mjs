@@ -29,6 +29,7 @@ import {
   CODEX_EFFORTS,
   CODEX_MIN_VERSION,
   CODEX_NOT_INSTALLED,
+  CODEX_FIXED_LOOKUP_DIRS,
   codexBinOption,
 } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
@@ -320,7 +321,10 @@ describe("Codex version and launch", () => {
       expect(launch.command).toBe(process.execPath);
       expect(launch.prefix).toEqual([fs.realpathSync(FAKE_CODEX)]);
     }
-    const missing = resolveCodexLaunch("codex-not-a-real-binary-name-xyz", { PATH: "" }, { home: fs.mkdtempSync(path.join(os.tmpdir(), "codex-home-")), platform: "darwin" });
+    const missingHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-home-"));
+    const missingFixed = [path.join(missingHome, "fixed-opt"), path.join(missingHome, "fixed-usr")];
+    for (const folder of missingFixed) fs.mkdirSync(folder);
+    const missing = resolveCodexLaunch("codex-not-a-real-binary-name-xyz", { PATH: "" }, { home: missingHome, platform: "darwin", fixedDirs: missingFixed });
     expect(missing).toEqual({ ok: false, reason: CODEX_NOT_INSTALLED });
   });
 });
@@ -968,37 +972,52 @@ describe("finding the Codex binary", () => {
     fs.chmodSync(file, 0o755);
     return file;
   };
+  /** Stand-ins for the fixed system folders. They live under the test's temp dir. */
+  const ownFixedDirs = (root) => {
+    const dirs = [path.join(root, "fixed-opt"), path.join(root, "fixed-usr")];
+    for (const folder of dirs) fs.mkdirSync(folder, { recursive: true });
+    return dirs;
+  };
+
+  it("the default fixed folders are today's list, in today's order", () => {
+    // Spec: Chat.CodexConnect B-F1 — production searches today's fixed folders, in today's order, when no list is given (meter: the exported list)
+    expect([...CODEX_FIXED_LOOKUP_DIRS]).toEqual(["/opt/homebrew/bin", "/usr/local/bin"]);
+  });
 
   it("finds Codex on PATH, beside node, under the newer fnm, and under nvm", (ctx) => {
-    // Spec: Chat.CodexConnect round 3 F9 — the lookup order, newest version first, and a directory is not a binary.
+    // Spec: Chat.CodexConnect round 3 F9 — the lookup order, newest version first, and a directory is not a binary. The fixed folders are this test's own.
     if (process.platform === "win32") {
       ctx.skip("skipped on Windows: this case asks the darwin lookup, and a Windows temp path contains ':' which that lookup splits as PATH. The placed file is also a POSIX shell script.");
     }
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-lookup-"));
     try {
+      const fixed = ownFixedDirs(home);
       const nodeDir = path.join(home, "node-bin");
       fs.mkdirSync(nodeDir);
       const execPath = path.join(nodeDir, "node");
       fs.writeFileSync(execPath, "", { mode: 0o755 });
       const pathDir = path.join(home, "path-bin");
       const onPath = place(pathDir);
-      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath)).toBe(onPath);
+      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath, fixed)).toBe(onPath);
       fs.rmSync(onPath);
       const beside = place(nodeDir);
-      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(beside);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).toBe(beside);
       fs.rmSync(beside);
       const older = place(path.join(home, ".local/share/fnm/node-versions/v22.9.0/installation/bin"));
       const newer = place(path.join(home, ".local/share/fnm/node-versions/v22.23.0/installation/bin"));
-      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(newer);
-      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).not.toBe(older);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).toBe(newer);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).not.toBe(older);
       fs.rmSync(older);
       fs.rmSync(newer);
       const nvm = place(path.join(home, ".nvm/versions/node/v18.20.0/bin"));
-      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(nvm);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).toBe(nvm);
       fs.rmSync(nvm);
+      const inFixed = place(fixed[0]);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).toBe(inFixed);
+      fs.rmSync(inFixed);
       fs.mkdirSync(path.join(pathDir, "codex"), { mode: 0o755 });
-      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath)).toBe(null);
-      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(null);
+      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath, fixed)).toBe(null);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath, fixed)).toBe(null);
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
@@ -1012,6 +1031,7 @@ describe("finding the Codex binary", () => {
     dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-")));
     const binDir = path.join(dir, "bin");
     const nodeDir = path.join(dir, "no-node");
+    const fixed = ownFixedDirs(dir);
     fs.mkdirSync(binDir);
     fs.mkdirSync(nodeDir);
     fs.symlinkSync(process.execPath, path.join(binDir, "node"));
@@ -1026,7 +1046,7 @@ describe("finding the Codex binary", () => {
       workDir: path.join(dir, "work"),
       home: dir,
       now: () => clock,
-      platformOpts: { platform: "darwin", nodePath: path.join(nodeDir, "node") },
+      platformOpts: { platform: "darwin", nodePath: path.join(nodeDir, "node"), fixedDirs: fixed },
       log: (l) => lines.push(String(l)),
       env: {
         PATH: binDir,

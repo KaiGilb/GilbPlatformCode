@@ -3185,18 +3185,26 @@ function newestVersionNames(names) {
     });
 }
 /**
+ * Fixed folders a Codex lookup searches after the home folders, on macOS and Linux, in this order.
+ * A short PATH, the kind a login item has, does not include them. They sit outside the home folder,
+ * so a test home cannot stand in for them.
+ */
+export const CODEX_FIXED_LOOKUP_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+/**
  * The absolute path of the Codex CLI, or null when nothing is there.
  * A bare name is looked up in this order: PATH, the folder of the running node, then each node version
  * manager bin under the home folder that exists (newest version first), then `~/.local/bin`, and on macOS
- * and Linux `/opt/homebrew/bin` and `/usr/local/bin`. Windows also looks in `%APPDATA%\\npm` and `%LOCALAPPDATA%\\pnpm`.
+ * and Linux {@link CODEX_FIXED_LOOKUP_DIRS} unless `fixedDirs` is given. Windows also looks in
+ * `%APPDATA%\\npm` and `%LOCALAPPDATA%\\pnpm`.
  * A bare-name hit must be a regular file the person may execute. An explicit path must be a regular file (a link is followed).
  * @param name A path, or the bare command name.
  * @param env The environment whose PATH is searched.
  * @param home The home folder the version-manager bins are under.
  * @param platform `win32` uses PATHEXT and Windows paths.
  * @param execPath This process's node, so a global install beside node is found when PATH is short.
+ * @param fixedDirs macOS and Linux folders after the home folders. Omitted means {@link CODEX_FIXED_LOOKUP_DIRS}.
  */
-export function resolveCodexBin(name, env = process.env, home = os.homedir(), platform = process.platform, execPath = process.execPath) {
+export function resolveCodexBin(name, env = process.env, home = os.homedir(), platform = process.platform, execPath = process.execPath, fixedDirs = CODEX_FIXED_LOOKUP_DIRS) {
     const win = platform === "win32";
     const P = win ? path.win32 : path;
     if (win ? /[\\/]/.test(name) || path.win32.isAbsolute(name) : name.includes("/") || path.isAbsolute(name)) {
@@ -3229,8 +3237,9 @@ export function resolveCodexBin(name, env = process.env, home = os.homedir(), pl
     dirs.push(P.join(home, ".bun", "bin"));
     dirs.push(P.join(home, "Library", "pnpm"));
     dirs.push(P.join(home, ".local", "bin"));
+    // Outside the home folder, so only this list can move them. Production passes none and gets today's list.
     if (!win)
-        dirs.push("/opt/homebrew/bin", "/usr/local/bin");
+        dirs.push(...fixedDirs);
     else {
         const appData = envGet(env, "APPDATA") ?? path.win32.join(home, "AppData", "Roaming");
         const localApp = envGet(env, "LOCALAPPDATA") ?? path.win32.join(home, "AppData", "Local");
@@ -3263,7 +3272,7 @@ export function resolveCodexLaunch(bin, env = process.env, o = {}) {
     const platform = o.platform ?? process.platform;
     const home = o.home ?? os.homedir();
     const nodePath = o.nodePath ?? process.execPath;
-    const found = resolveCodexBin(bin, env, home, platform, nodePath);
+    const found = resolveCodexBin(bin, env, home, platform, nodePath, o.fixedDirs);
     if (!found)
         return { ok: false, reason: CODEX_NOT_INSTALLED };
     if (platform === "win32") {
