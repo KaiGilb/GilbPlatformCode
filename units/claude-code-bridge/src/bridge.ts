@@ -23,6 +23,8 @@
 //     is relayed to the app's page (which holds the person's DPoP key) and run on GilbPlatform from there, so no
 //     GilbPlatform token ever reaches this process.
 //   * Claude Code's built-in tools (shell, files, web) are switched off for these turns.
+//   * A turn may name engine "codex". That turn talks to the person's own Codex (`codex app-server`) instead of Claude
+//     Code, on their ChatGPT sign-in only, with only this chat's tools. A turn that names no engine is Claude Code.
 //   * A hand-off to another agent (run_named_role, ask_agent_concept) runs as a NESTED turn of the same kind: the page
 //     opens it with `parentTurnId` (and `parentCallId` when it knows which call asked); it gets its own `claude -p` and
 //     its own MCP tool set, the same environment stripping, the same subscription check. One level only (a hand-off
@@ -110,6 +112,8 @@ interface Turn {
   approvals: Map<string, { settle: (allow: boolean, message?: string, scope?: WebScope) => void; answered: boolean }>;
   /** Folder mode: the person allowed every WebFetch for the rest of THIS turn. Never copied to a hand-off, a later turn or another pairing. */
   webTurnGrant: boolean;
+  /** Which program runs this turn. A hand-off keeps its parent's. A request that names none is Claude Code. */
+  engine: "claude" | "codex";
 }
 /** How far an allowed WebFetch reaches: this page only, or every page for the rest of the turn. */
 export type WebScope = "once" | "turn";
@@ -233,7 +237,7 @@ function turnUsage(modelUsage: ClaudeEvent["modelUsage"], reportedModel: string,
   if (cacheCreationInputTokens !== undefined) usage.cacheCreationInputTokens = cacheCreationInputTokens;
   return usage;
 }
-interface RunClaudeOut { result?: ClaudeEvent; error?: string; sessionId: string; model: string; apiKeyRefused?: boolean; bridgeRefused?: true; lastStep?: StepUsage | undefined }
+interface RunClaudeOut { result?: ClaudeEvent; error?: string; sessionId: string; model: string; apiKeyRefused?: boolean; bridgeRefused?: true; lastStep?: StepUsage | undefined; /** Codex only: token use already checked. Absent: the message carries no usage. */ codexUsage?: TurnUsage }
 interface ClaudeMode { sessionId: string; resume: boolean }
 /** The JSON `claude auth status` prints. */
 interface AuthStatus { loggedIn?: unknown; authMethod?: unknown; subscriptionType?: unknown; email?: string }
@@ -280,7 +284,7 @@ export interface ServiceFs {
 
 export const BRIDGE_VERSION = "1";
 /** Package version of this bridge. `/v1/hello` reports it; an older bridge sends none. */
-export const BRIDGE_BUILD = "0.3.23";
+export const BRIDGE_BUILD = "0.4.0";
 export const DEFAULT_PORT = 47821;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -335,6 +339,24 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env) {
   // Belt and braces: the CLI's idle limit (reset by progress) gets the same value.
   const ownIdle = Number(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT);
   if (!(Number.isFinite(ownIdle) && ownIdle > MCP_TOOL_TIMEOUT_MS)) out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT = String(MCP_TOOL_TIMEOUT_MS);
+  return out;
+}
+
+/**
+ * The environment a Codex child gets: {@link childEnv}, and also every OpenAI key variable removed.
+ * CODEX_HOME stays: it is where the person's ChatGPT sign-in lives, and this bridge uses that sign-in.
+ * Names are compared without regard to case, because Windows env names are.
+ * @param env The bridge's environment.
+ * @returns The environment for `codex app-server`.
+ */
+export function codexChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(childEnv(env))) {
+    const u = k.toUpperCase();
+    // An API key in the environment would bill a turn to a key. The ChatGPT sign-in is the only billing this bridge allows.
+    if (u.startsWith("OPENAI_") || u === "CODEX_API_KEY" || u === "CODEX_ACCESS_TOKEN" || u === "AZURE_OPENAI_API_KEY") continue;
+    out[k] = v;
+  }
   return out;
 }
 
@@ -1076,8 +1098,10 @@ export function refusedLaunch(found: string) {
 /**
  * Works out how to start `claude`. Off Windows: the name as given, nothing added. On Windows: an absolute path, and never a shell
  * (`.exe` directly; a `.js` file or an npm `.cmd` shim as node + the script; anything else is refused).
+ * `words`, when passed, replaces the two sentences (Codex uses the same Windows rules with its own sentences).
+ * With `words` omitted the sentences stay the Claude Code ones, byte for byte.
  */
-export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): ClaudeLaunch {
+export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}, words?: { missing: () => string; refused: (found: string) => string }): ClaudeLaunch {
   const platform = o.platform ?? process.platform;
   if (platform !== "win32") return { ok: true, command: bin, prefix: [], shown: bin };
   const W = path.win32;
@@ -1085,7 +1109,7 @@ export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = proces
   const nodePath = o.nodePath ?? process.execPath;
   const found = resolveBin(bin, env, o.home ?? os.homedir(), "win32", files);
   // Not found: refuse. Never pass the bare name on: CreateProcess looks in the current folder before PATH, so a planted claude.exe there would run.
-  if (!found || !files.exists(found)) return { ok: false, reason: claudeMissing() };
+  if (!found || !files.exists(found)) return { ok: false, reason: (words?.missing ?? claudeMissing)() };
   const ext = W.extname(found).toLowerCase();
   if (ext === ".exe" || ext === ".com") return { ok: true, command: found, prefix: [], shown: found };
   if (ext === ".js" || ext === ".cjs" || ext === ".mjs") return { ok: true, command: nodePath, prefix: [found], shown: found };
@@ -1104,7 +1128,7 @@ export function resolveClaudeLaunch(bin: string, env: NodeJS.ProcessEnv = proces
       }
     }
   }
-  return { ok: false, reason: refusedLaunch(found) };
+  return { ok: false, reason: (words?.refused ?? refusedLaunch)(found) };
 }
 
 /**
@@ -2598,9 +2622,440 @@ export async function systemAccessDialog(platform: string, env: NodeJS.ProcessEn
   throw new Error("the dialog failed");
 }
 
+// ---- engine: codex (shared rules) -------------------------------------------------------------------------------
+// Measured on Kai's Mac, Codex CLI 0.167.2, 2026-11-24. The flag list and web_search value are the probe's, and they
+// replace the shorter list this batch was first given: with these, five attack turns started no local tool.
+
+/** The oldest Codex this bridge will drive. Older than this, hello says to update and a turn is not started from a supported engine. */
+export const CODEX_MIN_VERSION = "0.167.0";
+/**
+ * Passed to `codex app-server` on every chat turn and on the hello probe.
+ * One `--disable` in front of each name. An unknown name makes that Codex exit at once: the bridge then says to update.
+ */
+export const CODEX_CHAT_FLAGS: readonly string[] = [
+  "--disable", "apps",
+  "--disable", "shell_tool",
+  "--disable", "plugins",
+  "--disable", "unified_exec",
+  "--disable", "unified_exec_tty",
+  "--disable", "code_mode_host",
+  "--disable", "view_image",
+  "--disable", "image_generation",
+  "--disable", "multi_agent",
+  "--disable", "goals",
+  "--disable", "sleep_tool",
+  "--disable", "tool_suggest",
+  "--disable", "skill_search",
+  "--disable", "hooks",
+  "--disable", "memories",
+  "--disable", "browser_use",
+  "--disable", "browser_use_external",
+  "--disable", "computer_use",
+  "--disable", "in_app_browser",
+  "--disable", "workspace_dependencies",
+  "--disable", "worktrees",
+];
+/** Merged into every thread's config. `web_search: "disabled"` is the switch the probe measured. */
+export const CODEX_CHAT_CONFIG = { web_search: "disabled" } as const;
+/** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
+export const CODEX_CHAT_SENTENCE = "Use only the gilb tools. Do not start other agents yourself: when the work needs another agent, use the hand-off tool this chat gives you.";
+/** Efforts a Codex turn may name. Claude's list is separate and does not include `ultra`. */
+export const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
+const CODEX_MODEL_RE = /^[a-z0-9][a-z0-9.-]{0,62}$/;
+/** Shown when `codex` cannot be found, on a turn and in hello. */
+export const CODEX_NOT_INSTALLED = "Codex is not installed on this computer (the `codex` command was not found). Install it with `npm install -g @openai/codex`, run `codex login` and choose Sign in with ChatGPT.";
+const CODEX_TOO_OLD = "Your Codex is too old for this bridge. Update it with `npm install -g @openai/codex`.";
+const CODEX_APIKEY_MSG = "Codex is signed in with an API key. This bridge runs Codex only on your ChatGPT sign-in. Run `codex logout`, then `codex login` and choose Sign in with ChatGPT.";
+const CODEX_NONE_MSG = "Codex is not signed in. Run `codex login` and choose Sign in with ChatGPT.";
+const CODEX_OTHER_MSG = "Codex is signed in with another kind of account. This bridge runs Codex only on your ChatGPT sign-in.";
+const CODEX_UNREADABLE_MSG = "The bridge stopped this turn: Codex did not confirm your ChatGPT sign-in. Send your message again. If this keeps happening, run `codex login`.";
+const CODEX_LIMITS_MSG = "The bridge stopped this turn: Codex did not start with only this chat's tools.";
+const CODEX_GUARD_MSG = "The bridge stopped this turn: Codex tried to use a tool this chat does not allow.";
+const CODEX_CONFIG_MSG = "The bridge stopped this turn: it could not read which tools your Codex has.";
+const CODEX_RESUME_MSG = "The Codex session could not be resumed.";
+/** The child exited before the handshake and its stderr named an unknown `--disable` flag. */
+const CODEX_UNKNOWN_TURN = "Could not start Codex: this bridge does not know your Codex version yet. Update the bridge.";
+const CODEX_UNKNOWN_HELLO = "This bridge does not support your Codex version yet. Update the bridge.";
+/** Item types that stop a chat turn. `collabAgentToolCall` and `subAgentActivity` are not here: Codex 0.167.2 still emits them with every flag on, and the child thread inherits this lock-down. */
+const CODEX_GUARD_ITEMS = new Set(["commandExecution", "fileChange", "webSearch", "imageView", "imageGeneration", "dynamicToolCall"]);
+
+/** The first x.y.z after a slash in Codex's userAgent, or null when there is none. */
+export function codexVersionOf(userAgent: unknown): string | null {
+  if (typeof userAgent !== "string") return null;
+  const m = /\/(\d+\.\d+\.\d+)/.exec(userAgent);
+  return m?.[1] ?? null;
+}
+
+/**
+ * True when `version` is at least `min`. Both must be x.y.z. Anything else is not new enough.
+ * @param version The version read from Codex.
+ * @param min The oldest version this bridge drives.
+ */
+export function codexVersionAtLeast(version: string, min: string): boolean {
+  const part = (s: string): [number, number, number] | null => {
+    const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(s);
+    if (!m) return null;
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+  };
+  const a = part(version);
+  const b = part(min);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!;
+  return true;
+}
+
+type CodexAccountKind = "chatgpt" | "apiKey" | "none" | "other" | "unknown";
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  return v as Record<string, unknown>;
+}
+
+/** What `account/read` said. An unreadable answer is "unknown", never treated as signed in. */
+function classifyCodexAccount(result: unknown): { kind: CodexAccountKind; plan: string | null } {
+  const root = asRecord(result);
+  if (!root || !Object.prototype.hasOwnProperty.call(root, "account")) return { kind: "unknown", plan: null };
+  if (root.account === null) return { kind: "none", plan: null };
+  const account = asRecord(root.account);
+  if (!account || typeof account.type !== "string") return { kind: "unknown", plan: null };
+  if (account.type === "chatgpt") return { kind: "chatgpt", plan: typeof account.planType === "string" ? account.planType : null };
+  if (account.type === "apiKey") return { kind: "apiKey", plan: null };
+  return { kind: "other", plan: null };
+}
+
+/** The sentence for an account that is not ChatGPT, or null when it is. */
+function codexAccountRefusal(kind: CodexAccountKind): string | null {
+  if (kind === "chatgpt") return null;
+  if (kind === "apiKey") return CODEX_APIKEY_MSG;
+  if (kind === "none") return CODEX_NONE_MSG;
+  if (kind === "other") return CODEX_OTHER_MSG;
+  return CODEX_UNREADABLE_MSG;
+}
+
+/**
+ * Why hello says Codex is not ready, or undefined when it is.
+ * Unknown `--disable` wins over "too old": the process never got as far as a version.
+ */
+function codexHelloReason(s: { installed: boolean; version: string | null; supported: boolean; account: CodexAccountKind; unknownFlag: boolean; startError?: string }): string | undefined {
+  if (!s.installed) return CODEX_NOT_INSTALLED;
+  if (s.unknownFlag) return CODEX_UNKNOWN_HELLO;
+  if (s.version === null) return s.startError ?? "Could not start Codex: timed out";
+  if (!s.supported) return CODEX_TOO_OLD;
+  return codexAccountRefusal(s.account) ?? undefined;
+}
+
+/** Models from `model/list`, or null when the answer is not a list. */
+function parseCodexModels(result: unknown): { id: string; label: string; default: boolean; efforts: string[] }[] | null {
+  const data = asRecord(result)?.data;
+  if (!Array.isArray(data)) return null;
+  const models: { id: string; label: string; default: boolean; efforts: string[] }[] = [];
+  for (const row of data) {
+    const r = asRecord(row);
+    if (!r || typeof r.id !== "string") continue;
+    const efforts: string[] = [];
+    if (Array.isArray(r.supportedReasoningEfforts)) {
+      for (const e of r.supportedReasoningEfforts) {
+        const effort = asRecord(e)?.reasoningEffort;
+        if (typeof effort === "string") efforts.push(effort);
+      }
+    }
+    models.push({ id: r.id, label: typeof r.displayName === "string" ? r.displayName : r.id, default: r.isDefault === true, efforts });
+  }
+  return models;
+}
+
+/** Names of the person's configured MCP servers, or null when the answer cannot be read. No `mcp_servers` means none. */
+function codexConfigServers(result: unknown): string[] | null {
+  const config = asRecord(asRecord(result)?.config);
+  if (!config) return null;
+  if (config.mcp_servers === undefined) return [];
+  const mcp = asRecord(config.mcp_servers);
+  if (!mcp) return null;
+  return Object.keys(mcp);
+}
+
+function parseCodexThread(result: unknown): { id: string; model: string; approvalPolicy: unknown; sandboxType: unknown } | null {
+  const root = asRecord(result);
+  const thread = asRecord(root?.thread);
+  const id = typeof thread?.id === "string" ? thread.id : "";
+  if (!root || !id) return null;
+  const model = typeof root.model === "string" ? root.model : typeof thread?.model === "string" ? thread.model : "";
+  return { id, model, approvalPolicy: root.approvalPolicy, sandboxType: asRecord(root.sandbox)?.type };
+}
+
+/** One row per server. Null when a row is not readable: a guess must not pass the "only gilb has tools" check. */
+function parseCodexServers(result: unknown): { name: string; tools: string[] }[] | null {
+  const data = asRecord(result)?.data;
+  if (!Array.isArray(data)) return null;
+  const out: { name: string; tools: string[] }[] = [];
+  for (const row of data) {
+    const r = asRecord(row);
+    if (!r || typeof r.name !== "string") return null;
+    if (r.tools !== undefined && !asRecord(r.tools)) return null;
+    out.push({ name: r.name, tools: r.tools === undefined ? [] : Object.keys(asRecord(r.tools) ?? {}) });
+  }
+  return out;
+}
+
+/** Token use for the page. Cached input is not counted twice: the page adds the three input counts. */
+function codexTurnUsage(raw: unknown, model: string): TurnUsage | undefined {
+  const last = asRecord(asRecord(raw)?.last);
+  if (!last) return undefined;
+  const contextWindow = usageCount(asRecord(raw)?.modelContextWindow);
+  const inputTokens = usageCount(last.inputTokens);
+  const cached = usageCount(last.cachedInputTokens);
+  const outputTokens = usageCount(last.outputTokens);
+  if (contextWindow === undefined || contextWindow <= 0 || inputTokens === undefined || cached === undefined || outputTokens === undefined) return undefined;
+  const fresh = inputTokens - cached;
+  if (!Number.isInteger(fresh) || fresh < 0 || fresh > USAGE_MAX) return undefined;
+  return { model, contextWindow, inputTokens: fresh, cacheReadInputTokens: cached, cacheCreationInputTokens: 0, outputTokens };
+}
+
+function sameNameSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(b);
+  return a.every((n) => s.has(n));
+}
+
+function stripAnsi(s: string): string {
+  return s.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function stderrTail(s: string): string {
+  return stripAnsi(s).trim().split("\n").map((l) => l.trim()).filter(Boolean).slice(-2).join(" ");
+}
+
+function rpcMessage(error: unknown): string {
+  const message = asRecord(error)?.message;
+  return typeof message === "string" && message.trim() ? message.slice(0, 300) : "the request failed";
+}
+
+/** The page's system text, a blank line, then the one sentence every Codex chat turn carries. */
+function codexDeveloperInstructions(system: string): string {
+  return `${system}\n\n${CODEX_CHAT_SENTENCE}`;
+}
+
+/** Thread config: the person's servers off, and this turn's gilb server on with no approval question. */
+function codexThreadConfig(serverNames: readonly string[], gilbUrl: string): Record<string, unknown> {
+  const mcp: Record<string, unknown> = {};
+  for (const name of serverNames) if (name !== "gilb") mcp[name] = { enabled: false };
+  // Measured: default_tools_approval_mode "approve" with approvalPolicy "never" runs the tool and asks nothing.
+  // tool_timeout_sec 2000: a hand-off may run 30 minutes, and the bridge waits that long for the tool result.
+  mcp.gilb = { url: gilbUrl, default_tools_approval_mode: "approve", tool_timeout_sec: 2000, startup_timeout_sec: 30 };
+  return { ...CODEX_CHAT_CONFIG, mcp_servers: mcp };
+}
+
+class CodexCallError extends Error {
+  constructor(message: string, readonly kind: "timeout" | "exit" | "rpc") {
+    super(message);
+    this.name = "CodexCallError";
+  }
+}
+
+interface CodexPending { resolve: (v: unknown) => void; reject: (e: CodexCallError) => void; timer: ReturnType<typeof setTimeout> }
+
+/**
+ * JSON-RPC over the app-server's stdio: one JSON object per line, no "jsonrpc" field.
+ * A line that is not one JSON object is skipped. A line with a method and an id is a request from the server.
+ */
+class CodexRpc {
+  readonly child: ChildProcess;
+  private buf = "";
+  private nextId = 1;
+  private pending = new Map<number, CodexPending>();
+  private err = "";
+  private note: (method: string, params: Record<string, unknown>) => void = () => {};
+  private asked: (method: string, id: unknown, params: Record<string, unknown>) => void = () => {};
+  private exited = false;
+
+  constructor(child: ChildProcess) {
+    this.child = child;
+    child.on("close", () => {
+      this.exited = true;
+      const err = new CodexCallError("exited", "exit");
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(err);
+      }
+      this.pending.clear();
+    });
+    child.stderr?.on("data", (d: Buffer | string) => {
+      this.err = (this.err + String(d)).slice(-4000);
+    });
+    child.stdout?.on("data", (d: Buffer | string) => {
+      this.buf += String(d);
+      this.drain();
+    });
+    child.stdin?.on("error", () => {});
+    child.on("error", (e) => {
+      const err = new CodexCallError(e.message, "exit");
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(err);
+      }
+      this.pending.clear();
+    });
+  }
+
+  onNotification(fn: (method: string, params: Record<string, unknown>) => void): void { this.note = fn; }
+  onServerRequest(fn: (method: string, id: unknown, params: Record<string, unknown>) => void): void { this.asked = fn; }
+  stderr(): string { return this.err; }
+  hasExited(): boolean { return this.exited; }
+
+  request(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new CodexCallError("timed out", "timeout"));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      this.write({ method, id, params });
+    });
+  }
+
+  notify(method: string, params: unknown): void { this.write({ method, params }); }
+  respond(id: unknown, result: unknown): void { this.write({ id, result }); }
+  respondError(id: unknown, code: number, message: string): void { this.write({ id, error: { code, message } }); }
+
+  private write(obj: unknown): void {
+    try { this.child.stdin?.write(`${JSON.stringify(obj)}\n`); } catch { /* the child is already gone */ }
+  }
+
+  private drain(): void {
+    let i = this.buf.indexOf("\n");
+    while (i >= 0) {
+      const line = this.buf.slice(0, i).trim();
+      this.buf = this.buf.slice(i + 1);
+      i = this.buf.indexOf("\n");
+      if (!line) continue;
+      let parsed: unknown;
+      try { parsed = JSON.parse(line); } catch { continue; }
+      const msg = asRecord(parsed);
+      if (!msg) continue;
+      const method = typeof msg.method === "string" ? msg.method : "";
+      if (method && msg.id !== undefined) {
+        this.asked(method, msg.id, asRecord(msg.params) ?? {});
+        continue;
+      }
+      if (msg.id !== undefined && !method) {
+        const id = typeof msg.id === "number" ? msg.id : Number(msg.id);
+        const p = Number.isInteger(id) ? this.pending.get(id) : undefined;
+        if (!p) continue;
+        clearTimeout(p.timer);
+        this.pending.delete(id);
+        if (msg.error !== undefined) p.reject(new CodexCallError(rpcMessage(msg.error), "rpc"));
+        else p.resolve(msg.result);
+        continue;
+      }
+      if (method) this.note(method, asRecord(msg.params) ?? {});
+    }
+  }
+}
+
+function fileThere(f: string): boolean {
+  try {
+    fs.accessSync(f, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function winCodexCandidates(base: string, env: NodeJS.ProcessEnv): string[] {
+  const ext = path.win32.extname(base).toLowerCase();
+  if (WIN_EXTS.includes(ext) || ext === ".js" || ext === ".cjs" || ext === ".mjs") return [base];
+  return winExts(env).flatMap((x) => [base + x, base + x.toUpperCase()]);
+}
+
+/**
+ * The absolute path of the Codex CLI, or null when nothing is there.
+ * A bare name is looked up on PATH, then beside this node, then in the usual install folders.
+ * On Windows, `%APPDATA%\\npm` is included as well.
+ * @param name A path, or the bare command name.
+ * @param env The environment whose PATH is searched.
+ * @param home The home folder for `~/.local/bin` and `~/.volta/bin`.
+ * @param platform `win32` uses PATHEXT and Windows paths.
+ * @param execPath This process's node, so a global install beside node is found when PATH is short.
+ */
+export function resolveCodexBin(name: string, env: NodeJS.ProcessEnv = process.env, home = os.homedir(), platform: string = process.platform, execPath = process.execPath): string | null {
+  const win = platform === "win32";
+  const P = win ? path.win32 : path;
+  if (win ? /[\\/]/.test(name) || path.win32.isAbsolute(name) : name.includes("/") || path.isAbsolute(name)) {
+    const abs = P.resolve(name);
+    if (win) return winCodexCandidates(abs, env).find((f) => fileThere(f)) ?? null;
+    return fileThere(abs) ? abs : null;
+  }
+  const sep = win ? ";" : ":";
+  const fromPath = String(envGet(env, "PATH") ?? "").split(sep).map((d) => d.trim().replace(/^"(.*)"$/, "$1")).filter((d) => d && (!win || path.win32.isAbsolute(d)));
+  const extra = [P.dirname(execPath), P.join(home, ".local", "bin")];
+  if (!win) extra.push("/opt/homebrew/bin", "/usr/local/bin");
+  extra.push(P.join(home, ".volta", "bin"));
+  if (win) extra.push(path.win32.join(envGet(env, "APPDATA") ?? path.win32.join(home, "AppData", "Roaming"), "npm"));
+  for (const dir of [...fromPath, ...extra]) {
+    if (!dir) continue;
+    if (win) {
+      if (!path.win32.isAbsolute(dir)) continue;
+      const hit = winCodexCandidates(path.win32.join(dir, name), env).find((f) => fileThere(f));
+      if (hit) return hit;
+    } else {
+      const f = path.join(dir, name);
+      try {
+        fs.accessSync(f, fs.constants.X_OK);
+        return f;
+      } catch {
+        /* next folder */
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * How to start Codex. Off Windows, a script (npm's `codex` links to one) is started with this process's node.
+ * On Windows, the same safe-launch rules as Claude Code, with Codex's sentences.
+ * @param bin The `codexBin` option or the `--codex` path. Default is the name `codex`.
+ */
+export function resolveCodexLaunch(bin: string, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): ClaudeLaunch {
+  const platform = o.platform ?? process.platform;
+  const home = o.home ?? os.homedir();
+  const nodePath = o.nodePath ?? process.execPath;
+  const found = resolveCodexBin(bin, env, home, platform, nodePath);
+  if (!found) return { ok: false, reason: CODEX_NOT_INSTALLED };
+  if (platform === "win32") {
+    // The "found, but not safe to start" sentence is not named in the brief. It mirrors Claude's, with Codex's install line.
+    return resolveClaudeLaunch(found, env, { ...o, platform: "win32", home }, {
+      missing: () => CODEX_NOT_INSTALLED,
+      refused: (p) => `Codex was found as ${p}, which the bridge cannot start safely. Install it with \`npm install -g @openai/codex\`, then start the bridge again.`,
+    });
+  }
+  let real = found;
+  try { real = fs.realpathSync(found); } catch { /* start the path we found */ }
+  if (/\.(?:m|c)?js$/i.test(real)) return { ok: true, command: nodePath, prefix: [real], shown: real };
+  return { ok: true, command: real, prefix: [], shown: real };
+}
+
+function startCodexProcess(launch: { command: string; prefix: string[] }, cwd: string, env: NodeJS.ProcessEnv): { rpc: CodexRpc } | { error: string } {
+  try {
+    const child = spawn(launch.command, [...launch.prefix, "app-server", ...CODEX_CHAT_FLAGS], {
+      cwd,
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    return { rpc: new CodexRpc(child) };
+  } catch (e) {
+    return { error: (e as ErrLike)?.message ?? String(e) };
+  }
+}
+
+const CODEX_CLIENT = { clientInfo: { name: "gilb-claude-code-bridge", title: "Gilb Claude Code bridge", version: BRIDGE_VERSION } };
+
 export interface BridgeOptions {
   port?: number | undefined;
   claudeBin?: string | undefined;
+  /** The Codex CLI. Default "codex". Resolved once per bridge, the first time a probe or a turn needs it. */
+  codexBin?: string | undefined;
   allowedOrigins?: string[] | undefined;
   workDir?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -4562,6 +5017,429 @@ export function createBridge(opts: BridgeOptions = {}) {
     });
   }
 
+  // ---- engine: codex (app-server) ----
+  // A chat turn speaks JSON-RPC to `codex app-server`. The person's own servers and local tools stay off.
+  // Sub-agents cannot be switched off in Codex 0.167.2: they inherit this lock-down, and the item guard watches every thread.
+  interface CodexProbeState {
+    installed: boolean;
+    version: string | null;
+    supported: boolean;
+    account: CodexAccountKind;
+    plan: string | null;
+    models: { id: string; label: string; default: boolean; efforts: string[] }[];
+    /** True after a readable model/list. Until then a turn's model is checked by shape only. */
+    modelsHeld: boolean;
+    reason?: string;
+    at: number;
+  }
+  let codexCache: CodexProbeState | null = null;
+  let codexChecking = false;
+  let probeChild: ChildProcess | null = null;
+  let probeGen = 0;
+  let codexLaunchMemo: ClaudeLaunch | undefined;
+  /** Resolved once per bridge, the first time a probe or a turn needs Codex. */
+  const getCodexLaunch = (): ClaudeLaunch => {
+    if (!codexLaunchMemo) codexLaunchMemo = resolveCodexLaunch(opts.codexBin ?? "codex", env, { ...(opts.platformOpts ?? {}), home });
+    return codexLaunchMemo;
+  };
+  const rememberProbe = (s: { installed: boolean; version: string | null; supported: boolean; account: CodexAccountKind; plan: string | null; models: CodexProbeState["models"]; modelsHeld: boolean; unknownFlag: boolean; startError?: string }) => {
+    const reason = codexHelloReason({ installed: s.installed, version: s.version, supported: s.unknownFlag ? false : s.supported, account: s.account, unknownFlag: s.unknownFlag, ...(s.startError ? { startError: s.startError } : {}) });
+    const next: CodexProbeState = { installed: s.installed, version: s.version, supported: s.unknownFlag ? false : s.supported, account: s.account, plan: s.plan, models: s.models, modelsHeld: s.modelsHeld, at: now() };
+    if (reason) next.reason = reason;
+    codexCache = next;
+  };
+  const emptyProbe = { version: null, supported: false, account: "unknown" as const, plan: null, models: [] as CodexProbeState["models"], modelsHeld: false };
+  // Node's stream types in this tsconfig share no fields with `{ unref }`, so the cast is the only way to drop the ref.
+  const unrefStream = (s: unknown) => { try { (s as { unref?: () => void } | null)?.unref?.(); } catch { /* a stream that cannot leave the loop is still closed on stop */ } };
+  const endProbeChild = (child: ChildProcess) => {
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+    child.stdin?.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+  };
+  /** Asks Codex who is signed in and which models it has. Hello never waits for this. One probe at a time. */
+  async function runCodexProbeBody(gen: number): Promise<void> {
+    // A close bumps the generation. A probe that notices it must not write a "Codex failed" cache from its own kill.
+    const stale = () => gen !== probeGen || bridgeClosing;
+    let rpc: CodexRpc | null = null;
+    let cap: ReturnType<typeof setTimeout> | undefined;
+    let version: string | null = null;
+    let supported = false;
+    let account: CodexAccountKind = "unknown";
+    let plan: string | null = null;
+    let models: CodexProbeState["models"] = [];
+    let modelsHeld = false;
+    let handshook = false;
+    try {
+      const launch = getCodexLaunch();
+      if (stale()) return;
+      if (!launch.ok) {
+        rememberProbe({ ...emptyProbe, installed: false, unknownFlag: false });
+        return;
+      }
+      const started = startCodexProcess(launch, workDir, codexChildEnv(env));
+      if ("error" in started) {
+        if (!stale()) rememberProbe({ ...emptyProbe, installed: true, unknownFlag: false, startError: `Could not start Codex: ${started.error}` });
+        return;
+      }
+      rpc = started.rpc;
+      if (stale()) return;
+      probeChild = rpc.child;
+      // The probe is not a turn. It must not keep the process, or a test suite, alive after close.
+      rpc.child.unref();
+      unrefStream(rpc.child.stdin);
+      unrefStream(rpc.child.stdout);
+      unrefStream(rpc.child.stderr);
+      if (stale()) return;
+      cap = setTimeout(() => { if (rpc) endProbeChild(rpc.child); }, 15_000);
+      const init = await rpc.request("initialize", CODEX_CLIENT, 12_000);
+      if (stale()) return;
+      handshook = true;
+      rpc.notify("initialized", {});
+      version = codexVersionOf(asRecord(init)?.userAgent);
+      supported = version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
+      const accountRes = await rpc.request("account/read", { refreshToken: false }, 8_000);
+      if (stale()) return;
+      const classified = classifyCodexAccount(accountRes);
+      account = classified.kind;
+      plan = classified.plan;
+      try {
+        const parsed = parseCodexModels(await rpc.request("model/list", {}, 8_000));
+        if (parsed) { models = parsed; modelsHeld = true; }
+      } catch { /* no list yet: a turn's model is checked by shape only */ }
+      if (stale()) return;
+      rememberProbe({ installed: true, version, supported, account, plan, models, modelsHeld, unknownFlag: false });
+    } catch {
+      if (stale() || !rpc) return;
+      const unknownFlag = rpc.stderr().includes("Unknown feature flag");
+      const tail = stderrTail(rpc.stderr());
+      rememberProbe({
+        installed: true,
+        version: handshook ? version : null,
+        supported,
+        account,
+        plan,
+        models,
+        modelsHeld,
+        unknownFlag,
+        ...(!unknownFlag && (handshook ? version : null) === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
+      });
+    } finally {
+      if (cap) clearTimeout(cap);
+      if (rpc) {
+        if (probeChild === rpc.child) probeChild = null;
+        endProbeChild(rpc.child);
+      }
+      codexChecking = false;
+    }
+  }
+  function startCodexProbe(): void {
+    if (codexChecking || bridgeClosing) return;
+    codexChecking = true;
+    const gen = ++probeGen;
+    void runCodexProbeBody(gen);
+  }
+  /** A paired hello refreshes a result older than 30 s. It does not wait. */
+  function refreshCodexProbe(): void {
+    const age = codexCache ? now() - codexCache.at : Number.POSITIVE_INFINITY;
+    if (age > 30_000) startCodexProbe();
+  }
+  function stopCodexProbe(): Promise<void> {
+    probeGen += 1;
+    const c = probeChild;
+    probeChild = null;
+    if (!c || c.exitCode !== null || c.signalCode !== null) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 1000);
+      c.once("exit", () => { clearTimeout(timer); resolve(); });
+      try {
+        endProbeChild(c);
+      } catch {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+  }
+  /** Close waits until the in-flight probe has dropped its timers. Bounded, so a stuck child cannot hold the bridge open. */
+  function waitProbeDone(): Promise<void> {
+    if (!codexChecking) return Promise.resolve();
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setInterval>;
+      const cap = setTimeout(() => { clearInterval(timer); resolve(); }, 2000);
+      timer = setInterval(() => {
+        if (!codexChecking) { clearInterval(timer); clearTimeout(cap); resolve(); }
+      }, 20);
+    });
+  }
+  /** A Codex model: the shape, not a Claude name, and one of the probed list once the bridge holds that list. */
+  function codexModelAllowed(m: unknown): m is string {
+    if (typeof m !== "string" || !CODEX_MODEL_RE.test(m) || m.startsWith("claude-")) return false;
+    if (codexCache?.modelsHeld) return codexCache.models.some((row) => row.id === m);
+    return true;
+  }
+  function enginesHello(): Record<string, unknown>[] {
+    const c = codexCache;
+    const installed = c?.installed ?? false;
+    const supported = c?.supported ?? false;
+    const account = c?.account ?? "unknown";
+    const codex: Record<string, unknown> = {
+      id: "codex", name: "Codex", installed, version: c?.version ?? null, supported, account,
+      ready: installed && supported && account === "chatgpt", billing: "chatgpt-subscription",
+      models: c?.models ?? [], efforts: [...CODEX_EFFORTS], codeTurns: false, images: false, delegateCoding: false,
+    };
+    if (codexChecking) codex.checking = true;
+    if (c?.reason) codex.reason = c.reason;
+    return [
+      { id: "claude", name: "Claude Code", ready: true, billing: "claude-subscription", models: MODEL_ALIASES.map((id) => ({ id, label: id })), efforts: [...EFFORTS], codeTurns: true, images: true, delegateCoding: true },
+      codex,
+    ];
+  }
+
+  /** Runs one Codex chat turn. Resolves the same shape as {@link runClaude}, plus `codexUsage` when the counts are usable. */
+  function runCodex(turn: Turn, mode: ClaudeMode, prompt: string): Promise<RunClaudeOut> {
+    return new Promise((resolve) => {
+      const launch = getCodexLaunch();
+      if (!launch.ok) return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
+      const started = startCodexProcess(launch, workDir, codexChildEnv(env));
+      if ("error" in started) return resolve({ error: `Could not start Codex: ${started.error}`, sessionId: mode.sessionId, model: "" });
+      const rpc = started.rpc;
+      turn.child = rpc.child;
+      let settled = false;
+      let handshook = false;
+      let threadId = "";
+      let model = "";
+      let gilbReady = false;
+      let stopReason: { kind: "guard" | "foreign"; detail: string } | null = null;
+      let lastAny = "";
+      let lastFinal = "";
+      let sawFinal = false;
+      let usageRaw: unknown;
+      // A binding assigned only inside onNotification stays `null` to the checker after an await, so the status lives on a holder.
+      const doneBox: { turn: { status: string; error: unknown } | null } = { turn: null };
+      let wake: (() => void) | null = null;
+      const poke = () => { wake?.(); };
+      const finish = (out: RunClaudeOut) => {
+        if (settled) return;
+        settled = true;
+        turn.child = null;
+        for (const pid of [...turn.pending.keys()]) cancelCall(turn, pid);
+        resolve(out);
+      };
+      const stop = () => { try { void stopChild(rpc.child); } catch { /* already gone */ } };
+      const failStopped = (): boolean => {
+        if (!stopReason) return false;
+        if (stopReason.kind === "guard") {
+          log(`codex item guard stopped the turn (${stopReason.detail})`);
+          finish({ error: CODEX_GUARD_MSG, sessionId: threadId || mode.sessionId, model, bridgeRefused: true });
+        } else {
+          log(`codex did not start with only this chat's tools (${stopReason.detail})`);
+          finish({ error: CODEX_LIMITS_MSG, sessionId: threadId || mode.sessionId, model, bridgeRefused: true });
+        }
+        stop();
+        return true;
+      };
+      const waitFor = (pred: () => boolean, ms: number): Promise<boolean> => {
+        if (pred()) return Promise.resolve(true);
+        return new Promise((done) => {
+          const timer = setTimeout(() => { wake = null; done(false); }, ms);
+          wake = () => {
+            if (!pred()) return;
+            clearTimeout(timer);
+            wake = null;
+            done(true);
+          };
+        });
+      };
+      const seenAsk = new Set<string>();
+      rpc.onServerRequest((method, id) => {
+        // A chat turn is not asked anything. Decline the two approval methods the probe saw Codex send; refuse the rest.
+        if (!seenAsk.has(method)) { seenAsk.add(method); log(`codex asked ${method}`); }
+        if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") rpc.respond(id, { decision: "decline" });
+        else if (method === "mcpServer/elicitation/request") rpc.respond(id, { action: "decline", content: null, _meta: null });
+        else rpc.respondError(id, -32601, "Not supported by this bridge.");
+      });
+      rpc.onNotification((method, params) => {
+        if (method === "mcpServer/startupStatus/updated") {
+          const name = typeof params.name === "string" ? params.name : "";
+          const status = params.status;
+          // Any thread, any time: a server other than gilb starting is the person's own tools coming in.
+          if (!stopReason && name !== "gilb" && (status === "starting" || status === "ready")) stopReason = { kind: "foreign", detail: `server ${name || "unnamed"} ${String(status)}` };
+          if (name === "gilb" && status === "ready") gilbReady = true;
+          if (!stopReason && name === "gilb" && status === "failed") stopReason = { kind: "foreign", detail: "gilb failed" };
+        }
+        if (method === "item/started") {
+          const item = asRecord(params.item);
+          const type = typeof item?.type === "string" ? item.type : "";
+          // Every thread of this process, not only the turn's: a sub-agent's shell is still a shell.
+          const blocked = CODEX_GUARD_ITEMS.has(type) || (type === "mcpToolCall" && item?.server !== "gilb");
+          if (!stopReason && blocked) stopReason = { kind: "guard", detail: type || "unknown item" };
+        }
+        const own = threadId !== "" && params.threadId === threadId;
+        if (own && method === "item/completed") {
+          const item = asRecord(params.item);
+          if (item?.type === "agentMessage" && typeof item.text === "string") {
+            lastAny = item.text;
+            if (item.phase === "final_answer") { lastFinal = item.text; sawFinal = true; }
+          }
+        }
+        if (own && method === "thread/tokenUsage/updated") usageRaw = params.tokenUsage;
+        if (own && method === "turn/completed") {
+          const done = asRecord(params.turn);
+          doneBox.turn = { status: typeof done?.status === "string" ? done.status : "", error: done?.error ?? null };
+        }
+        poke();
+      });
+      rpc.child.on("close", () => {
+        poke();
+        if (settled) return;
+        const tail = stderrTail(rpc.stderr());
+        if (!handshook && rpc.stderr().includes("Unknown feature flag")) {
+          finish({ error: CODEX_UNKNOWN_TURN, sessionId: mode.sessionId, model: "" });
+          return;
+        }
+        if (!handshook) {
+          finish({ error: `Could not start Codex: ${tail || "the app-server exited"}`.slice(0, 500), sessionId: mode.sessionId, model: "" });
+          return;
+        }
+        finish({ error: `Codex stopped without an answer.${tail ? ` ${tail}` : ""}`, sessionId: threadId || mode.sessionId, model });
+      });
+      void (async () => {
+        try {
+          await rpc.request("initialize", CODEX_CLIENT, 20_000);
+          if (settled) return;
+          handshook = true;
+          rpc.notify("initialized", {});
+          if (failStopped()) return;
+          let accountResult: unknown;
+          try { accountResult = await rpc.request("account/read", { refreshToken: false }, 20_000); } catch {
+            if (settled) return;
+            finish({ error: CODEX_UNREADABLE_MSG, sessionId: mode.sessionId, model: "", apiKeyRefused: true });
+            stop();
+            return;
+          }
+          if (settled) return;
+          const refusal = codexAccountRefusal(classifyCodexAccount(accountResult).kind);
+          if (refusal) {
+            finish({ error: refusal, sessionId: mode.sessionId, model: "", apiKeyRefused: true });
+            stop();
+            return;
+          }
+          if (failStopped()) return;
+          let names: string[] | null;
+          try { names = codexConfigServers(await rpc.request("config/read", { includeLayers: false }, 20_000)); } catch { names = null; }
+          if (settled) return;
+          if (!names) {
+            finish({ error: CODEX_CONFIG_MSG, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+            stop();
+            return;
+          }
+          if (failStopped()) return;
+          const config = codexThreadConfig(names, `http://127.0.0.1:${port}/mcp/${turn.id}/${turn.mcpToken}`);
+          const base: Record<string, unknown> = {
+            cwd: workDir, approvalPolicy: "never", sandbox: "read-only", developerInstructions: codexDeveloperInstructions(turn.system), config,
+            ...(turn.model ? { model: turn.model } : {}),
+          };
+          let threadResult: unknown;
+          try {
+            threadResult = mode.resume
+              ? await rpc.request("thread/resume", { ...base, threadId: mode.sessionId }, 20_000)
+              : await rpc.request("thread/start", { ...base, ephemeral: false }, 20_000);
+          } catch {
+            if (settled) return;
+            // A lost thread is retried by handleTurn as a new session. A new thread that fails is not.
+            finish(mode.resume
+              ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "" }
+              : { error: "Could not start Codex: the thread did not start.", sessionId: mode.sessionId, model: "" });
+            stop();
+            return;
+          }
+          if (settled) return;
+          const thread = parseCodexThread(threadResult);
+          if (!thread || !UUID.test(thread.id)) {
+            finish(mode.resume
+              ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "" }
+              : { error: "Could not start Codex: the thread did not start.", sessionId: mode.sessionId, model: "" });
+            stop();
+            return;
+          }
+          threadId = thread.id;
+          model = thread.model;
+          if (failStopped()) return;
+          if (thread.approvalPolicy !== "never" || thread.sandboxType !== "readOnly") {
+            log(`codex did not start with only this chat's tools (approvalPolicy ${String(thread.approvalPolicy)}, sandbox ${String(thread.sandboxType)})`);
+            finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+            stop();
+            return;
+          }
+          if (turn.tools.length > 0) {
+            await waitFor(() => gilbReady || stopReason !== null || rpc.hasExited(), 30_000);
+            if (settled) return;
+            if (failStopped()) return;
+            if (!gilbReady) {
+              log("codex did not start with only this chat's tools (gilb was not ready)");
+              finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+              stop();
+              return;
+            }
+          }
+          if (failStopped()) return;
+          let servers: { name: string; tools: string[] }[] | null;
+          try { servers = parseCodexServers(await rpc.request("mcpServerStatus/list", { threadId }, 20_000)); } catch { servers = null; }
+          if (settled) return;
+          const gilb = servers?.find((s) => s.name === "gilb");
+          const foreign = servers?.filter((s) => s.name !== "gilb" && s.tools.length > 0) ?? [];
+          if (!servers || !gilb || foreign.length > 0 || !sameNameSet(gilb.tools, turn.tools.map((t) => t.name))) {
+            const why = !servers ? "the server list could not be read" : foreign.length > 0 ? `server ${foreign[0]!.name} has ${foreign[0]!.tools.length} tools` : "gilb tools differ";
+            log(`codex did not start with only this chat's tools (${why})`);
+            finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+            stop();
+            return;
+          }
+          if (failStopped()) return;
+          turn.send("status", { engine: "codex", account: "chatgpt", tools: gilb.tools, mcpServers: servers.map((s) => ({ name: s.name, tools: s.tools.length })), model });
+          try {
+            await rpc.request("turn/start", {
+              threadId,
+              input: [{ type: "text", text: prompt, text_elements: [] }],
+              ...(turn.model ? { model: turn.model } : {}),
+              ...(turn.effort ? { effort: turn.effort } : {}),
+            }, 20_000);
+          } catch (e) {
+            if (settled) return;
+            const reason = e instanceof Error ? e.message : "the turn did not start";
+            finish({ error: `Could not start Codex: ${reason}`.slice(0, 500), sessionId: threadId, model });
+            stop();
+            return;
+          }
+          if (settled || failStopped()) return;
+          await waitFor(() => doneBox.turn !== null || stopReason !== null || rpc.hasExited(), 24 * 60 * 60 * 1000);
+          if (settled || failStopped()) return;
+          const completed = doneBox.turn;
+          if (!completed) return;
+          if (completed.status === "completed") {
+            const answer = sawFinal ? lastFinal : lastAny;
+            const usage = codexTurnUsage(usageRaw, model);
+            finish({ result: { type: "result", result: answer, is_error: false, num_turns: 1 }, sessionId: threadId, model, ...(usage ? { codexUsage: usage } : {}) });
+          } else if (completed.status === "failed") {
+            const errObj = asRecord(completed.error);
+            const message = typeof errObj?.message === "string" ? errObj.message : "the turn failed";
+            finish({ error: errObj?.codexErrorInfo === "usageLimitExceeded" ? "Your ChatGPT plan has reached its Codex limit. Try again later." : `Codex: ${message.slice(0, 500)}`, sessionId: threadId, model });
+          } else {
+            finish({ error: "Codex stopped without an answer.", sessionId: threadId, model });
+          }
+          stop();
+        } catch (e) {
+          if (settled) return;
+          const tail = stderrTail(rpc.stderr());
+          if (!handshook && rpc.stderr().includes("Unknown feature flag")) finish({ error: CODEX_UNKNOWN_TURN, sessionId: mode.sessionId, model: "" });
+          else if (!handshook) finish({ error: `Could not start Codex: ${tail || (e instanceof Error ? e.message : "the app-server stopped")}`.slice(0, 500), sessionId: mode.sessionId, model: "" });
+          else finish({ error: `Codex stopped without an answer.${tail ? ` ${tail}` : ""}`, sessionId: threadId || mode.sessionId, model });
+          stop();
+        }
+      })();
+    });
+  }
+
   /** While the bridge updates itself (or is about to restart after it) no turn may start: its claude child would be cut off or orphaned. */
   const updating = () => isUpdateRunning() || restartPending;
   const UPDATING = { error: "The bridge is updating. Send your message again in a minute.", code: "UpdateRunning" };
@@ -4582,11 +5460,28 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (body.approval !== undefined && body.approval !== "session" && body.approval !== "each-write") return json(res, 400, { error: 'approval must be "session" or "each-write"' });
     // An id from the page is a string or nothing; any other shape is a bad request (never turned into text, which can throw).
     if (body.parentTurnId !== undefined && typeof body.parentTurnId !== "string") return json(res, 400, { error: BAD_REQUEST });
-    // The model and the effort the person chose (chat and code turns); delegateCoding is for code turns only.
-    if (body.model !== undefined && !modelAllowed(body.model)) return json(res, 400, { error: "That model is not allowed." });
-    if (body.effort !== undefined && !effortAllowed(body.effort)) return json(res, 400, { error: "That effort is not allowed." });
-    if (body.delegateCoding !== undefined && (typeof body.delegateCoding !== "boolean" || (body.mode !== "code" && body.delegateCoding))) return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
+    // An engine the bridge does not know is refused before any model check, so a typo never starts a child.
+    if (body.engine !== undefined && body.engine !== "claude" && body.engine !== "codex") return json(res, 400, { error: "That engine is not known." });
     const me = callerKey(req);
+    // A usable parent decides the engine. The full hand-off checks stay below, so a missing parent is still 404 in the same place.
+    const hinted = typeof body.parentTurnId === "string" && body.parentTurnId ? turns.get(body.parentTurnId) : undefined;
+    const engineParent = hinted && !hinted.closed && !hinted.cancelRequested && hinted.owner === me ? hinted : null;
+    if (engineParent && body.engine !== undefined && body.engine !== engineParent.engine) return json(res, 400, { error: "A hand-off runs on its turn's engine." });
+    const engine: "claude" | "codex" = engineParent ? engineParent.engine : body.engine === "codex" ? "codex" : "claude";
+    if (engine === "codex") {
+      // Codex checks, in this order, after the shape checks and before any child. Claude's model list does not apply here.
+      if (body.mode === "code") return json(res, 400, { error: "Codex cannot run code turns on this bridge yet.", code: "EngineNoCodeTurns" });
+      if (imgCheck.images.length > 0) return json(res, 400, { error: "Codex cannot take pictures on this bridge yet." });
+      if (body.delegateCoding === true) return json(res, 400, { error: "delegateCoding is only for Claude Code." });
+      if (body.delegateCoding !== undefined && typeof body.delegateCoding !== "boolean") return json(res, 400, { error: BAD_REQUEST });
+      if (body.model !== undefined && !codexModelAllowed(body.model)) return json(res, 400, { error: "That model is not allowed." });
+      if (body.effort !== undefined && (typeof body.effort !== "string" || !(CODEX_EFFORTS as readonly string[]).includes(body.effort))) return json(res, 400, { error: "That effort is not allowed." });
+    } else {
+      // The model and the effort the person chose (chat and code turns); delegateCoding is for code turns only.
+      if (body.model !== undefined && !modelAllowed(body.model)) return json(res, 400, { error: "That model is not allowed." });
+      if (body.effort !== undefined && !effortAllowed(body.effort)) return json(res, 400, { error: "That effort is not allowed." });
+      if (body.delegateCoding !== undefined && (typeof body.delegateCoding !== "boolean" || (body.mode !== "code" && body.delegateCoding))) return json(res, 400, { error: typeof body.delegateCoding === "boolean" ? "delegateCoding is only for code turns." : BAD_REQUEST });
+    }
     const isCode = body.mode === "code";
     let proj: { path: string; name: string; id: string } | null = null;
     if (isCode) {
@@ -4694,6 +5589,7 @@ export function createBridge(opts: BridgeOptions = {}) {
       approval: isCode && body.approval === "each-write" ? "each-write" : "session",
       approvals: new Map(),
       webTurnGrant: false,
+      engine,
       owner: me,
       startedAt: now(),
       lastActivityAt: now(),
@@ -4765,21 +5661,38 @@ export function createBridge(opts: BridgeOptions = {}) {
       // A resumed session already holds the thread. A new one is given the earlier turns as text.
       const history = !parent && typeof body.history === "string" ? body.history.slice(0, 60000) : "";
       const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
+      // A Codex turn and a Claude turn share the resume retry. The Codex result's session id is the thread Codex returned, not the id we made up.
+      const run = (m: ClaudeMode, text: string) => (turn.engine === "codex" ? runCodex(turn, m, text) : runClaude(turn, m, text));
       let sessionId = resumeId || crypto.randomUUID();
-      let out = await runClaude(turn, { sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
-      // A turn the bridge itself refused is not retried: a retry would hide the true reason and run Claude Code again after a safety refusal.
+      let out = await run({ sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
+      // A turn the bridge itself refused is not retried: a retry would hide the true reason and run the engine again after a safety refusal.
       if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !out.bridgeRefused && !turn.closed && !turn.cancelRequested) {
         // The session is gone (different folder, cleaned up): start a new one with the thread as text.
         sessionId = crypto.randomUUID();
-        out = await runClaude(turn, { sessionId, resume: false }, freshPrompt);
+        out = await run({ sessionId, resume: false }, freshPrompt);
       }
       sendFilesChanged();
       if (turn.cancelRequested) {
         send("error", { message: "The turn was cancelled." });
       } else if (out.error || !out.result) {
-        send("error", { message: out.error ?? "Claude Code gave no answer." });
+        send("error", { message: out.error ?? (turn.engine === "codex" ? "Codex gave no answer." : "Claude Code gave no answer.") });
       } else if (out.result.is_error) {
-        send("error", { message: `Claude Code: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
+        const who = turn.engine === "codex" ? "Codex" : "Claude Code";
+        send("error", { message: `${who}: ${String(out.result.result ?? "the turn failed").slice(0, 500)}` });
+      } else if (turn.engine === "codex") {
+        // Usage is only for the person's turn. It was already checked inside runCodex. A hand-off's message leaves it out.
+        const usage = parent ? undefined : out.codexUsage;
+        send("message", {
+          role: "assistant",
+          content: String(out.result.result ?? ""),
+          model: out.model,
+          ...(turn.effort ? { effort: turn.effort } : {}),
+          payer: "person-codex",
+          engine: "codex",
+          sessionId: out.sessionId,
+          ...(usage ? { usage } : {}),
+          ...(turn.budgetSpent ? { budgetSpent: true } : {}),
+        });
       } else {
         // Usage is only for the person's turn. A hand-off already sends its own message; that message stays as it was.
         const usage = parent ? undefined : turnUsage(out.result.modelUsage, out.model, out.lastStep);
@@ -5506,8 +6419,12 @@ export function createBridge(opts: BridgeOptions = {}) {
     if (req.method === "GET" && url.pathname === "/v1/hello") {
       const paired = hasSecret(req, origin);
       // The next use after code mode was switched off: check the saved folder again (a paired caller only, so an unpaired hello does no work on disk).
-      if (paired) recheckSavedFolder();
-      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, ...(paired && !workspace && codeOff && savedFolder ? { codeModeOff: { reason: codeOff.reasonCode, message: codeOff.sentence, folderName: savedFolder.name } } : {}), codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(hasSecret(req, origin) ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}) } : {}) });
+      // A paired hello also refreshes the Codex probe when the cache is old. It does not wait for that probe.
+      if (paired) {
+        recheckSavedFolder();
+        refreshCodexProbe();
+      }
+      return json(res, 200, { bridge: "gilb-claude-code-bridge", version: BRIDGE_VERSION, build: BRIDGE_BUILD, billing: "claude-subscription", relay: true, codeTurns: true, ...(canOpenFolder() ? { openFolder: true } : {}), workspace: workspace !== null, ...(paired && !workspace && codeOff && savedFolder ? { codeModeOff: { reason: codeOff.reasonCode, message: codeOff.sentence, folderName: savedFolder.name } } : {}), codeMode: workspace ? (filesOnlyFor(accessMode) ? "files-only" : "full") : null, access: workspace ? accessMode : null, options: { ...(accessMode === "computer" && codePlatform !== "win32" ? { approvals: { mode: "sandboxed" } } : {}), ...(workspace ? { web: filesOnlyFor(accessMode) ? { search: false, fetch: "off" } : { search: true, fetch: "ask" } } : {}), models: [...MODEL_ALIASES], efforts: [...EFFORTS], delegateCoding: true, images: { maxCount: IMAGE_MAX_COUNT, maxBytes: IMAGE_MAX_BYTES, types: [...IMAGE_TYPES] } }, ...(paired ? { update: await updateHello(), access: accessMode, accessChangeable: true, accessSource, ...(accessUnsaved ? { accessSaveFailed: true } : {}), engines: enginesHello() } : {}) });
     }
     if (req.method === "POST" && url.pathname === "/v1/pair") {
       let body;
@@ -5709,9 +6626,10 @@ export function createBridge(opts: BridgeOptions = {}) {
     lockHeld = false;
   };
   const closeBridge = (): Promise<void> => {
-    bridgeClosing = true; // from here no preview starts, even on a connection that is still open
+    bridgeClosing = true; // from here no preview starts, even on a connection that is still open, and the Codex probe must not start again
+    const probeStopped = stopCodexProbe().then(() => waitProbeDone());
     const previewsClosed = closeAllPreviews();
-    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed);
+    const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed).then(() => probeStopped);
     return stopped.then(() => new Promise<void>((resolve) => server.close(() => { releaseLock(); resolve(); })));
   };
   const server = http.createServer((req, res) => {
@@ -5756,6 +6674,8 @@ export function createBridge(opts: BridgeOptions = {}) {
             // The folder is ours and so is the port: stop exactly what an earlier run recorded.
             sweepLeftovers().then(() => resolve(port), () => resolve(port));
             recordLockStart();
+            // Hello never waits for this. It asks Codex, once, who is signed in and which models it has.
+            startCodexProbe();
           });
         });
       } catch (e) {
@@ -5813,6 +6733,7 @@ export function parseCli(argv: string[]) {
     mode: modes.length === 0 ? "run" : modes[0]!.replace(/^-+/, "") === "h" ? "help" : modes[0] === "--unpair-all" ? "unpairAll" : modes[0] === "--access-reset" ? "accessReset" : modes[0]!.replace(/^-+/, ""),
     modes,
     claude: val("--claude"),
+    codex: val("--codex"),
     port: val("--port") === undefined ? undefined : Number(val("--port")),
     allowOrigins: valAll("--allow-origin"),
     allowOrigin: val("--allow-origin"),
@@ -6653,6 +7574,8 @@ export async function runSupervisor(cli: CliOptions, io: SuperviseIo = {}): Prom
 
   const bridgeFile = io.file ?? fs.realpathSync(fileURLToPath(import.meta.url));
   const childArgs = ["--port", String(cli.port ?? DEFAULT_PORT), "--claude", cli.claude ?? "claude", "--state-dir", f.stateDir];
+  // --install does not record --codex in this batch. A supervisor started with --codex still passes it to the child it restarts.
+  if (cli.codex) childArgs.push("--codex", cli.codex);
   for (const o of cli.allowOrigins ?? []) childArgs.push("--allow-origin", o);
   if (cli.workspace) childArgs.push("--workspace", cli.workspace);
   const realSpawn = (): SupervisedChild => {
@@ -6743,7 +7666,7 @@ async function main() {
   }
   const cli = parseCli(argv);
   if (cli.mode === "help") {
-    console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
+    console.log(`Usage: node bridge.mjs [--port N] [--claude PATH] [--codex PATH] [--allow-origin ORIGIN]... [--state-dir DIR] [--workspace FOLDER] [--full-access] [--access folder]
        node bridge.mjs --install | --uninstall | --status | --code | --unpair-all | --access-reset   (${process.platform === "win32" ? "Windows: starts at login with no window, through a per-user Run entry" : "macOS: an always-on LaunchAgent"}; add --label L to use another label)
        node bridge.mjs --selftest   prints the build number and exits (the app's update uses it to check a new file)
        node bridge.mjs --rollback   puts the previous bridge file (kept as <file>.prev by an update) back; restart the bridge after it
@@ -6753,10 +7676,10 @@ async function main() {
     return;
   }
   // A misspelled option (--allow-orgin) must not be quietly ignored: the bridge would start without what the person asked for.
-  const KNOWN = new Set(["--port", "--claude", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
+  const KNOWN = new Set(["--port", "--claude", "--codex", "--allow-origin", "--state-dir", "--workspace", "--full-access", "--access", "--label", "--install", "--uninstall", "--status", "--code", "--unpair-all", "--access-reset", "--supervise", "--selftest", "--rollback", "--help", "-h"]);
   const unknown = argv.filter((a) => a.startsWith("-") && !KNOWN.has(a.split("=")[0]!));
   if (unknown.length > 0) {
-    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --access-reset, --selftest, --rollback, --help`);
+    console.error(`Unknown option: ${unknown.join(" ")}\nOptions: --port, --claude, --codex, --allow-origin, --state-dir, --workspace, --full-access, --access, --label, --install, --uninstall, --status, --code, --unpair-all, --access-reset, --selftest, --rollback, --help`);
     process.exit(2);
   }
   const accessBad = accessFlagProblem(cli.access);
@@ -6851,7 +7774,7 @@ async function main() {
   // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
   // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
   const controlToken = crypto.randomBytes(32).toString("hex");
-  const bridge = createBridge({ port, claudeBin, controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
+  const bridge = createBridge({ port, claudeBin, ...(cli.codex ? { codexBin: cli.codex } : {}), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
   try {
     await bridge.start();
   } catch (e) {
