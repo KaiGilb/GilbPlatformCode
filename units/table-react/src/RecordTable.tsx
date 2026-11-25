@@ -895,7 +895,8 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                                 className={"relative flex min-h-[28px] min-w-0 flex-1 items-center px-1 text-[var(--ink)]" + edgeOf(c)}
                                 data-cell-state={c.state ?? undefined}
                                 data-selected={c.selected || undefined}
-                                aria-readonly={c.readOnly || undefined}
+                                // Not `aria-readonly`: this part of a list row has no role that takes it. The reason is its title, and the line under the list says it.
+                                data-read-only={c.readOnly || undefined}
                                 title={c.title}
                                 onClickCapture={(e) => { refIntent(cell); onCellPress(e, row.id, column.id); }}
                                 onClick={(e) => e.stopPropagation()}

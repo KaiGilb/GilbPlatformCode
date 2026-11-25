@@ -751,5 +751,16 @@ describe("table-react: editing a cell", () => {
       fireEvent.keyDown(editor(), { key: "Enter" });
       expect(await violations()).toEqual([]);
     });
+
+    test("the narrow list with a selected read-only value and with a box open breaks none", async () => {
+      render(<Host narrow />);
+      const value = (column: string) => document.querySelector(`[data-row-id="r1"]`)?.closest('[role="listitem"]')?.querySelector(`[data-column-id="a:${column}"] > span:last-child`) as HTMLElement;
+      fireEvent.click(value("approvedPostPicture"));
+      expect(await violations()).toEqual([]);
+      fireEvent.click(value("itemCode"));
+      fireEvent.click(value("itemCode"));
+      expect(hasEditor()).toBe(true);
+      expect(await violations()).toEqual([]);
+    });
   });
 });
