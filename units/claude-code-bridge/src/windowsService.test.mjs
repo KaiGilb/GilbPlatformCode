@@ -647,8 +647,10 @@ describe("the real bridge under the real supervisor", () => {
   };
 
   it("restarts the bridge after it is killed", async () => {
+    // Spec: Chat.CodexConnect B-T1 — a broken --claude path fails this test, and the stand-in still cannot see this computer's PATH (meter: the status billing line names the Claude subscription)
     const state = path.join(dir, "state");
     // Built from scratch, with the stand-in Codex named by path. Spreading process.env would let the child find a codex or claude on this computer.
+    // node is only the symlink below. The Claude stand-in's shebang needs it. Codex is started by its path, so a broken --claude must not be hidden by Codex being ready.
     const env = {
       PATH: path.join(dir, "bin"),
       HOME: dir,
@@ -663,6 +665,7 @@ describe("the real bridge under the real supervisor", () => {
       XDG_RUNTIME_DIR: path.join(dir, "xdg", "runtime"),
     };
     fs.mkdirSync(env.PATH, { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(env.PATH, "node"));
     const c = parseCli(["--supervise", "--state-dir", state, "--port", "0", "--claude", FAKE, "--codex", FAKE_CODEX]);
     const run = runSupervisor(c, { home: dir, env, file: BRIDGE, pollMs: 50 });
     stopRun = async () => {
@@ -677,6 +680,8 @@ describe("the real bridge under the real supervisor", () => {
       }
     };
     const first = await until(() => readStatus()?.ok && readStatus(), 20000, "the first bridge");
+    // Codex alone can start the bridge. The Claude subscription line is written only after the --claude stand-in answers.
+    expect(String(first.billing)).toContain("Claude subscription");
     const hello = async (port) => (await fetch(`http://127.0.0.1:${port}/v1/hello`)).json();
     expect((await hello(first.port)).bridge).toBe("gilb-claude-code-bridge");
     process.kill(first.pid, "SIGKILL"); // on Windows this ends the process hard, like taskkill /F
@@ -684,6 +689,7 @@ describe("the real bridge under the real supervisor", () => {
       const s = readStatus();
       return s?.ok && s.pid !== first.pid && s;
     }, 15000, "a new bridge after the kill");
+    expect(String(second.billing)).toContain("Claude subscription");
     expect((await hello(second.port)).bridge).toBe("gilb-claude-code-bridge");
     expect(fs.readFileSync(path.join(dir, "local", "gilb-claude-code-bridge", "bridge.log"), "utf8")).toMatch(/bridge stopped .* starting it again in 1 s/);
   }, 60000);
