@@ -800,7 +800,16 @@ describe("round 3 Codex turn limits", () => {
       const r = await turn(secret, { engine: "codex", prompt: "SHELLITEM" });
       expect(r.error).toEqual({ message: GUARD });
       pid = rpcs("turn/start").at(-1)?.pid;
-      expect(rows().some((row) => row.event === "sigterm" && row.pid === pid)).toBe(true);
+      // The bridge sends SIGTERM before this error comes back. The stand-in writes the sigterm row
+      // in its signal handler, and that write is not ordered against this read.
+      const hasSigterm = () => rows().some((row) => row.event === "sigterm" && row.pid === pid);
+      const deadline = Date.now() + 3000;
+      while (!hasSigterm() && Date.now() < deadline) await delay(20);
+      if (!hasSigterm()) {
+        const held = rows().map((row) => `${row.event ?? "?"}${row.pid !== undefined ? ":" + row.pid : ""}`).join(", ") || "(empty)";
+        throw new Error(`missing sigterm row for pid ${pid}; log held: ${held}`);
+      }
+      expect(hasSigterm()).toBe(true);
       let dead = false;
       try { await until(() => !alive(pid), 1500); dead = true; } catch { dead = false; }
       expect(dead).toBe(true);
