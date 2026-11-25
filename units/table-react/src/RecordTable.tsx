@@ -110,6 +110,8 @@ const LABEL_STYLE = "font-semibold uppercase tracking-wide";
 /** A link's chip: every link value is drawn in one, whether its cell holds one value or several. */
 const CHIP = "inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]";
 const NARROW_LINE = 20;
+/** The height of a list row's line whose value can be selected and edited. */
+const NARROW_EDIT_LINE = 28;
 /** The height of a list row's line that holds a cell with several values: room for a finger on the cell and its "+N". */
 const NARROW_TOUCH_LINE = 44;
 /** A value longer than this is not also put into its tooltip: it is in the page once, in its cell. */
@@ -457,7 +459,9 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   // A list row shows its name and, under it, only the columns that hold a value in THAT row (the first `NARROW_FIELDS` of them, in
   // column order): a row with no values is its name alone. So a row's height is worked out from its own cells; no row is measured.
   // A line with several values is `NARROW_TOUCH_LINE` high, so a finger has 44 px on the cell without the chip being drawn larger.
-  const narrowHeightFor = (lines: number, roomy: number) => 30 + lines * NARROW_LINE + roomy * (NARROW_TOUCH_LINE - NARROW_LINE) + 10;
+  // Where values can be edited a line is `NARROW_EDIT_LINE` high: room for a finger on the value, and for the selection's edge.
+  const narrowLine = editing ? NARROW_EDIT_LINE : NARROW_LINE;
+  const narrowHeightFor = (lines: number, roomy: number) => 30 + lines * narrowLine + roomy * (NARROW_TOUCH_LINE - narrowLine) + 10;
   const isManyValued = (cell: Cell | undefined) => cell?.kind === "list" && cell.items.length > 1;
   const narrowHeightOf = (index: number) => {
     const shown = narrowFieldsOfRow(columns, rows[index]?.original.cells ?? [], NARROW_FIELDS);
@@ -488,7 +492,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   // A change of layout changes every row's height.
   useEffect(() => {
     virtualizer.measure();
-  }, [narrow, columns, rowHeight, rows, virtualizer]);
+  }, [narrow, columns, rowHeight, rows, virtualizer, narrowLine]);
 
   // The rows in view (not the extra ones drawn around them).
   const inView = virtualizer.range;

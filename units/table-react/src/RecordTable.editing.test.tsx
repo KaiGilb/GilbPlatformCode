@@ -718,6 +718,12 @@ describe("table-react: editing a cell", () => {
       await waitFor(() => expect(asked[0]).toMatchObject({ rowId: "r1", columnId: "a:itemCode", value: "P-10", base: "P-1" }));
     });
 
+    test("a row of the list is as tall as its lines, each 28 px where values can be edited (found in a browser: 20 px lines ran into the next row)", () => {
+      render(<Host narrow />);
+      // r1 lists three values, r2 two (stock note, item code), r3 one (item code): 30 + lines x 28 + 10.
+      expect((screen.getAllByRole("listitem") as HTMLElement[]).map((i) => i.style.height)).toEqual(["124px", "96px", "68px"]);
+    });
+
     test("a tap on a read-only value says why; a tap on the name still opens the record", () => {
       render(<Host narrow />);
       fireEvent.click(line("r1", "approvedPostPicture"));
