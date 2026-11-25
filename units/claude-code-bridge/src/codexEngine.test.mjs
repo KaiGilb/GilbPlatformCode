@@ -804,9 +804,11 @@ describe("round 3 Codex turn limits", () => {
 
   it("a Codex child that ignores SIGTERM is killed", async () => {
     // Spec: Chat.CodexConnect round 3 F3 — SIGTERM, then SIGKILL after the grace. FAKE_CODEX_IGNORE_TERM is a guess.
+    // Spec: Chat.CodexConnect B-S1 — the grace is the production one, so a late sigterm row is still written (meter: the sigterm row, then the child is gone)
     let pid;
     try {
-      await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" }, opts: { killGraceMs: 200 } });
+      // A shorter grace kills the stand-in before a late row is written. The production grace does not.
+      await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" } });
       const r = await turn(secret, { engine: "codex", prompt: "SHELLITEM" });
       expect(r.error).toEqual({ message: GUARD });
       pid = rpcs("turn/start").at(-1)?.pid;
@@ -825,7 +827,8 @@ describe("round 3 Codex turn limits", () => {
         expect(hasSigterm()).toBe(true);
       }
       let dead = false;
-      try { await until(() => !alive(pid), 1500); dead = true; } catch { dead = false; }
+      // SIGKILL follows the production grace, 3 seconds after SIGTERM. The row can land up to a second after that signal.
+      try { await until(() => !alive(pid), 4500); dead = true; } catch { dead = false; }
       expect(dead).toBe(true);
     } finally {
       if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
