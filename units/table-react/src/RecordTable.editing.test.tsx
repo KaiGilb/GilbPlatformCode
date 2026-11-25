@@ -545,6 +545,31 @@ describe("table-react: editing a cell", () => {
       }
     });
 
+    // Tester round 6 R6-B: a failed value typed back to what the vault holds is given up: nothing is sent, the cell is not left "Saving…",
+    // and the host is told, so it forgets what it held.
+    test("a failed value typed back to the stored one: nothing sent, no 'Saving…', the host told; back online nothing is retried", async () => {
+      dropped = [];
+      let fail = true;
+      answer = () => { if (fail) throw offline(); };
+      render(<Host />);
+      go("r1", "altText");
+      key("r1", "Enter");
+      type("oops");
+      fireEvent.keyDown(editor(), { key: "Enter" });
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      go("r1", "altText");
+      key("r1", "Enter");
+      type("warm");
+      fireEvent.keyDown(editor(), { key: "Enter" });
+      await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+      expect(cellEl("r1", "altText").getAttribute("data-cell-state")).not.toBe("saving");
+      expect(screen.getByTestId("record-table-save-state").textContent).not.toMatch(/Saving/);
+      expect(dropped).toEqual(["r1 a:altText"]);
+      fail = false;
+      await act(async () => { window.dispatchEvent(new Event("online")); await new Promise((r) => setTimeout(r, 50)); });
+      expect(asked.map((a) => a.value)).toEqual(["oops"]);
+    });
+
     test("Escape on a failed cell restores the stored value and says 'Change dropped'; nothing more is sent", async () => {
       answer = () => { throw offline(); };
       render(<Host />);

@@ -699,7 +699,13 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     dropDraft(key);
     const stored = storedValueOf(at.cell) ?? null;
     // Nothing to write when the value is what the vault holds, unless a save of this cell is still open (then this settles it).
-    if (saves.views.get(key)?.phase !== undefined && saves.views.get(key)?.phase !== "saved" && saves.views.get(key)?.phase !== "note") saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
+    const unsettledHere = saves.views.get(key)?.phase !== undefined && saves.views.get(key)?.phase !== "saved" && saves.views.get(key)?.phase !== "note";
+    if (unsettledHere && sameCellValue(parsed.value, stored)) {
+      // The value typed back to what the vault holds (tester round 6, R6-B): the unsaved one is given up, nothing is sent, the cell's
+      // "Saving…" ends, and the host forgets what it held.
+      saves.drop(key, null);
+      editing?.onDropped?.(edit.rowId, edit.colId);
+    } else if (unsettledHere) saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
     else if (!sameCellValue(parsed.value, stored)) saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
     setEdit(null);
     if (then === "stay") return null;
