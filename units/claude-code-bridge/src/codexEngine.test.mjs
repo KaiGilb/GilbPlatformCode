@@ -18,6 +18,7 @@ import {
   parseCli,
   codexChildEnv,
   resolveCodexLaunch,
+  resolveCodexBin,
   codexVersionOf,
   codexVersionAtLeast,
   CODEX_CHAT_FLAGS,
@@ -98,6 +99,7 @@ async function startBridge(extra = {}) {
     home: dir,
     log: (l) => lines.push(String(l)),
     ...(extra.now ? { now: extra.now } : {}),
+    ...(extra.opts ?? {}),
     env: {
       ...process.env,
       FAKE_CODEX_LOG: codexLog,
@@ -205,11 +207,22 @@ const waitCodex = async () => {
 };
 
 describe("codexChildEnv", () => {
-  it("drops OpenAI key variables and keeps CODEX_HOME", () => {
-    // Proves: the Codex child environment removes every OPENAI_ name and the three named key variables, and keeps CODEX_HOME.
+  it("drops secret-like names and does not add the Claude tool timeouts", () => {
+    // Spec: Chat.CodexConnect round 3 R5 — the Codex child is the plain environment minus billing and secret-like names.
+    // Proves: OpenAI names, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL, API_KEY and a trailing _KEY are removed.
+    // Proves: CODEX_HOME, PATH, HOME, proxy names, SSH_AUTH_SOCK and locale names stay, and the Claude tool timeouts are not added.
     const out = codexChildEnv({
       PATH: "/bin",
+      HOME: "/home/person",
       CODEX_HOME: "/home/person/.codex",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+      HTTP_PROXY: "http://proxy.example",
+      http_proxy: "http://proxy.example",
+      HTTPS_PROXY: "http://proxy.example",
+      NO_PROXY: "localhost",
+      ALL_PROXY: "http://proxy.example",
+      SSH_AUTH_SOCK: "/tmp/ssh",
       OPENAI_API_KEY: "sk",
       openai_api_key: "sk2",
       OPENAI_BASE_URL: "https://example.invalid",
@@ -217,14 +230,32 @@ describe("codexChildEnv", () => {
       CODEX_ACCESS_TOKEN: "t",
       AZURE_OPENAI_API_KEY: "a",
       codex_api_key: "k2",
+      CODEX_CONNECTORS_TOKEN: "c",
+      GITHUB_TOKEN: "g",
+      AWS_SECRET_ACCESS_KEY: "s",
+      OPENROUTER_API_KEY: "o",
+      MY_PASSWORD: "p",
+      DB_PASSWD: "p2",
+      USER_CREDENTIAL: "c2",
+      SOME_KEY: "k2",
       KEEP_ME: "yes",
       ANTHROPIC_API_KEY: "anth",
     });
     expect(out.CODEX_HOME).toBe("/home/person/.codex");
     expect(out.KEEP_ME).toBe("yes");
     expect(out.PATH).toBe("/bin");
-    expect(out.MCP_TOOL_TIMEOUT).toBeDefined();
-    const bad = Object.keys(out).filter((k) => k.toUpperCase().startsWith("OPENAI_") || ["CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "AZURE_OPENAI_API_KEY"].includes(k.toUpperCase()) || k.toUpperCase() === "ANTHROPIC_API_KEY");
+    expect(out.HOME).toBe("/home/person");
+    expect(out.LANG).toBe("en_US.UTF-8");
+    expect(out.LC_ALL).toBe("en_US.UTF-8");
+    expect(out.HTTP_PROXY).toBe("http://proxy.example");
+    expect(out.http_proxy).toBe("http://proxy.example");
+    expect(out.HTTPS_PROXY).toBe("http://proxy.example");
+    expect(out.NO_PROXY).toBe("localhost");
+    expect(out.ALL_PROXY).toBe("http://proxy.example");
+    expect(out.SSH_AUTH_SOCK).toBe("/tmp/ssh");
+    expect(out.MCP_TOOL_TIMEOUT).toBeUndefined();
+    expect(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBeUndefined();
+    const bad = Object.keys(out).filter((k) => /TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY/i.test(k) || k.toUpperCase().endsWith("_KEY") || k.toUpperCase().startsWith("OPENAI_") || k.toUpperCase() === "ANTHROPIC_API_KEY");
     expect(bad).toEqual([]);
   });
 });
@@ -620,5 +651,361 @@ describe("an account that is not ChatGPT", () => {
     const r = await turn(secret, { engine: "codex" });
     expect(r.error).toEqual({ message: UNKNOWN_TURN });
     expect(rpcs("thread/start")).toHaveLength(0);
+  });
+});
+
+const IDLE = "Codex stopped answering, so the bridge stopped this turn.";
+const UNREAD_TURN = "The bridge stopped this turn: it could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const UNREAD_HELLO = "The bridge could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const LINE_TURN = "The bridge stopped this turn: Codex sent more than it will read.";
+const LINE_HELLO = "Could not start Codex: it sent more than the bridge will read.";
+const PROVIDER = "The bridge stopped this turn: your Codex is set to use another model provider. This bridge runs Codex only on your ChatGPT sign-in.";
+const NO_ANSWER = "Codex gave no answer.";
+const alive = (pid) => {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+};
+/** The turn, or a stand-in result when the stream is still open after `ms`. */
+async function turnWithin(extra, ms = 2500) {
+  return Promise.race([
+    turn(secret, extra),
+    delay(ms).then(() => ({ status: 0, events: [], error: { message: "still open" }, message: undefined })),
+  ]);
+}
+function turnPid() {
+  const listed = new Set(rpcs("model/list").map((row) => row.pid));
+  const row = [...rpcs("initialize")].reverse().find((item) => !listed.has(item.pid));
+  return row ? row.pid : undefined;
+}
+
+describe("round 3 Codex turn limits", () => {
+  it("an old Codex is not driven past the handshake", async () => {
+    // Spec: Chat.CodexConnect round 3 F1 — a version below CODEX_MIN_VERSION never gets account/read, a thread, or turn/start.
+    await startBridge({ env: { FAKE_CODEX_VERSION: "0.100.0" } });
+    const r = await turn(secret, { engine: "codex", prompt: "should not run" });
+    expect(r.error).toEqual({ message: TOO_OLD });
+    // The background check also speaks initialize. Wait until it has listed models, so the turn's pid is the one that did not.
+    await until(() => rpcs("model/list").length >= 1);
+    const pid = turnPid();
+    expect(pid).toBeTruthy();
+    expect(rpcs("account/read").filter((row) => row.pid === pid)).toHaveLength(0);
+    expect(rpcs("thread/start").filter((row) => row.pid === pid)).toHaveLength(0);
+    expect(rpcs("turn/start").filter((row) => row.pid === pid)).toHaveLength(0);
+  });
+
+  it("a Codex that does not give a version is not driven", async () => {
+    // Spec: Chat.CodexConnect round 3 F1 — no x.y.z in the userAgent stops the turn before account/read.
+    await startBridge({ env: { FAKE_CODEX_NO_VERSION: "1" } });
+    const r = await turn(secret, { engine: "codex", prompt: "should not run" });
+    expect(r.error).toEqual({ message: UNREAD_TURN });
+    await until(() => rpcs("model/list").length >= 1);
+    const pid = turnPid();
+    expect(rpcs("account/read").filter((row) => row.pid === pid)).toHaveLength(0);
+    expect(rpcs("thread/start")).toHaveLength(0);
+  });
+
+  it("a userAgent with no version has the version sentence in hello", async () => {
+    // Spec: Chat.CodexConnect round 3 F8 — installed, not supported, and not the timeout sentence.
+    await startBridge({ env: { FAKE_CODEX_NO_VERSION: "1" } });
+    const codex = await waitCodex();
+    expect(codex.installed).toBe(true);
+    expect(codex.supported).toBe(false);
+    expect(codex.ready).toBe(false);
+    expect(codex.reason).toBe(UNREAD_HELLO);
+  });
+
+  it("a silent turn ends at the idle limit and the child is stopped", async () => {
+    // Spec: Chat.CodexConnect round 3 F2 — no line after turn/start ends the turn, and the child is gone.
+    await startBridge({ opts: { codexIdleMs: 400, codexTurnMaxMs: 20000 } });
+    const r = await turnWithin({ engine: "codex", prompt: "SILENT" }, 3000);
+    expect(r.error).toEqual({ message: IDLE });
+    const pid = rpcs("turn/start").at(-1)?.pid;
+    expect(pid).toBeTruthy();
+    await until(() => !alive(pid), 2000);
+  });
+
+  it("lines keep the idle clock back, and the overall limit still ends the turn", async () => {
+    // Spec: Chat.CodexConnect round 3 F2 — the 24 hour cap is a real stop, and output from the child resets the idle clock.
+    await startBridge({ opts: { codexIdleMs: 400, codexTurnMaxMs: 1200 } });
+    const pending = turn(secret, { engine: "codex", prompt: "TICK" });
+    await until(() => rpcs("turn/start").length >= 1);
+    const atStart = Date.now();
+    const r = await Promise.race([
+      pending,
+      delay(3000).then(() => ({ error: { message: "still open" }, message: undefined })),
+    ]);
+    const after = Date.now() - atStart;
+    expect(r.error).toEqual({ message: IDLE });
+    expect(after).toBeGreaterThan(700);
+    expect(after).toBeLessThan(2500);
+    const pid = rpcs("turn/start").at(-1).pid;
+    await until(() => !alive(pid), 2000);
+  });
+
+  it("a pending tool call does not hold the idle clock", async () => {
+    // Spec: Chat.CodexConnect round 3 F2 — a relayed tool call does not reset or suspend the idle clock.
+    await startBridge({ opts: { codexIdleMs: 700, codexTurnMaxMs: 20000 } });
+    const live = await openTurn(secret, { engine: "codex", prompt: "CALLTOOL", tools: [{ name: "probe_echo", description: "d", inputSchema: { type: "object", properties: {} } }] });
+    await until(() => live.events.some((e) => e[0] === "tool_request"));
+    const saw = await until(() => live.events.some((e) => e[0] === "error"), 3000).then(() => true).catch(() => false);
+    expect(saw).toBe(true);
+    expect(live.events.find((e) => e[0] === "error")[1]).toEqual({ message: IDLE });
+  });
+
+  it("a Codex child that ignores SIGTERM is killed", async () => {
+    // Spec: Chat.CodexConnect round 3 F3 — SIGTERM, then SIGKILL after the grace. FAKE_CODEX_IGNORE_TERM is a guess.
+    let pid;
+    try {
+      await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" }, opts: { killGraceMs: 200 } });
+      const r = await turn(secret, { engine: "codex", prompt: "SHELLITEM" });
+      expect(r.error).toEqual({ message: GUARD });
+      pid = rpcs("turn/start").at(-1)?.pid;
+      expect(rows().some((row) => row.event === "sigterm" && row.pid === pid)).toBe(true);
+      let dead = false;
+      try { await until(() => !alive(pid), 1500); dead = true; } catch { dead = false; }
+      expect(dead).toBe(true);
+    } finally {
+      if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
+    }
+  });
+
+  it("close waits until a Codex child that ignores SIGTERM is gone", async () => {
+    // Spec: Chat.CodexConnect round 3 F3 — bridge.close returns only after the Codex child is gone.
+    let pid;
+    try {
+      await startBridge({ env: { FAKE_CODEX_IGNORE_TERM: "1" }, opts: { killGraceMs: 200 } });
+      const live = await openTurn(secret, { engine: "codex", prompt: "WAITFOREVER" });
+      await until(() => live.turnId && rpcs("turn/start").length >= 1);
+      pid = rpcs("turn/start").at(-1).pid;
+      expect(alive(pid)).toBe(true);
+      await bridge.close();
+      bridge = undefined;
+      expect(alive(pid)).toBe(false);
+    } finally {
+      if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
+    }
+  });
+
+  it("a long answer outside ASCII is not cut at a chunk edge", async () => {
+    // Spec: Chat.CodexConnect round 3 F4 — stdout is decoded before lines are split. The small writes are a guess.
+    await startBridge();
+    const text = "å€😀漢".repeat(8000);
+    const r = await turn(secret, { engine: "codex", prompt: "WIDE" });
+    expect(r.error).toBeUndefined();
+    expect(r.message.content).toBe(text);
+    expect(r.message.content.includes("\uFFFD")).toBe(false);
+  });
+});
+
+describe("round 3 Codex tool and item guards", () => {
+  it("a second gilb row and a row whose tools are not an object are refused", async () => {
+    // Spec: Chat.CodexConnect round 3 F6 — server names are unique, exactly one gilb, and tools is a plain object.
+    await startBridge({ env: { FAKE_CODEX_DOUBLE_GILB: "1" } });
+    const doubled = await turn(secret, { engine: "codex", tools: [{ name: "probe_echo", description: "d", inputSchema: { type: "object", properties: {} } }] });
+    expect(doubled.error).toEqual({ message: LIMITS });
+    expect(rpcs("turn/start")).toHaveLength(0);
+    await bridge.close();
+    bridge = undefined;
+    if (dir) await removeTestDir(dir);
+    await startBridge({ env: { FAKE_CODEX_STATUS: "omit-tools" } });
+    const omitted = await turn(secret, { engine: "codex" });
+    expect(omitted.error).toEqual({ message: LIMITS });
+    expect(rpcs("turn/start")).toHaveLength(0);
+    await bridge.close();
+    bridge = undefined;
+    if (dir) await removeTestDir(dir);
+    await startBridge({ env: { FAKE_CODEX_STATUS: "no-name" } });
+    const unnamed = await turn(secret, { engine: "codex" });
+    expect(unnamed.error).toEqual({ message: LIMITS });
+    await bridge.close();
+    bridge = undefined;
+    if (dir) await removeTestDir(dir);
+    await startBridge({ env: { FAKE_CODEX_STATUS: "tools-array" } });
+    const arrayTools = await turn(secret, { engine: "codex" });
+    expect(arrayTools.error).toEqual({ message: LIMITS });
+  });
+
+  it("a stop item is caught on every item notification once the thread exists", async () => {
+    // Spec: Chat.CodexConnect round 3 F7 — item/completed, item/updated, and an item while turn/start is unanswered.
+    // CommandExecution is not a Codex 0.167.2 item type, so it does not stop the turn.
+    await startBridge();
+    expect((await turnWithin({ engine: "codex", prompt: "COMPLETEDSHELL" })).error).toEqual({ message: GUARD });
+    expect((await turnWithin({ engine: "codex", prompt: "UPDATEDSHELL" })).error).toEqual({ message: GUARD });
+    expect((await turnWithin({ engine: "codex", prompt: "EARLYSHELL" }, 3000)).error).toEqual({ message: GUARD });
+    const kept = await turn(secret, { engine: "codex", prompt: "CASESHELL" });
+    expect(kept.error).toBeUndefined();
+    expect(kept.message.content).toBe("case-kept");
+  });
+
+  it("the thread pins model_provider openai and refuses another provider", async () => {
+    // Spec: Chat.CodexConnect round 3 R1 — model_provider openai in the thread config, and modelProvider openai on the answer.
+    await startBridge();
+    const ok = await turn(secret, { engine: "codex", prompt: "pin-provider" });
+    expect(ok.error).toBeUndefined();
+    expect(rpcs("thread/start")[0].params.config.model_provider).toBe("openai");
+    await bridge.close();
+    bridge = undefined;
+    if (dir) await removeTestDir(dir);
+    await startBridge({ env: { FAKE_CODEX_MODEL_PROVIDER: "other" } });
+    const bad = await turn(secret, { engine: "codex", prompt: "other-provider" });
+    expect(bad.error).toEqual({ message: PROVIDER });
+    expect(rpcs("turn/start")).toHaveLength(0);
+  });
+
+  it("a resumed turn is retried only when thread/resume was refused", async () => {
+    // Spec: Chat.CodexConnect round 3 R3 — a failed resumed turn is final. A refused thread/resume is still retried once.
+    await startBridge();
+    const first = await turn(secret, { engine: "codex", prompt: "first-body", tools: [{ name: "probe_echo", description: "d", inputSchema: { type: "object", properties: {} } }] });
+    const id = first.message.sessionId;
+    const failed = await turn(secret, { engine: "codex", prompt: "FAILTURN", sessionId: id });
+    expect(failed.error).toEqual({ message: "Codex: the model broke badly" });
+    expect(rpcs("turn/start")).toHaveLength(2);
+    const live = await openTurn(secret, {
+      engine: "codex",
+      prompt: "TOOLTHENFAIL",
+      sessionId: id,
+      tools: [{ name: "probe_echo", description: "d", inputSchema: { type: "object", properties: {} } }],
+    }, "ECHO:hi");
+    await until(() => live.events.some((e) => e[0] === "error"));
+    expect(live.events.filter((e) => e[0] === "tool_request")).toHaveLength(1);
+    expect(live.events.find((e) => e[0] === "error")[1]).toEqual({ message: "Codex: the model broke badly" });
+    const lost = "00000000-0000-4000-8000-000000000099";
+    const retried = await turn(secret, { engine: "codex", prompt: "fresh-after-refuse", sessionId: lost, history: "Person: earlier" });
+    expect(retried.message.content).toContain("Earlier in this conversation:");
+    expect(retried.message.sessionId).not.toBe(lost);
+  });
+
+  it("a turn with no agentMessage is an error, and a huge line stops the turn", async () => {
+    // Spec: Chat.CodexConnect round 3 R7 — no agentMessage is "Codex gave no answer.", and a line over 16 MiB stops the turn.
+    await startBridge();
+    const empty = await turn(secret, { engine: "codex", prompt: "NOANSWER" });
+    expect(empty.error).toEqual({ message: NO_ANSWER });
+    expect(empty.message).toBeUndefined();
+    const huge = await turn(secret, { engine: "codex", prompt: "BIGLINE" });
+    expect(huge.error).toEqual({ message: LINE_TURN });
+    expect(huge.message).toBeUndefined();
+  });
+
+  it("a background check that is sent a huge line is not ready", async () => {
+    // Spec: Chat.CodexConnect round 3 R7 — the hello probe's reason when Codex sends a line the bridge will not read.
+    await startBridge({ env: { FAKE_CODEX_BIG_LINE: "1" } });
+    const body = await until(async () => {
+      const hello = await pairedHello();
+      const codex = hello.engines?.find((e) => e.id === "codex");
+      return codex && !codex.checking ? hello : null;
+    }, 20000);
+    const codex = body.engines.find((e) => e.id === "codex");
+    expect(codex.installed).toBe(true);
+    expect(codex.ready).toBe(false);
+    expect(codex.reason).toBe(LINE_HELLO);
+  });
+});
+
+describe("finding the Codex binary", () => {
+  const place = (folder) => {
+    fs.mkdirSync(folder, { recursive: true });
+    const file = path.join(folder, "codex");
+    fs.writeFileSync(file, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    fs.chmodSync(file, 0o755);
+    return file;
+  };
+
+  it("finds Codex on PATH, beside node, under the newer fnm, and under nvm", () => {
+    // Spec: Chat.CodexConnect round 3 F9 — the lookup order, newest version first, and a directory is not a binary.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-lookup-"));
+    try {
+      const nodeDir = path.join(home, "node-bin");
+      fs.mkdirSync(nodeDir);
+      const execPath = path.join(nodeDir, "node");
+      fs.writeFileSync(execPath, "", { mode: 0o755 });
+      const pathDir = path.join(home, "path-bin");
+      const onPath = place(pathDir);
+      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath)).toBe(onPath);
+      fs.rmSync(onPath);
+      const beside = place(nodeDir);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(beside);
+      fs.rmSync(beside);
+      const older = place(path.join(home, ".local/share/fnm/node-versions/v22.9.0/installation/bin"));
+      const newer = place(path.join(home, ".local/share/fnm/node-versions/v22.23.0/installation/bin"));
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(newer);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).not.toBe(older);
+      fs.rmSync(older);
+      fs.rmSync(newer);
+      const nvm = place(path.join(home, ".nvm/versions/node/v18.20.0/bin"));
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(nvm);
+      fs.rmSync(nvm);
+      fs.mkdirSync(path.join(pathDir, "codex"), { mode: 0o755 });
+      expect(resolveCodexBin("codex", { PATH: pathDir }, home, "darwin", execPath)).toBe(null);
+      expect(resolveCodexBin("codex", { PATH: "" }, home, "darwin", execPath)).toBe(null);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("a Codex installed after a failed lookup is found on the next turn and the next check", async () => {
+    // Spec: Chat.CodexConnect round 3 R6 — a miss is not remembered. The next turn and the next background check look again.
+    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-")));
+    const binDir = path.join(dir, "bin");
+    const nodeDir = path.join(dir, "no-node");
+    fs.mkdirSync(binDir);
+    fs.mkdirSync(nodeDir);
+    fs.symlinkSync(process.execPath, path.join(binDir, "node"));
+    codexLog = path.join(dir, "codex.log");
+    let clock = 0;
+    lines = [];
+    bridge = createBridge({
+      port: 0,
+      claudeBin: FAKE_CLAUDE,
+      codexBin: "codex",
+      allowedOrigins: [APP],
+      workDir: path.join(dir, "work"),
+      home: dir,
+      now: () => clock,
+      platformOpts: { platform: "darwin", nodePath: path.join(nodeDir, "node") },
+      log: (l) => lines.push(String(l)),
+      env: {
+        PATH: binDir,
+        HOME: dir,
+        FAKE_CODEX_LOG: codexLog,
+        CODEX_HOME: path.join(dir, "codex-home"),
+      },
+    });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    const paired = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
+    secret = (await paired.json()).secret;
+    const missed = await waitCodex();
+    expect(missed.installed).toBe(false);
+    expect(missed.reason).toBe(CODEX_NOT_INSTALLED);
+    fs.copyFileSync(FAKE_CODEX, path.join(binDir, "codex"));
+    fs.chmodSync(path.join(binDir, "codex"), 0o755);
+    const r = await turn(secret, { engine: "codex", prompt: "found-later" });
+    expect(r.error).toBeUndefined();
+    expect(r.message.content).toBe("found-later");
+    clock = 31000;
+    const again = await pairedHello();
+    expect(again.engines.find((e) => e.id === "codex").checking).toBe(true);
+    const ready = await waitCodex();
+    expect(ready.installed).toBe(true);
+    expect(ready.ready).toBe(true);
+    expect(ready.version).toBe("0.167.2");
+  });
+
+  it("the README lists the Codex lookup and does not compare it with claude", () => {
+    // Spec: Chat.CodexConnect round 3 F5 — the sentence matches the lookup, and it does not mention how claude is found.
+    const text = fs.readFileSync(path.join(HERE, "../README.md"), "utf8");
+    expect(text).not.toContain("the way it finds `claude`");
+    expect(text).toContain("~/.local/share/fnm/aliases/default/bin");
+    expect(text).toContain("~/.local/share/fnm/node-versions/*/installation/bin");
+    expect(text).toContain("~/.nvm/versions/node/*/bin");
+    expect(text).toContain("~/.volta/bin");
+    expect(text).toContain("~/.asdf/shims");
+    expect(text).toContain("~/.local/share/mise/shims");
+    expect(text).toContain("~/.npm-global/bin");
+    expect(text).toContain("~/.bun/bin");
+    expect(text).toContain("~/Library/pnpm");
+    expect(text).toContain("~/.local/bin");
+    expect(text).toContain("/opt/homebrew/bin");
+    expect(text).toContain("/usr/local/bin");
+    expect(text).toContain("%LOCALAPPDATA%\\pnpm");
   });
 });

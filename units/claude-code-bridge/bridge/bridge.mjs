@@ -39,6 +39,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -197,18 +198,32 @@ export function childEnv(env = process.env) {
     return out;
 }
 /**
- * The environment a Codex child gets: {@link childEnv}, and also every OpenAI key variable removed.
- * CODEX_HOME stays: it is where the person's ChatGPT sign-in lives, and this bridge uses that sign-in.
+ * The environment a Codex child gets: the bridge's environment, minus the Anthropic billing names and every secret-like name.
+ * It is not {@link childEnv}: a Codex chat turn does not get the Claude tool-timeout variables that function adds.
+ * A name is secret-like when it contains TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or API_KEY, or ends in `_KEY`,
+ * or is an OpenAI key (`OPENAI_*`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `AZURE_OPENAI_API_KEY`).
+ * CODEX_HOME, PATH, HOME, the proxy variables, SSH_AUTH_SOCK and locale names stay: the ChatGPT sign-in lives in Codex's own store, and a turn needs no key of the person's.
  * Names are compared without regard to case, because Windows env names are.
  * @param env The bridge's environment.
  * @returns The environment for `codex app-server`.
  */
 export function codexChildEnv(env = process.env) {
     const out = {};
-    for (const [k, v] of Object.entries(childEnv(env))) {
+    for (const [k, v] of Object.entries(env)) {
+        if (envDenied(k))
+            continue;
         const u = k.toUpperCase();
+        // Kept even when a later rule would treat the name as a secret: the sign-in store, the path, and the network the CLI already uses.
+        const kept = u === "CODEX_HOME" || u === "PATH" || u === "HOME" || u === "SSH_AUTH_SOCK" || u === "LANG" || u === "LANGUAGE" || u.startsWith("LC_")
+            || u === "HTTP_PROXY" || u === "HTTPS_PROXY" || u === "NO_PROXY" || u === "ALL_PROXY";
+        if (kept) {
+            out[k] = v;
+            continue;
+        }
         // An API key in the environment would bill a turn to a key. The ChatGPT sign-in is the only billing this bridge allows.
         if (u.startsWith("OPENAI_") || u === "CODEX_API_KEY" || u === "CODEX_ACCESS_TOKEN" || u === "AZURE_OPENAI_API_KEY")
+            continue;
+        if (u.includes("TOKEN") || u.includes("SECRET") || u.includes("PASSWORD") || u.includes("PASSWD") || u.includes("CREDENTIAL") || u.includes("API_KEY") || u.endsWith("_KEY"))
             continue;
         out[k] = v;
     }
@@ -2644,8 +2659,16 @@ export async function systemAccessDialog(platform, env, run = realAccessRun, o =
 // ---- engine: codex (shared rules) -------------------------------------------------------------------------------
 // Measured on Kai's Mac, Codex CLI 0.167.2. web_search "disabled" is the 2026-11-24 probe. The flag list is the
 // 2026-11-25 measurement: twenty names, with code_mode_host left on (see the comment above CODEX_CHAT_FLAGS).
-/** The oldest Codex this bridge will drive. Older than this, hello says to update and a turn is not started from a supported engine. */
+/** The oldest Codex this bridge will drive. Older than this, hello says to update and a turn stops after the handshake, before account/read. */
 export const CODEX_MIN_VERSION = "0.167.0";
+/** No line from the Codex child for this long ends the turn. Longer than the 31 minutes a relayed tool may take, because Codex sends nothing while it waits for one. */
+export const CODEX_IDLE_MS = 35 * 60 * 1000;
+/** A Codex turn ends after this long even when lines keep arriving. The idle sentence is used: the ruling named one sentence for both stops. */
+export const CODEX_TURN_MAX_MS = 24 * 60 * 60 * 1000;
+/** After SIGTERM, a Codex child that has not exited is SIGKILL'd. A chat child is not a process-group leader, so this is that one pid. */
+export const CODEX_KILL_GRACE_MS = 3000;
+/** One stdout or stderr line longer than this (16 MiB) stops the child. A line of exactly this length is still read. */
+export const CODEX_LINE_MAX = 16 * 1024 * 1024;
 // code_mode_host is left on because Codex 0.167.2 calls MCP tools through it (measured 2026-11-25: with it off the model cannot call the gilb tool); its JavaScript tool has no file or network access (measured the same day); the item guard is the second line.
 /**
  * Passed to `codex app-server` on every chat turn and on the hello probe.
@@ -2673,8 +2696,8 @@ export const CODEX_CHAT_FLAGS = [
     "--disable", "workspace_dependencies",
     "--disable", "worktrees",
 ];
-/** Merged into every thread's config. `web_search: "disabled"` is the switch the probe measured. */
-export const CODEX_CHAT_CONFIG = { web_search: "disabled" };
+/** Merged into every thread's config. `web_search: "disabled"` is the switch the probe measured. `model_provider` pins the thread to the ChatGPT sign-in (the answer must say `modelProvider` is `openai`). */
+export const CODEX_CHAT_CONFIG = { web_search: "disabled", model_provider: "openai" };
 /** Appended to the page's system text. Sub-agents cannot be switched off in Codex 0.167.2, so the model is told to hand off instead. */
 export const CODEX_CHAT_SENTENCE = "Use only the gilb tools. Do not start other agents yourself: when the work needs another agent, use the hand-off tool this chat gives you.";
 /** Efforts a Codex turn may name. Claude's list is separate and does not include `ultra`. */
@@ -2694,6 +2717,12 @@ const CODEX_RESUME_MSG = "The Codex session could not be resumed.";
 /** The child exited before the handshake and its stderr named an unknown `--disable` flag. */
 const CODEX_UNKNOWN_TURN = "Could not start Codex: this bridge does not know your Codex version yet. Update the bridge.";
 const CODEX_UNKNOWN_HELLO = "This bridge does not support your Codex version yet. Update the bridge.";
+const CODEX_UNREADABLE_VERSION_TURN = "The bridge stopped this turn: it could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const CODEX_UNREADABLE_VERSION_HELLO = "The bridge could not read your Codex version. Update Codex with `npm install -g @openai/codex`.";
+const CODEX_IDLE_MSG = "Codex stopped answering, so the bridge stopped this turn.";
+const CODEX_LINE_TURN = "The bridge stopped this turn: Codex sent more than it will read.";
+const CODEX_LINE_HELLO = "Could not start Codex: it sent more than the bridge will read.";
+const CODEX_PROVIDER_MSG = "The bridge stopped this turn: your Codex is set to use another model provider. This bridge runs Codex only on your ChatGPT sign-in.";
 /** Item types that stop a chat turn. `collabAgentToolCall` and `subAgentActivity` are not here: Codex 0.167.2 still emits them with every flag on, and the child thread inherits this lock-down. */
 const CODEX_GUARD_ITEMS = new Set(["commandExecution", "fileChange", "webSearch", "imageView", "imageGeneration", "dynamicToolCall"]);
 /**
@@ -2773,12 +2802,17 @@ function codexAccountRefusal(kind) {
 /**
  * Why hello says Codex is not ready, or undefined when it is.
  * Unknown `--disable` wins over "too old": the process never got as far as a version.
+ * A handshake with no version is its own sentence. A line the bridge will not read is its own sentence too.
  */
 function codexHelloReason(s) {
     if (!s.installed)
         return CODEX_NOT_INSTALLED;
     if (s.unknownFlag)
         return CODEX_UNKNOWN_HELLO;
+    if (s.lineTooLong)
+        return CODEX_LINE_HELLO;
+    if (s.version === null && s.handshook)
+        return CODEX_UNREADABLE_VERSION_HELLO;
     if (s.version === null)
         return s.startError ?? "Could not start Codex: timed out";
     if (!s.supported)
@@ -2826,9 +2860,9 @@ function parseCodexThread(result) {
     if (!root || !id)
         return null;
     const model = typeof root.model === "string" ? root.model : typeof thread?.model === "string" ? thread.model : "";
-    return { id, model, approvalPolicy: root.approvalPolicy, sandboxType: asRecord(root.sandbox)?.type };
+    return { id, model, approvalPolicy: root.approvalPolicy, sandboxType: asRecord(root.sandbox)?.type, modelProvider: root.modelProvider };
 }
-/** One row per server. Null when a row is not readable: a guess must not pass the "only gilb has tools" check. */
+/** One row per server. Null when a row has no string name or its tools are not a plain object: a guess must not pass the check. */
 function parseCodexServers(result) {
     const data = asRecord(result)?.data;
     if (!Array.isArray(data))
@@ -2836,13 +2870,48 @@ function parseCodexServers(result) {
     const out = [];
     for (const row of data) {
         const r = asRecord(row);
-        if (!r || typeof r.name !== "string")
+        const tools = asRecord(r?.tools);
+        if (!r || typeof r.name !== "string" || !tools)
             return null;
-        if (r.tools !== undefined && !asRecord(r.tools))
-            return null;
-        out.push({ name: r.name, tools: r.tools === undefined ? [] : Object.keys(asRecord(r.tools) ?? {}) });
+        out.push({ name: r.name, tools: Object.keys(tools) });
     }
     return out;
+}
+/**
+ * Why this server list is not exactly one `gilb` row with this chat's tools, or null when it is.
+ * A repeated name is a refusal on its own. A row the parser could not read never reaches here.
+ * @param servers The parsed list, or null when it could not be read.
+ * @param toolNames The tools this turn offered.
+ * @returns A short reason for the log, or null when the list is the one this chat allows.
+ */
+function codexServersRefusal(servers, toolNames) {
+    if (!servers)
+        return "the server list could not be read";
+    const seen = new Set();
+    for (const s of servers) {
+        if (seen.has(s.name))
+            return `server ${s.name} is listed twice`;
+        seen.add(s.name);
+    }
+    const gilbs = servers.filter((s) => s.name === "gilb");
+    if (gilbs.length !== 1)
+        return "gilb was not the one server";
+    const foreign = servers.filter((s) => s.name !== "gilb" && s.tools.length > 0);
+    if (foreign.length > 0)
+        return `server ${foreign[0].name} has ${foreign[0].tools.length} tools`;
+    if (!sameNameSet(gilbs[0].tools, toolNames))
+        return "gilb tools differ";
+    return null;
+}
+/** The item type that stops a chat turn, or null when the item is allowed or has no string type. Names are compared exactly. */
+function codexBlockedItem(item) {
+    if (!item || typeof item.type !== "string")
+        return null;
+    if (CODEX_GUARD_ITEMS.has(item.type))
+        return item.type;
+    if (item.type === "mcpToolCall" && !codexMcpCallAllowed(item))
+        return item.type;
+    return null;
 }
 /** Token use for the page. Cached input is not counted twice: the page adds the three input counts. */
 function codexTurnUsage(raw, model) {
@@ -2906,16 +2975,29 @@ class CodexCallError extends Error {
 class CodexRpc {
     child;
     buf = "";
+    errBuf = "";
     nextId = 1;
     pending = new Map();
     err = "";
     note = () => { };
     asked = () => { };
+    onActivity = () => { };
+    onLineTooLong = () => { };
+    outDec = new StringDecoder("utf8");
+    errDec = new StringDecoder("utf8");
+    tooLong = false;
     exited = false;
     constructor(child) {
         this.child = child;
         child.on("close", () => {
             this.exited = true;
+            // A character split across the last chunk is still one character. The flush does not invent a newline.
+            const rest = this.outDec.end();
+            if (rest)
+                this.pushOut(rest);
+            const errRest = this.errDec.end();
+            if (errRest)
+                this.pushErr(errRest);
             const err = new CodexCallError("exited", "exit");
             for (const p of this.pending.values()) {
                 clearTimeout(p.timer);
@@ -2923,12 +3005,12 @@ class CodexRpc {
             }
             this.pending.clear();
         });
+        // One decoder per stream: joining Buffer chunks as strings replaces a character cut by a chunk edge.
         child.stderr?.on("data", (d) => {
-            this.err = (this.err + String(d)).slice(-4000);
+            this.pushErr(typeof d === "string" ? d : this.errDec.write(d));
         });
         child.stdout?.on("data", (d) => {
-            this.buf += String(d);
-            this.drain();
+            this.pushOut(typeof d === "string" ? d : this.outDec.write(d));
         });
         child.stdin?.on("error", () => { });
         child.on("error", (e) => {
@@ -2942,8 +3024,52 @@ class CodexRpc {
     }
     onNotification(fn) { this.note = fn; }
     onServerRequest(fn) { this.asked = fn; }
-    stderr() { return this.err; }
+    /** A complete line arrived. The idle clock uses this, not a relayed tool result. */
+    setActivity(fn) { this.onActivity = fn; }
+    /** A line was longer than {@link CODEX_LINE_MAX}. The turn or the probe stops from here. */
+    setLineTooLong(fn) { this.onLineTooLong = fn; }
+    lineTooLong() { return this.tooLong; }
+    stderr() { return this.errBuf ? (this.err + this.errBuf).slice(-4000) : this.err; }
     hasExited() { return this.exited; }
+    pushOut(text) {
+        if (this.tooLong)
+            return;
+        this.buf += text;
+        this.drain();
+    }
+    pushErr(text) {
+        if (this.tooLong)
+            return;
+        this.errBuf += text;
+        let i = this.errBuf.indexOf("\n");
+        while (i >= 0) {
+            if (i > CODEX_LINE_MAX) {
+                this.noteTooLong();
+                return;
+            }
+            const line = this.errBuf.slice(0, i);
+            this.errBuf = this.errBuf.slice(i + 1);
+            this.err = (this.err + line + "\n").slice(-4000);
+            this.onActivity();
+            i = this.errBuf.indexOf("\n");
+        }
+        if (this.errBuf.length > CODEX_LINE_MAX)
+            this.noteTooLong();
+    }
+    noteTooLong() {
+        if (this.tooLong)
+            return;
+        this.tooLong = true;
+        this.buf = "";
+        this.errBuf = "";
+        const err = new CodexCallError("line too long", "exit");
+        for (const p of this.pending.values()) {
+            clearTimeout(p.timer);
+            p.reject(err);
+        }
+        this.pending.clear();
+        this.onLineTooLong();
+    }
     request(method, params, timeoutMs) {
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
@@ -2965,11 +3091,19 @@ class CodexRpc {
         catch { /* the child is already gone */ }
     }
     drain() {
+        if (this.tooLong)
+            return;
         let i = this.buf.indexOf("\n");
         while (i >= 0) {
-            const line = this.buf.slice(0, i).trim();
+            if (i > CODEX_LINE_MAX) {
+                this.noteTooLong();
+                return;
+            }
+            const raw = this.buf.slice(0, i);
             this.buf = this.buf.slice(i + 1);
+            this.onActivity();
             i = this.buf.indexOf("\n");
+            const line = raw.trim();
             if (!line)
                 continue;
             let parsed;
@@ -3003,15 +3137,8 @@ class CodexRpc {
             if (method)
                 this.note(method, asRecord(msg.params) ?? {});
         }
-    }
-}
-function fileThere(f) {
-    try {
-        fs.accessSync(f, fs.constants.F_OK);
-        return true;
-    }
-    catch {
-        return false;
+        if (this.buf.length > CODEX_LINE_MAX)
+            this.noteTooLong();
     }
 }
 function winCodexCandidates(base, env) {
@@ -3020,13 +3147,57 @@ function winCodexCandidates(base, env) {
         return [base];
     return winExts(env).flatMap((x) => [base + x, base + x.toUpperCase()]);
 }
+/** A regular file. A link is followed. A directory is not a binary, even when the directory itself is executable. */
+function isRegularFile(f) {
+    try {
+        return fs.statSync(f).isFile();
+    }
+    catch {
+        return false;
+    }
+}
+/** A regular file the person may execute. Windows has no useful X bit, so a regular file is enough there. */
+function isExecutableFile(f, win) {
+    if (!isRegularFile(f))
+        return false;
+    if (win)
+        return true;
+    try {
+        fs.accessSync(f, fs.constants.X_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Version-looking names, newest first. A name with no number sorts last. Compared as numbers, so v22.23.0 beats v22.9.0. */
+function newestVersionNames(names) {
+    const nums = (name) => {
+        const found = name.match(/\d+/g);
+        return found ? found.map((n) => Number(n)) : [];
+    };
+    return [...names].sort((a, b) => {
+        const ka = nums(a);
+        const kb = nums(b);
+        const n = Math.max(ka.length, kb.length);
+        for (let i = 0; i < n; i++) {
+            const da = ka[i] ?? -1;
+            const db = kb[i] ?? -1;
+            if (da !== db)
+                return db - da;
+        }
+        return 0;
+    });
+}
 /**
  * The absolute path of the Codex CLI, or null when nothing is there.
- * A bare name is looked up on PATH, then beside this node, then in the usual install folders.
- * On Windows, `%APPDATA%\\npm` is included as well.
+ * A bare name is looked up in this order: PATH, the folder of the running node, then each node version
+ * manager bin under the home folder that exists (newest version first), then `~/.local/bin`, and on macOS
+ * and Linux `/opt/homebrew/bin` and `/usr/local/bin`. Windows also looks in `%APPDATA%\\npm` and `%LOCALAPPDATA%\\pnpm`.
+ * A bare-name hit must be a regular file the person may execute. An explicit path must be a regular file (a link is followed).
  * @param name A path, or the bare command name.
  * @param env The environment whose PATH is searched.
- * @param home The home folder for `~/.local/bin` and `~/.volta/bin`.
+ * @param home The home folder the version-manager bins are under.
  * @param platform `win32` uses PATHEXT and Windows paths.
  * @param execPath This process's node, so a global install beside node is found when PATH is short.
  */
@@ -3036,36 +3207,54 @@ export function resolveCodexBin(name, env = process.env, home = os.homedir(), pl
     if (win ? /[\\/]/.test(name) || path.win32.isAbsolute(name) : name.includes("/") || path.isAbsolute(name)) {
         const abs = P.resolve(name);
         if (win)
-            return winCodexCandidates(abs, env).find((f) => fileThere(f)) ?? null;
-        return fileThere(abs) ? abs : null;
+            return winCodexCandidates(abs, env).find((f) => isRegularFile(f)) ?? null;
+        return isRegularFile(abs) ? abs : null;
     }
     const sep = win ? ";" : ":";
-    const fromPath = String(envGet(env, "PATH") ?? "").split(sep).map((d) => d.trim().replace(/^"(.*)"$/, "$1")).filter((d) => d && (!win || path.win32.isAbsolute(d)));
-    const extra = [P.dirname(execPath), P.join(home, ".local", "bin")];
+    const dirs = String(envGet(env, "PATH") ?? "").split(sep).map((d) => d.trim().replace(/^"(.*)"$/, "$1")).filter((d) => d && (!win || path.win32.isAbsolute(d)));
+    dirs.push(P.dirname(execPath));
+    dirs.push(P.join(home, ".local", "share", "fnm", "aliases", "default", "bin"));
+    const versioned = (parent, rest) => {
+        let names;
+        try {
+            names = fs.readdirSync(parent);
+        }
+        catch {
+            return;
+        }
+        for (const child of newestVersionNames(names))
+            dirs.push(P.join(parent, child, ...rest));
+    };
+    versioned(P.join(home, ".local", "share", "fnm", "node-versions"), ["installation", "bin"]);
+    versioned(P.join(home, ".nvm", "versions", "node"), ["bin"]);
+    dirs.push(P.join(home, ".volta", "bin"));
+    dirs.push(P.join(home, ".asdf", "shims"));
+    dirs.push(P.join(home, ".local", "share", "mise", "shims"));
+    dirs.push(P.join(home, ".npm-global", "bin"));
+    dirs.push(P.join(home, ".bun", "bin"));
+    dirs.push(P.join(home, "Library", "pnpm"));
+    dirs.push(P.join(home, ".local", "bin"));
     if (!win)
-        extra.push("/opt/homebrew/bin", "/usr/local/bin");
-    extra.push(P.join(home, ".volta", "bin"));
-    if (win)
-        extra.push(path.win32.join(envGet(env, "APPDATA") ?? path.win32.join(home, "AppData", "Roaming"), "npm"));
-    for (const dir of [...fromPath, ...extra]) {
+        dirs.push("/opt/homebrew/bin", "/usr/local/bin");
+    else {
+        const appData = envGet(env, "APPDATA") ?? path.win32.join(home, "AppData", "Roaming");
+        const localApp = envGet(env, "LOCALAPPDATA") ?? path.win32.join(home, "AppData", "Local");
+        dirs.push(path.win32.join(appData, "npm"), path.win32.join(localApp, "pnpm"));
+    }
+    for (const dir of dirs) {
         if (!dir)
             continue;
         if (win) {
             if (!path.win32.isAbsolute(dir))
                 continue;
-            const hit = winCodexCandidates(path.win32.join(dir, name), env).find((f) => fileThere(f));
+            const hit = winCodexCandidates(path.win32.join(dir, name), env).find((f) => isExecutableFile(f, true));
             if (hit)
                 return hit;
         }
         else {
             const f = path.join(dir, name);
-            try {
-                fs.accessSync(f, fs.constants.X_OK);
+            if (isExecutableFile(f, false))
                 return f;
-            }
-            catch {
-                /* next folder */
-            }
         }
     }
     return null;
@@ -3098,6 +3287,80 @@ export function resolveCodexLaunch(bin, env = process.env, o = {}) {
         return { ok: true, command: nodePath, prefix: [real], shown: real };
     return { ok: true, command: real, prefix: [], shown: real };
 }
+/** Marks a Codex chat or probe child. Stopping it is a two-step kill of that one pid, not a process-group kill. */
+const CODEX_CHILD = Symbol("codexChild");
+const codexStopJobs = new WeakMap();
+function childGone(child) {
+    return child.exitCode !== null || child.signalCode !== null;
+}
+/** Resolves true once the child has exited, or false when `ms` passes first. Subscribing after the exit is not a miss. */
+function waitChildGone(child, ms) {
+    if (childGone(child))
+        return Promise.resolve(true);
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = (gone) => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(timer);
+            child.off("exit", onExit);
+            resolve(gone);
+        };
+        const onExit = () => finish(true);
+        const timer = setTimeout(() => finish(childGone(child)), ms);
+        child.once("exit", onExit);
+        if (childGone(child))
+            finish(true);
+    });
+}
+/**
+ * Stops one Codex child: SIGTERM, then SIGKILL after the grace when it is still there. On Windows, the existing tree kill.
+ * A second call for the same child waits for the first. The chat child is not a process-group leader.
+ * @param child The Codex child.
+ * @param o Grace, platform, and the Windows taskkill runner. Grace defaults to {@link CODEX_KILL_GRACE_MS}.
+ */
+function stopCodexProcess(child, o = {}) {
+    if (!child)
+        return Promise.resolve();
+    const existing = codexStopJobs.get(child);
+    if (existing)
+        return existing;
+    let finishJob = () => { };
+    const job = new Promise((resolve) => { finishJob = resolve; });
+    // Set before the first await, so a close that races this stop shares the one kill.
+    codexStopJobs.set(child, job);
+    void (async () => {
+        try {
+            const platform = o.platform ?? process.platform;
+            const grace = o.graceMs ?? CODEX_KILL_GRACE_MS;
+            if (platform === "win32") {
+                await killChild(child, o.env ?? process.env, { platform: "win32", execFile: o.execFile });
+                await waitChildGone(child, 5000);
+            }
+            else if (!childGone(child)) {
+                try {
+                    child.kill("SIGTERM");
+                }
+                catch { /* already gone */ }
+                if (!(await waitChildGone(child, grace))) {
+                    try {
+                        child.kill("SIGKILL");
+                    }
+                    catch { /* already gone */ }
+                    await waitChildGone(child, 5000);
+                }
+            }
+            child.stdin?.destroy();
+            child.stdout?.destroy();
+            child.stderr?.destroy();
+        }
+        finally {
+            finishJob();
+        }
+    })();
+    return job;
+}
 function startCodexProcess(launch, cwd, env) {
     try {
         const child = spawn(launch.command, [...launch.prefix, "app-server", ...CODEX_CHAT_FLAGS], {
@@ -3106,6 +3369,7 @@ function startCodexProcess(launch, cwd, env) {
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,
         });
+        child[CODEX_CHILD] = true;
         return { rpc: new CodexRpc(child) };
     }
     catch (e) {
@@ -3115,16 +3379,6 @@ function startCodexProcess(launch, cwd, env) {
 const CODEX_CLIENT = { clientInfo: { name: "gilb-claude-code-bridge", title: "Gilb Claude Code bridge", version: BRIDGE_VERSION } };
 const CODEX_PROBE_HELLO = { overallMs: 15_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
 const CODEX_PROBE_CHECK = { overallMs: 20_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
-/** Ends a probe child. SIGKILL, because the probe is not a turn and nothing it started should be left behind. */
-function endCodexProbeChild(child) {
-    try {
-        child.kill("SIGKILL");
-    }
-    catch { /* already gone */ }
-    child.stdin?.destroy();
-    child.stdout?.destroy();
-    child.stderr?.destroy();
-}
 /**
  * The one probe of `codex app-server`: initialize, then account/read, then model/list.
  * Hello's background check and {@link checkCodexReady} both call this, so the steps and the sentences cannot drift.
@@ -3138,7 +3392,8 @@ function endCodexProbeChild(child) {
 async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
     const limits = hooks.limits ?? CODEX_PROBE_HELLO;
     const stale = () => hooks.stale?.() === true;
-    const empty = () => ({ installed: false, version: null, supported: false, account: "unknown", plan: null, models: [], modelsHeld: false, unknownFlag: false });
+    const graceMs = hooks.graceMs ?? CODEX_KILL_GRACE_MS;
+    const empty = () => ({ installed: false, version: null, supported: false, account: "unknown", plan: null, models: [], modelsHeld: false, unknownFlag: false, handshook: false, lineTooLong: false });
     if (stale())
         return null;
     // A launch that is not ok is "not installed" for hello, the same as before this function was shared.
@@ -3153,6 +3408,7 @@ async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
     let models = [];
     let modelsHeld = false;
     let handshook = false;
+    let lineTooLong = false;
     try {
         const started = startCodexProcess(launch, cwd, env);
         if ("error" in started) {
@@ -3166,15 +3422,20 @@ async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
         hooks.onChild?.(rpc.child);
         if (stale())
             return null;
+        rpc.setLineTooLong(() => {
+            lineTooLong = true;
+            if (rpc)
+                void stopCodexProcess(rpc.child, { graceMs });
+        });
         cap = setTimeout(() => { if (rpc)
-            endCodexProbeChild(rpc.child); }, limits.overallMs);
+            void stopCodexProcess(rpc.child, { graceMs }); }, limits.overallMs);
         const init = await rpc.request("initialize", CODEX_CLIENT, limits.initializeMs);
         if (stale())
             return null;
         handshook = true;
         rpc.notify("initialized", {});
         version = codexVersionOf(asRecord(init)?.userAgent);
-        supported = version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
+        supported = !lineTooLong && version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
         const accountRes = await rpc.request("account/read", { refreshToken: false }, limits.accountMs);
         if (stale())
             return null;
@@ -3191,25 +3452,27 @@ async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
         catch { /* no list yet: a turn's model is checked by shape only */ }
         if (stale())
             return null;
-        return { installed: true, version, supported, account, plan, models, modelsHeld, unknownFlag: false };
+        return { installed: true, version, supported: lineTooLong ? false : supported, account, plan, models, modelsHeld, unknownFlag: false, handshook, lineTooLong };
     }
     catch {
         if (stale() || !rpc)
             return null;
-        const unknownFlag = rpc.stderr().includes("Unknown feature flag");
+        const unknownFlag = !lineTooLong && rpc.stderr().includes("Unknown feature flag");
         const tail = stderrTail(rpc.stderr());
         const shownVersion = handshook ? version : null;
         return {
             installed: true,
             version: shownVersion,
-            supported,
+            supported: lineTooLong ? false : supported,
             account,
             plan,
             models,
             modelsHeld,
             unknownFlag,
-            // No version and no unknown flag: the person sees the start failure, or "timed out" when stderr is empty.
-            ...(!unknownFlag && shownVersion === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
+            handshook,
+            lineTooLong,
+            // No version and no unknown flag and no oversized line: the person sees the start failure, or "timed out" when stderr is empty.
+            ...(!lineTooLong && !unknownFlag && shownVersion === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
         };
     }
     finally {
@@ -3217,7 +3480,7 @@ async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
             clearTimeout(cap);
         if (rpc) {
             hooks.onDone?.(rpc.child);
-            endCodexProbeChild(rpc.child);
+            await stopCodexProcess(rpc.child, { graceMs });
         }
     }
 }
@@ -3253,9 +3516,11 @@ export function checkCodexReady(codexBin, env = process.env, platformOpts = {}) 
         const reason = codexHelloReason({
             installed: true,
             version: facts.version,
-            supported: facts.unknownFlag ? false : facts.supported,
+            supported: facts.lineTooLong || facts.unknownFlag ? false : facts.supported,
             account: facts.account,
             unknownFlag: facts.unknownFlag,
+            handshook: facts.handshook,
+            lineTooLong: facts.lineTooLong,
             ...(facts.startError ? { startError: facts.startError } : {}),
         });
         if (reason || !facts.version)
@@ -3991,8 +4256,12 @@ export function createBridge(opts = {}) {
     let port = opts.port ?? DEFAULT_PORT;
     // How to start claude, worked out once (Windows: never through a shell; a claude that cannot be started safely is refused).
     const launch = resolveClaudeLaunch(claudeBin, env, opts.platformOpts);
+    /** SIGTERM, then SIGKILL, for a Codex child. The Claude path below is unchanged. */
+    const codexKillOpts = () => ({ graceMs: opts.killGraceMs ?? CODEX_KILL_GRACE_MS, platform: opts.platformOpts?.platform, env, execFile: opts.platformOpts?.execFile });
     /** Stops a child (and its group). A tracked code child is looked at first, so what it started is known before the group is gone and its children are re-parented. */
     const stopChild = async (c) => {
+        if (c && c[CODEX_CHILD])
+            return stopCodexProcess(c, codexKillOpts());
         const tr = c?.pid !== undefined ? tracks.get(c.pid) : undefined;
         if (tr && platform !== "win32")
             await Promise.race([snapshotTrack(tr), new Promise((r) => setTimeout(r, 1500).unref())]); // Windows: no wait before the kill (the last periodic look is used) // a last look, but a stop never waits long for it
@@ -5463,20 +5732,30 @@ export function createBridge(opts = {}) {
     let codexLaunchMemo;
     // A library caller that does not name a binary must not start the real app-server. The command line always passes one.
     const codexWanted = typeof opts.codexBin === "string" && opts.codexBin.length > 0;
-    /** Resolved once per bridge, the first time a probe or a turn needs Codex. Absent `codexBin`: not installed, and nothing is spawned. */
+    /** A successful lookup, kept so the next turn does not search again. A miss is not kept: Codex installed later is found on the next look. Absent `codexBin`: not installed, and nothing is spawned. */
     const getCodexLaunch = () => {
         if (!codexWanted)
             return { ok: false, reason: CODEX_NOT_INSTALLED };
-        if (!codexLaunchMemo)
-            codexLaunchMemo = resolveCodexLaunch(opts.codexBin, env, { ...(opts.platformOpts ?? {}), home });
-        return codexLaunchMemo;
+        if (codexLaunchMemo?.ok)
+            return codexLaunchMemo;
+        const next = resolveCodexLaunch(opts.codexBin, env, { ...(opts.platformOpts ?? {}), home });
+        if (next.ok)
+            codexLaunchMemo = next;
+        return next;
     };
     const rememberProbe = (s) => {
-        const reason = codexHelloReason({ installed: s.installed, version: s.version, supported: s.unknownFlag ? false : s.supported, account: s.account, unknownFlag: s.unknownFlag, ...(s.startError ? { startError: s.startError } : {}) });
-        const next = { installed: s.installed, version: s.version, supported: s.unknownFlag ? false : s.supported, account: s.account, plan: s.plan, models: s.models, modelsHeld: s.modelsHeld, at: now() };
+        const supported = s.lineTooLong || s.unknownFlag ? false : s.supported;
+        const reason = codexHelloReason({ installed: s.installed, version: s.version, supported, account: s.account, unknownFlag: s.unknownFlag, handshook: s.handshook, lineTooLong: s.lineTooLong, ...(s.startError ? { startError: s.startError } : {}) });
+        const next = { installed: s.installed, version: s.version, supported, account: s.account, plan: s.plan, models: s.models, modelsHeld: s.modelsHeld, at: now() };
         if (reason)
             next.reason = reason;
         codexCache = next;
+    };
+    /** Codex children still alive. A turn drops `turn.child` when it finishes, before the kill has completed, so close waits on this set. */
+    const codexLive = new Set();
+    const watchCodex = (child) => {
+        codexLive.add(child);
+        child.on("exit", () => { codexLive.delete(child); });
     };
     // Node's stream types in this tsconfig share no fields with `{ unref }`, so the cast is the only way to drop the ref.
     const unrefStream = (s) => { try {
@@ -5491,8 +5770,10 @@ export function createBridge(opts = {}) {
             const facts = await probeCodexAppServer(getCodexLaunch(), workDir, codexChildEnv(env), {
                 stale,
                 limits: CODEX_PROBE_HELLO,
+                graceMs: opts.killGraceMs ?? CODEX_KILL_GRACE_MS,
                 onChild: (child) => {
                     probeChild = child;
+                    watchCodex(child);
                     // The probe is not a turn. It must not keep the process, or a test suite, alive after close.
                     child.unref();
                     unrefStream(child.stdin);
@@ -5528,19 +5809,9 @@ export function createBridge(opts = {}) {
         probeGen += 1;
         const c = probeChild;
         probeChild = null;
-        if (!c || c.exitCode !== null || c.signalCode !== null)
+        if (!c)
             return Promise.resolve();
-        return new Promise((resolve) => {
-            const timer = setTimeout(resolve, 1000);
-            c.once("exit", () => { clearTimeout(timer); resolve(); });
-            try {
-                endCodexProbeChild(c);
-            }
-            catch {
-                clearTimeout(timer);
-                resolve();
-            }
-        });
+        return stopCodexProcess(c, codexKillOpts());
     }
     /** Close waits until the in-flight probe has dropped its timers. Bounded, so a stuck child cannot hold the bridge open. */
     function waitProbeDone() {
@@ -5602,33 +5873,72 @@ export function createBridge(opts = {}) {
                 return resolve({ error: `Could not start Codex: ${started.error}`, sessionId: mode.sessionId, model: "" });
             const rpc = started.rpc;
             turn.child = rpc.child;
+            watchCodex(rpc.child);
+            const idleMs = opts.codexIdleMs ?? CODEX_IDLE_MS;
+            const turnMaxMs = opts.codexTurnMaxMs ?? CODEX_TURN_MAX_MS;
             let settled = false;
             let handshook = false;
             let threadId = "";
             let model = "";
             let gilbReady = false;
+            let sawAgent = false;
             let stopReason = null;
             let lastAny = "";
             let lastFinal = "";
             let sawFinal = false;
             let usageRaw;
+            let idleTimer;
+            let maxTimer;
             // A binding assigned only inside onNotification stays `null` to the checker after an await, so the status lives on a holder.
             const doneBox = { turn: null };
             let wake = null;
             const poke = () => { wake?.(); };
+            const clearLimits = () => {
+                if (idleTimer)
+                    clearTimeout(idleTimer);
+                if (maxTimer)
+                    clearTimeout(maxTimer);
+                idleTimer = undefined;
+                maxTimer = undefined;
+            };
             const finish = (out) => {
                 if (settled)
                     return;
                 settled = true;
+                clearLimits();
                 turn.child = null;
                 for (const pid of [...turn.pending.keys()])
                     cancelCall(turn, pid);
+                poke();
                 resolve(out);
             };
             const stop = () => { try {
                 void stopChild(rpc.child);
             }
             catch { /* already gone */ } };
+            // No line at all for idleMs. A relayed tool result is not a line from the child, so it does not reset this.
+            const armIdle = () => {
+                if (settled)
+                    return;
+                if (idleTimer)
+                    clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    if (settled)
+                        return;
+                    finish({ error: CODEX_IDLE_MSG, sessionId: threadId || mode.sessionId, model });
+                    stop();
+                }, idleMs);
+            };
+            const armMax = () => {
+                if (settled || maxTimer)
+                    return;
+                maxTimer = setTimeout(() => {
+                    if (settled)
+                        return;
+                    finish({ error: CODEX_IDLE_MSG, sessionId: threadId || mode.sessionId, model });
+                    stop();
+                }, turnMaxMs);
+            };
             const failStopped = () => {
                 if (!stopReason)
                     return false;
@@ -5683,19 +5993,18 @@ export function createBridge(opts = {}) {
                     if (!stopReason && name === "gilb" && status === "failed")
                         stopReason = { kind: "foreign", detail: "gilb failed" };
                 }
-                if (method === "item/started") {
-                    const item = asRecord(params.item);
-                    const type = typeof item?.type === "string" ? item.type : "";
-                    // Every thread of this process, not only the turn's: a sub-agent's shell is still a shell.
-                    // gilb is this chat. Server "codex" is Codex's own resource list; only the three built-in names are allowed.
-                    const blocked = CODEX_GUARD_ITEMS.has(type) || (type === "mcpToolCall" && !codexMcpCallAllowed(item ?? {}));
+                // One guard for every notification that carries an item, from the moment this turn's thread exists.
+                // A sub-agent's shell is still a shell. The type name is compared exactly as Codex writes it.
+                if (threadId !== "") {
+                    const blocked = codexBlockedItem(asRecord(params.item));
                     if (!stopReason && blocked)
-                        stopReason = { kind: "guard", detail: type || "unknown item" };
+                        stopReason = { kind: "guard", detail: blocked };
                 }
                 const own = threadId !== "" && params.threadId === threadId;
                 if (own && method === "item/completed") {
                     const item = asRecord(params.item);
                     if (item?.type === "agentMessage" && typeof item.text === "string") {
+                        sawAgent = true;
                         lastAny = item.text;
                         if (item.phase === "final_answer") {
                             lastFinal = item.text;
@@ -5709,8 +6018,19 @@ export function createBridge(opts = {}) {
                     const done = asRecord(params.turn);
                     doneBox.turn = { status: typeof done?.status === "string" ? done.status : "", error: done?.error ?? null };
                 }
+                // A stop item while turn/start is still unanswered must end the turn now, not when that request times out.
+                if (stopReason)
+                    failStopped();
                 poke();
             });
+            rpc.setActivity(() => armIdle());
+            rpc.setLineTooLong(() => {
+                if (settled)
+                    return;
+                finish({ error: CODEX_LINE_TURN, sessionId: threadId || mode.sessionId, model });
+                stop();
+            });
+            armIdle();
             rpc.child.on("close", () => {
                 poke();
                 if (settled)
@@ -5728,11 +6048,22 @@ export function createBridge(opts = {}) {
             });
             void (async () => {
                 try {
-                    await rpc.request("initialize", CODEX_CLIENT, 20_000);
+                    const init = await rpc.request("initialize", CODEX_CLIENT, 20_000);
                     if (settled)
                         return;
                     handshook = true;
                     rpc.notify("initialized", {});
+                    const version = codexVersionOf(asRecord(init)?.userAgent);
+                    if (!version) {
+                        finish({ error: CODEX_UNREADABLE_VERSION_TURN, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    if (!codexVersionAtLeast(version, CODEX_MIN_VERSION)) {
+                        finish({ error: CODEX_TOO_OLD, sessionId: mode.sessionId, model: "", bridgeRefused: true });
+                        stop();
+                        return;
+                    }
                     if (failStopped())
                         return;
                     let accountResult;
@@ -5783,12 +6114,13 @@ export function createBridge(opts = {}) {
                             ? await rpc.request("thread/resume", { ...base, threadId: mode.sessionId }, 20_000)
                             : await rpc.request("thread/start", { ...base, ephemeral: false }, 20_000);
                     }
-                    catch {
+                    catch (e) {
                         if (settled)
                             return;
-                        // A lost thread is retried by handleTurn as a new session. A new thread that fails is not.
+                        // Only a refused thread/resume is retried. A timeout or a dead child is final. A new thread that fails is not retried.
+                        const resumeFailed = mode.resume && e instanceof CodexCallError && e.kind === "rpc";
                         finish(mode.resume
-                            ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "" }
+                            ? { error: CODEX_RESUME_MSG, sessionId: mode.sessionId, model: "", ...(resumeFailed ? { resumeFailed: true } : {}) }
                             : { error: "Could not start Codex: the thread did not start.", sessionId: mode.sessionId, model: "" });
                         stop();
                         return;
@@ -5805,6 +6137,11 @@ export function createBridge(opts = {}) {
                     }
                     threadId = thread.id;
                     model = thread.model;
+                    if (thread.modelProvider !== "openai") {
+                        finish({ error: CODEX_PROVIDER_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
                     if (failStopped())
                         return;
                     if (thread.approvalPolicy !== "never" || thread.sandboxType !== "readOnly") {
@@ -5837,11 +6174,16 @@ export function createBridge(opts = {}) {
                     }
                     if (settled)
                         return;
-                    const gilb = servers?.find((s) => s.name === "gilb");
-                    const foreign = servers?.filter((s) => s.name !== "gilb" && s.tools.length > 0) ?? [];
-                    if (!servers || !gilb || foreign.length > 0 || !sameNameSet(gilb.tools, turn.tools.map((t) => t.name))) {
-                        const why = !servers ? "the server list could not be read" : foreign.length > 0 ? `server ${foreign[0].name} has ${foreign[0].tools.length} tools` : "gilb tools differ";
-                        log(`codex did not start with only this chat's tools (${why})`);
+                    const why = codexServersRefusal(servers, turn.tools.map((t) => t.name));
+                    if (why || !servers) {
+                        log(`codex did not start with only this chat's tools (${why ?? "the server list could not be read"})`);
+                        finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
+                        stop();
+                        return;
+                    }
+                    const gilb = servers.find((s) => s.name === "gilb");
+                    if (!gilb) {
+                        log("codex did not start with only this chat's tools (gilb was not the one server)");
                         finish({ error: CODEX_LIMITS_MSG, sessionId: threadId, model, bridgeRefused: true });
                         stop();
                         return;
@@ -5850,6 +6192,7 @@ export function createBridge(opts = {}) {
                         return;
                     turn.send("status", { engine: "codex", account: "chatgpt", tools: gilb.tools, mcpServers: servers.map((s) => ({ name: s.name, tools: s.tools.length })), model });
                     try {
+                        armMax();
                         await rpc.request("turn/start", {
                             threadId,
                             input: [{ type: "text", text: prompt, text_elements: [] }],
@@ -5867,16 +6210,24 @@ export function createBridge(opts = {}) {
                     }
                     if (settled || failStopped())
                         return;
-                    await waitFor(() => doneBox.turn !== null || stopReason !== null || rpc.hasExited(), 24 * 60 * 60 * 1000);
+                    const ended = await waitFor(() => doneBox.turn !== null || stopReason !== null || settled || rpc.hasExited(), turnMaxMs);
                     if (settled || failStopped())
                         return;
                     const completed = doneBox.turn;
-                    if (!completed)
+                    if (!ended || !completed) {
+                        finish({ error: CODEX_IDLE_MSG, sessionId: threadId, model });
+                        stop();
                         return;
+                    }
                     if (completed.status === "completed") {
-                        const answer = sawFinal ? lastFinal : lastAny;
-                        const usage = codexTurnUsage(usageRaw, model);
-                        finish({ result: { type: "result", result: answer, is_error: false, num_turns: 1 }, sessionId: threadId, model, ...(usage ? { codexUsage: usage } : {}) });
+                        if (!sawAgent) {
+                            finish({ error: "Codex gave no answer.", sessionId: threadId, model });
+                        }
+                        else {
+                            const answer = sawFinal ? lastFinal : lastAny;
+                            const usage = codexTurnUsage(usageRaw, model);
+                            finish({ result: { type: "result", result: answer, is_error: false, num_turns: 1 }, sessionId: threadId, model, ...(usage ? { codexUsage: usage } : {}) });
+                        }
                     }
                     else if (completed.status === "failed") {
                         const errObj = asRecord(completed.error);
@@ -6163,12 +6514,14 @@ export function createBridge(opts = {}) {
             // A resumed session already holds the thread. A new one is given the earlier turns as text.
             const history = !parent && typeof body.history === "string" ? body.history.slice(0, 60000) : "";
             const freshPrompt = history ? `Earlier in this conversation:\n${history}\n\nThe person's new message:\n${prompt}` : prompt;
-            // A Codex turn and a Claude turn share the resume retry. The Codex result's session id is the thread Codex returned, not the id we made up.
+            // The Codex result's session id is the thread Codex returned, not the id we made up.
+            // Claude still retries any failed resume. Codex retries only when thread/resume itself was refused.
             const run = (m, text) => (turn.engine === "codex" ? runCodex(turn, m, text) : runClaude(turn, m, text));
             let sessionId = resumeId || crypto.randomUUID();
             let out = await run({ sessionId, resume: Boolean(resumeId) }, resumeId ? prompt : freshPrompt);
-            // A turn the bridge itself refused is not retried: a retry would hide the true reason and run the engine again after a safety refusal.
-            if (resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !out.bridgeRefused && !turn.closed && !turn.cancelRequested) {
+            const claudeRetry = turn.engine !== "codex" && resumeId && (out.error || out.result?.num_turns === 0) && !out.apiKeyRefused && !out.bridgeRefused && !turn.closed && !turn.cancelRequested;
+            const codexRetry = turn.engine === "codex" && !!resumeId && out.resumeFailed === true && !turn.closed && !turn.cancelRequested;
+            if (claudeRetry || codexRetry) {
                 // The session is gone (different folder, cleaned up): start a new one with the thread as text.
                 sessionId = crypto.randomUUID();
                 out = await run({ sessionId, resume: false }, freshPrompt);
@@ -7343,7 +7696,8 @@ export function createBridge(opts = {}) {
         bridgeClosing = true; // from here no preview starts, even on a connection that is still open, and the Codex probe must not start again
         const probeStopped = stopCodexProbe().then(() => waitProbeDone());
         const previewsClosed = closeAllPreviews();
-        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)))).then(() => killAllTracked()).then(() => previewsClosed).then(() => probeStopped);
+        // codexLive still holds a child whose turn already dropped turn.child. Close waits until those pids are gone.
+        const stopped = Promise.all([...turns.values()].map((t) => stopChild(t.child)).concat([...liveGroups.values()].map((c) => stopChild(c)), [...codexLive].map((c) => stopCodexProcess(c, codexKillOpts())))).then(() => killAllTracked()).then(() => previewsClosed).then(() => probeStopped);
         return stopped.then(() => new Promise((resolve) => server.close(() => { releaseLock(); resolve(); })));
     };
     const server = http.createServer((req, res) => {

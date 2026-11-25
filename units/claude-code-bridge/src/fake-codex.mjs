@@ -11,6 +11,19 @@
  * Guess: the initialize body this process POSTs to the gilb MCP url uses the same shape the Claude stand-in uses.
  * The order (initialize, notifications/initialized, tools/list) was measured. Guess: a tool call's arguments are { text: "hi" }.
  * FAKE_CODEX_FORCE_TOOLS is a test switch, not something Codex does.
+ *
+ * The switches below are guesses. The real Codex CLI 0.167.2 was not measured to do any of them
+ * (probe run 2026-11-24, and the 2026-11-25 chat turns). They exist so a test can force a shape:
+ * FAKE_CODEX_NO_VERSION (userAgent with no x.y.z), FAKE_CODEX_IGNORE_TERM (SIGTERM is logged and ignored),
+ * FAKE_CODEX_WIDE_REPEATS plus FAKE_CODEX_CHUNK (a long answer outside ASCII, written in small stdout pieces),
+ * FAKE_CODEX_DOUBLE_GILB (two rows named gilb), FAKE_CODEX_STATUS (omit-tools, tools-array, no-name),
+ * FAKE_CODEX_MODEL_PROVIDER (thread answer modelProvider other than openai),
+ * FAKE_CODEX_BIG_LINE (one stdout line longer than 16 MiB).
+ * Prompt words, also guesses: SILENT (nothing after turn/start), TICK (a status line on a timer, no item),
+ * EARLYSHELL (a commandExecution item before the turn/start answer), COMPLETEDSHELL (that item only as
+ * item/completed), UPDATEDSHELL (only as item/updated), NOANSWER (turn/completed with no agentMessage),
+ * WIDE (the long answer), BIGLINE (the long line, then an answer the bridge must not show),
+ * TOOLTHENFAIL (one tool call, then a failed turn).
  */
 import fs from "node:fs";
 import readline from "node:readline";
@@ -22,8 +35,10 @@ const log = (o) => logPath && fs.appendFileSync(logPath, JSON.stringify({ pid: p
 
 // First line, before a stop or an unknown-flag exit: teardown waits on this pid, and tests read argv and env names.
 log({ event: "boot", argv, cwd: process.cwd(), envNames: Object.keys(process.env).sort() });
+// Guess: a child that stays up after SIGTERM. The real Codex was not measured to ignore it.
 process.on("SIGTERM", () => {
   log({ event: "sigterm" });
+  if (process.env.FAKE_CODEX_IGNORE_TERM === "1") return;
   process.exit(143);
 });
 
@@ -99,9 +114,12 @@ function threadResult(id, params) {
   const model = typeof params.model === "string" && params.model ? params.model : "gpt-fake-a";
   // Measured: a request sandbox of "read-only" comes back as type "readOnly". Any other string was not measured.
   const sandbox = params.sandbox === "read-only" ? { type: "readOnly", networkAccess: false } : { type: String(params.sandbox), networkAccess: false };
+  // Measured 2026-11-24: the thread answer carries modelProvider "openai". Any other value is a test switch.
+  const modelProvider = process.env.FAKE_CODEX_MODEL_PROVIDER || "openai";
   return {
-    thread: { id, cwd: params.cwd, model },
+    thread: { id, cwd: params.cwd, model, modelProvider },
     model,
+    modelProvider,
     cwd: params.cwd,
     approvalPolicy: params.approvalPolicy,
     sandbox,
@@ -109,6 +127,11 @@ function threadResult(id, params) {
 }
 
 function statusList() {
+  // Guess: these list shapes were not in the measured mcpServerStatus/list (one row per name, tools an object).
+  const mode = process.env.FAKE_CODEX_STATUS || "";
+  if (mode === "omit-tools") return { data: [{ name: "gilb" }, { name: "PersonServer", tools: {} }] };
+  if (mode === "tools-array") return { data: [{ name: "gilb", tools: ["probe_echo"] }, { name: "PersonServer", tools: {} }] };
+  if (mode === "no-name") return { data: [{ tools: { a: { name: "a" } } }, { name: "gilb", tools: {} }] };
   const config = thread?.config?.mcp_servers ?? {};
   const force = process.env.FAKE_CODEX_FORCE_TOOLS === "1";
   const data = serverNames().filter((name) => name !== "gilb").map((name) => {
@@ -120,6 +143,8 @@ function statusList() {
   const gilbTools = {};
   for (const name of thread?.gilbTools ?? []) gilbTools[name] = { name };
   data.push({ name: "gilb", runtimeStatus: "ready", tools: gilbTools });
+  // Guess: a second row with the same name. The measured list had one row per name.
+  if (process.env.FAKE_CODEX_DOUBLE_GILB === "1") data.push({ name: "gilb", runtimeStatus: "ready", tools: { shell: { name: "shell" } } });
   return { data };
 }
 
@@ -139,8 +164,93 @@ function finishTurn(threadId, turnId, text, phase) {
   note("turn/completed", { threadId, turn: { id: turnId, status: "completed", error: null } });
 }
 
+/**
+ * Writes one stdout buffer in pieces, with a short pause so the bridge reads them apart.
+ * Guess: the real app-server was not measured to split a character across writes. The pause is a test technique.
+ */
+async function writeChunks(buf) {
+  const size = Math.max(1, Number(process.env.FAKE_CODEX_CHUNK || 4096));
+  for (let i = 0; i < buf.length; i += size) {
+    fs.writeSync(1, buf.subarray(i, Math.min(buf.length, i + size)));
+    await new Promise((r) => setTimeout(r, 8));
+  }
+}
+
+/**
+ * Writes every byte. A child's stdout is non-blocking, so one writeSync of a full buffer throws EAGAIN
+ * once the pipe is full and would never deliver a line long enough for the bridge to refuse.
+ * Guess: the real app-server was not measured to send a line this long.
+ * @param {number} fd The file descriptor.
+ * @param {Buffer} buf The bytes to write.
+ */
+function writeAllSync(fd, buf) {
+  let off = 0;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (off < buf.length) {
+    try {
+      const n = fs.writeSync(fd, buf, off, buf.length - off);
+      if (n > 0) off += n;
+    } catch (e) {
+      if (e?.code === "EPIPE") return; // the bridge closed the pipe after it had read enough
+      if (e?.code !== "EAGAIN") throw e;
+      Atomics.wait(pause, 0, 0, 2);
+    }
+  }
+}
+
+/** One stdout line of ASCII, longer than 16 MiB. Guess: the real app-server was not measured to send one. */
+function writeBigLine() {
+  const chunk = Buffer.alloc(1024 * 1024, 0x61);
+  for (let i = 0; i < 17; i++) writeAllSync(1, chunk);
+  writeAllSync(1, Buffer.from("\n"));
+}
+
 async function runScenario(prompt, threadId, turnId) {
-  if (prompt.includes("WAITFOREVER")) return;
+  // Guess: nothing after the turn/start answer. SILENT is the same wait as WAITFOREVER.
+  if (prompt.includes("WAITFOREVER") || prompt.includes("SILENT")) return;
+  if (prompt.includes("TICK")) {
+    // Guess: a notification with no item, on a timer, so a test can tell an idle clock from an overall clock.
+    const timer = setInterval(() => {
+      try { note("thread/status/changed", { threadId, status: "idle" }); } catch { /* the pipe is already closed */ }
+    }, 40);
+    timer.unref();
+    return;
+  }
+  if (prompt.includes("WIDE")) {
+    const unit = "å€😀漢";
+    const repeats = Math.max(1, Number(process.env.FAKE_CODEX_WIDE_REPEATS || 8000));
+    const text = unit.repeat(repeats);
+    const line = JSON.stringify({ method: "item/completed", params: { threadId, turnId, item: { type: "agentMessage", text, phase: "final_answer" } } }) + "\n";
+    await writeChunks(Buffer.from(line, "utf8"));
+    const rest = JSON.stringify({ method: "thread/tokenUsage/updated", params: { threadId, tokenUsage: { last: { totalTokens: 16208, inputTokens: 16196, cachedInputTokens: 13696, cacheWriteInputTokens: 0, outputTokens: 12, reasoningOutputTokens: 0 }, modelContextWindow: 475000 } } }) + "\n"
+      + JSON.stringify({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", error: null } } }) + "\n";
+    process.stdout.write(rest);
+    return;
+  }
+  if (prompt.includes("BIGLINE")) {
+    writeBigLine();
+    finishTurn(threadId, turnId, "should-not-arrive", "final_answer");
+    return;
+  }
+  if (prompt.includes("NOANSWER")) {
+    usageNote(threadId);
+    note("turn/completed", { threadId, turn: { id: turnId, status: "completed", error: null } });
+    return;
+  }
+  if (prompt.includes("COMPLETEDSHELL")) {
+    note("item/completed", { threadId, turnId, item: { type: "commandExecution" } });
+    return;
+  }
+  if (prompt.includes("UPDATEDSHELL")) {
+    note("item/updated", { threadId, turnId, item: { type: "commandExecution" } });
+    return;
+  }
+  if (prompt.includes("CASESHELL")) {
+    // Guess: this type string is not in Codex 0.167.2 ThreadItem.ts. It must not stop the turn.
+    note("item/started", { threadId, turnId, item: { type: "CommandExecution" } });
+    finishTurn(threadId, turnId, "case-kept", "final_answer");
+    return;
+  }
   if (prompt.includes("SUBAGENT")) {
     // Measured: collabAgentToolCall still starts with every disable flag on. A second thread's answer must not become this turn's answer.
     note("item/started", { threadId, turnId, item: { type: "collabAgentToolCall" } });
@@ -204,7 +314,7 @@ async function runScenario(prompt, threadId, turnId) {
     finishTurn(threadId, turnId, "no-phase-text");
     return;
   }
-  if (prompt.includes("CALLTOOL")) {
+  if (prompt.includes("CALLTOOL") || prompt.includes("TOOLTHENFAIL")) {
     const name = thread?.gilbTools?.[0];
     const url = thread?.gilbUrl;
     note("item/started", { threadId, turnId, item: { type: "mcpToolCall", server: "gilb", tool: name ?? "", status: "inProgress" } });
@@ -219,6 +329,11 @@ async function runScenario(prompt, threadId, turnId) {
       text = body?.result?.content?.[0]?.text ?? "no text";
     }
     note("item/completed", { threadId, turnId, item: { type: "mcpToolCall", server: "gilb", tool: name ?? "", status: "completed" } });
+    // Guess: a tool call followed by a failed turn. Measured turns that call a tool then complete do not fail.
+    if (prompt.includes("TOOLTHENFAIL")) {
+      note("turn/completed", { threadId, turn: { id: turnId, status: "failed", error: { message: "the model broke badly" } } });
+      return;
+    }
     finishTurn(threadId, turnId, text, "final_answer");
     return;
   }
@@ -228,8 +343,15 @@ async function runScenario(prompt, threadId, turnId) {
 async function onRequest(id, method, params) {
   log({ event: "rpc", method, id, params });
   if (method === "initialize") {
-    const version = process.env.FAKE_CODEX_VERSION || "0.167.2";
-    respond(id, { userAgent: `gilb-bridge/${version} (fake)`, codexHome: process.env.CODEX_HOME ?? "", platformFamily: "fake", platformOs: "fake" });
+    // Guess: one line the bridge should refuse to hold. Written here so the reader is already attached.
+    if (process.env.FAKE_CODEX_BIG_LINE === "1") {
+      writeBigLine();
+      return;
+    }
+    // Guess: a userAgent with no x.y.z. The measured userAgent carried the CLI version.
+    const version = process.env.FAKE_CODEX_NO_VERSION === "1" ? "" : (process.env.FAKE_CODEX_VERSION || "0.167.2");
+    const userAgent = version ? `gilb-bridge/${version} (fake)` : "gilb-bridge (fake)";
+    respond(id, { userAgent, codexHome: process.env.CODEX_HOME ?? "", platformFamily: "fake", platformOs: "fake" });
     return;
   }
   if (method === "account/read") {
@@ -274,6 +396,11 @@ async function onRequest(id, method, params) {
     const prompt = params.input?.[0]?.text ?? "";
     const threadId = String(params.threadId ?? thread?.id ?? "");
     const turnId = crypto.randomUUID();
+    // Guess: a stop item that arrives while turn/start is still unanswered. The answer is delayed so a bridge that misses it waits out its start timeout.
+    if (prompt.includes("EARLYSHELL")) {
+      note("item/started", { threadId, turnId, item: { type: "commandExecution" } });
+      await new Promise((r) => setTimeout(r, 30000));
+    }
     respond(id, { turn: { id: turnId, status: "inProgress" } });
     await runScenario(prompt, threadId, turnId);
     return;
