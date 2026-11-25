@@ -286,12 +286,12 @@ describe("QA hello shapes, Windows files-only turn, README", () => {
     for (const s of ['scopes: ["once","turn"]', "`approval_done` echoes `{id, allow, scope}`", "options.web", "any other scope value is a 400", "0.3.12:"]) expect(readme).toContain(s);
   });
 
-  it("the README's /v1/hello line lists web and images, and the 0.3.23 release note is last", () => {
+  it("the README's /v1/hello line lists web and images, and the 0.4.0 release note is last", () => {
     const readme = fs.readFileSync(path.join(HERE, "..", "README.md"), "utf8");
     const line = readme.split("\n").find((l) => l.startsWith("- **`GET /v1/hello`** has `options:"));
     expect(line).toContain("{ web,");
     expect(line).toContain("images");
     const notes = readme.split("\n").filter((l) => /^- 0\.\d+\.\d+/.test(l));
-    expect(notes[notes.length - 1].startsWith("- 0.3.23:")).toBe(true);
+    expect(notes[notes.length - 1].startsWith("- 0.4.0:")).toBe(true);
   });
 });

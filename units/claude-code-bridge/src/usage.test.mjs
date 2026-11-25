@@ -201,6 +201,6 @@ describe("turn usage", () => {
   it("hello reports build 0.3.17", async () => {
     await start();
     const hello = await (await fetch(`${base}/v1/hello`)).json();
-    expect(hello.build).toBe("0.3.23");
+    expect(hello.build).toBe("0.4.0");
   });
 });
