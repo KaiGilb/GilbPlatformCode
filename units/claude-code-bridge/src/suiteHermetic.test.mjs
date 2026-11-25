@@ -174,6 +174,7 @@ describe("the suite does not start codex or claude from PATH or home", () => {
   it("accessSwitch, windowsService and the Codex lookup leave the trap logs empty", (ctx) => {
     // Spec: Chat.CodexConnect.ChatPart — the unit's suite never starts a codex or claude from the person's PATH, home, or fixed lookup folders (meter: trap logs empty after the named test files run)
     // Spec: Chat.CodexConnect B-G1 — those named files run every one of their tests, none skipped, and the count matches (meter: the vitest json report)
+    // Spec: Chat.CodexConnect B-T2 — the claude trap records a start, the same way the codex trap does, before the logs are cleared (meter: each trap log contains its known-answer line)
     if (process.platform === "win32") {
       ctx.skip("skipped on Windows: the traps are POSIX shell scripts, and this job cannot prove Windows");
     }
@@ -194,14 +195,18 @@ describe("the suite does not start codex or claude from PATH or home", () => {
     const claudeLog = path.join(root, "claude-trap.log");
     try {
       const codexTrap = writeTrap(trapDir, "codex", codexLog);
-      writeTrap(trapDir, "claude", claudeLog);
+      const claudeTrap = writeTrap(trapDir, "claude", claudeLog);
       writeTrap(fixedOpt, "codex", codexLog);
       writeTrap(fixedUsr, "codex", codexLog);
-      // A direct start must leave a line, so an empty log after the suite is a real result.
+      // A direct start must leave a line, so an empty log after the suite is a real result. Both traps, or a dead claude trap could pass as empty.
       const known = spawnSync(codexTrap, ["known-answer"], { encoding: "utf8" });
       expect(known.status).toBe(1);
       expect(logText(codexLog)).toContain("codex known-answer");
       fs.writeFileSync(codexLog, "");
+      const knownClaude = spawnSync(claudeTrap, ["known-answer"], { encoding: "utf8" });
+      expect(knownClaude.status).toBe(1);
+      expect(logText(claudeLog)).toContain("claude known-answer");
+      fs.writeFileSync(claudeLog, "");
       const env = {
         ...process.env,
         PATH: `${trapDir}:${pathWithoutRealBinaries(root)}`,
