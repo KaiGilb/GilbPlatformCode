@@ -13,6 +13,11 @@ export interface ClaudeCodeRelayButtonProps {
   onFailed?: (message: string) => void;
   /** Whether this browser needs the bridge window (Safari). Optional; default is read from the user agent. Other browsers render nothing and never call `directBlocked()`. */
   relayBrowser?: boolean;
+  /**
+   * The program name in the bar sentence. Default "Claude Code", which keeps today's sentence.
+   * Spec: Chat.CodexConnect.PagePart.Units — the relay bar names the engine.
+   */
+  engineName?: string;
 }
 
 function PlainButton({ variant = "primary", className, ...rest }: ClaudeCodeButtonProps): ReactElement {
@@ -23,7 +28,7 @@ function PlainButton({ variant = "primary", className, ...rest }: ClaudeCodeButt
  * For the chat header, after pairing. Renders nothing while the bridge window is open, and nothing unless the
  * browser is Safari-family and blocks direct calls to the bridge (Safari). When the person closes the window it checks again.
  */
-export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, onFailed, relayBrowser }: ClaudeCodeRelayButtonProps): ReactElement | null {
+export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, onFailed, relayBrowser, engineName = "Claude Code" }: ClaudeCodeRelayButtonProps): ReactElement | null {
   const isRelay = relayBrowser ?? detectRelayBrowser();
   const [relay, setRelay] = useState<"closed" | "opening" | "open">(() => client.relayState());
   const [blocked, setBlocked] = useState(false);
@@ -74,9 +79,12 @@ export function ClaudeCodeRelayButton({ client, Button = PlainButton, onOpened, 
     })();
   };
 
+  // The default name uses the existing sentence, so a Claude bar is unchanged.
+  const barText = engineName === "Claude Code" ? RELAY_BAR_TEXT : `Safari needs the bridge window for ${engineName}.`;
+
   return (
     <div className="gcc-note" data-testid="claude-code-relay-bar">
-      <p className="gcc-text">{RELAY_BAR_TEXT}</p>
+      <p className="gcc-text">{barText}</p>
       <Button type="button" variant="ghost" onClick={openWindow} disabled={relay === "opening"} data-testid="claude-code-relay-bar-open">
         {relay === "opening" ? "Opening…" : "Open bridge window"}
       </Button>

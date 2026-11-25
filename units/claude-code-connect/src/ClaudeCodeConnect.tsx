@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ComponentType, type ReactElement, type ReactNode } from "react";
-import { ClaudeCodeBridgeError, type ClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
+import { ClaudeCodeBridgeError, type BridgeEngine, type ClaudeCodeClient, type ClaudeCodeReadback } from "@kaigilb/gilbplatformcode-claude-code-client";
 import type { BridgeCommands } from "@kaigilb/gilbplatformcode-claude-code-client";
 
 export interface ClaudeCodeButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -96,6 +96,26 @@ export const RELAY_BAR_TEXT = "Safari needs the bridge window for Claude Code.";
 export const RELAY_FAILED =
   "The bridge window did not open. If Safari blocked it, allow pop-ups for this site (Safari › Settings for This Website › Pop-up Windows › Allow) and try again. If it opened but stayed empty, your bridge is older: run the Option Always On command in step 2 again to update it.";
 
+/** An older bridge sends no `engines`, so Codex cannot be confirmed. */
+const CODEX_OUT_OF_DATE = "Your bridge is out of date. Update it to use Codex.";
+/** The hello's codex entry is still probing and gave no sentence of its own. */
+const CODEX_CHECKING = "Checking Codex on your computer…";
+
+/**
+ * Reads the codex entry of a paired hello.
+ * A missing entry is treated as an older bridge: the page has no sentence it can trust.
+ * Spec: Chat.CodexConnect.PagePart.Units — codex readiness.
+ */
+function codexVerdict(info: { engines?: BridgeEngine[] }): { ready: true } | { ready: false; text: string } {
+  const engines = info.engines;
+  if (!engines) return { ready: false, text: CODEX_OUT_OF_DATE };
+  const entry = engines.find((e) => e.id === "codex");
+  if (!entry) return { ready: false, text: CODEX_OUT_OF_DATE };
+  if (entry.ready) return { ready: true };
+  if (entry.checking && !entry.reason) return { ready: false, text: CODEX_CHECKING };
+  return { ready: false, text: entry.reason ?? "" };
+}
+
 /** "A", "A and B", "A, B and C". */
 function listWords(words: readonly string[]): string {
   if (words.length <= 1) return words.join("");
@@ -157,6 +177,12 @@ export interface ClaudeCodeConnectProps {
   relayBrowser?: boolean;
   /** Overrides Brave detection (`isBraveBrowser()`), for tests and hosts. */
   braveBrowser?: boolean;
+  /**
+   * Which program step 1 sets up. "claude" (the default) is today's Claude Code setup.
+   * "codex" sets up Codex and tells the app only once the bridge reports Codex ready.
+   * Spec: Chat.CodexConnect.PagePart.Units — engine on the connect view.
+   */
+  engine?: "claude" | "codex";
 }
 
 /**
@@ -164,8 +190,9 @@ export interface ClaudeCodeConnectProps {
  *   1. instructions: the one-off command and the always-on command, each with Copy;
  *   2. the code box: it looks for the bridge on this computer, then trades the typed code for the secret.
  * Rendering it IS choosing Claude Code, so mount it when the person picks that provider and unmount it on Cancel.
+ * Pass `engine: "codex"` for the Codex setup. Claude's screens stay as they are.
  */
-export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton, relayBrowser, braveBrowser }: ClaudeCodeConnectProps): ReactElement {
+export function ClaudeCodeConnect({ client, commands, onConnected, onError, supportEmail, supportedBrowsers = SUPPORTED_BROWSERS, notYetBrowsers = NOT_YET_BROWSERS, Button = DefaultButton, relayBrowser, braveBrowser, engine = "claude" }: ClaudeCodeConnectProps): ReactElement | null {
   const isRelay = relayBrowser ?? detectRelayBrowser();
   const isBrave = braveBrowser ?? isBraveBrowser();
   const [stage, setStage] = useState<"steps" | "code">("steps");
@@ -183,6 +210,18 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
   const [relay, setRelay] = useState<"closed" | "opening" | "open">(() => client.relayState());
   const [relayFailed, setRelayFailed] = useState(false);
   const [system, setSystem] = useState<ClaudeCodeSystem>(detectSystem);
+  const [copiedCodexInstall, setCopiedCodexInstall] = useState(false);
+  const [copiedCodexLogin, setCopiedCodexLogin] = useState(false);
+  // null until a codex hello has been read. The sentence stays up until the entry is ready.
+  const [codexHold, setCodexHold] = useState<string | null>(null);
+  const [codexReady, setCodexReady] = useState(false);
+  const toldConnected = useRef(false);
+  const savedReadback = useRef<ClaudeCodeReadback | null>(null);
+  // Once, on the first render: a pair later in this visit must not switch to the already-paired layout.
+  const pairedAtMount = useRef<boolean | null>(null);
+  if (pairedAtMount.current === null) pairedAtMount.current = engine === "codex" && client.load() !== null;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
   const tabRefs = useRef<Partial<Record<ClaudeCodeSystem, HTMLButtonElement | null>>>({});
   const codeId = useId();
   const uid = useId();
@@ -194,6 +233,39 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     },
     [onError],
   );
+
+  // The app is told once, and only when the codex entry is ready. Claude never comes through here.
+  // Spec: Chat.CodexConnect.PagePart.Units — onConnected only when Codex is ready.
+  const settleCodex = useCallback((info: { engines?: BridgeEngine[] }, readback: ClaudeCodeReadback | null) => {
+    const verdict = codexVerdict(info);
+    if (verdict.ready) {
+      if (readback && !toldConnected.current) {
+        toldConnected.current = true;
+        setCodexReady(true);
+        onConnectedRef.current(readback);
+      }
+      return;
+    }
+    setCodexHold(verdict.text);
+  }, []);
+
+  const loadCodexInfo = useCallback(async (): Promise<{ engines?: BridgeEngine[] }> => {
+    try {
+      return await client.bridgeInfo();
+    } catch {
+      // A hello that cannot be read has no engines. The person sees the out-of-date sentence.
+      return {};
+    }
+  }, [client]);
+
+  // A later read (Check again, or the pair that just finished) must beat a read that left earlier.
+  const codexTicket = useRef(0);
+  const refreshCodex = useCallback(async (readback: ClaudeCodeReadback | null, still: () => boolean) => {
+    const mine = ++codexTicket.current;
+    const info = await loadCodexInfo();
+    if (!still() || mine !== codexTicket.current) return;
+    settleCodex(info, readback);
+  }, [loadCodexInfo, settleCodex]);
 
   const enterCode = useCallback(async () => {
     setError(null);
@@ -221,6 +293,17 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     return client.onRelayChange(setRelay);
   }, [client]);
 
+  useEffect(() => {
+    // Claude does not read engines. Codex reads them at once only when this page opens already paired.
+    // Spec: Chat.CodexConnect.PagePart.Units — codex readiness at mount.
+    if (engine !== "codex" || client.load() === null) return;
+    let live = true;
+    void refreshCodex(client.readConnected(), () => live);
+    return () => {
+      live = false;
+    };
+  }, [engine, client, refreshCodex]);
+
   const openWindow = () => {
     // First statement, no await before it: the pop-up is only allowed inside the click.
     const opened = client.openRelay();
@@ -242,14 +325,25 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
       const readback = await client.pair(pairCode);
       setPairCode("");
       setBridgeUp(true);
-      onConnected(readback);
+      // Codex stays on this screen until the bridge says it is ready. Claude tells the app at once, as before.
+      // Spec: Chat.CodexConnect.PagePart.Units — the readiness check runs after pairing.
+      if (engine === "codex") {
+        savedReadback.current = readback;
+        await refreshCodex(readback, () => true);
+      } else {
+        onConnected(readback);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Claude Code could not connect.");
+      setError(err instanceof Error ? err.message : engine === "codex" ? "Codex could not connect." : "Claude Code could not connect.");
       if (err instanceof ClaudeCodeBridgeError && err.status === 0) setBridgeUp(false);
     } finally {
       setPairing(false);
     }
-  }, [client, pairing, pairCode, onConnected, setError]);
+  }, [client, pairing, pairCode, onConnected, setError, engine, refreshCodex]);
+
+  const checkCodexAgain = useCallback(async () => {
+    await refreshCodex(savedReadback.current ?? client.readConnected(), () => true);
+  }, [refreshCodex, client]);
 
   const copy = (text: string, done: () => void) => {
     void navigator.clipboard?.writeText(text).catch(() => {});
@@ -407,32 +501,85 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             <p className="gcc-text">
               <strong>Supported browsers: {listWords(supportedBrowsers)}.</strong>
               {notYetBrowsers.length > 0
-                ? ` ${listWords(notYetBrowsers)} cannot connect to Claude Code yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
+                ? ` ${listWords(notYetBrowsers)} cannot connect to ${engine === "codex" ? "Codex" : "Claude Code"} yet. If you are in ${notYetBrowsers.length === 1 ? "it" : "one of them"}, open this page in ${orWords(supportedBrowsers)}.`
                 : ""}{" "}
-              {SAFARI_WINDOW_SENTENCE}{" "}{supportedBrowsers.includes("Brave") && !isBrave ? `${BRAVE_OTHER_BROWSERS_SENTENCE} ` : ""}{supportedBrowsers.includes("Brave") && isBrave ? "" : ALLOW_BEFORE_PAIR}
+              {engine === "codex" ? SAFARI_WINDOW_SENTENCE.replace("Claude Code", "Codex") : SAFARI_WINDOW_SENTENCE}{" "}{supportedBrowsers.includes("Brave") && !isBrave ? `${BRAVE_OTHER_BROWSERS_SENTENCE} ` : ""}{supportedBrowsers.includes("Brave") && isBrave ? "" : ALLOW_BEFORE_PAIR}
             </p>
             {supportedBrowsers.includes("Brave") && isBrave ? <BraveSteps last={BRAVE_LAST_STEP_ITEM} /> : null}
           </li>
         ) : null}
-        <li>
-          <p className="gcc-text">
-            {win ? (
-              <>
-                <strong>Claude Code for Windows</strong>, signed in with your Claude subscription. Install it from Anthropic's setup page (
-                <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener noreferrer">
-                  code.claude.com/docs/en/setup
-                </a>
-                ), then sign in once in {T}:
-              </>
+        {/* Node comes first for Codex: npm needs it. Claude keeps its own order. */}
+        {/* Spec: Chat.CodexConnect.PagePart.Units — Node.js before Codex. */}
+        {engine === "codex" ? (
+          <li>
+            <p className="gcc-text">
+              <strong>Node.js 18 or newer</strong>, the free program that runs the bridge. To check, type this in {T}; it should show v18 or higher:
+            </p>
+            {cmdBox({ text: "node --version", testId: "claude-code-node-check", copyLabel: "Copy node check command", copiedFlag: copiedNode, onCopied: () => setCopiedNode(true) })}
+            {system === "linux" ? (
+              <p className="gcc-text">
+                Get it from{" "}
+                <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
+                  nodejs.org
+                </a>{" "}
+                if it is missing.
+              </p>
             ) : (
               <>
-                <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in {T}:
+                <p className="gcc-text">
+                  {win ? `If it is missing, paste this in ${T}:` : `If it is missing, paste this in ${T}. It downloads the official installer from nodejs.org and asks for your Mac password:`}
+                </p>
+                {cmdBox({
+                  text: win ? NODE_INSTALL_WINDOWS : NODE_INSTALL_MAC,
+                  testId: "claude-code-node-install",
+                  copyLabel: "Copy Node install command",
+                  copiedFlag: copiedNodeInstall,
+                  onCopied: () => setCopiedNodeInstall(true),
+                })}
+                <p className="gcc-text">
+                  Then close and reopen {T} and check again with node --version. Or get it from{" "}
+                  <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer">
+                    nodejs.org
+                  </a>
+                  {win ? " (choose the LTS Windows installer)." : "."}
+                </p>
               </>
             )}
-          </p>
-          {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
-        </li>
-        <li>
+          </li>
+        ) : (
+          <li>
+            <p className="gcc-text">
+              {win ? (
+                <>
+                  <strong>Claude Code for Windows</strong>, signed in with your Claude subscription. Install it from Anthropic's setup page (
+                  <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener noreferrer">
+                    code.claude.com/docs/en/setup
+                  </a>
+                  ), then sign in once in {T}:
+                </>
+              ) : (
+                <>
+                  <strong>Claude Code</strong>, signed in with your Claude subscription. Sign in once in {T}:
+                </>
+              )}
+            </p>
+            {cmdBox({ text: "claude auth login", copyLabel: "Copy sign-in command", copiedFlag: copiedAuth, onCopied: () => setCopiedAuth(true) })}
+          </li>
+        )}
+        {engine === "codex" ? (
+          <li>
+            <p className="gcc-text">
+              <strong>Codex</strong>, signed in with your ChatGPT subscription. Install it once in {T}:
+            </p>
+            {cmdBox({ text: "npm install -g @openai/codex", testId: "codex-install", copyLabel: "Copy install command", copiedFlag: copiedCodexInstall, onCopied: () => setCopiedCodexInstall(true) })}
+            <p className="gcc-text">Then sign in:</p>
+            {cmdBox({ text: "codex login", testId: "codex-login", copyLabel: "Copy sign-in command", copiedFlag: copiedCodexLogin, onCopied: () => setCopiedCodexLogin(true) })}
+            <p className="gcc-text" data-testid="codex-signin-note">
+              Choose Sign in with ChatGPT. This app runs Codex only on your ChatGPT sign-in, never on an API key.
+            </p>
+          </li>
+        ) : (
+          <li>
           <p className="gcc-text">
             <strong>Node.js 18 or newer</strong>, the free program that runs the bridge. To check, type this in {T}; it should show v18 or higher:
           </p>
@@ -467,8 +614,9 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
             </>
           )}
         </li>
+        )}
       </ul>
-      <p className="gcc-text">It is billed to your Claude subscription, and your turns stay on your computer.</p>
+      <p className="gcc-text">{engine === "codex" ? "It is billed to your ChatGPT subscription, and your turns stay on your computer." : "It is billed to your Claude subscription, and your turns stay on your computer."}</p>
       {win ? <p className="gcc-text" data-testid="claude-code-windows-allow">{WINDOWS_ALLOW_SENTENCE}</p> : null}
     </>,
   );
@@ -514,7 +662,7 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
           {supportEmail ? (
             <>
               {" write to "}
-              <a href={`mailto:${supportEmail}?subject=Claude%20Code%20on%20Windows`} data-testid="claude-code-windows-request">
+              <a href={`mailto:${supportEmail}?subject=${engine === "codex" ? "Codex%20on%20Windows" : "Claude%20Code%20on%20Windows"}`} data-testid="claude-code-windows-request">
                 {supportEmail}
               </a>
             </>
@@ -527,8 +675,38 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
     </div>
   );
 
+  const codexGate =
+    engine === "codex" && !codexReady && (codexHold !== null || pairedAtMount.current) ? (
+      <>
+        {codexHold ? (
+          <p className="gcc-text" data-testid="codex-state">
+            {codexHold}
+          </p>
+        ) : null}
+        <Button type="button" variant="ghost" onClick={() => void checkCodexAgain()} data-testid="codex-check-again">
+          Check again
+        </Button>
+      </>
+    ) : null;
+
+  // Already paired when the page opened: steps 2 and 3 would start a second bridge. Step 1 is what is left.
+  // Spec: Chat.CodexConnect.PagePart.Units — already paired at mount.
   const panelBody =
-    stage === "code" ? (
+    engine === "codex" && pairedAtMount.current && !codexReady ? (
+      <>
+        {win ? windowsEarly : null}
+        {sectionOne}
+        <p className="gcc-text" data-testid="codex-already-paired">
+          Your bridge is already paired. Finish step 1, then press Check again.
+        </p>
+        {codexGate}
+      </>
+    ) : stage === "code" && engine === "codex" && codexHold !== null ? (
+      <>
+        {win ? windowsEarly : null}
+        {codexGate}
+      </>
+    ) : stage === "code" ? (
       <>
         {win ? windowsEarly : null}
         {sectionThree}
@@ -541,6 +719,10 @@ export function ClaudeCodeConnect({ client, commands, onConnected, onError, supp
         {sectionThree}
       </>
     );
+
+  // A ready Codex entry has nothing left to show. The app was already told.
+  // Spec: Chat.CodexConnect.PagePart.Units — show nothing more once Codex is ready.
+  if (engine === "codex" && codexReady) return null;
 
   return (
     <div className="gcc-connect">
