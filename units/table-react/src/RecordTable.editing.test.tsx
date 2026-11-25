@@ -68,7 +68,7 @@ let asked: CellWriteRequest[] = [];
 let answer: (request: CellWriteRequest) => Promise<void> | void = () => undefined;
 const bare = (writeKey: string) => writeKey.replace(/^a:/, "");
 
-function Host({ narrow = false, readOnly = null as string | null, start = START }: { narrow?: boolean; readOnly?: string | null; start?: BaseRecord[] }) {
+function Host({ narrow = false, readOnly = null as string | null, start = START, hostsOwn = null as string | null }: { narrow?: boolean; readOnly?: string | null; start?: BaseRecord[]; hostsOwn?: string | null }) {
   const [records, setRecords] = useState(start);
   hostSet = setRecords;
   const table = buildTable({ fields, records, nameOf: (r) => r.facts["label"] ?? "" });
@@ -81,6 +81,7 @@ function Host({ narrow = false, readOnly = null as string | null, start = START 
       editing={{
         locale: "en-US",
         ...(readOnly ? { rowReadOnly: () => readOnly } : {}),
+        ...(hostsOwn ? { cellReadOnly: (_row, column) => (column.id === hostsOwn ? "The name is changed on the card for now" : null) } : {}),
         write: async (request) => {
           asked.push(request);
           await answer(request);
@@ -636,6 +637,17 @@ describe("table-react: editing a cell", () => {
       render(<Host />);
       go("r1", "name");
       expect(status()).toBe("Name: The name is changed on the card for now");
+    });
+
+    test("a cell the host saves by a rule of its own is read-only with the host's reason, and the cells beside it are not", async () => {
+      render(<Host hostsOwn="a:itemCode" />);
+      go("r1", "itemCode");
+      expect(status()).toBe("item code: The name is changed on the card for now");
+      key("r1", "Enter");
+      expect(hasEditor()).toBe(false);
+      go("r1", "stockNote");
+      key("r1", "Enter");
+      expect(hasEditor()).toBe(true);
     });
 
     test("a row the person may not write is read-only in every cell, with the host's reason", async () => {

@@ -80,6 +80,11 @@ export interface TableEditing<R extends BaseRecord = BaseRecord> {
   write: CellWrite;
   /** Why the person may not change this row (they may read it and not write it), or null when they may. */
   rowReadOnly?: (row: TableRow<R>) => string | null;
+  /**
+   * Why this one cell is not changed here though its kind could be (the host saves that field by a rule of its own, for example a
+   * record's name), or null. Asked after `rowReadOnly`, before the table's own rules.
+   */
+  cellReadOnly?: (row: TableRow<R>, column: TableColumn) => string | null;
   /** The keys of fields the vault sets itself: their cells are read-only. */
   systemKeys?: ReadonlySet<string>;
   /** The person's locale, for numbers. Default: the browser's. */
@@ -560,6 +565,8 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     // A row the person may not write is read-only in every cell, and that is the reason given.
     const refused = editing?.rowReadOnly?.(row) ?? null;
     if (refused) return { editable: false, reason: refused };
+    const hostsOwn = column.id === NAME_COLUMN_ID ? null : (editing?.cellReadOnly?.(row, column) ?? null);
+    if (hostsOwn) return { editable: false, reason: hostsOwn };
     return editabilityOf(column, cell, editing?.systemKeys ? { systemKeys: editing.systemKeys } : {});
   };
   const saves = useCellSaves({
