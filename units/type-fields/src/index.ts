@@ -5,6 +5,7 @@ export {
   FIELD_DECLARATIONS_PAGE_SIZE,
   TypeFieldsError,
   fieldIndex,
+  encodingAsServed,
   fieldKindOf,
   fieldsOfType,
   readFieldDeclarations,

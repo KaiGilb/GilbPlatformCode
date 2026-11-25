@@ -29,6 +29,7 @@ const FIELD_OF_KEYS = ["a:fieldOf", "fieldOf"] as const;
 const REQUIRED_SLOT_KEYS = ["a:requiredSlot", "requiredSlot"] as const;
 const LABEL_KEYS = ["a:label", "label"] as const;
 const STATUS_KEYS = ["a:ontologyStatus", "ontologyStatus"] as const;
+const ENCODING_KEYS = ["a:encoding", "encoding"] as const;
 const VALUE_SET_KEYS = ["a:valueSet", "valueSet"] as const;
 const VALUE_SET_CLOSURE_KEYS = ["a:valueSetClosure", "valueSetClosure"] as const;
 const FIELD_RECORD_TYPE_KEYS = ["a:fieldRecordType", "fieldRecordType"] as const;
@@ -83,8 +84,11 @@ export interface TypeField {
   doc: TermDoc;
   label: string;
   kind: FieldKind;
-  /** The encoding as served (`inline-literal:text`, `reference`), or null. */
-  encoding: string | null;
+  /**
+   * The encoding as served: one text (`inline-literal:text`, `reference`), or a list of texts when the term serves a list (one live
+   * term does: `["reference-valued:@id", "inline-literal:text"]`), or null when it serves none. Kept as served, a list as a list.
+   */
+  encoding: string | readonly string[] | null;
   /** `single` or `multi`; null when the term states neither (see `cardinalityAsServed`). */
   cardinality: "single" | "multi" | null;
   /** The cardinality token as served, or null when the term carries none. */
@@ -184,15 +188,36 @@ function firstString(doc: Record<string, unknown>, keys: readonly string[]): str
 /**
  * The value kind an encoding names. Only the encoding's own words are read.
  *
- * @param encoding the term's encoding as served, or null
- * @returns the kind; `unknown` for no encoding or one this unit does not know
+ * @param encoding the term's encoding as served: a text, a list of texts, or null
+ * @returns the kind; `unknown` for no encoding, one this unit does not know, or forms that are not all one kind
  */
-export function fieldKindOf(encoding: string | null): FieldKind {
-  if (!encoding) return "unknown";
-  // An encoding may name several forms (`a|b`, `a,b`). They are one kind only when every form is that kind; a term that allows a link
-  // or a text is not read as either.
-  const kinds = [...new Set(encoding.split(/[|,]/).map((part) => oneKindOf(part)))];
+export function fieldKindOf(encoding: string | readonly string[] | null): FieldKind {
+  const served = typeof encoding === "string" ? [encoding] : (encoding ?? []);
+  // An encoding may name several forms: as a list, or inside one text (`a|b`, `a,b`). They are one kind only when every form is that
+  // kind; a term that allows a link or a text is not read as either, and its value is then shown as it is stored.
+  const forms = served.flatMap((text) => text.split(/[|,]/)).filter((part) => part.trim() !== "");
+  if (forms.length === 0) return "unknown";
+  const kinds = [...new Set(forms.map((part) => oneKindOf(part)))];
   return kinds.length === 1 ? (kinds[0] as FieldKind) : "unknown";
+}
+
+/**
+ * A term's encoding as it is served: the one text, or the list of texts when the term serves a list, or null when it serves none.
+ * A list is kept a list: joined into one text it would read as an encoding the master never served.
+ *
+ * @param doc the term's document
+ */
+export function encodingAsServed(doc: Record<string, unknown>): string | readonly string[] | null {
+  const one = encodingOf(doc);
+  if (one !== null) return one;
+  for (const key of ENCODING_KEYS) {
+    const v = doc[key];
+    if (Array.isArray(v)) {
+      const texts = v.filter((x): x is string => typeof x === "string" && x.trim() !== "");
+      if (texts.length > 0) return texts;
+    }
+  }
+  return null;
 }
 
 /** The kind one form of an encoding names. */
@@ -268,7 +293,7 @@ function fieldOfTerm(doc: TermDoc, requiredSlots: readonly RequiredSlot[]): { fi
   }
   const anchor = spelling.writeKey ?? spelling.readKeys[0];
   if (!anchor) return { problem: { term, why: `${term} names no spelling to read` } };
-  const encoding = encodingOf(doc);
+  const encoding = encodingAsServed(doc);
   const served = cardinalityOf(doc);
   return {
     field: {

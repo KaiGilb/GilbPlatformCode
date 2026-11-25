@@ -384,30 +384,160 @@ describe("table-react", () => {
       expect(all()).toBeNull();
     });
 
-    test("the pointer over the count lists every value", () => {
+    test("a mouse pointer over the count lists every value, and leaving puts the list away", async () => {
       render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
-      fireEvent.mouseEnter(more());
+      fireEvent.pointerEnter(more(), { pointerType: "mouse" });
       expect(all()?.querySelectorAll("li").length).toBe(6);
+      fireEvent.pointerLeave(more(), { pointerType: "mouse" });
+      await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
+      expect(all()).toBeNull();
     });
 
-    test("a tap lists every value, does not open the record, and a second tap or Escape puts the list away", () => {
-      const onOpenRow = vi.fn();
-      render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
-      fireEvent.click(more());
-      expect(all()?.querySelectorAll("li").length).toBe(6);
-      fireEvent.click(more());
-      expect(all()).toBeNull();
-      fireEvent.click(more());
-      fireEvent.keyDown(more(), { key: "Escape" });
-      expect(all()).toBeNull();
-      fireEvent.keyDown(more(), { key: " " });
-      expect(onOpenRow).not.toHaveBeenCalled();
+    // Spec: Kai-Zen's decision of 2026-11-25 on Agent.Tester round 2, F-N1: "on a touch device the list opens on a tap of the cell or
+    // its "+N"; a second tap on the same cell closes it; any scroll of the table closes it; a tap elsewhere closes it and does NOT also
+    // open that row's record (the first tap outside only dismisses). Escape and blur close it with a keyboard."
+    // ⚠ jsdom has no finger: `tap` sends what a real tap sends, in its order (the press, the focus the press brings, the click). The
+    // proof with real touch events is the app's browser proof (GilbApp scripts/measure-sheet.mjs, the phone leg).
+    describe("how the list is put away", () => {
+      // jsdom has no PointerEvent, so a pointer event made here would carry no pointer type. This gives it the one field the table reads.
+      beforeAll(() => {
+        if (typeof window.PointerEvent === "function") return;
+        class PointerEventForTest extends MouseEvent {
+          readonly pointerType: string;
+          constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+            super(type, init);
+            this.pointerType = init.pointerType ?? "";
+          }
+        }
+        Object.defineProperty(window, "PointerEvent", { configurable: true, writable: true, value: PointerEventForTest });
+      });
+
+      /** What a real tap or mouse click on an element sends, in order. */
+      const press = (el: Element, pointerType: "touch" | "mouse") => {
+        fireEvent.pointerDown(el, { pointerType });
+        // The browser moves focus to a button that is pressed; a press on anything else takes focus away from the button.
+        act(() => {
+          if (el instanceof HTMLButtonElement) el.focus();
+          else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        });
+        fireEvent.pointerUp(el, { pointerType });
+        return fireEvent.click(el);
+      };
+      const tap = (el: Element) => press(el, "touch");
+      const cell = () => document.querySelector('[data-row-id="r1"] [data-list-count="6"]') as HTMLElement;
+
+      test("a tap on the count lists every value and does not open the record; a second tap puts the list away", () => {
+        const onOpenRow = vi.fn();
+        render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
+        tap(more());
+        expect(all()?.querySelectorAll("li").length).toBe(6);
+        tap(more());
+        expect(all()).toBeNull();
+        tap(more());
+        expect(all()?.querySelectorAll("li").length).toBe(6);
+        expect(onOpenRow).not.toHaveBeenCalled();
+      });
+
+      test("a tap on the cell beside the count opens the list too, and a second tap on the same cell puts it away", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        const firstValue = cell().firstElementChild as HTMLElement;
+        tap(firstValue);
+        expect(all()?.querySelectorAll("li").length).toBe(6);
+        tap(more());
+        expect(all()).toBeNull();
+      });
+
+      test("a hover that a browser makes up after a touch does not hold the list open", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        fireEvent.pointerEnter(more(), { pointerType: "touch" });
+        expect(all()).toBeNull();
+      });
+
+      test("a scroll of the table puts the list away, after a tap and after keyboard focus, though the button keeps focus", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        tap(more());
+        expect(all()).not.toBeNull();
+        fireEvent.scroll(screen.getByRole("grid"));
+        expect(all()).toBeNull();
+        // The keyboard: focus opens it, a scroll puts it away, and the focus has not moved.
+        act(() => more().blur());
+        act(() => more().focus());
+        expect(all()).not.toBeNull();
+        fireEvent.scroll(screen.getByRole("grid"));
+        expect(all()).toBeNull();
+        expect(document.activeElement).toBe(more());
+      });
+
+      test("a scroll inside the list, and a press on it, do not put it away", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        tap(more());
+        const list = all() as HTMLElement;
+        fireEvent.scroll(list);
+        fireEvent.pointerDown(list.querySelector("li") as Element, { pointerType: "touch" });
+        act(() => more().blur());
+        expect(all()).not.toBeNull();
+      });
+
+      test("on a narrow screen a finger's tap elsewhere only puts the list away: the row under it does not open, and the next tap does", () => {
+        // arrange
+        const onOpenRow = vi.fn();
+        const two = [record("r1", "Parka, green", { approvedPostPicture: [{ "@id": `${VAULT}/base/e/p1` }, { "@id": `${VAULT}/base/e/p2` }] }), record("r2", "Boots", {})];
+        render(<RecordTable table={tableOf(two)} onOpenRow={onOpenRow} narrow />);
+        const all = () => screen.queryByRole("group", { name: "All 2 values" });
+        const otherRow = document.querySelector('button[data-row-id="r2"]') as HTMLElement;
+        tap(more());
+        expect(all()).not.toBeNull();
+        // act: the first tap outside
+        const delivered = tap(otherRow);
+        // assert: the list is away, and that tap's click reached nobody
+        expect(all()).toBeNull();
+        expect(delivered).toBe(false);
+        expect(onOpenRow).not.toHaveBeenCalled();
+        // The next tap is an ordinary one.
+        tap(otherRow);
+        expect(onOpenRow).toHaveBeenCalledWith("r2");
+      });
+
+      test("a mouse press elsewhere puts the list away, and its click is delivered", () => {
+        const onOpenRow = vi.fn();
+        render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
+        press(more(), "mouse");
+        expect(all()).not.toBeNull();
+        press(screen.getByRole("button", { name: "Open Boots" }), "mouse");
+        expect(all()).toBeNull();
+        expect(onOpenRow).toHaveBeenCalledWith("r2");
+      });
+
+      test("with a keyboard, Escape puts the list away, and so does the focus leaving after Enter pinned it", () => {
+        const onOpenRow = vi.fn();
+        render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
+        act(() => more().focus());
+        fireEvent.keyDown(more(), { key: "Escape" });
+        expect(all()).toBeNull();
+        // Enter on the button clicks it (the browser's own act): the list is pinned open, and the row is not opened by the key.
+        fireEvent.keyDown(more(), { key: "Enter" });
+        fireEvent.click(more());
+        expect(all()).not.toBeNull();
+        act(() => more().blur());
+        expect(all()).toBeNull();
+        fireEvent.keyDown(more(), { key: " " });
+        expect(onOpenRow).not.toHaveBeenCalled();
+      });
     });
 
     test("the count takes a Tab stop in the row that holds the row Tab stop, and in no other", () => {
       const both = [record("r1", "One", { account: ["a", "b"] }), record("r2", "Two", { account: ["c", "d"] })];
       render(<RecordTable table={tableOf(both)} onOpenRow={() => {}} />);
       expect(screen.getAllByTestId("record-table-more").map((b) => b.getAttribute("tabindex"))).toEqual(["0", "-1"]);
+    });
+
+    // Tester round 2, F-N7: the chip stays its size; the line it is on is 44 px high, so the row is taller by 24 px for each such line.
+    test("on a narrow screen a row with a many-valued cell is 24 px taller, so a finger has 44 px on that cell", () => {
+      const two = [record("r1", "Parka, green", { approvedPostPicture: [{ "@id": `${VAULT}/base/e/p1` }, { "@id": `${VAULT}/base/e/p2` }] }), record("r2", "Boots", { approvedPostPicture: { "@id": `${VAULT}/base/e/p1` } })];
+      render(<RecordTable table={tableOf(two)} onOpenRow={() => {}} narrow />);
+      const heights = screen.getAllByRole("listitem").map((li) => parseInt((li as HTMLElement).style.height, 10));
+      expect((heights[0] as number) - (heights[1] as number)).toBe(24);
+      expect(document.querySelector('[data-list-count="2"]')?.className).toContain("min-h-[44px]");
     });
 
     test("on a narrow screen a tap on the count lists the values and does not open the record", () => {

@@ -6,7 +6,7 @@
 // named there; what it does that the live master was never measured to do is labelled a guess there and at each test that uses it).
 // Every expected value below is a literal read off those documents.
 import { describe, expect, test } from "vitest";
-import { TypeFieldsError, fieldIndex, fieldKindOf, fieldsOfType, readFieldDeclarations, readTypeFields, type TypeField } from "./typeFields";
+import { TypeFieldsError, encodingAsServed, fieldIndex, fieldKindOf, fieldsOfType, readFieldDeclarations, readTypeFields, type TypeField } from "./typeFields";
 import { ORIGIN, fakeMaster, fixture, t } from "../test/support";
 
 const byAnchor = (fields: TypeField[], anchor: string): TypeField => {
@@ -209,10 +209,13 @@ describe("type-fields", () => {
 
   // Spec: Solution TableView.SameRecords, Read.Columns: "columns come from a field reader for each type (P1: kind, cardinality, value set, record type, required, status)".
   describe("fieldKindOf", () => {
-    // Measured: the 20 distinct encodings among the 847 field terms of veda.gilb.com (GET /base/vocab?status=all&carries=a:fieldOf,
-    // 2026-11-25T01:07Z), most used first, each with how many terms carry it. Two more terms carry no encoding.
+    // Measured: the 20 distinct encodings among the 847 field terms of veda.gilb.com (production, public read; GET
+    // /base/vocab?status=all&carries=a:fieldOf&limit=1000, 2026-11-25T01:07Z), most used first, each with how many terms carry it. Two
+    // more terms carry no encoding. 19 are served as one text; one is served as a LIST of two texts (the term t:Skill, a:skill), and is
+    // written here as the list it is. (An earlier version of this test wrote it as one text with a comma, which the master does not
+    // serve: Agent.Tester round 2, F-N6.)
     test("reads the kind from the encoding's own words, for each of the 20 encodings the live master served", () => {
-      const served: [encoding: string, terms: number, kind: string][] = [
+      const served: [encoding: string | string[], terms: number, kind: string][] = [
         ["inline-literal:text", 185, "text"],
         ["reference", 150, "reference"],
         ["inline-literal:token", 125, "token"],
@@ -233,12 +236,30 @@ describe("type-fields", () => {
         ["reference:node-or-node-array", 1, "reference"],
         ["inline-literal:text[]", 1, "text"],
         // A link or a text: not read as either. A stored link is still drawn as a link, and a stored text as the text.
-        ["reference-valued:@id,inline-literal:text", 1, "unknown"],
+        [["reference-valued:@id", "inline-literal:text"], 1, "unknown"],
         ["inline-literal:enum", 1, "token"],
       ];
       expect(served.length).toBe(20);
       expect(served.reduce((sum, [, terms]) => sum + terms, 0)).toBe(845);
       expect(served.map(([encoding]) => fieldKindOf(encoding))).toEqual(served.map(([, , kind]) => kind));
+    });
+
+    // Kai-Zen's decision of 2026-11-25 (L3): "take the kind when all entries agree; otherwise show the value as stored".
+    test("an encoding served as a list is the kind its entries agree on, and unknown when they do not", () => {
+      expect(fieldKindOf(["inline-literal:text", "inline-literal:string"])).toBe("text");
+      expect(fieldKindOf(["reference", "reference:@id"])).toBe("reference");
+      expect(fieldKindOf(["reference-valued:@id", "inline-literal:text"])).toBe("unknown");
+      expect(fieldKindOf([])).toBe("unknown");
+    });
+
+    // The live shape: the term t:Skill as veda.gilb.com served it (production, public read; GET
+    // /base/vocab?status=all&carries=a:fieldOf&limit=1000, 2026-11-25T01:07Z), cut to the keys the reader reads.
+    test("a term that serves its encoding as a list keeps it as the list, and its field is of no single kind", () => {
+      const skill = { "@id": `${ORIGIN}/base/t/Skill`, "a:predicateAttribute": "a:skill", "a:label": "Skill", "a:encoding": ["reference-valued:@id", "inline-literal:text"], "a:fieldOf": [{ "@id": `${ORIGIN}/base/t/Person` }] };
+      expect(encodingAsServed(skill)).toEqual(["reference-valued:@id", "inline-literal:text"]);
+      const field = fieldIndex({ origin: ORIGIN, fieldTerms: [skill], requiredTerms: [], complete: true, incompleteAt: [] }).get("a:skill");
+      expect(field?.encoding).toEqual(["reference-valued:@id", "inline-literal:text"]);
+      expect(field?.kind).toBe("unknown");
     });
 
     test("no encoding, or one it does not know, is unknown", () => {

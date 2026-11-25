@@ -54,6 +54,8 @@ const SKELETON_ROWS = 12;
 const SKELETON_FIELD_COLUMNS = 5;
 const NARROW_FIELDS = 3;
 const NARROW_LINE = 20;
+/** The height of a list row's line that holds a cell with several values: room for a finger on the cell and its "+N". */
+const NARROW_TOUCH_LINE = 44;
 /** A value longer than this is not also put into its tooltip: it is in the page once, in its cell. */
 const TITLE_MAX = 300;
 /** How long the list of all values stays after the pointer leaves, so the pointer can cross onto it, ms. */
@@ -61,22 +63,64 @@ const LEAVE_MS = 150;
 
 type RenderRef = ((ref: TableRef) => ReactNode) | undefined;
 
+/** How long after an outside touch its click is still held back, ms: a tap's click follows its touch at once; later is another act. */
+const DISMISS_CLICK_MS = 700;
+
 /**
- * The control of a cell that holds more values than it shows: "+N", and the list of ALL the cell's values, shown while the pointer is
- * on it, while it has focus, and after a tap or click until the next one or Escape. So no value is cut without a sign, and every value
- * can be read from the cell.
+ * Holds back the click that follows a touch which only put a list away, so the same tap does not also act on what lies under it (a
+ * row would open its record). It lets go after that one click, when the touch turns into a scroll, or after {@link DISMISS_CLICK_MS}.
+ */
+function holdBackNextClick(): void {
+  const done = () => {
+    document.removeEventListener("click", swallow, true);
+    document.removeEventListener("pointercancel", done, true);
+    clearTimeout(timer);
+  };
+  const swallow = (e: Event) => {
+    e.stopPropagation();
+    e.preventDefault();
+    done();
+  };
+  const timer = setTimeout(done, DISMISS_CLICK_MS);
+  document.addEventListener("click", swallow, true);
+  document.addEventListener("pointercancel", done, true);
+}
+
+/**
+ * A cell that holds several values: its first value, "+N" for the rest, and the list of ALL of them on request. So no value is cut
+ * without a sign, and every value can be read from the cell without opening the record.
+ *
+ * WHAT OPENS THE LIST, and what puts it away. Three things can hold it open, and each is ended by its own opposite:
+ *  - a mouse pointer on "+N" or on the list (`hover`): ended by the pointer leaving both. A finger is not a hover: the mouse events a
+ *    browser makes up after a touch come with a touch pointer type and are not counted;
+ *  - focus that came from the keyboard (`focus`): ended by the focus leaving. Focus that a press put there is not counted: a tap also
+ *    focuses the button, and counting it would keep the list open after the second tap (Agent.Tester round 2, F-N1);
+ *  - a tap or a click on the cell or on "+N" (`pinned`): ended by a second tap or click on the same cell.
+ * And these end all three at once: Escape; any scroll outside the list (the list is fixed to the screen and would stay behind its
+ * cell); a press anywhere outside the cell and the list. When that press is a finger's, it ONLY puts the list away: its click is held
+ * back, so the first tap outside never also opens the row under it.
  *
  * The list is drawn outside the table (a portal, fixed to the screen), because the table clips what is inside it.
+ *
+ * @param props the cell's values; the host's way to name a link; whether "+N" takes a Tab stop; and `roomy`, for a touch layout,
+ *   where the cell and the area a finger can hit around "+N" are at least 44 px high
  */
-function MoreValues({ items, renderRef, tabbable }: { items: readonly Cell[]; renderRef: RenderRef; tabbable: boolean }) {
+function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cell[]; renderRef: RenderRef; tabbable: boolean; roomy: boolean }) {
   const more = items.length - 1;
+  const cellRef = useRef<HTMLSpanElement | null>(null);
   const anchor = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState(false);
   const [focus, setFocus] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [place, setPlace] = useState<{ left: number; top: number | null; bottom: number | null; maxHeight: number } | null>(null);
   const leave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** True from a press on the cell until its click or the blur: the focus that press brings is the press's, not the keyboard's. */
+  const pressed = useRef(false);
+  /** True from a press on the list until the blur it causes: reading or scrolling the list must not put it away. */
+  const pressedList = useRef(false);
   const open = hover || focus || pinned;
+  const isMouse = (e: { pointerType?: string }) => e.pointerType !== "touch" && e.pointerType !== "pen";
   const stay = () => {
     if (leave.current !== null) clearTimeout(leave.current);
     leave.current = null;
@@ -86,6 +130,11 @@ function MoreValues({ items, renderRef, tabbable }: { items: readonly Cell[]; re
     if (leave.current !== null) clearTimeout(leave.current);
     leave.current = setTimeout(() => setHover(false), LEAVE_MS);
   };
+  const closeAll = useCallback(() => {
+    setHover(false);
+    setFocus(false);
+    setPinned(false);
+  }, []);
   useEffect(() => () => { if (leave.current !== null) clearTimeout(leave.current); }, []);
 
   // Where the list goes: under the control, or above it when there is more room there. Worked out when it opens.
@@ -100,16 +149,51 @@ function MoreValues({ items, renderRef, tabbable }: { items: readonly Cell[]; re
     else setPlace({ left, top: null, bottom: window.innerHeight - r.top + 4, maxHeight: Math.max(80, above - 12) });
   }, [open]);
 
-  // A list fixed to the screen would stay behind when the table scrolls under it: any scroll closes it.
+  // While the list is open: any scroll but the list's own, and a press anywhere outside the cell and the list, put it away.
   useEffect(() => {
     if (!open) return;
-    const close = () => { setHover(false); setPinned(false); };
-    window.addEventListener("scroll", close, true);
-    return () => window.removeEventListener("scroll", close, true);
-  }, [open]);
+    const within = (el: HTMLElement | null, target: EventTarget | null) => target instanceof Node && !!el && el.contains(target);
+    const onScroll = (e: Event) => {
+      if (!within(listRef.current, e.target)) closeAll();
+    };
+    const onPress = (e: PointerEvent) => {
+      if (within(listRef.current, e.target)) {
+        pressedList.current = true;
+        return;
+      }
+      if (within(cellRef.current, e.target)) return;
+      closeAll();
+      // A finger's press outside only puts the list away: the click it would make is held back.
+      if (!isMouse(e)) holdBackNextClick();
+    };
+    window.addEventListener("scroll", onScroll, true);
+    document.addEventListener("pointerdown", onPress, true);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("pointerdown", onPress, true);
+    };
+  }, [open, closeAll]);
 
+  const first = items[0] as Cell;
+  // The area a finger can hit around "+N", made larger than the chip is drawn: 44 px wide, and 44 px high where the layout has the room.
+  const hitArea = " relative after:absolute after:content-[''] after:inset-x-[-7px] " + (roomy ? "after:inset-y-[-11px]" : "after:inset-y-[-7px]");
   return (
-    <>
+    <span
+      ref={cellRef}
+      // A tap or click anywhere on the cell opens the list, and the next one on the same cell puts it away. It never reaches the row.
+      onClick={(e) => {
+        e.stopPropagation();
+        pressed.current = false;
+        setPinned((p) => !p);
+      }}
+      onPointerDown={() => { pressed.current = true; }}
+      className={"flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch" + (roomy ? " min-h-[44px]" : "")}
+      data-list-count={items.length}
+      data-list-open={open ? "true" : undefined}
+    >
+      <span className="inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]">
+        <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} />
+      </span>
       <button
         ref={anchor}
         type="button"
@@ -118,35 +202,43 @@ function MoreValues({ items, renderRef, tabbable }: { items: readonly Cell[]; re
         aria-label={`${more} more ${more === 1 ? "value" : "values"}: show all ${items.length}`}
         data-testid="record-table-more"
         data-more-count={more}
-        onMouseEnter={stay}
-        onMouseLeave={go}
-        onFocus={() => setFocus(true)}
-        onBlur={() => setFocus(false)}
-        onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
+        onPointerEnter={(e) => { if (isMouse(e)) stay(); }}
+        onPointerLeave={(e) => { if (isMouse(e)) go(); }}
+        onFocus={() => { if (!pressed.current) setFocus(true); }}
+        onBlur={() => {
+          setFocus(false);
+          // The focus left by the keyboard (or to somewhere outside): what a key press pinned goes too. A press on the list is not leaving.
+          if (!pressedList.current) setPinned(false);
+          pressed.current = false;
+          pressedList.current = false;
+        }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") { e.stopPropagation(); setPinned(false); setHover(false); setFocus(false); }
-          // Space and Enter are this button's own; they must not also open the row.
+          if (e.key === "Escape") { e.stopPropagation(); closeAll(); }
+          // Space and Enter are this button's own (they click it); they must not also open the row.
           if (e.key === " " || e.key === "Enter") e.stopPropagation();
         }}
-        className="flex-none rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--paper-2)] px-1.5 text-[12px] font-semibold leading-[20px] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+        className={"flex-none rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--paper-2)] px-1.5 text-[12px] font-semibold leading-[20px] text-[var(--ink-soft)] hover:border-[var(--accent)] hover:text-[var(--accent-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]" + hitArea}
       >
         +{more}
       </button>
       {open && place
         ? createPortal(
             <div
+              ref={listRef}
               role="group"
               aria-label={`All ${items.length} values`}
               data-testid="record-table-all-values"
-              onMouseEnter={stay}
-              onMouseLeave={go}
+              onPointerEnter={(e) => { if (isMouse(e)) stay(); }}
+              onPointerLeave={(e) => { if (isMouse(e)) go(); }}
+              // The list is drawn elsewhere but is this cell's child to React: a click in it must not count as a click on the cell.
+              onClick={(e) => e.stopPropagation()}
               className="fixed z-[1000] w-[264px] overflow-auto rounded-[var(--r-md)] border border-[var(--line)] bg-[var(--surface)] p-2 text-[13px] text-[var(--ink)] shadow-[var(--shadow-md)]"
               style={{ left: place.left, maxHeight: place.maxHeight, ...(place.top !== null ? { top: place.top } : { bottom: place.bottom ?? 0 }) }}
             >
               <ul className="flex flex-col gap-1">
                 {items.map((item, i) => (
                   <li key={i} className="flex min-w-0 items-center break-words leading-[20px]">
-                    <CellView cell={item} renderRef={renderRef} tabbable={false} wrap />
+                    <CellView cell={item} renderRef={renderRef} tabbable={false} roomy={false} wrap />
                   </li>
                 ))}
               </ul>
@@ -154,17 +246,17 @@ function MoreValues({ items, renderRef, tabbable }: { items: readonly Cell[]; re
             document.body,
           )
         : null}
-    </>
+    </span>
   );
 }
 
 /**
  * One cell's content. An empty cell draws nothing at all. A cell with several values draws the first and "+N" for the rest.
  *
- * @param props the cell; the host's way to name a link; whether the cell's own control takes a Tab stop; and `wrap`, for the list of all
- *   values, where a value is shown whole on as many lines as it needs
+ * @param props the cell; the host's way to name a link; whether the cell's own control takes a Tab stop; `roomy`, for a touch layout
+ *   (see {@link ManyValues}); and `wrap`, for the list of all values, where a value is shown whole on as many lines as it needs
  */
-function CellView({ cell, renderRef, tabbable, wrap = false }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; wrap?: boolean }) {
+function CellView({ cell, renderRef, tabbable, roomy, wrap = false }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; roomy: boolean; wrap?: boolean }) {
   const clip = wrap ? "min-w-0 break-words" : "truncate";
   switch (cell.kind) {
     case "empty":
@@ -193,12 +285,12 @@ function CellView({ cell, renderRef, tabbable, wrap = false }: { cell: Cell; ren
     case "list": {
       const first = cell.items[0];
       if (!first) return null;
+      if (cell.items.length > 1) return <ManyValues items={cell.items} renderRef={renderRef} tabbable={tabbable} roomy={roomy} />;
       return (
         <span className="flex min-w-0 items-center gap-1" data-list-count={cell.items.length}>
           <span className="inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]">
-            <CellView cell={first} renderRef={renderRef} tabbable={false} />
+            <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} />
           </span>
-          {cell.items.length > 1 ? <MoreValues items={cell.items} renderRef={renderRef} tabbable={tabbable} /> : null}
         </span>
       );
     }
@@ -294,11 +386,20 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   );
 
   const narrowRowHeight = 30 + listColumns.length * NARROW_LINE + 10;
+  // A list row is taller by what its lines with several values need: such a line is `NARROW_TOUCH_LINE` high, so a finger has 44 px
+  // on the cell without the chip being drawn any larger. Worked out from the row's cells, so no row is measured.
+  const listColumnIndexes = useMemo(() => listColumns.map((column) => columns.indexOf(column) - 1), [listColumns, columns]);
+  const isManyValued = (cell: Cell | undefined) => cell?.kind === "list" && cell.items.length > 1;
+  const narrowHeightOf = (index: number) => {
+    const cells = rows[index]?.original.cells;
+    const roomy = cells ? listColumnIndexes.filter((i) => isManyValued(cells[i])).length : 0;
+    return narrowRowHeight + roomy * (NARROW_TOUCH_LINE - NARROW_LINE);
+  };
   const headerSpace = narrow ? 0 : HEADER_HEIGHT;
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => (narrow ? narrowRowHeight : rowHeight),
+    estimateSize: (index) => (narrow ? narrowHeightOf(index) : rowHeight),
     overscan,
     rangeExtractor,
     // The header row sits above the rows inside the scrolling box, and stays over them: a row brought into view stops below it.
@@ -308,7 +409,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   // A change of layout changes every row's height.
   useEffect(() => {
     virtualizer.measure();
-  }, [narrow, narrowRowHeight, rowHeight, virtualizer]);
+  }, [narrow, narrowRowHeight, rowHeight, rows, virtualizer]);
 
   // The rows in view (not the extra ones drawn around them).
   const inView = virtualizer.range;
@@ -413,7 +514,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                           <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
                             <span className="w-[38%] max-w-[150px] shrink-0 truncate text-[var(--ink-faint)]">{column.label}</span>
                             <span className="flex min-w-0 flex-1 items-center text-[var(--ink)]">
-                              <CellView cell={cell} renderRef={renderRef} tabbable />
+                              <CellView cell={cell} renderRef={renderRef} tabbable roomy />
                             </span>
                           </span>
                         );
@@ -531,7 +632,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                     return (
                       <div key={cell.id} role="gridcell" aria-colindex={i + 1} data-column-id={cell.column.id} className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + focusLines}>
                         {/* A cell's "+N" takes a Tab stop only in the row that holds the row Tab stop: one Tab from the row reaches it. */}
-                        <CellView cell={cell.getValue() as Cell} renderRef={renderRef} tabbable={isTabStop} />
+                        <CellView cell={cell.getValue() as Cell} renderRef={renderRef} tabbable={isTabStop} roomy={false} />
                       </div>
                     );
                   })}
