@@ -4,8 +4,11 @@
 // 12 and its unit tests: number parse in several locales, date write at the edges of the day, text exactly as typed, empty against
 // absent, the closed-list check, the 412 decision table, the mapping of each error to its cell state, the keyboard state machine.
 //
-// The field terms are cut down from the live master's (veda.gilb.com, GET /base/vocab?status=all&carries=a:fieldOf, 2026-11-25; an
-// example.test host), as in tableCore.test.ts. Nothing here asks the network.
+// Every attribute name below is a live GilbVeda term (veda.gilb.com, GET /base/vocab?status=all&carries=a:fieldOf, read
+// 2026-11-25T09:23Z; an example.test host stands for the master): none is made up. ⚠ Their labels, and for some their kind, their list
+// of values, their closure or their cardinality, are SET FOR THE CASE under test and are not the live terms' own (the live master has
+// no field that is a date with a time, none whose list is declared open, and none with two spellings of this shape). They are all
+// declared here as fields of one type, which the live ones are not. Nothing here asks the network.
 import { describe, expect, test } from "vitest";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
 import { fieldsOfType, type FieldDeclarations } from "@kaigilb/gilbplatformcode-type-fields";
@@ -46,23 +49,23 @@ const term = (name: string, binding: string, label: string, encoding: string | s
 const declarations: FieldDeclarations = {
   origin: MASTER,
   fieldTerms: [
-    term("StockNote", "a:stockNote", "stock note", "inline-literal:text", "single"),
-    term("StockCount", "a:stockCount", "stock count", "inline-literal:integer", "single"),
-    term("UnitPrice", "a:unitPrice", "unit price", "inline-literal:decimal", "single"),
-    term("RestockDate", "a:restockDate", "restock date", "inline-literal:date", "single"),
-    term("CountedAt", "a:countedAt", "counted at", "inline-literal:dateTime", "single"),
+    term("AltText", "a:altText", "stock note", "inline-literal:text", "single"),
+    term("BerthCount", "a:berthCount", "stock count", "inline-literal:integer", "single"),
+    term("AskingPrice", "a:askingPrice", "unit price", "inline-literal:decimal", "single"),
+    term("MenuStartDate", "a:menuStartDate", "restock date", "inline-literal:date", "single"),
+    term("FedAt", "a:fedAt", "counted at", "inline-literal:dateTime", "single"),
     term("MadeForKids", "a:madeForKids", "made for kids", "inline-literal:boolean", "single"),
     term("ClothingSize", "a:clothingSize", "clothing size", "inline-literal:token", "single", { "a:valueSet": ["XS", "S", "M", "L"], "a:valueSetClosure": "closed" }),
-    term("Colour", "a:colour", "colour", "inline-literal:text", "single", { "a:valueSet": ["Red", "Green"] }),
-    term("Mood", "a:mood", "mood", "inline-literal:token", "single", { "a:valueSet": ["calm"], "a:valueSetClosure": "open" }),
+    term("ExerciseKind", "a:exerciseKind", "exerciseKind", "inline-literal:text", "single", { "a:valueSet": ["Red", "Green"] }),
+    term("ImpactBasis", "a:impactBasis", "impactBasis", "inline-literal:token", "single", { "a:valueSet": ["calm"], "a:valueSetClosure": "open" }),
     term("Account", "a:account", "Online Account", "inline-literal:text", "multi"),
     term("ApprovedPostPicture", "a:approvedPostPicture", "approved post picture", "reference", "single"),
     term("StatedBy", "a:statedBy", "stated by", "inline-literal:text", "single"),
     term("PostVisibility", "a:postVisibility", "post visibility", "inline-literal:uri", "single"),
     term("Email", "a:email", "Email", "inline-literal:text", null),
-    term("TwoKeys", "a:twoKeys|a:otherKey", "two keys", "inline-literal:text", "single"),
+    term("NameOrLabel", "a:name|a:label", "two keys", "inline-literal:text", "single"),
   ],
-  requiredTerms: [{ "@id": TYPE, "a:requiredSlot": [{ "a:slot": "a:stockNote", "a:card": "1" }] }],
+  requiredTerms: [{ "@id": TYPE, "a:requiredSlot": [{ "a:slot": "a:altText", "a:card": "1" }] }],
   complete: true,
   incompleteAt: [],
 };
@@ -100,22 +103,22 @@ describe("cellEdit", () => {
   // checkbox, choice from a closed list") and 10 ("Read-only cells ... each with its reason").
   describe("editabilityOf", () => {
     test("each kind in scope gets its editor, with the key to write and the field's label", () => {
-      expect(planOf("a:stockNote")).toEqual({ editable: true, editor: "text", integer: false, options: null, required: true, writeKey: "a:stockNote", label: "stock note" });
-      expect(planOf("a:stockCount")).toMatchObject({ editor: "number", integer: true, required: false });
-      expect(planOf("a:unitPrice")).toMatchObject({ editor: "number", integer: false });
-      expect(planOf("a:restockDate")).toMatchObject({ editor: "date" });
+      expect(planOf("a:altText")).toEqual({ editable: true, editor: "text", integer: false, options: null, required: true, writeKey: "a:altText", label: "stock note" });
+      expect(planOf("a:berthCount")).toMatchObject({ editor: "number", integer: true, required: false });
+      expect(planOf("a:askingPrice")).toMatchObject({ editor: "number", integer: false });
+      expect(planOf("a:menuStartDate")).toMatchObject({ editor: "date" });
       expect(planOf("a:madeForKids")).toMatchObject({ editor: "checkbox" });
       expect(planOf("a:clothingSize")).toMatchObject({ editor: "choice", options: ["XS", "S", "M", "L"] });
     });
 
     test("a list of values with no closure word is closed; one declared open is free text", () => {
-      expect(planOf("a:colour")).toMatchObject({ editor: "choice", options: ["Red", "Green"] });
-      expect(planOf("a:mood")).toMatchObject({ editor: "text", options: null });
+      expect(planOf("a:exerciseKind")).toMatchObject({ editor: "choice", options: ["Red", "Green"] });
+      expect(planOf("a:impactBasis")).toMatchObject({ editor: "text", options: null });
     });
 
     test("an empty cell of an editable field may be edited: giving a field its first value is an edit", () => {
-      expect(at("a:stockCount").cell).toEqual({ kind: "empty" });
-      expect(planOf("a:stockCount").editable).toBe(true);
+      expect(at("a:berthCount").cell).toEqual({ kind: "empty" });
+      expect(planOf("a:berthCount").editable).toBe(true);
     });
 
     test("what is out of scope is read-only, each with its own reason", () => {
@@ -123,9 +126,9 @@ describe("cellEdit", () => {
       expect(reasonOf("a:approvedPostPicture", { approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } })).toBe("Links are changed on the card for now");
       expect(reasonOf("a:approvedPostPicture")).toBe("Links are changed on the card for now");
       expect(reasonOf("a:account", { account: ["x"] })).toBe(READ_ONLY_REASON.multi);
-      expect(reasonOf("a:countedAt", { countedAt: "2026-11-25T08:00:00Z" })).toBe(READ_ONLY_REASON.dateTime);
+      expect(reasonOf("a:fedAt", { fedAt: "2026-11-25T08:00:00Z" })).toBe(READ_ONLY_REASON.dateTime);
       expect(reasonOf("a:postVisibility")).toBe(READ_ONLY_REASON.otherKind);
-      expect(reasonOf("a:twoKeys")).toBe(READ_ONLY_REASON.noWriteKey);
+      expect(reasonOf("a:name")).toBe(READ_ONLY_REASON.noWriteKey);
     });
 
     test("a field the host names as set by the vault is read-only, by any of its keys", () => {
@@ -149,9 +152,9 @@ describe("cellEdit", () => {
     });
 
     test("a link stored under a text field, a structured value and an unread value are read-only", () => {
-      expect(reasonOf("a:stockNote", { stockNote: { "@id": `${VAULT}/base/e/x` } })).toBe(READ_ONLY_REASON.link);
-      expect(reasonOf("a:stockNote", { stockNote: { lat: 1 } })).toBe(READ_ONLY_REASON.noPlainForm);
-      const { column } = at("a:stockNote");
+      expect(reasonOf("a:altText", { altText: { "@id": `${VAULT}/base/e/x` } })).toBe(READ_ONLY_REASON.link);
+      expect(reasonOf("a:altText", { altText: { lat: 1 } })).toBe(READ_ONLY_REASON.noPlainForm);
+      const { column } = at("a:altText");
       expect(editabilityOf(column, { kind: "unread", reason: "not loaded" })).toEqual({ editable: false, reason: READ_ONLY_REASON.unread });
     });
   });
@@ -260,7 +263,7 @@ describe("cellEdit", () => {
           expect(offsetHours, zone).toBe(zone === "Etc/GMT+12" ? -12 : zone === "UTC" ? 0 : 14);
           for (const picked of ["2026-12-31", "2027-01-01", "2024-02-29"]) {
             expect(parseDateInput(picked), `${picked} in ${zone}`).toEqual({ ok: true, value: picked });
-            expect(cellPatch("a:restockDate", picked)).toEqual({ "a:restockDate": picked });
+            expect(cellPatch("a:menuStartDate", picked)).toEqual({ "a:menuStartDate": picked });
           }
         }
       } finally {
@@ -296,7 +299,7 @@ describe("cellEdit", () => {
   // Spec: step 2 brief 9, Text: "store exactly what was typed. No trimming, so leading and trailing spaces and unicode come back the
   // same", and its test list: 10 000 characters, leading and trailing spaces, emoji, RTL, combining marks, NUL-free control characters.
   describe("text", () => {
-    const plan = planOf("a:colour") && planOf("a:email");
+    const plan = planOf("a:exerciseKind") && planOf("a:email");
     const odd = [
       "x".repeat(10_000),
       "  leading and trailing  ",
@@ -344,14 +347,14 @@ describe("cellEdit", () => {
 
     test("a stored false and a stored 0 are values, and a link or a list is not one plain value", () => {
       expect(storedValueOf(at("a:madeForKids", { madeForKids: false }).cell)).toBe(false);
-      expect(storedValueOf(at("a:stockCount", { stockCount: 0 }).cell)).toBe(0);
+      expect(storedValueOf(at("a:berthCount", { berthCount: 0 }).cell)).toBe(0);
       expect(storedValueOf(at("a:approvedPostPicture", { approvedPostPicture: { "@id": `${VAULT}/base/e/p` } }).cell)).toBeUndefined();
       expect(storedValueOf(at("a:account", { account: ["x", "y"] }).cell)).toBeUndefined();
     });
 
     test("a required field cannot be cleared: the reason names the field", () => {
-      expect(parseEdit(planOf("a:stockNote"), "", "en-US")).toEqual({ ok: false, why: "stock note is required" });
-      expect(parseEdit(planOf("a:stockNote"), " ", "en-US")).toEqual({ ok: true, value: " " });
+      expect(parseEdit(planOf("a:altText"), "", "en-US")).toEqual({ ok: false, why: "stock note is required" });
+      expect(parseEdit(planOf("a:altText"), " ", "en-US")).toEqual({ ok: true, value: " " });
     });
   });
 
@@ -361,7 +364,7 @@ describe("cellEdit", () => {
     test("a value of the list is taken exactly; one that is not is refused with the list's own sentence", () => {
       expect(checkChoice("Green", ["Red", "Green"])).toEqual({ ok: true, value: "Green" });
       expect(checkChoice("Purple", ["Red", "Green"])).toEqual({ ok: false, why: "Purple is not in this list" });
-      expect(parseEdit(planOf("a:colour"), "Purple", "en-US")).toEqual({ ok: false, why: "Purple is not in this list" });
+      expect(parseEdit(planOf("a:exerciseKind"), "Purple", "en-US")).toEqual({ ok: false, why: "Purple is not in this list" });
       // The list is matched exactly: another case, or a space, is another value.
       expect(checkChoice("green", ["Red", "Green"]).ok).toBe(false);
       expect(checkChoice("Green ", ["Red", "Green"]).ok).toBe(false);
@@ -371,9 +374,9 @@ describe("cellEdit", () => {
 
   describe("the other editors", () => {
     test("a number field parses by its range, a date field by the calendar, a yes-or-no field takes true and false", () => {
-      expect(parseEdit(planOf("a:stockCount"), "1.5", "en-US")).toEqual({ ok: false, why: '"1.5" is not a whole number' });
-      expect(parseEdit(planOf("a:unitPrice"), "1,5", "de-DE")).toEqual({ ok: true, value: 1.5 });
-      expect(parseEdit(planOf("a:restockDate"), "2026-12-31", "en-US")).toEqual({ ok: true, value: "2026-12-31" });
+      expect(parseEdit(planOf("a:berthCount"), "1.5", "en-US")).toEqual({ ok: false, why: '"1.5" is not a whole number' });
+      expect(parseEdit(planOf("a:askingPrice"), "1,5", "de-DE")).toEqual({ ok: true, value: 1.5 });
+      expect(parseEdit(planOf("a:menuStartDate"), "2026-12-31", "en-US")).toEqual({ ok: true, value: "2026-12-31" });
       expect(parseEdit(planOf("a:madeForKids"), "true", "en-US")).toEqual({ ok: true, value: true });
       expect(parseEdit(planOf("a:madeForKids"), "false", "en-US")).toEqual({ ok: true, value: false });
       expect(parseEdit(planOf("a:madeForKids"), "", "en-US")).toEqual({ ok: true, value: null });
@@ -414,7 +417,7 @@ describe("cellEdit", () => {
   // Spec: step 2 brief 5 and 6: Failure and Refusals; Rule_Code_gilb-app-failure-truth RuleBasefailCorsIsNotAStatus ("a refused
   // cross-origin call has no status code ... detect the failed fetch itself").
   describe("problemOf", () => {
-    const cell = { label: "colour", typed: "Purple" as const };
+    const cell = { label: "exerciseKind", typed: "Purple" as const };
     test("no answer at all (offline, or a cross-origin call the browser refused) is the failed state with Retry", () => {
       expect(problemOf({ kind: "network", message: "Failed to fetch" }, cell)).toEqual({ state: "failed", message: "Not saved: no connection. Retry", retry: true, keepsTyped: true });
     });
@@ -425,7 +428,7 @@ describe("cellEdit", () => {
     });
 
     test("422 ValueNotAllowedError is the closed-list state; 422 RequiredSlotMissingError leaves the cell uncleared and names the field", () => {
-      expect(problemOf({ kind: "http", status: 422, error: "ValueNotAllowedError", message: "a:colour takes Red or Green" }, cell)).toEqual({ state: "not-in-list", message: "Purple is not in this list", retry: false, keepsTyped: true });
+      expect(problemOf({ kind: "http", status: 422, error: "ValueNotAllowedError", message: "a:exerciseKind takes Red or Green" }, cell)).toEqual({ state: "not-in-list", message: "Purple is not in this list", retry: false, keepsTyped: true });
       expect(problemOf({ kind: "http", status: 422, error: "RequiredSlotMissingError" }, { label: "stock note", typed: null })).toEqual({ state: "required", message: "stock note is required", retry: false, keepsTyped: false });
     });
 
@@ -436,7 +439,7 @@ describe("cellEdit", () => {
     });
 
     test("409 UndefinedTermError, and any other refusal, shows the vault's own words and keeps what was typed", () => {
-      expect(problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:colour is not a defined term" }, cell)).toEqual({ state: "refused", message: "Not saved: a:colour is not a defined term", retry: false, keepsTyped: true });
+      expect(problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:exerciseKind is not a defined term" }, cell)).toEqual({ state: "refused", message: "Not saved: a:exerciseKind is not a defined term", retry: false, keepsTyped: true });
       expect(problemOf({ kind: "http", status: 400, error: "InvalidDatomError" }, cell).message).toBe("Not saved: the vault answered 400 InvalidDatomError");
     });
 

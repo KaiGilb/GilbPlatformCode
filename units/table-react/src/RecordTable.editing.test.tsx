@@ -7,7 +7,8 @@
 // REAL: `RecordTable` with `editing`, its editor, its saves (the code library's `useAutosaveRecord` with `saveOn: "commit"`) and
 // table-core's rules. The HOST is a stand-in: `write` is a function of this test, which applies a write to the records the table is
 // built from (as a host's record cache would after the vault confirmed), or refuses it as the test says. It makes no claim about what a
-// vault allows: the app's own tests hold the fake platform. jsdom lays nothing out and has no finger: real keys and touches are the
+// vault allows: the app's own tests hold the fake platform. Every attribute name is a live GilbVeda term (veda.gilb.com, read
+// 2026-11-25T09:23Z); their labels and the list of the closed one (Red, Green) are set for the cases here, not the live terms' own. jsdom lays nothing out and has no finger: real keys and touches are the
 // app's browser proof.
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -34,19 +35,19 @@ const term = (name: string, binding: string, label: string, encoding: string, ca
 const declarations: FieldDeclarations = {
   origin: MASTER,
   fieldTerms: [
-    term("StockNote", "a:stockNote", "stock note", "inline-literal:text", "single"),
-    term("StockCount", "a:stockCount", "stock count", "inline-literal:integer", "single"),
-    term("RestockDate", "a:restockDate", "restock date", "inline-literal:date", "single"),
+    term("AltText", "a:altText", "stock note", "inline-literal:text", "single"),
+    term("BerthCount", "a:berthCount", "stock count", "inline-literal:integer", "single"),
+    term("MenuStartDate", "a:menuStartDate", "restock date", "inline-literal:date", "single"),
     term("MadeForKids", "a:madeForKids", "made for kids", "inline-literal:boolean", "single"),
-    term("Colour", "a:colour", "colour", "inline-literal:token", "single", { "a:valueSet": ["Red", "Green"], "a:valueSetClosure": "closed" }),
+    term("ExerciseKind", "a:exerciseKind", "exerciseKind", "inline-literal:token", "single", { "a:valueSet": ["Red", "Green"], "a:valueSetClosure": "closed" }),
     term("ApprovedPostPicture", "a:approvedPostPicture", "approved post picture", "reference", "single"),
-    term("ItemCode", "a:itemCode", "item code", "inline-literal:text", "single"),
+    term("BrandName", "a:brandName", "item code", "inline-literal:text", "single"),
   ],
-  requiredTerms: [{ "@id": TYPE, "a:requiredSlot": [{ "a:slot": "a:itemCode", "a:card": "1" }] }],
+  requiredTerms: [{ "@id": TYPE, "a:requiredSlot": [{ "a:slot": "a:brandName", "a:card": "1" }] }],
   complete: true,
   incompleteAt: [],
 };
-// Columns, in label order: Name, approved post picture, colour, item code, made for kids, restock date, stock count, stock note.
+// Columns, in label order: Name, approved post picture, exerciseKind, item code, made for kids, restock date, stock count, stock note.
 const fields = fieldsOfType(declarations, "GarmentStockLine");
 const record = (id: string, name: string, served: Record<string, unknown>): BaseRecord => ({
   id,
@@ -58,9 +59,9 @@ const record = (id: string, name: string, served: Record<string, unknown>): Base
   served: { facts: { label: name, ...served }, context: null, etag: null },
 });
 const START = [
-  record("r1", "Parka", { stockNote: "warm", stockCount: 3, madeForKids: true, colour: "Red", itemCode: "P-1", approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } }),
-  record("r2", "Knit", { stockNote: "soft", itemCode: "K-2" }),
-  record("r3", "Boots", { itemCode: "B-3" }),
+  record("r1", "Parka", { altText: "warm", berthCount: 3, madeForKids: true, exerciseKind: "Red", brandName: "P-1", approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } }),
+  record("r2", "Knit", { altText: "soft", brandName: "K-2" }),
+  record("r3", "Boots", { brandName: "B-3" }),
 ];
 
 /** What the host was asked to write, in order, and how it answers the next asks. */
@@ -159,46 +160,46 @@ describe("table-react: editing a cell", () => {
     test("with no editing passed no cell can be selected and nothing is offered to edit", () => {
       const table = buildTable({ fields, records: START, nameOf: (r) => r.facts["label"] ?? "" });
       render(<RecordTable table={table} onOpenRow={() => {}} />);
-      fireEvent.click(cellEl("r1", "stockNote"));
+      fireEvent.click(cellEl("r1", "altText"));
       expect(document.querySelector("[data-selected]")).toBeNull();
       expect(screen.queryByTestId("record-table-bar")).toBeNull();
     });
 
     test("a click selects a cell; the arrows move the selection and stop at the table's edges", () => {
       render(<Host />);
-      go("r1", "stockNote");
-      expect(selected()).toEqual(["r1", "a:stockNote"]);
-      expect(cellEl("r1", "stockNote").getAttribute("aria-selected")).toBe("true");
+      go("r1", "altText");
+      expect(selected()).toEqual(["r1", "a:altText"]);
+      expect(cellEl("r1", "altText").getAttribute("aria-selected")).toBe("true");
       key("r1", "ArrowLeft");
-      expect(selected()).toEqual(["r1", "a:stockCount"]);
+      expect(selected()).toEqual(["r1", "a:berthCount"]);
       key("r1", "ArrowDown");
-      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(selected()).toEqual(["r2", "a:berthCount"]);
       // The keys follow the selection to its row.
       expect(document.activeElement).toBe(rowEl("r2"));
       key("r2", "ArrowRight");
       key("r2", "ArrowRight");
-      expect(selected()).toEqual(["r2", "a:stockNote"]);
+      expect(selected()).toEqual(["r2", "a:altText"]);
       key("r2", "End");
-      expect(selected()).toEqual(["r3", "a:stockNote"]);
+      expect(selected()).toEqual(["r3", "a:altText"]);
       key("r3", "ArrowDown");
-      expect(selected()).toEqual(["r3", "a:stockNote"]);
+      expect(selected()).toEqual(["r3", "a:altText"]);
       key("r3", "Home");
-      expect(selected()).toEqual(["r1", "a:stockNote"]);
+      expect(selected()).toEqual(["r1", "a:altText"]);
     });
 
     // In a browser a mouse press brings the focus to the row before its click arrives (proved with a real mouse in the app's browser
     // proof). The press itself selects the cell, so the row's selection on focus cannot fall on the column selected before.
     test("a mouse press selects its cell before the focus it brings, in another row and another column than the selection", () => {
       render(<Host />);
-      go("r1", "stockNote");
-      const target = cellEl("r2", "stockCount");
+      go("r1", "altText");
+      const target = cellEl("r2", "berthCount");
       fireEvent.pointerDown(target, { pointerType: "mouse" });
-      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(selected()).toEqual(["r2", "a:berthCount"]);
       act(() => rowEl("r2").focus());
-      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(selected()).toEqual(["r2", "a:berthCount"]);
       fireEvent.click(target);
       // It was not the selected cell when the press began: the click selects, and opens no box.
-      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(selected()).toEqual(["r2", "a:berthCount"]);
       expect(hasEditor()).toBe(false);
       // A second press on it, now the selected cell, opens its box.
       fireEvent.pointerDown(target, { pointerType: "mouse" });
@@ -215,7 +216,7 @@ describe("table-react: editing a cell", () => {
 
     test("Space opens the row's record from any cell that is not a yes-or-no cell", () => {
       render(<Host />);
-      go("r2", "stockNote");
+      go("r2", "altText");
       key("r2", " ");
       expect(opened).toEqual(["r2"]);
       expect(hasEditor()).toBe(false);
@@ -227,60 +228,60 @@ describe("table-react: editing a cell", () => {
       let confirm!: () => void;
       answer = () => new Promise<void>((r) => { confirm = r; });
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       expect(editor().value).toBe("warm");
       type("warm and dry");
       fireEvent.keyDown(editor(), { key: "Enter" });
       // The box is gone, the selection moved down, the typed value shows before the vault has answered.
       expect(hasEditor()).toBe(false);
-      expect(selected()).toEqual(["r2", "a:stockNote"]);
+      expect(selected()).toEqual(["r2", "a:altText"]);
       await waitFor(() => expect(asked.length).toBe(1));
-      expect(asked[0]).toMatchObject({ rowId: "r1", columnId: "a:stockNote", value: "warm and dry", base: "warm" });
-      expect(asked[0]?.plan.writeKey).toBe("a:stockNote");
-      expect(cellEl("r1", "stockNote").textContent).toContain("warm and dry");
-      expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saving");
+      expect(asked[0]).toMatchObject({ rowId: "r1", columnId: "a:altText", value: "warm and dry", base: "warm" });
+      expect(asked[0]?.plan.writeKey).toBe("a:altText");
+      expect(cellEl("r1", "altText").textContent).toContain("warm and dry");
+      expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saving");
       await act(async () => { confirm(); });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
-      expect(cellEl("r1", "stockNote").querySelector('[data-cell-mark="saved"]')?.getAttribute("aria-label")).toBe("Saved");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
+      expect(cellEl("r1", "altText").querySelector('[data-cell-mark="saved"]')?.getAttribute("aria-label")).toBe("Saved");
       await settle();
       expect(asked.length).toBe(1);
     });
 
     test("Tab saves and moves right; Shift+Tab and Shift+Enter move the other way", async () => {
       render(<Host />);
-      go("r2", "stockCount");
+      go("r2", "berthCount");
       key("r2", "Enter");
       type("12");
       fireEvent.keyDown(editor(), { key: "Tab" });
-      expect(selected()).toEqual(["r2", "a:stockNote"]);
-      await waitFor(() => expect(asked.map((a) => [a.columnId, a.value, a.base])).toEqual([["a:stockCount", 12, null]]));
+      expect(selected()).toEqual(["r2", "a:altText"]);
+      await waitFor(() => expect(asked.map((a) => [a.columnId, a.value, a.base])).toEqual([["a:berthCount", 12, null]]));
       key("r2", "Enter");
       type("softer");
       fireEvent.keyDown(editor(), { key: "Tab", shiftKey: true });
-      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(selected()).toEqual(["r2", "a:berthCount"]);
       key("r2", "Enter");
       fireEvent.keyDown(editor(), { key: "Enter", shiftKey: true });
-      expect(selected()).toEqual(["r1", "a:stockCount"]);
+      expect(selected()).toEqual(["r1", "a:berthCount"]);
       await waitFor(() => expect(asked.length).toBe(2));
     });
 
     test("Escape gives the edit up: the stored value is back and nothing is written", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("something else");
       fireEvent.keyDown(editor(), { key: "Escape" });
       expect(hasEditor()).toBe(false);
-      expect(cellEl("r1", "stockNote").textContent).toBe("warm");
-      expect(selected()).toEqual(["r1", "a:stockNote"]);
+      expect(cellEl("r1", "altText").textContent).toBe("warm");
+      expect(selected()).toEqual(["r1", "a:altText"]);
       await settle();
       expect(asked).toEqual([]);
     });
 
     test("a typed character starts an edit that replaces the value", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "x");
       expect(editor().value).toBe("x");
       fireEvent.keyDown(editor(), { key: "Enter" });
@@ -289,13 +290,13 @@ describe("table-react: editing a cell", () => {
 
     test("leaving the box saves; a value that was not changed is not written", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("warm, lined");
       fireEvent.blur(editor());
       await waitFor(() => expect(asked.length).toBe(1));
       expect(asked[0]?.value).toBe("warm, lined");
-      go("r2", "stockNote");
+      go("r2", "altText");
       key("r2", "Enter");
       fireEvent.keyDown(editor(), { key: "Enter" });
       await settle();
@@ -304,26 +305,26 @@ describe("table-react: editing a cell", () => {
 
     test("text is stored exactly as typed: spaces and line breaks are kept, and shown", async () => {
       render(<Host />);
-      go("r2", "stockNote");
+      go("r2", "altText");
       key("r2", "Enter");
       type("  two lines\nof text  ");
       fireEvent.keyDown(editor(), { key: "Tab" });
       await waitFor(() => expect(asked[0]?.value).toBe("  two lines\nof text  "));
-      await waitFor(() => expect(cellEl("r2", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
-      expect(cellEl("r2", "stockNote").querySelector("span")?.textContent).toBe("  two lines\nof text  ");
+      await waitFor(() => expect(cellEl("r2", "altText").getAttribute("data-cell-state")).toBe("saved"));
+      expect(cellEl("r2", "altText").querySelector("span")?.textContent).toBe("  two lines\nof text  ");
     });
 
     test("a second click on the selected cell opens its box", () => {
       render(<Host />);
-      fireEvent.click(cellEl("r1", "stockNote"));
+      fireEvent.click(cellEl("r1", "altText"));
       expect(hasEditor()).toBe(false);
-      fireEvent.click(cellEl("r1", "stockNote"));
+      fireEvent.click(cellEl("r1", "altText"));
       expect(editor().value).toBe("warm");
     });
 
     test("the page being hidden finishes the edit under way: what is typed is sent, not lost", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("typed, then the tab was closed");
       act(() => void window.dispatchEvent(new Event("pagehide")));
@@ -334,16 +335,16 @@ describe("table-react: editing a cell", () => {
   describe("clearing", () => {
     test("Delete removes the value: the write carries no value (null), never an empty text", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Delete");
       await waitFor(() => expect(asked.length).toBe(1));
-      expect(asked[0]).toMatchObject({ columnId: "a:stockNote", value: null, base: "warm" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").textContent).not.toContain("warm"));
+      expect(asked[0]).toMatchObject({ columnId: "a:altText", value: null, base: "warm" });
+      await waitFor(() => expect(cellEl("r1", "altText").textContent).not.toContain("warm"));
     });
 
     test("emptying the box and saving is the same clear", async () => {
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("");
       fireEvent.keyDown(editor(), { key: "Enter" });
@@ -352,9 +353,9 @@ describe("table-react: editing a cell", () => {
 
     test("a cell with no value is not written when cleared; a required field is not cleared and says so", async () => {
       render(<Host />);
-      go("r2", "stockCount");
+      go("r2", "berthCount");
       key("r2", "Delete");
-      go("r1", "itemCode");
+      go("r1", "brandName");
       key("r1", "Backspace");
       expect(status()).toBe("item code: item code is required");
       key("r1", "Enter");
@@ -369,7 +370,7 @@ describe("table-react: editing a cell", () => {
   describe("each kind of value", () => {
     test("a number is read by the locale's marks and written as a number; what is not a number stays in the box with the reason", async () => {
       render(<Host />);
-      go("r1", "stockCount");
+      go("r1", "berthCount");
       key("r1", "Enter");
       expect(editor().getAttribute("inputmode")).toBe("decimal");
       type("abc");
@@ -389,7 +390,7 @@ describe("table-react: editing a cell", () => {
 
     test("a date is picked in a date box and written as the text that was picked", async () => {
       render(<Host />);
-      go("r1", "restockDate");
+      go("r1", "menuStartDate");
       key("r1", "Enter");
       expect(editor().getAttribute("type")).toBe("date");
       type("2026-12-31");
@@ -424,7 +425,7 @@ describe("table-react: editing a cell", () => {
     // Spec: step 2 brief 7 and its end-to-end case: "The refused 'Purple' in Red/Green."
     test("a choice opens its list; Purple in Red/Green turns the box red, is not written, and the list stays open with the reason", async () => {
       render(<Host />);
-      go("r1", "colour");
+      go("r1", "exerciseKind");
       key("r1", "Enter");
       const list = () => [...screen.getByTestId("record-table-choice-list").querySelectorAll('[role="option"]')].map((o) => o.textContent);
       expect(list()).toEqual(["Red", "Green"]);
@@ -437,13 +438,13 @@ describe("table-react: editing a cell", () => {
       expect(asked).toEqual([]);
       // A value of the list is taken: by a click on it.
       fireEvent.click(screen.getByRole("option", { name: "Green" }));
-      await waitFor(() => expect(asked[0]).toMatchObject({ columnId: "a:colour", value: "Green", base: "Red" }));
+      await waitFor(() => expect(asked[0]).toMatchObject({ columnId: "a:exerciseKind", value: "Green", base: "Red" }));
       expect(hasEditor()).toBe(false);
     });
 
     test("in a choice the arrows mark a value and Enter takes it; typing narrows the list", async () => {
       render(<Host />);
-      go("r2", "colour");
+      go("r2", "exerciseKind");
       key("r2", "Enter");
       type("gr");
       expect([...screen.getByTestId("record-table-choice-list").querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(["Green"]);
@@ -454,21 +455,21 @@ describe("table-react: editing a cell", () => {
 
     test("text that cannot be stored stays in its cell, in red with the reason, when its box is left; Escape there drops it and says so", async () => {
       render(<Host />);
-      go("r1", "stockCount");
+      go("r1", "berthCount");
       key("r1", "Enter");
       type("three");
       fireEvent.blur(editor());
       expect(hasEditor()).toBe(false);
-      expect(cellEl("r1", "stockCount").getAttribute("data-cell-state")).toBe("invalid");
-      expect(cellEl("r1", "stockCount").textContent).toContain("three");
-      expect(cellEl("r1", "stockCount").getAttribute("title")).toBe('"three" is not a number');
-      go("r1", "stockCount");
+      expect(cellEl("r1", "berthCount").getAttribute("data-cell-state")).toBe("invalid");
+      expect(cellEl("r1", "berthCount").textContent).toContain("three");
+      expect(cellEl("r1", "berthCount").getAttribute("title")).toBe('"three" is not a number');
+      go("r1", "berthCount");
       expect(status()).toBe('stock count: Not saved: "three" is not a number');
       // Opening the box again finds the text and the reason.
       key("r1", "Enter");
       expect(editor().value).toBe("three");
       fireEvent.keyDown(editor(), { key: "Escape" });
-      expect(cellEl("r1", "stockCount").textContent).toBe("3");
+      expect(cellEl("r1", "berthCount").textContent).toBe("3");
       expect(status()).toBe("stock count: Change dropped");
       await settle();
       expect(asked).toEqual([]);
@@ -482,18 +483,18 @@ describe("table-react: editing a cell", () => {
       let fail = true;
       answer = () => { if (fail) throw offline(); };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("typed offline");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("failed"));
-      const cell = cellEl("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      const cell = cellEl("r1", "altText");
       expect(cell.textContent).toContain("typed offline");
       expect(cell.className).toContain("shadow-[inset_0_0_0_2px_var(--bad,#9c4438)]");
       expect(cell.getAttribute("title")).toBe("Not saved: no connection. Retry");
       // The line under the table says how many cells are not saved, whichever cell is selected.
       expect(screen.getByTestId("record-table-save-state").textContent).toContain("Not saved: 1 cell");
-      go("r1", "stockNote");
+      go("r1", "altText");
       expect(status()).toBe("stock note: Not saved: no connection. Retry");
       // With the unsaved cell selected, the line offers "Try again" for every cell that can be tried again.
       expect(screen.getByTestId("record-table-save-state").textContent).toBe("Not saved: 1 cell Try again");
@@ -501,20 +502,20 @@ describe("table-react: editing a cell", () => {
       fireEvent.click(screen.getByTestId("record-table-retry"));
       await waitFor(() => expect(asked.length).toBe(2));
       expect(asked.map((a) => [a.value, a.base])).toEqual([["typed offline", "warm"], ["typed offline", "warm"]]);
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
     });
 
     test("Escape on a failed cell restores the stored value and says 'Change dropped'; nothing more is sent", async () => {
       answer = () => { throw offline(); };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("typed offline");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("failed"));
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      go("r1", "altText");
       key("r1", "Escape");
-      await waitFor(() => expect(cellEl("r1", "stockNote").textContent).toBe("warm"));
+      await waitFor(() => expect(cellEl("r1", "altText").textContent).toBe("warm"));
       expect(status()).toBe("stock note: Change dropped");
       await settle();
       expect(asked.length).toBe(1);
@@ -530,39 +531,39 @@ describe("table-react: editing a cell", () => {
         return e.defaultPrevented;
       };
       expect(leaving()).toBe(false);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "x");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("failed"));
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
       expect(leaving()).toBe(true);
       fail = false;
       fireEvent.click(screen.getByTestId("record-table-retry"));
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
       expect(leaving()).toBe(false);
     });
 
     test("a refusal that cannot be tried again with the same value (the record is gone) puts the stored value back and says why", async () => {
       answer = () => { throw new CellWriteError({ problem: problemOf({ kind: "http", status: 404 }, { label: "stock note", typed: "x" }) }); };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "x");
       fireEvent.keyDown(editor(), { key: "Tab" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("note"));
-      expect(cellEl("r1", "stockNote").textContent).toBe("warm");
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("note"));
+      expect(cellEl("r1", "altText").textContent).toBe("warm");
+      go("r1", "altText");
       expect(status()).toBe("stock note: This record is no longer there");
       expect(screen.queryByTestId("record-table-retry")).toBeNull();
     });
 
     test("the vault's refusal of a value keeps what was typed and shows the vault's words, with no Retry", async () => {
-      answer = () => { throw new CellWriteError({ problem: problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:stockNote is not a defined term" }, { label: "stock note", typed: "x" }) }); };
+      answer = () => { throw new CellWriteError({ problem: problemOf({ kind: "http", status: 409, error: "UndefinedTermError", message: "a:altText is not a defined term" }, { label: "stock note", typed: "x" }) }); };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "x");
       fireEvent.keyDown(editor(), { key: "Tab" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("failed"));
-      expect(cellEl("r1", "stockNote").textContent).toContain("x");
-      expect(cellEl("r1", "stockNote").getAttribute("title")).toBe("Not saved: a:stockNote is not a defined term");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      expect(cellEl("r1", "altText").textContent).toContain("x");
+      expect(cellEl("r1", "altText").getAttribute("title")).toBe("Not saved: a:altText is not a defined term");
       expect(screen.queryByTestId("record-table-retry")).toBeNull();
     });
   });
@@ -584,13 +585,13 @@ describe("table-react: editing a cell", () => {
     test("the cell says both values and offers the two choices; nothing was overwritten", async () => {
       conflictOnce("dry");
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("wet");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("conflict"));
-      expect(cellEl("r1", "stockNote").getAttribute("title")).toBe("Changed by someone else: dry. Yours: wet");
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
+      expect(cellEl("r1", "altText").getAttribute("title")).toBe("Changed by someone else: dry. Yours: wet");
+      go("r1", "altText");
       expect(screen.getByTestId("record-table-theirs").textContent).toBe("Changed by someone else: dry");
       expect(screen.getByTestId("record-table-mine").textContent).toBe("Yours: wet");
       // The row of two buttons: the one that writes is at the right.
@@ -602,31 +603,31 @@ describe("table-react: editing a cell", () => {
     test("'Keep mine' writes the person's value over the value they were shown", async () => {
       conflictOnce("dry");
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("wet");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("conflict"));
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
+      go("r1", "altText");
       fireEvent.click(screen.getByRole("button", { name: "Keep mine" }));
       await waitFor(() => expect(asked.length).toBe(2));
       expect(asked.map((a) => [a.value, a.base])).toEqual([["wet", "warm"], ["wet", "dry"]]);
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
-      expect(cellEl("r1", "stockNote").textContent).toContain("wet");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
+      expect(cellEl("r1", "altText").textContent).toContain("wet");
     });
 
     test("'Use theirs' shows their value and writes nothing", async () => {
       conflictOnce("dry");
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("wet");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("conflict"));
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
+      go("r1", "altText");
       fireEvent.click(screen.getByRole("button", { name: "Use theirs" }));
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBeNull());
-      expect(cellEl("r1", "stockNote").textContent).toBe("dry");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBeNull());
+      expect(cellEl("r1", "altText").textContent).toBe("dry");
       await settle();
       expect(asked.length).toBe(1);
     });
@@ -634,15 +635,15 @@ describe("table-react: editing a cell", () => {
     test("with the conflict on another cell, the line under the table says a cell is not saved and 'Show' goes to it", async () => {
       conflictOnce("dry");
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       type("wet");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("conflict"));
-      expect(selected()).toEqual(["r2", "a:stockNote"]);
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
+      expect(selected()).toEqual(["r2", "a:altText"]);
       expect(screen.getByTestId("record-table-save-state").textContent).toContain("Not saved: 1 cell");
       fireEvent.click(screen.getByTestId("record-table-show-unsaved"));
-      expect(selected()).toEqual(["r1", "a:stockNote"]);
+      expect(selected()).toEqual(["r1", "a:altText"]);
       expect(screen.getByTestId("record-table-theirs").textContent).toBe("Changed by someone else: dry");
     });
   });
@@ -673,19 +674,19 @@ describe("table-react: editing a cell", () => {
     });
 
     test("a cell the host saves by a rule of its own is read-only with the host's reason, and the cells beside it are not", async () => {
-      render(<Host hostsOwn="a:itemCode" />);
-      go("r1", "itemCode");
+      render(<Host hostsOwn="a:brandName" />);
+      go("r1", "brandName");
       expect(status()).toBe("item code: The name is changed on the card for now");
       key("r1", "Enter");
       expect(hasEditor()).toBe(false);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "Enter");
       expect(hasEditor()).toBe(true);
     });
 
     test("a row the person may not write is read-only in every cell, with the host's reason", async () => {
       render(<Host readOnly="You can read this item but not edit it." />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       expect(status()).toBe("stock note: You can read this item but not edit it.");
       key("r1", "Enter");
       key("r1", "x");
@@ -705,8 +706,8 @@ describe("table-react: editing a cell", () => {
 
     test("a tap on a value selects its cell and does not open the record; a second tap opens its box", async () => {
       render(<Host narrow />);
-      // A row of the list shows the first three columns it holds a value under: for r1 the picture, the colour and the item code.
-      const cell = line("r1", "itemCode");
+      // A row of the list shows the first three columns it holds a value under: for r1 the picture, the exerciseKind and the item code.
+      const cell = line("r1", "brandName");
       fireEvent.click(cell);
       expect(opened).toEqual([]);
       expect(cell.getAttribute("data-selected")).toBe("true");
@@ -715,7 +716,7 @@ describe("table-react: editing a cell", () => {
       expect(editor().value).toBe("P-1");
       type("P-10");
       fireEvent.blur(editor());
-      await waitFor(() => expect(asked[0]).toMatchObject({ rowId: "r1", columnId: "a:itemCode", value: "P-10", base: "P-1" }));
+      await waitFor(() => expect(asked[0]).toMatchObject({ rowId: "r1", columnId: "a:brandName", value: "P-10", base: "P-1" }));
     });
 
     test("a row of the list is as tall as its lines, each 28 px where values can be edited (found in a browser: 20 px lines ran into the next row)", () => {
@@ -739,17 +740,17 @@ describe("table-react: editing a cell", () => {
       let fail = true;
       answer = () => { if (fail) throw new CellWriteError({ problem: problemOf({ kind: "network" }, { label: "stock note", typed: "x" }) }); };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       key("r1", "x");
       fireEvent.keyDown(editor(), { key: "Tab" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("failed"));
-      go("r1", "stockCount");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+      go("r1", "berthCount");
       key("r1", "Enter");
       type("three");
       fireEvent.blur(editor());
       fail = false;
       fireEvent.click(screen.getByTestId("record-table-retry"));
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("saved"));
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
       expect(setItem).not.toHaveBeenCalled();
     });
 
@@ -775,16 +776,16 @@ describe("table-react: editing a cell", () => {
         throw new CellWriteError({ theirs: "dry" });
       };
       render(<Host />);
-      go("r1", "stockNote");
+      go("r1", "altText");
       expect(await violations()).toEqual([]);
       key("r1", "Enter");
       expect(await violations()).toEqual([]);
       type("wet");
       fireEvent.keyDown(editor(), { key: "Enter" });
-      await waitFor(() => expect(cellEl("r1", "stockNote").getAttribute("data-cell-state")).toBe("conflict"));
-      go("r1", "stockNote");
+      await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("conflict"));
+      go("r1", "altText");
       expect(await violations()).toEqual([]);
-      go("r1", "colour");
+      go("r1", "exerciseKind");
       key("r1", "Enter");
       type("Purple");
       fireEvent.keyDown(editor(), { key: "Enter" });
@@ -796,8 +797,8 @@ describe("table-react: editing a cell", () => {
       const value = (column: string) => document.querySelector(`[data-row-id="r1"]`)?.closest('[role="listitem"]')?.querySelector(`[data-column-id="a:${column}"] > span:last-child`) as HTMLElement;
       fireEvent.click(value("approvedPostPicture"));
       expect(await violations()).toEqual([]);
-      fireEvent.click(value("itemCode"));
-      fireEvent.click(value("itemCode"));
+      fireEvent.click(value("brandName"));
+      fireEvent.click(value("brandName"));
       expect(hasEditor()).toBe(true);
       expect(await violations()).toEqual([]);
     });
