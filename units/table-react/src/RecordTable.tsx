@@ -35,6 +35,7 @@ import {
 } from "@kaigilb/gilbplatformcode-table-core";
 import { CellEditor, type AfterCommit } from "./CellEditor";
 import { cellKey, useCellSaves, type CellSaveView, type CellWrite } from "./cellSaves";
+import { CONFLICT_WORDS, ConflictActs } from "./ConflictChoice";
 
 /** A link cell's reference, as the host is asked to draw it. */
 export interface TableRef {
@@ -778,7 +779,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     const typed = draft ? draft.text : view && "value" in view ? view.value : undefined;
     const shown: Cell = typed === undefined ? cell : typed === null ? { kind: "empty" } : { kind: "value", value: typed, text: String(typed) };
     const state = draft ? "invalid" : (view?.phase ?? null);
-    const message = draft ? draft.why : view?.phase === "failed" || view?.phase === "note" ? view.message : view?.phase === "conflict" ? `Changed by someone else: ${wordsOf(view.theirs, locale)}. Yours: ${wordsOf(view.value, locale)}` : null;
+    const message = draft ? draft.why : view?.phase === "failed" || view?.phase === "note" ? view.message : view?.phase === "conflict" ? `${CONFLICT_WORDS.theirs(wordsOf(view.theirs, locale))}. ${CONFLICT_WORDS.mine(wordsOf(view.value, locale))}` : null;
     const check = e.editable && e.editor === "checkbox" && shown.kind === "value" && typeof shown.value === "boolean" ? shown.value : null;
     return {
       body: (
@@ -1136,7 +1137,6 @@ function CellBar(props: {
   onShowFirst: (() => void) | null;
 }) {
   const { view, locale } = props;
-  const button = "min-h-[28px] rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--paper-2)] px-2.5 text-[12.5px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
   let text: ReactNode = null;
   let acts: ReactNode = null;
   let tone = "text-[var(--ink-soft)]";
@@ -1144,19 +1144,14 @@ function CellBar(props: {
     tone = "text-[var(--bad,#9c4438)]";
     text = (
       <>
-        <span data-testid="record-table-theirs">Changed by someone else: {wordsOf(view.theirs, locale)}</span>
+        <span data-testid="record-table-theirs">{CONFLICT_WORDS.theirs(wordsOf(view.theirs, locale))}</span>
         {" · "}
-        <span data-testid="record-table-mine">Yours: {wordsOf(view.value, locale)}</span>
+        <span data-testid="record-table-mine">{CONFLICT_WORDS.mine(wordsOf(view.value, locale))}</span>
       </>
     );
     // The row of two buttons is a line of its own, as wide as the table, with the buttons at its right, each its own width: the act
     // that writes is rightmost, the one that changes nothing at its left (the platform's order for a row of buttons).
-    acts = (
-      <div className="flex w-full flex-none items-center justify-end gap-2" data-testid="record-table-conflict-acts">
-        <button type="button" className={button} onClick={props.onUseTheirs}>Use theirs</button>
-        <button type="button" className={button + " border-[var(--accent)]"} onClick={props.onKeepMine}>Keep mine</button>
-      </div>
-    );
+    acts = <ConflictActs testId="record-table-conflict-acts" onUseTheirs={props.onUseTheirs} onKeepMine={props.onKeepMine} />;
   } else if (view?.phase === "failed") {
     tone = "text-[var(--bad,#9c4438)]";
     // The sentence ends with the act's name ("... Retry"); here the act is the button beside it.
