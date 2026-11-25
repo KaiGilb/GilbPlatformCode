@@ -18,6 +18,12 @@ const FORBIDDEN = new Set(["codex", "claude", "codex.exe", "claude.exe", "codex.
 const FIXED_MARK = 'export const CODEX_FIXED_LOOKUP_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];';
 // The files this guard runs. The third is the lookup file: its default fixed folders are trap folders in the copy.
 const NAMED_FILES = ["src/accessSwitch.test.mjs", "src/windowsService.test.mjs", "src/codexEngine.test.mjs"];
+// How many tests each named file has. The guard fails when a run is short, long, empty, or has a skip.
+const EXPECTED_TESTS = {
+  "src/accessSwitch.test.mjs": 37,
+  "src/windowsService.test.mjs": 42,
+  "src/codexEngine.test.mjs": 43,
+};
 
 function shQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -64,28 +70,85 @@ function linesOf(text) {
   return text.split("\n").filter((line) => line.length > 0);
 }
 
-/** One vitest run of a named file. `passed` and `skipped` are the summary counts the guard requires. */
+/** One vitest run of a named file. The json report is how the guard counts tests. */
 function runNamed(file, env, opts) {
   if (!NAMED_FILES.includes(file)) throw new Error(`${file} is outside the guard's named files`);
   // One worker: other jobs share this computer, and this guard is already a second vitest.
-  const run = spawnSync(process.execPath, [VITEST, "run", "--maxWorkers=1", "--minWorkers=1", file, ...opts.args], {
+  // passWithNoTests: an empty file must come back here as zero tests, so this guard can reject it.
+  const run = spawnSync(process.execPath, [
+    VITEST, "run", "--maxWorkers=1", "--minWorkers=1", "--passWithNoTests",
+    "--reporter=default", "--reporter=json", `--outputFile.json=${opts.jsonPath}`,
+    file, ...opts.args,
+  ], {
     cwd: opts.cwd,
     env,
     encoding: "utf8",
     timeout: opts.timeout,
   });
   const text = `${run.stdout ?? ""}\n${run.stderr ?? ""}`;
-  const counts = text.match(/Tests\s+(\d+) passed(?:\s+\|\s+(\d+) skipped)?/);
   return {
-    file: opts.args.length > 0 ? `${file} ${opts.args.join(" ")}` : file,
+    file,
     status: run.status,
     signal: run.signal,
     tail: text.slice(-4000),
-    passed: opts.passed,
-    skipped: opts.skipped,
-    gotPassed: counts ? Number(counts[1]) : undefined,
-    gotSkipped: counts ? Number(counts[2] ?? 0) : undefined,
+    jsonPath: opts.jsonPath,
+    pattern: opts.pattern,
   };
+}
+
+/** Tests this run was asked to run. A name filter leaves the others out, so a filter skip is not a skipped test. */
+function selectedTests(report, pattern) {
+  const out = [];
+  for (const file of report.testResults ?? []) {
+    for (const test of file.assertionResults ?? []) {
+      const name = test.fullName || test.title || "";
+      if (pattern && !pattern.test(name)) continue;
+      out.push(test);
+    }
+  }
+  return out;
+}
+
+/**
+ * The named files ran exactly their expected tests, and every one of those passed.
+ * Zero tests, a skip, and a count that is off all fail here.
+ */
+function assertNamedCounts(runs) {
+  const byFile = new Map();
+  for (const run of runs) {
+    // The count is the failure when a file ran nothing. Vitest's own exit comes after that.
+    if (!fs.existsSync(run.jsonPath)) throw new Error(`${run.file} wrote no json report, searched ${run.jsonPath}\n${run.tail}`);
+    let report;
+    try { report = JSON.parse(fs.readFileSync(run.jsonPath, "utf8")); }
+    catch (err) { throw new Error(`${run.file} json report is not readable: ${err}\n${run.tail}`); }
+    const selected = selectedTests(report, run.pattern);
+    const list = byFile.get(run.file) ?? [];
+    list.push(...selected);
+    byFile.set(run.file, list);
+  }
+  let total = 0;
+  for (const file of NAMED_FILES) {
+    const tests = byFile.get(file) ?? [];
+    const expected = EXPECTED_TESTS[file];
+    const seen = new Set();
+    for (const test of tests) {
+      if (seen.has(test.fullName)) throw new Error(`${file} counted twice: ${test.fullName}`);
+      seen.add(test.fullName);
+    }
+    const bad = tests.filter((test) => test.status !== "passed");
+    if (bad.length !== 0) {
+      throw new Error(`${file}: ${bad.length} not passed: ${bad.map((test) => `${test.status}: ${test.title}`).join("; ")}`);
+    }
+    if (tests.length === 0 || tests.length !== expected) {
+      throw new Error(`${file} ran ${tests.length} tests, expected ${expected}`);
+    }
+    total += tests.length;
+  }
+  const expectedTotal = NAMED_FILES.reduce((sum, file) => sum + EXPECTED_TESTS[file], 0);
+  if (total === 0 || total !== expectedTotal) throw new Error(`ran ${total} tests, expected ${expectedTotal}`);
+  for (const run of runs) {
+    if (run.status !== 0) throw new Error(`${run.file} exited ${run.status} signal ${run.signal}\n${run.tail}`);
+  }
 }
 
 /** A copy of the unit whose default Codex fixed folders are `dirs`. node_modules stays a link. */
@@ -110,6 +173,7 @@ function copyUnitWithFixedDirs(dest, dirs) {
 describe("the suite does not start codex or claude from PATH or home", () => {
   it("accessSwitch, windowsService and the Codex lookup leave the trap logs empty", (ctx) => {
     // Spec: Chat.CodexConnect.ChatPart — the unit's suite never starts a codex or claude from the person's PATH, home, or fixed lookup folders (meter: trap logs empty after the named test files run)
+    // Spec: Chat.CodexConnect B-G1 — those named files run every one of their tests, none skipped, and the count matches (meter: the vitest json report)
     if (process.platform === "win32") {
       ctx.skip("skipped on Windows: the traps are POSIX shell scripts, and this job cannot prove Windows");
     }
@@ -169,26 +233,33 @@ describe("the suite does not start codex or claude from PATH or home", () => {
         runNamed("src/codexEngine.test.mjs", env, {
           cwd: UNIT,
           timeout: 120000,
+          jsonPath: path.join(root, "count-default.json"),
+          pattern: /the default fixed folders are today's list/,
           args: ["-t", "the default fixed folders are today's list"],
-          passed: 1,
-          skipped: 42,
         }),
         runNamed("src/codexEngine.test.mjs", env, {
           cwd: copy,
           timeout: 360000,
+          jsonPath: path.join(root, "count-lookup.json"),
+          pattern: /^(?!.*the default fixed folders)/,
           args: ["-t", "^(?!.*the default fixed folders)"],
-          passed: 42,
-          skipped: 1,
         }),
-        runNamed("src/accessSwitch.test.mjs", env, { cwd: UNIT, timeout: 180000, args: [] }),
-        runNamed("src/windowsService.test.mjs", env, { cwd: UNIT, timeout: 180000, args: [] }),
+        runNamed("src/accessSwitch.test.mjs", env, {
+          cwd: UNIT,
+          timeout: 180000,
+          jsonPath: path.join(root, "count-access.json"),
+          pattern: null,
+          args: [],
+        }),
+        runNamed("src/windowsService.test.mjs", env, {
+          cwd: UNIT,
+          timeout: 180000,
+          jsonPath: path.join(root, "count-windows.json"),
+          pattern: null,
+          args: [],
+        }),
       ];
-      for (const run of runs) {
-        if (run.status !== 0) throw new Error(`${run.file} exited ${run.status} signal ${run.signal}\n${run.tail}`);
-        if (run.passed !== undefined && (run.gotPassed !== run.passed || run.gotSkipped !== run.skipped)) {
-          throw new Error(`${run.file} passed ${run.gotPassed} skipped ${run.gotSkipped}, wanted ${run.passed} passed and ${run.skipped} skipped\n${run.tail}`);
-        }
-      }
+      assertNamedCounts(runs);
       const codexText = logText(codexLog);
       const claudeText = logText(claudeLog);
       if (linesOf(codexText).length !== 0 || linesOf(claudeText).length !== 0) {
