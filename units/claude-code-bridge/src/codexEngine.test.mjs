@@ -559,7 +559,13 @@ describe("a Codex chat turn", () => {
     expect((await api(secret, "/v1/turn/cancel", { turnId: live.turnId })).json).toEqual({ cancelled: true });
     await until(() => live.events.some((e) => e[0] === "error"));
     expect(live.events.find((e) => e[0] === "error")[1]).toEqual({ message: "The turn was cancelled." });
-    await until(() => rows().some((r) => r.event === "sigterm"));
+    const pid = rpcs("turn/start").at(-1)?.pid;
+    if (process.platform === "win32") {
+      // Windows ends this child with taskkill /F. The stand-in never receives SIGTERM, so it cannot write that row. The child must still be gone.
+      await until(() => pid && !alive(pid));
+    } else {
+      await until(() => rows().some((r) => r.event === "sigterm"));
+    }
   });
 });
 
@@ -800,16 +806,20 @@ describe("round 3 Codex turn limits", () => {
       const r = await turn(secret, { engine: "codex", prompt: "SHELLITEM" });
       expect(r.error).toEqual({ message: GUARD });
       pid = rpcs("turn/start").at(-1)?.pid;
-      // The bridge sends SIGTERM before this error comes back. The stand-in writes the sigterm row
-      // in its signal handler, and that write is not ordered against this read.
-      const hasSigterm = () => rows().some((row) => row.event === "sigterm" && row.pid === pid);
-      const deadline = Date.now() + 3000;
-      while (!hasSigterm() && Date.now() < deadline) await delay(20);
-      if (!hasSigterm()) {
-        const held = rows().map((row) => `${row.event ?? "?"}${row.pid !== undefined ? ":" + row.pid : ""}`).join(", ") || "(empty)";
-        throw new Error(`missing sigterm row for pid ${pid}; log held: ${held}`);
+      if (process.platform === "win32") {
+        // Windows ends this child with taskkill /F, so the stand-in cannot receive SIGTERM and cannot write the row. The kill below is what this platform can show.
+      } else {
+        // The bridge sends SIGTERM before this error comes back. The stand-in writes the sigterm row
+        // in its signal handler, and that write is not ordered against this read.
+        const hasSigterm = () => rows().some((row) => row.event === "sigterm" && row.pid === pid);
+        const deadline = Date.now() + 3000;
+        while (!hasSigterm() && Date.now() < deadline) await delay(20);
+        if (!hasSigterm()) {
+          const held = rows().map((row) => `${row.event ?? "?"}${row.pid !== undefined ? ":" + row.pid : ""}`).join(", ") || "(empty)";
+          throw new Error(`missing sigterm row for pid ${pid}; log held: ${held}`);
+        }
+        expect(hasSigterm()).toBe(true);
       }
-      expect(hasSigterm()).toBe(true);
       let dead = false;
       try { await until(() => !alive(pid), 1500); dead = true; } catch { dead = false; }
       expect(dead).toBe(true);
@@ -959,8 +969,11 @@ describe("finding the Codex binary", () => {
     return file;
   };
 
-  it("finds Codex on PATH, beside node, under the newer fnm, and under nvm", () => {
+  it("finds Codex on PATH, beside node, under the newer fnm, and under nvm", (ctx) => {
     // Spec: Chat.CodexConnect round 3 F9 — the lookup order, newest version first, and a directory is not a binary.
+    if (process.platform === "win32") {
+      ctx.skip("skipped on Windows: this case asks the darwin lookup, and a Windows temp path contains ':' which that lookup splits as PATH. The placed file is also a POSIX shell script.");
+    }
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-lookup-"));
     try {
       const nodeDir = path.join(home, "node-bin");
@@ -991,8 +1004,11 @@ describe("finding the Codex binary", () => {
     }
   });
 
-  it("a Codex installed after a failed lookup is found on the next turn and the next check", async () => {
+  it("a Codex installed after a failed lookup is found on the next turn and the next check", async (ctx) => {
     // Spec: Chat.CodexConnect round 3 R6 — a miss is not remembered. The next turn and the next background check look again.
+    if (process.platform === "win32") {
+      ctx.skip("skipped on Windows: this case asks the darwin lookup with PATH set to a temp folder, and a Windows temp path contains ':' which that lookup splits as PATH. The placed file is a POSIX script named codex.");
+    }
     dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-")));
     const binDir = path.join(dir, "bin");
     const nodeDir = path.join(dir, "no-node");
