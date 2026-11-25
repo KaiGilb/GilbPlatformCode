@@ -1,9 +1,9 @@
 {
   "name": "@kaigilb/gilbplatformcode-table-react",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A read-only table of vault records on screen: one row per record and one column per field, only the rows in view drawn, the Name column kept in place, a list on a narrow screen, and a row opened by Space or its button.",
+  "description": "A table of vault records on screen: one row per record and one column per field, only the rows in view drawn, the Name column kept in place, a list on a narrow screen, a row opened by Space or its button, and, when the host passes a cell write, cells that can be selected and edited.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -17,7 +17,8 @@
   },
   "peerDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
-    "@kaigilb/gilbplatformcode-table-core": "^0.1.0",
+    "@kaigilb/gilbplatformcode-record-autosave": "^0.2.0",
+    "@kaigilb/gilbplatformcode-table-core": "^0.2.0",
     "@tanstack/react-table": "^9.3.1",
     "@tanstack/react-virtual": "^3.14.28",
     "react": "^19.0.0",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
     "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-record-autosave": "file:../record-autosave",
     "@kaigilb/gilbplatformcode-table-core": "file:../table-core",
     "@kaigilb/gilbplatformcode-type-fields": "file:../type-fields",
     "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",

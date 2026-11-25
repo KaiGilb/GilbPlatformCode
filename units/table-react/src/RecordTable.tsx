@@ -1,17 +1,40 @@
 /**
- * The table on screen: a read-only grid of vault records, one row per record and one column per field, drawn only for the rows in view.
+ * The table on screen: a grid of vault records, one row per record and one column per field, drawn only for the rows in view.
  *
  * It draws what `table-core` built and nothing else: an empty cell stays empty, a link is handed to the host to name, a cell with
  * several values says how many it does not show and lists them all on request, and a row is opened by Space or by the button at its
  * left. It reads no record and no vocabulary itself.
+ *
+ * With `editing` (since 0.2.0) a cell can be selected and its value changed: text, a number, a date, yes or no, a choice from a closed
+ * list. The rules are `table-core`'s (`cellEdit`); each save is the code library's save-as-you-type machine (`cellSaves`); the write
+ * itself is the host's. Without `editing` the table is the read-only one it was.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { columnSizingFeature, flexRender, tableFeatures, useTable, type ColumnDef } from "@tanstack/react-table";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
-import { NAME_COLUMN_ID, narrowFieldsOfRow, type Cell, type TableColumn, type TableModel, type TableRow } from "@kaigilb/gilbplatformcode-table-core";
+import { SaveStateLine } from "@kaigilb/gilbplatformcode-record-autosave";
+import {
+  NAME_COLUMN_ID,
+  editabilityOf,
+  keyAct,
+  narrowFieldsOfRow,
+  parseEdit,
+  sameCellValue,
+  storedValueOf,
+  valueText,
+  type Cell,
+  type CellValue,
+  type Editability,
+  type EditPlan,
+  type TableColumn,
+  type TableModel,
+  type TableRow,
+} from "@kaigilb/gilbplatformcode-table-core";
+import { CellEditor, type AfterCommit } from "./CellEditor";
+import { cellKey, useCellSaves, type CellSaveView, type CellWrite } from "./cellSaves";
 
 /** A link cell's reference, as the host is asked to draw it. */
 export interface TableRef {
@@ -41,12 +64,26 @@ export interface RecordTableProps<R extends BaseRecord = BaseRecord> {
   onRefIntent?: (ref: TableRef) => void;
   /** True on a narrow screen: a list of rows, each with its name and the first field columns, in place of the grid. */
   narrow?: boolean;
+  /** Lets the person change the value of a cell. Absent: the table is read-only and no cell can be selected. */
+  editing?: TableEditing<R>;
   /** What the grid is called for a screen reader, for example the type's name. */
   label?: string;
   /** Height of a grid row, px. Default 36. */
   rowHeight?: number;
   /** Rows drawn above and below the ones in view. Default 12. */
   overscan?: number;
+}
+
+/** What a host passes to let cells be edited. */
+export interface TableEditing<R extends BaseRecord = BaseRecord> {
+  /** Writes one cell (see `CellWrite`): one field of one record, over the value the edit started from. */
+  write: CellWrite;
+  /** Why the person may not change this row (they may read it and not write it), or null when they may. */
+  rowReadOnly?: (row: TableRow<R>) => string | null;
+  /** The keys of fields the vault sets itself: their cells are read-only. */
+  systemKeys?: ReadonlySet<string>;
+  /** The person's locale, for numbers. Default: the browser's. */
+  locale?: string;
 }
 
 /** The table features this grid uses: column sizes. Rows come from the core row model. */
@@ -278,7 +315,7 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
  * @param props the cell; the host's way to name a link; whether the cell's own control takes a Tab stop; `roomy`, for a touch layout
  *   (see {@link ManyValues}); and `wrap`, for the list of all values, where a value is shown whole on as many lines as it needs
  */
-function CellView({ cell, renderRef, tabbable, roomy, wrap = false, chip = true }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; roomy: boolean; wrap?: boolean; chip?: boolean }) {
+function CellView({ cell, renderRef, tabbable, roomy, wrap = false, chip = true, locale = "en", plain = false }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; roomy: boolean; wrap?: boolean; chip?: boolean; locale?: string; plain?: boolean }) {
   const clip = wrap ? "min-w-0 break-words" : "truncate";
   // A link is a chip wherever it is drawn. `chip` false: the caller has already drawn the chip around this value.
   const inChip = (link: ReactNode) => (chip ? <span className={CHIP} data-chip="link">{link}</span> : link);
@@ -286,9 +323,11 @@ function CellView({ cell, renderRef, tabbable, roomy, wrap = false, chip = true 
     case "empty":
       return null;
     case "value": {
-      const text = typeof cell.value === "boolean" ? (cell.value ? "Yes" : "No") : cell.text;
+      // A number is written with the person's decimal mark, as its editor takes it; a yes-or-no value reads Yes or No.
+      const text = typeof cell.value === "boolean" ? (cell.value ? "Yes" : "No") : typeof cell.value === "number" ? valueText(cell.value, locale) : cell.text;
       return (
-        <span className={clip} title={!wrap && cell.text.length <= TITLE_MAX ? cell.text : undefined}>
+        // `plain`: the cell itself carries a title (why it is read-only, or what its save says), so the value adds none.
+        <span className={clip + (typeof cell.value === "string" ? " whitespace-pre" : "")} title={!plain && !wrap && cell.text.length <= TITLE_MAX ? cell.text : undefined}>
           {text}
         </span>
       );
@@ -369,6 +408,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   renderRef,
   onRefIntent,
   narrow = false,
+  editing,
   label = "Records",
   rowHeight = 36,
   overscan = 12,
@@ -494,6 +534,299 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     }
   };
 
+  // --- Editing: the selected cell, the box, and the saves (all of it idle when the host passes no `editing`) ---
+  const locale = editing?.locale ?? (typeof navigator !== "undefined" && navigator.language ? navigator.language : "en");
+  const uid = useId();
+  const columnIndex = useMemo(() => new Map(columns.map((c, i) => [c.id, i])), [columns]);
+  /** The selected cell: the one the keys act on. */
+  const [sel, setSel] = useState<{ rowId: string; colId: string } | null>(null);
+  /** The cell being typed in, with the text its box starts with and what the field held when the edit started. */
+  const [edit, setEdit] = useState<{ rowId: string; colId: string; text: string; base: CellValue | null | undefined; selectAll: boolean; why: string | null } | null>(null);
+  /** Text that could not be stored and whose box was left: it stays in its cell with the reason, until it is changed or given up. In memory only. */
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, { text: string; why: string }>>(new Map());
+  /** Something said about one cell that is not the state of a save: why it cannot be edited, or that a change was dropped. */
+  const [said, setSaid] = useState<{ key: string; text: string } | null>(null);
+
+  const cellAt = (rowId: string, colId: string) => {
+    const r = indexById.get(rowId);
+    const c = columnIndex.get(colId);
+    const row = r === undefined ? undefined : rows[r]?.original;
+    const column = c === undefined ? undefined : columns[c];
+    if (r === undefined || c === undefined || !row || !column) return null;
+    const cell: Cell = c === 0 ? { kind: "empty" } : (row.cells[c - 1] ?? { kind: "empty" });
+    return { row, column, cell, rowIndex: r, colIndex: c };
+  };
+  const editabilityAt = (row: TableRow<R>, column: TableColumn, cell: Cell): Editability => {
+    // A row the person may not write is read-only in every cell, and that is the reason given.
+    const refused = editing?.rowReadOnly?.(row) ?? null;
+    if (refused) return { editable: false, reason: refused };
+    return editabilityOf(column, cell, editing?.systemKeys ? { systemKeys: editing.systemKeys } : {});
+  };
+  const saves = useCellSaves({
+    write: editing?.write,
+    locale,
+    storedOf: (rowId, colId) => {
+      const at = cellAt(rowId, colId);
+      const value = at ? storedValueOf(at.cell) : undefined;
+      return { readable: value !== undefined, value: value ?? null };
+    },
+  });
+  const dropDraft = (key: string) => setDrafts((prev) => {
+    if (!prev.has(key)) return prev;
+    const next = new Map(prev);
+    next.delete(key);
+    return next;
+  });
+  const say = (rowId: string, colId: string, text: string) => setSaid({ key: cellKey(rowId, colId), text });
+  const select = (rowId: string, colId: string) => {
+    setSel((prev) => (prev && prev.rowId === rowId && prev.colId === colId ? prev : { rowId, colId }));
+    setSaid((prev) => (prev && prev.key !== cellKey(rowId, colId) ? null : prev));
+  };
+  /** Moves the selection to a cell by its place, inside the table's edges, and puts the keys on its row. */
+  const goTo = (rowIndex: number, colIndex: number) => {
+    const target = rows[Math.max(0, Math.min(rows.length - 1, rowIndex))];
+    const column = columns[Math.max(0, Math.min(columns.length - 1, colIndex))];
+    if (!target || !column) return;
+    select(target.id, column.id);
+    moveTo(target.index);
+  };
+  /** What a cell shows as its value now: what was typed while a save is under way or did not land, else what the vault holds. */
+  const shownValue = (key: string, stored: CellValue | null): CellValue | null => {
+    const view = saves.views.get(key);
+    return view && "value" in view ? view.value : stored;
+  };
+  /** The base of a new edit of a cell: what the vault holds, except after a failed write, whose own base stands (the person has not seen anything newer). */
+  const baseFor = (key: string, stored: CellValue | null): CellValue | null | undefined => (saves.views.get(key)?.phase === "failed" ? undefined : stored);
+  const toggle = (at: NonNullable<ReturnType<typeof cellAt>>, plan: EditPlan) => {
+    const key = cellKey(at.row.id, at.column.id);
+    const stored = storedValueOf(at.cell) ?? null;
+    saves.commit(at.row.id, at.column.id, plan, shownValue(key, stored) === true ? false : true, baseFor(key, stored));
+  };
+  const clear = (at: NonNullable<ReturnType<typeof cellAt>>, plan: EditPlan) => {
+    const key = cellKey(at.row.id, at.column.id);
+    if (plan.required) return say(at.row.id, at.column.id, `${plan.label} is required`);
+    const stored = storedValueOf(at.cell) ?? null;
+    dropDraft(key);
+    if (stored === null && !saves.views.get(key)) return;
+    saves.commit(at.row.id, at.column.id, plan, null, baseFor(key, stored));
+  };
+  const startEdit = (rowId: string, colId: string, replaceWith?: string) => {
+    const at = editing ? cellAt(rowId, colId) : null;
+    if (!at) return;
+    const e = editabilityAt(at.row, at.column, at.cell);
+    if (!e.editable) return say(rowId, colId, e.reason);
+    if (e.editor === "checkbox") return toggle(at, e);
+    const key = cellKey(rowId, colId);
+    const draft = drafts.get(key);
+    const stored = storedValueOf(at.cell) ?? null;
+    setSaid(null);
+    setEdit({
+      rowId,
+      colId,
+      text: replaceWith ?? draft?.text ?? valueText(shownValue(key, stored), locale),
+      base: baseFor(key, stored),
+      selectAll: replaceWith === undefined,
+      why: replaceWith === undefined ? (draft?.why ?? null) : null,
+    });
+  };
+  /** Finishes the edit under way with this text: null when it was taken, else why it cannot be stored. */
+  const finishEdit = (text: string, then: AfterCommit): string | null => {
+    if (!edit) return null;
+    const at = cellAt(edit.rowId, edit.colId);
+    const key = cellKey(edit.rowId, edit.colId);
+    const e = at ? editabilityAt(at.row, at.column, at.cell) : null;
+    // The row went away, or may no longer be written: there is nothing to save into.
+    if (!at || !e || !e.editable) {
+      setEdit(null);
+      return null;
+    }
+    const parsed = parseEdit(e, text, locale);
+    if (!parsed.ok) {
+      // By a key: the box stays and says why. By leaving the box: the text stays in its cell, with the reason.
+      if (then !== "stay") return parsed.why;
+      setDrafts((prev) => new Map(prev).set(key, { text, why: parsed.why }));
+      setEdit(null);
+      return null;
+    }
+    dropDraft(key);
+    const stored = storedValueOf(at.cell) ?? null;
+    // Nothing to write when the value is what the vault holds, unless a save of this cell is still open (then this settles it).
+    if (saves.views.get(key)?.phase !== undefined && saves.views.get(key)?.phase !== "saved" && saves.views.get(key)?.phase !== "note") saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
+    else if (!sameCellValue(parsed.value, stored)) saves.commit(edit.rowId, edit.colId, e, parsed.value, edit.base);
+    setEdit(null);
+    if (then === "stay") return null;
+    goTo(at.rowIndex + (then === "down" ? 1 : then === "up" ? -1 : 0), at.colIndex + (then === "right" ? 1 : then === "left" ? -1 : 0));
+    return null;
+  };
+  const cancelEdit = () => {
+    if (!edit) return;
+    const key = cellKey(edit.rowId, edit.colId);
+    // Giving an edit up also gives up what did not land or could not be stored in that cell: the stored value is back, and it is said.
+    const view = saves.views.get(key);
+    if (drafts.has(key) || view?.phase === "failed" || view?.phase === "conflict") dropChange(edit.rowId, edit.colId);
+    pendingFocus.current = edit.rowId;
+    setEdit(null);
+  };
+  const dropChange = (rowId: string, colId: string) => {
+    const key = cellKey(rowId, colId);
+    dropDraft(key);
+    saves.drop(key, "Change dropped");
+    say(rowId, colId, "Change dropped");
+  };
+  const onRowKeyDownEditing = (e: KeyboardEvent<HTMLElement>, index: number, id: string) => {
+    if (e.target !== e.currentTarget) return; // a key pressed in the box, or on a control inside the row, belongs to it
+    const colId = sel && sel.rowId === id ? sel.colId : NAME_COLUMN_ID;
+    const at = cellAt(id, colId);
+    if (!at) return;
+    const key = cellKey(id, colId);
+    if (e.key === "Escape") {
+      // Escape on a cell whose change did not land, or could not be stored: the change is dropped, and the cell says so.
+      const view = saves.views.get(key);
+      if (drafts.has(key) || view?.phase === "failed" || view?.phase === "conflict") {
+        e.preventDefault();
+        dropChange(id, colId);
+      }
+      return;
+    }
+    const ed = editabilityAt(at.row, at.column, at.cell);
+    const act = keyAct({ key: e.key, shift: e.shiftKey, alt: e.altKey, command: e.ctrlKey || e.metaKey, mode: "nav", editable: ed.editable, editor: ed.editable ? ed.editor : null, composing: e.nativeEvent.isComposing });
+    if (act.act === "none") return;
+    // The key is the table's: the browser must not also scroll the box, or type into the page.
+    e.preventDefault();
+    if (act.act === "move") goTo(index + act.rows, at.colIndex + act.cols);
+    else if (act.act === "page") goTo(index + act.direction * pageRows(), at.colIndex);
+    else if (act.act === "edge") goTo(act.to === "first-row" ? 0 : rows.length - 1, at.colIndex);
+    else if (act.act === "open") onOpenRow(id);
+    else if (act.act === "edit") startEdit(id, colId, act.replaceWith);
+    else if (act.act === "toggle" && ed.editable) toggle(at, ed);
+    else if (act.act === "clear" && ed.editable) clear(at, ed);
+    else if (act.act === "explain" && !ed.editable) say(id, colId, ed.reason);
+  };
+  /** A click or tap on a cell: it selects the cell; on the cell already selected it starts the edit (a yes-or-no cell is changed). */
+  const onCellPress = (e: ReactMouseEvent<HTMLElement>, rowId: string, colId: string) => {
+    if (!editing) return;
+    const was = sel !== null && sel.rowId === rowId && sel.colId === colId;
+    select(rowId, colId);
+    // A press on a control inside the cell (Retry, "+N", the open button) is that control's.
+    const onControl = e.target instanceof Element && e.target.closest("button, [role='option'], textarea, input") !== null;
+    const onCheck = e.target instanceof Element && e.target.closest("[data-check]") !== null;
+    if (onCheck || (was && !onControl)) startEdit(rowId, colId);
+  };
+  // The selected cell is brought into view sideways (every column is one width, so its place is known without measuring), and a
+  // host that reads a link's name on request is told the person went to that cell.
+  const selKey = sel ? cellKey(sel.rowId, sel.colId) : null;
+  useEffect(() => {
+    if (!sel) return;
+    const at = cellAt(sel.rowId, sel.colId);
+    if (at) refIntent(at.cell);
+    const box = scrollRef.current;
+    if (!box || narrow || !at || at.colIndex === 0) return;
+    const left = NAME_WIDTH + (at.colIndex - 1) * FIELD_WIDTH;
+    if (left < box.scrollLeft + NAME_WIDTH) box.scrollLeft = left - NAME_WIDTH;
+    else if (left + FIELD_WIDTH > box.scrollLeft + box.clientWidth) box.scrollLeft = left + FIELD_WIDTH - box.clientWidth;
+    // Only a change of the selected cell moves the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey]);
+
+  /**
+   * What one cell draws when the table can be edited: its box while it is typed in; else its value (what was typed while a save is
+   * under way or did not land, else what the vault holds) with the mark of its save.
+   */
+  const editableCell = (row: TableRow<R>, column: TableColumn, cell: Cell, o: { tabbable: boolean; roomy: boolean }): { body: ReactNode; state: string | null; title: string | undefined; selected: boolean; readOnly: boolean } => {
+    const key = cellKey(row.id, column.id);
+    const e = editabilityAt(row, column, cell);
+    const selected = sel !== null && sel.rowId === row.id && sel.colId === column.id;
+    if (edit && edit.rowId === row.id && edit.colId === column.id && e.editable) {
+      return {
+        body: <CellEditor key={key} plan={e} initialText={edit.text} selectAll={edit.selectAll} initialWhy={edit.why} label={`${column.label}, ${row.name}`} onCommit={finishEdit} onCancel={cancelEdit} />,
+        state: "editing",
+        title: undefined,
+        selected,
+        readOnly: false,
+      };
+    }
+    const view = saves.views.get(key) ?? null;
+    const draft = drafts.get(key) ?? null;
+    const typed = draft ? draft.text : view && "value" in view ? view.value : undefined;
+    const shown: Cell = typed === undefined ? cell : typed === null ? { kind: "empty" } : { kind: "value", value: typed, text: String(typed) };
+    const state = draft ? "invalid" : (view?.phase ?? null);
+    const message = draft ? draft.why : view?.phase === "failed" || view?.phase === "note" ? view.message : view?.phase === "conflict" ? `Changed by someone else: ${wordsOf(view.theirs, locale)}. Yours: ${wordsOf(view.value, locale)}` : null;
+    const check = e.editable && e.editor === "checkbox" && shown.kind === "value" && typeof shown.value === "boolean" ? shown.value : null;
+    return {
+      body: (
+        <>
+          {check !== null ? (
+            <span role="checkbox" aria-checked={check} aria-label={column.label} data-check className={"flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[var(--r-sm)] border text-[12px] leading-none " + (check ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--surface)]" : "border-[var(--ink-faint)] bg-[var(--surface)] text-transparent")}>
+              ✓
+            </span>
+          ) : (
+            <CellView cell={shown} renderRef={renderRef} tabbable={o.tabbable} roomy={o.roomy} locale={locale} plain />
+          )}
+          {state === "saved" ? (
+            <span role="img" aria-label="Saved" data-cell-mark="saved" className="ml-auto flex-none pl-1.5 text-[12px] text-[var(--accent)]">✓</span>
+          ) : state === "saving" ? (
+            <span role="img" aria-label="Saving" data-cell-mark="saving" className="ml-auto flex-none pl-1.5 text-[12px] text-[var(--ink-faint)]">…</span>
+          ) : view?.phase === "failed" && view.retry ? (
+            <button
+              type="button"
+              tabIndex={o.tabbable ? 0 : -1}
+              data-testid="record-table-retry"
+              onClick={(ev) => { ev.stopPropagation(); saves.retry(key); }}
+              onKeyDown={(ev) => { if (ev.key === " " || ev.key === "Enter") ev.stopPropagation(); }}
+              className="ml-auto flex-none rounded-[var(--r-sm)] border border-[var(--bad,#9c4438)] px-1.5 text-[12px] font-semibold leading-[20px] text-[var(--bad,#9c4438)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+            >
+              Retry
+            </button>
+          ) : state === "failed" || state === "conflict" || state === "invalid" ? (
+            <span role="img" aria-label="Not saved" data-cell-mark="not-saved" className="ml-auto flex-none pl-1.5 text-[12px] font-semibold text-[var(--bad,#9c4438)]">!</span>
+          ) : null}
+        </>
+      ),
+      state,
+      title: message ?? (e.editable ? undefined : e.reason),
+      selected,
+      readOnly: !e.editable,
+    };
+  };
+  /** The edge of a cell that can be edited: the selection's ring, or red when its change is not saved. */
+  const edgeOf = (c: { state: string | null; selected: boolean }) =>
+    c.state === "failed" || c.state === "conflict" || c.state === "invalid"
+      ? " shadow-[inset_0_0_0_2px_var(--bad,#9c4438)]"
+      : c.selected && c.state !== "editing"
+        ? " shadow-[inset_0_0_0_2px_var(--accent)]"
+        : "";
+  const unsaved = [...saves.views].filter(([, v]) => v.phase === "failed" || v.phase === "conflict");
+  const selAt = sel ? cellAt(sel.rowId, sel.colId) : null;
+  const selEd = selAt ? editabilityAt(selAt.row, selAt.column, selAt.cell) : null;
+  const bar = editing ? (
+    <CellBar
+      uid={uid}
+      locale={locale}
+      label={selAt ? selAt.column.label : null}
+      view={selKey ? (saves.views.get(selKey) ?? null) : null}
+      draftWhy={selKey ? (drafts.get(selKey)?.why ?? null) : null}
+      said={said && said.key === selKey ? said.text : null}
+      readOnlyReason={selEd && !selEd.editable ? selEd.reason : null}
+      onRetry={() => selKey && saves.retry(selKey)}
+      onKeepMine={() => selKey && saves.keepMine(selKey)}
+      onUseTheirs={() => selKey && saves.useTheirs(selKey)}
+      saving={[...saves.views.values()].some((v) => v.phase === "saving")}
+      saved={[...saves.views.values()].some((v) => v.phase === "saved")}
+      unsavedCount={unsaved.length + drafts.size}
+      canRetryAll={unsaved.some(([, v]) => v.phase === "failed" && v.retry)}
+      onRetryAll={saves.retryAll}
+      onShowFirst={
+        unsaved.length > 0 && !(selKey && unsaved.some(([k]) => k === selKey))
+          ? () => {
+              const first = (unsaved[0] as [string, CellSaveView])[0].split("\u0000");
+              const at = cellAt(first[0] as string, first[1] as string);
+              if (at) goTo(at.rowIndex, at.colIndex);
+            }
+          : null
+      }
+    />
+  ) : null;
+
   const skeleton = loading || !table;
   const template = (skeleton && columns.length === 0 ? [NAME_WIDTH, ...Array.from({ length: SKELETON_FIELD_COLUMNS }, () => FIELD_WIDTH)] : grid.getAllLeafColumns().map((c) => c.getSize()))
     .map((w) => `${w}px`)
@@ -542,16 +875,34 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                       >
                         <span className="truncate text-[14px] font-semibold text-[var(--ink)]">{row.original.name}</span>
                       </button>
-                      {narrowFieldsOfRow(columns, row.original.cells, NARROW_FIELDS).map(({ column, cell }) => (
-                        <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
-                          <span className={"w-[38%] max-w-[150px] shrink-0 truncate text-[10.5px] text-[var(--ink-faint)] " + LABEL_STYLE} data-field-label>
-                            {column.label}
+                      {narrowFieldsOfRow(columns, row.original.cells, NARROW_FIELDS).map(({ column, cell }) => {
+                        const c = editing ? editableCell(row.original, column, cell, { tabbable: true, roomy: true }) : null;
+                        return (
+                          <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
+                            <span className={"w-[38%] max-w-[150px] shrink-0 truncate text-[10.5px] text-[var(--ink-faint)] " + LABEL_STYLE} data-field-label>
+                              {column.label}
+                            </span>
+                            {c ? (
+                              // A tap on a value selects its cell and a second tap edits it; it does not open the record (the name does).
+                              <span
+                                className={"relative flex min-h-[28px] min-w-0 flex-1 items-center px-1 text-[var(--ink)]" + edgeOf(c)}
+                                data-cell-state={c.state ?? undefined}
+                                data-selected={c.selected || undefined}
+                                aria-readonly={c.readOnly || undefined}
+                                title={c.title}
+                                onClickCapture={(e) => { refIntent(cell); onCellPress(e, row.id, column.id); }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {c.body}
+                              </span>
+                            ) : (
+                              <span className="flex min-w-0 flex-1 items-center text-[var(--ink)]" onClickCapture={() => refIntent(cell)}>
+                                <CellView cell={cell} renderRef={renderRef} tabbable roomy locale={locale} />
+                              </span>
+                            )}
                           </span>
-                          <span className="flex min-w-0 flex-1 items-center text-[var(--ink)]" onClickCapture={() => refIntent(cell)}>
-                            <CellView cell={cell} renderRef={renderRef} tabbable roomy />
-                          </span>
-                        </span>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -559,6 +910,8 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
             </div>
           )}
         </div>
+        {bar}
+        {saves.machines}
       </div>
     );
   }
@@ -628,24 +981,37 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                   aria-selected={selected}
                   tabIndex={isTabStop ? 0 : -1}
                   data-row-id={row.id}
-                  onKeyDown={(e) => onRowKeyDown(e, item.index, row.id)}
+                  aria-activedescendant={editing && sel && sel.rowId === row.id ? `${uid}-${item.index}-${columnIndex.get(sel.colId) ?? 0}` : undefined}
+                  onKeyDown={(e) => (editing ? onRowKeyDownEditing(e, item.index, row.id) : onRowKeyDown(e, item.index, row.id))}
                   onFocus={(e) => {
                     if (e.target !== e.currentTarget) return;
                     setActive(row.id);
                     setFocusInRow(true);
+                    // The keys act on a cell of this row: the column last selected, or Name.
+                    if (editing && (!sel || sel.rowId !== row.id)) select(row.id, sel?.colId ?? NAME_COLUMN_ID);
                   }}
                   onBlur={(e) => {
                     if (e.target === e.currentTarget) setFocusInRow(false);
                   }}
                   className="group absolute left-0 top-0 grid border-b border-[var(--line-2)] outline-none"
-                  // The start is counted from the top of the scrolling box; the rows' own box begins under the header.
-                  style={{ gridTemplateColumns: template, width: totalWidth, height: item.size, transform: `translateY(${item.start - headerSpace}px)`, scrollMarginTop: HEADER_HEIGHT }}
+                  // The start is counted from the top of the scrolling box; the rows' own box begins under the header. The row whose cell
+                  // is being typed in lies over the rows after it, so its box and its list are not covered (and under the header row).
+                  style={{ gridTemplateColumns: template, width: totalWidth, height: item.size, transform: `translateY(${item.start - headerSpace}px)`, scrollMarginTop: HEADER_HEIGHT, ...(edit && edit.rowId === row.id ? { zIndex: 1 } : {}) }}
                 >
                   {row.getAllCells().map((cell, i) => {
                     const isName = cell.column.id === NAME_COLUMN_ID;
                     if (isName) {
                       return (
-                        <div key={cell.id} role="rowheader" aria-colindex={1} className={cellBase + " gap-1.5 pl-1 " + frozenCell + focusLinesFirst}>
+                        <div
+                          key={cell.id}
+                          id={editing ? `${uid}-${item.index}-0` : undefined}
+                          role="rowheader"
+                          aria-colindex={1}
+                          aria-readonly={editing ? true : undefined}
+                          data-selected={(editing && sel !== null && sel.rowId === row.id && sel.colId === NAME_COLUMN_ID) || undefined}
+                          onClickCapture={editing ? (e) => onCellPress(e, row.id, NAME_COLUMN_ID) : undefined}
+                          className={cellBase + " gap-1.5 pl-1 " + frozenCell + (editing ? edgeOf({ state: null, selected: sel !== null && sel.rowId === row.id && sel.colId === NAME_COLUMN_ID }) : focusLinesFirst)}
+                        >
                           <button
                             type="button"
                             tabIndex={-1}
@@ -664,19 +1030,27 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                         </div>
                       );
                     }
+                    const column = columns[i] as TableColumn;
+                    const c = editing ? editableCell(row.original, column, cell.getValue() as Cell, { tabbable: isTabStop, roomy: false }) : null;
                     return (
                       <div
                         key={cell.id}
+                        id={editing ? `${uid}-${item.index}-${i}` : undefined}
                         role="gridcell"
                         aria-colindex={i + 1}
+                        aria-selected={c ? c.selected : undefined}
+                        aria-readonly={c ? c.readOnly : undefined}
                         data-column-id={cell.column.id}
+                        data-cell-state={c?.state ?? undefined}
+                        data-selected={c?.selected || undefined}
+                        title={c?.title}
                         // A mouse over the cell, or a tap or click on it, is the person going to that cell (a touch is not a hover).
                         onPointerEnter={(e) => { if (e.pointerType !== "touch" && e.pointerType !== "pen") refIntent(cell.getValue() as Cell); }}
-                        onClickCapture={() => refIntent(cell.getValue() as Cell)}
-                        className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + focusLines}
+                        onClickCapture={(e) => { refIntent(cell.getValue() as Cell); onCellPress(e, row.id, column.id); }}
+                        className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + (c ? " relative" + edgeOf(c) : focusLines)}
                       >
                         {/* A cell's "+N" takes a Tab stop only in the row that holds the row Tab stop: one Tab from the row reaches it. */}
-                        <CellView cell={cell.getValue() as Cell} renderRef={renderRef} tabbable={isTabStop} roomy={false} />
+                        {c ? c.body : <CellView cell={cell.getValue() as Cell} renderRef={renderRef} tabbable={isTabStop} roomy={false} locale={locale} />}
                       </div>
                     );
                   })}
@@ -686,6 +1060,105 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
           </div>
         )}
       </div>
+      {bar}
+      {saves.machines}
+    </div>
+  );
+}
+
+/** A value in a sentence: its text, or "(empty)" for none. */
+function wordsOf(value: CellValue | null, locale: string): string {
+  if (value === null) return "(empty)";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return valueText(value, locale);
+}
+
+/**
+ * The line under a table that can be edited. At its left it speaks for the selected cell: why it cannot be edited, that its change was
+ * not saved (with Retry), that someone else changed it (both values, with "Use theirs" and "Keep mine"), or why its text cannot be
+ * stored. At its right it says what is true of all the saves: saving, saved, or how many cells are not saved.
+ *
+ * @param props the selected cell's label and state, the state of all saves, and the acts
+ */
+function CellBar(props: {
+  uid: string;
+  locale: string;
+  label: string | null;
+  view: CellSaveView | null;
+  draftWhy: string | null;
+  said: string | null;
+  readOnlyReason: string | null;
+  onRetry: () => void;
+  onKeepMine: () => void;
+  onUseTheirs: () => void;
+  saving: boolean;
+  saved: boolean;
+  unsavedCount: number;
+  canRetryAll: boolean;
+  onRetryAll: () => void;
+  onShowFirst: (() => void) | null;
+}) {
+  const { view, locale } = props;
+  const button = "min-h-[28px] rounded-[var(--r-sm)] border border-[var(--line)] bg-[var(--paper-2)] px-2.5 text-[12.5px] font-semibold text-[var(--ink)] hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]";
+  let text: ReactNode = null;
+  let acts: ReactNode = null;
+  let tone = "text-[var(--ink-soft)]";
+  if (view?.phase === "conflict") {
+    tone = "text-[var(--bad,#9c4438)]";
+    text = (
+      <>
+        <span data-testid="record-table-theirs">Changed by someone else: {wordsOf(view.theirs, locale)}</span>
+        {" · "}
+        <span data-testid="record-table-mine">Yours: {wordsOf(view.value, locale)}</span>
+      </>
+    );
+    // The row keeps the platform's order: the act that writes is at the right; the one that changes nothing is at its left.
+    acts = (
+      <span className="ml-auto flex flex-none items-center justify-end gap-2" data-testid="record-table-conflict-acts">
+        <button type="button" className={button} onClick={props.onUseTheirs}>Use theirs</button>
+        <button type="button" className={button + " border-[var(--accent)]"} onClick={props.onKeepMine}>Keep mine</button>
+      </span>
+    );
+  } else if (view?.phase === "failed") {
+    tone = "text-[var(--bad,#9c4438)]";
+    // The sentence ends with the act's name ("... Retry"); here the act is the button beside it.
+    text = view.retry ? view.message.replace(/\s*Retry$/, "") : view.message;
+    acts = view.retry ? (
+      <span className="ml-auto flex flex-none items-center">
+        <button type="button" className={button} onClick={props.onRetry} data-testid="record-table-bar-retry">Retry</button>
+      </span>
+    ) : null;
+  } else if (props.draftWhy !== null) {
+    tone = "text-[var(--bad,#9c4438)]";
+    text = `Not saved: ${props.draftWhy}`;
+  } else if (props.said !== null) {
+    text = props.said;
+  } else if (view?.phase === "note") {
+    text = view.message;
+  } else if (props.readOnlyReason !== null) {
+    text = props.readOnlyReason;
+  }
+  const all: { state: "error" | "saving" | "saved" | "idle"; error: string | null } =
+    props.unsavedCount > 0
+      ? { state: "error", error: `${props.unsavedCount} ${props.unsavedCount === 1 ? "cell" : "cells"}` }
+      : props.saving
+        ? { state: "saving", error: null }
+        : props.saved
+          ? { state: "saved", error: null }
+          : { state: "idle", error: null };
+  return (
+    <div className="flex min-h-[36px] flex-none flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--line)] bg-[var(--paper-2)] px-3 py-1 text-[12.5px]" data-testid="record-table-bar">
+      <p role="status" aria-live="polite" className={"m-0 min-w-0 flex-1 " + tone} data-testid="record-table-cell-status">
+        {text !== null && props.label ? <span className="font-semibold">{props.label}: </span> : null}
+        {text}
+      </p>
+      {acts}
+      <span className={"flex flex-none items-center gap-2 [&_button]:ml-1 [&_button]:underline [&_p]:m-0 " + (all.state === "error" ? "text-[var(--bad,#9c4438)]" : "text-[var(--ink-soft)]")} data-testid="record-table-save-state">
+        <SaveStateLine state={all.state} error={all.error} onRetry={props.canRetryAll ? props.onRetryAll : undefined} testId={`table-${props.uid}`} />
+        {props.onShowFirst ? (
+          <button type="button" className="underline" onClick={props.onShowFirst} data-testid="record-table-show-unsaved">Show</button>
+        ) : null}
+      </span>
     </div>
   );
 }
