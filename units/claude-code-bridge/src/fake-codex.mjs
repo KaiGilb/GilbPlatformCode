@@ -166,6 +166,16 @@ async function runScenario(prompt, threadId, turnId) {
     note("item/started", { threadId, turnId, item: { type: "mcpToolCall", server: "other", tool: "x", status: "inProgress" } });
     return;
   }
+  if (prompt.includes("RESOURCES")) {
+    // Measured 2026-11-25: Codex calls its own resource list as mcpToolCall on server "codex". Then the turn's own answer.
+    note("item/started", { threadId, turnId, item: { type: "mcpToolCall", server: "codex", tool: "list_mcp_resources", status: "inProgress" } });
+    finishTurn(threadId, turnId, prompt, "final_answer");
+    return;
+  }
+  if (prompt.includes("CODEXOTHER")) {
+    note("item/started", { threadId, turnId, item: { type: "mcpToolCall", server: "codex", tool: "something_else", status: "inProgress" } });
+    return;
+  }
   if (prompt.includes("ASKAPPROVAL")) {
     let decision = "error";
     try {

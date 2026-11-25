@@ -2623,14 +2623,15 @@ export async function systemAccessDialog(platform: string, env: NodeJS.ProcessEn
 }
 
 // ---- engine: codex (shared rules) -------------------------------------------------------------------------------
-// Measured on Kai's Mac, Codex CLI 0.167.2, 2026-11-24. The flag list and web_search value are the probe's, and they
-// replace the shorter list this batch was first given: with these, five attack turns started no local tool.
+// Measured on Kai's Mac, Codex CLI 0.167.2. web_search "disabled" is the 2026-11-24 probe. The flag list is the
+// 2026-11-25 measurement: twenty names, with code_mode_host left on (see the comment above CODEX_CHAT_FLAGS).
 
 /** The oldest Codex this bridge will drive. Older than this, hello says to update and a turn is not started from a supported engine. */
 export const CODEX_MIN_VERSION = "0.167.0";
+// code_mode_host is left on because Codex 0.167.2 calls MCP tools through it (measured 2026-11-25: with it off the model cannot call the gilb tool); its JavaScript tool has no file or network access (measured the same day); the item guard is the second line.
 /**
  * Passed to `codex app-server` on every chat turn and on the hello probe.
- * One `--disable` in front of each name. An unknown name makes that Codex exit at once: the bridge then says to update.
+ * One `--disable` in front of each of the twenty names. An unknown name makes that Codex exit at once: the bridge then says to update.
  */
 export const CODEX_CHAT_FLAGS: readonly string[] = [
   "--disable", "apps",
@@ -2638,7 +2639,6 @@ export const CODEX_CHAT_FLAGS: readonly string[] = [
   "--disable", "plugins",
   "--disable", "unified_exec",
   "--disable", "unified_exec_tty",
-  "--disable", "code_mode_host",
   "--disable", "view_image",
   "--disable", "image_generation",
   "--disable", "multi_agent",
@@ -2678,6 +2678,19 @@ const CODEX_UNKNOWN_TURN = "Could not start Codex: this bridge does not know you
 const CODEX_UNKNOWN_HELLO = "This bridge does not support your Codex version yet. Update the bridge.";
 /** Item types that stop a chat turn. `collabAgentToolCall` and `subAgentActivity` are not here: Codex 0.167.2 still emits them with every flag on, and the child thread inherits this lock-down. */
 const CODEX_GUARD_ITEMS = new Set(["commandExecution", "fileChange", "webSearch", "imageView", "imageGeneration", "dynamicToolCall"]);
+/**
+ * Tools Codex itself exposes on the pseudo-server named `codex`.
+ * They list or read the resources of the MCP servers this turn connected, which here is only `gilb`.
+ * Measured 2026-11-25: the model calls the first two during a locked-down chat. Any other tool on that server stops the turn.
+ */
+export const CODEX_BUILTIN_MCP_TOOLS = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"] as const;
+
+/** An MCP tool call this chat allows: this turn's gilb server, or one of Codex's own resource tools. */
+function codexMcpCallAllowed(item: Record<string, unknown>): boolean {
+  if (item.server === "gilb") return true;
+  const tool = item.tool;
+  return item.server === "codex" && typeof tool === "string" && (CODEX_BUILTIN_MCP_TOOLS as readonly string[]).includes(tool);
+}
 
 /** The first x.y.z after a slash in Codex's userAgent, or null when there is none. */
 export function codexVersionOf(userAgent: unknown): string | null {
@@ -3014,7 +3027,7 @@ export function resolveCodexBin(name: string, env: NodeJS.ProcessEnv = process.e
 /**
  * How to start Codex. Off Windows, a script (npm's `codex` links to one) is started with this process's node.
  * On Windows, the same safe-launch rules as Claude Code, with Codex's sentences.
- * @param bin The `codexBin` option or the `--codex` path. Default is the name `codex`.
+ * @param bin The `codexBin` option or the `--codex` path. The command line passes the name `codex` when the flag is absent.
  */
 export function resolveCodexLaunch(bin: string, env: NodeJS.ProcessEnv = process.env, o: PlatformOpts = {}): ClaudeLaunch {
   const platform = o.platform ?? process.platform;
@@ -3054,7 +3067,7 @@ const CODEX_CLIENT = { clientInfo: { name: "gilb-claude-code-bridge", title: "Gi
 export interface BridgeOptions {
   port?: number | undefined;
   claudeBin?: string | undefined;
-  /** The Codex CLI. Default "codex". Resolved once per bridge, the first time a probe or a turn needs it. */
+  /** The Codex CLI. Codex exists for this bridge only when this is a non-empty string. The command line passes `codex` when `--codex` is absent. */
   codexBin?: string | undefined;
   allowedOrigins?: string[] | undefined;
   workDir?: string | undefined;
@@ -5037,9 +5050,12 @@ export function createBridge(opts: BridgeOptions = {}) {
   let probeChild: ChildProcess | null = null;
   let probeGen = 0;
   let codexLaunchMemo: ClaudeLaunch | undefined;
-  /** Resolved once per bridge, the first time a probe or a turn needs Codex. */
+  // A library caller that does not name a binary must not start the real app-server. The command line always passes one.
+  const codexWanted = typeof opts.codexBin === "string" && opts.codexBin.length > 0;
+  /** Resolved once per bridge, the first time a probe or a turn needs Codex. Absent `codexBin`: not installed, and nothing is spawned. */
   const getCodexLaunch = (): ClaudeLaunch => {
-    if (!codexLaunchMemo) codexLaunchMemo = resolveCodexLaunch(opts.codexBin ?? "codex", env, { ...(opts.platformOpts ?? {}), home });
+    if (!codexWanted) return { ok: false, reason: CODEX_NOT_INSTALLED };
+    if (!codexLaunchMemo) codexLaunchMemo = resolveCodexLaunch(opts.codexBin as string, env, { ...(opts.platformOpts ?? {}), home });
     return codexLaunchMemo;
   };
   const rememberProbe = (s: { installed: boolean; version: string | null; supported: boolean; account: CodexAccountKind; plan: string | null; models: CodexProbeState["models"]; modelsHeld: boolean; unknownFlag: boolean; startError?: string }) => {
@@ -5134,7 +5150,7 @@ export function createBridge(opts: BridgeOptions = {}) {
     }
   }
   function startCodexProbe(): void {
-    if (codexChecking || bridgeClosing) return;
+    if (!codexWanted || codexChecking || bridgeClosing) return;
     codexChecking = true;
     const gen = ++probeGen;
     void runCodexProbeBody(gen);
@@ -5179,16 +5195,18 @@ export function createBridge(opts: BridgeOptions = {}) {
   }
   function enginesHello(): Record<string, unknown>[] {
     const c = codexCache;
-    const installed = c?.installed ?? false;
-    const supported = c?.supported ?? false;
-    const account = c?.account ?? "unknown";
+    const installed = codexWanted && (c?.installed ?? false);
+    const supported = codexWanted && (c?.supported ?? false);
+    const account = codexWanted ? (c?.account ?? "unknown") : "unknown";
     const codex: Record<string, unknown> = {
-      id: "codex", name: "Codex", installed, version: c?.version ?? null, supported, account,
+      id: "codex", name: "Codex", installed, version: codexWanted ? (c?.version ?? null) : null, supported, account,
       ready: installed && supported && account === "chatgpt", billing: "chatgpt-subscription",
-      models: c?.models ?? [], efforts: [...CODEX_EFFORTS], codeTurns: false, images: false, delegateCoding: false,
+      models: codexWanted ? (c?.models ?? []) : [], efforts: [...CODEX_EFFORTS], codeTurns: false, images: false, delegateCoding: false,
     };
-    if (codexChecking) codex.checking = true;
-    if (c?.reason) codex.reason = c.reason;
+    if (codexWanted && codexChecking) codex.checking = true;
+    // No binary was asked for: the same sentence as a missing install, and no probe is ever started.
+    if (!codexWanted) codex.reason = CODEX_NOT_INSTALLED;
+    else if (c?.reason) codex.reason = c.reason;
     return [
       { id: "claude", name: "Claude Code", ready: true, billing: "claude-subscription", models: MODEL_ALIASES.map((id) => ({ id, label: id })), efforts: [...EFFORTS], codeTurns: true, images: true, delegateCoding: true },
       codex,
@@ -5271,7 +5289,8 @@ export function createBridge(opts: BridgeOptions = {}) {
           const item = asRecord(params.item);
           const type = typeof item?.type === "string" ? item.type : "";
           // Every thread of this process, not only the turn's: a sub-agent's shell is still a shell.
-          const blocked = CODEX_GUARD_ITEMS.has(type) || (type === "mcpToolCall" && item?.server !== "gilb");
+          // gilb is this chat. Server "codex" is Codex's own resource list; only the three built-in names are allowed.
+          const blocked = CODEX_GUARD_ITEMS.has(type) || (type === "mcpToolCall" && !codexMcpCallAllowed(item ?? {}));
           if (!stopReason && blocked) stopReason = { kind: "guard", detail: type || "unknown item" };
         }
         const own = threadId !== "" && params.threadId === threadId;
@@ -6748,6 +6767,17 @@ export function parseCli(argv: string[]) {
 
 export type CliOptions = ReturnType<typeof parseCli>;
 
+/**
+ * The Codex binary the command line passes into {@link createBridge}.
+ * No `--codex` flag means the name `codex`, so a bridge started from the command line always looks for Codex.
+ * `createBridge` itself does not: it uses Codex only when `codexBin` is a non-empty string.
+ * @param cli The object {@link parseCli} returned.
+ * @returns The `codexBin` option.
+ */
+export function codexBinOption(cli: { codex?: string | undefined }): { codexBin: string } {
+  return { codexBin: cli.codex ?? "codex" };
+}
+
 const xmlEsc = (t: unknown) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** The LaunchAgent plist text. Absolute node and bridge paths, the PATH that finds `claude`, always on, one log file. */
@@ -7774,7 +7804,7 @@ async function main() {
   // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
   // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
   const controlToken = crypto.randomBytes(32).toString("hex");
-  const bridge = createBridge({ port, claudeBin, ...(cli.codex ? { codexBin: cli.codex } : {}), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
+  const bridge = createBridge({ port, claudeBin, ...codexBinOption(cli), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
   try {
     await bridge.start();
   } catch (e) {

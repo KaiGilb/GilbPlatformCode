@@ -23,8 +23,11 @@ import {
   CODEX_CHAT_FLAGS,
   CODEX_CHAT_CONFIG,
   CODEX_CHAT_SENTENCE,
+  CODEX_BUILTIN_MCP_TOOLS,
+  CODEX_EFFORTS,
   CODEX_MIN_VERSION,
   CODEX_NOT_INSTALLED,
+  codexBinOption,
 } from "../bridge/bridge.mjs";
 import { removeTestDir } from "./testTeardown.mjs";
 
@@ -253,13 +256,34 @@ describe("Codex version and launch", () => {
 describe("the command line", () => {
   it("parses --codex like --claude, and --help names it", () => {
     // Proves: --codex PATH is a known flag, and a misspelled flag is still refused.
+    // Proves: the option handed to createBridge is the name "codex" when the flag is absent.
     expect(parseCli(["--codex", "/opt/codex", "--claude", "claude"]).codex).toBe("/opt/codex");
+    expect(codexBinOption(parseCli([])).codexBin).toBe("codex");
+    expect(codexBinOption(parseCli(["--codex", "/opt/codex"])).codexBin).toBe("/opt/codex");
     const help = spawnSync(process.execPath, [BUILT, "--help"], { encoding: "utf8", timeout: 15000 });
     expect(help.status).toBe(0);
     expect(help.stdout).toContain("--codex");
     const known = spawnSync(process.execPath, [BUILT, "--codex", "/no/such", "--allow-origin", "*", "--claude", FAKE_CLAUDE, "--port", "0"], { encoding: "utf8", timeout: 15000 });
     expect(String(known.stderr)).not.toMatch(/Unknown option/);
     expect(String(known.stderr)).toMatch(/not an origin/);
+  });
+});
+
+describe("the chat flag list", () => {
+  it("disables the twenty measured names and leaves code_mode_host on", () => {
+    // Proves: CODEX_CHAT_FLAGS is --disable before each of the twenty names, in the measured order, and code_mode_host is not one of them.
+    const names = [];
+    for (let i = 0; i < CODEX_CHAT_FLAGS.length; i += 2) {
+      expect(CODEX_CHAT_FLAGS[i]).toBe("--disable");
+      names.push(CODEX_CHAT_FLAGS[i + 1]);
+    }
+    expect(names).toEqual([
+      "apps", "shell_tool", "plugins", "unified_exec", "unified_exec_tty", "view_image", "image_generation",
+      "multi_agent", "goals", "sleep_tool", "tool_suggest", "skill_search", "hooks", "memories",
+      "browser_use", "browser_use_external", "computer_use", "in_app_browser", "workspace_dependencies", "worktrees",
+    ]);
+    expect(names).not.toContain("code_mode_host");
+    expect(CODEX_BUILTIN_MCP_TOOLS).toEqual(["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]);
   });
 });
 
@@ -377,9 +401,14 @@ describe("a Codex chat turn", () => {
 
   it("a shell item, a foreign tool and a child shell stop the turn; a sub-agent's answer does not", async () => {
     // Proves: the item guard watches every thread, and a sub-agent's own final answer is not this turn's answer.
+    // Proves: an mcpToolCall on server codex is allowed for list_mcp_resources and stopped for any other tool. FOREIGNMCP is still stopped.
     await startBridge();
     expect((await turn(secret, { engine: "codex", prompt: "SHELLITEM" })).error).toEqual({ message: GUARD });
     expect((await turn(secret, { engine: "codex", prompt: "FOREIGNMCP" })).error).toEqual({ message: GUARD });
+    const resources = await turn(secret, { engine: "codex", prompt: "RESOURCES" });
+    expect(resources.error).toBeUndefined();
+    expect(resources.message.content).toBe("RESOURCES");
+    expect((await turn(secret, { engine: "codex", prompt: "CODEXOTHER" })).error).toEqual({ message: GUARD });
     expect((await turn(secret, { engine: "codex", prompt: "CHILDSHELL" })).error).toEqual({ message: GUARD });
     expect(lines.some((l) => l.includes("commandExecution"))).toBe(true);
     const sub = await turn(secret, { engine: "codex", prompt: "SUBAGENT please" });
@@ -459,6 +488,45 @@ describe("a Codex chat turn", () => {
     await until(() => live.events.some((e) => e[0] === "error"));
     expect(live.events.find((e) => e[0] === "error")[1]).toEqual({ message: "The turn was cancelled." });
     await until(() => rows().some((r) => r.event === "sigterm"));
+  });
+});
+
+describe("a bridge that was not given a Codex binary", () => {
+  it("never starts Codex, says it is not installed, and a Codex turn ends with that sentence", async () => {
+    // Proves: createBridge without codexBin does not spawn Codex, even when an executable named codex is on PATH.
+    dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-codex-")));
+    const binDir = path.join(dir, "bin");
+    const marker = path.join(dir, "codex-spawned");
+    fs.mkdirSync(binDir);
+    fs.writeFileSync(path.join(binDir, "codex"), `#!/bin/sh\nprintf '%s\\n' spawned >> ${JSON.stringify(marker)}\n`, { mode: 0o755 });
+    fs.chmodSync(path.join(binDir, "codex"), 0o755);
+    lines = [];
+    bridge = createBridge({
+      port: 0,
+      claudeBin: FAKE_CLAUDE,
+      allowedOrigins: [APP],
+      workDir: path.join(dir, "work"),
+      home: dir,
+      log: (l) => lines.push(String(l)),
+      env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` },
+    });
+    await bridge.start();
+    base = `http://127.0.0.1:${bridge.port}`;
+    const paired = await fetch(`${base}/v1/pair`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: bridge.pairingCode }) });
+    secret = (await paired.json()).secret;
+    const hello = async () => (await fetch(`${base}/v1/hello`, { headers: { "x-bridge-secret": secret } })).json();
+    const codexOf = (body) => body.engines.find((e) => e.id === "codex");
+    const want = {
+      id: "codex", name: "Codex", installed: false, version: null, supported: false, account: "unknown", ready: false,
+      billing: "chatgpt-subscription", models: [], efforts: [...CODEX_EFFORTS], codeTurns: false, images: false, delegateCoding: false,
+      reason: CODEX_NOT_INSTALLED,
+    };
+    expect(codexOf(await hello())).toEqual(want);
+    expect(codexOf(await hello())).toEqual(want);
+    const r = await turn(secret, { engine: "codex", prompt: "do-not-spawn" });
+    expect(r.error).toEqual({ message: CODEX_NOT_INSTALLED });
+    await delay(500);
+    expect(fs.existsSync(marker)).toBe(false);
   });
 });
 
