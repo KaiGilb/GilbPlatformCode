@@ -198,11 +198,35 @@ export function childEnv(env = process.env) {
     return out;
 }
 /**
+ * Locale names a Codex child may keep: `LANG`, `LANGUAGE`, `LC_ALL`, and the POSIX and glibc `LC_*` categories.
+ * Names are matched in upper case, because Windows environment names are case-insensitive.
+ */
+// A fixed list, not an `LC_` prefix: a prefix would also keep a secret written as an LC_ name, such as LC_API_KEY.
+const CODEX_CHILD_LOCALE_NAMES = new Set([
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_COLLATE",
+    "LC_MESSAGES",
+    "LC_MONETARY",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_ADDRESS",
+    "LC_IDENTIFICATION",
+    "LC_MEASUREMENT",
+    "LC_NAME",
+    "LC_PAPER",
+    "LC_TELEPHONE",
+]);
+/**
  * The environment a Codex child gets: the bridge's environment, minus the Anthropic billing names and every secret-like name.
  * It is not {@link childEnv}: a Codex chat turn does not get the Claude tool-timeout variables that function adds.
  * A name is secret-like when it contains TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or API_KEY, or ends in `_KEY`,
  * or is an OpenAI key (`OPENAI_*`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `AZURE_OPENAI_API_KEY`).
- * CODEX_HOME, PATH, HOME, the proxy variables, SSH_AUTH_SOCK and locale names stay: the ChatGPT sign-in lives in Codex's own store, and a turn needs no key of the person's.
+ * That check runs before the keep list, so a secret-like name is removed even when it starts with `LC_`.
+ * CODEX_HOME, PATH, HOME, the proxy variables, SSH_AUTH_SOCK and the known locale names stay: the ChatGPT sign-in lives in Codex's own store, and a turn needs no key of the person's.
+ * Any other name that is not secret-like stays too, including an `LC_` name that is not in the locale list.
  * Names are compared without regard to case, because Windows env names are.
  * @param env The bridge's environment.
  * @returns The environment for `codex app-server`.
@@ -213,18 +237,19 @@ export function codexChildEnv(env = process.env) {
         if (envDenied(k))
             continue;
         const u = k.toUpperCase();
-        // Kept even when a later rule would treat the name as a secret: the sign-in store, the path, and the network the CLI already uses.
-        const kept = u === "CODEX_HOME" || u === "PATH" || u === "HOME" || u === "SSH_AUTH_SOCK" || u === "LANG" || u === "LANGUAGE" || u.startsWith("LC_")
-            || u === "HTTP_PROXY" || u === "HTTPS_PROXY" || u === "NO_PROXY" || u === "ALL_PROXY";
-        if (kept) {
-            out[k] = v;
-            continue;
-        }
+        // Secret-like names are removed first. LC_API_KEY must not survive on the strength of looking like a locale.
         // An API key in the environment would bill a turn to a key. The ChatGPT sign-in is the only billing this bridge allows.
         if (u.startsWith("OPENAI_") || u === "CODEX_API_KEY" || u === "CODEX_ACCESS_TOKEN" || u === "AZURE_OPENAI_API_KEY")
             continue;
         if (u.includes("TOKEN") || u.includes("SECRET") || u.includes("PASSWORD") || u.includes("PASSWD") || u.includes("CREDENTIAL") || u.includes("API_KEY") || u.endsWith("_KEY"))
             continue;
+        // The sign-in store, the path, the proxies and the known locale names stay. A secret-like name was removed above.
+        const kept = u === "CODEX_HOME" || u === "PATH" || u === "HOME" || u === "SSH_AUTH_SOCK" || CODEX_CHILD_LOCALE_NAMES.has(u)
+            || u === "HTTP_PROXY" || u === "HTTPS_PROXY" || u === "NO_PROXY" || u === "ALL_PROXY";
+        if (kept) {
+            out[k] = v;
+            continue;
+        }
         out[k] = v;
     }
     return out;

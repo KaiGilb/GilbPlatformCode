@@ -5,7 +5,7 @@
  * probe run folder /Users/kaigilb/Developer/_tmp/codex-probe/runs/2026-11-24T222311.994Z.
  * Anything the live app-server was not measured to do is marked as a guess in fake-codex.mjs.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 30000, hookTimeout: 30000 });
 import { spawnSync } from "node:child_process";
@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import {
   createBridge,
   parseCli,
+  childEnv,
   codexChildEnv,
   resolveCodexLaunch,
   resolveCodexBin,
@@ -257,6 +258,46 @@ describe("codexChildEnv", () => {
     expect(out.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT).toBeUndefined();
     const bad = Object.keys(out).filter((k) => /TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_KEY/i.test(k) || k.toUpperCase().endsWith("_KEY") || k.toUpperCase().startsWith("OPENAI_") || k.toUpperCase() === "ANTHROPIC_API_KEY");
     expect(bad).toEqual([]);
+  });
+
+  test("removes a secret-like name that starts with LC_ and keeps the known locale names", () => {
+    // Spec: fix order R5 — every token, secret, password and key name is taken out of the Codex child's environment (tester round 2, N1)
+    // arrange
+    const input = {
+      LC_API_KEY: "x",
+      LC_GITHUB_TOKEN: "x",
+      lc_secret: "x",
+      LC_OPENAI_API_KEY: "x",
+      LC_ALL: "C",
+      LC_CTYPE: "UTF-8",
+      LANG: "en_US.UTF-8",
+      LANGUAGE: "en",
+      PATH: "/bin",
+    };
+    // act
+    const out = codexChildEnv(input);
+    // assert
+    expect(out).toEqual({
+      LC_ALL: "C",
+      LC_CTYPE: "UTF-8",
+      LANG: "en_US.UTF-8",
+      LANGUAGE: "en",
+      PATH: "/bin",
+    });
+    // Measured at 7fa3ca50 against bridge/bridge.mjs: childEnv keeps these names and adds the two Claude timeouts.
+    expect(childEnv(input)).toEqual({
+      LC_API_KEY: "x",
+      LC_GITHUB_TOKEN: "x",
+      lc_secret: "x",
+      LC_OPENAI_API_KEY: "x",
+      LC_ALL: "C",
+      LC_CTYPE: "UTF-8",
+      LANG: "en_US.UTF-8",
+      LANGUAGE: "en",
+      PATH: "/bin",
+      MCP_TOOL_TIMEOUT: "1860000",
+      CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "1860000",
+    });
   });
 });
 
