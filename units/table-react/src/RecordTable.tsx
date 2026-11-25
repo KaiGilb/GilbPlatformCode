@@ -779,9 +779,13 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       body: (
         <>
           {check !== null ? (
-            <span role="checkbox" aria-checked={check} aria-label={column.label} data-check className={"flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[var(--r-sm)] border text-[12px] leading-none " + (check ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--surface)]" : "border-[var(--ink-faint)] bg-[var(--surface)]")}>
-              {/* The mark is in the page only when the box is checked: an unchecked box holds no text (and so none of no contrast). */}
-              {check ? "✓" : null}
+            <span role="checkbox" aria-checked={check} aria-label={column.label} data-check className={"flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[var(--r-sm)] border text-[12px] leading-none " + (check ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--on-accent,var(--surface))]" : "border-[var(--ink-faint)] bg-[var(--surface)]")}>
+              {/* The mark is a drawn stroke in the host's colour for a glyph on its accent, and is in the page only when the box is checked. */}
+              {check ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              ) : null}
             </span>
           ) : (
             <CellView cell={shown} renderRef={renderRef} tabbable={o.tabbable} roomy={o.roomy} locale={locale} plain />
