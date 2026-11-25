@@ -2,7 +2,7 @@
   "schema": 1,
   "unit": "units/vocabulary-source",
   "package": "@kaigilb/gilbplatformcode-vocabulary-source",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "purpose": "Reading the GilbVeda master's term documents, each request and each whole reading bounded in time, so a master that does not answer is \"not known yet\" and never \"nothing\".",
   "source": {
     "repo": "KaiGilb/gilb-stakeholders",
@@ -55,6 +55,14 @@
           360
         ],
         "to": "src/source.ts"
+      },
+      {
+        "path": "src/lists.ts",
+        "lines": [
+          20,
+          57
+        ],
+        "to": "src/lists.ts"
       }
     ]
   },

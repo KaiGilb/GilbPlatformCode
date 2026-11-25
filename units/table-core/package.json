@@ -1,0 +1,33 @@
+{
+  "name": "@kaigilb/gilbplatformcode-table-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A table over vault records with no screen: one type's fields and records in; columns, one row per record and one cell per fact out, with the footer line of a table cut at the row limit.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "file:../base-record",
+    "@kaigilb/gilbplatformcode-entity-ref": "file:../entity-ref",
+    "@kaigilb/gilbplatformcode-type-fields": "file:../type-fields",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-base-record": "^0.1.0",
+    "@kaigilb/gilbplatformcode-entity-ref": "^0.1.0",
+    "@kaigilb/gilbplatformcode-type-fields": "^0.1.0",
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.1"
+  }
+}

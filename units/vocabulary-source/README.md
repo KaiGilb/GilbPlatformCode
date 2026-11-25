@@ -15,6 +15,7 @@ Plain functions and types, no React, no credential. The master's documents are p
 - `spellingOfTermDoc(doc, fallbackTerm)`, `spellingFromBinding(term, token, deprecated)`, `bareForm(segment)`: a predicate's read keys and its one write key, from its own term document.
 - `encodingOf(doc)`, `typeAttributeOf(doc)`, `cardinalityOf(doc)` (since 0.2.0): the term's declared value encoding (`inline-literal:text`, `reference:@id`, ...), the string a writer stamps as a record's type for the type the term defines (`t:<Type>`), and its declared cardinality (`single`, `multi`). Each is the first non-blank string under `a:encoding` / `a:typeAttribute` / `a:cardinality` or the bare key, trimmed, or `null`.
 - `valuesUnder(doc, readKeys)`, `refsUnder(doc, readKeys)`, `textUnder(facts, readKeys)`, `nameOfIri(iri)`: the values, references (CURIEs expanded by the document's own `@context`), first text and bare name read out of a document.
+- `readList(record, term)` (since 0.2.1): the record's value or values for the predicate the term defines, by the term's own `a:cardinality`. `multi`: always a new array (no value is `[]`, one bare value is `[v]`, an array is its elements); every spelling the term publishes is read. `single`: the first non-null value as the server sent it, or `undefined`. It throws `VocabularyUnavailableError` when the term cannot say what it is (no term document, no `a:predicateAttribute`, no `a:cardinality`, or a token other than `single` or `multi`): it never guesses and never answers `[]` for that.
 - Types: `TermDoc`, `TermFetch`, `PredicateSpelling`, `VocabularySource`, `ChildEntry`, `ChildrenPage`, `CarrierList`, `MasterSourceOptions`, `DeadlineOptions`.
 
 ## What this is not
@@ -23,6 +24,10 @@ Plain functions and types, no React, no credential. The master's documents are p
 - Not the whole of `gilb-stakeholders`' `terms.ts`, `deadline.ts` and `source.ts`: only the symbols the Plan-card readers reach. Not here: the field-set and tag readers that use `encodingOf`, `typeAttributeOf` and `cardinalityOf` (the field-set reader is `stakeholder-field-sets`), and the write side of the package.
 - Not a writer: nothing here sends anything but a `GET`.
 - Not a place for a host: the master's origin is an argument (`vedaOrigin`), never a default. The Plan card passes the term origin it already keeps (`termOrigin()` of `term-origin`); this unit does not import it, because the origin is an argument and not a setting.
+
+### Changes in 0.2.1
+
+Added `readList`, taken from `gilb-stakeholders` at the same commit `0a261488be7c98d1ac5d79887c966a445b8928bd` (the pin does not move), because the table units (`type-fields`, `table-core`) read a `multi` field of a record as a list. New code, copied by line range from `src/lists.ts`: lines 20-57 (`readList` and its comment), into the new file `src/lists.ts`; its import is the unit's own `./terms`. `createListReader` (lines 59-90) is not taken. Nothing of 0.2.0 changed. Tests: `src/lists.test.ts`, ported by test block from the source's `test/lists.test.ts` (the `readList` blocks, lines 15-105), and `vocabularySource.test.ts` lists the new export. Every peer range on this unit (`^0.2.0`) accepts 0.2.1.
 
 ### Changes in 0.2.0
 
@@ -98,6 +103,7 @@ Dynamic imports in the files taken: none. The tracer does not follow `import()`,
 
 - `src/terms.ts` to `src/terms.ts`: lines 11-44, 58-142, 144-158, 162-232 (`TermDoc`, `VocabularyUnavailableError`, `MasterTimeoutError`, `TermFetch`, `splitBinding`, `bareForm`, `PredicateSpelling`, `SELF_DESCRIPTION`, `firstString`, `spellingFromBinding`, `spellingOfTermDoc`, `encodingOf`, `typeAttributeOf`, `cardinalityOf` (144-158, 0.2.0), `valuesUnder`, `prefixesOf`, `refOf`, `refsUnder`, `textUnder`, `nameOfIri`);
 - `src/deadline.ts` to `src/deadline.ts`: lines 15-148 (`MAX_BOUND_MS`, `checkedBound`, `DeadlineOptions`, `withDeadline`, `boundSource`);
+- `src/lists.ts` to `src/lists.ts`: lines 20-57 (`readList`, 0.2.1);
 - `src/source.ts` to `src/source.ts`: lines 6-360 (`ChildEntry`, `ChildrenPage`, `CarrierList`, `CarrierSelectorMissingError`, `VocabularySource`, `MASTER_REQUEST_TIMEOUT_MS`, `MASTER_READ_CAP_MS`, `MasterSourceOptions`, `NAMED_READ_MAX`, `NAMED_TYPE`, `checkBack`, `masterSource`).
 
 Not taken: the file header comments (replaced by the short header comments of this unit).
@@ -115,4 +121,4 @@ Named changes, and only these:
 
 `src/index.ts` is new. Tests (`src/*.test.ts`; shared set-up in `test/support.ts`, not shipped; the hosts are `example.test` hosts, and no test reaches a real host): ported from `gilb-stakeholders` `test/` at the same commit, by test block (a block that calls a symbol not in this unit is left out): `masterTimeout-m3kt.test.ts` 12 of 34, `fieldSetReadSpeed-22d.test.ts` 4 of 18, `qa-c214-m3kt-s92.test.ts` 3 of 31 (its wire block talks to a server on the loopback address of the test machine), `qa-c214-22c-r2.test.ts` 1 of 3. New: `terms.test.ts` (41), `deadline.test.ts` (24), `source.test.ts` (28), `vocabularySource.test.ts` (1: the export list). `src/hostAgnostic.test.ts` is the same host-agnostic check test as the other units.
 
-Left out, with reasons: `carrierSelector-22c`, `qa-c214-22c`, `qa-c214-22d`, `qa-c214-22d-r2`, `lists` (they run `resolveFieldSets`, `createStakeholderVocabulary` or `readList`, which are not taken); `qa-c214-m3kt-s93` (it needs the 987 KB recorded live answer of the master, `fixtures/m3kt-s92/live-memo.json.gz`, and its blocks run the type-tree reader and the reference check, which are not taken); the other blocks of the four ported files (they run the kind reader, `resolveFieldSets`, `createRecord` or the reference writer; the kind-reader blocks are in `stakeholder-kinds`).
+Left out, with reasons: `carrierSelector-22c`, `qa-c214-22c`, `qa-c214-22d`, `qa-c214-22d-r2` (they run `resolveFieldSets` or `createStakeholderVocabulary`, which are not taken); the `createListReader` blocks of `lists` (that function is not taken; its `readList` blocks are ported since 0.2.1); `qa-c214-m3kt-s93` (it needs the 987 KB recorded live answer of the master, `fixtures/m3kt-s92/live-memo.json.gz`, and its blocks run the type-tree reader and the reference check, which are not taken); the other blocks of the four ported files (they run the kind reader, `resolveFieldSets`, `createRecord` or the reference writer; the kind-reader blocks are in `stakeholder-kinds`).

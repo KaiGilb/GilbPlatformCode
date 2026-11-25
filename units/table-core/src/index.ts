@@ -1,0 +1,16 @@
+export {
+  NAME_COLUMN_ID,
+  buildTable,
+  cellOf,
+  cellText,
+  columnsOf,
+  narrowColumns,
+  rowLimitNotice,
+  type BuildTableInput,
+  type Cell,
+  type KnownTotal,
+  type RowLimitInput,
+  type TableColumn,
+  type TableModel,
+  type TableRow,
+} from "./tableCore";

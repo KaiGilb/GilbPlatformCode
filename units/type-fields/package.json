@@ -1,0 +1,27 @@
+{
+  "name": "@kaigilb/gilbplatformcode-type-fields",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads the fields of one GilbVeda type from the ontology master: each field's value kind, one-or-many, value set, record type, required and status, in two requests that serve every type.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check:host-agnostic": "node ./scripts/check-host-agnostic.mjs"
+  },
+  "devDependencies": {
+    "@kaigilb/gilbplatformcode-vocabulary-source": "file:../vocabulary-source",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "@kaigilb/gilbplatformcode-vocabulary-source": "^0.2.1"
+  }
+}

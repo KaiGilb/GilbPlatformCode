@@ -19,6 +19,7 @@ describe("the unit's export list", () => {
         "encodingOf",
         "masterSource",
         "nameOfIri",
+        "readList",
         "refsUnder",
         "spellingFromBinding",
         "spellingOfTermDoc",

@@ -1,0 +1,1540 @@
+{
+ "_copiedFrom": {
+  "host": "veda.gilb.com (production, public read, no credential)",
+  "requests": [
+   "GET /base/vocab?status=all&carries=a:fieldOf&limit=100 (walked to complete: 9 pages, 847 terms, 4,024,102 bytes); with limit=1000: 1 page, complete true, 4,017,960 bytes",
+   "GET /base/vocab?status=all&carries=a:requiredSlot&limit=100 (1 page, 6 terms, 27,946 bytes)"
+  ],
+  "date": "2026-11-25T01:07Z",
+  "changed": "the host is rewritten to ontology.platform.example.test; only the terms of a few types are kept; of each term only the keys the field reader reads are kept (@id, a:predicateAttribute, a:deprecatedNotation, a:label, a:encoding, a:cardinality, a:fieldOf, a:valueSet, a:valueSetClosure, a:fieldRecordType, a:endpoint, a:ontologyStatus, a:nodeKind, a:requiredSlot), each exactly as served.",
+  "keptTerms": 37
+ },
+ "context": [
+  {
+   "@version": 1.1,
+   "@vocab": "https://ontology.platform.example.test/base/a/",
+   "base": "https://ontology.platform.example.test/base/",
+   "t": "https://ontology.platform.example.test/base/t/",
+   "a": "https://ontology.platform.example.test/base/a/",
+   "role": "https://ontology.platform.example.test/base/role/",
+   "functions": {
+    "@id": "a:functionOf",
+    "@container": "@set"
+   },
+   "values": {
+    "@id": "a:valueHierarchy",
+    "@container": "@set"
+   },
+   "children": {
+    "@id": "a:fvChild",
+    "@container": "@set"
+   },
+   "resources": {
+    "@id": "a:resourceOf",
+    "@container": "@set"
+   },
+   "fvParent": {
+    "@id": "a:fvParent",
+    "@type": "@id"
+   },
+   "fvOf": {
+    "@id": "a:fvOf",
+    "@type": "@id"
+   },
+   "valueEstimations": {
+    "@id": "a:valueEstimations",
+    "@container": "@set"
+   },
+   "constraints": {
+    "@id": "a:constraints",
+    "@container": "@set"
+   },
+   "stakeholders": {
+    "@id": "a:stakeholders",
+    "@container": "@set"
+   },
+   "relationType": {
+    "@id": "a:relationType"
+   },
+   "solution": {
+    "@id": "role:solution",
+    "@type": "@id"
+   },
+   "valueEstimate": {
+    "@id": "a:valueEstimate"
+   },
+   "resourceDraw": {
+    "@id": "a:resourceDraw"
+   },
+   "shows": {
+    "@id": "a:viewShows"
+   },
+   "target": {
+    "@id": "a:viewTarget"
+   },
+   "label": {
+    "@id": "a:label"
+   }
+  },
+  {
+   "complete": {
+    "@id": "https://ontology.platform.example.test/base/ns/vocab-page#complete"
+   },
+   "limit": {
+    "@id": "https://ontology.platform.example.test/base/ns/vocab-page#limit"
+   },
+   "absent": {
+    "@id": "https://ontology.platform.example.test/base/ns/vocab-page#absent",
+    "@container": "@set"
+   },
+   "next": {
+    "@id": "http://www.w3.org/ns/hydra/core#next",
+    "@type": "@id"
+   },
+   "carries": {
+    "@id": "https://ontology.platform.example.test/base/ns/vocab-page#carries"
+   },
+   "carriesSpellings": {
+    "@id": "https://ontology.platform.example.test/base/ns/vocab-page#carriesSpellings",
+    "@container": "@set"
+   }
+  }
+ ],
+ "carriesSpellings": {
+  "fieldOf": [
+   "a:fieldOf",
+   "https://ontology.platform.example.test/base/a/fieldOf"
+  ],
+  "requiredSlot": [
+   "a:requiredSlot",
+   "https://ontology.platform.example.test/base/a/requiredSlot"
+  ]
+ },
+ "fieldTerms": [
+  {
+   "@id": "https://ontology.platform.example.test/base/t/AcceptedCheck",
+   "a:predicateAttribute": "a:acceptedCheck",
+   "a:label": "accepted check",
+   "a:encoding": "reference",
+   "a:cardinality": "multi",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:endpoint": [
+    {
+     "a:card": "1",
+     "a:role": "subject",
+     "a:order": 0,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+     }
+    },
+    {
+     "a:card": "0..*",
+     "a:role": "reference",
+     "a:order": 1,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/DraftCheck"
+     }
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ActsOnBehalfOf",
+   "a:predicateAttribute": "a:actsOnBehalfOf",
+   "a:label": "acts-on-behalf-of",
+   "a:encoding": "reference",
+   "a:cardinality": "multi",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "relation"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ApprovedPostPicture",
+   "a:predicateAttribute": "a:approvedPostPicture",
+   "a:label": "approved post picture",
+   "a:encoding": "reference",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:endpoint": [
+    {
+     "a:card": "1",
+     "a:role": "subject",
+     "a:order": 0,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+     }
+    },
+    {
+     "a:card": "0..1",
+     "a:role": "reference",
+     "a:order": 1,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostPicture"
+     }
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ApprovedPostVideo",
+   "a:predicateAttribute": "a:approvedPostVideo",
+   "a:label": "approved post video",
+   "a:encoding": "reference",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:endpoint": [
+    {
+     "a:card": "1",
+     "a:role": "subject",
+     "a:order": 0,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+     }
+    },
+    {
+     "a:card": "0..1",
+     "a:role": "reference",
+     "a:order": 1,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostVideoCut"
+     }
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ClothingSize",
+   "a:predicateAttribute": "a:clothingSize",
+   "a:label": "clothing size",
+   "a:encoding": "inline-literal:text",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/GarmentStockLine"
+    }
+   ],
+   "a:valueSet": [
+    "XS",
+    "S",
+    "M",
+    "L",
+    "XL",
+    "XXL",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "24/28",
+    "24/30",
+    "24/32",
+    "24/34",
+    "24/36",
+    "25/28",
+    "25/30",
+    "25/32",
+    "25/34",
+    "25/36",
+    "26/28",
+    "26/30",
+    "26/32",
+    "26/34",
+    "26/36",
+    "27/28",
+    "27/30",
+    "27/32",
+    "27/34",
+    "27/36",
+    "28/28",
+    "28/30",
+    "28/32",
+    "28/34",
+    "28/36",
+    "29/28",
+    "29/30",
+    "29/32",
+    "29/34",
+    "29/36",
+    "30/28",
+    "30/30",
+    "30/32",
+    "30/34",
+    "30/36",
+    "31/28",
+    "31/30",
+    "31/32",
+    "31/34",
+    "31/36",
+    "32/28",
+    "32/30",
+    "32/32",
+    "32/34",
+    "32/36",
+    "33/28",
+    "33/30",
+    "33/32",
+    "33/34",
+    "33/36",
+    "34/28",
+    "34/30",
+    "34/32",
+    "34/34",
+    "34/36",
+    "35/28",
+    "35/30",
+    "35/32",
+    "35/34",
+    "35/36",
+    "36/28",
+    "36/30",
+    "36/32",
+    "36/34",
+    "36/36",
+    "37/28",
+    "37/30",
+    "37/32",
+    "37/34",
+    "37/36",
+    "38/28",
+    "38/30",
+    "38/32",
+    "38/34",
+    "38/36",
+    "39/28",
+    "39/30",
+    "39/32",
+    "39/34",
+    "39/36",
+    "40/28",
+    "40/30",
+    "40/32",
+    "40/34",
+    "40/36",
+    "41/28",
+    "41/30",
+    "41/32",
+    "41/34",
+    "41/36",
+    "42/28",
+    "42/30",
+    "42/32",
+    "42/34",
+    "42/36",
+    "43/28",
+    "43/30",
+    "43/32",
+    "43/34",
+    "43/36",
+    "44/28",
+    "44/30",
+    "44/32",
+    "44/34",
+    "44/36"
+   ],
+   "a:valueSetClosure": "closed-forward",
+   "a:ontologyStatus": "Approved",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ContactLanguage",
+   "a:predicateAttribute": "a:contactLanguage",
+   "a:label": "Contact Language",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/DecidedDraft",
+   "a:predicateAttribute": "a:decidedDraft",
+   "a:label": "decided draft",
+   "a:encoding": "reference",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftDrop"
+    }
+   ],
+   "a:endpoint": [
+    {
+     "a:card": "1",
+     "a:role": "subject",
+     "a:order": 0,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/Event"
+     }
+    },
+    {
+     "a:card": "1",
+     "a:role": "reference",
+     "a:order": 1,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/PostDraft"
+     }
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "relation"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/EarlierTakesDeleteAfter",
+   "a:predicateAttribute": "a:earlierTakesDeleteAfter",
+   "a:label": "earlier takes delete after",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Email",
+   "a:predicateAttribute": "a:email",
+   "a:label": "Email",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WorkspaceMembership"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/MailboxReadConsent"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TeamRegistrationRequest"
+    }
+   ],
+   "a:ontologyStatus": "Approved"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Employment",
+   "a:predicateAttribute": "a:employment",
+   "a:label": "Employment",
+   "a:encoding": "reference-edge:@id",
+   "a:cardinality": "multi",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    }
+   ],
+   "a:fieldRecordType": {
+    "@id": "https://ontology.platform.example.test/base/t/Employment"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "relation"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/GoGivenByPrincipal",
+   "a:predicateAttribute": "a:goGivenByPrincipal",
+   "a:label": "go given by principal",
+   "a:encoding": "reference",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/StandardChangeGo"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SpendCap"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/MadeForKids",
+   "a:predicateAttribute": "a:madeForKids",
+   "a:label": "made for kids",
+   "a:encoding": "inline-literal:boolean",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/MemberOf",
+   "a:predicateAttribute": "a:memberOf",
+   "a:label": "member-of",
+   "a:encoding": "reference:@id",
+   "a:cardinality": "multi",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PartyGroup"
+    }
+   ],
+   "a:endpoint": [
+    {
+     "a:card": "1",
+     "a:role": "subject",
+     "a:order": 0,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/Thing"
+     }
+    },
+    {
+     "a:card": "1..*",
+     "a:role": "reference",
+     "a:order": 1,
+     "a:directed": true,
+     "a:endpointType": {
+      "@id": "https://ontology.platform.example.test/base/t/Substance"
+     }
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "relation"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Name",
+   "a:predicateAttribute": "a:name",
+   "a:label": "Name",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PartyGroup"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SoftwareSystem"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SoftwareSystemGroup"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ObjectGroup"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/CatalogEntry"
+    }
+   ],
+   "a:ontologyStatus": "Approved"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/OnlineAccount",
+   "a:predicateAttribute": "a:account",
+   "a:label": "Online Account",
+   "a:encoding": "inline-literal:text",
+   "a:cardinality": "multi",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ConnectedAccount"
+    }
+   ],
+   "a:ontologyStatus": "Suggested"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Phone",
+   "a:predicateAttribute": "a:phone",
+   "a:label": "Phone",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/PictureHash",
+   "a:predicateAttribute": "a:pictureHash",
+   "a:label": "picture hash",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/PostalAddress",
+   "a:predicateAttribute": "a:postalAddress|a:address",
+   "a:deprecatedNotation": "a:address",
+   "a:label": "Postal Address",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/PostVisibility",
+   "a:predicateAttribute": "a:postVisibility",
+   "a:label": "post visibility",
+   "a:encoding": "inline-literal:uri",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/PreferredContactChannel",
+   "a:predicateAttribute": "a:preferredChannel",
+   "a:label": "Preferred Contact Channel",
+   "a:encoding": "reference:@id",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/PriceCurrency",
+   "a:predicateAttribute": "a:priceCurrency",
+   "a:label": "price currency",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ServiceOffer"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PaymentReceipt"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PictureMakingAttempt"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SpendCap"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/UsageDebit"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/GarmentStockLine"
+    }
+   ],
+   "a:valueSet": [
+    "AED",
+    "AFN",
+    "ALL",
+    "AMD",
+    "AOA",
+    "ARS",
+    "AUD",
+    "AWG",
+    "AZN",
+    "BAM",
+    "BBD",
+    "BDT",
+    "BHD",
+    "BIF",
+    "BMD",
+    "BND",
+    "BOB",
+    "BOV",
+    "BRL",
+    "BSD",
+    "BTN",
+    "BWP",
+    "BYN",
+    "BZD",
+    "CAD",
+    "CDF",
+    "CHE",
+    "CHF",
+    "CHW",
+    "CLF",
+    "CLP",
+    "CNY",
+    "COP",
+    "COU",
+    "CRC",
+    "CUP",
+    "CVE",
+    "CZK",
+    "DJF",
+    "DKK",
+    "DOP",
+    "DZD",
+    "EGP",
+    "ERN",
+    "ETB",
+    "EUR",
+    "FJD",
+    "FKP",
+    "GBP",
+    "GEL",
+    "GHS",
+    "GIP",
+    "GMD",
+    "GNF",
+    "GTQ",
+    "GYD",
+    "HKD",
+    "HNL",
+    "HTG",
+    "HUF",
+    "IDR",
+    "ILS",
+    "INR",
+    "IQD",
+    "IRR",
+    "ISK",
+    "JMD",
+    "JOD",
+    "JPY",
+    "KES",
+    "KGS",
+    "KHR",
+    "KMF",
+    "KPW",
+    "KRW",
+    "KWD",
+    "KYD",
+    "KZT",
+    "LAK",
+    "LBP",
+    "LKR",
+    "LRD",
+    "LSL",
+    "LYD",
+    "MAD",
+    "MDL",
+    "MGA",
+    "MKD",
+    "MMK",
+    "MNT",
+    "MOP",
+    "MRU",
+    "MUR",
+    "MVR",
+    "MWK",
+    "MXN",
+    "MXV",
+    "MYR",
+    "MZN",
+    "NAD",
+    "NGN",
+    "NIO",
+    "NOK",
+    "NPR",
+    "NZD",
+    "OMR",
+    "PAB",
+    "PEN",
+    "PGK",
+    "PHP",
+    "PKR",
+    "PLN",
+    "PYG",
+    "QAR",
+    "RON",
+    "RSD",
+    "RUB",
+    "RWF",
+    "SAR",
+    "SBD",
+    "SCR",
+    "SDG",
+    "SEK",
+    "SGD",
+    "SHP",
+    "SLE",
+    "SOS",
+    "SRD",
+    "SSP",
+    "STN",
+    "SVC",
+    "SYP",
+    "SZL",
+    "THB",
+    "TJS",
+    "TMT",
+    "TND",
+    "TOP",
+    "TRY",
+    "TTD",
+    "TWD",
+    "TZS",
+    "UAH",
+    "UGX",
+    "USD",
+    "USN",
+    "UYI",
+    "UYU",
+    "UYW",
+    "UZS",
+    "VED",
+    "VES",
+    "VND",
+    "VUV",
+    "WST",
+    "XAD",
+    "XAF",
+    "XAG",
+    "XAU",
+    "XBA",
+    "XBB",
+    "XBC",
+    "XBD",
+    "XCD",
+    "XCG",
+    "XDR",
+    "XOF",
+    "XPD",
+    "XPF",
+    "XPT",
+    "XSU",
+    "XTS",
+    "XUA",
+    "XXX",
+    "YER",
+    "ZAR",
+    "ZMW",
+    "ZWG"
+   ],
+   "a:valueSetClosure": "closed-forward",
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/RawDeleteAfter",
+   "a:predicateAttribute": "a:rawDeleteAfter",
+   "a:label": "raw delete after",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewColumnField",
+   "a:predicateAttribute": "a:tableViewColumnField",
+   "a:label": "table view column field",
+   "a:encoding": "inline-literal:uri",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewColumnFrozen",
+   "a:predicateAttribute": "a:tableViewColumnFrozen",
+   "a:label": "table view column frozen",
+   "a:encoding": "inline-literal:boolean",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewColumnHidden",
+   "a:predicateAttribute": "a:tableViewColumnHidden",
+   "a:label": "table view column hidden",
+   "a:encoding": "inline-literal:boolean",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewColumnOrder",
+   "a:predicateAttribute": "a:tableViewColumnOrder",
+   "a:label": "table view column order",
+   "a:encoding": "inline-literal:integer",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewColumnWidth",
+   "a:predicateAttribute": "a:tableViewColumnWidth",
+   "a:label": "table view column width",
+   "a:encoding": "inline-literal:integer",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewSortDirection",
+   "a:predicateAttribute": "a:tableViewSortDirection",
+   "a:label": "table view sort direction",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:valueSet": [
+    "ascending",
+    "descending"
+   ],
+   "a:valueSetClosure": "closed",
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TableViewSortPriority",
+   "a:predicateAttribute": "a:tableViewSortPriority",
+   "a:label": "table view sort priority",
+   "a:encoding": "inline-literal:integer",
+   "a:cardinality": "single",
+   "a:fieldOf": {
+    "@id": "https://ontology.platform.example.test/base/t/TableViewColumn"
+   },
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TextHash",
+   "a:predicateAttribute": "a:textHash",
+   "a:label": "text hash",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/StandardChangeGo"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/StandardChangeProposal"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItemAssessment"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSample"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostDraft"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/HelpPicture"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/TimeZone",
+   "a:predicateAttribute": "a:timeZone",
+   "a:label": "Time Zone",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/VideoHash",
+   "a:predicateAttribute": "a:videoHash",
+   "a:label": "video hash",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostVideoRecording"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostVideoCut"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/WebAddress",
+   "a:predicateAttribute": "a:url",
+   "a:label": "Web Address",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Person"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Organization"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceWatch"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItem"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/MeasurementFact"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSample"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TermsReading"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceChannel"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceSuggestion"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/BrandKit"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/OwnerWork"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WorkPart"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostOwnerConfirmation"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PublishedApp"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PublishedWebsite"
+    }
+   ],
+   "a:ontologyStatus": "Suggested"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/WrittenAsAgent",
+   "a:predicateAttribute": "a:writtenAsAgent",
+   "a:label": "written as agent",
+   "a:encoding": "reference",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ProcessInstance"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Transition"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/IssuedTask"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItem"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/MeasurementFact"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItemAssessment"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TopicSuggestion"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TopicCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Pick"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceWatch"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TeamRegistration"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ConnectedAccount"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSample"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ServiceOffer"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PaymentReceipt"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WorkspaceMembership"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/AiAgent"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Standard"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Rule"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ProcedureStep"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TemplateSpecimen"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceChannel"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TermsReading"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceLicence"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ContentSource"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ServiceUseTerms"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostDraft"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftDrop"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingStyleProposal"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSliderSetting"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SuggestionDismissal"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceSuggestion"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TeamRegistrationRequest"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TeamRegistrationAnswer"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/WrittenAsAgentVersion",
+   "a:predicateAttribute": "a:writtenAsAgentVersion",
+   "a:label": "written as agent version",
+   "a:encoding": "inline-literal:token",
+   "a:cardinality": "single",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ProcessInstance"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Transition"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/IssuedTask"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItem"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/MeasurementFact"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceItemAssessment"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TopicSuggestion"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TopicCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Pick"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceWatch"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TeamRegistration"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ConnectedAccount"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSample"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ServiceOffer"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PaymentReceipt"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WorkspaceMembership"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/AiAgent"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Standard"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Rule"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ProcedureStep"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TemplateSpecimen"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceChannel"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TermsReading"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceLicence"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ContentSource"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ServiceUseTerms"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostDraft"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostApproval"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftDrop"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingStyleProposal"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSliderSetting"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SuggestionDismissal"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SourceSuggestion"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "attribute"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ChecksStandard",
+   "a:predicateAttribute": "a:checksStandard",
+   "a:label": "checksStandard",
+   "a:encoding": "inline-literal:text",
+   "a:cardinality": "multiple",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TopicCheck"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DraftCheck"
+    }
+   ],
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "relation"
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Body",
+   "a:predicateAttribute": "a:body",
+   "a:label": "Body",
+   "a:encoding": "inline-literal:text",
+   "a:fieldOf": [
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Standard"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/TargetSpecies"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostDraft"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Function"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/FunctionConstraint"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Solution"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/DesignConstraint"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/CauseEffectLevel"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/SpecificationElement"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/Assumption"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PictureStyle"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WritingSample"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/PostIdea"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/WorkPart"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ImpactEstimationTable"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/VideoEditInstruction"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/VideoGraphicInstruction"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/EvoStep"
+    },
+    {
+     "@id": "https://ontology.platform.example.test/base/t/ContentGuideProposal"
+    }
+   ],
+   "a:ontologyStatus": "Approved"
+  }
+ ],
+ "requiredTerms": [
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Brand",
+   "a:label": "Brand",
+   "a:ontologyStatus": "Approved",
+   "a:nodeKind": "type",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "the brand's name",
+     "a:slot": "a:label"
+    }
+   ]
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ClothingCategory",
+   "a:label": "Clothing Category",
+   "a:ontologyStatus": "Approved",
+   "a:nodeKind": "type",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "the category's name, e.g. 'Knitwear'",
+     "a:slot": "a:label"
+    }
+   ]
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/FashionCollection",
+   "a:label": "Fashion Collection",
+   "a:ontologyStatus": "Approved",
+   "a:nodeKind": "type",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "the collection's name, e.g. 'Autumn/Winter 2026'",
+     "a:slot": "a:label"
+    }
+   ]
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/GarmentStockLine",
+   "a:label": "Garment Stock Line",
+   "a:ontologyStatus": "Approved",
+   "a:nodeKind": "type",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "the stock line's name, e.g. the model and colour",
+     "a:slot": "a:label"
+    }
+   ]
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/Supplier",
+   "a:label": "Supplier",
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "type",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "the supplier's name",
+     "a:slot": "a:label"
+    }
+   ]
+  },
+  {
+   "@id": "https://ontology.platform.example.test/base/t/ValueCompletenessShape",
+   "a:label": "Value Completeness Shape",
+   "a:ontologyStatus": "Suggested",
+   "a:nodeKind": "shape",
+   "a:requiredSlot": [
+    {
+     "a:card": "1",
+     "a:note": "exactly one Scale (unit + mandatory rate)",
+     "a:slot": "a:scale"
+    },
+    {
+     "a:card": "1",
+     "a:note": "the subject endpoint (bearer)",
+     "a:slot": "a:value-of"
+    },
+    {
+     "a:card": "1..*",
+     "a:note": "≥1 reference endpoint (directed subject→reference)",
+     "a:slot": "a:qualifier.reference"
+    },
+    {
+     "a:card": "1..*",
+     "a:note": "≥1 valuer-kind (the separate stakeholder axis)",
+     "a:slot": "a:valuedBy"
+    }
+   ]
+  }
+ ]
+}
