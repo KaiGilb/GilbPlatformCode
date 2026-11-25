@@ -1,9 +1,11 @@
-// The fields of one GilbVeda type, read from the ontology master: what a table draws as columns and a card as rows.
-//
-// An attribute term declares `a:fieldOf <Type>`. This unit reads every such declaration once (the master's carrier read, one request),
-// reads which slots each type requires (a second request), and derives one type's fields from the two. Nothing about what a type or a
-// field is, is typed in here: the label, the value kind, one-or-many, the value set, the record type a link points at and the status all
-// come out of the field's own term document. The keys below are only the ontology's self-description (how a term says what it is).
+/**
+ * The fields of one GilbVeda type, read from the ontology master: what a table draws as columns and a card as rows.
+ *
+ * An attribute term declares `a:fieldOf <Type>`. This unit reads every such declaration once (the master's carrier read, one request),
+ * reads which slots each type requires (a second request), and derives one type's fields from the two. Nothing about what a type or a
+ * field is, is typed in here: the label, the value kind, one-or-many, the value set, the record type a link points at and the status all
+ * come out of the field's own term document. The keys below are only the ontology's self-description (how a term says what it is).
+ */
 
 import {
   CarrierSelectorMissingError,
@@ -147,6 +149,7 @@ export interface FieldDeclarations {
  */
 export type TypeFieldsErrorKind = "not-found" | "forbidden" | "server" | "network" | "timeout" | "not-narrowed" | "unknown-type" | "unreadable";
 
+/** A read of fields that failed. `kind` says how; it is never to be shown as "this type has no fields". */
 export class TypeFieldsError extends Error {
   readonly kind: TypeFieldsErrorKind;
   /** The HTTP status the master answered, when it answered. */
@@ -159,6 +162,7 @@ export class TypeFieldsError extends Error {
   }
 }
 
+/** Where and how to read the master. */
 export interface ReadOptions {
   /** The ontology master's origin, a bare origin. Never a default: the host passes the one it keeps. */
   vedaOrigin: string;
@@ -177,7 +181,12 @@ function firstString(doc: Record<string, unknown>, keys: readonly string[]): str
   return null;
 }
 
-/** The value kind an encoding names. Only the encoding's own words are read. */
+/**
+ * The value kind an encoding names. Only the encoding's own words are read.
+ *
+ * @param encoding the term's encoding as served, or null
+ * @returns the kind; `unknown` for no encoding or one this unit does not know
+ */
 export function fieldKindOf(encoding: string | null): FieldKind {
   if (!encoding) return "unknown";
   const e = encoding.trim().toLowerCase();
@@ -235,6 +244,66 @@ function checkTypeName(typeName: string): string {
 }
 
 /**
+ * One term as a field, or the reason it cannot be read as one.
+ *
+ * @param doc the field term's document
+ * @param requiredSlots the slots the type in question requires (none when the field is not read for one type)
+ */
+function fieldOfTerm(doc: TermDoc, requiredSlots: readonly RequiredSlot[]): { field: TypeField } | { problem: FieldProblem } {
+  const term = typeof doc["@id"] === "string" ? (doc["@id"] as string) : "(a term with no address)";
+  let spelling;
+  try {
+    spelling = spellingOfTermDoc(doc, term);
+  } catch (e) {
+    return { problem: { term, why: e instanceof Error ? e.message : String(e) } };
+  }
+  const anchor = spelling.writeKey ?? spelling.readKeys[0];
+  if (!anchor) return { problem: { term, why: `${term} names no spelling to read` } };
+  const encoding = encodingOf(doc);
+  const served = cardinalityOf(doc);
+  return {
+    field: {
+      anchor,
+      writeKey: spelling.writeKey,
+      readKeys: spelling.readKeys,
+      term,
+      doc,
+      label: textUnder(doc, LABEL_KEYS) ?? nameOfIri(term),
+      kind: fieldKindOf(encoding),
+      encoding,
+      cardinality: served === "single" || served === "multi" ? served : null,
+      cardinalityAsServed: served,
+      valueSet: valueSetOf(doc),
+      recordType: recordTypeOf(doc),
+      required: requiredSlots.some((s) => spelling.readKeys.includes(s.slot)),
+      status: firstString(doc, STATUS_KEYS),
+    },
+  };
+}
+
+/**
+ * Every field the master declares, by each key a stored fact of it may carry (prefixed and bare). Pure; no request.
+ *
+ * A table uses it to head and read a fact a record holds outside its type's own fields, for example a field declared on a type above.
+ * It does not say which types a field belongs to: `required` is false on every entry, because that is a fact about one type. When two
+ * terms publish the same key, the term whose address sorts first is kept, so two readings agree. A host builds it once per reading of
+ * the declarations and keeps it beside them.
+ *
+ * @param declarations what {@link readFieldDeclarations} returned
+ * @returns the index; a term that cannot be read as a field is not in it
+ */
+export function fieldIndex(declarations: FieldDeclarations): Map<string, TypeField> {
+  const index = new Map<string, TypeField>();
+  const terms = [...declarations.fieldTerms].sort((a, b) => String(a["@id"] ?? "").localeCompare(String(b["@id"] ?? ""), "en"));
+  for (const doc of terms) {
+    const read = fieldOfTerm(doc, []);
+    if (!("field" in read)) continue;
+    for (const key of read.field.readKeys) if (!index.has(key)) index.set(key, read.field);
+  }
+  return index;
+}
+
+/**
  * One type's fields, from declarations already read. Pure.
  *
  * A field is a term whose `a:fieldOf` names exactly this type's address on the declarations' master. Fields declared on a type above
@@ -252,37 +321,9 @@ export function fieldsOfType(declarations: FieldDeclarations, typeName: string):
   const unreadable: FieldProblem[] = [];
   for (const doc of declarations.fieldTerms) {
     if (!refsUnder(doc, FIELD_OF_KEYS).includes(type)) continue;
-    const term = typeof doc["@id"] === "string" ? (doc["@id"] as string) : "(a term with no address)";
-    let spelling;
-    try {
-      spelling = spellingOfTermDoc(doc, term);
-    } catch (e) {
-      unreadable.push({ term, why: e instanceof Error ? e.message : String(e) });
-      continue;
-    }
-    const anchor = spelling.writeKey ?? spelling.readKeys[0];
-    if (!anchor) {
-      unreadable.push({ term, why: `${term} names no spelling to read` });
-      continue;
-    }
-    const encoding = encodingOf(doc);
-    const served = cardinalityOf(doc);
-    fields.push({
-      anchor,
-      writeKey: spelling.writeKey,
-      readKeys: spelling.readKeys,
-      term,
-      doc,
-      label: textUnder(doc, LABEL_KEYS) ?? nameOfIri(term),
-      kind: fieldKindOf(encoding),
-      encoding,
-      cardinality: served === "single" || served === "multi" ? served : null,
-      cardinalityAsServed: served,
-      valueSet: valueSetOf(doc),
-      recordType: recordTypeOf(doc),
-      required: requiredSlots.some((s) => spelling.readKeys.includes(s.slot)),
-      status: firstString(doc, STATUS_KEYS),
-    });
+    const read = fieldOfTerm(doc, requiredSlots);
+    if ("field" in read) fields.push(read.field);
+    else unreadable.push(read.problem);
   }
   fields.sort((a, b) => a.label.localeCompare(b.label, "en") || a.term.localeCompare(b.term, "en"));
   return {

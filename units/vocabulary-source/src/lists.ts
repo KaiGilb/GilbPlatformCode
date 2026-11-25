@@ -1,7 +1,9 @@
-// Reading a record's value or values for the predicate a term defines, by the term's own cardinality.
-//
-// The cardinality comes from the served term document's `a:cardinality`, and the keys from its `a:predicateAttribute`. No term name,
-// key or list of "known list terms" is typed in here.
+/**
+ * Reading a record's value or values for the predicate a term defines, by the term's own cardinality.
+ *
+ * The cardinality comes from the served term document's `a:cardinality`, and the keys from its `a:predicateAttribute`. No term name,
+ * key or list of "known list terms" is typed in here.
+ */
 import { VocabularyUnavailableError, cardinalityOf, spellingOfTermDoc, valuesUnder, type TermDoc } from "./terms";
 
 /**

@@ -3,7 +3,11 @@
 // What it copies: the live master veda.gilb.com (production, public read, no credential), measured 2026-11-25T01:07Z:
 //   GET /base/vocab?status=all&carries=a:fieldOf&limit=1000      200, complete: true, 847 terms, 4,017,960 bytes, one page
 //   GET /base/vocab?status=all&carries=a:requiredSlot&limit=100  200, complete: true, 6 terms, 27,946 bytes
-//   GET /base/t/<Type>                                           200 with the term, 404 for a name no term claims
+//   GET /base/t/<Type>                                           200 with the term (TableViewColumn, Person); 404 for a name no term
+//                                                                claims (NoSuchTypeHere, measured 2026-11-25T02:02Z)
+// GUESSES, each labelled again at the test that uses it: `status` (the master answering 403, 404 or 500 to every request) and
+// `noSelector` (a master that leaves `carries` off the answer) were never measured on the live master. `down` is no platform
+// behaviour: the request never leaves (fetch rejects).
 // The term documents are in fixtures/master-fields-2026-11-25.json: the keys the reader reads, each as served (its `_copiedFrom` says what was left out and that the host
 // was rewritten to an example.test host). No test reaches a real host.
 import { readFileSync } from "node:fs";

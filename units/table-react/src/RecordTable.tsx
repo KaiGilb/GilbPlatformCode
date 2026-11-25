@@ -1,7 +1,9 @@
-// The table on screen: a read-only grid of vault records, one row per record and one column per field, drawn only for the rows in view.
-//
-// It draws what `table-core` built and nothing else: an empty cell stays empty, a link is handed to the host to name, and a row is opened
-// by Space or by the button at its left. It reads no record and no vocabulary itself.
+/**
+ * The table on screen: a read-only grid of vault records, one row per record and one column per field, drawn only for the rows in view.
+ *
+ * It draws what `table-core` built and nothing else: an empty cell stays empty, a link is handed to the host to name, and a row is opened
+ * by Space or by the button at its left. It reads no record and no vocabulary itself.
+ */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { columnSizingFeature, flexRender, tableFeatures, useTable, type ColumnDef } from "@tanstack/react-table";
@@ -17,6 +19,7 @@ export interface TableRef {
   id: string | null;
 }
 
+/** What {@link RecordTable} is given. */
 export interface RecordTableProps<R extends BaseRecord = BaseRecord> {
   /** The table to draw, or null while its columns are not known yet. */
   table: TableModel<R> | null;
@@ -28,8 +31,6 @@ export interface RecordTableProps<R extends BaseRecord = BaseRecord> {
   onOpenRow: (id: string) => void;
   /** Draws a link to another record or term as its name. Absent: the stored address is shown, which says the link is not resolved. */
   renderRef?: (ref: TableRef) => ReactNode;
-  /** The footer line (for a table cut at the row limit), or null for none. */
-  footer?: string | null;
   /** True on a narrow screen: a list of rows, each with its name and the first field columns, in place of the grid. */
   narrow?: boolean;
   /** What the grid is called for a screen reader, for example the type's name. */
@@ -103,6 +104,14 @@ function CellView({ cell, renderRef }: { cell: Cell; renderRef?: (ref: TableRef)
   }
 }
 
+/** What a heading says on hover: its words, and for a column that is not a field of the type, why it is there. */
+function headingTitle(column: TableColumn | undefined): string | undefined {
+  if (!column) return undefined;
+  if (column.source === "stored") return `${column.label}: a stored fact that no field describes, shown as stored`;
+  if (column.source === "other") return `${column.label}: not a field of this type; shown because a record here holds it`;
+  return column.label;
+}
+
 function OpenGlyph() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -113,13 +122,19 @@ function OpenGlyph() {
 
 const SKELETON_BAR = "block h-[10px] rounded-full bg-[var(--line)] motion-safe:animate-pulse";
 
+/**
+ * The table of one kind of record: a grid on a wide screen, a list on a narrow one.
+ *
+ * @param props the table from `table-core`, whether it is still loading, the open record, and the host's ways to open a record and to
+ *   name a link
+ * @returns the grid (or list), filling its parent's height and scrolling inside it
+ */
 export function RecordTable<R extends BaseRecord = BaseRecord>({
   table,
   loading = false,
   selectedId = null,
   onOpenRow,
   renderRef,
-  footer = null,
   narrow = false,
   label = "Records",
   rowHeight = 36,
@@ -129,6 +144,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   const columns: readonly TableColumn[] = useMemo(() => table?.columns ?? [], [table]);
   const data: TableRow<R>[] = useMemo(() => (loading || !table ? [] : table.rows), [loading, table]);
   const listColumns = useMemo(() => narrowColumns(columns, NARROW_FIELDS), [columns]);
+  const columnById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const defs = useMemo<ColumnDef<Features, TableRow<R>>[]>(
     () =>
@@ -136,8 +152,8 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
         id: column.id,
         header: column.label,
         size: column.id === NAME_COLUMN_ID ? NAME_WIDTH : FIELD_WIDTH,
-        // The Name column's value is the row's name; a field column's value is its cell (column n is cell n - 1).
-        accessorFn: (row) => (column.field === null ? row.name : row.cells[index - 1]),
+        // The Name column's value is the row's name; every other column's value is its cell (column n is cell n - 1).
+        accessorFn: (row) => (column.id === NAME_COLUMN_ID ? row.name : row.cells[index - 1]),
       })),
     [columns],
   );
@@ -253,11 +269,6 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
             </div>
           )}
         </div>
-        {footer ? (
-          <div role="status" className="flex-none border-t border-[var(--line)] bg-[var(--paper-2)] px-3 py-1.5 text-[12px] text-[var(--ink-soft)]" data-testid="record-table-footer">
-            {footer}
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -282,11 +293,12 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                   role="columnheader"
                   aria-colindex={i + 1}
                   data-column-id={header.column.id}
+                  data-column-source={columnById.get(header.column.id)?.source}
                   className={
                     "flex min-w-0 items-center px-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-[var(--ink-soft)] " +
                     (header.column.id === NAME_COLUMN_ID ? "sticky left-0 z-[3] border-r border-[var(--line)] bg-[var(--paper-2)] pl-[42px]" : "border-r border-[var(--line-2)]")
                   }
-                  title={typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : undefined}
+                  title={headingTitle(columnById.get(header.column.id))}
                 >
                   <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext())}</span>
                 </div>
@@ -367,11 +379,6 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
           </div>
         )}
       </div>
-      {footer ? (
-        <div role="status" className="flex-none border-t border-[var(--line)] bg-[var(--paper-2)] px-3 py-1.5 text-[12px] text-[var(--ink-soft)]" data-testid="record-table-footer">
-          {footer}
-        </div>
-      ) : null}
     </div>
   );
 }
