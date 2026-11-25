@@ -69,6 +69,9 @@ let asked: CellWriteRequest[] = [];
 let answer: (request: CellWriteRequest) => Promise<void> | void = () => undefined;
 const bare = (writeKey: string) => writeKey.replace(/^a:/, "");
 
+let heldCells: TableEditingHeld = undefined;
+let dropped: string[] = [];
+type TableEditingHeld = ReadonlyArray<{ rowId: string; columnId: string; value: string | number | boolean | null; base: string | number | boolean | null }> | undefined;
 function Host({ narrow = false, readOnly = null as string | null, start = START, hostsOwn = null as string | null }: { narrow?: boolean; readOnly?: string | null; start?: BaseRecord[]; hostsOwn?: string | null }) {
   const [records, setRecords] = useState(start);
   hostSet = setRecords;
@@ -83,6 +86,8 @@ function Host({ narrow = false, readOnly = null as string | null, start = START,
         locale: "en-US",
         ...(readOnly ? { rowReadOnly: () => readOnly } : {}),
         ...(hostsOwn ? { cellReadOnly: (_row, column) => (column.id === hostsOwn ? "The name is changed on the card for now" : null) } : {}),
+        ...(heldCells ? { held: heldCells } : {}),
+        onDropped: (rowId, columnId) => dropped.push(`${rowId} ${columnId}`),
         write: async (request) => {
           asked.push(request);
           await answer(request);
@@ -519,6 +524,25 @@ describe("table-react: editing a cell", () => {
       await act(async () => { window.dispatchEvent(new Event("online")); });
       await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("saved"));
       expect(asked.map((a) => a.value)).toEqual(["typed offline", "typed offline"]);
+    });
+
+    // Tester round 6 (rule 3): a value the host holds for a cell is drawn as not saved when the table opens, and handed to the save once;
+    // giving it up tells the host.
+    test("a held value: drawn as not saved when the table opens, sent once through write; Escape drops it and tells the host", async () => {
+      heldCells = [{ rowId: "r1", columnId: "a:altText", value: "held offline", base: "warm" }];
+      dropped = [];
+      answer = () => { throw offline(); };
+      try {
+        render(<Host />);
+        await waitFor(() => expect(cellEl("r1", "altText").getAttribute("data-cell-state")).toBe("failed"));
+        expect(cellEl("r1", "altText").textContent).toContain("held offline");
+        expect(asked.map((a) => [a.value, a.base])).toEqual([["held offline", "warm"]]);
+        go("r1", "altText");
+        key("r1", "Escape");
+        await waitFor(() => expect(dropped).toEqual(["r1 a:altText"]));
+      } finally {
+        heldCells = undefined;
+      }
     });
 
     test("Escape on a failed cell restores the stored value and says 'Change dropped'; nothing more is sent", async () => {

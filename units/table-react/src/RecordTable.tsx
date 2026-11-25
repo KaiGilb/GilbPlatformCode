@@ -90,6 +90,14 @@ export interface TableEditing<R extends BaseRecord = BaseRecord> {
   systemKeys?: ReadonlySet<string>;
   /** The person's locale, for numbers. Default: the browser's. */
   locale?: string;
+  /**
+   * Values the host holds for cells whose save did not reach the vault (an app-level holder of unsaved changes). Each is drawn as not
+   * saved, over what the vault holds, and is handed to `write` once, which decides when it is sent; so a table opened again never shows
+   * the old value as if it were current.
+   */
+  held?: ReadonlyArray<{ rowId: string; columnId: string; value: CellValue | null; base: CellValue | null }>;
+  /** The person gave a cell's unsaved change up ("Change dropped", or "Use theirs"): the host forgets what it holds for that cell. */
+  onDropped?: (rowId: string, columnId: string) => void;
 }
 
 /** The table features this grid uses: column sizes. Rows come from the core row model. */
@@ -597,6 +605,20 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     window.addEventListener("online", onOnline);
     return () => window.removeEventListener("online", onOnline);
   }, []);
+  // A value the host holds for a cell (it did not reach the vault before) is drawn as not saved and handed to the cell's save once.
+  const heldItems = editing?.held;
+  useEffect(() => {
+    if (!heldItems) return;
+    for (const h of heldItems) {
+      const key = cellKey(h.rowId, h.columnId);
+      if (saves.views.has(key)) continue;
+      const at = cellAt(h.rowId, h.columnId);
+      if (!at) continue;
+      const e = editabilityAt(at.row, at.column, at.cell);
+      if (e.editable) saves.commit(h.rowId, h.columnId, e, h.value, h.base);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heldItems]);
   const dropDraft = (key: string) => setDrafts((prev) => {
     if (!prev.has(key)) return prev;
     const next = new Map(prev);
@@ -697,6 +719,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     const key = cellKey(rowId, colId);
     dropDraft(key);
     saves.drop(key, "Change dropped");
+    editing?.onDropped?.(rowId, colId);
     say(rowId, colId, "Change dropped");
   };
   const onRowKeyDownEditing = (e: KeyboardEvent<HTMLElement>, index: number, id: string) => {
@@ -854,7 +877,11 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       said={said && said.key === selKey ? said.text : null}
       readOnlyReason={selEd && !selEd.editable ? selEd.reason : null}
       onKeepMine={() => selKey && saves.keepMine(selKey)}
-      onUseTheirs={() => selKey && saves.useTheirs(selKey)}
+      onUseTheirs={() => {
+        if (!selKey || !sel) return;
+        saves.useTheirs(selKey);
+        editing?.onDropped?.(sel.rowId, sel.colId);
+      }}
       saving={[...saves.views.values()].some((v) => v.phase === "saving")}
       saved={[...saves.views.values()].some((v) => v.phase === "saved")}
       unsavedCount={unsaved.length + drafts.size}
