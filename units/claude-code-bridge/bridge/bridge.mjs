@@ -3509,10 +3509,11 @@ async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
         }
     }
 }
-/** The first sentence of a reason, for a banner or an install line that has room for one. */
+/** The first sentence of a reason, for a banner or an install line that has room for one. The end mark stays. A reason with no sentence end comes back whole, with its white space flattened. */
 function firstSentence(reason) {
     const flat = reason.replace(/\s+/g, " ").trim();
-    const at = flat.indexOf(".");
+    // A bare dot is not a sentence end: paths, file names and version numbers contain dots.
+    const at = flat.search(/[.!?](?=\s|$)/);
     return at < 0 ? flat : flat.slice(0, at + 1);
 }
 /** Codex billing text. No e-mail address: the account read has one, and it is not shown. */

@@ -432,6 +432,83 @@ describe("serviceInstall either engine", () => {
     expect(out.message).not.toContain(CLAUDE_BILLING);
   });
 
+  describe("firstSentence", () => {
+    async function installLine(reason) {
+      const home = keep(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-either-svc-")));
+      const out = await serviceInstall(parseCli(["--install", "--claude", FAKE_CLAUDE]), darwinDeps(home, {
+        check: async () => ({ ok: false, reason }),
+        ...codexReady,
+        resolveCodex: () => FAKE_CODEX,
+      }));
+      return out.message.split("\n").find((l) => l.includes("Claude Code is not ready"));
+    }
+
+    test("keeps a dotted path and stops at the sentence end", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const reason = "Claude Code was found as /Users/a.b/bin/claude.cmd, which the bridge cannot start safely. Install it again.";
+      // act
+      const line = await installLine(reason);
+      // assert
+      expect(line).toContain("/Users/a.b/bin/claude.cmd, which the bridge cannot start safely");
+      expect(line).not.toContain("Install it again");
+      expect(line).toBe("  Claude Code is not ready on this computer: Claude Code was found as /Users/a.b/bin/claude.cmd, which the bridge cannot start safely.");
+    });
+
+    test("keeps the dots in a version number and keeps the sentence's end mark", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const reason = "Codex 0.4.0 is too old. Update it.";
+      // act
+      const line = await installLine(reason);
+      // assert
+      expect(line).toBe("  Claude Code is not ready on this computer: Codex 0.4.0 is too old.");
+    });
+
+    test("ends a sentence at a question mark followed by white space", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const reason = "Is the binary there? Install it again.";
+      // act
+      const line = await installLine(reason);
+      // assert
+      expect(line).toBe("  Claude Code is not ready on this computer: Is the binary there?");
+    });
+
+    test("ends a sentence at an exclamation mark followed by white space", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const reason = "The start failed! Try again.";
+      // act
+      const line = await installLine(reason);
+      // assert
+      expect(line).toBe("  Claude Code is not ready on this computer: The start failed!");
+    });
+
+    test("ends a sentence at a question mark or an exclamation mark at the end of the text", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const question = "Is the binary there?";
+      const exclaim = "The start failed!";
+      // act
+      const questionLine = await installLine(question);
+      const exclaimLine = await installLine(exclaim);
+      // assert
+      expect(questionLine).toBe("  Claude Code is not ready on this computer: Is the binary there?");
+      expect(exclaimLine).toBe("  Claude Code is not ready on this computer: The start failed!");
+    });
+
+    test("returns a reason with no sentence end whole", async () => {
+      // Spec: tester round 2 N3 — the first sentence ends at . ? or ! followed by white space or the end of the text, never at a dot inside a path, a file name or a version number
+      // arrange
+      const reason = "Claude Code was found as /Users/a.b/bin/claude 0.4.0";
+      // act
+      const line = await installLine(reason);
+      // assert
+      expect(line).toBe("  Claude Code is not ready on this computer: Claude Code was found as /Users/a.b/bin/claude 0.4.0");
+    });
+  });
+
   test("darwin: Claude missing and Codex not installed is today's sentence, byte for byte", async () => {
     // Spec: Chat.CodexConnect.EitherEngine — no Codex leaves the not-found refusal unchanged.
     const home = keep(fs.mkdtempSync(path.join(os.tmpdir(), "bridge-either-svc-")));
