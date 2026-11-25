@@ -779,8 +779,9 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
       body: (
         <>
           {check !== null ? (
-            <span role="checkbox" aria-checked={check} aria-label={column.label} data-check className={"flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[var(--r-sm)] border text-[12px] leading-none " + (check ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--surface)]" : "border-[var(--ink-faint)] bg-[var(--surface)] text-transparent")}>
-              ✓
+            <span role="checkbox" aria-checked={check} aria-label={column.label} data-check className={"flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded-[var(--r-sm)] border text-[12px] leading-none " + (check ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--surface)]" : "border-[var(--ink-faint)] bg-[var(--surface)]")}>
+              {/* The mark is in the page only when the box is checked: an unchecked box holds no text (and so none of no contrast). */}
+              {check ? "✓" : null}
             </span>
           ) : (
             <CellView cell={shown} renderRef={renderRef} tabbable={o.tabbable} roomy={o.roomy} locale={locale} plain />
