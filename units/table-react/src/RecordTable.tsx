@@ -790,6 +790,9 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
               type="button"
               tabIndex={o.tabbable ? 0 : -1}
               data-testid="record-table-retry"
+              // A cell's own control in a row of a grid, beside the row's open button: not a row of action buttons (a dialog's, a
+              // form's), so the button-row check is told to leave it out.
+              data-button-row-ignore
               onClick={(ev) => { ev.stopPropagation(); saves.retry(key); }}
               onKeyDown={(ev) => { if (ev.key === " " || ev.key === "Enter") ev.stopPropagation(); }}
               className="ml-auto flex-none rounded-[var(--r-sm)] border border-[var(--bad,#9c4438)] px-1.5 text-[12px] font-semibold leading-[20px] text-[var(--bad,#9c4438)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
