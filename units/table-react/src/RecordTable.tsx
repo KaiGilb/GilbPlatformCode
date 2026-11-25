@@ -102,11 +102,16 @@ const SKELETON_ROWS = 12;
 const SKELETON_FIELD_COLUMNS = 5;
 const NARROW_FIELDS = 3;
 /**
- * How a field's label is drawn, in the grid's header and beside a value in the narrow list alike: small spaced capitals, the host
- * app's style for a field label and a table heading. The letters are the label as its term gives it (`TableColumn.label`); the
- * capitals are drawn by the style, never typed into the text, so a screen reader and a copy get the label in its own case.
+ * How a column's label is drawn in the grid's header: small spaced capitals, the host app's style for a table heading. The letters are
+ * the label as its term gives it (`TableColumn.label`); the capitals are drawn by the style, never typed into the text, so a screen
+ * reader and a copy get the label in its own case.
  */
 const LABEL_STYLE = "font-semibold uppercase tracking-wide";
+/**
+ * How a field's label is drawn beside its value in the narrow (phone) list: the same weight, in the label's own case (decision 1b.3,
+ * tester F2 of 2026-11-25: the list is not a table header, so the capitals of the header are not the list's).
+ */
+const LIST_LABEL_STYLE = "font-semibold";
 /** A link's chip: every link value is drawn in one, whether its cell holds one value or several. */
 const CHIP = "inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]";
 const NARROW_LINE = 20;
@@ -909,7 +914,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                         const c = editing ? editableCell(row.original, column, cell, { tabbable: true, roomy: true }) : null;
                         return (
                           <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
-                            <span className={"w-[38%] max-w-[150px] shrink-0 truncate text-[10.5px] text-[var(--ink-faint)] " + LABEL_STYLE} data-field-label>
+                            <span className={"w-[38%] max-w-[150px] shrink-0 truncate text-[10.5px] text-[var(--ink-faint)] " + LIST_LABEL_STYLE} data-field-label>
                               {column.label}
                             </span>
                             {c ? (

@@ -332,14 +332,16 @@ describe("table-react", () => {
 
     // Spec: fix pass 1b item 3: "Column labels come from one source, in the label's own case. The phone must not lower-case a label.
     // Desktop keeps spaced capitals only if the app's design system sets that for table headers; the letters are the field's label."
-    test("a field's label is the same letters, in its own case, and drawn in the same label style, in the list and in the grid's header", () => {
+    // Tester F2 (2026-11-25): the phone list is not a table header, so its labels are drawn in their own case, not in capitals.
+    test("a field's label is the same letters in the list and in the grid's header; the list draws it in its own case, the header in spaced capitals", () => {
       const { unmount } = render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} narrow />);
       const inList = [...document.querySelectorAll<HTMLElement>("[data-field-label]")];
       expect(inList.map((l) => l.textContent)).toEqual(["clothing size", "made for kids", "Online Account", "approved post picture"]);
       const styleOf = (el: HTMLElement) => ["uppercase", "tracking-wide", "font-semibold"].filter((c) => el.classList.contains(c));
       for (const label of inList) {
-        expect(styleOf(label)).toEqual(["uppercase", "tracking-wide", "font-semibold"]);
+        expect(styleOf(label)).toEqual(["font-semibold"]);
         expect(label.classList.contains("lowercase")).toBe(false);
+        expect(label.classList.contains("capitalize")).toBe(false);
       }
       unmount();
       render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} />);
