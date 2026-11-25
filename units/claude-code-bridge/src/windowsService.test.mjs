@@ -16,6 +16,7 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE = path.join(HERE, "..", "bridge", "bridge.mjs");
 const FAKE = path.join(HERE, "fake-claude.mjs");
+const FAKE_CODEX = path.join(HERE, "fake-codex.mjs");
 const W = path.win32;
 
 const HOME = "C:\\Users\\Anna Maria";
@@ -647,8 +648,22 @@ describe("the real bridge under the real supervisor", () => {
 
   it("restarts the bridge after it is killed", async () => {
     const state = path.join(dir, "state");
-    const env = { ...process.env, LOCALAPPDATA: path.join(dir, "local"), HOME: dir };
-    const c = parseCli(["--supervise", "--state-dir", state, "--port", "0", "--claude", FAKE]);
+    // Built from scratch, with the stand-in Codex named by path. Spreading process.env would let the child find a codex or claude on this computer.
+    const env = {
+      PATH: path.join(dir, "bin"),
+      HOME: dir,
+      USERPROFILE: dir,
+      LOCALAPPDATA: path.join(dir, "local"),
+      TMPDIR: dir,
+      TMP: dir,
+      TEMP: dir,
+      XDG_CONFIG_HOME: path.join(dir, "xdg", "config"),
+      XDG_DATA_HOME: path.join(dir, "xdg", "data"),
+      XDG_CACHE_HOME: path.join(dir, "xdg", "cache"),
+      XDG_RUNTIME_DIR: path.join(dir, "xdg", "runtime"),
+    };
+    fs.mkdirSync(env.PATH, { recursive: true });
+    const c = parseCli(["--supervise", "--state-dir", state, "--port", "0", "--claude", FAKE, "--codex", FAKE_CODEX]);
     const run = runSupervisor(c, { home: dir, env, file: BRIDGE, pollMs: 50 });
     stopRun = async () => {
       fs.writeFileSync(path.join(state, "supervisor.stop"), "x");

@@ -519,8 +519,14 @@ D("precedence: the file, --full-access, --access", () => {
     prep();
     const cli = parseCli(["--install", "--state-dir", stateDir, "--workspace", ws(), "--access", "folder", "--full-access"]);
     expect(B.accessFlagProblem("computer")).toContain("refused");
-    const bad = await B.serviceInstall(parseCli(["--install", "--access", "computer"]), { platform: "darwin", home, uid: 501, nodePath: process.execPath, file: path.join(dir, "bridge.mjs"), launchctl: async () => ({ code: 0, out: "" }) });
+    // Claude's check is the seam, and the binary is the stand-in, so --install reaches the access refusal without starting a codex or claude from this computer.
+    const bad = await B.serviceInstall(parseCli(["--install", "--access", "computer", "--claude", FAKE]), {
+      platform: "darwin", home, uid: 501, nodePath: path.join(dir, "no-such-node"), file: path.join(dir, "bridge.mjs"),
+      launchctl: async () => ({ code: 0, out: "" }), env: { PATH: "" },
+      check: async () => ({ ok: true, info: { subscriptionType: "max" } }),
+    });
     expect(bad.ok).toBe(false);
+    expect(bad.message).toContain("--access computer is refused");
     expect(cli.access).toBe("folder");
     expect(B.FULL_ACCESS_NOTICE).toContain("access switch in GilbApp");
     expect(B.FULL_ACCESS_NOTICE).toContain("--access folder");
