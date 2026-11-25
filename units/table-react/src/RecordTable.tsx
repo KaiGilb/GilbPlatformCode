@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import { columnSizingFeature, flexRender, tableFeatures, useTable, type ColumnDef } from "@tanstack/react-table";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
-import { NAME_COLUMN_ID, narrowColumns, type Cell, type TableColumn, type TableModel, type TableRow } from "@kaigilb/gilbplatformcode-table-core";
+import { NAME_COLUMN_ID, narrowFieldsOfRow, type Cell, type TableColumn, type TableModel, type TableRow } from "@kaigilb/gilbplatformcode-table-core";
 
 /** A link cell's reference, as the host is asked to draw it. */
 export interface TableRef {
@@ -33,6 +33,12 @@ export interface RecordTableProps<R extends BaseRecord = BaseRecord> {
   onOpenRow: (id: string) => void;
   /** Draws a link to another record or term as its name. Absent: the stored address is shown, which says the link is not resolved. */
   renderRef?: (ref: TableRef) => ReactNode;
+  /**
+   * The person went to a cell that holds a link: a mouse pointer came over it, it was tapped or clicked, or it took the selection.
+   * For a host that reads a link's name only on request (a name it did not read by itself, to keep its requests bounded). It is
+   * told the cell's first link, the one the cell draws.
+   */
+  onRefIntent?: (ref: TableRef) => void;
   /** True on a narrow screen: a list of rows, each with its name and the first field columns, in place of the grid. */
   narrow?: boolean;
   /** What the grid is called for a screen reader, for example the type's name. */
@@ -53,6 +59,14 @@ const HEADER_HEIGHT = 34;
 const SKELETON_ROWS = 12;
 const SKELETON_FIELD_COLUMNS = 5;
 const NARROW_FIELDS = 3;
+/**
+ * How a field's label is drawn, in the grid's header and beside a value in the narrow list alike: small spaced capitals, the host
+ * app's style for a field label and a table heading. The letters are the label as its term gives it (`TableColumn.label`); the
+ * capitals are drawn by the style, never typed into the text, so a screen reader and a copy get the label in its own case.
+ */
+const LABEL_STYLE = "font-semibold uppercase tracking-wide";
+/** A link's chip: every link value is drawn in one, whether its cell holds one value or several. */
+const CHIP = "inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]";
 const NARROW_LINE = 20;
 /** The height of a list row's line that holds a cell with several values: room for a finger on the cell and its "+N". */
 const NARROW_TOUCH_LINE = 44;
@@ -200,8 +214,8 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
       data-list-count={items.length}
       data-list-open={open ? "true" : undefined}
     >
-      <span className="inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]">
-        <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} />
+      <span className={CHIP}>
+        <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} chip={false} />
       </span>
       <button
         ref={anchor}
@@ -264,8 +278,10 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
  * @param props the cell; the host's way to name a link; whether the cell's own control takes a Tab stop; `roomy`, for a touch layout
  *   (see {@link ManyValues}); and `wrap`, for the list of all values, where a value is shown whole on as many lines as it needs
  */
-function CellView({ cell, renderRef, tabbable, roomy, wrap = false }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; roomy: boolean; wrap?: boolean }) {
+function CellView({ cell, renderRef, tabbable, roomy, wrap = false, chip = true }: { cell: Cell; renderRef: RenderRef; tabbable: boolean; roomy: boolean; wrap?: boolean; chip?: boolean }) {
   const clip = wrap ? "min-w-0 break-words" : "truncate";
+  // A link is a chip wherever it is drawn. `chip` false: the caller has already drawn the chip around this value.
+  const inChip = (link: ReactNode) => (chip ? <span className={CHIP} data-chip="link">{link}</span> : link);
   switch (cell.kind) {
     case "empty":
       return null;
@@ -279,16 +295,16 @@ function CellView({ cell, renderRef, tabbable, roomy, wrap = false }: { cell: Ce
     }
     case "ref":
       if (!cell.known) {
-        return (
+        return inChip(
           <span className={`${clip} text-[var(--ink-faint)]`} title={`${cell.uri} (an address this record does not explain; shown as stored)`} data-ref-state="unknown">
             {cell.uri}
-          </span>
+          </span>,
         );
       }
-      return (
+      return inChip(
         <span className={wrap ? "min-w-0 break-words" : "min-w-0 truncate"} data-ref-state={renderRef ? "named-by-host" : "unresolved"} title={renderRef ? undefined : cell.uri}>
           {renderRef ? renderRef({ uri: cell.uri, id: cell.id }) : cell.uri}
-        </span>
+        </span>,
       );
     case "list": {
       const first = cell.items[0];
@@ -296,8 +312,8 @@ function CellView({ cell, renderRef, tabbable, roomy, wrap = false }: { cell: Ce
       if (cell.items.length > 1) return <ManyValues items={cell.items} renderRef={renderRef} tabbable={tabbable} roomy={roomy} />;
       return (
         <span className="flex min-w-0 items-center gap-1" data-list-count={cell.items.length}>
-          <span className="inline-flex min-w-0 items-center rounded-[var(--r-sm)] border border-[var(--line)] px-1.5 leading-[20px]">
-            <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} />
+          <span className={CHIP}>
+            <CellView cell={first} renderRef={renderRef} tabbable={false} roomy={false} chip={false} />
           </span>
         </span>
       );
@@ -351,6 +367,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   selectedId = null,
   onOpenRow,
   renderRef,
+  onRefIntent,
   narrow = false,
   label = "Records",
   rowHeight = 36,
@@ -359,7 +376,6 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const columns: readonly TableColumn[] = useMemo(() => table?.columns ?? [], [table]);
   const data: TableRow<R>[] = useMemo(() => (loading || !table ? [] : table.rows), [loading, table]);
-  const listColumns = useMemo(() => narrowColumns(columns, NARROW_FIELDS), [columns]);
   const columnById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const defs = useMemo<ColumnDef<Features, TableRow<R>>[]>(
@@ -393,15 +409,25 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     [keepIndex],
   );
 
-  const narrowRowHeight = 30 + listColumns.length * NARROW_LINE + 10;
-  // A list row is taller by what its lines with several values need: such a line is `NARROW_TOUCH_LINE` high, so a finger has 44 px
-  // on the cell without the chip being drawn any larger. Worked out from the row's cells, so no row is measured.
-  const listColumnIndexes = useMemo(() => listColumns.map((column) => columns.indexOf(column) - 1), [listColumns, columns]);
+  // A list row shows its name and, under it, only the columns that hold a value in THAT row (the first `NARROW_FIELDS` of them, in
+  // column order): a row with no values is its name alone. So a row's height is worked out from its own cells; no row is measured.
+  // A line with several values is `NARROW_TOUCH_LINE` high, so a finger has 44 px on the cell without the chip being drawn larger.
+  const narrowHeightFor = (lines: number, roomy: number) => 30 + lines * NARROW_LINE + roomy * (NARROW_TOUCH_LINE - NARROW_LINE) + 10;
   const isManyValued = (cell: Cell | undefined) => cell?.kind === "list" && cell.items.length > 1;
   const narrowHeightOf = (index: number) => {
-    const cells = rows[index]?.original.cells;
-    const roomy = cells ? listColumnIndexes.filter((i) => isManyValued(cells[i])).length : 0;
-    return narrowRowHeight + roomy * (NARROW_TOUCH_LINE - NARROW_LINE);
+    const shown = narrowFieldsOfRow(columns, rows[index]?.original.cells ?? [], NARROW_FIELDS);
+    return narrowHeightFor(shown.length, shown.filter((f) => isManyValued(f.cell)).length);
+  };
+  /** The height of a row of the list's skeleton: a name and two lines. */
+  const narrowRowHeight = narrowHeightFor(2, 0);
+  // The first link a cell draws, for the host that reads a link's name on request.
+  const firstRefOf = (cell: Cell | undefined): TableRef | null => {
+    const first = cell?.kind === "list" ? cell.items[0] : cell;
+    return first?.kind === "ref" && first.known ? { uri: first.uri, id: first.id } : null;
+  };
+  const refIntent = (cell: Cell | undefined) => {
+    const ref = onRefIntent ? firstRefOf(cell) : null;
+    if (ref) onRefIntent?.(ref);
   };
   const headerSpace = narrow ? 0 : HEADER_HEIGHT;
   const virtualizer = useVirtualizer({
@@ -417,7 +443,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
   // A change of layout changes every row's height.
   useEffect(() => {
     virtualizer.measure();
-  }, [narrow, narrowRowHeight, rowHeight, rows, virtualizer]);
+  }, [narrow, columns, rowHeight, rows, virtualizer]);
 
   // The rows in view (not the extra ones drawn around them).
   const inView = virtualizer.range;
@@ -516,17 +542,16 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                       >
                         <span className="truncate text-[14px] font-semibold text-[var(--ink)]">{row.original.name}</span>
                       </button>
-                      {listColumns.map((column) => {
-                        const cell = row.original.cells[columns.indexOf(column) - 1] ?? { kind: "empty" };
-                        return (
-                          <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
-                            <span className="w-[38%] max-w-[150px] shrink-0 truncate text-[var(--ink-faint)]">{column.label}</span>
-                            <span className="flex min-w-0 flex-1 items-center text-[var(--ink)]">
-                              <CellView cell={cell} renderRef={renderRef} tabbable roomy />
-                            </span>
+                      {narrowFieldsOfRow(columns, row.original.cells, NARROW_FIELDS).map(({ column, cell }) => (
+                        <span key={column.id} className="flex min-w-0 items-center gap-2 text-[12.5px] leading-[20px]" data-column-id={column.id}>
+                          <span className={"w-[38%] max-w-[150px] shrink-0 truncate text-[10.5px] text-[var(--ink-faint)] " + LABEL_STYLE} data-field-label>
+                            {column.label}
                           </span>
-                        );
-                      })}
+                          <span className="flex min-w-0 flex-1 items-center text-[var(--ink)]" onClickCapture={() => refIntent(cell)}>
+                            <CellView cell={cell} renderRef={renderRef} tabbable roomy />
+                          </span>
+                        </span>
+                      ))}
                     </div>
                   </div>
                 );
@@ -560,7 +585,9 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                   data-column-id={header.column.id}
                   data-column-source={columnById.get(header.column.id)?.source}
                   className={
-                    "flex min-w-0 items-center px-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-[var(--ink-soft)] " +
+                    "flex min-w-0 items-center px-2.5 text-[11.5px] text-[var(--ink-soft)] " +
+                    LABEL_STYLE +
+                    " " +
                     (header.column.id === NAME_COLUMN_ID ? "sticky left-0 z-[3] border-r border-[var(--line)] bg-[var(--paper-2)] pl-[42px]" : "border-r border-[var(--line-2)]")
                   }
                   title={headingTitle(columnById.get(header.column.id))}
@@ -638,7 +665,16 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                       );
                     }
                     return (
-                      <div key={cell.id} role="gridcell" aria-colindex={i + 1} data-column-id={cell.column.id} className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + focusLines}>
+                      <div
+                        key={cell.id}
+                        role="gridcell"
+                        aria-colindex={i + 1}
+                        data-column-id={cell.column.id}
+                        // A mouse over the cell, or a tap or click on it, is the person going to that cell (a touch is not a hover).
+                        onPointerEnter={(e) => { if (e.pointerType !== "touch" && e.pointerType !== "pen") refIntent(cell.getValue() as Cell); }}
+                        onClickCapture={() => refIntent(cell.getValue() as Cell)}
+                        className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + focusLines}
+                      >
                         {/* A cell's "+N" takes a Tab stop only in the row that holds the row Tab stop: one Tab from the row reaches it. */}
                         <CellView cell={cell.getValue() as Cell} renderRef={renderRef} tabbable={isTabStop} roomy={false} />
                       </div>

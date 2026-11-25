@@ -58,6 +58,17 @@ const three = [
 const tableOf = (records: BaseRecord[]): TableModel => buildTable({ fields, records, nameOf });
 
 beforeAll(() => {
+  // jsdom has no PointerEvent, so a pointer event made here would carry no pointer type. This gives it the one field the table reads.
+  if (typeof window.PointerEvent !== "function") {
+    class PointerEventForTest extends MouseEvent {
+      readonly pointerType: string;
+      constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+        super(type, init);
+        this.pointerType = init.pointerType ?? "";
+      }
+    }
+    Object.defineProperty(window, "PointerEvent", { configurable: true, writable: true, value: PointerEventForTest });
+  }
   // jsdom has no layout: give every element the size of a desktop viewport, so the rows in view can be worked out.
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 600 });
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 1000 });
@@ -128,6 +139,47 @@ describe("table-react", () => {
       const cell = document.querySelector('[data-row-id="r2"] [data-column-id="a:approvedPostPicture"] [data-ref-state]');
       expect(cell?.getAttribute("data-ref-state")).toBe("unresolved");
       expect(cell?.textContent).toBe(`${VAULT}/base/e/pic01`);
+    });
+
+    // Spec: fix pass 1b item 1 (Agent.UserExperience, Kai-Zen 2026-11-25): "Every link value is a chip, whether the cell holds one value
+    // or several. Plain text is only for values that are not links."
+    test("every link is a chip: a cell with one link, a cell with several, and each link in the list of all values", () => {
+      const many = [1, 2, 3].map((n) => ({ "@id": `${VAULT}/base/e/pic0${n}` }));
+      // `a:account` is a text field; a stored link under it is still a link (a link is a link under any column).
+      const records = [record("r2", "Knit, grey", { approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` } }), record("r5", "Links", { account: many }), record("r1", "Parka", { clothingSize: "L" })];
+      render(<RecordTable table={tableOf(records)} onOpenRow={() => {}} renderRef={(ref) => <span>name of {ref.id}</span>} />);
+      const one = document.querySelector('[data-row-id="r2"] [data-column-id="a:approvedPostPicture"]') as HTMLElement;
+      expect(one.querySelectorAll('[data-chip="link"]').length).toBe(1);
+      expect(one.querySelector('[data-chip="link"]')?.textContent).toBe("name of pic01");
+      // The cell with several: its first link is in the cell's one chip (not a chip inside a chip).
+      const several = document.querySelector('[data-row-id="r5"] [data-column-id="a:account"]') as HTMLElement;
+      expect(several.querySelectorAll(".border").length).toBeGreaterThan(0);
+      expect(several.querySelectorAll('[data-chip="link"] [data-chip="link"]').length).toBe(0);
+      // A value that is not a link is plain text: no chip.
+      const text = document.querySelector('[data-row-id="r1"] [data-column-id="a:clothingSize"]') as HTMLElement;
+      expect(text.querySelector('[data-chip="link"]')).toBeNull();
+      expect(text.textContent).toBe("L");
+      // In the list of all values each link is a chip.
+      fireEvent.click(within(several).getByTestId("record-table-more"));
+      expect(screen.getByTestId("record-table-all-values").querySelectorAll('[data-chip="link"]').length).toBe(3);
+    });
+
+    // Spec: fix pass 1b item 6: a link whose name was not read "is read only when the person focuses, hovers or taps that cell".
+    test("going to a cell that holds a link tells the host which link: a mouse over it, and a click or tap on it; a touch is not a hover", () => {
+      const onRefIntent = vi.fn();
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} onRefIntent={onRefIntent} />);
+      const link = document.querySelector('[data-row-id="r2"] [data-column-id="a:approvedPostPicture"]') as HTMLElement;
+      const want = { uri: `${VAULT}/base/e/pic01`, id: "pic01" };
+      fireEvent.pointerEnter(link, { pointerType: "touch" });
+      expect(onRefIntent).not.toHaveBeenCalled();
+      fireEvent.pointerEnter(link, { pointerType: "mouse" });
+      expect(onRefIntent.mock.calls).toEqual([[want]]);
+      fireEvent.click(link);
+      expect(onRefIntent.mock.calls).toEqual([[want], [want]]);
+      // A cell with no link says nothing.
+      fireEvent.pointerEnter(document.querySelector('[data-row-id="r1"] [data-column-id="a:clothingSize"]') as HTMLElement, { pointerType: "mouse" });
+      fireEvent.click(document.querySelector('[data-row-id="r3"] [data-column-id="a:approvedPostPicture"]') as HTMLElement);
+      expect(onRefIntent).toHaveBeenCalledTimes(2);
     });
 
     test("the open record's row is marked selected", () => {
@@ -237,20 +289,63 @@ describe("table-react", () => {
 
   // Spec: step 1 brief, item 6: "Phone: a list of rows, each showing Name and the first 2 to 3 columns. A tap opens the card."
   describe("a narrow screen", () => {
-    test("is a list of rows, each with its Name and the first three field columns, and no grid", () => {
+    // Spec: fix pass 1b item 2 (Agent.UserExperience, Kai-Zen 2026-11-25): "Phone rows show only columns that hold a value in that row:
+    // the first up to 3, in column order, each with its label. A row with no values shows only its Name."
+    test("is a list of rows and no grid; each row lists only the columns it holds a value under, the first three in column order", () => {
       render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} narrow label="Garment stock lines" />);
       expect(screen.queryByRole("grid")).toBeNull();
       expect(screen.getByTestId("record-table").getAttribute("data-layout")).toBe("list");
-      const items = screen.getAllByRole("listitem");
+      const items = screen.getAllByRole("listitem") as HTMLElement[];
       expect(items.length).toBe(3);
-      const first = within(items[0] as HTMLElement);
-      expect(first.getByText("Parka, green")).toBeTruthy();
-      expect([...(items[0] as HTMLElement).querySelectorAll("[data-column-id]")].map((e) => e.getAttribute("data-column-id"))).toEqual([
+      const listed = (item: HTMLElement) => [...item.querySelectorAll("[data-column-id]")].map((e) => e.getAttribute("data-column-id"));
+      // r1 holds a size, an account list and "made for kids", and no picture: the picture column is not listed.
+      expect(listed(items[0]!)).toEqual(["a:clothingSize", "a:madeForKids", "a:account"]);
+      expect(items[0]!.textContent).toBe("Parka, greenclothing sizeLmade for kidsYesOnline Accountx+1");
+      // r2 holds a picture only.
+      expect(listed(items[1]!)).toEqual(["a:approvedPostPicture"]);
+      // r3 holds nothing: its name alone, and no field label.
+      expect(listed(items[2]!)).toEqual([]);
+      expect(items[2]!.textContent).toBe("Boots");
+    });
+
+    test("a row that holds more than three values lists the first three, in column order", () => {
+      const full = record("r9", "Full", { approvedPostPicture: { "@id": `${VAULT}/base/e/pic01` }, clothingSize: "M", madeForKids: false, account: ["a"] });
+      render(<RecordTable table={tableOf([full])} onOpenRow={() => {}} narrow />);
+      expect([...(screen.getAllByRole("listitem")[0] as HTMLElement).querySelectorAll("[data-column-id]")].map((e) => e.getAttribute("data-column-id"))).toEqual([
         "a:approvedPostPicture",
         "a:clothingSize",
         "a:madeForKids",
       ]);
-      expect((items[0] as HTMLElement).textContent).toBe("Parka, greenapproved post pictureclothing sizeLmade for kidsYes");
+    });
+
+    test("a value that is only blank text is not a value to list", () => {
+      render(<RecordTable table={tableOf([record("r8", "Blank", { clothingSize: "  " })])} onOpenRow={() => {}} narrow />);
+      expect((screen.getAllByRole("listitem")[0] as HTMLElement).querySelectorAll("[data-column-id]").length).toBe(0);
+    });
+
+    test("a row is as tall as what it lists: its name alone is 40 px, each listed line adds 20", () => {
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} narrow />);
+      const heights = (screen.getAllByRole("listitem") as HTMLElement[]).map((i) => i.style.height);
+      // r1: three lines, one of them many-valued (44 px in place of 20); r2: one line; r3: none.
+      expect(heights).toEqual(["124px", "60px", "40px"]);
+    });
+
+    // Spec: fix pass 1b item 3: "Column labels come from one source, in the label's own case. The phone must not lower-case a label.
+    // Desktop keeps spaced capitals only if the app's design system sets that for table headers; the letters are the field's label."
+    test("a field's label is the same letters, in its own case, and drawn in the same label style, in the list and in the grid's header", () => {
+      const { unmount } = render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} narrow />);
+      const inList = [...document.querySelectorAll<HTMLElement>("[data-field-label]")];
+      expect(inList.map((l) => l.textContent)).toEqual(["clothing size", "made for kids", "Online Account", "approved post picture"]);
+      const styleOf = (el: HTMLElement) => ["uppercase", "tracking-wide", "font-semibold"].filter((c) => el.classList.contains(c));
+      for (const label of inList) {
+        expect(styleOf(label)).toEqual(["uppercase", "tracking-wide", "font-semibold"]);
+        expect(label.classList.contains("lowercase")).toBe(false);
+      }
+      unmount();
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} />);
+      const inGrid = screen.getAllByRole("columnheader") as HTMLElement[];
+      expect(inGrid.map((h) => h.textContent)).toEqual(["Name", "approved post picture", "clothing size", "made for kids", "Online Account"]);
+      for (const header of inGrid) expect(styleOf(header)).toEqual(["uppercase", "tracking-wide", "font-semibold"]);
     });
 
     test("a tap on a row opens that record", () => {
@@ -399,19 +494,6 @@ describe("table-react", () => {
     // ⚠ jsdom has no finger: `tap` sends what a real tap sends, in its order (the press, the focus the press brings, the click). The
     // proof with real touch events is the app's browser proof (GilbApp scripts/measure-sheet.mjs, the phone leg).
     describe("how the list is put away", () => {
-      // jsdom has no PointerEvent, so a pointer event made here would carry no pointer type. This gives it the one field the table reads.
-      beforeAll(() => {
-        if (typeof window.PointerEvent === "function") return;
-        class PointerEventForTest extends MouseEvent {
-          readonly pointerType: string;
-          constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
-            super(type, init);
-            this.pointerType = init.pointerType ?? "";
-          }
-        }
-        Object.defineProperty(window, "PointerEvent", { configurable: true, writable: true, value: PointerEventForTest });
-      });
-
       /** What a real tap or mouse click on an element sends, in order. */
       const press = (el: Element, pointerType: "touch" | "mouse") => {
         fireEvent.pointerDown(el, { pointerType });

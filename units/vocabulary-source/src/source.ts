@@ -312,6 +312,9 @@ export function masterSource(opts: MasterSourceOptions): VocabularySource {
           : `${origin}/base/vocab?status=all&limit=${pageSize}`;
       let pages = 0;
       let complete = false;
+      // Every term address a page of this read has served, kept or not: a page that serves nothing new ends the read (below).
+      const served = new Set<string>();
+      const asked = mode === "selector" ? carrierPageSize : pageSize;
       while (url) {
         if (pages >= maxPages) {
           incompleteAt.push(`stopped after ${maxPages} pages at ${url}`);
@@ -330,25 +333,41 @@ export function masterSource(opts: MasterSourceOptions): VocabularySource {
         }
         const graph = page["@graph"];
         if (!Array.isArray(graph)) throw new VocabularyUnavailableError(`${url} served no @graph`);
+        let fresh = 0;
         for (const node of graph) {
           if (!node || typeof node !== "object") continue;
           const doc = node as TermDoc;
+          const id = typeof doc["@id"] === "string" ? (doc["@id"] as string) : null;
+          // A term a page of this read already served is not kept a second time, and does not count as something new.
+          if (id !== null && served.has(id)) continue;
+          if (id !== null) served.add(id);
+          fresh += 1;
           if (readKeys.some((k) => doc[k] !== undefined && doc[k] !== null)) {
             // A page node carries no @context of its own; lend it the page's, so a CURIE value
             // is expanded by the document that served it.
             terms.push(page["@context"] && !doc["@context"] ? { ...doc, "@context": page["@context"] } : doc);
           }
         }
-        if (page["complete"] === true) {
+        const next = page["next"];
+        const hasNext = typeof next === "string" && next !== "";
+        // The list is whole when the page says so. One case is read on all the same: a page that holds as many terms as were asked
+        // for AND names a next page. Such a page was cut at the limit, whatever its `complete` says, and a list cut at the limit
+        // with nothing said is a field that silently has no column.
+        if (page["complete"] === true && !(hasNext && graph.length >= asked)) {
           complete = true;
           break;
         }
-        const next = page["next"];
-        if (typeof next !== "string" || !next) {
+        if (!hasNext) {
           incompleteAt.push(`${url} said complete=false and gave no next page`);
           break;
         }
-        url = locate(next);
+        // A page that brought no term this read did not already hold (an empty page, or the same terms again) ends the read: a door
+        // that keeps answering so would be asked `maxPages` times for nothing. It is reported as not complete, ⛔ never as the end.
+        if (fresh === 0) {
+          incompleteAt.push(`${url} served no term this read did not already hold, and still named a next page`);
+          break;
+        }
+        url = locate(next as string);
       }
       return {
         terms,

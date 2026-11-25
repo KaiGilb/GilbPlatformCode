@@ -19,7 +19,8 @@ Plain functions and types, no React, no network. A table is one type read in one
   - A record with no served document shows its flattened strings; a string that stands in for a value with no text form, and every field of a record whose content was not read, is `unread`, never empty.
 - `cellOfColumn(record, column)`: one cell under any column. In a `stored` column the value is shown as stored; a text that is the address of a record is a `ref`, as a card shows it.
 - `cellText(cell)`: a cell as plain text.
-- `narrowColumns(columns, max?)`: the first `max` (default 3) columns after Name, for a narrow screen that lists them under each row's name.
+- `narrowColumns(columns, max?)`: the first `max` (default 3) columns after Name.
+- `narrowFieldsOfRow(columns, cells, max?)` (since 0.1.1): what a narrow screen lists under ONE row's name: the first `max` (default 3) columns, in column order, that hold a value in that row, each with the row's cell. A row that holds nothing lists nothing. `cellHoldsValue(cell)` is its test: any cell but an empty one and blank text (a stored `false` or `0` is a value).
 - `NAME_COLUMN_ID`, and the types `Cell`, `ColumnSource`, `TableColumn`, `TableRow`, `TableModel`, `BuildTableInput`.
 
 A `Cell` is one of:

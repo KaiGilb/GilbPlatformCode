@@ -187,11 +187,92 @@ describe("masterSource: carriersOf", () => {
     expect(list.incompleteAt).toEqual([`${ORIGIN}/base/vocab?status=all&carries=label&limit=3&cursor=k3 said complete=false and gave no next page`]);
   });
   it("maxPages stops a server that never says complete, and says so", async () => {
-    const m = master(() => json(page({ complete: false, next: "/base/vocab?again" })));
+    // Each page brings a new term, so only the page ceiling can end this read (a page of terms already held ends it sooner: below).
+    let n = 0;
+    const m = master(() => json(page({ complete: false, next: "/base/vocab?again", "@graph": [{ "@id": `more${(n += 1)}`, label: "x" }] })));
     const list = await masterSource({ vedaOrigin: ORIGIN, maxPages: 2, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
     expect(m.sent).toHaveLength(2);
     expect(list.complete).toBe(false);
     expect(list.incompleteAt[0]).toMatch(/^stopped after 2 pages at /);
+  });
+
+  // Spec: fix pass 1b item 7 (Agent.Scaling, Kai-Zen 2026-11-25): "The field list must never be cut silently ... If an answer holds
+  // exactly `limit` items or says it is not complete, read the next page (the door gives `next` and `complete`). Test with a fake of
+  // 1,200 terms: every column is present."
+  // The fake copies the door's paging as GilbPlatform origin/main 82e7177d codes it (`src/routes/vocab.ts`, `buildVocabPageDocument` in
+  // `src/vocab/document.ts`, read 2026-11-25): a keyset page of at most `limit` terms, `complete`, and `next` only when not complete.
+  // ⚠ A GUESS, not measured live: a master holding more terms than one page (the live one held 847 on 2026-11-25, one page of 1000).
+  describe("a list longer than one page (fix pass 1b, items 7 and 9)", () => {
+    const TERMS = Array.from({ length: 1200 }, (_, i) => ({ "@id": `${ORIGIN}/base/t/Field${i}`, label: `field ${i}` }));
+    /** The door: `limit` terms from the cursor on; `complete` and `next` as the platform's code sets them, unless `lie` changes them. */
+    const paged = (lie: (page: Record<string, unknown>, from: number) => Record<string, unknown> = (p) => p) =>
+      master((u) => {
+        const q = new URL(u).searchParams;
+        const limit = Number(q.get("limit"));
+        const from = Number(q.get("cursor") ?? 0);
+        const graph = TERMS.slice(from, from + limit);
+        const complete = from + graph.length >= TERMS.length;
+        const face: Record<string, unknown> = { carries: "label", carriesSpellings: ["label"], limit, complete, "@graph": graph };
+        if (!complete) face["next"] = `/base/vocab?status=all&carries=label&limit=${limit}&cursor=${from + graph.length}`;
+        return json(lie(face, from));
+      });
+
+    it("1,200 terms asked for 1000 at a time: every term is read, in 2 requests, and the list is complete", async () => {
+      const m = paged();
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 1000, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(list.terms).toHaveLength(1200);
+      expect(new Set(list.terms.map((t) => t["@id"])).size).toBe(1200);
+      expect(m.sent).toHaveLength(2);
+      expect(list.complete).toBe(true);
+      expect(list.incompleteAt).toEqual([]);
+    });
+
+    it("a page that holds exactly `limit` terms and names a next page is read on, even when it says complete", async () => {
+      // The first page is full (1000 of 1000) and wrongly says it is the whole list, while still naming the next page.
+      const m = paged((p, from) => (from === 0 ? { ...p, complete: true } : p));
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 1000, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(list.terms).toHaveLength(1200);
+      expect(m.sent).toHaveLength(2);
+      expect(list.complete).toBe(true);
+    });
+
+    it("a full page that says complete and names no next page is taken at its word (there is nowhere to read on)", async () => {
+      const m = master(() => json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: true, "@graph": TERMS.slice(0, 3) }));
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 3, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(list.terms).toHaveLength(3);
+      expect(m.sent).toHaveLength(1);
+      expect(list.complete).toBe(true);
+    });
+
+    // Spec: fix pass 1b item 9: "a page that returns only ids already held ends the read, like the empty-page guard."
+    it("a page that serves only terms already held ends the read, and the list is said to be not complete", async () => {
+      // The door answers the first 3 terms on every page and always names a next page: before this guard it was asked 200 times.
+      const m = master(() => json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: false, next: "/base/vocab?status=all&carries=label&limit=3&cursor=same", "@graph": TERMS.slice(0, 3) }));
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 3, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(m.sent).toHaveLength(2);
+      expect(list.terms).toHaveLength(3);
+      expect(list.complete).toBe(false);
+      expect(list.incompleteAt).toEqual([`${ORIGIN}/base/vocab?status=all&carries=label&limit=3&cursor=same served no term this read did not already hold, and still named a next page`]);
+    });
+
+    it("an empty page that names a next page ends the read too, and is not the end of the list", async () => {
+      const m = master((u) =>
+        u.includes("cursor=") ? json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: false, next: "/base/vocab?status=all&carries=label&limit=3&cursor=on", "@graph": [] }) : json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: false, next: "/base/vocab?status=all&carries=label&limit=3&cursor=on", "@graph": TERMS.slice(0, 3) }),
+      );
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 3, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(m.sent).toHaveLength(2);
+      expect(list.complete).toBe(false);
+    });
+
+    it("a term served on two pages is kept once", async () => {
+      // Page 2 repeats the last term of page 1 and adds one new: 4 distinct terms.
+      const m = master((u) =>
+        u.includes("cursor=") ? json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: true, "@graph": [TERMS[2], TERMS[3]] }) : json({ carries: "label", carriesSpellings: ["label"], limit: 3, complete: false, next: "/base/vocab?status=all&carries=label&limit=3&cursor=3", "@graph": TERMS.slice(0, 3) }),
+      );
+      const list = await masterSource({ vedaOrigin: ORIGIN, carrierPageSize: 3, fetchImpl: m.fetchImpl }).carriersOf(["label"]);
+      expect(list.terms.map((t) => t["@id"])).toEqual([0, 1, 2, 3].map((i) => `${ORIGIN}/base/t/Field${i}`));
+      expect(list.complete).toBe(true);
+    });
   });
   it("a page with no @graph is a VocabularyUnavailableError", async () => {
     const m = master(() => json({ carries: "label", carriesSpellings: [] }));

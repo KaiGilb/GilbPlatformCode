@@ -11,7 +11,7 @@
 import { describe, expect, test } from "vitest";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
 import { fieldIndex, fieldsOfType, type FieldDeclarations, type TypeFields } from "@kaigilb/gilbplatformcode-type-fields";
-import { NAME_COLUMN_ID, buildTable, cellOf, cellText, columnsOf, narrowColumns, type Cell } from "./tableCore";
+import { NAME_COLUMN_ID, buildTable, cellHoldsValue, cellOf, cellText, columnsOf, narrowColumns, narrowFieldsOfRow, type Cell } from "./tableCore";
 
 const MASTER = "https://ontology.platform.example.test";
 const VAULT = "https://vault.example.test";
@@ -272,6 +272,43 @@ describe("table-core", () => {
     test("a narrow screen lists the first three field columns under each name", () => {
       expect(narrowColumns(columnsOf(fields)).map((c) => c.id)).toEqual(["a:acceptedCheck", "a:approvedPostPicture", "a:clothingSize"]);
       expect(narrowColumns(columnsOf(fields), 2).map((c) => c.id)).toEqual(["a:acceptedCheck", "a:approvedPostPicture"]);
+    });
+
+    // Spec: fix pass 1b item 2 (Agent.UserExperience, Kai-Zen 2026-11-25): "Phone rows show only columns that hold a value in that row:
+    // the first up to 3, in column order, each with its label. A row with no values shows only its Name."
+    test("a narrow row lists only the columns it holds a value under: the first three in column order, each with its cell", () => {
+      const table = buildTable({
+        fields,
+        nameOf,
+        records: [
+          record("r1", { clothingSize: "L", madeForKids: false, tableViewColumnOrder: 0, account: ["x", "y"] }, "Holds four"),
+          record("r2", { email: "a@b.example" }, "Holds one"),
+          record("r3", {}, "Holds none"),
+          record("r4", { clothingSize: "", email: "   " }, "Holds blank text only"),
+        ],
+      });
+      const listed = (row: number, max?: number) => narrowFieldsOfRow(table.columns, table.rows[row]!.cells, max).map((x) => x.column.id);
+      // Column order is: accepted check, approved post picture, clothing size, Email, made for kids, Online Account, table view column order.
+      // A stored `false` and a stored 0 are values.
+      expect(listed(0)).toEqual(["a:clothingSize", "a:madeForKids", "a:account"]);
+      expect(listed(0, 5)).toEqual(["a:clothingSize", "a:madeForKids", "a:account", "a:tableViewColumnOrder"]);
+      expect(listed(0, 0)).toEqual([]);
+      expect(listed(1)).toEqual(["a:email"]);
+      expect(listed(2)).toEqual([]);
+      expect(listed(3)).toEqual([]);
+      // Each listed column comes with the row's own cell under it.
+      expect(narrowFieldsOfRow(table.columns, table.rows[1]!.cells)[0]?.cell).toEqual({ kind: "value", value: "a@b.example", text: "a@b.example" });
+    });
+
+    test("what counts as holding a value: anything on screen, so not an empty cell and not blank text", () => {
+      expect(cellHoldsValue(undefined)).toBe(false);
+      expect(cellHoldsValue({ kind: "empty" })).toBe(false);
+      expect(cellHoldsValue({ kind: "value", value: "", text: "" })).toBe(false);
+      expect(cellHoldsValue({ kind: "value", value: " \n", text: " \n" })).toBe(false);
+      expect(cellHoldsValue({ kind: "value", value: 0, text: "0" })).toBe(true);
+      expect(cellHoldsValue({ kind: "value", value: false, text: "false" })).toBe(true);
+      expect(cellHoldsValue({ kind: "ref", uri: "https://v.example.test/base/e/x", id: "x", known: true })).toBe(true);
+      expect(cellHoldsValue({ kind: "unread", reason: "not loaded" })).toBe(true);
     });
   });
 

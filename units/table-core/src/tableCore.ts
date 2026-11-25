@@ -344,3 +344,37 @@ export function cellText(cell: Cell): string {
 export function narrowColumns(columns: readonly TableColumn[], max = 3): TableColumn[] {
   return columns.filter((c) => c.id !== NAME_COLUMN_ID).slice(0, Math.max(0, max));
 }
+
+/** True when a cell puts something on screen: any cell but an empty one and a value that is blank text. */
+export function cellHoldsValue(cell: Cell | undefined): boolean {
+  if (!cell || cell.kind === "empty") return false;
+  return !(cell.kind === "value" && typeof cell.value === "string" && cell.value.trim() === "");
+}
+
+/** One column of a row on a narrow screen, with the row's cell under it. */
+export interface NarrowField {
+  column: TableColumn;
+  cell: Cell;
+}
+
+/**
+ * What a narrow screen lists under ONE row's name: the first `max` columns, in column order, that hold a value in that row, each with
+ * its cell. A column the row holds nothing under is not listed (its heading alone would say nothing), so a row with no values lists
+ * nothing and is its name alone.
+ *
+ * @param columns a table's columns
+ * @param cells the row's cells (`TableRow.cells`: one per column after Name)
+ * @param max how many to list (default 3)
+ */
+export function narrowFieldsOfRow(columns: readonly TableColumn[], cells: readonly Cell[], max = 3): NarrowField[] {
+  const out: NarrowField[] = [];
+  let at = 0;
+  for (const column of columns) {
+    if (column.id === NAME_COLUMN_ID) continue;
+    const cell = cells[at];
+    at += 1;
+    if (out.length >= Math.max(0, max)) break;
+    if (cell && cellHoldsValue(cell)) out.push({ column, cell });
+  }
+  return out;
+}

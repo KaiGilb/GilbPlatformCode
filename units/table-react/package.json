@@ -1,6 +1,6 @@
 {
   "name": "@kaigilb/gilbplatformcode-table-react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "A read-only table of vault records on screen: one row per record and one column per field, only the rows in view drawn, the Name column kept in place, a list on a narrow screen, and a row opened by Space or its button.",
