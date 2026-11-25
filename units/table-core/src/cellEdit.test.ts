@@ -62,7 +62,10 @@ const declarations: FieldDeclarations = {
     term("ApprovedPostPicture", "a:approvedPostPicture", "approved post picture", "reference", "single"),
     term("StatedBy", "a:statedBy", "stated by", "inline-literal:text", "single"),
     term("PostVisibility", "a:postVisibility", "post visibility", "inline-literal:uri", "single"),
-    term("Email", "a:email", "Email", "inline-literal:text", null),
+    // As served since 2026-11-25T12:22:03Z (Agent.Concept, inbox f044037e): a:email is multi; a:measurementType is the one field term
+    // left with no cardinality (its `a:fieldOf` cut to this type here).
+    term("Email", "a:email", "Email", "inline-literal:text", "multi"),
+    term("MeasurementType", "a:measurementType", "Measurement Type", "inline-literal:text", null),
     term("NameOrLabel", "a:name|a:label", "two keys", "inline-literal:text", "single"),
   ],
   requiredTerms: [{ "@id": TYPE, "a:requiredSlot": [{ "a:slot": "a:altText", "a:card": "1" }] }],
@@ -146,9 +149,17 @@ describe("cellEdit", () => {
     // Spec: Kai-Zen's decision 4 (2026-11-25): "Unclear cardinality: edit such a field the way the card already does; if the card does
     // not, the cell is read-only and says why." The card edits such a field as one text value.
     test("a field whose term states no cardinality is edited as one value while it holds one or none, and is read-only when it holds several", () => {
-      expect(planOf("a:email", { email: "a@b.example" })).toMatchObject({ editor: "text" });
-      expect(planOf("a:email")).toMatchObject({ editor: "text" });
-      expect(reasonOf("a:email", { email: ["a@b.example", "c@d.example"] })).toBe(READ_ONLY_REASON.severalHeld);
+      expect(planOf("a:measurementType", { measurementType: "count" })).toMatchObject({ editor: "text" });
+      expect(planOf("a:measurementType")).toMatchObject({ editor: "text" });
+      expect(reasonOf("a:measurementType", { measurementType: ["count", "ratio"] })).toBe(READ_ONLY_REASON.severalHeld);
+    });
+
+    // Spec: step 2 brief, "Not in scope: Multi-valued fields: read-only, with the reason." a:email and a:phone are multi on the live
+    // master since 2026-11-25T12:22:03Z, so their cells are read-only whatever they hold.
+    test("a:email, multi on the live master, is read-only with the reason, holding one value, several or none", () => {
+      expect(reasonOf("a:email", { email: "a@b.example" })).toBe(READ_ONLY_REASON.multi);
+      expect(reasonOf("a:email", { email: ["a@b.example", "c@d.example"] })).toBe(READ_ONLY_REASON.multi);
+      expect(reasonOf("a:email")).toBe(READ_ONLY_REASON.multi);
     });
 
     test("a link stored under a text field, a structured value and an unread value are read-only", () => {
@@ -299,7 +310,7 @@ describe("cellEdit", () => {
   // Spec: step 2 brief 9, Text: "store exactly what was typed. No trimming, so leading and trailing spaces and unicode come back the
   // same", and its test list: 10 000 characters, leading and trailing spaces, emoji, RTL, combining marks, NUL-free control characters.
   describe("text", () => {
-    const plan = planOf("a:helpPictureKind") && planOf("a:email");
+    const plan = planOf("a:helpPictureKind") && planOf("a:measurementType");
     const odd = [
       "x".repeat(10_000),
       "  leading and trailing  ",
@@ -315,7 +326,7 @@ describe("cellEdit", () => {
       for (const text of odd) {
         const parsed = parseEdit(plan, text, "en-US");
         expect(parsed).toEqual({ ok: true, value: text });
-        expect(cellPatch(plan.writeKey, text)).toEqual({ "a:email": text });
+        expect(cellPatch(plan.writeKey, text)).toEqual({ "a:measurementType": text });
         expect(valueText(text, "en-US")).toBe(text);
       }
     });
@@ -329,15 +340,15 @@ describe("cellEdit", () => {
   // is absent. A stored '' shows as stored."
   describe("empty against absent", () => {
     test("clearing sends null for that one field, and an empty text is never sent", () => {
-      expect(parseEdit(planOf("a:email"), "", "en-US")).toEqual({ ok: true, value: null });
+      expect(parseEdit(planOf("a:measurementType"), "", "en-US")).toEqual({ ok: true, value: null });
       expect(cellPatch("a:email", null)).toEqual({ "a:email": null });
       expect(cellPatch("a:email", "")).toEqual({ "a:email": null });
       expect(Object.keys(cellPatch("a:email", null))).toEqual(["a:email"]);
     });
 
     test("an absent fact is null and a stored empty text is that text: they are not the same value", () => {
-      expect(storedValueOf(at("a:email").cell)).toBeNull();
-      expect(storedValueOf(at("a:email", { email: "" }).cell)).toBe("");
+      expect(storedValueOf(at("a:measurementType").cell)).toBeNull();
+      expect(storedValueOf(at("a:measurementType", { measurementType: "" }).cell)).toBe("");
       expect(sameCellValue(null, "")).toBe(false);
       expect(sameCellValue(null, undefined)).toBe(true);
       expect(sameCellValue(0, false)).toBe(false);
