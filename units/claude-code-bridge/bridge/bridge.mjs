@@ -12,10 +12,9 @@
 // What it is, and what it is NOT (decided, see README.md):
 //   * It runs the person's own official `claude` CLI as a child process (headless, stream-json). It never reads,
 //     copies, forwards or shows a Claude login token, and it holds no Anthropic API key.
-//   * Billing is the person's Claude subscription, always. ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and
-//     ANTHROPIC_BASE_URL (and the cloud-provider switches) are removed from every child's environment, `claude auth
-//     status` must say "logged in with a Claude subscription" before the bridge starts, and each turn is stopped if
-//     the CLI reports an API-key source.
+//   * Billing is the person's subscription, always: Claude Code, or Codex on a ChatGPT sign-in. The bridge starts when
+//     at least one of those is ready. API-key variables are removed from every child's environment, and a turn is
+//     stopped if the engine reports an API key.
 //   * It listens on 127.0.0.1 only, answers only the origins on its allow-list (the ones the
 //     host app built into this file; others only by an explicit --allow-origin), and needs a pairing secret that is first
 //     handed over by a short code printed in this terminal.
@@ -3114,6 +3113,180 @@ function startCodexProcess(launch, cwd, env) {
     }
 }
 const CODEX_CLIENT = { clientInfo: { name: "gilb-claude-code-bridge", title: "Gilb Claude Code bridge", version: BRIDGE_VERSION } };
+const CODEX_PROBE_HELLO = { overallMs: 15_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
+const CODEX_PROBE_CHECK = { overallMs: 20_000, initializeMs: 12_000, accountMs: 8_000, modelsMs: 8_000 };
+/** Ends a probe child. SIGKILL, because the probe is not a turn and nothing it started should be left behind. */
+function endCodexProbeChild(child) {
+    try {
+        child.kill("SIGKILL");
+    }
+    catch { /* already gone */ }
+    child.stdin?.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+}
+/**
+ * The one probe of `codex app-server`: initialize, then account/read, then model/list.
+ * Hello's background check and {@link checkCodexReady} both call this, so the steps and the sentences cannot drift.
+ * Returns null when `stale` is true.
+ * @param launch How to start Codex. Not ok means it was not found, which this function reports as not installed.
+ * @param cwd The child's working folder. The probe reads nothing from it.
+ * @param env The child's environment, already without API keys.
+ * @param hooks Stale check, child hooks, and time limits.
+ * @returns What the probe learned, or null when it was told to stop.
+ */
+async function probeCodexAppServer(launch, cwd, env, hooks = {}) {
+    const limits = hooks.limits ?? CODEX_PROBE_HELLO;
+    const stale = () => hooks.stale?.() === true;
+    const empty = () => ({ installed: false, version: null, supported: false, account: "unknown", plan: null, models: [], modelsHeld: false, unknownFlag: false });
+    if (stale())
+        return null;
+    // A launch that is not ok is "not installed" for hello, the same as before this function was shared.
+    if (!launch.ok)
+        return empty();
+    let rpc = null;
+    let cap;
+    let version = null;
+    let supported = false;
+    let account = "unknown";
+    let plan = null;
+    let models = [];
+    let modelsHeld = false;
+    let handshook = false;
+    try {
+        const started = startCodexProcess(launch, cwd, env);
+        if ("error" in started) {
+            if (stale())
+                return null;
+            return { ...empty(), installed: true, startError: `Could not start Codex: ${started.error}` };
+        }
+        rpc = started.rpc;
+        if (stale())
+            return null;
+        hooks.onChild?.(rpc.child);
+        if (stale())
+            return null;
+        cap = setTimeout(() => { if (rpc)
+            endCodexProbeChild(rpc.child); }, limits.overallMs);
+        const init = await rpc.request("initialize", CODEX_CLIENT, limits.initializeMs);
+        if (stale())
+            return null;
+        handshook = true;
+        rpc.notify("initialized", {});
+        version = codexVersionOf(asRecord(init)?.userAgent);
+        supported = version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
+        const accountRes = await rpc.request("account/read", { refreshToken: false }, limits.accountMs);
+        if (stale())
+            return null;
+        const classified = classifyCodexAccount(accountRes);
+        account = classified.kind;
+        plan = classified.plan;
+        try {
+            const parsed = parseCodexModels(await rpc.request("model/list", {}, limits.modelsMs));
+            if (parsed) {
+                models = parsed;
+                modelsHeld = true;
+            }
+        }
+        catch { /* no list yet: a turn's model is checked by shape only */ }
+        if (stale())
+            return null;
+        return { installed: true, version, supported, account, plan, models, modelsHeld, unknownFlag: false };
+    }
+    catch {
+        if (stale() || !rpc)
+            return null;
+        const unknownFlag = rpc.stderr().includes("Unknown feature flag");
+        const tail = stderrTail(rpc.stderr());
+        const shownVersion = handshook ? version : null;
+        return {
+            installed: true,
+            version: shownVersion,
+            supported,
+            account,
+            plan,
+            models,
+            modelsHeld,
+            unknownFlag,
+            // No version and no unknown flag: the person sees the start failure, or "timed out" when stderr is empty.
+            ...(!unknownFlag && shownVersion === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
+        };
+    }
+    finally {
+        if (cap)
+            clearTimeout(cap);
+        if (rpc) {
+            hooks.onDone?.(rpc.child);
+            endCodexProbeChild(rpc.child);
+        }
+    }
+}
+/** The first sentence of a reason, for a banner or an install line that has room for one. */
+function firstSentence(reason) {
+    const flat = reason.replace(/\s+/g, " ").trim();
+    const at = flat.indexOf(".");
+    return at < 0 ? flat : flat.slice(0, at + 1);
+}
+/** Codex billing text. No e-mail address: the account read has one, and it is not shown. */
+function codexBillingLine(plan) {
+    const shown = plan && plan.trim() ? plan.trim() : "unknown";
+    return `ChatGPT subscription, plan ${shown}`;
+}
+/**
+ * Asks Codex whether this computer can run a chat turn: the binary starts, the version is one this bridge knows,
+ * and the account is a ChatGPT sign-in. The same probe as hello, with a 20 second limit. No e-mail address is returned.
+ * @param codexBin The `codex` command, or a path to it.
+ * @param env The environment. API-key variables are removed before Codex starts.
+ * @param platformOpts How to find and start the binary. Tests pass these.
+ * @returns Ready, with the version and the plan, or not ready, with whether a binary was found and the one sentence to show.
+ */
+export function checkCodexReady(codexBin, env = process.env, platformOpts = {}) {
+    // Spec: Chat.CodexConnect.EitherEngine — one probe, shared with hello, 20 seconds.
+    const launch = resolveCodexLaunch(codexBin, env, platformOpts);
+    if (!launch.ok) {
+        // The not-installed sentence is the only launch failure that means no binary. Any other sentence means one was found.
+        return Promise.resolve({ ok: false, installed: launch.reason !== CODEX_NOT_INSTALLED, reason: launch.reason });
+    }
+    return probeCodexAppServer(launch, os.tmpdir(), codexChildEnv(env), { limits: CODEX_PROBE_CHECK }).then((facts) => {
+        if (!facts)
+            return { ok: false, installed: true, reason: "Could not start Codex: timed out" };
+        const reason = codexHelloReason({
+            installed: true,
+            version: facts.version,
+            supported: facts.unknownFlag ? false : facts.supported,
+            account: facts.account,
+            unknownFlag: facts.unknownFlag,
+            ...(facts.startError ? { startError: facts.startError } : {}),
+        });
+        if (reason || !facts.version)
+            return { ok: false, installed: true, reason: reason ?? "Could not start Codex: timed out" };
+        return { ok: true, info: { version: facts.version, plan: facts.plan } };
+    });
+}
+/**
+ * Whether the bridge starts, from the two engine checks. One ready engine is enough.
+ * When neither is ready and Codex is not installed, the message is the Claude reason alone,
+ * so a computer that has no Codex sees the same sentence as before.
+ * @param claude The Claude subscription check.
+ * @param codex The Codex readiness check.
+ * @returns Start, with one billing line per ready engine, or do not start, with the message to print.
+ */
+export function decideStart(claude, codex) {
+    // Spec: Chat.CodexConnect.EitherEngine — start when either engine is ready.
+    if (!claude.ok && !codex.ok) {
+        if (!codex.installed)
+            return { start: false, message: claude.reason };
+        return { start: false, message: `Claude Code: ${claude.reason}\nCodex: ${codex.reason}` };
+    }
+    const billingLines = [];
+    if (claude.ok) {
+        const who = claude.info.email ? ` (${claude.info.email})` : "";
+        billingLines.push(`Claude subscription${who}, plan ${claude.info.subscriptionType}`);
+    }
+    if (codex.ok)
+        billingLines.push(codexBillingLine(codex.info.plan));
+    return { start: true, claudeReady: claude.ok, codexReady: codex.ok, billingLines };
+}
 // ---- preview: serve a project's BUILT app to the person's browser (read-only, loopback only) --------------------------------------
 // The agent builds inside its sandbox (`npm run build`); the bridge never runs a project script outside it. These helpers find the build
 // folder and the pinned port from fixed names, and serve the folder with a small static server in this process. No child process, no CORS.
@@ -5083,6 +5256,9 @@ export function createBridge(opts = {}) {
     /** Runs `claude` once. Resolves { result?, error?, sessionId, model, apiKeyRefused?, bridgeRefused? }. */
     function runClaude(turn, mode, prompt) {
         return new Promise((resolve) => {
+            // The body checks have passed and the stream is already open. No child: a resumed turn must not try Claude again.
+            if (opts.claudeNotReady)
+                return resolve({ error: opts.claudeNotReady, sessionId: mode.sessionId, model: "", bridgeRefused: true });
             const { computer, filesOnly } = turn; // this turn's own copy of the mode
             if (!launch.ok)
                 return resolve({ error: launch.reason, sessionId: mode.sessionId, model: "" });
@@ -5302,111 +5478,36 @@ export function createBridge(opts = {}) {
             next.reason = reason;
         codexCache = next;
     };
-    const emptyProbe = { version: null, supported: false, account: "unknown", plan: null, models: [], modelsHeld: false };
     // Node's stream types in this tsconfig share no fields with `{ unref }`, so the cast is the only way to drop the ref.
     const unrefStream = (s) => { try {
         s?.unref?.();
     }
     catch { /* a stream that cannot leave the loop is still closed on stop */ } };
-    const endProbeChild = (child) => {
-        try {
-            child.kill("SIGKILL");
-        }
-        catch { /* already gone */ }
-        child.stdin?.destroy();
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-    };
-    /** Asks Codex who is signed in and which models it has. Hello never waits for this. One probe at a time. */
+    /** Asks Codex who is signed in and which models it has. Hello never waits for this. One probe at a time. The steps are {@link probeCodexAppServer}. */
     async function runCodexProbeBody(gen) {
         // A close bumps the generation. A probe that notices it must not write a "Codex failed" cache from its own kill.
         const stale = () => gen !== probeGen || bridgeClosing;
-        let rpc = null;
-        let cap;
-        let version = null;
-        let supported = false;
-        let account = "unknown";
-        let plan = null;
-        let models = [];
-        let modelsHeld = false;
-        let handshook = false;
         try {
-            const launch = getCodexLaunch();
-            if (stale())
-                return;
-            if (!launch.ok) {
-                rememberProbe({ ...emptyProbe, installed: false, unknownFlag: false });
-                return;
-            }
-            const started = startCodexProcess(launch, workDir, codexChildEnv(env));
-            if ("error" in started) {
-                if (!stale())
-                    rememberProbe({ ...emptyProbe, installed: true, unknownFlag: false, startError: `Could not start Codex: ${started.error}` });
-                return;
-            }
-            rpc = started.rpc;
-            if (stale())
-                return;
-            probeChild = rpc.child;
-            // The probe is not a turn. It must not keep the process, or a test suite, alive after close.
-            rpc.child.unref();
-            unrefStream(rpc.child.stdin);
-            unrefStream(rpc.child.stdout);
-            unrefStream(rpc.child.stderr);
-            if (stale())
-                return;
-            cap = setTimeout(() => { if (rpc)
-                endProbeChild(rpc.child); }, 15_000);
-            const init = await rpc.request("initialize", CODEX_CLIENT, 12_000);
-            if (stale())
-                return;
-            handshook = true;
-            rpc.notify("initialized", {});
-            version = codexVersionOf(asRecord(init)?.userAgent);
-            supported = version !== null && codexVersionAtLeast(version, CODEX_MIN_VERSION);
-            const accountRes = await rpc.request("account/read", { refreshToken: false }, 8_000);
-            if (stale())
-                return;
-            const classified = classifyCodexAccount(accountRes);
-            account = classified.kind;
-            plan = classified.plan;
-            try {
-                const parsed = parseCodexModels(await rpc.request("model/list", {}, 8_000));
-                if (parsed) {
-                    models = parsed;
-                    modelsHeld = true;
-                }
-            }
-            catch { /* no list yet: a turn's model is checked by shape only */ }
-            if (stale())
-                return;
-            rememberProbe({ installed: true, version, supported, account, plan, models, modelsHeld, unknownFlag: false });
-        }
-        catch {
-            if (stale() || !rpc)
-                return;
-            const unknownFlag = rpc.stderr().includes("Unknown feature flag");
-            const tail = stderrTail(rpc.stderr());
-            rememberProbe({
-                installed: true,
-                version: handshook ? version : null,
-                supported,
-                account,
-                plan,
-                models,
-                modelsHeld,
-                unknownFlag,
-                ...(!unknownFlag && (handshook ? version : null) === null ? { startError: `Could not start Codex: ${tail || "timed out"}` } : {}),
+            const facts = await probeCodexAppServer(getCodexLaunch(), workDir, codexChildEnv(env), {
+                stale,
+                limits: CODEX_PROBE_HELLO,
+                onChild: (child) => {
+                    probeChild = child;
+                    // The probe is not a turn. It must not keep the process, or a test suite, alive after close.
+                    child.unref();
+                    unrefStream(child.stdin);
+                    unrefStream(child.stdout);
+                    unrefStream(child.stderr);
+                },
+                onDone: (child) => {
+                    if (probeChild === child)
+                        probeChild = null;
+                },
             });
+            if (facts)
+                rememberProbe(facts);
         }
         finally {
-            if (cap)
-                clearTimeout(cap);
-            if (rpc) {
-                if (probeChild === rpc.child)
-                    probeChild = null;
-                endProbeChild(rpc.child);
-            }
             codexChecking = false;
         }
     }
@@ -5433,7 +5534,7 @@ export function createBridge(opts = {}) {
             const timer = setTimeout(resolve, 1000);
             c.once("exit", () => { clearTimeout(timer); resolve(); });
             try {
-                endProbeChild(c);
+                endCodexProbeChild(c);
             }
             catch {
                 clearTimeout(timer);
@@ -5482,10 +5583,13 @@ export function createBridge(opts = {}) {
             codex.reason = CODEX_NOT_INSTALLED;
         else if (c?.reason)
             codex.reason = c.reason;
-        return [
-            { id: "claude", name: "Claude Code", ready: true, billing: "claude-subscription", models: MODEL_ALIASES.map((id) => ({ id, label: id })), efforts: [...EFFORTS], codeTurns: true, images: true, delegateCoding: true },
-            codex,
-        ];
+        // Absent claudeNotReady: this object is the one hello has always returned. No `reason` key is added.
+        const claude = { id: "claude", name: "Claude Code", ready: true, billing: "claude-subscription", models: MODEL_ALIASES.map((id) => ({ id, label: id })), efforts: [...EFFORTS], codeTurns: true, images: true, delegateCoding: true };
+        if (opts.claudeNotReady) {
+            claude.ready = false;
+            claude.reason = opts.claudeNotReady;
+        }
+        return [claude, codex];
     }
     /** Runs one Codex chat turn. Resolves the same shape as {@link runClaude}, plus `codexUsage` when the counts are usable. */
     function runCodex(turn, mode, prompt) {
@@ -7481,9 +7585,59 @@ const serviceFiles = (opts, home, platform = process.platform) => {
         pairingsFile: path.join(stateDir, "pairings.json"),
     };
 };
+/** Today's refusal when `claude` cannot be found. Kept as its own sentence so a computer with no Codex still sees it unchanged. */
+const CLAUDE_NOT_FOUND_INSTALL = "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again.";
+/** The arguments `--install` records. `--codex` sits after `--claude` when that binary was found, and is left out when it was not. */
+function serviceEngineArgs(port, stateDir, claudeBin, codexBin, extraOrigins, workspace) {
+    const args = ["--port", String(port)];
+    if (claudeBin)
+        args.push("--claude", claudeBin);
+    if (codexBin)
+        args.push("--codex", codexBin);
+    args.push("--state-dir", stateDir);
+    for (const origin of extraOrigins)
+        args.push("--allow-origin", origin);
+    if (workspace)
+        args.push("--workspace", workspace);
+    return args;
+}
 /**
- * `--install`: checks the subscription login first (never installs a bridge that could not start), then writes the plist
- * with the absolute node, bridge file and claude paths recorded, and (re)loads it. Installing again restarts on the new file.
+ * Billing lines of an install message. The Claude line stays the sentence `--install` has always printed.
+ * A ChatGPT line is added only when Codex passed. A Claude that did not pass is named in one sentence.
+ */
+function installBillingBlock(claudeReady, codexPlan, claudeReason) {
+    const lines = [];
+    if (claudeReady)
+        lines.push("  Billing: Claude subscription (checked at every start; never an API key)");
+    if (codexPlan !== undefined)
+        lines.push(`  Billing: ${codexBillingLine(codexPlan)}`);
+    if (claudeReason)
+        lines.push(`  Claude Code is not ready on this computer: ${firstSentence(claudeReason)}`);
+    return lines.join("\n");
+}
+/**
+ * Where Codex is, and whether it is ready, for `--install`.
+ * A test that injects `check` and does not inject `checkCodex` gets "not installed" without a lookup and without a process.
+ * @param opts The command line. `--codex` overrides the name `codex`.
+ * @param deps Service seams. The real command line sets neither Codex seam.
+ * @param platform `win32` or the platform this process is on.
+ */
+async function codexInstallFacts(opts, deps, platform) {
+    // Spec: Chat.CodexConnect.EitherEngine — a test that stubs only the Claude check must not touch Codex.
+    if (deps.check !== undefined && deps.checkCodex === undefined) {
+        return { path: null, check: { ok: false, installed: false, reason: CODEX_NOT_INSTALLED } };
+    }
+    const name = opts.codex ?? "codex";
+    const plat = platform === "win32" ? "win32" : process.platform;
+    const found = deps.resolveCodex ? deps.resolveCodex(name, deps.env, deps.home, plat) : resolveCodexBin(name, deps.env, deps.home, plat, deps.nodePath);
+    const checker = deps.checkCodex ?? checkCodexReady;
+    const platformOpts = { platform: plat, home: deps.home, nodePath: deps.nodePath, ...(deps.files ? { files: deps.files } : {}) };
+    const check = await checker(found ?? name, deps.env, platformOpts);
+    return { path: found, check };
+}
+/**
+ * `--install`: checks Claude Code first, then Codex. It installs when at least one is ready.
+ * A computer with no Codex, and a Claude check that fails, sees the same refusal as before.
  * deps: { launchctl, uid, home, nodePath, file, env, log }
  */
 export async function serviceInstall(opts, deps) {
@@ -7498,11 +7652,29 @@ export async function serviceInstall(opts, deps) {
     if (!Number.isInteger(port0) || port0 < 1 || port0 > 65535)
         return { ok: false, message: "--port must be a number from 1 to 65535." };
     const claudeBin = resolveBin(opts.claude ?? "claude", env, home, platform === "win32" ? "win32" : process.platform, deps.files);
+    // Claude is resolved and checked first. Codex is the other way in, not a change to that order.
+    let claudeReason;
     if (!claudeBin)
-        return { ok: false, message: "Claude Code (`claude`) was not found. Install it and run `claude auth login`, then run --install again." };
-    const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);
-    if (!login.ok)
-        return { ok: false, message: `Not installed.\n${login.reason}` };
+        claudeReason = CLAUDE_NOT_FOUND_INSTALL;
+    else {
+        const login = await (deps.check ?? checkSubscriptionLogin)(claudeBin, env);
+        if (!login.ok)
+            claudeReason = login.reason;
+    }
+    let codexPath = null;
+    // undefined: no ChatGPT billing line. null: Codex is ready and named no plan.
+    let codexPlan;
+    if (claudeReason) {
+        const codex = await codexInstallFacts(opts, deps, platform);
+        if (!codex.check.ok) {
+            // No Codex on this computer: the refusal is today's sentence, with nothing about Codex added.
+            if (!codex.check.installed)
+                return { ok: false, message: claudeBin ? `Not installed.\n${claudeReason}` : claudeReason };
+            return { ok: false, message: `Not installed.\nClaude Code: ${claudeReason}\nCodex: ${codex.check.reason}` };
+        }
+        codexPath = codex.path;
+        codexPlan = codex.check.info.plan;
+    }
     const port = opts.port ?? DEFAULT_PORT;
     // Persisted in the LaunchAgent: the origins the person allowed at install time (checked now, so a typo never installs).
     let extraOrigins;
@@ -7515,18 +7687,27 @@ export async function serviceInstall(opts, deps) {
     const accessBad = accessFlagProblem(opts.access);
     if (accessBad)
         return { ok: false, message: `Not installed.\n${accessBad}` };
+    // A passing Claude check looks up Codex only after those refusals, so a refused flag never starts Codex.
+    if (!claudeReason) {
+        const codex = await codexInstallFacts(opts, deps, platform);
+        codexPath = codex.path;
+        if (codex.check.ok)
+            codexPlan = codex.check.info.plan;
+    }
+    const billingBlock = installBillingBlock(!claudeReason, codexPlan, claudeReason);
     if (platform === "win32")
-        return installWindows(opts, deps, { claudeBin, port, extraOrigins });
+        return installWindows(opts, deps, { claudeBin, codexBin: codexPath, port, extraOrigins, billingBlock });
     const f = serviceFiles(opts, home);
-    const args = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
-    for (const o of extraOrigins)
-        args.push("--allow-origin", o);
-    if (opts.workspace)
-        args.push("--workspace", opts.workspace);
+    const args = serviceEngineArgs(port, f.stateDir, claudeBin, codexPath, extraOrigins, opts.workspace);
     const stateBad = stateDirProblem(f.stateDir, opts.workspace, home, platform);
     if (stateBad)
         return { ok: false, message: `Not installed.\n${stateBad}` };
-    const pathEnv = [...new Set([path.dirname(nodePath), path.dirname(claudeBin), "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(":");
+    // Codex's folder is not added. The bridge starts Codex by the recorded path, not by PATH.
+    const pathParts = [path.dirname(nodePath)];
+    if (claudeBin)
+        pathParts.push(path.dirname(claudeBin));
+    pathParts.push("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin");
+    const pathEnv = [...new Set(pathParts)].join(":");
     fs.mkdirSync(path.dirname(f.plist), { recursive: true });
     fs.mkdirSync(path.dirname(f.logFile), { recursive: true });
     fs.mkdirSync(f.stateDir, { recursive: true, mode: 0o700 });
@@ -7562,7 +7743,7 @@ export async function serviceInstall(opts, deps) {
     return {
         ok: true,
         message: `Always-on bridge installed (${opts.label}). It starts when you log in and restarts if it stops.
-  Billing: Claude subscription (checked at every start; never an API key)
+${billingBlock}
   Log:     ${f.logFile}
   Get your pairing code:  node ${file} --code${flags}
   Check it:               node ${file} --status${flags}
@@ -7941,21 +8122,17 @@ function labelOnPort(f, sfs, label, port) {
 }
 async function installWindows(opts, deps, ctx) {
     const { home, nodePath, file, env } = deps;
-    const { claudeBin, port, extraOrigins } = ctx;
+    const { claudeBin, codexBin, port, extraOrigins, billingBlock } = ctx;
     const sfs = deps.sfs ?? realServiceFs;
     const exec = deps.exec ?? runExec;
     const { alive, sleep, now } = depsClock(deps);
     const hello = deps.hello ?? realHello;
     const f = serviceFilesWin(opts, home, "win32", env);
     // A % in a path would be expanded by Windows inside the command; refuse rather than start the wrong file.
-    const bad = [nodePath, file, claudeBin, f.stateDir, f.launcher].find((p) => p.includes("%"));
+    const bad = [nodePath, file, claudeBin, codexBin, f.stateDir, f.launcher].filter((p) => typeof p === "string").find((p) => p.includes("%"));
     if (bad)
         return { ok: false, message: `Not installed.\nThe path ${bad} contains a % sign, which Windows would expand inside the start-up command. Move the file to a folder without one.` };
-    const base = ["--port", String(port), "--claude", claudeBin, "--state-dir", f.stateDir];
-    for (const o of extraOrigins)
-        base.push("--allow-origin", o);
-    if (opts.workspace)
-        base.push("--workspace", opts.workspace);
+    const base = serviceEngineArgs(port, f.stateDir, claudeBin, codexBin, extraOrigins, opts.workspace);
     const stateBadW = stateDirProblem(f.stateDir, opts.workspace, home, "win32");
     if (stateBadW)
         return { ok: false, message: `Not installed.\n${stateBadW}` };
@@ -8045,7 +8222,7 @@ async function installWindows(opts, deps, ctx) {
     return {
         ok: true,
         message: `Always-on bridge installed (${opts.label}). It starts when you log in and restarts if it stops.
-  Billing: Claude subscription (checked at every start; never an API key)
+${billingBlock}
   Log:     ${f.logFile}
   Get your pairing code:  node ${cmd} --code${flags}
   Check it:               node ${cmd} --status${flags}
@@ -8232,7 +8409,7 @@ export async function runSupervisor(cli, io = {}) {
             process.on(s, onSignal);
     const bridgeFile = io.file ?? fs.realpathSync(fileURLToPath(import.meta.url));
     const childArgs = ["--port", String(cli.port ?? DEFAULT_PORT), "--claude", cli.claude ?? "claude", "--state-dir", f.stateDir];
-    // --install does not record --codex in this batch. A supervisor started with --codex still passes it to the child it restarts.
+    // --install records --codex when it found Codex. A supervisor started with --codex passes that path to the bridge it restarts.
     if (cli.codex)
         childArgs.push("--codex", cli.codex);
     for (const o of cli.allowOrigins ?? [])
@@ -8438,15 +8615,18 @@ async function main() {
     };
     const launch = resolveClaudeLaunch(claudeBin, process.env);
     const login = await checkSubscriptionLogin(claudeBin);
-    if (!login.ok) {
-        console.error(`\nThe bridge did not start.\n${login.reason}\n`);
-        writeStatus({ ok: false, reason: String(login.reason).replace(/\s+/g, " ").trim() });
+    // Codex is checked even when Claude is ready, so the banner can name both. Claude stays first.
+    const codexCheck = await checkCodexReady(cli.codex ?? "codex");
+    const decision = decideStart(login, codexCheck);
+    if (!decision.start) {
+        console.error(`\nThe bridge did not start.\n${decision.message}\n`);
+        writeStatus({ ok: false, reason: String(decision.message).replace(/\s+/g, " ").trim() });
         process.exit(1);
     }
     // The local control token: a fresh one at every start, written only once the port is ours (a second bridge that fails to
     // bind must not overwrite the running one's token or status). Readable by this user only. `--code` uses it.
     const controlToken = crypto.randomBytes(32).toString("hex");
-    const bridge = createBridge({ port, claudeBin, ...codexBinOption(cli), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
+    const bridge = createBridge({ port, claudeBin, ...codexBinOption(cli), ...(login.ok ? {} : { claudeNotReady: login.reason }), controlToken, allowedOrigins, pairingsFile: f.pairingsFile, workDir: path.join(f.stateDir, "work"), workspace, fullAccess: cli.fullAccess, workspaceFile: path.join(f.stateDir, "workspace.json"), label: cli.label, stateDir: f.stateDir, log: (l) => console.log(`  ${l}`) });
     try {
         await bridge.start();
     }
@@ -8481,21 +8661,30 @@ async function main() {
             catch { /* ignore */ }
         }
     }
-    const who = login.info.email ? ` (${login.info.email})` : "";
-    const billing = `Claude subscription${who}, plan ${login.info.subscriptionType}`;
-    writeStatus({ ok: true, port: bridge.port, billing });
+    const claudeLine = decision.claudeReady
+        ? `  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${bridge.access === "computer" ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}`
+        : `  Claude Code: not ready (${firstSentence(login.ok ? "" : login.reason)})`;
+    // The word is `codex`, not the path: the banner must not name where the binary sits.
+    const codexLine = codexCheck.ok
+        ? `  Codex: your own \`codex\` ${codexCheck.info.version}; chat turns only: tools off (no shell, no files, no web)`
+        : codexCheck.installed
+            ? `  Codex: not ready (${firstSentence(codexCheck.reason)})`
+            : "  Codex: not installed";
+    const billingText = decision.billingLines.map((line) => `  Billing:      ${line}`).join("\n");
+    writeStatus({ ok: true, port: bridge.port, billing: decision.billingLines.join("; ") });
     console.log(`
 Gilb Claude Code bridge
   Listening:    http://127.0.0.1:${bridge.port}  (this computer only)
-  Billing:      ${billing}
-                API keys are removed from every Claude Code run; none is ever used.
-  Claude Code:  your own \`${platform === "win32" && launch.ok ? launch.shown : claudeBin}\`; chat turns: tools off (no shell, no files, no web)${bridge.workspacePath ? `; code turns: ${bridge.access === "computer" ? "computer mode (full access)" : "folder mode (only the code folder)"}` : ""}
+${billingText}
+                API keys are removed from every Claude Code and Codex run; none is ever used.
+${claudeLine}
+${codexLine}
 ${bridge.access === "computer" ? `  ${platform === "win32" ? FULL_ACCESS_NOTICE_WINDOWS : FULL_ACCESS_NOTICE}\n` : cli.fullAccess ? `  ${FULL_ACCESS_SAVED_FOLDER_NOTICE}\n` : ""}${bridge.workspacePath ? `  Code folder:  ${bridge.workspacePath}  (${bridge.access === "computer" ? "the start folder of a code turn; full computer access is on" : platform === "win32" ? "a code turn may read and edit files only there; it cannot run commands on Windows" : "a code turn may read, edit and run commands only there"})\n` : ""}
   Allowed apps: ${allowedOrigins.join(", ")}
                 (any other web page is refused; add one with --allow-origin)
 
   Pairing code: ${bridge.pairingCode}
-  In the app that gave you this command, press Connect, choose Claude Code, and type this code.
+  In the app that gave you this command, press Connect, choose Claude Code or Codex, and type this code.
   Press Ctrl+C to stop. (Later: \`node ${commandPathForPerson(fileURLToPath(import.meta.url), home, platform)} --code\` prints the current code.)
 `);
     const stop = () => bridge.close().then(() => process.exit(0));
