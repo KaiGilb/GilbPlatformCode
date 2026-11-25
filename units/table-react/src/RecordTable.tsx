@@ -65,6 +65,11 @@ type RenderRef = ((ref: TableRef) => ReactNode) | undefined;
 
 /** How long after an outside touch its click is still held back, ms: a tap's click follows its touch at once; later is another act. */
 const DISMISS_CLICK_MS = 700;
+/**
+ * How long after a press the focus changes it causes still count as that press's, ms. A press moves the focus (onto "+N", or off it)
+ * before its click arrives; for a finger the focus moves only after the finger is lifted. Past this, a focus change is the keyboard's.
+ */
+const PRESS_FOCUS_MS = 700;
 
 /**
  * Holds back the click that follows a touch which only put a list away, so the same tap does not also act on what lies under it (a
@@ -95,7 +100,9 @@ function holdBackNextClick(): void {
  *    browser makes up after a touch come with a touch pointer type and are not counted;
  *  - focus that came from the keyboard (`focus`): ended by the focus leaving. Focus that a press put there is not counted: a tap also
  *    focuses the button, and counting it would keep the list open after the second tap (Agent.Tester round 2, F-N1);
- *  - a tap or a click on the cell or on "+N" (`pinned`): ended by a second tap or click on the same cell.
+ *  - a tap or a click on the cell or on "+N" (`pinned`): ended by a second tap or click anywhere on the same cell, in any order
+ *    ("+N" then the value beside it, the value then "+N", the cell's edge ...). A press on the cell may take the focus off "+N" before
+ *    its click arrives; that focus change is the press's own and decides nothing: the click does (Agent.Tester round 3, F-R1).
  * And these end all three at once: Escape; any scroll outside the list (the list is fixed to the screen and would stay behind its
  * cell); a press anywhere outside the cell and the list. When that press is a finger's, it ONLY puts the list away: its click is held
  * back, so the first tap outside never also opens the row under it.
@@ -115,10 +122,11 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
   const [pinned, setPinned] = useState(false);
   const [place, setPlace] = useState<{ left: number; top: number | null; bottom: number | null; maxHeight: number } | null>(null);
   const leave = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** True from a press on the cell until its click or the blur: the focus that press brings is the press's, not the keyboard's. */
-  const pressed = useRef(false);
-  /** True from a press on the list until the blur it causes: reading or scrolling the list must not put it away. */
-  const pressedList = useRef(false);
+  /** When the cell was last pressed, until that press's click (0: no press is under way). Focus changes that soon after are the press's. */
+  const pressedAt = useRef(0);
+  /** When the list was last pressed: the focus leaving "+N" for that is not leaving; reading or scrolling the list must not put it away. */
+  const pressedListAt = useRef(0);
+  const justPressed = (at: number) => at !== 0 && performance.now() - at < PRESS_FOCUS_MS;
   const open = hover || focus || pinned;
   const isMouse = (e: { pointerType?: string }) => e.pointerType !== "touch" && e.pointerType !== "pen";
   const stay = () => {
@@ -158,7 +166,7 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
     };
     const onPress = (e: PointerEvent) => {
       if (within(listRef.current, e.target)) {
-        pressedList.current = true;
+        pressedListAt.current = performance.now();
         return;
       }
       if (within(cellRef.current, e.target)) return;
@@ -175,18 +183,19 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
   }, [open, closeAll]);
 
   const first = items[0] as Cell;
-  // The area a finger can hit around "+N", made larger than the chip is drawn: 44 px wide, and 44 px high where the layout has the room.
-  const hitArea = " relative after:absolute after:content-[''] after:inset-x-[-7px] " + (roomy ? "after:inset-y-[-11px]" : "after:inset-y-[-7px]");
+  // The area a finger can hit around "+N", larger than the chip is drawn: a box centred on the chip, 44 px wide (the chip's own width
+  // when that is more) and 44 px high where the layout has the room (the narrow one); in the grid it is the row's 36 px high.
+  const hitArea = " relative after:absolute after:left-1/2 after:top-1/2 after:w-[max(44px,100%)] after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] " + (roomy ? "after:h-[44px]" : "after:h-[36px]");
   return (
     <span
       ref={cellRef}
       // A tap or click anywhere on the cell opens the list, and the next one on the same cell puts it away. It never reaches the row.
       onClick={(e) => {
         e.stopPropagation();
-        pressed.current = false;
+        pressedAt.current = 0;
         setPinned((p) => !p);
       }}
-      onPointerDown={() => { pressed.current = true; }}
+      onPointerDown={() => { pressedAt.current = performance.now(); }}
       className={"flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch" + (roomy ? " min-h-[44px]" : "")}
       data-list-count={items.length}
       data-list-open={open ? "true" : undefined}
@@ -204,13 +213,12 @@ function ManyValues({ items, renderRef, tabbable, roomy }: { items: readonly Cel
         data-more-count={more}
         onPointerEnter={(e) => { if (isMouse(e)) stay(); }}
         onPointerLeave={(e) => { if (isMouse(e)) go(); }}
-        onFocus={() => { if (!pressed.current) setFocus(true); }}
+        onFocus={() => { if (!justPressed(pressedAt.current)) setFocus(true); }}
         onBlur={() => {
           setFocus(false);
-          // The focus left by the keyboard (or to somewhere outside): what a key press pinned goes too. A press on the list is not leaving.
-          if (!pressedList.current) setPinned(false);
-          pressed.current = false;
-          pressedList.current = false;
+          // The focus left by the keyboard: what a key press pinned goes too. But a press on this cell (its click decides, and must find
+          // the list as it was) or on the list (not leaving at all) also takes the focus off "+N", and that changes nothing here.
+          if (!justPressed(pressedAt.current) && !justPressed(pressedListAt.current)) setPinned(false);
         }}
         onKeyDown={(e) => {
           if (e.key === "Escape") { e.stopPropagation(); closeAll(); }

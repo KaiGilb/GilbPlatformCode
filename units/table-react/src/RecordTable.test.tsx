@@ -447,6 +447,61 @@ describe("table-react", () => {
         expect(all()).toBeNull();
       });
 
+      // Spec: Kai-Zen's decision on Agent.Tester round 3, F-R1: "a second tap anywhere on the same cell closes the list ... all six
+      // orders of two taps (cell, chip, "+N", cell edge, in any pair on the same cell) end closed, and a third tap opens again."
+      // In jsdom the cell and its edge are one target (the cell's own element); the real positions are tapped in the browser proof.
+      test("two taps on the same cell, in every order of the count, the value beside it and the cell itself, end closed; a third opens again", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        const targets: Record<string, () => HTMLElement> = { count: more, value: () => cell().firstElementChild as HTMLElement, cell };
+        const seen: string[] = [];
+        const wrong: string[] = [];
+        for (const a of Object.keys(targets)) {
+          for (const b of Object.keys(targets)) {
+            tap((targets[a] as () => HTMLElement)());
+            const first = all() !== null;
+            tap((targets[b] as () => HTMLElement)());
+            const second = all() !== null;
+            tap((targets[a] as () => HTMLElement)());
+            const third = all() !== null;
+            // Put it away for the next order, by the same cell.
+            tap((targets[b] as () => HTMLElement)());
+            const fourth = all() !== null;
+            seen.push(`${a} then ${b}`);
+            if (!first || second || !third || fourth) wrong.push(`${a} then ${b}: ${[first, second, third, fourth].map((o) => (o ? "open" : "closed")).join(", ")}`);
+          }
+        }
+        expect(seen.length).toBe(9);
+        expect(wrong).toEqual([]);
+      });
+
+      test("the same orders with a mouse end closed once the pointer has left the count", () => {
+        render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+        press(more(), "mouse");
+        expect(all()).not.toBeNull();
+        press(cell().firstElementChild as HTMLElement, "mouse");
+        expect(all()).toBeNull();
+      });
+
+      // Agent.Tester round 3, F-R4: opened from the value (so the count never had the focus, and no blur helps), then a press elsewhere.
+      test("a list opened from the value beside the count is put away by a press elsewhere: a finger's is held back, a mouse's is delivered", () => {
+        const onOpenRow = vi.fn();
+        render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
+        const elsewhere = screen.getByRole("button", { name: "Open Boots" });
+        // a finger
+        tap(cell().firstElementChild as HTMLElement);
+        expect(all()).not.toBeNull();
+        expect(document.activeElement).not.toBe(more());
+        expect(tap(elsewhere)).toBe(false);
+        expect(all()).toBeNull();
+        expect(onOpenRow).not.toHaveBeenCalled();
+        // a mouse
+        press(cell().firstElementChild as HTMLElement, "mouse");
+        expect(all()).not.toBeNull();
+        press(elsewhere, "mouse");
+        expect(all()).toBeNull();
+        expect(onOpenRow).toHaveBeenCalledWith("r2");
+      });
+
       test("a hover that a browser makes up after a touch does not hold the list open", () => {
         render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
         fireEvent.pointerEnter(more(), { pointerType: "touch" });
