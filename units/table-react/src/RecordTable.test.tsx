@@ -7,7 +7,8 @@
 // (veda.gilb.com, GET /base/vocab?status=all&carries=a:fieldOf, 2026-11-25; an example.test host). jsdom lays nothing out, so the
 // viewport's size is given to it below; what a browser paints (the frozen column staying in place) is proved in a browser, not here.
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import axe from "axe-core";
 import type { BaseRecord } from "@kaigilb/gilbplatformcode-base-record";
 import { buildTable, type TableModel } from "@kaigilb/gilbplatformcode-table-core";
 import { fieldsOfType, type FieldDeclarations } from "@kaigilb/gilbplatformcode-type-fields";
@@ -60,6 +61,13 @@ beforeAll(() => {
   // jsdom has no layout: give every element the size of a desktop viewport, so the rows in view can be worked out.
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 600 });
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 1000 });
+  // jsdom has no content height either: without one, every scroll the table asks for would be held at the top.
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 100_000 });
+  // jsdom does not scroll: a scroll the table asks for moves the box's scroll position and tells the table, as a browser does.
+  HTMLElement.prototype.scrollTo = function (this: HTMLElement, to?: ScrollToOptions | number) {
+    if (typeof to === "object" && typeof to.top === "number") this.scrollTop = to.top;
+    this.dispatchEvent(new Event("scroll"));
+  } as typeof HTMLElement.prototype.scrollTo;
 });
 afterEach(cleanup);
 
@@ -92,7 +100,8 @@ describe("table-react", () => {
     test("a cell shows its fact, and a cell with no fact holds nothing at all", () => {
       render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} />);
       const cellsOf = (id: string) => within(dataRows().find((r) => r.getAttribute("data-row-id") === id) as HTMLElement).getAllByRole("gridcell");
-      expect(cellsOf("r1").map((c) => c.textContent)).toEqual(["", "L", "Yes", "xy"]);
+      // The multi-valued cell shows its first value and says one more is held ("+1").
+      expect(cellsOf("r1").map((c) => c.textContent)).toEqual(["", "L", "Yes", "x+1"]);
       const boots = cellsOf("r3");
       expect(boots.length).toBe(4);
       for (const cell of boots) {
@@ -274,6 +283,179 @@ describe("table-react", () => {
       expect(stored.getAttribute("title")).toBe("shelf: a stored fact that no field describes, shown as stored");
       expect(document.querySelector('[data-row-id="r1"] [data-column-id="stored:shelf"]')?.textContent).toBe("B4");
       expect(document.querySelector('[data-row-id="r2"] [data-column-id="stored:shelf"]')?.textContent).toBe("");
+    });
+  });
+
+  // Spec: step 1 brief, item 5 (Space opens the card) and Kai-Zen's decision of 2026-11-25 (tester finding F2): "there is always exactly one focusable row among the drawn rows; arrows, PageUp/PageDown, Home/End move it and scroll it into view; Space opens the card from the focused row".
+  describe("the keyboard on a long table", () => {
+    const many = Array.from({ length: 200 }, (_, i) => record(`m${i}`, `Line ${i}`, { clothingSize: "M" }));
+    const tabStops = () => dataRows().filter((r) => r.getAttribute("tabindex") === "0");
+    const focused = () => document.activeElement?.getAttribute("data-row-id") ?? null;
+    const key = (k: string) => act(() => { fireEvent.keyDown(document.activeElement as HTMLElement, { key: k }); });
+    /** A wheel scroll: the box moves and says so. */
+    const wheelTo = (top: number) => act(() => { const box = screen.getByRole("grid"); box.scrollTop = top; fireEvent.scroll(box); });
+
+    test("with the open record far down the list, its row is brought into view and is the one Tab stop", async () => {
+      // arrange + act: a link that opens on record 150 of 200
+      render(<RecordTable table={tableOf(many)} onOpenRow={() => {}} selectedId="m150" />);
+      // assert: at every moment one drawn row holds the Tab stop; once the scroll has landed it is the open record's row
+      expect(tabStops().length).toBe(1);
+      await waitFor(() => expect(tabStops().map((r) => r.getAttribute("data-row-id"))).toEqual(["m150"]));
+      expect(screen.getByRole("grid").scrollTop).toBeGreaterThan(3000);
+    });
+
+    test("after a wheel scroll with no row focused, the one Tab stop is a row in view", () => {
+      render(<RecordTable table={tableOf(many)} onOpenRow={() => {}} />);
+      expect(tabStops().map((r) => r.getAttribute("data-row-id"))).toEqual(["m0"]);
+      wheelTo(3000);
+      const stops = tabStops();
+      expect(stops.length).toBe(1);
+      // 3000 px down, under a 34 px header, rows of 36 px: the first row in view is row 82 or 83.
+      expect(["m82", "m83"]).toContain(stops[0]?.getAttribute("data-row-id"));
+    });
+
+    test("Page down three times keeps focus on a row and moves it by three pages; Arrow down then moves one more", () => {
+      render(<RecordTable table={tableOf(many)} onOpenRow={() => {}} />);
+      (dataRows()[0] as HTMLElement).focus();
+      // (600 - 34) / 36 = 15 rows fit; a page is 14.
+      key("PageDown");
+      expect(focused()).toBe("m14");
+      key("PageDown");
+      key("PageDown");
+      expect(focused()).toBe("m42");
+      key("ArrowDown");
+      expect(focused()).toBe("m43");
+      expect(tabStops().map((r) => r.getAttribute("data-row-id"))).toEqual(["m43"]);
+      key("PageUp");
+      expect(focused()).toBe("m29");
+    });
+
+    test("End moves to the last row and Home to the first, and Space opens the row the keys moved to", () => {
+      const onOpenRow = vi.fn();
+      render(<RecordTable table={tableOf(many)} onOpenRow={onOpenRow} />);
+      (dataRows()[0] as HTMLElement).focus();
+      key("End");
+      expect(focused()).toBe("m199");
+      key(" ");
+      expect(onOpenRow.mock.calls).toEqual([["m199"]]);
+      key("Home");
+      expect(focused()).toBe("m0");
+      key("ArrowUp");
+      expect(focused()).toBe("m0");
+    });
+
+    test("a focused row stays in the page and keeps the Tab stop while the table is scrolled away from it", () => {
+      render(<RecordTable table={tableOf(many)} onOpenRow={() => {}} />);
+      (dataRows()[2] as HTMLElement).focus();
+      wheelTo(5000);
+      expect(focused()).toBe("m2");
+      expect(tabStops().map((r) => r.getAttribute("data-row-id"))).toEqual(["m2"]);
+      // The keys still act from it.
+      key("ArrowDown");
+      expect(focused()).toBe("m3");
+    });
+  });
+
+  // Spec: Solution TableView.SameRecords, Mapping.Cell, and Kai-Zen's decision of 2026-11-25 (tester finding F4): "a cell that cannot show all its values says how many more there are ("+4"), and all of them can be reached from the cell (on focus, hover and tap) without opening the card. Nothing is cut silently."
+  describe("a cell with several values", () => {
+    const six = [record("r1", "Parka, green", { account: ["one", "two", "three", "four", "five", "six"] }), record("r2", "Boots", { account: "only" })];
+    const more = () => screen.getByTestId("record-table-more");
+    const all = () => screen.queryByRole("group", { name: "All 6 values" });
+
+    test("shows its first value and how many more it holds", () => {
+      render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+      const cell = document.querySelector('[data-row-id="r1"] [data-column-id="a:account"]');
+      expect(cell?.textContent).toBe("one+5");
+      expect(more().getAttribute("aria-label")).toBe("5 more values: show all 6");
+    });
+
+    test("a cell with one value has no count", () => {
+      render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+      expect(document.querySelector('[data-row-id="r2"] [data-column-id="a:account"]')?.textContent).toBe("only");
+      expect(screen.getAllByTestId("record-table-more").length).toBe(1);
+    });
+
+    test("focus on the count lists every value, and leaving it puts the list away", () => {
+      render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+      expect(all()).toBeNull();
+      act(() => more().focus());
+      expect([...(all()?.querySelectorAll("li") ?? [])].map((li) => li.textContent)).toEqual(["one", "two", "three", "four", "five", "six"]);
+      act(() => more().blur());
+      expect(all()).toBeNull();
+    });
+
+    test("the pointer over the count lists every value", () => {
+      render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+      fireEvent.mouseEnter(more());
+      expect(all()?.querySelectorAll("li").length).toBe(6);
+    });
+
+    test("a tap lists every value, does not open the record, and a second tap or Escape puts the list away", () => {
+      const onOpenRow = vi.fn();
+      render(<RecordTable table={tableOf(six)} onOpenRow={onOpenRow} />);
+      fireEvent.click(more());
+      expect(all()?.querySelectorAll("li").length).toBe(6);
+      fireEvent.click(more());
+      expect(all()).toBeNull();
+      fireEvent.click(more());
+      fireEvent.keyDown(more(), { key: "Escape" });
+      expect(all()).toBeNull();
+      fireEvent.keyDown(more(), { key: " " });
+      expect(onOpenRow).not.toHaveBeenCalled();
+    });
+
+    test("the count takes a Tab stop in the row that holds the row Tab stop, and in no other", () => {
+      const both = [record("r1", "One", { account: ["a", "b"] }), record("r2", "Two", { account: ["c", "d"] })];
+      render(<RecordTable table={tableOf(both)} onOpenRow={() => {}} />);
+      expect(screen.getAllByTestId("record-table-more").map((b) => b.getAttribute("tabindex"))).toEqual(["0", "-1"]);
+    });
+
+    test("on a narrow screen a tap on the count lists the values and does not open the record", () => {
+      const onOpenRow = vi.fn();
+      const first = [record("r1", "Parka, green", { approvedPostPicture: [{ "@id": `${VAULT}/base/e/p1` }, { "@id": `${VAULT}/base/e/p2` }] })];
+      render(<RecordTable table={tableOf(first)} onOpenRow={onOpenRow} narrow renderRef={(ref) => <b>name of {ref.id}</b>} />);
+      expect(more().textContent).toBe("+1");
+      fireEvent.click(more());
+      expect([...(screen.getByRole("group", { name: "All 2 values" }).querySelectorAll("li"))].map((li) => li.textContent)).toEqual(["name of p1", "name of p2"]);
+      expect(onOpenRow).not.toHaveBeenCalled();
+    });
+  });
+
+  // Internal edge case (tester finding F13): tied to no spec item.
+  describe("a very long value", () => {
+    test("is in the page once: in its cell, not again in a tooltip", () => {
+      const long = "x".repeat(20_000);
+      render(<RecordTable table={tableOf([record("r1", "Long", { clothingSize: long })])} onOpenRow={() => {}} />);
+      const cell = document.querySelector('[data-row-id="r1"] [data-column-id="a:clothingSize"]') as HTMLElement;
+      expect(cell.textContent).toBe(long);
+      expect(cell.outerHTML.split(long).length - 1).toBe(1);
+    });
+
+    test("a short value keeps its tooltip", () => {
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} />);
+      expect(document.querySelector('[data-row-id="r1"] [data-column-id="a:clothingSize"] span')?.getAttribute("title")).toBe("L");
+    });
+  });
+
+  // Spec: Contrast WCAG-AA is measured in a browser; this is the rest of the accessibility rules a page can be checked for without layout (RuleA11yUnitTest).
+  describe("accessibility rules", () => {
+    const violations = async () => (await axe.run(document.body, { rules: { "color-contrast": { enabled: false }, region: { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes.length}`);
+
+    test("the grid breaks none", async () => {
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} selectedId="r2" label="Garment stock lines" />);
+      expect(await violations()).toEqual([]);
+    });
+
+    test("the list on a narrow screen breaks none", async () => {
+      render(<RecordTable table={tableOf(three)} onOpenRow={() => {}} narrow label="Garment stock lines" />);
+      expect(await violations()).toEqual([]);
+    });
+
+    test("the list of all values breaks none", async () => {
+      const six = [record("r1", "Parka, green", { account: ["one", "two", "three"] })];
+      render(<RecordTable table={tableOf(six)} onOpenRow={() => {}} />);
+      act(() => screen.getByTestId("record-table-more").focus());
+      expect(await violations()).toEqual([]);
     });
   });
 });

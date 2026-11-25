@@ -209,25 +209,36 @@ describe("type-fields", () => {
 
   // Spec: Solution TableView.SameRecords, Read.Columns: "columns come from a field reader for each type (P1: kind, cardinality, value set, record type, required, status)".
   describe("fieldKindOf", () => {
-    test("reads the kind from the encoding's own words (the fourteen encodings the live master served on 2026-11-25)", () => {
-      expect(
-        [
-          "inline-literal:text",
-          "reference",
-          "inline-literal:token",
-          "inline-literal:integer",
-          "node-reference",
-          "inline-literal:json",
-          "inline-literal:decimal",
-          "inline-literal:boolean",
-          "reference:@id",
-          "inline-literal:date",
-          "inline-literal:uri",
-          "inline-literal:string",
-          "inline-literal:uri-or-uri-array",
-          "reference-valued:@id",
-        ].map(fieldKindOf),
-      ).toEqual(["text", "reference", "token", "integer", "reference", "json", "decimal", "boolean", "reference", "date", "uri", "text", "uri", "reference"]);
+    // Measured: the 20 distinct encodings among the 847 field terms of veda.gilb.com (GET /base/vocab?status=all&carries=a:fieldOf,
+    // 2026-11-25T01:07Z), most used first, each with how many terms carry it. Two more terms carry no encoding.
+    test("reads the kind from the encoding's own words, for each of the 20 encodings the live master served", () => {
+      const served: [encoding: string, terms: number, kind: string][] = [
+        ["inline-literal:text", 185, "text"],
+        ["reference", 150, "reference"],
+        ["inline-literal:token", 125, "token"],
+        ["inline-literal:integer", 71, "integer"],
+        ["node-reference", 69, "reference"],
+        ["inline-literal:json", 65, "json"],
+        ["inline-literal:decimal", 55, "decimal"],
+        ["inline-literal:boolean", 53, "boolean"],
+        ["reference:@id", 23, "reference"],
+        ["inline-literal:date", 22, "date"],
+        ["inline-literal:uri", 11, "uri"],
+        ["inline-literal:string", 3, "text"],
+        ["inline-literal:uri-or-uri-array", 3, "uri"],
+        ["reference-valued:@id", 3, "reference"],
+        // A link held on a role record, or a plain link: the first form is not one this unit knows, so the two are not one kind.
+        ["reified:role-plane|reference:@id", 2, "unknown"],
+        ["reference-edge:@id", 1, "reference"],
+        ["reference:node-or-node-array", 1, "reference"],
+        ["inline-literal:text[]", 1, "text"],
+        // A link or a text: not read as either. A stored link is still drawn as a link, and a stored text as the text.
+        ["reference-valued:@id,inline-literal:text", 1, "unknown"],
+        ["inline-literal:enum", 1, "token"],
+      ];
+      expect(served.length).toBe(20);
+      expect(served.reduce((sum, [, terms]) => sum + terms, 0)).toBe(845);
+      expect(served.map(([encoding]) => fieldKindOf(encoding))).toEqual(served.map(([, , kind]) => kind));
     });
 
     test("no encoding, or one it does not know, is unknown", () => {

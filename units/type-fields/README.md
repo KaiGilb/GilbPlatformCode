@@ -14,7 +14,7 @@ Plain functions and types, no React, no credential. An attribute term on the mas
 - `readFieldDeclarations({ vedaOrigin, fetchImpl?, signal?, pageSize? })`: every field declaration and every required-slot statement of the master, as `FieldDeclarations`. The two requests are made at the same time and serve every type. A host keeps the answer in its own cache.
 - `fieldsOfType(declarations, typeName)`: the pure step, from declarations already read.
 - `fieldIndex(declarations)`: every field the master declares, by each key a stored fact of it may carry (prefixed and bare), as a `Map`. Pure, no request. A table uses it to head and read a fact a record holds outside its type's own fields, for example a field declared on a type above. `required` is false on every entry (it is a fact about one type). When two terms publish one key, the term whose address sorts first is kept. A host builds it once per reading of the declarations.
-- `fieldKindOf(encoding)`: the value kind an encoding names.
+- `fieldKindOf(encoding)`: the value kind an encoding names. An encoding that names several forms (`a|b`, `a,b`) is one kind only when every form is that kind; a term that allows a link or a text is `unknown`, and its value is shown as stored.
 - `TypeFieldsError` (`kind`, `status`): why the fields are not known. `kind` is `not-found` (404), `forbidden` (401 or 403), `server` (another error status), `network` (not reached), `timeout`, `not-narrowed` (a master without the carrier read), `unknown-type` (the name is not a type on this master, or not a type name), or `unreadable`.
 - `FIELD_DECLARATIONS_PAGE_SIZE` (1000): the rows one page of the carrier read asks for.
 - Types: `TypeFields`, `TypeField`, `FieldDeclarations`, `FieldKind`, `FieldValueSet`, `RequiredSlot`, `FieldProblem`, `ReadOptions`, `TypeFieldsErrorKind`.
@@ -114,7 +114,7 @@ On the live master, 2026-11-25T01:07Z (public read, no credential), before this 
 | `GET /base/vocab?status=all&carries=a:requiredSlot&limit=100` | 200, `complete: true`, 6 terms, 27,946 bytes |
 | `GET /base/t/<Type>` | does not list the type's fields (the fact is stored on the field term) |
 
-The 847 terms named 252 types. 17 of them carried no `a:cardinality`, and 5 carried a word other than `single` or `multi`. No route gave the fields of one type alone; that is why the unit reads all declarations once and derives each type from them.
+The 847 terms named 252 types. 17 of them carried no `a:cardinality`, and 5 carried a word other than `single` or `multi`. They carried 20 distinct encodings (2 terms none); the test of `fieldKindOf` lists all 20 with their counts. No route gave the fields of one type alone; that is why the unit reads all declarations once and derives each type from them.
 
 ## Where it came from
 

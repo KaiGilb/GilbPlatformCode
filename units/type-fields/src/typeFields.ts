@@ -189,12 +189,21 @@ function firstString(doc: Record<string, unknown>, keys: readonly string[]): str
  */
 export function fieldKindOf(encoding: string | null): FieldKind {
   if (!encoding) return "unknown";
-  const e = encoding.trim().toLowerCase();
+  // An encoding may name several forms (`a|b`, `a,b`). They are one kind only when every form is that kind; a term that allows a link
+  // or a text is not read as either.
+  const kinds = [...new Set(encoding.split(/[|,]/).map((part) => oneKindOf(part)))];
+  return kinds.length === 1 ? (kinds[0] as FieldKind) : "unknown";
+}
+
+/** The kind one form of an encoding names. */
+function oneKindOf(part: string): FieldKind {
+  const e = part.trim().toLowerCase();
   if (e.startsWith("reference") || e.startsWith("node-reference")) return "reference";
   if (!e.startsWith("inline-literal:")) return "unknown";
-  const literal = e.slice("inline-literal:".length);
+  // `text[]` is text, held several times: how many is the term's cardinality, not its kind.
+  const literal = e.slice("inline-literal:".length).replace(/\[\]$/, "");
   if (literal === "text" || literal === "string") return "text";
-  if (literal === "token") return "token";
+  if (literal === "token" || literal === "enum") return "token";
   if (literal === "integer") return "integer";
   if (literal === "decimal") return "decimal";
   if (literal === "boolean") return "boolean";

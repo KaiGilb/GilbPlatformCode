@@ -395,6 +395,22 @@ describe("table-core", () => {
       ]);
     });
 
+    test("a fact held only as blank text makes no column", () => {
+      const held = [record("r1", { shelf: "" }, "One"), record("r2", { shelf: "   " }, "Two")];
+      expect(buildTable({ fields, records: held, nameOf }).columns.map((c) => c.id)).toEqual(OWN);
+      // One row with something to read brings the column, and the blank rows keep their stored text.
+      const one = [record("r1", { shelf: "" }, "One"), record("r2", { shelf: "B4" }, "Two")];
+      expect(last(buildTable({ fields, records: one, nameOf }).columns).id).toBe("stored:shelf");
+    });
+
+    test("a field of another type whose every value equals the row's name is left out too: the value is in the Name column", () => {
+      // The rule is by value, not by key (tester finding F12): kept on purpose, and said here so it is not a surprise.
+      const same = [record("r1", { phone: "One" }, "One"), record("r2", { phone: "Two" }, "Two")];
+      expect(buildTable({ fields, records: same, nameOf, otherFields: others }).columns.map((c) => c.id)).toEqual(OWN);
+      const differs = [record("r1", { phone: "One" }, "One"), record("r2", { phone: "222" }, "Two")];
+      expect(last(buildTable({ fields, records: differs, nameOf, otherFields: others }).columns).id).toBe("a:phone");
+    });
+
     test("every row has one cell for each column after Name", () => {
       const held = [record("r1", { shelf: "B4", phone: "111" }, "One"), record("r2", {}, "Two")];
       const table = buildTable({ fields, records: held, nameOf, otherFields: others });

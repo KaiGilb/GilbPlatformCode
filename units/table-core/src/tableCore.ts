@@ -272,14 +272,19 @@ function usedColumns<R extends BaseRecord>(input: BuildTableInput<R>, names: rea
     ...[...otherByTerm.values()].sort((a, b) => a.label.localeCompare(b.label, "en") || a.id.localeCompare(b.id, "en")),
     ...[...storedByKey.values()].sort((a, b) => a.id.localeCompare(b.id, "en")),
   ];
-  // Already on screen as the Name: a column that only repeats each row's name adds nothing a person can read.
+  // Two kinds of such a column are left out, because neither would put anything on screen that is not already there:
+  //  - one whose every held value is the row's own name. The Name column, always first and always in view, already shows that value
+  //    on that row (most records hold their name under `label`). ⚠ This is by value, not by key: if every record's Email happens to
+  //    equal its name, there is no Email column either, and the value is still on screen, in Name. One row that differs brings the
+  //    column back.
+  //  - one whose every held value is blank text: there is nothing to read in it.
   return found.filter((column) => {
     for (let i = 0; i < input.records.length; i++) {
       const cell = cellOfColumn(input.records[i] as R, column);
-      if (cell.kind === "empty") continue;
+      if (cell.kind === "empty" || (cell.kind === "value" && cell.text.trim() === "")) continue;
       if (cell.kind !== "value" || cell.text !== names[i]) return true;
     }
-    // Every value held is the row's name (or, after reading, none is held at all): no column.
+    // Every value held is the row's name or blank (or, after reading, none is held at all): no column.
     return false;
   });
 }
