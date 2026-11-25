@@ -709,10 +709,22 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
     else if (act.act === "clear" && ed.editable) clear(at, ed);
     else if (act.act === "explain" && !ed.editable) say(id, colId, ed.reason);
   };
+  /**
+   * Whether the cell under a mouse press was the selected one when the press began; null when no press is under way. A mouse press
+   * selects its cell at once (below), before the focus it brings to the row: the row's own selection on focus would otherwise fall on
+   * the column selected before, the view would move to show that column, and the click would land on another cell.
+   */
+  const pressWas = useRef<boolean | null>(null);
+  const onCellDown = (e: { pointerType?: string }, rowId: string, colId: string) => {
+    if (!editing || e.pointerType !== "mouse") return;
+    pressWas.current = sel !== null && sel.rowId === rowId && sel.colId === colId;
+    select(rowId, colId);
+  };
   /** A click or tap on a cell: it selects the cell; on the cell already selected it starts the edit (a yes-or-no cell is changed). */
   const onCellPress = (e: ReactMouseEvent<HTMLElement>, rowId: string, colId: string) => {
     if (!editing) return;
-    const was = sel !== null && sel.rowId === rowId && sel.colId === colId;
+    const was = pressWas.current ?? (sel !== null && sel.rowId === rowId && sel.colId === colId);
+    pressWas.current = null;
     select(rowId, colId);
     // A press on a control inside the cell (Retry, "+N", the open button) is that control's.
     const onControl = e.target instanceof Element && e.target.closest("button, [role='option'], textarea, input") !== null;
@@ -1017,6 +1029,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                           aria-colindex={1}
                           aria-readonly={editing ? true : undefined}
                           data-selected={(editing && sel !== null && sel.rowId === row.id && sel.colId === NAME_COLUMN_ID) || undefined}
+                          onPointerDownCapture={editing ? (e) => onCellDown(e, row.id, NAME_COLUMN_ID) : undefined}
                           onClickCapture={editing ? (e) => onCellPress(e, row.id, NAME_COLUMN_ID) : undefined}
                           className={cellBase + " gap-1.5 pl-1 " + frozenCell + (editing ? edgeOf({ state: null, selected: sel !== null && sel.rowId === row.id && sel.colId === NAME_COLUMN_ID }) : focusLinesFirst)}
                         >
@@ -1054,6 +1067,7 @@ export function RecordTable<R extends BaseRecord = BaseRecord>({
                         title={c?.title}
                         // A mouse over the cell, or a tap or click on it, is the person going to that cell (a touch is not a hover).
                         onPointerEnter={(e) => { if (e.pointerType !== "touch" && e.pointerType !== "pen") refIntent(cell.getValue() as Cell); }}
+                        onPointerDownCapture={(e) => onCellDown(e, row.id, column.id)}
                         onClickCapture={(e) => { refIntent(cell.getValue() as Cell); onCellPress(e, row.id, column.id); }}
                         className={cellBase + " border-r border-[var(--line-2)] " + (selected ? "bg-[var(--sel)]" : "") + (c ? " relative" + edgeOf(c) : focusLines)}
                       >

@@ -109,6 +109,17 @@ const store = (rowId: string, key: string, value: CellValue | null) =>
   );
 
 beforeAll(() => {
+  // jsdom has no PointerEvent, so a pointer event made here would carry no pointer type. This gives it the one field the table reads.
+  if (typeof window.PointerEvent !== "function") {
+    class PointerEventForTest extends MouseEvent {
+      readonly pointerType: string;
+      constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+        super(type, init);
+        this.pointerType = init.pointerType ?? "";
+      }
+    }
+    Object.defineProperty(window, "PointerEvent", { configurable: true, writable: true, value: PointerEventForTest });
+  }
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 600 });
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => 1000 });
   Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 100_000 });
@@ -173,6 +184,26 @@ describe("table-react: editing a cell", () => {
       expect(selected()).toEqual(["r3", "a:stockNote"]);
       key("r3", "Home");
       expect(selected()).toEqual(["r1", "a:stockNote"]);
+    });
+
+    // In a browser a mouse press brings the focus to the row before its click arrives (proved with a real mouse in the app's browser
+    // proof). The press itself selects the cell, so the row's selection on focus cannot fall on the column selected before.
+    test("a mouse press selects its cell before the focus it brings, in another row and another column than the selection", () => {
+      render(<Host />);
+      go("r1", "stockNote");
+      const target = cellEl("r2", "stockCount");
+      fireEvent.pointerDown(target, { pointerType: "mouse" });
+      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      act(() => rowEl("r2").focus());
+      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      fireEvent.click(target);
+      // It was not the selected cell when the press began: the click selects, and opens no box.
+      expect(selected()).toEqual(["r2", "a:stockCount"]);
+      expect(hasEditor()).toBe(false);
+      // A second press on it, now the selected cell, opens its box.
+      fireEvent.pointerDown(target, { pointerType: "mouse" });
+      fireEvent.click(target);
+      expect(hasEditor()).toBe(true);
     });
 
     test("a row that takes the keys has a selected cell: Name, or the column last selected", () => {
